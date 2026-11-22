@@ -25,6 +25,7 @@
     <string name="chat_inbox">Posta in arrivo</string>
     <string name="chat_mark_all_read">Segna tutto come letto</string>
     <string name="chat_mark_all_read_unconfirmed">Alcune chat potrebbero essere ancora da leggere.</string>
+    <string name="chat_mark_all_read_partial">Segnate come lette %1$d chat su %2$d.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d chat segnata come letta.</item>
         <item quantity="many">%1$d chat segnate come lette.</item>
@@ -70,7 +71,7 @@
     <string name="chat_rename_cancel">Annulla</string>
     <string name="chat_delete">Elimina la chat</string>
     <string name="chat_delete_title">Eliminare la chat?</string>
-    <string name="chat_delete_description">Ciò eliminerà definitivamente questa chat. Qualsiasi attività attualmente in esecuzione in questa chat verrà interrotta immediatamente. Tutte le automazioni collegate verranno messe in pausa. Questa azione non può essere annullata.</string>
+    <string name="chat_delete_description">I messaggi e le bozze di «%1$s» verranno eliminati definitivamente. Le attività in corso verranno interrotte e le automazioni collegate verranno sospese.</string>
     <string name="chat_delete_confirm">Elimina</string>
     <string name="chat_rename_project">Rinomina progetto</string>
     <string name="chat_project_name">Nome del progetto</string>
@@ -86,7 +87,7 @@
     <string name="chat_project_moved_outside">Spostata fuori dai progetti</string>
     <string name="chat_project_delete">Elimina progetto</string>
     <string name="chat_project_delete_title">Eliminare il progetto?</string>
-    <string name="chat_project_delete_description">Le chat di questo progetto verranno spostate fuori dai progetti. Le attività in corso continueranno.</string>
+    <string name="chat_project_delete_description">Le chat di «%1$s» verranno spostate fuori dai progetti. Le attività in corso continueranno.</string>
     <string name="chat_project_delete_pending">Eliminazione del progetto…</string>
     <string name="chat_project_deleted">Il progetto è stato eliminato e le sue chat sono state spostate fuori dai progetti.</string>
     <string name="chat_project_delete_rejected">Impossibile eliminare il progetto.</string>

@@ -1312,7 +1312,7 @@ class ChatListModelTest {
             advanceUntilIdle()
             model.markAllRead()
             runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             source.statusRead = { newer }
             model.refreshIndicators()
@@ -1329,6 +1329,66 @@ class ChatListModelTest {
             advanceUntilIdle()
             assertEquals(ChatMarkAllReadResult(1, 1), model.uiState.value.markAllReadResult)
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun bulkReadUpdatesEachConfirmedChatAndReportsPartialSuccess() = runTest {
+        val personal = CompletableDeferred<ReadState>()
+        val other = CompletableDeferred<ReadState>()
+        val unreadBefore =
+            Indicators(
+                mapOf(
+                    CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                    CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD,
+                ),
+                mapOf(CHAT_PERSONAL to CHAT_DATE, CHAT_IN_PROJECT to CHAT_DATE),
+            )
+        val unreadAfter =
+            Indicators(
+                mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_IN_PROJECT to CHAT_DATE),
+            )
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) =
+                        if (threadId == CHAT_PERSONAL) personal.await() else other.await()
+                }
+                .apply {
+                    statusRead = { unreadBefore }
+                    listRead = {
+                        page(
+                            listOf(
+                                chatEventWire(),
+                                chatEventWire(
+                                    id = "77777777-7777-4777-8777-777777777777",
+                                    seq = 18,
+                                    thread = CHAT_IN_PROJECT,
+                                ),
+                            )
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            model.markAllRead()
+            runCurrent()
+            assertEquals(unreadBefore.unreadAt.keys, model.uiState.value.unreadChatIds())
+
+            personal.complete(ReadState(CHAT_DATE))
+            runCurrent()
+            val partial = model.uiState.value
+            assertTrue(partial.markingAllRead)
+            assertEquals(setOf(CHAT_IN_PROJECT), partial.unreadChatIds())
+
+            source.statusRead = { unreadAfter }
+            other.completeExceptionally(ApiFailure.Http(409, null, null, null))
+            advanceUntilIdle()
+            val settled = model.uiState.value
+            assertEquals(setOf(CHAT_IN_PROJECT), settled.unreadChatIds())
+            assertEquals(ChatMarkAllReadResult(1, 2), settled.markAllReadResult)
         }
     }
 

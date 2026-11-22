@@ -257,6 +257,12 @@ internal fun WorkspaceChatFeedback(
                             result.confirmed,
                             result.confirmed,
                         )
+                    result.confirmed > 0 ->
+                        stringResource(
+                            R.string.chat_mark_all_read_partial,
+                            result.confirmed,
+                            result.requested,
+                        )
                     else -> stringResource(R.string.chat_mark_all_read_unconfirmed)
                 }
             LaunchedEffect(chats, result, message, showChatList) {

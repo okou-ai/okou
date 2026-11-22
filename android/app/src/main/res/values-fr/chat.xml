@@ -25,6 +25,7 @@
     <string name="chat_inbox">Boîte de réception</string>
     <string name="chat_mark_all_read">Tout marquer comme lu</string>
     <string name="chat_mark_all_read_unconfirmed">Certaines discussions sont peut-être encore non lues.</string>
+    <string name="chat_mark_all_read_partial">%1$d conversations sur %2$d ont été marquées comme lues.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d discussion marquée comme lue.</item>
         <item quantity="many">%1$d discussions marquées comme lues.</item>
@@ -70,7 +71,7 @@
     <string name="chat_rename_cancel">Annuler</string>
     <string name="chat_delete">Supprimer la discussion</string>
     <string name="chat_delete_title">Supprimer la discussion ?</string>
-    <string name="chat_delete_description">Cela supprimera définitivement cette discussion. Toute tâche en cours dans cette discussion sera arrêtée immédiatement. Toutes les automatisations liées seront mises en pause. Cette action est irréversible.</string>
+    <string name="chat_delete_description">Les messages et brouillons de « %1$s » seront définitivement supprimés. Les tâches en cours seront arrêtées et les automatisations liées seront mises en pause.</string>
     <string name="chat_delete_confirm">Supprimer</string>
     <string name="chat_rename_project">Renommer le projet</string>
     <string name="chat_project_name">Nom du projet</string>
@@ -86,7 +87,7 @@
     <string name="chat_project_moved_outside">Déplacée hors des projets</string>
     <string name="chat_project_delete">Supprimer le projet</string>
     <string name="chat_project_delete_title">Supprimer le projet ?</string>
-    <string name="chat_project_delete_description">Les conversations de ce projet seront déplacées hors des projets. Les tâches en cours continueront.</string>
+    <string name="chat_project_delete_description">Les conversations de « %1$s » seront déplacées hors des projets. Les tâches en cours continueront.</string>
     <string name="chat_project_delete_pending">Suppression du projet…</string>
     <string name="chat_project_deleted">Le projet a été supprimé et ses conversations ont été déplacées hors des projets.</string>
     <string name="chat_project_delete_rejected">Impossible de supprimer le projet.</string>

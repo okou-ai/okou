@@ -813,8 +813,11 @@ internal fun DeleteChatDialog(
 ) {
     DeleteOrganizationDialog(
         title = stringResource(R.string.chat_delete_title),
-        name = chatName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
-        description = stringResource(R.string.chat_delete_description),
+        description =
+            stringResource(
+                R.string.chat_delete_description,
+                chatName?.takeIf { it.isNotBlank() } ?: stringResource(R.string.chat_untitled),
+            ),
         confirmRes = R.string.chat_delete_confirm,
         enabled = enabled,
         dismiss = dismiss,
@@ -833,8 +836,7 @@ internal fun DeleteProjectDialog(
 ) {
     DeleteOrganizationDialog(
         title = stringResource(R.string.chat_project_delete_title),
-        name = projectName,
-        description = stringResource(R.string.chat_project_delete_description),
+        description = stringResource(R.string.chat_project_delete_description, projectName),
         confirmRes = R.string.chat_project_delete,
         enabled = enabled,
         dismiss = dismiss,
@@ -855,7 +857,6 @@ internal fun DeleteProjectDialog(
 @Composable
 private fun DeleteOrganizationDialog(
     title: String,
-    name: String,
     description: String,
     @StringRes confirmRes: Int,
     enabled: Boolean,
@@ -872,7 +873,6 @@ private fun DeleteOrganizationDialog(
         destructive = true,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(name, fontWeight = FontWeight.SemiBold)
             Text(description)
             if (noticeRes != null) {
                 Text(

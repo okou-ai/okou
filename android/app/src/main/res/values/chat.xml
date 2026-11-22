@@ -25,6 +25,7 @@
     <string name="chat_inbox">Inbox</string>
     <string name="chat_mark_all_read">Mark all as read</string>
     <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
+    <string name="chat_mark_all_read_partial">Marked %1$d of %2$d chats as read.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">Marked %1$d chat as read.</item>
         <item quantity="other">Marked %1$d chats as read.</item>
@@ -69,7 +70,7 @@
     <string name="chat_rename_cancel">Cancel</string>
     <string name="chat_delete">Delete chat</string>
     <string name="chat_delete_title">Delete chat?</string>
-    <string name="chat_delete_description">This will permanently delete this chat. Any task currently running in this chat will be stopped immediately. Any linked automations will be paused. This action cannot be undone.</string>
+    <string name="chat_delete_description">Messages and drafts in “%1$s” will be permanently deleted. Running tasks will stop and linked automations will pause.</string>
     <string name="chat_delete_confirm">Delete</string>
     <string name="chat_rename_project">Rename Project</string>
     <string name="chat_project_name">Project name</string>
@@ -85,7 +86,7 @@
     <string name="chat_project_moved_outside">Moved outside Projects</string>
     <string name="chat_project_delete">Delete Project</string>
     <string name="chat_project_delete_title">Delete Project?</string>
-    <string name="chat_project_delete_description">Chats in this Project will move outside Projects. Running tasks will continue.</string>
+    <string name="chat_project_delete_description">Chats in “%1$s” will move outside Projects. Running tasks will continue.</string>
     <string name="chat_project_delete_pending">Deleting Project…</string>
     <string name="chat_project_deleted">Project deleted and its chats moved outside Projects.</string>
     <string name="chat_project_delete_rejected">Could not delete the Project.</string>

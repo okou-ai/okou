@@ -1427,12 +1427,12 @@ class ChatListRootTest {
         try {
             markAll()
             compose.waitUntil(10_000) { marked.size == 2 }
-            compose.onNodeWithText("Personal chat").assertDoesNotExist()
-            compose.onNodeWithText("Research").assertDoesNotExist()
+            compose.onNodeWithText("Personal chat").assertIsDisplayed()
+            compose.onNodeWithText("Research").assert(projectUnreadCount)
         } finally {
             releaseWrites.countDown()
         }
-        awaitMessage("Some chats may still be unread.")
+        awaitMessage("Marked 1 of 2 chats as read.")
         assertEquals(setOf(CHAT_PERSONAL, CHAT_IN_PROJECT), marked.toSet())
         assertEquals(2, marked.size)
         list.performScrollToNode(hasText("Personal chat"))
@@ -1680,7 +1680,9 @@ class ChatListRootTest {
         projectRow.performKeyInput { pressKey(Key.Menu) }
         compose.onNodeWithText("Delete Project").performClick()
         compose.onNodeWithText("Delete Project?").assertIsDisplayed()
-        compose.onNode(hasText("Research").and(hasAnyAncestor(isDialog()))).assertIsDisplayed()
+        compose
+            .onNode(hasText("Research", substring = true).and(hasAnyAncestor(isDialog())))
+            .assertIsDisplayed()
         compose.runOnIdle { app.connectivity.value = false }
         compose.waitUntil(10_000) { currentList()?.offline == true }
         assertEquals(0, deletes.get())

@@ -25,6 +25,7 @@
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
+    <string name="chat_mark_all_read_partial">%1$d dari %2$d chat ditandai sudah dibaca.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">%1$d chat ditandai telah dibaca.</item>
     </plurals>
@@ -68,7 +69,7 @@
     <string name="chat_rename_cancel">Batal</string>
     <string name="chat_delete">Hapus chat</string>
     <string name="chat_delete_title">Hapus chat?</string>
-    <string name="chat_delete_description">Ini akan menghapus chat ini secara permanen. Setiap tugas yang sedang berjalan di chat ini akan dihentikan segera. Semua automasi yang ditautkan akan dijeda. Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="chat_delete_description">Pesan dan draf di “%1$s” akan dihapus secara permanen. Tugas yang sedang berjalan akan dihentikan dan automasi tertaut akan dijeda.</string>
     <string name="chat_delete_confirm">Hapus</string>
     <string name="chat_rename_project">Ganti nama proyek</string>
     <string name="chat_project_name">Nama proyek</string>
@@ -84,7 +85,7 @@
     <string name="chat_project_moved_outside">Dipindahkan ke luar proyek</string>
     <string name="chat_project_delete">Hapus proyek</string>
     <string name="chat_project_delete_title">Hapus proyek?</string>
-    <string name="chat_project_delete_description">Chat dalam proyek ini akan dipindahkan ke luar proyek. Tugas yang sedang berjalan akan dilanjutkan.</string>
+    <string name="chat_project_delete_description">Chat di “%1$s” akan dipindahkan ke luar proyek. Tugas yang sedang berjalan akan dilanjutkan.</string>
     <string name="chat_project_delete_pending">Menghapus proyek…</string>
     <string name="chat_project_deleted">Proyek dihapus dan chatnya dipindahkan ke luar proyek.</string>
     <string name="chat_project_delete_rejected">Proyek tidak dapat dihapus.</string>

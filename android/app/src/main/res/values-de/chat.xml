@@ -25,6 +25,7 @@
     <string name="chat_inbox">Posteingang</string>
     <string name="chat_mark_all_read">Alles als gelesen markieren</string>
     <string name="chat_mark_all_read_unconfirmed">Einige Chats sind möglicherweise noch ungelesen.</string>
+    <string name="chat_mark_all_read_partial">%1$d von %2$d Chats wurden als gelesen markiert.</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="one">%1$d Chat als gelesen markiert.</item>
         <item quantity="other">%1$d Chats als gelesen markiert.</item>
@@ -69,7 +70,7 @@
     <string name="chat_rename_cancel">Abbrechen</string>
     <string name="chat_delete">Chat löschen</string>
     <string name="chat_delete_title">Chat löschen?</string>
-    <string name="chat_delete_description">Dadurch wird dieser Chat dauerhaft gelöscht. Jede derzeit in diesem Chat ausgeführte Aufgabe wird sofort gestoppt. Alle verknüpften Automatisierungen werden pausiert. Diese Aktion kann nicht rückgängig gemacht werden.</string>
+    <string name="chat_delete_description">Nachrichten und Entwürfe in „%1$s“ werden dauerhaft gelöscht. Laufende Aufgaben werden gestoppt und verknüpfte Automatisierungen pausiert.</string>
     <string name="chat_delete_confirm">Löschen</string>
     <string name="chat_rename_project">Projekt umbenennen</string>
     <string name="chat_project_name">Projektname</string>
@@ -85,7 +86,7 @@
     <string name="chat_project_moved_outside">Aus Projekten verschoben</string>
     <string name="chat_project_delete">Projekt löschen</string>
     <string name="chat_project_delete_title">Projekt löschen?</string>
-    <string name="chat_project_delete_description">Chats in diesem Projekt werden aus den Projekten verschoben. Laufende Aufgaben werden fortgesetzt.</string>
+    <string name="chat_project_delete_description">Chats in „%1$s“ werden aus den Projekten verschoben. Laufende Aufgaben werden fortgesetzt.</string>
     <string name="chat_project_delete_pending">Projekt wird gelöscht…</string>
     <string name="chat_project_deleted">Das Projekt wurde gelöscht und seine Chats wurden aus den Projekten verschoben.</string>
     <string name="chat_project_delete_rejected">Das Projekt konnte nicht gelöscht werden.</string>

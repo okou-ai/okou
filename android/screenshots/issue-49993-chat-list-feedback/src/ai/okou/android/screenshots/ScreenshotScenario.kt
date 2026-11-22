@@ -1,6 +1,7 @@
 package ai.okou.android.screenshots
 
 import ai.okou.android.CHAT_DATE
+import ai.okou.android.CHAT_IN_PROJECT
 import ai.okou.android.CHAT_PERSONAL
 import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.ChatCacheSnapshot
@@ -18,6 +19,7 @@ import ai.okou.android.jsonResponse
 import ai.okou.android.rowEvent
 import ai.okou.android.rowEventTail
 import ai.okou.android.testAuthenticationState
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -31,6 +33,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.net.ConnectException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
@@ -66,6 +69,14 @@ class ScreenshotScenario {
             )
         }
         val events = fixture.rowEventTail()
+        val readPersonal = AtomicBoolean()
+        fixture.indicators = {
+            val unreadPersonal =
+                if (readPersonal.get()) "" else ",\"$CHAT_PERSONAL\":\"$CHAT_DATE\""
+            jsonResponse(
+                """{"threads":{"$CHAT_PERSONAL":"active","$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"$unreadPersonal}}"""
+            )
+        }
         fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
                 "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
@@ -76,6 +87,12 @@ class ScreenshotScenario {
                     events += 25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived")
                     MockResponse().setResponseCode(204)
                 }
+                "/api/chat-threads/$CHAT_PERSONAL/mark-read" -> {
+                    readPersonal.set(true)
+                    jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
+                }
+                "/api/chat-threads/$CHAT_IN_PROJECT/mark-read" ->
+                    MockResponse().setResponseCode(409)
                 else -> null
             }
         }
@@ -120,9 +137,14 @@ class ScreenshotScenario {
         fun text(value: String) = element(selector(value))
         fun text(id: Int) = text(app.getString(id))
         fun openDelete() {
-            text(project).longClick()
+            text(project)
+            val node =
+                checkNotNull(instrumentation.uiAutomation.rootInActiveWindow.findText(project))
+            val row = generateSequence(node) { it.parent }.first { it.isLongClickable }
+            assertTrue(row.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK))
             text(R.string.chat_project_delete).click()
             text(R.string.chat_project_delete_title)
+            element(By.pkg(app.packageName).textContains(project))
         }
 
         try {
@@ -197,6 +219,21 @@ class ScreenshotScenario {
             assertEquals(2, inverseWrites.get())
             ScreenshotCapture.capture("recovered-undo.png")
 
+            val filter = By.pkg(app.packageName).desc(app.getString(R.string.chat_filter))
+            element(filter).click()
+            text(R.string.chat_unread).click()
+            text("Personal chat")
+            element(filter).click()
+            text(R.string.chat_mark_all_read).click()
+            val partialFeedback = app.getString(R.string.chat_mark_all_read_partial, 1, 2)
+            text(partialFeedback)
+            assertFalse(device.hasObject(selector("Personal chat")))
+            text(project)
+            ScreenshotCapture.capture("partial-bulk-read.png")
+            element(filter).click()
+            text(R.string.chat_inbox).click()
+            assertTrue(device.wait(Until.gone(selector(partialFeedback)), 10_000))
+
             text("Personal chat").longClick()
             text(R.string.chat_delete).click()
             text(R.string.chat_delete_title)
@@ -254,7 +291,6 @@ class ScreenshotScenario {
             val list = device.awaitChatList(app)
             if (!device.hasObject(selector(project))) list.swipe(Direction.UP, 0.45f)
             openDelete()
-            text(project)
             val compactAction =
                 generateSequence(text(R.string.chat_project_delete)) { it.parent }
                     .first { it.isClickable }
@@ -305,4 +341,15 @@ class ScreenshotScenario {
             .firstOrNull { it.startsWith("Override ") }
             ?.substringAfter(": ")
             ?.trim()
+
+    private fun AccessibilityNodeInfo?.findText(value: String): AccessibilityNodeInfo? {
+        if (this == null) return null
+        if (text?.toString() == value && isVisibleToUser) return this
+        for (index in 0 until childCount) {
+            getChild(index).findText(value)?.let {
+                return it
+            }
+        }
+        return null
+    }
 }

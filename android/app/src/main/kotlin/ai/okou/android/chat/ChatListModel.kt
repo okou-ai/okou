@@ -617,7 +617,6 @@ class ChatListModel(
                     state.pendingRowActions + targets.keys.associateWith { ChatRowAction.MarkRead },
                 markingAllRead = true,
                 markAllReadResult = null,
-                readIntents = state.readIntents + intents,
             )
         viewModelScope.launch {
             var result: ChatMarkAllReadResult? = null
@@ -627,7 +626,14 @@ class ChatListModel(
                         coroutineScope {
                             intents
                                 .map { (id, intent) ->
-                                    async { writeReadIntent(id, intent, reportFailure = false) }
+                                    async {
+                                        writeReadIntent(
+                                            id,
+                                            intent,
+                                            reportFailure = false,
+                                            publishOnReceipt = true,
+                                        )
+                                    }
                                 }
                                 .awaitAll()
                         }
@@ -670,6 +676,7 @@ class ChatListModel(
         threadId: String,
         intent: ChatReadIntent,
         reportFailure: Boolean,
+        publishOnReceipt: Boolean = false,
     ): ReadConfirmation {
         val received =
             try {
@@ -722,6 +729,10 @@ class ChatListModel(
         requireCurrent()
         return ReadConfirmation(intent, received, reportFailure).also {
             readConfirmations[threadId] = it
+            if (received && publishOnReceipt) {
+                val state = mutable.value
+                mutable.value = state.copy(readIntents = state.readIntents + (threadId to intent))
+            }
         }
     }
 
@@ -941,12 +952,12 @@ class ChatListModel(
                     readSession?.stopAutomaticRead()
                     if (intent != null) {
                         confirmation =
-                            writeReadIntent(threadId, intent, reportFailure = undoRequest == null)
-                        if (undoRequest != null && confirmation.receiptCoversIntent) {
-                            val latest = mutable.value
-                            mutable.value =
-                                latest.copy(readIntents = latest.readIntents + (threadId to intent))
-                        }
+                            writeReadIntent(
+                                threadId,
+                                intent,
+                                reportFailure = undoRequest == null,
+                                publishOnReceipt = undoRequest != null,
+                            )
                         submission = null
                     } else {
                         confirmation = null

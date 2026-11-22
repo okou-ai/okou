@@ -25,6 +25,7 @@
     <string name="chat_inbox">收件匣</string>
     <string name="chat_mark_all_read">全部標為已讀</string>
     <string name="chat_mark_all_read_unconfirmed">有些聊天可能仍未讀。</string>
+    <string name="chat_mark_all_read_partial">已將 %2$d 個聊天中的 %1$d 個標示為已讀。</string>
     <plurals name="chat_mark_all_read_success">
         <item quantity="other">已將 %1$d 則聊天標為已讀</item>
     </plurals>
@@ -68,7 +69,7 @@
     <string name="chat_rename_cancel">取消</string>
     <string name="chat_delete">刪除聊天</string>
     <string name="chat_delete_title">刪除聊天？</string>
-    <string name="chat_delete_description">這將永久刪除該聊天。聊天中正在執行的任務會立即停止，關聯的自動化會被暫停。此操作無法撤銷。</string>
+    <string name="chat_delete_description">「%1$s」的訊息與草稿將永久刪除。正在執行的任務會停止，關聯的自動化會暫停。</string>
     <string name="chat_delete_confirm">刪除</string>
     <string name="chat_rename_project">重新命名專案</string>
     <string name="chat_project_name">專案名稱</string>
@@ -84,7 +85,7 @@
     <string name="chat_project_moved_outside">已移到專案外</string>
     <string name="chat_project_delete">刪除專案</string>
     <string name="chat_project_delete_title">刪除專案？</string>
-    <string name="chat_project_delete_description">專案中的聊天將移到專案外，正在執行的任務會繼續。</string>
+    <string name="chat_project_delete_description">「%1$s」中的聊天將移到專案外，正在執行的任務會繼續。</string>
     <string name="chat_project_delete_pending">正在刪除專案…</string>
     <string name="chat_project_deleted">已刪除專案，聊天已移到專案外。</string>
     <string name="chat_project_delete_rejected">無法刪除專案。</string>
