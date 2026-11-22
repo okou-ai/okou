@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 
+internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
+
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
         fun of(query: String, category: String?): ConnectorBrowseFilter? =
@@ -337,7 +339,7 @@ class ConnectorModel(
     internal fun rename(id: String, name: String) {
         val label = name.trim()
         val target = currentAccount(id) ?: return
-        if (label.isEmpty() || label.length > 255) return
+        if (label.isEmpty() || label.length > CONNECTOR_ACCOUNT_NAME_LIMIT) return
         change(
             PendingChange(target, ConnectorResult.Renamed) { account ->
                 account?.displayName == label

@@ -36,6 +36,9 @@
     <string name="connector_rename">Renommer</string>
     <string name="connector_rename_title">Renommer le compte</string>
     <string name="connector_account_name">Nom du compte</string>
+    <string name="connector_rename_hint">Les espaces au début et à la fin sont supprimés. %1$d caractères au maximum.</string>
+    <string name="connector_rename_required">Saisissez un nom de compte.</string>
+    <string name="connector_rename_too_long">Le nom du compte peut contenir jusqu’à %1$d caractères.</string>
     <string name="connector_disconnect">Déconnecter le compte</string>
     <string name="connector_disconnect_title">Déconnecter ce compte ?</string>
     <string name="connector_disconnect_copy">Les chats et automatisations qui utilisent ce compte peuvent nécessiter une autre connexion. Les autres comptes restent disponibles.</string>

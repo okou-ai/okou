@@ -148,6 +148,29 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
+    fun renameComparesTrimmedNamesAndExplainsInvalidInput() = withCalendar { _, _ ->
+        compose.onNodeWithText("工作日历").performClick()
+        compose.onNodeWithText("Rename").performClick()
+        compose
+            .onNodeWithText("Leading and trailing spaces are removed. Up to 255 characters.")
+            .assertIsDisplayed()
+        val input = compose.onNodeWithTag("connector-input")
+        val save = compose.onNodeWithText("Save")
+        input.performTextReplacement("  工作日历  ")
+        save.assertIsNotEnabled()
+        input.performTextReplacement("   ")
+        save.performClick()
+        compose.onNodeWithText("Enter an account name.").assertIsDisplayed()
+        input.assertIsFocused()
+        input.performTextReplacement("x".repeat(256))
+        save.performClick()
+        compose.onNodeWithText("Account name can contain up to 255 characters.").assertIsDisplayed()
+        input.performTextReplacement("  Meeting calendar  ")
+        save.performClick()
+        awaitText("Meeting calendar")
+    }
+
+    @Test
     fun removingTheAccountWhileRenamingLeavesADismissibleExplanation() =
         withCalendar { fixture, _ ->
             compose.onNodeWithText("工作日历").performClick()

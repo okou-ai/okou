@@ -36,6 +36,9 @@
     <string name="connector_rename">이름 변경</string>
     <string name="connector_rename_title">계정 이름 변경</string>
     <string name="connector_account_name">계정 이름</string>
+    <string name="connector_rename_hint">앞뒤 공백은 자동으로 제거됩니다. 최대 %1$d자입니다.</string>
+    <string name="connector_rename_required">계정 이름을 입력하세요.</string>
+    <string name="connector_rename_too_long">계정 이름은 %1$d자까지 입력할 수 있습니다.</string>
     <string name="connector_disconnect">계정 연결 해제</string>
     <string name="connector_disconnect_title">이 계정의 연결을 해제하시겠어요?</string>
     <string name="connector_disconnect_copy">이 계정을 사용하는 채팅과 자동화에서 다른 연결을 선택해야 할 수 있습니다. 다른 계정은 계속 사용할 수 있습니다.</string>

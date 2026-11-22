@@ -36,6 +36,9 @@
     <string name="connector_rename">Renomear</string>
     <string name="connector_rename_title">Renomear conta</string>
     <string name="connector_account_name">Nome da conta</string>
+    <string name="connector_rename_hint">Os espaços no início e no fim são removidos. Até %1$d caracteres.</string>
+    <string name="connector_rename_required">Digite um nome para a conta.</string>
+    <string name="connector_rename_too_long">O nome da conta pode ter até %1$d caracteres.</string>
     <string name="connector_disconnect">Desconectar conta</string>
     <string name="connector_disconnect_title">Desconectar esta conta?</string>
     <string name="connector_disconnect_copy">Conversas e automações que usam esta conta podem precisar de outra conexão. As outras contas continuam disponíveis.</string>

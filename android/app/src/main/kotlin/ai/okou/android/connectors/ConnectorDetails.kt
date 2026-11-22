@@ -369,6 +369,7 @@ internal fun ConnectorDetails(
                         ConnectorRenameSheet(
                             account,
                             canModify,
+                            state.offline,
                             action,
                             save = { model.rename(account.id, it) },
                             cancel = ::dismissPanel,

@@ -36,6 +36,9 @@
     <string name="connector_rename">重命名</string>
     <string name="connector_rename_title">重命名账号</string>
     <string name="connector_account_name">账号名称</string>
+    <string name="connector_rename_hint">首尾空格会自动去除，最长 %1$d 个字符。</string>
+    <string name="connector_rename_required">请输入账号名称。</string>
+    <string name="connector_rename_too_long">账号名称不能超过 %1$d 个字符。</string>
     <string name="connector_disconnect">断开账号</string>
     <string name="connector_disconnect_title">断开此账号？</string>
     <string name="connector_disconnect_copy">使用此账号的聊天和自动化可能需要重新选择连接。其他账号继续可用。</string>

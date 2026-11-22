@@ -36,6 +36,9 @@
     <string name="connector_rename">Ganti nama</string>
     <string name="connector_rename_title">Ganti nama akun</string>
     <string name="connector_account_name">Nama akun</string>
+    <string name="connector_rename_hint">Spasi di awal dan akhir akan dihapus. Maksimal %1$d karakter.</string>
+    <string name="connector_rename_required">Masukkan nama akun.</string>
+    <string name="connector_rename_too_long">Nama akun dapat berisi hingga %1$d karakter.</string>
     <string name="connector_disconnect">Putuskan akun</string>
     <string name="connector_disconnect_title">Putuskan hubungan akun ini?</string>
     <string name="connector_disconnect_copy">Chat dan otomatisasi yang memakai akun ini mungkin perlu memilih koneksi lain. Akun lainnya tetap tersedia.</string>

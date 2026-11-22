@@ -35,11 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -52,28 +55,58 @@ import okhttp3.HttpUrl
 internal fun ConnectorRenameSheet(
     account: ConnectorSavedAccount,
     canModify: Boolean,
+    offline: Boolean,
     action: ConnectorAction?,
     save: (String) -> Unit,
     cancel: () -> Unit,
 ) {
-    val baseline = account.label()
+    val currentLabel = account.label()
+    val baseline = remember(account.id) { currentLabel }
     var label by remember(account.id) { mutableStateOf(baseline) }
+    var showError by remember(account.id) { mutableStateOf(false) }
+    val focus = remember { FocusRequester() }
+    val name = label.trim()
+    val errorMessage =
+        when {
+            name.isEmpty() -> stringResource(R.string.connector_rename_required)
+            name.length > CONNECTOR_ACCOUNT_NAME_LIMIT ->
+                stringResource(R.string.connector_rename_too_long, CONNECTOR_ACCOUNT_NAME_LIMIT)
+            else -> null
+        }
     ConnectorSheetHeading(stringResource(R.string.connector_rename_title))
     ConnectorInput(
         stringResource(R.string.connector_account_name),
         label,
-        { label = it },
+        {
+            label = it
+            if (it.trim().length in 1..CONNECTOR_ACCOUNT_NAME_LIMIT) showError = false
+        },
         canModify,
+        supportingText =
+            stringResource(R.string.connector_rename_hint, CONNECTOR_ACCOUNT_NAME_LIMIT),
+        errorMessage = errorMessage.takeIf { showError },
+        modifier = Modifier.focusRequester(focus),
     )
     ConnectorActionFeedback(action)
+    if (offline) {
+        Text(
+            stringResource(R.string.connector_offline_action),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = connectorSmallType(),
+        )
+    }
     ConnectorFormActions(
         stringResource(R.string.instructions_save),
-        enabled =
-            canModify && label.trim().let { it.isNotEmpty() && it.length <= 255 && it != baseline },
+        enabled = canModify && name != baseline.trim(),
         cancel = cancel,
         cancelEnabled = action?.busy != true,
     ) {
-        save(label)
+        if (errorMessage == null) {
+            save(name)
+        } else {
+            showError = true
+            focus.requestFocus()
+        }
     }
 }
 
@@ -322,6 +355,9 @@ private fun ConnectorInput(
     enabled: Boolean,
     secret: Boolean = false,
     placeholder: String? = null,
+    supportingText: String? = null,
+    errorMessage: String? = null,
+    modifier: Modifier = Modifier,
 ) {
     val colors = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -330,15 +366,26 @@ private fun ConnectorInput(
             value = value,
             onValueChange = edit,
             modifier =
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("connector-input").semantics {
+                modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("connector-input").semantics {
                     contentDescription = label
+                    if (errorMessage != null) error(errorMessage)
                 },
             enabled = enabled,
+            isError = errorMessage != null,
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
             textStyle = connectorBodyType(),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
             placeholder = placeholder?.let { { Text(it, style = connectorBodyType()) } },
+            supportingText =
+                supportingText?.let { hint ->
+                    {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(hint, color = colors.onSurfaceVariant)
+                            if (errorMessage != null) Text(errorMessage, color = colors.error)
+                        }
+                    }
+                },
             keyboardOptions =
                 KeyboardOptions(
                     keyboardType = if (secret) KeyboardType.Password else KeyboardType.Text
