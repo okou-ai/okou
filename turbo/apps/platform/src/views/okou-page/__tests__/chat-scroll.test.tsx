@@ -115,9 +115,17 @@ function installChatScrollGeometry(
   let scrollTop = 0;
   let heightBeforeMessages = 0;
 
+  const spacerHeight = (side: "before" | "after") => {
+    const spacer = container.querySelector<HTMLElement>(
+      `[data-transcript-spacer="${side}"]`,
+    );
+    return spacer ? Number.parseFloat(spacer.style.height) : 0;
+  };
   const scrollHeight = (): number => {
     return (
       heightBeforeMessages +
+      spacerHeight("before") +
+      spacerHeight("after") +
       renderedAnchors(container).length * ROW_HEIGHT_PX +
       CONTENT_BOTTOM_PADDING_PX
     );
@@ -153,12 +161,32 @@ function installChatScrollGeometry(
       if (this === container) {
         return rect(viewportTop(), viewportHeight());
       }
+      if (this.dataset.transcriptSpacer === "before") {
+        return rect(
+          viewportTop() + heightBeforeMessages - scrollTop,
+          spacerHeight("before"),
+        );
+      }
+      if (this.dataset.transcriptSpacer === "after") {
+        return rect(
+          viewportTop() +
+            heightBeforeMessages +
+            spacerHeight("before") +
+            renderedAnchors(container).length * ROW_HEIGHT_PX -
+            scrollTop,
+          spacerHeight("after"),
+        );
+      }
+      if (this.dataset.transcriptPage) {
+        return rect(0, renderedAnchors(this).length * ROW_HEIGHT_PX);
+      }
       if (Object.hasOwn(this.dataset, "chatScrollAnchorEventId")) {
         const index = renderedAnchors(container).indexOf(this);
         if (index !== -1) {
           return rect(
             viewportTop() +
               heightBeforeMessages +
+              spacerHeight("before") +
               index * ROW_HEIGHT_PX -
               scrollTop,
             ROW_CONTENT_HEIGHT_PX,
@@ -338,11 +366,15 @@ function mockMutableConversation(
   context.mocks.api(
     chatThreadEventsContract.rows,
     ({ params, query, respond }) => {
-      const rows =
-        params.threadId === threadId
-          ? rowsSince(query.sinceSeqId).slice(0, query.limit ?? 50)
-          : [];
-      const response = respond(200, chatEventRowsResponse(rows, query));
+      const remaining =
+        params.threadId === threadId ? rowsSince(query.sinceSeqId) : [];
+      const rows = remaining.slice(0, query.limit ?? 50);
+      const response = respond(
+        200,
+        chatEventRowsResponse(rows, query, {
+          hasMore: rows.length < remaining.length,
+        }),
+      );
       acknowledgeRows?.(rows);
       return response;
     },
@@ -1441,11 +1473,11 @@ test.each(["layout", "tap"])(
   async (cause) => {
     const conversation = mockMutableConversation(
       THREAD_IDS.incomingLatest,
-      completedHistoryEvents(5),
+      completedHistoryEvents(26),
     );
     const container = await openConversation(
       THREAD_IDS.incomingLatest,
-      "History answer 5",
+      "History answer 26",
     );
     const geometry = installChatScrollGeometry(container);
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
@@ -1459,9 +1491,9 @@ test.each(["layout", "tap"])(
     fireEvent.scroll(container);
     expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
 
-    await conversation.publish(completedTurn(6));
+    await conversation.publish(completedTurn(27));
 
-    const incomingAnswer = await screen.findByText("History answer 6");
+    const incomingAnswer = await screen.findByText("History answer 27");
     expect(incomingAnswer).toBeVisible();
     await waitFor(() => {
       expect(container.scrollTop).toBe(geometry.bottomScrollTop());
@@ -1490,6 +1522,110 @@ test("Follow the tail before and during both render frames as the layout changes
   }
 });
 
+test.each([19, 20])(
+  "Open a transcript with %i message groups at the latest reply",
+  async (groupCount) => {
+    const threadId = THREAD_IDS.incomingLatest;
+    const turns = completedHistoryEvents(10);
+    // An assistant-only opening turn contributes one group instead of two.
+    mockMutableConversation(
+      threadId,
+      groupCount === 19 ? turns.slice(1) : turns,
+    );
+    const container = await openConversation(threadId, "History answer 10");
+    const geometry = installChatScrollGeometry(container);
+
+    // The compact tail contains three turns. The virtual tail also mounts its neighboring page.
+    expect(screen.queryByText("History question 6") !== null).toBe(
+      groupCount === 20,
+    );
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  },
+);
+
+test("Fill a tall viewport from a virtual tail while keeping the latest reply pinned", async () => {
+  const id = THREAD_IDS.unfilledViewport;
+  const conversation = mockMutableConversation(id, completedHistoryEvents(26));
+  const container = await openConversation(id, "History answer 26");
+  const geometry = installChatScrollGeometry(container, () => {
+    return 6000;
+  });
+  await conversation.publish(completedTurn(27));
+  await screen.findByText("History answer 27");
+  // The 6000px viewport spans fifteen turns. Its middle and oldest visible
+  // answers arrive in successive renders before the final tail alignment.
+  await screen.findByText("History answer 20");
+  await screen.findByText("History answer 13");
+  await waitFor(() => {
+    const before = container.querySelector<HTMLElement>(
+      '[data-transcript-spacer="before"]',
+    );
+    expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  });
+});
+
+test("Drag into unmounted history, retain the message through new output, and return to the latest reply", async () => {
+  const id = THREAD_IDS.incomingHistory;
+  const diagramImage = "https://example.com/skipped-history.png";
+  const decoded: string[] = [];
+  vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    decoded.push(this.src);
+    return Promise.resolve();
+  });
+  const history = completedHistoryEvents(26).map((event) => {
+    if (event.id !== "scroll-assistant-13") {
+      return event;
+    }
+    return {
+      ...event,
+      content: [
+        "```mermaid",
+        "flowchart TD",
+        `  Skipped@{ img: "${diagramImage}", h: 80 }`,
+        "```",
+      ].join("\n"),
+    };
+  });
+  const conversation = mockMutableConversation(id, history);
+  const container = await openConversation(id, "History answer 26");
+  const geometry = installChatScrollGeometry(container);
+  expect(screen.queryByText("History question 1")).toBeNull();
+  const beforeSpacer = container.querySelector<HTMLElement>(
+    '[data-transcript-spacer="before"]',
+  )!;
+  const estimatedHistoryHeight = beforeSpacer.getBoundingClientRect().height;
+  scrollFromUser(container, 48);
+  await screen.findByText("History question 1");
+  await waitFor(() => {
+    expect(screen.queryByText("History answer 26")).toBeNull();
+    expect(geometry.firstVisibleAnchor()).toHaveTextContent(
+      "History question 1",
+    );
+  });
+  await conversation.publish(completedTurn(27));
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-locator-tick][data-turn-index="26"]'),
+    ).toBeInTheDocument();
+  });
+  expect(screen.queryByText("History answer 27")).toBeNull();
+  expect(geometry.firstVisibleAnchor()).toHaveTextContent("History question 1");
+  click(buttonByLabel("Scroll to bottom"));
+  await screen.findByText("History answer 27");
+  await waitFor(() => {
+    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+    // The history rows were taller than their initial estimates. Leaving
+    // history must preserve their measured height in the leading spacer.
+    expect(beforeSpacer.getBoundingClientRect().height).toBeGreaterThan(
+      estimatedHistoryHeight,
+    );
+  });
+  expect(decoded).not.toContain(diagramImage);
+});
+
 test("A reader who scrolls between paints keeps their new position", async () => {
   const id = THREAD_IDS.incomingLatest;
   const conversation = mockMutableConversation(id, completedHistoryEvents(7));
@@ -1514,11 +1650,11 @@ test("A reader who scrolls between paints keeps their new position", async () =>
 test("Preserve the reading position when new messages are added", async () => {
   const conversation = mockMutableConversation(
     THREAD_IDS.incomingHistory,
-    completedHistoryEvents(10),
+    completedHistoryEvents(7),
   );
   const container = await openConversation(
     THREAD_IDS.incomingHistory,
-    "History answer 10",
+    "History answer 7",
   );
   const geometry = installChatScrollGeometry(container);
   scrollFromUser(container, 240);
@@ -1527,9 +1663,9 @@ test("Preserve the reading position when new messages are added", async () => {
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  await conversation.publish(completedTurn(11));
+  await conversation.publish(completedTurn(8));
 
-  const liveAnswer = await screen.findByText("History answer 11");
+  const liveAnswer = await screen.findByText("History answer 8");
   expect(liveAnswer).toBeVisible();
   await waitFor(() => {
     expect(
@@ -1537,9 +1673,9 @@ test("Preserve the reading position when new messages are added", async () => {
     ).toBe(readingTop);
   });
 
-  await conversation.publish(completedTurn(12));
+  await conversation.publish(completedTurn(9));
 
-  const nextAnswer = await screen.findByText("History answer 12");
+  const nextAnswer = await screen.findByText("History answer 9");
   expect(nextAnswer).toBeVisible();
   await waitFor(() => {
     expect(
@@ -1551,20 +1687,20 @@ test("Preserve the reading position when new messages are added", async () => {
 test("Loading older messages preserves the reading position", async () => {
   mockMutableConversation(
     THREAD_IDS.prependedHistory,
-    completedHistoryEvents(12),
+    completedHistoryEvents(9),
   );
   const container = await openConversation(
     THREAD_IDS.prependedHistory,
-    "History answer 12",
+    "History answer 9",
   );
   const geometry = installChatScrollGeometry(container);
-  expect(screen.queryByText("History question 6")).toBeNull();
+  expect(screen.queryByText("History question 3")).toBeNull();
   scrollFromUser(container, 40);
   const readingAnchor = geometry.firstVisibleAnchor();
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  const olderMessage = await screen.findByText("History question 6");
+  const olderMessage = await screen.findByText("History question 3");
   expect(olderMessage).toBeVisible();
   await waitFor(() => {
     expect(
@@ -1574,13 +1710,10 @@ test("Loading older messages preserves the reading position", async () => {
 });
 
 test("Load earlier messages once scrolling stops near the top", async () => {
-  mockMutableConversation(
-    THREAD_IDS.settledHistory,
-    completedHistoryEvents(12),
-  );
+  mockMutableConversation(THREAD_IDS.settledHistory, completedHistoryEvents(9));
   const container = await openConversation(
     THREAD_IDS.settledHistory,
-    "History answer 12",
+    "History answer 9",
   );
   const geometry = installChatScrollGeometry(container);
   // One gesture passes the top, moves away, and stops near the top again.
@@ -1592,14 +1725,14 @@ test("Load earlier messages once scrolling stops near the top", async () => {
   const readingAnchorId = anchorId(readingAnchor);
   const readingTop = readingAnchor.getBoundingClientRect().top;
 
-  const olderMessage = await screen.findByText("History question 6");
+  const olderMessage = await screen.findByText("History question 3");
   expect(olderMessage).toBeVisible();
   await waitFor(() => {
     expect(
       anchorById(container, readingAnchorId).getBoundingClientRect().top,
     ).toBe(readingTop);
   });
-  expect(screen.queryByText("History question 4")).not.toBeInTheDocument();
+  expect(screen.queryByText("History question 1")).not.toBeInTheDocument();
 });
 
 test("Load earlier messages while the latest ones do not fill the viewport", async () => {
@@ -1607,12 +1740,12 @@ test("Load earlier messages while the latest ones do not fill the viewport", asy
   installViewportHeightBeforeOpen(1500);
   mockMutableConversation(
     THREAD_IDS.unfilledViewport,
-    completedHistoryEvents(12),
+    completedHistoryEvents(9),
   );
-  await openConversation(THREAD_IDS.unfilledViewport, "History answer 12");
+  await openConversation(THREAD_IDS.unfilledViewport, "History answer 9");
 
   await expect(
-    screen.findByText("History question 5"),
+    screen.findByText("History question 2"),
   ).resolves.toBeInTheDocument();
 });
 

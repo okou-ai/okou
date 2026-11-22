@@ -7,6 +7,7 @@ import {
   waitLoopUntil,
 } from "../utils.ts";
 import type { ChatEventSignals } from "./chat-event-signals.ts";
+import { visibleTranscriptSpacer } from "./chat-transcript-pages.ts";
 
 const L = logger("AutoScroll");
 const AT_BOTTOM_THRESHOLD_PX = 10;
@@ -77,6 +78,12 @@ interface ThreadScrollPositionSignals {
 }
 
 interface ChatThreadScrollRenderWindow {
+  readonly awaitingAnchor$: Computed<boolean>;
+  readonly tailMounted$: Computed<boolean>;
+  readonly positionInSpacer$: Command<
+    ThreadScrollPosition | null,
+    [HTMLElement]
+  >;
   readonly afterThreadScrollPositionChanged$: Command<
     Promise<void>,
     [AbortSignal]
@@ -444,7 +451,17 @@ function createScrollNavigationSignals(
   threadId: string,
   scroll: InternalScrollSignals,
   runtime: ScrollRuntime,
+  render: ReturnType<typeof createRenderScrollSignals>,
+  window: ChatThreadScrollRenderWindow,
 ) {
+  const seekSpacer$ = command(
+    ({ set }, container: HTMLElement, signal: AbortSignal) => {
+      const position = set(window.positionInSpacer$, container);
+      return position
+        ? set(render.requestScrollAfterRender$, position, "instant", signal)
+        : null;
+    },
+  );
   const scrollTo$ = command(({ get }, position: ThreadScrollPosition) => {
     runtime.hiddenLayout = null;
     runtime.pendingScroll = null;
@@ -479,7 +496,12 @@ function createScrollNavigationSignals(
       // part of the current task and cannot paint at the old offset first.
       applyScrollTop(runtime, container, container.scrollHeight);
       runtime.initialized = true;
-      await set(scroll.setThreadScrollPosition$, null, signal);
+      if (get(scroll.threadScrollPosition$) && !get(window.tailMounted$)) {
+        // Supersede an incoming history commit while the tail page is preparing.
+        await set(render.requestScrollAfterRender$, null, "instant", signal);
+      } else {
+        await set(scroll.setThreadScrollPosition$, null, signal);
+      }
     },
   );
 
@@ -493,7 +515,12 @@ function createScrollNavigationSignals(
       }
       applyScrollTop(runtime, container, 0);
       runtime.initialized = true;
-      await set(scroll.syncThreadScrollPosition$, container, signal);
+      const seek = set(seekSpacer$, container, signal);
+      if (seek) {
+        await seek;
+      } else {
+        await set(scroll.syncThreadScrollPosition$, container, signal);
+      }
     },
   );
 
@@ -521,6 +548,9 @@ function createScrollNavigationSignals(
           runtime.initialized = true;
           return;
         }
+        if (get(window.awaitingAnchor$)) {
+          return;
+        }
         L.debug("layout scroll restore target no longer rendered", {
           threadId,
           targetEventId: position.targetEventId,
@@ -545,12 +575,24 @@ function createScrollNavigationSignals(
   );
 
   return {
+    seekSpacer$,
     scrollTo$,
     scrollToBottom$,
     scrollToTop$,
     restoreScrollPosition$,
     restoreScrollPositionForLayout$,
   };
+}
+
+function transcriptViewportNeedsContent(
+  container: HTMLElement,
+  atTail: boolean,
+): boolean {
+  return (
+    container.clientHeight > 0 &&
+    ((atTail && container.scrollHeight <= container.clientHeight) ||
+      visibleTranscriptSpacer(container) !== null)
+  );
 }
 
 function createRenderScrollSignals(
@@ -570,8 +612,8 @@ function createRenderScrollSignals(
       const request = Symbol();
       runtime.pendingScroll = request;
       runtime.hasMeasuredPosition = false;
-      // Return the tail viewport only when this request still owns its position.
-      function align(): HTMLElement | null {
+      // Return the aligned viewport so any visible spacer can be filled.
+      function align(): { container: HTMLElement; atTail: boolean } | null {
         signal.throwIfAborted();
         const container = get(scroll.scrollContainer$);
         if (
@@ -589,12 +631,13 @@ function createRenderScrollSignals(
         ) {
           if (scrollToPosition(runtime, container, position, behavior)) {
             runtime.initialized = true;
+            return { container, atTail: false };
           }
           return null;
         }
         applyScrollTop(runtime, container, container.scrollHeight, behavior);
         runtime.initialized = true;
-        return container;
+        return { container, atTail: true };
       }
       async function alignAcrossFrames() {
         await set(scroll.setThreadScrollPosition$, position, signal);
@@ -606,16 +649,18 @@ function createRenderScrollSignals(
           await waitForAnimationFrame(signal);
           align();
           await waitForAnimationFrame(signal);
-          const tail = align();
-          if (!tail) {
+          const aligned = align();
+          if (!aligned) {
             return;
           }
-          if (position) {
+          if (aligned.atTail && position) {
             await set(scroll.setThreadScrollPosition$, null, signal);
           }
           if (
-            tail.clientHeight <= 0 ||
-            tail.scrollHeight > tail.clientHeight ||
+            !transcriptViewportNeedsContent(
+              aligned.container,
+              aligned.atTail,
+            ) ||
             runtime.pendingScroll !== request
           ) {
             return;
@@ -794,6 +839,12 @@ function createAttachScrollContainer(
       runtime.programmaticSmoothScrollTop = null;
       runtime.initialized = true;
       runtime.hasMeasuredPosition = true;
+      if (!isAtBottom(container)) {
+        const seek = set(navigation.seekSpacer$, container, signal);
+        if (seek) {
+          return seek;
+        }
+      }
       return set(scroll.syncThreadScrollPosition$, container, signal);
     });
     const restoreLayout = onDomEventFn((event: Event) => {
@@ -957,11 +1008,19 @@ export function createChatThreadScrollSignals(
     renderWindow.loadEarlierGroups$,
     events,
   );
-  const navigation = createScrollNavigationSignals(threadId, scroll, runtime);
-  const scrollContainerOnRef$ = onRef(
-    createAttachScrollContainer(threadId, scroll, navigation, runtime),
+  const navigation = createScrollNavigationSignals(
+    threadId,
+    scroll,
+    runtime,
+    render,
+    renderWindow,
   );
-  const scrollContentOnRef$ = createScrollContentOnRef(threadId, navigation);
+  const attachContainer$ = createAttachScrollContainer(
+    threadId,
+    scroll,
+    navigation,
+    runtime,
+  );
   const isProgrammaticScrollEvent$ = command(
     ({ get }, target: EventTarget | null): boolean => {
       const container = get(scroll.scrollContainer$);
@@ -1010,8 +1069,6 @@ export function createChatThreadScrollSignals(
         targetEventId: eventId,
         viewportOffsetTop: viewportHeight * options.viewportRatio,
       };
-      await set(scroll.setThreadScrollPosition$, position, signal);
-      signal.throwIfAborted();
       await set(
         render.requestScrollAfterRender$,
         position,
@@ -1029,8 +1086,8 @@ export function createChatThreadScrollSignals(
 
   return {
     ...hiddenLayout,
-    scrollContainerOnRef$,
-    scrollContentOnRef$,
+    scrollContainerOnRef$: onRef(attachContainer$),
+    scrollContentOnRef$: createScrollContentOnRef(threadId, navigation),
     scrollContainer$: scroll.scrollContainer$,
     threadScrollPosition$: scroll.threadScrollPosition$,
     awayFromBottom$: scroll.awayFromBottom$,
