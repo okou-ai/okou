@@ -753,3 +753,754 @@ test("browser-viewer-interaction-030 Recovery retries the first image on the ori
     }),
   ]);
 });
+
+function localPair() {
+  return openWindow(0, [primary, { ...sibling, windowId: 0 }]);
+}
+
+test.each([
+  ["049", "create receipt"],
+  ["052", "membership"],
+])(
+  "browser-viewer-interaction-%s Another caller's destination survives the delayed %s",
+  async (id) => {
+    const remote = await openWindow();
+    const creation = await startCreation(remote);
+    const target = created(remote);
+    const marker = target.url;
+    expect(marker).toMatch(/^about:blank#.+/);
+    if (id === "052") {
+      const membership = remote.holdNextMembership(target.targetId);
+      await creation.release();
+      await membership.received;
+      remote.beginNavigation(
+        target.targetId,
+        "https://user-navigation.example.com",
+      );
+      await membership.release();
+    } else {
+      remote.beginNavigation(
+        target.targetId,
+        "https://user-navigation.example.com",
+      );
+      await creation.release();
+    }
+    await screen.findByText(
+      "The browser action could not be completed. Check the browser before trying again.",
+    );
+    await expectStreamingAt(home);
+    selected("Example");
+    expect(created(remote)).toMatchObject({
+      targetId: target.targetId,
+      url: marker,
+      pendingUrl: "https://user-navigation.example.com",
+    });
+  },
+);
+
+test("browser-viewer-interaction-050 Native updates before the admission read still admit the local blank", async () => {
+  const remote = await openWindow();
+  const updatedTarget = remote.updateBeforeNextTabRead();
+  await userEvent.click(newTabButton());
+  await waitFor(() => {
+    return selected("New tab");
+  });
+  await expectStreamingAt("");
+  expect(created(remote)).toMatchObject({
+    targetId: await updatedTarget,
+    windowId: 0,
+    url: "about:blank",
+  });
+});
+test("browser-viewer-interaction-058 Mailto reaches the selected remote document intact", async () => {
+  const uri = "mailto:user@example.com";
+  const remote = await editingRemote(uri);
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    return expect(remote.targets[0]?.url).toBe(uri);
+  });
+  await expectStreamingAt(uri);
+});
+test("browser-viewer-interaction-076 Draft focus survives closing Other", async () => {
+  const remote = await localPair();
+  await userEvent.click(tab("Other"));
+  await expectStreamingAt(other);
+  const close = remote.holdClose("notes");
+  await userEvent.click(screen.getByLabelText("Close Other"));
+  await close.received;
+  await replaceDraft("draft.example");
+  await close.release();
+  await waitFor(() => {
+    return selected("Example");
+  });
+  expect(remote.targets).toStrictEqual([primary]);
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue("draft.example");
+});
+test("browser-viewer-interaction-079 A removed keyboard target returns focus once", async () => {
+  const remote = await localPair();
+  await userEvent.click(tab("Example"));
+  await userEvent.keyboard("{ArrowRight}");
+  expect(tab("Other")).toHaveFocus();
+  remote.event("Target.targetDestroyed", { targetId: "notes" });
+  await waitFor(() => {
+    return expect(tab("Example")).toHaveFocus();
+  });
+  await replaceDraft("keep-focus.example");
+  const target = remote.targets[0]!;
+  target.title = "Updated report";
+  remote.event("Target.targetInfoChanged", {
+    targetInfo: { ...target, type: "page" },
+  });
+  await waitFor(() => {
+    return selected("Updated report");
+  });
+  expect(field()).toHaveValue("keep-focus.example");
+  expect(field()).toHaveFocus();
+});
+test("browser-viewer-interaction-080 Other receives tab focus before its first image", async () => {
+  const remote = await localPair();
+  const image = remote.holdTargetFrames("notes");
+  await userEvent.click(screen.getByLabelText("Close Example"));
+  await image.received;
+  await waitFor(() => {
+    return expect(tab("Other")).toHaveFocus();
+  });
+  selected("Other");
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(other);
+});
+
+function presentPreview() {
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+}
+test("browser-viewer-interaction-082 Other retains its image while its visible page refreshes", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await localPair();
+  await userEvent.click(tab("Other"));
+  await expectStreamingAt(other);
+  const replacement = remote.holdTargetFrames("notes");
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await replacement.received;
+  await screen.findByText("Updating view…");
+  presentPreview();
+  expect(input()).toBeDisabled();
+  replacement.release();
+  await expectStreamingAt(other);
+  selected("Other");
+});
+test("browser-viewer-interaction-083 Repeated resumes wait for the original stop and the new image", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  const stop = remote.holdNext("Page.stopScreencast");
+  visibility.changeTo("hidden");
+  await stop.received;
+  visibility.changeTo("visible");
+  visibility.changeTo("hidden");
+  visibility.changeTo("visible");
+  await waitFor(presentPreview);
+  expect(input()).toBeDisabled();
+  const image = remote.holdTargetFrames("main");
+  await stop.release();
+  await image.received;
+  presentPreview();
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(home);
+  await navigateFromEditor(remote, "main", "recovered.example/path");
+});
+test("browser-viewer-interaction-098 A paused draft only navigates on the second submission", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  const draft = "local-draft.example/path";
+  await replaceDraft(draft);
+  const image = remote.holdTargetFrames("main");
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await image.received;
+  expect(field()).toHaveValue(draft);
+  await userEvent.click(field());
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText("The browser is not ready. Try again shortly.");
+  expect(field()).toHaveValue(draft);
+  expect(remote.targets[0]?.url).toBe(home);
+  image.release();
+  await waitFor(() => {
+    return expect(input()).toBeEnabled();
+  });
+  expect(remote.targets[0]?.url).toBe(home);
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    return expect(remote.targets[0]?.url).toBe("http://" + draft);
+  });
+});
+test("browser-viewer-interaction-100 A document changed in the background supplies the resumed address", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await localPair();
+  await userEvent.click(tab("Other"));
+  await expectStreamingAt(other);
+  const image = remote.holdTargetFrames("notes");
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  const destination = "https://background.example/changed";
+  remote.navigate(remote.pageSession("notes"), destination);
+  visibility.changeTo("visible");
+  await image.received;
+  await waitFor(() => {
+    return expect(field()).toHaveValue(destination);
+  });
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(destination);
+  await navigateFromEditor(
+    remote,
+    "notes",
+    "after-background-navigation.example/ready",
+  );
+  expect(remote.targets[0]?.url).toBe(home);
+});
+test("browser-viewer-interaction-101 A second pause before paint retains the multi-tab preview", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await localPair();
+  const first = remote.holdTargetFrames("main");
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await first.received;
+  const stop = remote.holdNext("Page.stopScreencast");
+  visibility.changeTo("hidden");
+  await stop.received;
+  const capture = remote.holdNext("Page.startScreencast");
+  const image = remote.holdTargetFrames("main");
+  visibility.changeTo("visible");
+  await stop.release();
+  await capture.received;
+  presentPreview();
+  expect(input()).toBeDisabled();
+  await capture.release();
+  await image.received;
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(home);
+});
+function insertText(text: string) {
+  fireEvent.input(input(), {
+    target: { value: text },
+    inputType: "insertText",
+    data: text,
+  });
+}
+function ime(phase: "compositionupdate" | "compositionend", data: string) {
+  fireEvent(
+    input(),
+    Object.assign(new Event(phase, { bubbles: true }), { data }),
+  );
+}
+function compose(text: string) {
+  fireEvent.compositionStart(input());
+  ime("compositionupdate", text);
+  fireEvent.input(input(), {
+    target: { value: text },
+    data: text,
+    isComposing: true,
+    inputType: "insertCompositionText",
+  });
+}
+function inserted(remote: Remote, target: string) {
+  return remote
+    .inputForTarget(target)
+    .filter((e) => {
+      return e.method === "Input.insertText";
+    })
+    .map((e) => {
+      return e.params?.text;
+    });
+}
+function softDelete() {
+  fireEvent(
+    input(),
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      inputType: "deleteContentBackward",
+    }),
+  );
+}
+function backspaces(remote: Remote, target: string) {
+  return remote
+    .inputForTarget(target)
+    .filter((e) => {
+      return e.params?.key === "Backspace";
+    })
+    .map((e) => {
+      return e.params?.type;
+    });
+}
+test("browser-viewer-interaction-071 A replaced composition cannot forward Enter or delete to Other", async () => {
+  const remote = await localPair();
+  await userEvent.click(input());
+  const preedit = remote.holdNext("Input.imeSetComposition");
+  compose("old");
+  await preedit.received;
+  ime("compositionend", "old");
+  fireEvent.submit(input().closest("form")!);
+  softDelete();
+  await userEvent.click(tab("Other"));
+  await expectStreamingAt(other);
+  await preedit.release();
+  await userEvent.click(input());
+  insertText("fresh");
+  softDelete();
+  await waitFor(() => {
+    return expect(backspaces(remote, "notes")).toStrictEqual([
+      "rawKeyDown",
+      "keyUp",
+    ]);
+  });
+  expect(inserted(remote, "notes")).toStrictEqual(["fresh"]);
+  expect(backspaces(remote, "main")).toStrictEqual([]);
+  expect(
+    remote.inputForTarget("notes").filter((e) => {
+      return (
+        e.params?.key === "Enter" || e.method === "Input.imeSetComposition"
+      );
+    }),
+  ).toStrictEqual([]);
+});
+test("browser-viewer-interaction-072 Backward deletion distinguishes preedit from committed text", async () => {
+  const remote = await openWindow();
+  await userEvent.click(input());
+  compose("中国");
+  fireEvent.input(input(), {
+    target: { value: "中" },
+    data: null,
+    isComposing: true,
+    inputType: "deleteContentBackward",
+  });
+  ime("compositionupdate", "中");
+  await waitFor(() => {
+    expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        method: "Input.imeSetComposition",
+        params: expect.objectContaining({ text: "中" }),
+      }),
+    );
+  });
+  expect(input()).toHaveValue("中");
+  ime("compositionend", "中");
+  softDelete();
+  insertText("fresh");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["中", "fresh"]);
+  });
+  expect(backspaces(remote, "main")).toStrictEqual(["rawKeyDown", "keyUp"]);
+});
+test("browser-viewer-interaction-073 The IME confirms text while the editing read is outstanding", async () => {
+  const remote = await openWindow();
+  const metadata = remote.holdNext("editing-context");
+  await userEvent.click(input());
+  await metadata.received;
+  compose("中");
+  await waitFor(() => {
+    return expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        method: "Input.imeSetComposition",
+        params: expect.objectContaining({ text: "中" }),
+      }),
+    );
+  });
+  ime("compositionend", "中");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["中"]);
+  });
+  expect(input()).toHaveFocus();
+  await metadata.release();
+});
+test("browser-viewer-interaction-074 Context reset retires old composition at the input boundary", async () => {
+  const remote = await openWindow();
+  await userEvent.click(input());
+  compose("old");
+  await waitFor(() => {
+    return expect(remote.inputForTarget("main")).toContainEqual(
+      expect.objectContaining({
+        method: "Input.imeSetComposition",
+        params: expect.objectContaining({ text: "old" }),
+      }),
+    );
+  });
+  remote.event(
+    "Runtime.executionContextsCleared",
+    undefined,
+    remote.pageSession("main"),
+  );
+  await waitFor(() => {
+    return expect(
+      screen
+        .getByRole("img", { name: "Live browser view" })
+        .closest("[data-browser-surface]"),
+    ).toHaveFocus();
+  });
+  ime("compositionend", "old");
+  await userEvent.click(input());
+  insertText("fresh");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["fresh"]);
+  });
+});
+
+function remoteField(
+  type: string,
+  extras: Partial<{
+    inputMode: string;
+    enterKeyHint: string;
+    lang: string;
+    autoCapitalize: string;
+    multiline: boolean;
+  }> = {},
+) {
+  return {
+    x: 25,
+    y: 30,
+    width: 160,
+    height: 90,
+    offsetX: 0,
+    offsetY: 0,
+    editing: {
+      type,
+      multiline: false,
+      inputMode: "",
+      enterKeyHint: "",
+      lang: "en",
+      autoCapitalize: "words",
+      ...extras,
+    },
+  };
+}
+function hints(
+  mode: string,
+  hint: string,
+  lang: string,
+  capital: string,
+  type = "text",
+) {
+  const proxy = input();
+  expect(proxy).toHaveFocus();
+  expect(proxy).toHaveAttribute("type", type);
+  expect(proxy).toHaveAttribute("inputmode", mode);
+  expect(proxy).toHaveAttribute("enterkeyhint", hint);
+  expect(proxy).toHaveAttribute("lang", lang);
+  expect(proxy).toHaveAttribute("autocapitalize", capital);
+}
+const password = remoteField("password", {
+  inputMode: "numeric",
+  enterKeyHint: "done",
+  lang: "ja",
+});
+test("browser-viewer-interaction-059 Remote keyboard hints track the current field outside composition", async () => {
+  const remote = await openWindow();
+  const canvas = screen.getByRole("img", { name: "Live browser view" });
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 800, 500),
+  );
+  await userEvent.click(input());
+  for (const [type, mode, enter, capital] of [
+    ["search", "search", "search", "words"],
+    ["email", "email", "enter", "none"],
+    ["url", "url", "enter", "none"],
+    ["tel", "tel", "enter", "words"],
+    ["number", "decimal", "enter", "words"],
+    ["textarea", "text", "enter", "words"],
+    ["password", "text", "enter", "none"],
+    ["search", "search", "search", "words"],
+  ] as const) {
+    remote.setFocusedEditing(
+      remoteField(type, { multiline: type === "textarea" }),
+    );
+    await userEvent.keyboard("{ArrowRight}");
+    await waitFor(() => {
+      return hints(
+        mode,
+        enter,
+        "en",
+        capital,
+        type === "password" ? "password" : "text",
+      );
+    });
+  }
+  const previousAnchor = input().style.left;
+  remote.setFocusedEditing({ ...password, x: 135 });
+  const read = remote.holdNext("editing-context");
+  compose("文");
+  await read.received;
+  await read.release();
+  // The updated caret position comes from the same editing-context reply as the hints.
+  await waitFor(() => {
+    return expect(input().style.left).not.toBe(previousAnchor);
+  });
+  hints("search", "search", "en", "words");
+  ime("compositionend", "文");
+  await waitFor(() => {
+    return hints("numeric", "done", "ja", "none", "password");
+  });
+  remote.setFocusedEditing(null);
+  await userEvent.keyboard("{ArrowLeft}");
+  await waitFor(() => {
+    return hints("text", "enter", "", "none");
+  });
+  expect(input()).toBeEnabled();
+});
+test("browser-viewer-interaction-060 A tab title update preserves Japanese password composition", async () => {
+  const remote = await openWindow();
+  remote.setFocusedEditing(password);
+  await userEvent.click(input());
+  await waitFor(() => {
+    return hints("numeric", "done", "ja", "none", "password");
+  });
+  compose("中");
+  const target = remote.targets[0]!;
+  target.title = "Checkout details";
+  remote.nativeEvent("tab-updated", target);
+  remote.event("Target.targetInfoChanged", {
+    targetInfo: { ...target, type: "page" },
+  });
+  await waitFor(() => {
+    return selected("Checkout details");
+  });
+  hints("numeric", "done", "ja", "none", "password");
+  expect(input()).toBeEnabled();
+  expect(input()).toHaveValue("中");
+  ime("compositionend", "中");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["中"]);
+  });
+  hints("numeric", "done", "ja", "none", "password");
+});
+test("browser-viewer-interaction-066 Failed context read restores defaults and forwards fresh input", async () => {
+  const remote = await openWindow();
+  remote.setFocusedEditing(password);
+  await userEvent.click(input());
+  await waitFor(() => {
+    return hints("numeric", "done", "ja", "none", "password");
+  });
+  remote.failNext("Runtime.evaluate", "Editing context unavailable");
+  await userEvent.keyboard("{ArrowRight}");
+  await waitFor(() => {
+    return hints("text", "enter", "", "none");
+  });
+  expect(input()).toBeEnabled();
+  insertText("fresh");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["fresh"]);
+  });
+});
+test("browser-viewer-interaction-078 A late failure restores Example without displacing a chosen draft", async () => {
+  const remote = await localPair();
+  remote.failNext("Target.closeTarget", "Close refused");
+  const denied = remote.holdNext("Target.closeTarget", "main");
+  await userEvent.click(screen.getByLabelText("Close Example"));
+  await denied.received;
+  await userEvent.click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    selected("Example");
+    expect(tab("Example")).toHaveAttribute("aria-disabled", "true");
+    expect(
+      remote.targets.some((page) => {
+        return page.targetId === "notes";
+      }),
+    ).toBeFalsy();
+  });
+  await replaceDraft("chosen.example/draft");
+  await denied.release();
+  await screen.findByRole("alert");
+  expect(tab("Example")).not.toHaveAttribute("aria-disabled", "true");
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue("chosen.example/draft");
+});
+test("browser-viewer-interaction-084 Resuming after a rejected stop requires a fresh picture", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  remote.failNext("Page.stopScreencast", "Stop failed");
+  const stop = remote.holdNext("Page.stopScreencast");
+  visibility.changeTo("hidden");
+  await stop.received;
+  const image = remote.holdTargetFrames("main");
+  visibility.changeTo("visible");
+  await stop.release();
+  await screen.findByText("Reconnecting…");
+  await image.received;
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(home);
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await expectStreamingAt(home);
+});
+test("browser-viewer-interaction-099 Resume preserves the preview through fresh membership and paint", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  remote.duplicate("main");
+  const prior = remote.holdNextMembership(created(remote).targetId);
+  await prior.received;
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  const fresh = remote.holdNextMembership("main");
+  const image = remote.holdTargetFrames("main");
+  visibility.changeTo("visible");
+  await prior.release();
+  await fresh.received;
+  presentPreview();
+  expect(input()).toBeDisabled();
+  await fresh.release();
+  await image.received;
+  presentPreview();
+  expect(input()).toBeDisabled();
+  image.release();
+  await expectStreamingAt(home);
+});
+
+test("browser-viewer-interaction-075 Image retry waits for input and capture shutdown", async () => {
+  const remote = await openWindow();
+  const original = remote.holdNext("Input.insertText");
+  await userEvent.click(input());
+  insertText("typed");
+  await original.received;
+  const cleanup = remote.holdNext("Page.stopScreencast");
+  remote.frame("!corrupt", remote.pageSession("main"));
+  await screen.findByText("Reconnecting…");
+  await cleanup.received;
+  expect(input()).toBeDisabled();
+  await original.release();
+  expect(input()).toBeDisabled();
+  const next = remote.holdTargetFrames("main");
+  await cleanup.release();
+  await next.received;
+  expect(input()).toBeDisabled();
+  next.release();
+  await expectStreamingAt(home);
+});
+async function choosePng() {
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.click(await screen.findByText("Image format"));
+  await userEvent.click(await screen.findByText("PNG"));
+}
+test("browser-viewer-interaction-087 Navigation completion permits PNG after its first capture was rejected", async () => {
+  const remote = await openWindow();
+  const session = remote.pageSession("main");
+  remote.event(
+    "Page.frameStartedNavigating",
+    { frameId: "example-frame" },
+    session,
+  );
+  remote.failNext("Page.startScreencast", "Navigation in progress");
+  const failure = remote.holdNext("Page.startScreencast");
+  await choosePng();
+  await failure.received;
+  await failure.release();
+  const png = remote.holdTargetFrames("main");
+  remote.event(
+    "Page.frameStoppedLoading",
+    { frameId: "example-frame" },
+    session,
+  );
+  await png.received;
+  expect(remote.captures.at(-1)).toMatchObject({ format: "png" });
+  expect(input()).toBeDisabled();
+  png.release();
+  await expectStreamingAt(home);
+  expect(screen.queryByText("Browser view unavailable")).toBeNull();
+});
+test("browser-viewer-interaction-096 A resumed owner accepts input after interrupted recovery preparation", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  const prep = remote.holdNextMembership("main");
+  remote.frame("!broken", remote.pageSession("main"));
+  await screen.findByText("Reconnecting…");
+  await prep.received;
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  const replacement = remote.holdTargetFrames("main");
+  visibility.changeTo("visible");
+  await replacement.received;
+  expect(input()).toBeDisabled();
+  replacement.release();
+  await expectStreamingAt(home);
+  await prep.release();
+  await userEvent.click(input());
+  insertText("recovered");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["recovered"]);
+  });
+  expect(screen.queryByText("Browser view unavailable")).toBeNull();
+});
+
+test("browser-viewer-interaction-103 Revealing the initially hidden viewer enables Example", async () => {
+  const visibility = context.mocks.browser.visibilityState("hidden");
+  const session = arrangeNativePage(context);
+  await session.openPage();
+  expect(input()).toBeDisabled();
+  visibility.changeTo("visible");
+  await expectStreamingAt(home);
+});
+test("browser-viewer-interaction-104 The initializing viewer survives a hidden-visible cycle", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const session = arrangeNativePage(context);
+  const enabling = session.cdp.holdNext("Page.enable");
+  await session.openPage();
+  await enabling.received;
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await enabling.release();
+  await expectStreamingAt(home);
+});
+test("browser-viewer-interaction-105 Resumed input commits only the new text", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  await userEvent.click(input());
+  const previous = remote.holdNext("Input.imeSetComposition");
+  compose("旧");
+  await previous.received;
+  visibility.changeTo("hidden");
+  await waitFor(() => {
+    return expect(input()).toBeDisabled();
+  });
+  visibility.changeTo("visible");
+  await previous.release();
+  await expectStreamingAt(home);
+  ime("compositionend", "旧");
+  await userEvent.click(input());
+  insertText("fresh text");
+  await waitFor(() => {
+    return expect(inserted(remote, "main")).toStrictEqual(["fresh text"]);
+  });
+  presentPreview();
+});
+test("browser-viewer-interaction-123 An ordinary Page enable failure disables the viewer", async () => {
+  const session = arrangeNativePage(context);
+  session.cdp.failNext("Page.enable", "Page not available");
+  await session.openPage();
+  await screen.findByText("Browser view unavailable");
+  expect(input()).toBeDisabled();
+});

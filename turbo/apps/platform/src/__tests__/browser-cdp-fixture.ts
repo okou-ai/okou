@@ -81,7 +81,7 @@ export function mockBrowserCdp(
   });
   let created = 0;
   let corruptPageAttachment = false;
-  let updateBeforeTabRead = false;
+  let updateBeforeTabRead: ((targetId: string) => void) | undefined;
   let sessionSequence = 0;
   let nativeSequence = 0;
   let nativeEpoch = "fixture-worker";
@@ -89,7 +89,7 @@ export function mockBrowserCdp(
   const nativeIds = new Map<string, number>();
   let nextNativeId = 1;
   const requests: BrowserRequest[] = [];
-  const input: { method: string; params: unknown; sessionId?: string }[] = [];
+  const input: Pick<BrowserRequest, "method" | "params" | "sessionId">[] = [];
   const detached: string[] = [];
   const retiredSessions = new Set<string>();
   const sessionTargets = new Map<string, string>();
@@ -273,12 +273,15 @@ export function mockBrowserCdp(
       url: string().optional(),
     }).parse(JSON.parse(raw));
     if (request.method === "getTab" && updateBeforeTabRead) {
-      updateBeforeTabRead = false;
+      const updated = updateBeforeTabRead;
+      updateBeforeTabRead = undefined;
       const target = targets.find((target) => {
         return nativeTab(target).id === request.tabId;
       });
       if (target) {
+        target.title = "Preparing new tab";
         nativeEvent("tab-updated", target);
+        updated(target.targetId);
       }
     }
     const startedSequence = nativeSequence;
@@ -758,6 +761,13 @@ export function mockBrowserCdp(
       const { expression } = object({ expression: string() }).parse(
         request.params,
       );
+      if (
+        expression.includes("doc.activeElement") &&
+        expression.includes("offsetX:") &&
+        heldReplies.has("editing-context")
+      ) {
+        return "editing-context";
+      }
       if (expression.startsWith("globalThis.__okouBrowser?.invoke(")) {
         const raw = expression.slice(expression.indexOf(".invoke(") + 8, -1);
         const { method } = object({ method: string() }).parse(JSON.parse(raw));
@@ -1015,7 +1025,9 @@ export function mockBrowserCdp(
       corruptPageAttachment = true;
     },
     updateBeforeNextTabRead() {
-      updateBeforeTabRead = true;
+      const updated = context.mocks.deferred<string>();
+      updateBeforeTabRead = updated.resolve;
+      return updated.promise;
     },
     holdNextNative(method: string) {
       const response = context.mocks.deferred<ProtocolReply>();

@@ -169,3 +169,28 @@ test("browser-domain-initialization-013 A transport change retains its new sessi
   );
   expect(cdp.pageSession(owner.targetId)).toBe(successor);
 });
+
+test("browser-domain-initialization-014 A fresh connection takes input after the original Page reply arrives late", async () => {
+  const { cdp, openPage } = setup();
+  const original = cdp.holdNext("Page.enable");
+  await openPage();
+  await original.received;
+  const previous = cdp.pageSession(owner.targetId);
+  const replacement = cdp.holdTargetFrames(owner.targetId);
+  cdp.disconnect({ code: 1006 });
+  await replacement.received;
+  replacement.release();
+  await expectStreamingAt(owner.url);
+  const current = cdp.pageSession(owner.targetId);
+  expect(current).not.toBe(previous);
+  await original.release();
+  await sendText(cdp, owner.targetId, "r");
+  expect(cdp.inputForTarget(owner.targetId)).toContainEqual(
+    expect.objectContaining({
+      sessionId: current,
+      params: expect.objectContaining({ text: "r" }),
+    }),
+  );
+  expect(cdp.pageSession(owner.targetId)).toBe(current);
+  expect(cdp.connections()).toBe(2);
+});

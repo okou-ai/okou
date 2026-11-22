@@ -727,3 +727,360 @@ After authorship, normalized four-line windows from the changed portions of the 
 - Observed The native viewport begins at 1440×900 and the panel measures 900×600. The opened Window size menu identifies Follow panel as the checked mode. The remote viewport actually becomes 900×600 with usable input and the original address.
 - Write-after-GWT review: freeze L4975, before-first-withdrawal L3512, before-second-withdrawal absent, upstream L4975. The largest same-registration token similarity was 0.347. Cross-file sequences and helper matches are described above.
 - Vitest `browser-viewer-interaction-166 The remote viewport follows the measured 900 by 600 panel`.
+
+## Batch 73 evidence
+
+Opening head `641a5cc40ad46eb9a98c6df91956a77719e4971e`. Synchronized main `f0babd9a5b1d68fef595bc35d6944d3859e593f2`. Historical first acceptances rose from 1,400 to 1,430 of 2,681. Complete current coverage rose from 1,383 to 1,413. The 233 open files contain 550 covered selections of 1,813. Closed files remain 252. Withdrawal cohort 420 historical / 413 current of 506; outside it 1,010 historical / 1,000 current of 2,175. The original 86 withdrawn, 17 subsequently invalidated and 68 independent upstream scenarios retain their owners.
+
+26 nominees and viewer 103/104/105/123 earned first acceptance. Both files retain their full BDD. The seven domain and thirty viewer rows from the opening head are whole-file regressions, including viewer 048. Viewer 010 retains the actual Example target readback from batch 72. No Escape prerequisite has been added. The seven batch 71 session probes and chat-activity-summary-002 also remain open.
+
+[Full original GWT and passing Vitest row crosswalk](https://app.okou.ai/artifacts/9v04ntf02a.tsv) · [Mutation diffs, failure assertions and gap probes](https://app.okou.ai/artifacts/s7x3xotz9k.md)
+
+### Batch 73 verification
+
+Real Router and user events with a local native-browser extension, CDP transport and frame fixture. The editing-context gate identifies the external caret evaluation separately from extension RPCs. The keyboard anchor moves when that observation is consumed. Target-specific commits and key events distinguish recipients. Geometry, visibility and clock checks follow the [repository guidelines](../../../AGENTS.md), [testing guide](../../../docs/testing.md), [App testing and worker lifetime](../../../docs/app/app-testing.md) and [async ownership](../../../docs/app/platform-ccstate.md).
+
+Post-sync targeted 30/30, full 67/67 across both files, shuffled 200/200 across 20 files (seed 73049). The shuffle includes 170 existing rows, with batch 65 quality regressions. No imported upstream App row. Three TypeScript projects, scoped ESLint, oxlint, type-aware oxlint and all changed file formatting and size checks passed. One concurrent local test run under memory pressure timed out on 096; the final suites ran serially, with default timeouts.
+
+### Batch 73 comparison after authoring
+
+Compared 1,794 unique historical blobs from 757 paths, including renamed paths and helpers, and inspected each frozen registration against the new entry. One four-line normalized window matched: constructing the standard cancelable, bubbling beforeinput event for deleteContentBackward. The helper issues the native event only; the old scenario orchestration was not reused. The highest same-registration token ratio was 0.507. The tests use separate external frame, native effect and recipient evidence. The two no-stop probes record the earlier stop observed during pause as well as the older registrations' narrower observation interval.
+
+[before-zero-page-rename](https://github.com/okou-ai/okou/tree/8924f63dade934b3caa6d5629013447a6c70fc3c) · [after-zero-page-rename](https://github.com/okou-ai/okou/tree/0f0ded9b208cbeb41998c04f43db70ac1cf11d22) · [freeze](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32) · [before-first-withdrawal](https://github.com/okou-ai/okou/tree/5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b) · [restored](https://github.com/okou-ai/okou/tree/b666cd050364ef31821b71fee4e14802a9e8476b) · [before-second-withdrawal](https://github.com/okou-ai/okou/tree/a445586e0483bb7e2440e60200a8deed30aa3df9) · [opening](https://github.com/okou-ai/okou/tree/641a5cc40ad46eb9a98c6df91956a77719e4971e) · [upstream](https://github.com/okou-ai/okou/tree/f0babd9a5b1d68fef595bc35d6944d3859e593f2)
+
+### Batch 73 open evidence
+
+- **browser-domain-initialization-018.** The Page failure probe displayed Browser view unavailable, retired the original attachment and stayed disabled with one physical connection after 31 real seconds. The explicit timer and enlarged timeout fail the repository lint rules. A second probe used the documented 31,000 ms monotonic advance after retirement; no subsequent application clock read acknowledged the advance before the default case timeout. The timing clause remains open.
+- **browser-viewer-interaction-064.** Held the identified password-context evaluation, focused Address, sent same-document navigation, entered my-choice.example and delivered the old response. The draft, focus and text type survived. With the response withheld entirely the same assertions still passed. Keyboard activity on Address does not establish completion of the obsolete read.
+- **browser-viewer-interaction-088.** Held the successful capture response during navigation. Paused and resumed, delivered the old success and ended navigation. The remote observed Page.stopScreencast before the replacement picture. When the observed stop was acknowledged, the original session consumed the replacement picture and received resumed text without a further stop. The unqualified no-stop clause in the frozen Then remains open.
+- **browser-viewer-interaction-095.** After a previous pause and recovery, began PNG capture during navigation, delivered its navigation failure and paused and resumed again. The remote observed Page.stopScreencast before replacement paint. After acknowledging that stop, the replacement image enabled input on the original session without another stop. The old registration measured stops only from after recovery; the retained Then also requires preservation without stopping screencast.
+
+### browser-domain-initialization-014
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-domain-initialization.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L273) · [Passing test](src/views/browser-session/__tests__/browser-domain-initialization.test.tsx#L173)
+
+- Given Page enable is pending when the browser connection is lost.
+- When The viewer reconnects and then the old pending response arrives.
+- Then The viewer recovers with two connections, keeps input usable, and accepts entered text without reviving the old response's session.
+- Observed: The old socket closes while its Page reply is held. A replacement attachment paints Report. After attempted late delivery to the closed socket, only the new session on Report receives r, with two physical connections and no delivery to either sibling.
+- Expanded row: `browser-domain-initialization-014 A fresh connection takes input after the original Page reply arrives late`.
+- Post-authoring comparison: freeze 273, before-first-withdrawal 260, before-second-withdrawal absent, upstream 273.
+
+### browser-viewer-interaction-049
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L390) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1409) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
+
+- Given A new-tab creation receipt is pending.
+- When Another caller starts navigation of the created page before the receipt is released.
+- Then Creation reports that the browser action could not be completed, but the pending URL remains https://user-navigation.example.com; the existing page remains active and its address is https://example.com.
+- Observed: The remote created target keeps its marker and pending https://user-navigation.example.com after the action-failed notice. Example stays selected and live at its original address.
+- Expanded row: `browser-viewer-interaction-049 Another caller's destination survives the delayed create receipt`.
+- Post-authoring comparison: freeze 1409, before-first-withdrawal 1092, before-second-withdrawal absent, upstream 1409.
+
+### browser-viewer-interaction-050
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L398) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1448) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L801)
+
+- Given The assigned browser contains the Example page.
+- When The user creates a new tab while native tab metadata is updated before the fresh tab read.
+- Then The new blank tab is selected and usable, the address is empty, and the created tab is about:blank in the assigned window.
+- Observed: The external extension updates the created page title and emits its metadata event immediately before reading the created native tab. New tab becomes selected and usable, with an empty address and an about:blank target in window 0.
+- Expanded row: `browser-viewer-interaction-050 Native updates before the admission read still admit the local blank`.
+- Post-authoring comparison: freeze 1448, before-first-withdrawal 1131, before-second-withdrawal absent, upstream 1448.
+
+### browser-viewer-interaction-052
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L414) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1468) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L761)
+
+- Given A new page is being attached and the Browser.getWindowForTarget membership check is delayed.
+- When Another caller starts navigation of that page before the check completes.
+- Then Creation reports that the browser action could not be completed; the created page retains its pending user navigation and its creation marker URL. The existing page remains active with address https://example.com.
+- Observed: The creation response precedes the held membership read on the identified target. After another caller starts navigation and that read completes, the visible failure leaves the marker and exact pending URL intact on the created target; Example is active.
+- Expanded row: `browser-viewer-interaction-052 Another caller's destination survives the delayed membership`.
+- Post-authoring comparison: freeze 1468, before-first-withdrawal 1151, before-second-withdrawal absent, upstream 1468.
+
+### browser-viewer-interaction-058
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L462) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1601) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L815)
+
+- Given The address field is open in the remote browser viewer.
+- When The user submits mailto:user@example.com.
+- Then The field and remote page retain mailto:user@example.com.
+- Observed: A real Enter in Address leaves mailto:user@example.com on both the selected remote page and the visible editor. Changing only the outgoing CDP destination failed the actual-target assertion.
+- Expanded row: `browser-viewer-interaction-058 Mailto reaches the selected remote document intact`.
+- Post-authoring comparison: freeze 1594, before-first-withdrawal 1195, before-second-withdrawal absent, upstream 1594.
+
+### browser-viewer-interaction-059
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L470) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1614) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1212)
+
+- Given The remote page's focused editing context changes among search, email, URL, telephone, number, textarea, and password fields.
+- When The user requests updated keyboard hints, then starts composing text while the remote context changes again.
+- Then The input reflects the field's appropriate input mode, enter-key hint, language, capitalization, and password type without losing focus. During composition the displayed type and hints remain stable; after composition ends they update to the latest password context, and clearing the context resets defaults without disabling input.
+- Observed: Search, email, URL, telephone, number, textarea and password hints are observed on the focused input. A new caret position proves delivery and processing of the password observation during composition; the displayed hints switch only after confirmation, then reset to defaults when the external context clears.
+- Expanded row: `browser-viewer-interaction-059 Remote keyboard hints track the current field outside composition`.
+- Post-authoring comparison: freeze 1614, before-first-withdrawal 1208, before-second-withdrawal absent, upstream 1614.
+
+### browser-viewer-interaction-060
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L478) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1734) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1265)
+
+- Given The remote page has a password field with numeric input, a Done hint, and Japanese language; the user is composing 中.
+- When The native page title and tab metadata update during composition, then composition ends.
+- Then The input stays enabled, focused, password-typed, and retains its numeric, Done, and Japanese hints and composed value through the tab update. The committed text is forwarded to the remote page.
+- Observed: The selected Checkout details title confirms the native tab update during composition. The enabled focused proxy retains its numeric, done, Japanese and password attributes and 中 value. After confirmation only 中 is inserted on main.
+- Expanded row: `browser-viewer-interaction-060 A tab title update preserves Japanese password composition`.
+- Post-authoring comparison: freeze 1734, before-first-withdrawal 1328, before-second-withdrawal absent, upstream 1734.
+
+### browser-viewer-interaction-066
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L526) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1969) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1291)
+
+- Given The remote input has stale editing hints, and the next editing-context read fails.
+- When The user requests refreshed hints and then enters fresh text.
+- Then The input resets to default hints but remains enabled and focused; the fresh text is forwarded to the remote page.
+- Observed: After a password context a failed editing read restores text/enter, empty language, text type and no capitalization. The focused enabled input forwards fresh to main.
+- Expanded row: `browser-viewer-interaction-066 Failed context read restores defaults and forwards fresh input`.
+- Post-authoring comparison: freeze 1969, before-first-withdrawal 1464, before-second-withdrawal absent, upstream 1969.
+
+### browser-viewer-interaction-071
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L566) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2265) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1052)
+
+- Given The user is composing “old” text in one browser tab while the composition update is pending, then commits it, submits Enter, and requests backward deletion. A second tab is selected before the pending update completes.
+- When The user enters “fresh” text in the replacement tab and requests backward deletion there.
+- Then “fresh” is sent to the replacement tab, and the only Backspace key events are one key-down and one key-up sent to that tab; queued input from the previous tab does not reach it.
+- Observed: An actual pending preedit on main precedes commit, Enter and delete. With Other streaming, the old reply is released. Other receives fresh and only the rawKeyDown/keyUp Backspace pair, with no Enter or composition command. Main has no Backspace.
+- Expanded row: `browser-viewer-interaction-071 A replaced composition cannot forward Enter or delete to Other`.
+- Post-authoring comparison: freeze 2265, before-first-withdrawal 1510, before-second-withdrawal absent, upstream 2265.
+
+### browser-viewer-interaction-072
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2339) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1083)
+
+- Given The user is composing “中国” in the remote browser input and deletes backward within the active composition, leaving “中”. The composition is then committed, followed by a backward deletion and fresh text entry.
+- When The input events are processed by the browser.
+- Then The committed “中” and subsequent “fresh” are each sent as inserted text. Exactly one Backspace key-down and key-up are sent, and the committed composition residual does not cause an extra deletion.
+- Observed: After editing 中国 to 中 the preedit is visible locally and reaches main. Main subsequently receives exactly the committed 中, fresh, and one Backspace down/up pair.
+- Expanded row: `browser-viewer-interaction-072 Backward deletion distinguishes preedit from committed text`.
+- Post-authoring comparison: freeze 2339, before-first-withdrawal 1584, before-second-withdrawal absent, upstream 2339.
+
+### browser-viewer-interaction-073
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2424) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1111)
+
+- Given The user focuses the remote browser input while keyboard metadata is still pending.
+- When The user composes and confirms “中”.
+- Then The composition update and one confirmed text insertion are sent while metadata remains pending, and the remote browser input stays focused.
+- Observed: The local browser keeps its editing metadata reply pending until after main receives the 中 preedit and the sole 中 insertion. Keyboard focus remains on the input.
+- Expanded row: `browser-viewer-interaction-073 The IME confirms text while the editing read is outstanding`.
+- Post-authoring comparison: freeze 2424, before-first-withdrawal 1669, before-second-withdrawal absent, upstream 2424.
+
+### browser-viewer-interaction-074
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L590) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2475) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1132)
+
+- Given The user is composing “old” in the remote browser input when the browser reports that execution contexts were cleared without a payload.
+- When The old composition ends, then the user focuses the input again and enters “fresh” as ordinary text.
+- Then The live browser view receives focus after the reset, and only “fresh” is sent as inserted text; the retired “old” composition is not sent.
+- Observed: Clearing execution contexts without params returns focus to the live surface. Completing the old composition and entering fresh yields exactly one insertion, fresh, on main. Omitting the production reset fails the focus check.
+- Expanded row: `browser-viewer-interaction-074 Context reset retires old composition at the input boundary`.
+- Post-authoring comparison: freeze 2475, before-first-withdrawal 1720, before-second-withdrawal absent, upstream 2475.
+
+### browser-viewer-interaction-075
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L598) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2524) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1379)
+
+- Given The user enters “typed” while a screenshot frame arrives, starting recovery; the original text input and screenshot-capture cleanup are both still pending.
+- When The original input completes before capture cleanup, then capture cleanup completes and recovery advances by one second.
+- Then The input remains disabled until both pending operations complete, then becomes enabled again with the address showing “https://example.com”.
+- Observed: The original text and capture shutdown both reach their external boundaries before either reply. Reconnecting appears and input stays disabled through input completion and capture shutdown until the held new image. Example's address is restored.
+- Expanded row: `browser-viewer-interaction-075 Image retry waits for input and capture shutdown`.
+- Post-authoring comparison: freeze 2524, before-first-withdrawal 1769, before-second-withdrawal absent, upstream 2524.
+
+### browser-viewer-interaction-076
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L606) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2552) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L824)
+
+- Given Two browser tabs are open, and closing “Other” is pending.
+- When The user focuses the address field and enters “draft.example” before the close completes.
+- Then “Other” closes and “Example” becomes selected, while the address field retains focus and the draft value.
+- Observed: Other is selected and live when its close reaches the native boundary. After editing draft.example and completing the close, Example alone remains remotely; the address retains its draft and focus.
+- Expanded row: `browser-viewer-interaction-076 Draft focus survives closing Other`.
+- Post-authoring comparison: freeze 2552, before-first-withdrawal 1797, before-second-withdrawal absent, upstream 2552.
+
+### browser-viewer-interaction-078
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L622) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2574) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1309)
+
+- Given Two tabs are open. Closing “Example” fails but remains pending; the user then closes “Other”, which succeeds, leaving “Example” temporarily disabled as the selected tab.
+- When The user focuses the address field and enters “chosen.example/draft”, then the older close failure arrives.
+- Then An alert is shown, “Example” is re-enabled, and the address field retains focus and the draft value.
+- Observed: Example is selected and aria-disabled while its failed close is pending and Other has gone. When the older failure is released the alert appears, Example is re-enabled, and the chosen address and focus survive.
+- Expanded row: `browser-viewer-interaction-078 A late failure restores Example without displacing a chosen draft`.
+- Post-authoring comparison: freeze 2574, before-first-withdrawal 1819, before-second-withdrawal absent, upstream 2574.
+
+### browser-viewer-interaction-079
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L630) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2623) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L840)
+
+- Given The Example tab is selected, and the user moves focus to the Other tab with the right arrow. The Other page is then removed.
+- When The user starts an address draft and the surviving page's title updates.
+- Then Focus recovers to the Example tab once, then remains on the Address field. Its draft value is preserved.
+- Observed: ArrowRight focuses Other. Target destruction restores focus to Example. Its new selected title arrives after the user enters keep-focus.example; Address still owns focus and text.
+- Expanded row: `browser-viewer-interaction-079 A removed keyboard target returns focus once`.
+- Post-authoring comparison: freeze 2623, before-first-withdrawal 1868, before-second-withdrawal absent, upstream 2623.
+
+### browser-viewer-interaction-080
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L638) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2658) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L861)
+
+- Given The Example tab is open, and the Other page's live image is delayed.
+- When The user closes Example and the close completes before the Other page image arrives.
+- Then Focus and selection move to Other, and the remote browser input remains disabled until its image arrives. Then input is enabled and the address shows https://other.example.com.
+- Observed: Other is selected with keyboard focus after Example closes, before Other's held first picture. Remote input enables only after that picture, with the Other URL.
+- Expanded row: `browser-viewer-interaction-080 Other receives tab focus before its first image`.
+- Post-authoring comparison: freeze 2658, before-first-withdrawal 1903, before-second-withdrawal absent, upstream 2658.
+
+### browser-viewer-interaction-082
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L654) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2724) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L879)
+
+- Given The Other tab is selected in a viewer with Example and Other tabs.
+- When The page becomes hidden, then visible while the selected tab's image is being refreshed.
+- Then Input pauses while hidden. On return, the prior live image remains visible and the view shows an updating status; input stays disabled until the new image arrives, then enables with the Other address restored.
+- Observed: Other is selected before hiding. On resume the updating notice and previous visible image coexist with disabled input. The fresh image for notes restores usable input and the Other address.
+- Expanded row: `browser-viewer-interaction-082 Other retains its image while its visible page refreshes`.
+- Post-authoring comparison: freeze 2724, before-first-withdrawal 1939, before-second-withdrawal absent, upstream 2724.
+
+### browser-viewer-interaction-083
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L662) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2796) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L898)
+
+- Given The browser viewer is open, and stopping its original screen capture is delayed.
+- When The page becomes hidden, then rapidly alternates visible, hidden, and visible before the original capture stop completes.
+- Then The existing preview remains visible without a connecting message, and input stays disabled until the original stop and a new image finish. Input then enables, and submitting an address draft navigates to http://after-visibility.example/ready.
+- Observed: The original stop receipt stays held across alternating visibility. The live preview remains visible without a connecting label. After stop completion the new image is still required; a subsequent draft reaches main at http://recovered.example/path.
+- Expanded row: `browser-viewer-interaction-083 Repeated resumes wait for the original stop and the new image`.
+- Post-authoring comparison: freeze 2796, before-first-withdrawal 2011, before-second-withdrawal absent, upstream 2796.
+
+### browser-viewer-interaction-084
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L670) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2837) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1332)
+
+- Given The browser viewer is open, and the original screen-capture stop fails while the page is being hidden.
+- When The page resumes, then recovery is advanced after the viewer reports reconnecting.
+- Then Input remains disabled until a new image arrives, then enables. Hiding and resuming again also restores enabled input.
+- Observed: The original stop fails during the hidden-visible transition. Reconnecting appears before the replacement picture is released; input enables at Example and survives a second hidden-visible cycle.
+- Expanded row: `browser-viewer-interaction-084 Resuming after a rejected stop requires a fresh picture`.
+- Post-authoring comparison: freeze 2833, before-first-withdrawal 2048, before-second-withdrawal absent, upstream 2833.
+
+### browser-viewer-interaction-087
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L694) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L2944) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1404)
+
+- Given A browser capture fails because navigation is still in progress, and the capture remains unchanged.
+- When Navigation ends.
+- Then The view retries the PNG capture, keeps the input disabled until the capture arrives, then enables it without showing an unavailable-view message.
+- Observed: Starting PNG during native navigation fails. After the matching frame stops loading a PNG capture reaches main; the input is disabled while its image is held and enabled afterward, without an unavailable message.
+- Expanded row: `browser-viewer-interaction-087 Navigation completion permits PNG after its first capture was rejected`.
+- Post-authoring comparison: freeze 2944, before-first-withdrawal 2157, before-second-withdrawal absent, upstream 2944.
+
+### browser-viewer-interaction-096
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L766) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3050) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1430)
+
+- Given Automatic image recovery is paused while preparation is in progress.
+- When The viewer is hidden and resumed, then the replacement image and the interrupted preparation complete.
+- Then Input remains disabled until the replacement image arrives, then becomes usable; the address remains https://example.com and no unavailable-view message appears.
+- Observed: A held membership read intercepts preparation after corrupt image recovery. While that old reply is outstanding the resumed owner waits for a replacement picture, becomes usable at Example, and accepts recovered on main after old reply delivery.
+- Expanded row: `browser-viewer-interaction-096 A resumed owner accepts input after interrupted recovery preparation`.
+- Post-authoring comparison: freeze 3050, before-first-withdrawal 2258, before-second-withdrawal absent, upstream 3050.
+
+### browser-viewer-interaction-098
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L782) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3109) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L918)
+
+- Given The user has entered the local address draft local-draft.example/path.
+- When The viewer is hidden and resumed while its replacement image is pending, and the user submits the address before that image arrives.
+- Then The address remains editable with the draft preserved, and the early submission shows “The browser is not ready. Try again shortly.” It does not navigate early; after the image arrives, submitting navigates to http://local-draft.example/path.
+- Observed: While the resumed image is withheld the editable draft stays intact, Enter raises the readiness notice, and main retains its original URL before and after first paint. Enter after readiness navigates main to http://local-draft.example/path.
+- Expanded row: `browser-viewer-interaction-098 A paused draft only navigates on the second submission`.
+- Post-authoring comparison: freeze 3109, before-first-withdrawal 2317, before-second-withdrawal absent, upstream 3109.
+
+### browser-viewer-interaction-099
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L790) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3147) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1354)
+
+- Given The viewer has an initialized preview, and membership proof for a newly created tab is pending.
+- When The viewer is hidden and resumed, then fresh membership proof and a replacement image arrive.
+- Then The initialized preview remains visible without a connecting message, and input stays disabled until both fresh proof and the image are available; it then becomes enabled.
+- Observed: A duplicate tab is created at the external boundary. Its identified target's membership lookup is held across the pause. The fresh read on main and the subsequent held image independently gate enabled input; the initialized preview remains visible with no connecting label.
+- Expanded row: `browser-viewer-interaction-099 Resume preserves the preview through fresh membership and paint`.
+- Post-authoring comparison: freeze 3147, before-first-withdrawal 2355, before-second-withdrawal absent, upstream 3147.
+
+### browser-viewer-interaction-100
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L798) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3180) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L946)
+
+- Given A multi-tab viewer is hidden while a document in the background tab navigates to https://background.example/changed.
+- When The viewer resumes, receives the replacement image, and the user submits after-background-navigation.example/ready.
+- Then The address first reflects https://background.example/changed, and input stays disabled until the image arrives. The subsequent submission navigates to http://after-background-navigation.example/ready.
+- Observed: With Other selected the hidden document navigates remotely. On resume its changed URL appears before notes receives its replacement image. Afterward the submitted ready URL reaches notes and main remains at Example.
+- Expanded row: `browser-viewer-interaction-100 A document changed in the background supplies the resumed address`.
+- Post-authoring comparison: freeze 3180, before-first-withdrawal 2388, before-second-withdrawal absent, upstream 3180.
+
+### browser-viewer-interaction-101
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L806) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3228) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L973)
+
+- Given A multi-tab viewer is resumed and its replacement picture is still pending.
+- When The viewer is hidden and resumed a second time while a new screencast capture is pending.
+- Then The live preview remains visible without a connecting message, and input remains disabled until the pending capture and picture finish; it then becomes enabled.
+- Observed: After resuming without the first picture, the viewer pauses again. Its retained preview remains visible through the second capture response and its independently held picture, then Example becomes usable.
+- Expanded row: `browser-viewer-interaction-101 A second pause before paint retains the multi-tab preview`.
+- Post-authoring comparison: freeze 3228, before-first-withdrawal 2436, before-second-withdrawal absent, upstream 3228.
+
+### browser-viewer-interaction-103
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L822) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3322) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1456)
+
+- Given The browser viewer is initially hidden and its remote input is disabled.
+- When The viewer becomes visible.
+- Then The input becomes enabled, and the address shows https://example.com.
+- Observed: Opening while hidden exposes disabled input. Revealing the viewer brings up a usable image and the Example URL.
+- Expanded row: `browser-viewer-interaction-103 Revealing the initially hidden viewer enables Example`.
+- Post-authoring comparison: freeze 3322, before-first-withdrawal 2530, before-second-withdrawal absent, upstream 3322.
+
+### browser-viewer-interaction-104
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L830) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3337) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1464)
+
+- Given The viewer is visible while a browser page is still initializing.
+- When The viewer is hidden and then shown again before initialization finishes.
+- Then The input becomes enabled after initialization, and the address shows the current page, https://example.com.
+- Observed: A native Page.enable request already reached the browser before hiding and revealing the viewer. Completing it yields a live, enabled Example page.
+- Expanded row: `browser-viewer-interaction-104 The initializing viewer survives a hidden-visible cycle`.
+- Post-authoring comparison: freeze 3337, before-first-withdrawal 2545, before-second-withdrawal absent, upstream 3337.
+
+### browser-viewer-interaction-105
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L838) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3359) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1478)
+
+- Given The viewer is active and the user has an unfinished composition containing 旧.
+- When The viewer is hidden and shown again, the pending composition completes, and the user enters fresh text.
+- Then The input is disabled while the viewer is paused, then becomes enabled; the live browser view remains visible, and only “fresh text” is sent, not the abandoned composition.
+- Observed: The original 旧 preedit remains outstanding while hiding disables input. On resume, completion of that preedit and its composition end leave the visible preview enabled; only fresh text reaches main.
+- Expanded row: `browser-viewer-interaction-105 Resumed input commits only the new text`.
+- Post-authoring comparison: freeze 3359, before-first-withdrawal 2567, before-second-withdrawal absent, upstream 3359.
+
+### browser-viewer-interaction-123
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L982) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3928) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1500)
+
+- Given Opening the viewer encounters an ordinary failure in Page.enable.
+- When The viewer initializes.
+- Then The browser view is unavailable and the remote-browser input is disabled.
+- Observed: An ordinary Page.enable failure on route entry results in the unavailable-view message and disabled remote input.
+- Expanded row: `browser-viewer-interaction-123 An ordinary Page enable failure disables the viewer`.
+- Post-authoring comparison: freeze 3928, before-first-withdrawal 2907, before-second-withdrawal absent, upstream 3928.
