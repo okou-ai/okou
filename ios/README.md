@@ -367,7 +367,7 @@ reports build timings. Formatting includes both package manifests, sources,
 and tests. Swift packages must match `Package.resolved`; CI checks that it
 remains unchanged.
 
-On the first attempt of an iOS pull request, the package runner compiles the
+On an initial or full iOS pull request run, the package runner compiles the
 App for testing while the simulator runner boots the iPhone. The package runner
 uploads the complete Xcode products and runs the standalone ChatDomain and
 ChatData suites. The simulator runner verifies the artifact digest, run,

@@ -130,6 +130,13 @@ def wait(kind):
                 or str(job["run_attempt"]) != attempt
             ):
                 raise ValueError("Producer identity does not match this PR run attempt")
+            # Source artifacts keep their name across reruns. Wait for this attempt
+            # to replace the previous upload before downloading by name.
+            if kind == "sources" and job["conclusion"] != "success":
+                if job["conclusion"] is not None:
+                    raise ValueError(f"{producer} ended with {job['conclusion']}")
+                time.sleep(5)
+                continue
             items = request(f"{base}/artifacts?{params}")
             live = [
                 a for a in items["artifacts"] if a["name"] == name and not a["expired"]

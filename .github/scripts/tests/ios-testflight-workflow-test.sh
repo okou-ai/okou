@@ -183,15 +183,21 @@ assert publish_products['with']['name'] == 'ios-ci-products-${{ github.sha }}-${
 assert 'ci-test.sh run' in simulator['run'] and 'run-ci-tests.sh' in simulator['run']
 assert 'GH_TOKEN' not in simulator.get('env', {})
 assert prepare['env']['PR_HEAD_SHA'] == next(step for step in producer if step.get('id') == 'producer-sources')['env']['PR_HEAD_SHA'] == '${{ github.event.pull_request.head.sha }}'
-selector = ios['env']['IOS_PARALLEL_PR_TESTS'].removeprefix('${{').removesuffix('}}').strip()
+detect_job = ios['jobs']['detect']
+assert detect_job['outputs']['attempt'] == '${{ steps.changes.outputs.attempt }}'
+changes = next(step for step in detect_job['steps'] if step.get('id') == 'changes')
+assert 'echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"' in changes['run']
+assert test_job['env']['IOS_PARALLEL_PR_TESTS'] == package_job['env']['IOS_PARALLEL_PR_TESTS']
+selector = test_job['env']['IOS_PARALLEL_PR_TESTS'].removeprefix('${{').removesuffix('}}').strip()
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
-    for attempt in ['1', '2']:
+    for attempt, detect_attempt in [('1', '1'), ('2', '2'), ('2', '1'), ('3', '2'), ('2', '')]:
         for decision in ['true', 'false', '']:
-            parallel = event == 'pull_request' and attempt == '1'
+            parallel = event == 'pull_request' and attempt == detect_attempt
             run_tests = event != 'merge_group' or decision == 'true'
             def enabled(expression):
                 expression = (expression.replace('github.event_name', repr(event))
                     .replace('github.run_attempt', repr(attempt))
+                    .replace('needs.detect.outputs.attempt', repr(detect_attempt))
                     .replace('env.IOS_PARALLEL_PR_TESTS', repr('true' if parallel else 'false'))
                     .replace('steps.evidence.outputs.run_tests', repr(decision))
                     .replace('&&', 'and').replace('||', 'or'))
@@ -214,7 +220,7 @@ for upload_attempt, download_attempt in [(1, 1), (1, 2), (2, 2)]:
 assert source_upload['overwrite'] is True
 assert test_job['env']['IOS_BUILD_CACHE_ENABLED'] == 'true'
 assert archive_job['env']['IOS_ARCHIVE_CACHE_ENABLED'] == 'true'
-assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == package_job['env']
+assert {key: value for key, value in test_job['env'].items() if key not in {'IOS_BUILD_CACHE_ENABLED', 'IOS_XCODE_STARTUP_SAMPLING', 'IOS_PARALLEL_PR_TESTS'}} == {key: value for key, value in archive_job['env'].items() if key != 'IOS_ARCHIVE_CACHE_ENABLED'} == {key: value for key, value in package_job['env'].items() if key != 'IOS_PARALLEL_PR_TESTS'}
 # Startup observations are confined to explicit manual runs, not native release evidence.
 assert ios['on']['workflow_dispatch']['inputs']['sample_xcode_startup']['default'] is False
 sampling = test_job['env']['IOS_XCODE_STARTUP_SAMPLING'].removeprefix('${{').removesuffix('}}').strip()

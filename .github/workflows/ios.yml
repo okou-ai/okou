@@ -23,8 +23,6 @@ permissions:
 
 env:
   npm_config_audit: "false"
-  # A failed-job rerun may start only the simulator, without a new product producer.
-  IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && github.run_attempt == '1' && 'true' || 'false' }}
   # SwiftPM clones hit HTTP/2 stream resets on the hosted image.
   GIT_CONFIG_COUNT: "1"
   GIT_CONFIG_KEY_0: http.version
@@ -74,6 +72,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
+      # A full rerun refreshes this output. A partial rerun retains the original attempt.
+      attempt: ${{ steps.changes.outputs.attempt }}
       needed: ${{ steps.changes.outputs.needed }}
       scripts-needed: ${{ steps.changes.outputs.scripts-needed }}
       release: ${{ steps.changes.outputs.release }}
@@ -96,6 +96,7 @@ jobs:
           MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
+          echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           bash ios/scripts/ci-changed.sh >> "$GITHUB_OUTPUT"
           # A queued release commit may reuse published validation. Its subject only
           # selects the resolver, which still classifies the whole group's diff.
@@ -233,6 +234,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 15
     env:
+      IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
     steps:
@@ -327,6 +329,7 @@ jobs:
     runs-on: xcode-27
     timeout-minutes: 30
     env:
+      IOS_PARALLEL_PR_TESTS: ${{ github.event_name == 'pull_request' && needs.detect.outputs.attempt == github.run_attempt && 'true' || 'false' }}
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
       IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
       IOS_BUILD_CACHE_ENABLED: "true"

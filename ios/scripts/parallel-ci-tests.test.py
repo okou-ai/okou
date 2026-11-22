@@ -90,6 +90,7 @@ class ArtifactTests(unittest.TestCase):
             ("sources", "prepare-package-sources", "ios-package-sources-merge-sha"),
         ]:
             self.job["name"] = producer
+            self.job["conclusion"] = "success" if kind == "sources" else None
             artifact = self.artifact | {"name": name}
             with (
                 self.subTest(kind=kind),
@@ -110,6 +111,27 @@ class ArtifactTests(unittest.TestCase):
                 self.assertEqual(waiter.wait(kind), artifact)
                 self.assertIn("/attempts/1/jobs?", request.call_args_list[0].args[0])
                 self.assertIn("name=" + name, request.call_args_list[-1].args[0])
+
+    def test_full_rerun_waits_for_the_replacement_source_upload(self):
+        self.env["GITHUB_RUN_ATTEMPT"] = "2"
+        source = self.job | {"name": "prepare-package-sources", "run_attempt": 2}
+        artifact = self.artifact | {"name": "ios-package-sources-merge-sha"}
+        with (
+            patch.dict(os.environ, self.env),
+            patch.object(
+                waiter,
+                "request",
+                side_effect=[
+                    {"jobs": [source]},
+                    {"jobs": [source | {"conclusion": "success"}]},
+                    {"artifacts": [artifact]},
+                ],
+            ) as request,
+            patch.object(waiter.time, "sleep"),
+        ):
+            self.assertEqual(waiter.wait("sources"), artifact)
+        self.assertIn("/attempts/2/jobs?", request.call_args_list[1].args[0])
+        self.assertIn("/artifacts?", request.call_args_list[2].args[0])
 
     def test_rejects_wrong_producer_or_artifact_identity(self):
         for change in [{"head_sha": "merge-sha"}, {"run_id": 13}, {"run_attempt": 2}]:
