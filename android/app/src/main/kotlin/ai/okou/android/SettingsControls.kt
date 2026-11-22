@@ -23,7 +23,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -377,39 +376,48 @@ internal fun SettingsSheet(
 }
 
 @Composable
-internal fun SettingsConfirmation(
+internal fun OkouConfirmationDialog(
     title: String,
-    message: String,
     confirm: String,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    confirmEnabled: Boolean = true,
+    dismissEnabled: Boolean = true,
+    content: @Composable () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val actions = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(max = 360.dp),
         shape = RoundedCornerShape(28.dp),
-        containerColor = colors.surface,
-        title = { Text(title) },
-        text = { Text(message) },
+        containerColor = colors.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        titleContentColor = colors.onSurface,
+        textContentColor = colors.onSurfaceVariant,
+        properties =
+            DialogProperties(
+                dismissOnBackPress = dismissEnabled,
+                dismissOnClickOutside = dismissEnabled,
+            ),
+        title = { Text(title, Modifier.semantics { heading() }) },
+        text = content,
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                modifier = Modifier.heightIn(min = 48.dp),
+                enabled = dismissEnabled,
+                colors = actions,
             ) {
                 Text(stringResource(R.string.settings_cancel))
             }
         },
         confirmButton = {
-            Button(
+            TextButton(
                 onClick = onConfirm,
-                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.heightIn(min = 48.dp),
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = colors.inverseSurface,
-                        contentColor = colors.inverseOnSurface,
-                    ),
+                enabled = confirmEnabled,
+                colors = actions,
             ) {
                 Text(confirm)
             }

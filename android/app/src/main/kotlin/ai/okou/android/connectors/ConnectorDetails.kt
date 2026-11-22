@@ -1,5 +1,6 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
 import ai.okou.android.R
 import ai.okou.android.SettingsModal
@@ -25,7 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -678,89 +678,49 @@ private fun ConnectorAccountAction(
 @Composable
 private fun ConnectorDisconnectDialog(
     account: ConnectorSavedAccount,
-    impact: ConnectorRead<Long>?,
+    impact: ConnectorRead<Long>,
     canModify: Boolean,
     action: ConnectorAction?,
     offline: Boolean,
     confirm: () -> Unit,
     cancel: () -> Unit,
 ) {
-    val count = impact?.data
-    AlertDialog(
-        onDismissRequest = cancel,
-        modifier = Modifier.widthIn(max = 360.dp),
-        shape = RoundedCornerShape(28.dp),
-        title = {
-            Text(
-                stringResource(R.string.connector_disconnect_title),
-                modifier = Modifier.semantics { heading() },
-                style =
-                    MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 24.sp,
-                        lineHeight = 32.sp,
-                        letterSpacing = 0.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-            )
-        },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+    val count = impact.data
+    OkouConfirmationDialog(
+        title = stringResource(R.string.connector_disconnect_title),
+        confirm = stringResource(R.string.connector_disconnect),
+        onDismiss = cancel,
+        onConfirm = confirm,
+        confirmEnabled = canModify && count != null,
+        dismissEnabled = action?.busy != true,
+    ) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(account.label(), fontWeight = FontWeight.SemiBold)
+            if (
+                account.displayName != null &&
+                    account.identity != null &&
+                    account.displayName != account.identity
             ) {
-                Text(
-                    account.label(),
-                    style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold),
-                )
-                if (
-                    account.displayName != null &&
-                        account.identity != null &&
-                        account.displayName != account.identity
-                ) {
-                    Text(account.identity, style = connectorSmallType())
-                }
-                Text(
-                    stringResource(R.string.connector_disconnect_copy),
-                    style = connectorFeedbackType(),
-                )
-                when {
-                    count != null && count > 0 -> {
-                        val displayed = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-                        Text(
-                            pluralStringResource(
-                                R.plurals.connector_impact_count,
-                                displayed,
-                                displayed,
-                            ),
-                            style = connectorFeedbackType(),
-                        )
-                    }
-                    offline -> ConnectorStatusBanner(R.string.connector_offline_action)
-                    impact?.failure != null ->
-                        ConnectorStatusBanner(R.string.connector_impact_failed)
-                    count == null -> ConnectorProgress(R.string.connector_loading_impact)
-                }
-                ConnectorActionFeedback(action)
+                Text(account.identity)
             }
-        },
-        confirmButton = {
-            ConnectorButton(
-                stringResource(R.string.connector_disconnect),
-                confirm,
-                enabled = canModify && count != null,
-                treatment = ConnectorButtonTreatment.Destructive,
-            )
-        },
-        dismissButton = {
-            ConnectorButton(
-                stringResource(R.string.settings_cancel),
-                cancel,
-                enabled = action?.busy != true,
-                treatment = ConnectorButtonTreatment.Text,
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-    )
+            Text(stringResource(R.string.connector_disconnect_copy))
+            when {
+                count != null && count > 0 -> {
+                    val displayed = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    Text(
+                        pluralStringResource(R.plurals.connector_impact_count, displayed, displayed)
+                    )
+                }
+                offline -> ConnectorStatusBanner(R.string.connector_offline_action)
+                impact.failure != null -> ConnectorStatusBanner(R.string.connector_impact_failed)
+                count == null -> ConnectorProgress(R.string.connector_loading_impact)
+            }
+            ConnectorActionFeedback(action)
+        }
+    }
 }
 
 @Composable
@@ -820,7 +780,6 @@ internal enum class ConnectorButtonTreatment {
     Primary,
     Outline,
     Text,
-    Destructive,
 }
 
 @Composable
@@ -860,9 +819,7 @@ internal fun ConnectorButton(
                 contentPadding = padding,
                 content = { text() },
             )
-        ConnectorButtonTreatment.Primary,
-        ConnectorButtonTreatment.Destructive -> {
-            val destructive = treatment == ConnectorButtonTreatment.Destructive
+        ConnectorButtonTreatment.Primary ->
             Button(
                 onClick,
                 size,
@@ -870,14 +827,13 @@ internal fun ConnectorButton(
                 shape = shape,
                 colors =
                     ButtonDefaults.buttonColors(
-                        containerColor = if (destructive) colors.error else colors.inverseSurface,
-                        contentColor = if (destructive) colors.onError else colors.inverseOnSurface,
+                        containerColor = colors.inverseSurface,
+                        contentColor = colors.inverseOnSurface,
                         disabledContainerColor = colors.surfaceVariant,
                         disabledContentColor = colors.onSurfaceVariant,
                     ),
                 contentPadding = padding,
                 content = { text() },
             )
-        }
     }
 }
