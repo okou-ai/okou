@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.97](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.96...runner-rs-v0.249.97) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share buffered inspection start and pending decision ([#49968](https://github.com/okou-ai/okou/issues/49968)) ([a690784](https://github.com/okou-ai/okou/commit/a690784042ecc6af5a4feec4837fafdb374f3e91))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.96](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.95...runner-rs-v0.249.96) (2026-11-22)
 
 

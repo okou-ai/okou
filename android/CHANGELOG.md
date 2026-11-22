@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.42.0](https://github.com/okou-ai/okou/compare/android-v0.41.0...android-v0.42.0) (2026-11-22)
+
+
+### Features
+
+* **android:** add native connector discovery and account management ([#49863](https://github.com/okou-ai/okou/issues/49863)) ([bbfdbac](https://github.com/okou-ai/okou/commit/bbfdbacd8edeec26260da989aa2d7cdc8e377d62))
+* **android:** open inline chat artifacts in the shared preview ([#49954](https://github.com/okou-ai/okou/issues/49954)) ([5fd1984](https://github.com/okou-ai/okou/commit/5fd1984c7314f246f7b4812ba8f2dfdd85a16f3a))
+
 ## [0.41.0](https://github.com/okou-ai/okou/compare/android-v0.40.0...android-v0.41.0) (2026-11-22)
 
 
