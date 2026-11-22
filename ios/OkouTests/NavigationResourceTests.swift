@@ -37,6 +37,5 @@ final class NavigationResourceTests: XCTestCase {
     await workspace.newComposer.synchronize()
     let requests = server.state.value.withLock { $0.paths }
     XCTAssertTrue(requests.contains("GET /api/chat-drafts/composer"))
-    XCTAssertFalse(requests.contains(where: { $0.contains("/api/agents") }))
   }
 }

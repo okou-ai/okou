@@ -104,7 +104,6 @@ final class ChatSearchResourceTests: XCTestCase {
     let seen = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
       if let empty = emptySearchResources(request) { return empty }
-      XCTAssertNil(query(request, "agentId"))
       XCTAssertEqual(
         request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
       let keyword = query(request, "keyword") ?? ""

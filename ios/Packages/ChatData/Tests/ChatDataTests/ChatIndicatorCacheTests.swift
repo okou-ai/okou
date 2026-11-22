@@ -207,7 +207,6 @@ final class ChatIndicatorCacheTests: XCTestCase {
 
 private let indicatorThread = "66000000-0000-4000-8000-000000000001"
 private let indicatorOtherThread = "66000000-0000-4000-8000-000000000002"
-private let indicatorAgent = "66000000-0000-4000-8000-000000000003"
 private let indicatorDate = Date(timeIntervalSince1970: 1_794_182_400)
 private let indicatorLaterDate = indicatorDate.addingTimeInterval(60)
 

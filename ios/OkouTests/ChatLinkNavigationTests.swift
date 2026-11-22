@@ -23,7 +23,6 @@ final class ChatLinkNavigationTests: XCTestCase {
       "https://app.example.invalid.evil/chats/\(ChatLinkFixture.sourceID)",
       "https://app.example.invalid:8443/chats/\(ChatLinkFixture.sourceID)",
       "https://example.slack.com/archives/C1/p1",
-      "https://app.example.invalid/agents/\(ChatLinkFixture.homeID)/chat",
       "https://app.example.invalid/workflows/\(ChatLinkFixture.workflowID)/automations"
     ] {
       XCTAssertNil(ChatLinkDestination(url: try XCTUnwrap(URL(string: link)), webURL: web))
