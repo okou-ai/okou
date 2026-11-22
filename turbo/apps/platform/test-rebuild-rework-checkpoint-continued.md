@@ -1084,3 +1084,374 @@ Compared 1,794 unique historical blobs from 757 paths, including renamed paths a
 - Observed: An ordinary Page.enable failure on route entry results in the unavailable-view message and disabled remote input.
 - Expanded row: `browser-viewer-interaction-123 An ordinary Page enable failure disables the viewer`.
 - Post-authoring comparison: freeze 3928, before-first-withdrawal 2907, before-second-withdrawal absent, upstream 3928.
+
+## Batch 74 evidence
+
+Opening head `e6d0809665c0f79b41aab881099893a044b6c25d`. Synchronized main `fa3af9d57a3c609c1e7f3f1cbea8193a88f5da58`. Historical first acceptances rose from 1,430 to 1,460 of 2,681. Current complete coverage rose from 1,413 to 1,443. Of 1,813 retained selections in 233 open files, 580 now have complete evidence. The 252 closed files still account for 868 selections, including five retirements. The original withdrawal cohort contributes 420 historical and 413 current of 506, with 1,040 historical and 1,030 current outside it. The 86 original withdrawals, 17 later historical losses and 68 independent upstream items retain their owners.
+
+Twenty nominations and ten substitutes passed. All three partial files keep their complete BDD. Their Git blobs match the initial GWT inventory at `9f5f4ff567` byte for byte. Viewer 103, 104, 105 and 123 belong to the 59 prior viewer rows rerun this batch. Domain 018, viewer 064/088/095, viewer 010, the seven batch 71 gaps, chat-activity-summary-002 and billing-survey-004 keep their prior evidence dispositions. Batch 65's three quality repairs remain regressions.
+
+[Original GWT, observed Then and actual expanded Vitest titles](https://app.okou.ai/artifacts/8vivlzeut1.tsv) · [Delivery versus withholding, production mutations and open probes](https://app.okou.ai/artifacts/wt29ew2nvg.md)
+
+### Batch 74 verification
+
+All cases enter the production Router. The fixtures simulate the external descriptor API, native browser, CDP sessions and frame transport. Input and navigation are attributed to specific remote targets. Frame presentation uses the canvas, its accessible state and the input it enables. The 180-second recovery deadline uses the scoped monotonic clock. The successor failure case checks both Sentry and the page action's rejected-promise output. [Repository instructions](../../../AGENTS.md) · [Testing practices](../../../docs/testing.md) · [App browser and SharedWorker practices](../../../docs/app/app-testing.md) · [Async ownership](../../../docs/app/platform-ccstate.md).
+
+The targeted run passed 30/30 rows. Three complete files passed 89/89. With seed 74063, the shuffled run passed 230 rows across 22 files. The shuffle includes 200 existing rows. The affected main-sync run passed 17 rows in 5 files. App production, test and build-config TypeScript, scoped ESLint, oxlint, type-aware oxlint, Prettier and the repository file-size check cover the submitted changes.
+
+Removing focus restoration failed viewer 164. Extending the original deadline to 360 seconds failed recovery 003. Suppressing pixel clearing failed recovery 038 while the new page frame was held. Reversing the completed Shift release disposition failed viewer 141 and 142 on the original tab. Withholding the actual successor image failed viewer 125. Its obsolete admission remains pending throughout the asserted text delivery. The controls artifact records which UI assertions still passed without their purported cause.
+
+### Batch 74 main synchronization
+
+Main reverted transcript virtualization in [#49915](https://github.com/okou-ai/okou/pull/49915). Of five conflicts, chat-conversation-locator keeps its open BDD and the removed historical implementation stays withdrawn. Chat-navigation-conversation-state retains its independent email-card row. The history resource test retains its mention and both attachment readbacks after the user scrolls a measured viewport to earlier messages. The two sharing-position rows and all five virtual-scroll rows were removed upstream. Their two now-empty executable files were removed here; their frozen BDD files remain. All seven deleted expanded rows were verified against the pre-revert main and the opening PR. They were independent upstream rows, with zero deductions from historical or current accepted-ID totals.
+
+### Batch 74 comparison after authoring
+
+Checked 1,791 distinct test and helper blobs from 757 paths. The search included former Zero and Platform paths, both removal parents, frozen, restored, opening and synchronized main. The 6 four-line matches involved shared imports and fixture setup, native text-event properties, or the standard per-target IME matcher. Per-ID consideration included the original registration, its called helpers and the explicit event order required by the GWT. No previous orchestration was transferred into a new helper. The rebuilt cases use target-specific external evidence, per-response gates, window-scoped inventory and direct production-route outcomes as applicable.
+
+[before-zero-page-rename](https://github.com/okou-ai/okou/tree/8924f63dade934b3caa6d5629013447a6c70fc3c) · [after-zero-page-rename](https://github.com/okou-ai/okou/tree/0f0ded9b208cbeb41998c04f43db70ac1cf11d22) · [freeze](https://github.com/okou-ai/okou/tree/b0a10287edf4242383c28e39c6f7675053febb32) · [before-first-withdrawal](https://github.com/okou-ai/okou/tree/5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b) · [restored](https://github.com/okou-ai/okou/tree/b666cd050364ef31821b71fee4e14802a9e8476b) · [before-second-withdrawal](https://github.com/okou-ai/okou/tree/a445586e0483bb7e2440e60200a8deed30aa3df9) · [opening](https://github.com/okou-ai/okou/tree/e6d0809665c0f79b41aab881099893a044b6c25d) · [upstream](https://github.com/okou-ai/okou/tree/fa3af9d57a3c609c1e7f3f1cbea8193a88f5da58)
+
+### Batch 74 open evidence
+
+- **browser-viewer-interaction-102.** The native key-down and key-up reached the original target. With the key-up acknowledgement held, hiding stopped the screencast and resuming showed Updating view. Even after acknowledging capture stop, the replacement screencast did not start while the original key receipt remained outstanding. This probe cannot paint the replacement before the original key release as required.
+- **browser-viewer-interaction-107.** After real Router entry and queued remote text, the DOM copy event did not reach clipboard.write. The production entry requires a trusted browser gesture. The clipboard data promise and AbortError on blur were unobserved. No test fabricated event trust.
+- **browser-viewer-interaction-122.** The split viewer recovers Other and navigates after its control detach. Running the same test without delivering the held image attachment still enables input and navigates. These outcomes do not establish consumption of the obsolete image attachment.
+- **browser-viewer-interaction-133.** The selected Other target's CDP membership request was observed. Interposing the native getTab or getWindow response did not establish the required simultaneous unacknowledged native proof and selection of Last before its completion. No added selection or keyboard workaround was used.
+- **browser-viewer-interaction-148.** After destruction of the selected target the surviving scoped tab alone accepts navigation, and the foreign tab is excluded. Keeping the failed membership response entirely outstanding produces the same results as delivery. There is no completion signal for the old failure.
+- **browser-viewer-interaction-155.** After original destruction and selection of Other, delivering the successful confirmation and withholding it both leave Other selected, enabled and unchanged. The disappearance is established by the earlier destruction event.
+- **browser-viewer-interaction-158.** While a failed target-loss confirmation was outstanding for the still-existing original page, clicking Other did not commit it as the selected tab before reply delivery. The probe failed at aria-selected, so destruction-before-selection from 155 was not substituted.
+- **browser-viewer-interaction-160.** Disconnecting with a pending target-loss confirmation shows Reconnecting and disables both controls. Attempted delivery on the closed peer and withholding the reply yield identical assertions; actual consumption after disconnect remains unproven.
+- **browser-automatic-recovery-004.** The 409 conflict produced an unavailable view and a single final recovery-stopped record with protocol kind, HTTP status 409 and terminal outcome. A separate ordered descriptor-error record was absent in the reporting and console probes. The one combined record cannot establish both ordered effects.
+- **browser-automatic-recovery-008.** An accelerated probe could exhaust the replacement viewer and reconnect after the local descriptor was made repeatable. The passing last-attempt timing depended on an arbitrary wall-clock threshold to advance from 65 to 179 seconds. With a causal capture-stop gate the last image was not reached in order. The four-second no-automatic-retry clause also lacks an independent completion signal. The timed variant was discarded.
+
+Additional substitution probes and exact failure controls are preserved in the linked experiment record.
+
+### browser-automatic-recovery-001
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L324) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L139)
+
+- Given The selected tab is recovering after a failed image frame, with one image attempt already made.
+- When A frame succeeds and the browser session is revalidated without changing its binding.
+- Then Recovery remains pending during revalidation, then the viewer becomes ready and accepts input. A later frame failure recovers without an extra connection or error report.
+- Ledger's first recovered frame arrives while the same descriptor is held. Input remains disabled until revalidation, then Ledger receives a. An independently damaged frame recovers, with one physical connection and zero reports.
+- Vitest expanded `browser-automatic-recovery-001 A confirmed Ledger image survives same-binding revalidation and a second failure`.
+- Post-authoring source registrations included freeze 324, before-first-withdrawal 323, before-second-withdrawal absent, upstream 324.
+
+### browser-automatic-recovery-003
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L22) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L361) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L197)
+
+- Given The selected tab is recovering after three failed image attempts, and a successful frame arrives near the original recovery deadline while session revalidation is pending.
+- When The original 180-second deadline passes before revalidation completes.
+- Then Recovery is reported exhausted and the input remains disabled. Revalidation can restore the viewer and input, but does not clear the single exhaustion report or start another connection.
+- Three failed frames precede the successful frame during a held descriptor at 179 seconds. Crossing the original 180-second deadline produces one exhaustion report while input is disabled. The same descriptor restores Ledger, which receives d without a second report or connection.
+- Vitest expanded `browser-automatic-recovery-003 The original deadline expires while the success descriptor is pending`.
+- Post-authoring source registrations included freeze 361, before-first-withdrawal 360, before-second-withdrawal absent, upstream 361.
+
+### browser-automatic-recovery-005
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L38) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L430) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L157)
+
+- Given The selected tab is recovering after a successful image frame, and revalidation confirms the browser is suspended with no viewer.
+- When The descriptor update completes.
+- Then The Start browser button appears, the input is disabled, and the reconnecting status is removed.
+- The returned descriptor specifies suspended and has no viewer. The page presents Start browser, disables remote input and removes Reconnecting.
+- Vitest expanded `browser-automatic-recovery-005 A suspended descriptor retires the recovering viewer`.
+- Post-authoring source registrations included freeze 430, before-first-withdrawal 429, before-second-withdrawal absent, upstream 430.
+
+### browser-automatic-recovery-006
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L46) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
+
+- Given The selected tab is recovering after one failed image attempt.
+- When A successful image frame coincides with a same-window endpoint replacement and the replacement viewer initializes.
+- Then The new endpoint is used while recovery remains pending; a succeeding frame restores the viewer and input without an additional connection or error report.
+- Following the first failed image, successful paint overlaps same-window endpoint replacement. The replacement socket is in use while its image is held and input disabled. Its image enables Ledger, which receives r, with only the two expected sockets and no reports.
+- Vitest expanded `browser-automatic-recovery-006 A new endpoint supplies Ledger after 1 failed pictures`.
+- Post-authoring source registrations included freeze 441, before-first-withdrawal 440, before-second-withdrawal absent, upstream 441.
+
+### browser-automatic-recovery-007
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L54) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L441) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L169)
+
+- Given The selected tab is recovering after three failed image attempts.
+- When A successful image frame coincides with a same-window endpoint replacement and the replacement viewer initializes.
+- Then The new endpoint is used while recovery remains pending; a succeeding frame restores the viewer and input without an additional connection or error report.
+- Following the third failed image, the replacement endpoint is already connected while its image is held. That image enables Ledger and its r input. The original and replacement are the only two connections, with no report.
+- Vitest expanded `browser-automatic-recovery-007 A new endpoint supplies Ledger after 3 failed pictures`.
+- Post-authoring source registrations included freeze 441, before-first-withdrawal 440, before-second-withdrawal absent, upstream 441.
+
+### browser-automatic-recovery-011
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L86) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+
+- Given A healthy viewer has a selected tab and a sibling whose membership inventory is still pending.
+- When The selected tab and another known tab are destroyed before inventory completes.
+- Then The input and New tab control remain disabled, and no-tabs-open is not shown until the inventory is complete. Then New tab is enabled and creates a blank tab in the selected window without a recovery report.
+- Starting healthy, two known local targets disappear while sibling membership is outstanding. New tab and input are disabled; No tabs open is absent. Resolving inventory shows the empty window, where New tab creates a ready about:blank in window 19 without a report.
+- Vitest expanded `browser-automatic-recovery-011 Pending inventory delays the empty ready window`.
+- Post-authoring source registrations included freeze 583, before-first-withdrawal 537, before-second-withdrawal absent, upstream 583.
+
+### browser-automatic-recovery-012
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L94) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L583) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+
+- Given A recovering viewer has a selected tab and a sibling whose membership inventory is still pending.
+- When The selected tab and another known tab are destroyed before inventory completes.
+- Then The input and New tab control remain disabled, and no-tabs-open is not shown until the inventory is complete. Then New tab is enabled and creates a blank tab in the selected window without a recovery report.
+- Starting at Reconnecting, destruction of the known local targets leaves both controls disabled while membership is outstanding. Resolution admits the empty state and a ready about:blank created in window 19. No recovery report is added.
+- Vitest expanded `browser-automatic-recovery-012 Pending inventory delays the empty recovering window`.
+- Post-authoring source registrations included freeze 583, before-first-withdrawal 537, before-second-withdrawal absent, upstream 583.
+
+### browser-automatic-recovery-013
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L102) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L278)
+
+- Given Image recovery has been exhausted and reported, with no pending tab inventory.
+- When The remaining tabs are closed and the user creates a new tab after the empty state appears.
+- Then The no-tabs-open state appears, the new blank tab becomes ready, and the original exhaustion report remains unchanged.
+- Exhaustion is reported before both local tabs disappear. No tabs open enables New tab. The resulting ready page is the only about:blank in the assigned window. The entire original report sequence remains intact.
+- Vitest expanded `browser-automatic-recovery-013 The local empty window accepts a new tab after exhaustion`.
+- Post-authoring source registrations included freeze 642, before-first-withdrawal 596, before-second-withdrawal absent, upstream 642.
+
+### browser-automatic-recovery-014
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L110) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L642) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L244)
+
+- Given Image recovery has been exhausted and reported, and a new sibling tab has been created while its membership inventory is pending.
+- When The remaining tabs are closed, inventory completes, and the user creates a new tab.
+- Then The connecting state appears until inventory completes, then no-tabs-open appears and the new blank tab becomes ready. The original exhaustion report remains unchanged.
+- After exhaustion and background creation, destroying the local targets shows Connecting and disables the controls until the outstanding inventory completes. No tabs open then permits the ready blank tab in the assigned window. The exhaustion report is preserved.
+- Vitest expanded `browser-automatic-recovery-014 Pending inventory delays the empty exhausted window`.
+- Post-authoring source registrations included freeze 642, before-first-withdrawal 596, before-second-withdrawal absent, upstream 642.
+
+### browser-automatic-recovery-017
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L755) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L286)
+
+- Given Image recovery has been exhausted and its failure reported once.
+- When The user selects another tab whose initialization fails with an unsupported Page.enable capability error, then reconnects.
+- Then A new terminal recovery report and the corresponding promise error are recorded for the successor failure, while the original report remains. Reconnect restores the selected tab without further reports.
+- After Ledger's exhaustion, selecting Other rejects its Page.enable with -32601. A distinct terminal Sentry report and a page-action promise rejection identify that same command/code. The prior report stays first. Manual Reconnect restores Other without adding another report.
+- Vitest expanded `browser-automatic-recovery-017 Other's capability failure has its own report and rejected page action`.
+- Post-authoring source registrations included freeze 755, before-first-withdrawal 662, before-second-withdrawal absent, upstream 755.
+
+### browser-automatic-recovery-021
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L166) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L932) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L336)
+
+- Given Image recovery is underway while creation of a new tab is pending.
+- When The selected recovery target moves to another window and tab creation completes.
+- Then The newly created blank tab in the selected window becomes ready and accepts input. No recovery report is produced.
+- With creation pending, the current image fails and the selected target moves to the foreign window. Completing creation selects the ready blank tab in the assigned window. Only that tab receives b. The recovery reporter stays empty.
+- Vitest expanded `browser-automatic-recovery-021 A new blank tab accepts the keystroke after Ledger leaves the window`.
+- Post-authoring source registrations included freeze 932, before-first-withdrawal 839, before-second-withdrawal absent, upstream 932.
+
+### browser-automatic-recovery-033
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L262) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1272) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L420)
+
+- Given The user has selected a scoped sibling tab when the browser connection drops.
+- When Automatic recovery encounters two transient descriptor failures, then receives a successful descriptor.
+- Then The selected sibling tab is restored and accepts input; the out-of-scope sibling is not shown. No error log or recovery report is produced.
+- After the selected Other loses its socket, two transient HTTP descriptor errors precede a held success. Input is disabled until recovery; Other remains selected, accepts t exclusively, and excludes Foreign. No application error log or recovery report is produced.
+- Vitest expanded `browser-automatic-recovery-033 Two transient descriptor errors recover the selected tab in the assigned window`.
+- Post-authoring source registrations included freeze 1272, before-first-withdrawal 1052, before-second-withdrawal absent, upstream 1272.
+
+### browser-automatic-recovery-038
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L302) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L1470) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L356)
+
+- Given The original browser tab is selected and its picture is visible.
+- When The user selects another tab before its first frame arrives.
+- Then The previous picture is cleared, the canvas is hidden, and browser input stays disabled until the new tab is ready.
+- The original canvas is painted before selection. Selecting Other clears its full pixel rectangle and hides it from accessibility while the new frame remains outstanding and input is disabled. Other's own image restores display and input.
+- Vitest expanded `browser-automatic-recovery-038 Selecting Other clears Ledger's picture while its first frame is withheld`.
+- Post-authoring source registrations included freeze 1470, before-first-withdrawal 1109, before-second-withdrawal absent, upstream 1470.
+
+### browser-automatic-recovery-069
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L550) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2349) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L376)
+
+- Given The user has selected the Other tab in the assigned browser window.
+- When The native worker is replaced and automatic recovery runs.
+- Then The selected tab becomes ready again, text input works there, and the sibling window is not shown as a tab.
+- Replacing the native worker triggers a new proof for selected Other. Input is disabled until it returns. Other remains selected, is the sole recipient of w, and the foreign-window tab is absent.
+- Vitest expanded `browser-automatic-recovery-069 A replaced native worker restores Other in its own window`.
+- Post-authoring source registrations included freeze 2349, before-first-withdrawal 1514, before-second-withdrawal absent, upstream 2349.
+
+### browser-automatic-recovery-072
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L574) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2468) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L393)
+
+- Given The remote browser is ready and a frame is missing.
+- When All three local image recovery attempts fail and the user selects Retry live image.
+- Then A retry button is enabled after recovery is exhausted, with one exhaustion report. The browser becomes ready again without another connection, accepts subsequent text, and does not report a second exhaustion.
+- Three failed local image retries exhaust once. The enabled Retry live image restores Ledger's stream and its i keystroke on the same connection. Its original exhaustion report is the only report.
+- Vitest expanded `browser-automatic-recovery-072 Retry live image restores the local stream after exhaustion`.
+- Post-authoring source registrations included freeze 2468, before-first-withdrawal 1608, before-second-withdrawal absent, upstream 2468.
+
+### browser-automatic-recovery-073
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-automatic-recovery.bdd.md#L582) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L2500) · [Passing test](src/views/browser-session/__tests__/browser-automatic-recovery.test.tsx#L404)
+
+- Given The connected browser loses its two existing targets and disconnects.
+- When Automatic recovery runs with the authoritative window empty.
+- Then The app shows “No tabs open” and enables New tab; it does not create a tab or show the sibling window’s tab.
+- Two target-destruction events followed by transport loss produce Reconnecting, then No tabs open on the authoritative window. New tab is enabled, the local window contains no synthetic blank, and Foreign is absent from the tab strip.
+- Vitest expanded `browser-automatic-recovery-073 An empty reconnected window offers New tab and excludes Foreign`.
+- Post-authoring source registrations included freeze 2500, before-first-withdrawal 1640, before-second-withdrawal absent, upstream 2500.
+
+### browser-discovery-startup-001
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#L6) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L117) · [Passing test](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L67)
+
+- Given The browser is starting discovery and its first owned tab has not yet been admitted.
+- When The user enters “initial-draft.example/path” and presses Enter before admission, then releases discovery and presses Enter again.
+- Then The first Enter does not change the tab URL. After admission, the address retains the draft and has focus; the second Enter navigates to http://initial-draft.example/path.
+- Enter before the first assigned target's admission gives readiness feedback and leaves its external URL unchanged. The retained focused draft survives admission. A second Enter changes First's browser-side URL to http://initial-draft.example/path.
+- Vitest expanded `browser-discovery-startup-001 The second Enter navigates First after its membership is confirmed`.
+- Post-authoring source registrations included freeze 117, before-first-withdrawal 117, before-second-withdrawal absent, upstream 117.
+
+### browser-discovery-startup-004
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#L30) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L217) · [Passing test](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L93)
+
+- Given The first owned tab is ready while discovery of a new background tab triggers a membership check for the later owned tab.
+- When The user selects the later owned tab before its proof completes, then releases the proof and types “new selection after proof.”
+- Then Input is disabled while the selected tab awaits proof. After admission, the address shows https://later.example.com and the text is sent to that tab.
+- While Later's proof is held during background discovery, selecting Later disables input. Release displays https://later.example.com and only Later receives new selection after proof.
+- Vitest expanded `browser-discovery-startup-004 Selecting Later during discovery directs subsequent text to Later`.
+- Post-authoring source registrations included freeze 217, before-first-withdrawal 217, before-second-withdrawal absent, upstream 217.
+
+### browser-discovery-startup-029
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#L230) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L800) · [Passing test](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L108)
+
+- Given The selected tab’s membership is being validated while the image-quality preference is available.
+- When The user sets image quality to 60 before admission.
+- Then After admission, capture uses quality 60 and remote browser input is enabled.
+- While the first selected tab awaits admission, the user applies 60 in Browser settings. After admission the ready browser has enabled input and the capture carries quality 60.
+- Vitest expanded `browser-discovery-startup-029 Image quality set before admission reaches the capture on First`.
+- Post-authoring source registrations included freeze 800, before-first-withdrawal 557, before-second-withdrawal absent, upstream 800.
+
+### browser-discovery-startup-032
+
+[Substitute BDD](src/views/browser-session/__tests__/browser-discovery-startup.bdd.md#L254) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L885) · [Passing test](src/views/browser-session/__tests__/browser-discovery-startup.test.tsx#L125)
+
+- Given A narrow membership refresh is pending after a duplicate-tab event.
+- When The first tab moves out, a sibling moves in, and another duplicate event occurs before the held refresh completes.
+- Then Input is disabled while the move is unresolved; afterward the first tab is absent, sibling 0 appears and can be selected, and its address is https://sibling-0.example.com.
+- The first scoped tab leaves and Sibling 0 enters during the outstanding duplicate-triggered proof. Another duplicate occurs before release. Input is disabled during the move. Sibling 0 can then be selected at https://sibling-0.example.com and First is absent.
+- Vitest expanded `browser-discovery-startup-032 Moving targets during an unresolved refresh updates the window's choices`.
+- Post-authoring source registrations included freeze 885, before-first-withdrawal 621, before-second-withdrawal absent, upstream 885.
+
+### browser-viewer-interaction-110
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L878) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3561) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1538)
+
+- Given The user holds Shift on Example, and the original text-input receipt fails.
+- When They switch to Other, edit text there, then return to Example.
+- Then Other accepts the fresh text. Example is unavailable and its input is disabled; the reported error retains the original Input.insertText failure attribution and excludes private input details.
+- The held failure for Input.insertText precedes the tab change. Only Other receives the fresh text. Returning to Example displays Browser view unavailable and disables input. The exception identifies the failed command. Neither the serialized report nor the error description exposes the private fixture text.
+- Vitest expanded `browser-viewer-interaction-110 The original text error belongs to Example and omits the input`.
+- Post-authoring source registrations included freeze 3557, before-first-withdrawal 2691, before-second-withdrawal absent, upstream 3557.
+
+### browser-viewer-interaction-113
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L902) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3717) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1567)
+
+- Given The user enters text through an unsupported-only IME composition on Example.
+- When They leave the tab and return to it.
+- Then The committed text is preserved, and the Example tab is selected with its input enabled.
+- Example receives the single committed 你 after an unsupported preedit. Following a visit to Other, the selected Example presents its live image and enabled input. Its committed text is intact.
+- Vitest expanded `browser-viewer-interaction-113 Unsupported preedit preserves the committed text after returning to Example`.
+- Post-authoring source registrations included freeze 3717, before-first-withdrawal 2847, before-second-withdrawal absent, upstream 3717.
+
+### browser-viewer-interaction-114
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L910) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3725) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1584)
+
+- Given The user enters a composition with mixed IME support on Example.
+- When They leave the tab and return to it.
+- Then Example is unavailable and its input is disabled; the reported error identifies the original Input.imeSetComposition failure with CDP code -32601.
+- An n preedit reaches Example. Its ni update fails as unsupported. Returning from Other yields the unavailable view, disabled input and a Sentry exception identifying Input.imeSetComposition with code -32601.
+- Vitest expanded `browser-viewer-interaction-114 A failed update after a successful preedit fences Example`.
+- Post-authoring source registrations included freeze 3725, before-first-withdrawal 2855, before-second-withdrawal absent, upstream 3725.
+
+### browser-viewer-interaction-125
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L998) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L3951) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1717)
+
+- Given The viewer uses a separate image connection, and page admission is pending for Other when the frames connection is lost.
+- When Automatic recovery reconnects and Other's image frames become available before the old admission completes.
+- Then Other remains selected; the input is disabled during recovery and becomes enabled after image frames are available. Text entered afterward is sent to the recovered page session.
+- The old Other membership reply stays outstanding. The separate image socket disconnects, the page reports recovery and disables input. Only the fresh frames for Other enable input. Submitted text reaches its recovered session and no sibling.
+- Vitest expanded `browser-viewer-interaction-125 The recovered frames connection keeps Other's input on its new session`.
+- Post-authoring source registrations included freeze 3951, before-first-withdrawal 2930, before-second-withdrawal absent, upstream 3951.
+
+### browser-viewer-interaction-136
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1086) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4236) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1618)
+
+- Given The user holds Shift on Example when a background tab-created event triggers membership checking.
+- When The held key is released and the membership check completes, then the user enters a Japanese composition.
+- Then The input becomes enabled; composition text "ni" is sent as IME composition and committed text "你" is sent as inserted text.
+- The key is held when a background duplicate triggers a selected-target proof. Releasing Shift and completing the proof enables input. The browser receives ni as IME composition and a single committed 你 on Example.
+- Vitest expanded `browser-viewer-interaction-136 Japanese preedit and commit resume after held Shift and tab admission`.
+- Post-authoring source registrations included freeze 4236, before-first-withdrawal 3038, before-second-withdrawal absent, upstream 4236.
+
+### browser-viewer-interaction-141
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1126) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1662)
+
+- Given The user has held Shift on the original tab, and input release and capture stop are pending; the input release will succeed.
+- When The user switches to the other tab, then capture stops before input release completes and detachment is confirmed.
+- Then The other tab remains usable. Returning to the original tab leaves input enabled, and the address can be changed to http://cleanup-proof.example/ready.
+- While switching from Example to Other, capture stop succeeds before the held Shift release succeeds and the original detachment is delivered. Other accepts the user's text. On return the remote Example page reaches http://cleanup-proof.example/ready while Other retains its own URL.
+- Vitest expanded `browser-viewer-interaction-141 A confirmed release permits navigation on the original page`.
+- Post-authoring source registrations included freeze 4412, before-first-withdrawal 3113, before-second-withdrawal absent, upstream 4412.
+
+### browser-viewer-interaction-142
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1134) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4420) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1672)
+
+- Given The user has held Shift on the original tab, and input release and capture stop are pending; the input release will fail.
+- When The user switches to the other tab, then capture stops before input release completes and detachment is confirmed.
+- Then The other tab remains usable. Returning to the original tab shows the browser view as unavailable and leaves input disabled.
+- With the same ordered capture stop and confirmed detach, the original key release fails. Other still receives the user's text. On return Example shows Browser view unavailable with disabled input.
+- Vitest expanded `browser-viewer-interaction-142 A rejected release fences the original page after visiting Other`.
+- Post-authoring source registrations included freeze 4412, before-first-withdrawal 3113, before-second-withdrawal absent, upstream 4412.
+
+### browser-viewer-interaction-147
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1174) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4518) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1677)
+
+- Given The user has held Shift on the original tab, and its input release is unconfirmed.
+- When A capture-detachment proof arrives after the user switches to the other tab, then the user returns to the original tab.
+- Then Input remains enabled on the other tab, but the original tab shows the browser view as unavailable and input remains disabled.
+- The externally observed Example capture session detaches while the original Shift release remains outstanding. Other accepts its own text. On return Example shows Browser view unavailable with disabled input. Withholding the detach changes this result.
+- Vitest expanded `browser-viewer-interaction-147 Detachment alone cannot prove an outstanding original release`.
+- Post-authoring source registrations included freeze 4518, before-first-withdrawal 3214, before-second-withdrawal absent, upstream 4518.
+
+### browser-viewer-interaction-154
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1230) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4638) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1694)
+
+- Given The selected scoped tab's membership lookup is pending, and membership lookup is unsupported.
+- When Membership lookup fails, then the user chooses Reconnect.
+- Then The browser view is unavailable and input and the new-tab button are disabled until reconnect. Afterward the new-tab button is enabled, input is enabled, and there are two connections.
+- Unsupported selected-target membership removes both input and New tab. After explicit Reconnect, Example has a live picture, enabled input and enabled creation, with two physical connections.
+- Vitest expanded `browser-viewer-interaction-154 Reconnect restores controls after unsupported membership`.
+- Post-authoring source registrations included freeze 4638, before-first-withdrawal 3298, before-second-withdrawal absent, upstream 4638.
+
+### browser-viewer-interaction-164
+
+[Nominee BDD](src/views/browser-session/__tests__/browser-viewer-interaction.bdd.md#L1310) · [Frozen registration](https://github.com/okou-ai/okou/blob/b0a10287edf4242383c28e39c6f7675053febb32/turbo/apps/platform/src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L4906) · [Passing test](src/views/browser-session/__tests__/browser-viewer-interaction.test.tsx#L1740)
+
+- Given Two tabs are present; the All tabs picker has focus while the tab bar is narrow.
+- When The tab bar widens, narrows again while the address field contains a draft, then widens once more.
+- Then Focus returns to the committed selected Example tab when the picker disappears. On the later widening, the address field retains focus and the draft chosen.example/draft remains intact.
+- A narrow local tab budget exposes the All tabs picker. With focus on the picker, widening returns focus to committed Example. After narrowing and editing Address, widening removes the picker while Address keeps focus and chosen.example/draft.
+- Vitest expanded `browser-viewer-interaction-164 Widening removes the focused picker without stealing a later draft`.
+- Post-authoring source registrations included freeze 4906, before-first-withdrawal 3443, before-second-withdrawal absent, upstream 4906.
