@@ -345,9 +345,9 @@ class NativeChatListTest {
                 device.findObject(selector.packageName(app.packageName)).click()
             }
             fun clickText(value: String) = click(UiSelector().text(value))
-            fun revealText(value: String) {
-                val target = By.pkg(app.packageName).text(value).hasAncestor(chatListRegion(app))
-                val scrollable = chatListRegion(app).scrollable(true)
+            fun revealText(value: String, region: BySelector = chatListRegion(app)) {
+                val target = By.pkg(app.packageName).text(value).hasAncestor(region)
+                val scrollable = By.copy(region).scrollable(true)
                 var direction = Direction.UP
                 var reachedEnd = false
                 assertTrue(
@@ -392,7 +392,8 @@ class NativeChatListTest {
             )
             takeScreenshot().writeToTestStorage("android-list-loading")
             click(UiSelector().description(app.getString(R.string.settings)))
-            text(app.getString(R.string.appearance))
+            text(app.getString(R.string.settings))
+            revealText(app.getString(R.string.appearance), By.pkg(app.packageName).scrollable(true))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)

@@ -72,11 +72,11 @@ class NativeShellTest {
             dismissAppearance()
             mode.nightMode = UiModeManager.MODE_NIGHT_YES
             awaitActivity("Android night configuration applies") { isNight(it) }
-            text(R.string.appearance_system)
+            reveal(label(R.string.appearance_system), app.getString(R.string.appearance_system))
             awaitBars(light = false)
             mode.nightMode = UiModeManager.MODE_NIGHT_NO
             awaitActivity("Android light configuration applies") { !isNight(it) }
-            text(R.string.appearance_system)
+            reveal(label(R.string.appearance_system), app.getString(R.string.appearance_system))
             awaitBars(light = true)
             assertTrue("System Back key injected", device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
@@ -85,36 +85,6 @@ class NativeShellTest {
     @Test
     fun paletteAndLanguageChangesRecreateTheListAndReloadMemberPreferences() =
         onIsolatedDevice("member-preferences") {
-            fun findCurrent(target: BySelector): UiObject2? {
-                // API 35 can retain offscreen Compose descendants after a scroll without events.
-                check(automation.clearCache()) { "Native accessibility cache could not be cleared" }
-                return device.findObject(target)
-            }
-            fun reveal(target: BySelector, value: String, firstChoice: Int? = null): UiObject2 {
-                if (findCurrent(target) == null) {
-                    val selector = By.pkg(app.packageName).scrollable(true)
-                    if (firstChoice != null) selector.hasDescendant(appearanceOption(firstChoice))
-                    fun container() = requireNotNull(device.wait(Until.findObject(selector), WAIT))
-                    val visible =
-                        object : Condition<UiObject2, Boolean> {
-                            override fun apply(container: UiObject2) = findCurrent(target) != null
-                        }
-                    // The sheet starts at the first choice. The overview can retain a scroll.
-                    if (firstChoice != null || !container().scrollUntil(Direction.UP, visible)) {
-                        container().scrollUntil(Direction.DOWN, visible)
-                    }
-                }
-                return requireNotNull(
-                    device.wait(
-                        object : Condition<UiDevice, UiObject2?> {
-                            override fun apply(device: UiDevice) = findCurrent(target)
-                        },
-                        WAIT,
-                    )
-                ) {
-                    "Native preference control not reachable: $value"
-                }
-            }
             fun button(id: Int) =
                 reveal(
                     By.pkg(app.packageName)
@@ -193,6 +163,38 @@ class NativeShellTest {
 
     private fun label(id: Int): BySelector = By.pkg(app.packageName).text(app.getString(id))
 
+    private fun findCurrent(target: BySelector): UiObject2? {
+        // API 35 can retain offscreen Compose descendants after a scroll without events.
+        check(automation.clearCache()) { "Native accessibility cache could not be cleared" }
+        return device.findObject(target)
+    }
+
+    private fun reveal(target: BySelector, value: String, firstChoice: Int? = null): UiObject2 {
+        if (findCurrent(target) == null) {
+            val selector = By.pkg(app.packageName).scrollable(true)
+            if (firstChoice != null) selector.hasDescendant(appearanceOption(firstChoice))
+            fun container() = requireNotNull(device.wait(Until.findObject(selector), WAIT))
+            val visible =
+                object : Condition<UiObject2, Boolean> {
+                    override fun apply(container: UiObject2) = findCurrent(target) != null
+                }
+            // The sheet starts at the first choice. The overview can retain a scroll.
+            if (firstChoice != null || !container().scrollUntil(Direction.UP, visible)) {
+                container().scrollUntil(Direction.DOWN, visible)
+            }
+        }
+        return requireNotNull(
+            device.wait(
+                object : Condition<UiDevice, UiObject2?> {
+                    override fun apply(device: UiDevice) = findCurrent(target)
+                },
+                WAIT,
+            )
+        ) {
+            "Native preference control not reachable: $value"
+        }
+    }
+
     private fun click(id: Int) =
         if (id == R.string.settings)
             checkNotNull(device.wait(Until.findObject(By.desc(app.getString(id))), WAIT)).click()
@@ -210,7 +212,8 @@ class NativeShellTest {
             .hasDescendant(label(R.string.appearance))
 
     private fun openAppearance() {
-        requireNotNull(device.wait(Until.findObject(appearanceRow()), WAIT)).click()
+        text(R.string.settings)
+        reveal(appearanceRow(), app.getString(R.string.appearance)).click()
     }
 
     private fun selectAppearance(id: Int) {
