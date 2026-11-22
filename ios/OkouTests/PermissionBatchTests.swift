@@ -244,7 +244,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(card.duration, .day)
     let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }
     await card.confirm()
-    XCTAssertNotNil(card.error)
+    XCTAssertFalse(card.canConfirm)
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, writes)
     conversation.close()

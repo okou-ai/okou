@@ -218,14 +218,17 @@ final class WorkspaceStartupTests: XCTestCase {
       let cacheDirectory = CacheTestDirectory(owner: self)
       let catchUpStarted = expectation(
         description: "Thread catch-up starts after cached chats")
+      let cachePrimed = Mutex(false)
       let releaseCatchUp = HTTPResponseGate()
       defer { releaseCatchUp.open() }
       let fixture = ChatHTTPFixture { request in
         switch request.url?.path {
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
-          catchUpStarted.fulfill()
-          await releaseCatchUp.wait()
+          if cachePrimed.withLock({ $0 }) {
+            catchUpStarted.fulfill()
+            await releaseCatchUp.wait()
+          }
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
         case "/api/indicators":
           return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
@@ -239,6 +242,7 @@ final class WorkspaceStartupTests: XCTestCase {
         scope: ChatCacheScope(
           apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
       try await ChatSync(client: fixture.client, cache: cache).prefetchThreadList()
+      cachePrimed.withLock { $0 = true }
       let store = WorkspaceStore(
         client: fixture.client, webURL: fixture.baseURL, cache: cache)
       defer { store.close() }

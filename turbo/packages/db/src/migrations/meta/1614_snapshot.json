@@ -1,6 +1,6 @@
 {
-  "id": "5965b632-bed5-4ed2-8289-f43af9fe94c4",
-  "prevId": "19635a69-8380-4d04-89ec-ec07769fcd46",
+  "id": "267297ba-30ab-4544-bcba-fd10ea38806e",
+  "prevId": "b54b591c-fd8d-46b3-b971-47f4cbbe56fc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -8250,6 +8250,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
+        },
+        "event_executor_id": {
+          "name": "event_executor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "project_id": {
           "name": "project_id",
@@ -23967,12 +23973,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "skill_storage_version_id": {
-          "name": "skill_storage_version_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -24008,21 +24008,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_org_custom_connectors_skill_storage_version": {
-          "name": "idx_org_custom_connectors_skill_storage_version",
-          "columns": [
-            {
-              "expression": "skill_storage_version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}

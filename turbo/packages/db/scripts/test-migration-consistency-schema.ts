@@ -2882,11 +2882,12 @@ async function main(): Promise<void> {
     await validateCustomConnectorSkillCutover(
       dbUrl1,
       await migrationTimestamp("1608_prepare_custom_connector_skill_cutover"),
+      await migrationTimestamp("1613_retire_custom_connector_skill_mirror"),
     );
     await validateChatThreadEventExecutorRetirement(
       dbUrl1,
-      await migrationTimestamp("1614_drop_chat_thread_event_executor"),
-      await migrationTimestamp("1615_retire_agents_table"),
+      await migrationTimestamp("1615_drop_chat_thread_event_executor"),
+      await migrationTimestamp("1616_retire_agents_table"),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

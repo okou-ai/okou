@@ -1,4 +1,7 @@
 <resources>
+    <string name="workspace_workflows">工作流</string>
+    <string name="workspace_connectors">連接器</string>
+    <string name="workspace_artifacts">成果</string>
     <string name="chat_undo_archived">已封存</string>
     <string name="chat_undo_unarchived">已取消封存</string>
     <string name="chat_undo_marked_read">已標為已讀</string>

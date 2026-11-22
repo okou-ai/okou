@@ -1,5 +1,5 @@
 {
-  "id": "19635a69-8380-4d04-89ec-ec07769fcd46",
+  "id": "b54b591c-fd8d-46b3-b971-47f4cbbe56fc",
   "prevId": "0ed139fd-2c3d-4cfa-99e9-55a2e5d00d65",
   "version": "7",
   "dialect": "postgresql",
@@ -14775,6 +14775,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'agent'"
+        },
         "priority": {
           "name": "priority",
           "type": "integer",
@@ -15019,6 +15026,10 @@
         "feed_items_type": {
           "name": "feed_items_type",
           "value": "\"feed_items\".\"type\" IN ('suggestion', 'event')"
+        },
+        "feed_items_source_type": {
+          "name": "feed_items_source_type",
+          "value": "(\"feed_items\".\"type\" = 'suggestion' AND \"feed_items\".\"source_type\" = 'agent') OR (\"feed_items\".\"type\" = 'event' AND \"feed_items\".\"source_type\" = 'platform-event')"
         },
         "feed_items_suggestion_state": {
           "name": "feed_items_suggestion_state",
@@ -23973,12 +23984,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
-        },
-        "skill_storage_version_id": {
-          "name": "skill_storage_version_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -24014,21 +24019,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_org_custom_connectors_skill_storage_version": {
-          "name": "idx_org_custom_connectors_skill_storage_version",
-          "columns": [
-            {
-              "expression": "skill_storage_version_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
