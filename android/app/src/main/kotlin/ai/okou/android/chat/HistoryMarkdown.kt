@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.painterResource
@@ -153,7 +154,11 @@ private fun HistoryMarkdownBlocks(
                     Column(blockModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         for ((itemIndex, item) in block.items.withIndex()) {
                             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                                Text(item.marker, Modifier.widthIn(min = 16.dp), style = contentStyle)
+                                Text(
+                                    item.marker,
+                                    Modifier.widthIn(min = 16.dp),
+                                    style = contentStyle,
+                                )
                                 HistoryMarkdownBlocks(
                                     item.blocks,
                                     contentStyle,
@@ -198,7 +203,9 @@ private fun HistoryMarkdownBlocks(
                                     block.text.text.substring(card.start, card.end),
                                     card.item,
                                     restoreFocus =
-                                        artifacts.restored.takeIf { artifacts.restoreKey == focusKey },
+                                        artifacts.restored.takeIf {
+                                            artifacts.restoreKey == focusKey
+                                        },
                                 ) {
                                     artifacts.open(card.item, focusKey)
                                 }
@@ -241,6 +248,7 @@ private fun MessageArtifactCard(
     Surface(shape = shape, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
         Row(
             Modifier.fillMaxWidth()
+                .focusProperties { canFocus = true }
                 .then(restore)
                 .heightIn(min = 60.dp)
                 .clip(shape)
@@ -297,8 +305,10 @@ private fun HistoryMarkdownBlock.findText(): String =
             items.joinToString(" ") { item -> item.blocks.joinToString(" ") { it.findText() } }
     }
 
-internal fun conversationMarkdownFindPassages(source: String, artifactCards: Boolean): List<String> =
-    historyMarkdownBlocks(source, artifactCards).map { it.findText() }
+internal fun conversationMarkdownFindPassages(
+    source: String,
+    artifactCards: Boolean,
+): List<String> = historyMarkdownBlocks(source, artifactCards).map { it.findText() }
 
 private val historyMarkdownParser =
     Parser.builder().extensions(listOf(TablesExtension.create())).build()

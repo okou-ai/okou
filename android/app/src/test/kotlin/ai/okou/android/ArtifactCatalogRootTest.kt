@@ -12,11 +12,12 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isFocused
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -278,6 +279,46 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         awaitText(fixture.summary.title)
         compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun inlineArtifactPreviewReturnsToTheFindHit() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        fixture.installInlineHistory()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithText(fixture.sourceTitle).performClick()
+        awaitText(fixture.summary.title)
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement("artifacts2.md")
+        awaitText("No matching messages")
+        query.performTextReplacement("launch summary")
+        awaitText("1 matching message")
+        val cardLabel = hasText(fixture.summary.title) and hasClickAction()
+        compose.onNode(cardLabel).performClick()
+        val hit = hasTestTag("conversation_find_hit") and isFocused()
+        compose.waitUntil(10_000) { compose.onAllNodes(hit).fetchSemanticsNodes().isNotEmpty() }
+        val card = compose.onNode(cardLabel)
+        card.assertIsDisplayed().performClick()
+
+        awaitText("Preview only", partial = true)
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose.onNodeWithTag("conversation").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(cardLabel and isFocused()).fetchSemanticsNodes().isNotEmpty()
+        }
+        card.assertIsDisplayed().assertIsFocused()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        query.assertTextContains("launch summary")
+        awaitText("1 matching message")
+        assertTrue(fixture.catalogScopes.isEmpty())
     }
 
     @Test
