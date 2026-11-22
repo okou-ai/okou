@@ -40,6 +40,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.regex.Pattern
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -143,6 +144,9 @@ class NativeRealtimeTest {
                 }
                 if (!device.hasObject(target)) {
                     val container = checkNotNull(device.findObject(scrollable))
+                    // Start swipes above the floating conversation jump button.
+                    val jumpInset = (56 * app.resources.displayMetrics.density).roundToInt()
+                    container.setGestureMargins(0, 0, 0, jumpInset)
                     val visible =
                         object : Condition<UiObject2, Boolean> {
                             // Compose exposes virtual descendants through the current window.
@@ -637,6 +641,11 @@ class NativeRealtimeTest {
                     .setResponseCode(201)
             }
             external.invalidate(ChatChanges(messageThreads = setOf(CHAT_PERSONAL)))
+            condition("The failure is confirmed before scrolling to the recovery action") {
+                chats?.history?.uiState?.value?.transcript?.messages?.any {
+                    it.id == RecoveryApiFixture.FAILURE && it.status == "run.failed"
+                } == true
+            }
             reveal(app.getString(R.string.recovery_continue))
             text(app.getString(R.string.recovery_continue)).click()
             condition { recovery.inputs.size == 1 }
