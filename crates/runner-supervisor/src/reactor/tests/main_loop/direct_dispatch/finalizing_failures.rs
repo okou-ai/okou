@@ -87,7 +87,7 @@ async fn cancelled_finalizing_handoff_flushes_outcome_without_executor() {
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_pre_spawn_finalizing_handoff")
                 .body_includes(r#""outcome":"cancelled""#)
                 .body_includes(r#""reason":"successor_cancelled""#)
@@ -177,7 +177,7 @@ async fn assert_finalizing_activation_failure_retains_lease_until_completion(dir
     let telemetry_mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/telemetry")
+                .path("/api/webhooks/run/telemetry")
                 .body_includes("runner_pre_spawn_finalizing_handoff")
                 .body_includes(r#""outcome":"activation_failed""#)
                 .body_includes(r#""reason":"exact_activation_failed""#);

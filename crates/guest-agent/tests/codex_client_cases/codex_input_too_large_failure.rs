@@ -43,7 +43,7 @@ async fn oversized_codex_input_writes_actionable_structured_failure()
             .json_body(json!({}));
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));

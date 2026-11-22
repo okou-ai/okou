@@ -47,7 +47,7 @@ async fn execution_timeout_preserves_the_resumable_session_before_exit()
             .json_body(json!({}));
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));

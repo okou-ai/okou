@@ -27,7 +27,7 @@ async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
             });
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
+                .path("/api/webhooks/run/storages/prepare");
             if name == "memory" {
                 then.status(409).json_body(json!({
                     "error": {"code": "CONFLICT", "message": "Preparation conflict"},
@@ -41,7 +41,7 @@ async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
         });
         server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
+                .path("/api/webhooks/run/storages/commit");
             then.status(409).json_body(json!({
                 "error": {"code": "CONFLICT", "message": "Artifact conflict"},
             }));

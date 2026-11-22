@@ -85,7 +85,7 @@ async fn telemetry_server() -> MockServer {
     server
         .mock_async(|when, then| {
             when.method(httpmock::Method::POST)
-                .path("/api/webhooks/agent/telemetry");
+                .path("/api/webhooks/run/telemetry");
             then.status(200)
                 .json_body(serde_json::json!({"success": true}));
         })

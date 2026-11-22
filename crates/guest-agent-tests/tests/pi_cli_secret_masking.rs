@@ -183,7 +183,7 @@ async fn pi_masks_live_http_text_across_deltas_chunks_and_completion()
             let body: Value = serde_json::from_str(&request.request.body)?;
             let mut settled = false;
             match request.request.path.as_str() {
-                "/api/webhooks/agent/session-output" => {
+                "/api/webhooks/run/session-output" => {
                     assert_eq!(body["runId"], RUN_ID);
                     assert_eq!(body["threadId"], session_id);
                     let id = body["runEventId"].as_str().ok_or("missing preview id")?;

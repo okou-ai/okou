@@ -719,7 +719,7 @@ async fn private_http_warnings_wait_until_telemetry_releases_its_sink() {
     let system_log_guard = SystemLogOverrideGuard::set(paths.system_log_file());
     let upload_mock = api.server().mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(marker.trim());
         then.status(200);
     });

@@ -31,7 +31,7 @@ async def test_matching_sni_and_host_blocks_connected_platform_api_edge_when_unb
         with_response=False,
         host="203.0.113.10",
         sni="api.okou.ai",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(("Host", "api.okou.ai")),
     )
     flow.server_conn.state = connection.ConnectionState.OPEN
@@ -55,7 +55,7 @@ async def test_matching_sni_and_host_allows_authenticated_connected_platform_api
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Authorization", "Bearer tok-xyz"),
             ("Host", "api.okou.ai"),

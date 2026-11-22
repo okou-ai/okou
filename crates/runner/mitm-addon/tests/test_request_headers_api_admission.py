@@ -128,7 +128,7 @@ async def test_capture_enabled_api_allow_retargets_unconnected_upstream(
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -335,7 +335,7 @@ async def test_streamed_api_allow_blocks_connected_unbound_edge_upstream(
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -366,7 +366,7 @@ async def test_capture_enabled_api_allow_uses_authenticated_connected_edge_upstr
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Authorization", "Bearer tok-conn"),
             ("Host", "api.okou.ai"),
@@ -403,7 +403,7 @@ async def test_capture_enabled_api_allow_uses_connected_upstream_address_when_tl
         host="198.18.20.34",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -442,7 +442,7 @@ async def test_capture_enabled_api_allow_uses_prior_client_binding_when_server_c
         host="127.0.0.1",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -489,7 +489,7 @@ async def test_api_allow_prior_client_binding_endpoint_mismatch_blocks(
         host="127.0.0.1",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -535,7 +535,7 @@ async def test_api_allow_current_server_binding_mismatch_blocks_even_with_prior_
         host="127.0.0.1",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", str(STREAM_BUFFER_LIMIT + 1)),
@@ -582,7 +582,7 @@ async def test_api_allow_small_bounded_body_retargets_unconnected_upstream(
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", "4"),
@@ -620,7 +620,7 @@ async def test_api_allow_unknown_body_length_retargets_unconnected_upstream(
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(("Host", "api.okou.ai")),
     )
 
@@ -650,7 +650,7 @@ def test_api_allow_bounded_prebind_ignores_unregistered_client(
         host="203.0.113.10",
         sni="api.okou.ai",
         method="POST",
-        path="/api/webhooks/agent/heartbeat",
+        path="/api/webhooks/run/heartbeat",
         request_headers=headers(
             ("Host", "api.okou.ai"),
             ("Content-Length", "4"),

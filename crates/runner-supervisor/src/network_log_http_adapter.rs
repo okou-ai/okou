@@ -23,7 +23,7 @@ impl NetworkLogHttpClient for NetworkLogHttpAdapter<'_> {
     ) -> Result<Box<dyn PreparedNetworkLogRequest>, String> {
         let request = self
             .0
-            .request_route(routes::webhooks::agent::telemetry::SEND, sandbox_token)
+            .request_route(routes::webhooks::run::telemetry::SEND, sandbox_token)
             .json(payload)
             .prepare("network_logs")
             .map_err(|error| error.to_string())?;

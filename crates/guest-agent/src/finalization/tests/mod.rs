@@ -71,12 +71,12 @@ async fn finalization_missing_mount_fails_before_final_completion() {
 
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -126,12 +126,12 @@ async fn ordinary_recovery_finalization_still_snapshots_changed_artifacts() {
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(500);
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"success": true}));
     });
     let http = HttpClient::with_api_config(

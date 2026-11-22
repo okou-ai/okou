@@ -855,7 +855,7 @@ impl JobTelemetry {
             let mut response = match self
                 .http
                 .request_route(
-                    routes::webhooks::agent::telemetry::SEND,
+                    routes::webhooks::run::telemetry::SEND,
                     &self.sandbox_token,
                 )
                 .timeout(Duration::from_secs(2))
@@ -1364,7 +1364,7 @@ async fn send_telemetry(
     };
 
     let req = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, sandbox_token)
+        .request_route(routes::webhooks::run::telemetry::SEND, sandbox_token)
         .timeout(TELEMETRY_TIMEOUT)
         .json(&payload);
 

@@ -275,7 +275,7 @@ async fn record_first_completion(
         });
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200).json_body(json!({}));
     });
     let masker = Arc::new(masker::SecretMasker::from_config(&config));

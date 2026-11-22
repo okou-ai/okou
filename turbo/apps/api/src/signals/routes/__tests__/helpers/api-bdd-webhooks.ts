@@ -8,6 +8,7 @@ import {
   webhookCompleteContract,
   webhookEventsContract,
   webhookHeartbeatContract,
+  runWebhookContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookStripeContract,
@@ -534,7 +535,7 @@ export function createWebhookCallbackApi(context: TestContext) {
           context,
           routes: webhooksAgentHealthUsageTelemetryRoutes,
           signal,
-        })(webhookTelemetryContract).send({ headers, body }),
+        })(runWebhookContract).telemetry({ headers, body }),
         statuses,
       );
     },
@@ -576,8 +577,8 @@ export function createWebhookCallbackApi(context: TestContext) {
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(
-          webhookStoragesPrepareContract,
-        ).prepare({
+          runWebhookContract,
+        ).storagePrepare({
           headers,
           body,
         }),
@@ -592,8 +593,8 @@ export function createWebhookCallbackApi(context: TestContext) {
     ) {
       return await accept(
         setupApp({ context, routes: webhooksAgentStorageRoutes })(
-          webhookStoragesCommitContract,
-        ).commit({
+          runWebhookContract,
+        ).storageCommit({
           headers,
           body,
         }),

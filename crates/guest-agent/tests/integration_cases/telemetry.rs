@@ -77,7 +77,7 @@ async fn spawn_for_paths_uploads_explicit_runtime_files() {
 
     let upload_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(r#""runId":"explicit-run""#)
             .body_includes("explicit system log");
         then.status(200);
@@ -129,7 +129,7 @@ async fn flush_is_incremental_between_calls() {
     let request_bodies = Arc::new(Mutex::new(Vec::new()));
     let request_bodies_for_mock = Arc::clone(&request_bodies);
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.respond_with(move |request| {
             request_bodies_for_mock
                 .lock()
@@ -303,7 +303,7 @@ async fn final_flush_and_shutdown_uploads_log_emitted_immediately_before_it() {
     let marker = "fatal-tail-before-final-telemetry";
     let upload_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(marker);
         then.status(200);
     });
@@ -445,13 +445,13 @@ async fn telemetry_preserves_runtime_session_id_and_masks_secrets() {
     });
     let raw_telemetry_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(secret);
         then.status(500);
     });
     let masked_telemetry_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(format!("system log {session_id} ***"))
             .body_includes(r#""action_type":"telemetry_secret_mask""#)
             .body_includes(r#""duration_ms":17"#)
@@ -522,7 +522,7 @@ async fn telemetry_redacts_multiline_secret_across_flushes() {
     let request_bodies = Arc::new(Mutex::new(Vec::new()));
     let request_bodies_for_mock = Arc::clone(&request_bodies);
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.respond_with(move |request| {
             request_bodies_for_mock
                 .lock()
@@ -616,7 +616,7 @@ async fn concurrent_flushes_do_not_regress_pos_file() {
     let pos_file = paths.telemetry_sandbox_ops_pos_file();
 
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200);
     });
 
@@ -695,7 +695,7 @@ async fn flush_propagates_error_then_loop_recovers() {
 
     // First attempt: server returns 500.
     let fail_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(500);
     });
 
@@ -711,7 +711,7 @@ async fn flush_propagates_error_then_loop_recovers() {
     // did not advance the pos file.
     let success_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes("first_attempt_op");
         then.status(200);
     });
@@ -773,7 +773,7 @@ async fn flush_reports_position_persistence_status_after_upload_then_recovers() 
     let request_bodies = Arc::new(Mutex::new(Vec::new()));
     let request_bodies_for_mock = Arc::clone(&request_bodies);
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.respond_with(move |request| {
             request_bodies_for_mock
                 .lock()
@@ -889,7 +889,7 @@ async fn flush_ignores_unadvanced_position_write_failures() {
     let system_log_guard = SystemLogOverrideGuard::set(system_log);
 
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200);
     });
 
@@ -949,7 +949,7 @@ async fn skip_only_metrics_progress_saves_position_without_posting_empty_payload
     );
 
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200);
     });
 
@@ -997,7 +997,7 @@ async fn skip_only_flush_reports_position_persistence_status_then_recovers() {
     std::fs::create_dir(metrics_pos_file).expect("position failure directory should be created");
 
     let upload_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200);
     });
 
@@ -1089,13 +1089,13 @@ async fn oversized_system_log_uploads_marker_without_raw_line_fragment() {
 
     let raw_fragment_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(raw_token);
         then.status(500);
     });
     let marker_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes(OVERSIZED_SYSTEM_LOG_LINE_MARKER_FRAGMENT);
         then.status(200);
     });
@@ -1145,7 +1145,7 @@ async fn urgent_oom_bypasses_log_backlog_and_keeps_live_positions() {
         .unwrap();
     let urgent = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes("oomEvidence")
             .body_excludes("systemLog");
         then.status(200).json_body(
@@ -1154,7 +1154,7 @@ async fn urgent_oom_bypasses_log_backlog_and_keeps_live_positions() {
     });
     let normal = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes("systemLog");
         then.status(200);
     });
@@ -1208,7 +1208,7 @@ async fn urgent_oom_retries_until_acknowledged_and_retains_evidence() {
         let request_bodies = Arc::new(Mutex::new(Vec::new()));
         let requests = Arc::clone(&request_bodies);
         let upload = server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
+            when.method(POST).path("/api/webhooks/run/telemetry");
             then.respond_with(move |request| {
                 let attempt = {
                     let mut bodies = requests.lock().unwrap();

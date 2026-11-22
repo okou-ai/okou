@@ -109,8 +109,8 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/session-output",
-    rustModulePath: ["webhooks", "agent", "session_output"],
+    path: "/api/webhooks/run/session-output",
+    rustModulePath: ["webhooks", "run", "session_output"],
     rustConstName: "SEND",
   },
   {
@@ -127,20 +127,20 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/telemetry",
-    rustModulePath: ["webhooks", "agent", "telemetry"],
+    path: "/api/webhooks/run/telemetry",
+    rustModulePath: ["webhooks", "run", "telemetry"],
     rustConstName: "SEND",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/storages/prepare",
-    rustModulePath: ["webhooks", "agent", "storages", "prepare"],
+    path: "/api/webhooks/run/storages/prepare",
+    rustModulePath: ["webhooks", "run", "storages", "prepare"],
     rustConstName: "PREPARE",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/storages/commit",
-    rustModulePath: ["webhooks", "agent", "storages", "commit"],
+    path: "/api/webhooks/run/storages/commit",
+    rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
   },
 ] as const;

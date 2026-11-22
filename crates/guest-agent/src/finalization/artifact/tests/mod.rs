@@ -104,12 +104,12 @@ async fn artifact_snapshot_preflight_error(mount: &std::path::Path) -> String {
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -152,7 +152,7 @@ async fn start_artifact_finalization_test_server(
         for _ in 0..artifact_count {
             let (mut socket, _) = listener.accept().await.unwrap();
             let (path, payload) = read_test_json_request(&mut socket).await;
-            assert_eq!(path, "/api/webhooks/agent/storages/prepare");
+            assert_eq!(path, "/api/webhooks/run/storages/prepare");
             let storage_id = payload["storageId"].as_str().unwrap().to_string();
             prepare_requests.push((socket, storage_id));
         }
@@ -176,7 +176,7 @@ async fn start_artifact_finalization_test_server(
         for _ in 0..artifact_count {
             let (mut socket, _) = listener.accept().await.unwrap();
             let (path, _) = read_test_json_request(&mut socket).await;
-            assert_eq!(path, "/api/webhooks/agent/storages/commit");
+            assert_eq!(path, "/api/webhooks/run/storages/commit");
             write_test_json_response(
                 &mut socket,
                 &json!({
@@ -264,12 +264,12 @@ async fn artifact_snapshot_missing_mount_fails_before_storage_api_calls() {
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -353,12 +353,12 @@ async fn artifact_snapshot_enforces_manifest_boundaries_before_storage_api_calls
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let upload = server.mock(|when, then| {
@@ -518,12 +518,12 @@ async fn artifact_snapshot_explicit_fail_policy_missing_mount_fails() {
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -562,12 +562,12 @@ async fn artifact_snapshot_later_missing_mount_fails_before_any_storage_api_call
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -680,12 +680,12 @@ async fn artifact_snapshot_preserve_policy_missing_mount_preserves_parent_versio
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(
@@ -732,12 +732,12 @@ async fn artifact_snapshot_policy_still_fails_on_non_not_found_root_error() {
     let server = MockServer::start();
     let prepare = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+            .path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let commit = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+            .path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let http = HttpClient::with_api_config(

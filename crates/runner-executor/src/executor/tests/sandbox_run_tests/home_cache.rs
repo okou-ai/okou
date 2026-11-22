@@ -1187,7 +1187,7 @@ async fn actual_startup_correlates_the_consumed_generation_but_not_a_discarded_c
             .mock_async(|when, then| {
                 let when = when
                     .method(POST)
-                    .path("/api/webhooks/agent/telemetry")
+                    .path("/api/webhooks/run/telemetry")
                     .body_includes("runner_sandbox_startup")
                     .body_includes(ctx.run_id.to_string())
                     .body_includes(r#""is_first_run":false"#);
@@ -1208,7 +1208,7 @@ async fn actual_startup_correlates_the_consumed_generation_but_not_a_discarded_c
         let batch = server
             .mock_async(|when, then| {
                 when.method(POST)
-                    .path("/api/webhooks/agent/telemetry")
+                    .path("/api/webhooks/run/telemetry")
                     .body_excludes("runner_sandbox_startup");
                 then.status(200)
                     .json_body(serde_json::json!({"success": true}));

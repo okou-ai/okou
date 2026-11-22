@@ -7,12 +7,7 @@ import { sharedThreadRoutes } from "../shared-threads";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
-import {
-  runWebhookContract,
-  webhookCompleteContract,
-  webhookEventsContract,
-  webhookHeartbeatContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { webhooksAgentCompleteRoutes } from "../webhooks-agent-complete";
 import { webhooksAgentEventsRoutes } from "../webhooks-agent-events";
@@ -1960,68 +1955,56 @@ describe("WHCB-05: sandbox agent webhook boundaries", () => {
   });
 });
 
-test.each([
-  { namespace: "run", contract: runWebhookContract },
-  {
-    namespace: "agent",
-    contract: {
-      heartbeat: webhookHeartbeatContract.send,
-      events: webhookEventsContract.send,
-      complete: webhookCompleteContract.complete,
-    },
-  },
-])(
-  "accepts a sandbox callback lifecycle through /api/webhooks/$namespace",
-  async ({ contract }) => {
-    const { runId, headers, run } = await createEventWebhookRun(
-      "exercise sandbox callbacks",
-    );
-    await run(async () => {
-      const client = setupApp({
-        context,
-        routes: [
-          ...webhooksAgentHealthUsageTelemetryRoutes,
-          ...webhooksAgentEventsRoutes,
-          ...webhooksAgentCompleteRoutes,
-        ],
-      })(contract);
+test("accepts a sandbox callback lifecycle through the run webhooks", async () => {
+  const contract = runWebhookContract;
+  const { runId, headers, run } = await createEventWebhookRun(
+    "exercise sandbox callbacks",
+  );
+  await run(async () => {
+    const client = setupApp({
+      context,
+      routes: [
+        ...webhooksAgentHealthUsageTelemetryRoutes,
+        ...webhooksAgentEventsRoutes,
+        ...webhooksAgentCompleteRoutes,
+      ],
+    })(contract);
 
-      const heartbeat = await accept(
-        client.heartbeat({ headers, body: { runId } }),
-        [200],
-      );
-      expect(heartbeat.body).toMatchObject({ ok: true });
-      const events = await accept(
-        client.events({
-          headers,
-          body: {
-            runId,
-            events: [{ type: "system", sequenceNumber: 1 }],
-          },
-        }),
-        [200],
-      );
-      expect(events.body).toStrictEqual({
-        received: 1,
-        firstSequence: 1,
-        lastSequence: 1,
-      });
-      const complete = await accept(
-        client.complete({
-          headers,
-          body: {
-            runId,
-            exitCode: 1,
-            error: "Sandbox exited",
-            lastEventSequence: 1,
-          },
-        }),
-        [200],
-      );
-      expect(complete.body).toStrictEqual({ success: true, status: "failed" });
+    const heartbeat = await accept(
+      client.heartbeat({ headers, body: { runId } }),
+      [200],
+    );
+    expect(heartbeat.body).toMatchObject({ ok: true });
+    const events = await accept(
+      client.events({
+        headers,
+        body: {
+          runId,
+          events: [{ type: "system", sequenceNumber: 1 }],
+        },
+      }),
+      [200],
+    );
+    expect(events.body).toStrictEqual({
+      received: 1,
+      firstSequence: 1,
+      lastSequence: 1,
     });
-  },
-);
+    const complete = await accept(
+      client.complete({
+        headers,
+        body: {
+          runId,
+          exitCode: 1,
+          error: "Sandbox exited",
+          lastEventSequence: 1,
+        },
+      }),
+      [200],
+    );
+    expect(complete.body).toStrictEqual({ success: true, status: "failed" });
+  });
+});
 
 describe("WHCB-06: sandbox agent artifact webhook boundaries", () => {
   it("rejects mismatched sandbox artifact reports", async () => {

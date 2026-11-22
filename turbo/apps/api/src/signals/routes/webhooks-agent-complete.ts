@@ -1,9 +1,6 @@
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
-import {
-  runWebhookContract,
-  webhookCompleteContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { webhookCompleteContract } from "@okouai/api-contracts/contracts/webhooks";
 import { command, computed } from "ccstate";
 import { logger } from "../../lib/log";
 import { apiStartTime$, authorization$ } from "../context/hono";
@@ -179,10 +176,6 @@ const completeAgentRunRoute$ = command(
 );
 
 export const webhooksAgentCompleteRoutes: readonly RouteEntry[] = [
-  {
-    route: runWebhookContract.complete,
-    handler: completeAgentRunRoute$,
-  },
   {
     route: webhookCompleteContract.complete,
     handler: completeAgentRunRoute$,

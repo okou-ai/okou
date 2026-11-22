@@ -330,7 +330,7 @@ async fn delayed_collection_preserves_the_measured_header_phase() {
     let ingest = api
         .mock_async(move |when, then| {
             when.method(httpmock::Method::POST)
-                .path("/api/webhooks/agent/telemetry");
+                .path("/api/webhooks/run/telemetry");
             then.respond_with(move |request: &httpmock::HttpMockRequest| {
                 let payload = serde_json::from_slice(request.body_ref()).unwrap();
                 sink.lock().unwrap().push(payload);
