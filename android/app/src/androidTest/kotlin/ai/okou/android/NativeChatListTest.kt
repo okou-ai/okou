@@ -568,13 +568,18 @@ class NativeChatListTest {
                     start.x + (horizontal * swipeDensity).toInt(),
                     start.y + (vertical * swipeDensity).toInt(),
                 )
-            val downAt = SystemClock.uptimeMillis()
+            // Keep both samples in the past with a controlled interval, independent of CI scheduling.
+            val downAt = SystemClock.uptimeMillis() - 80L
             val finger =
                 MotionEvent.PointerProperties().apply {
                     id = 0
                     toolType = MotionEvent.TOOL_TYPE_FINGER
                 }
-            fun injectSwipeEvent(action: Int, point: Point): Boolean {
+            fun injectSwipeEvent(
+                action: Int,
+                point: Point,
+                eventTime: Long = SystemClock.uptimeMillis(),
+            ): Boolean {
                 val coordinates =
                     MotionEvent.PointerCoords().apply {
                         x = point.x.toFloat()
@@ -591,7 +596,7 @@ class NativeChatListTest {
                 val event =
                     MotionEvent.obtain(
                         downAt,
-                        SystemClock.uptimeMillis(),
+                        eventTime,
                         action,
                         1, // pointerCount
                         arrayOf(finger),
@@ -617,9 +622,13 @@ class NativeChatListTest {
                 }
             }
             val personalChat = By.pkg(app.packageName).text("Personal chat")
-            fun captureSwipe(displacement: Int, name: String) {
+            fun captureSwipe(
+                displacement: Int,
+                name: String,
+                eventTime: Long = SystemClock.uptimeMillis(),
+            ) {
                 val point = swipePoint(displacement, 0)
-                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point))
+                assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, point, eventTime))
                 val targetRight = row.right + point.x - start.x
                 Log.d(
                     "SwipeProbe",
@@ -648,10 +657,10 @@ class NativeChatListTest {
                 assertTrue("Chat row failed to follow the $displacement dp swipe", matched)
                 ScreenshotCapture.capture("$name.png")
             }
-            assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start))
+            assertTrue(injectSwipeEvent(MotionEvent.ACTION_DOWN, start, downAt))
             var released = false
             try {
-                captureSwipe(-36, "android-swipe-archive-icon")
+                captureSwipe(-36, "android-swipe-archive-icon", downAt + 8L)
                 captureSwipe(-104, "android-swipe-archive-ready")
                 val diagonal = swipePoint(-96, 72)
                 assertTrue(injectSwipeEvent(MotionEvent.ACTION_MOVE, diagonal))
