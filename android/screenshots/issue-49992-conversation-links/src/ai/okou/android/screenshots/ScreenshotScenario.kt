@@ -16,7 +16,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import ai.okou.android.testAuthenticationState
 import android.util.Log
-import android.view.KeyEvent
+import android.view.WindowInsets
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -129,7 +129,9 @@ class ScreenshotScenario {
                     text("Project release update", partial = true).click()
                     text("Release checklist approved. The launch may proceed.")
                     ScreenshotCapture.capture("02-phone-message-target.png")
-                    check(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
+                    val systemBack = await(By.res("com.android.launcher3", "back"))
+                    check(systemBack.isClickable)
+                    systemBack.click()
                     text("Project release update", partial = true)
                     ScreenshotCapture.capture("03-phone-source-return.png")
 
@@ -157,6 +159,11 @@ class ScreenshotScenario {
                                     "LinkCapture",
                                     "History phase=${state?.phase}, source=${state?.source}, transcript=${state?.transcript?.messages?.size}",
                                 )
+                            val decor = activity.window.decorView
+                            Log.i(
+                                "LinkCapture",
+                                "Window focused=${decor.hasWindowFocus()}, IME=${decor.rootWindowInsets?.isVisible(WindowInsets.Type.ime())}",
+                            )
                             }
                             ScreenshotCapture.capture("99-diagnostic.png")
                             TestStorage().openOutputFile("99-hierarchy.xml").use {
