@@ -227,12 +227,12 @@ class ScreenshotScenario {
                             }
                         }
                     check(device.wait(keyboardHidden, 12_000)) { "The search keyboard remained open" }
-                    check(device.pressBack())
+                    await(By.res("com.android.launcher3", "back")).click()
                     text("Project release update", partial = true)
                     await(searchQuery)
                     awaitSavedDraft()
                     ScreenshotCapture.capture("07-wide-search-return.png")
-                    check(device.pressBack())
+                    await(By.res("com.android.launcher3", "back")).click()
                     device.awaitChatList(app)
 
                     text("Project release update", partial = true).click()
