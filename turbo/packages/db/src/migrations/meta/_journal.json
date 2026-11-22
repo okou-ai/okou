@@ -3758,14 +3758,7 @@
       "idx": 1615,
       "version": "7",
       "when": 1795317682056,
-      "tag": "1615_prepare_legacy_agent_api",
-      "breakpoints": true
-    },
-    {
-      "idx": 1616,
-      "version": "7",
-      "when": 1795317702706,
-      "tag": "1616_retire_agents_table",
+      "tag": "1615_retire_agents_table",
       "breakpoints": true
     }
   ]

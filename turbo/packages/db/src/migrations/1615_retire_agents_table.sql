@@ -13,11 +13,8 @@ CREATE TABLE "legacy_agent_api_profiles" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX "idx_legacy_agent_api_workspace" ON "legacy_agent_api_profiles" USING btree ("org_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "uq_legacy_agent_api_workspace_name" ON "legacy_agent_api_profiles" USING btree ("org_id","name");
---> statement-breakpoint
--- Drain any prior writers before copying the last committed legacy state.
-LOCK TABLE public.agents IN SHARE ROW EXCLUSIVE MODE;
+-- Freeze legacy writes until their copy and the drop commit together.
+LOCK TABLE public.agents IN ACCESS EXCLUSIVE MODE;
 --> statement-breakpoint
 INSERT INTO public.legacy_agent_api_profiles
   (id, org_id, owner, name, visibility, display_name, description, instructions,
@@ -26,15 +23,11 @@ SELECT id, org_id, owner, name, visibility, display_name, description, instructi
        instructions_bundle, sound, avatar_url, updated_at
 FROM public.agents;
 --> statement-breakpoint
-CREATE FUNCTION public.reject_retired_agent_write() RETURNS trigger
-LANGUAGE plpgsql AS $$
-BEGIN
-  RAISE EXCEPTION 'Legacy profile writes must use the upgraded API' USING ERRCODE = '55000';
-END;
-$$;
+DROP FUNCTION public.update_agent_metadata(text, uuid, text, boolean, boolean, text, integer, bytea, timestamp without time zone);
 --> statement-breakpoint
-CREATE TRIGGER reject_retired_agent_write BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE
-ON public.agents FOR EACH STATEMENT EXECUTE FUNCTION public.reject_retired_agent_write();
+DROP TABLE public.agents RESTRICT;--> statement-breakpoint
+CREATE INDEX "idx_legacy_agent_api_workspace" ON "legacy_agent_api_profiles" USING btree ("org_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_legacy_agent_api_workspace_name" ON "legacy_agent_api_profiles" USING btree ("org_id","name");
 --> statement-breakpoint
 -- One caller-owned statement; no explicit transaction, trigger or new lock.
 -- VOLATILE is required: internal statements take fresh READ COMMITTED snapshots.

@@ -1,5 +1,9 @@
 import { array } from "zod";
-import { composerDraftContract } from "../contracts/agent-draft";
+import {
+  agentDraftContract,
+  composerDraftContract,
+} from "../contracts/agent-draft";
+import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import {
@@ -109,7 +113,7 @@ const iosChatThreadArtifactsResponseSchema =
  * Add route references when adding calls in ios/Packages/ChatData or the App.
  * Wire DTO generation is independent; this gate protects installed Codable readers.
  */
-const iosContracts: readonly {
+export const iosClientContracts: readonly {
   readonly id: string;
   readonly route: RuntimeApiRouteLike & {
     readonly responses: Readonly<Record<number, unknown>>;
@@ -551,15 +555,26 @@ const iosContracts: readonly {
   },
 ];
 
-export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =
-  iosContracts.map(({ id, route }) => {
-    return {
-      id,
-      owner: "ios",
-      // The global compatibility middleware can answer 426 before route matching.
-      route: {
-        ...route,
-        responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
-      },
-    };
-  });
+// Keep checking the server contracts used by installed builds until the mobile
+// version floor excludes them. New Swift calls use iosClientContracts only.
+const installedIosAgentContracts = [
+  { id: "ios.agentDraftContract.get", route: agentDraftContract.get },
+  { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
+  { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
+  { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
+];
+
+export const iosRouteBindings: readonly RuntimeApiRouteBinding[] = [
+  ...iosClientContracts,
+  ...installedIosAgentContracts,
+].map(({ id, route }) => {
+  return {
+    id,
+    owner: "ios",
+    // The global compatibility middleware can answer 426 before route matching.
+    route: {
+      ...route,
+      responses: { ...route.responses, 426: iosUpgradeRequiredSchema },
+    },
+  };
+});

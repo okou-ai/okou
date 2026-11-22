@@ -304,7 +304,7 @@ fi
 
 # Older releases still read or write agents and cannot serve the contracted schema.
 agent_contraction_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
-  origin/main -- turbo/packages/db/src/migrations/1616_retire_agents_table.sql | sed -n '1p')
+  origin/main -- turbo/packages/db/src/migrations/1615_retire_agents_table.sql | sed -n '1p')
 if [[ ! "$agent_contraction_commit" =~ ^[0-9a-f]{40}$ ]]; then
   fail "Cannot resolve the merged Agent storage contraction on main."
 fi

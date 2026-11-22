@@ -1664,7 +1664,7 @@ jobs:
         run: |
           echo "Running production migrations on production"
           cd turbo
-          if [[ "$AGENT_CUTOVER" == "true" ]]; then
+          if [ "$AGENT_CUTOVER" = "true" ]; then
             pnpm -F @okouai/db db:migrate --before-agent-retirement
           else
             pnpm -F @okouai/db db:migrate

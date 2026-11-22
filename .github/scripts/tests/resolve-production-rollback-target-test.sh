@@ -413,7 +413,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_WORKFLOW_ATTACHMENT_COMMIT-7171717171717171717171717171717171717171}"
     elif [[ "$*" == *rollback-floors/wechat-workflows-only* ]]; then
       printf '%s\n' "${MOCK_WECHAT_WORKFLOWS_ONLY_COMMIT-5959595959595959595959595959595959595959}"
-    elif [[ "$*" == *1616_retire_agents_table.sql* ]]; then
+    elif [[ "$*" == *1615_retire_agents_table.sql* ]]; then
       printf '%s\n' "bcd1540000000000000000000000000000000000"
     elif [[ "$*" == *1375_workflow_name_scopes.sql* ]]; then
       printf '%s\n' "${MOCK_WORKFLOW_NAME_SCOPES_COMMIT-52525252525252525252525252525252525252ab}"

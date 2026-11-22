@@ -20,7 +20,7 @@ async function runMigrations() {
       throw new Error("Unknown database migration option");
     }
     const beforeMillis = options.length
-      ? await migrationTimestamp("1616_retire_agents_table")
+      ? await migrationTimestamp("1615_retire_agents_table")
       : undefined;
     await applyPendingMigrations(sql, { beforeMillis });
     console.log("Migrations complete");

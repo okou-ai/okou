@@ -3738,7 +3738,7 @@ describe("POST /api/webhooks/teams/bot", () => {
     });
   });
 
-  it("asks connected Teams users to configure a default agent", async () => {
+  it("checks the connected member’s credits when no Agent profile exists", async () => {
     const fixture = await trackTeamsFixture(
       Promise.resolve(teamsConnectFixture()),
     );
@@ -3769,7 +3769,7 @@ describe("POST /api/webhooks/teams/bot", () => {
       activityId,
       body: {
         type: "message",
-        text: expect.stringContaining("No agent is configured"),
+        text: expect.stringContaining("Insufficient credits"),
         replyToId: activityId,
       },
     });
