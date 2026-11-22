@@ -77,6 +77,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -207,6 +208,53 @@ class ChatListRootTest {
         compose.waitUntilExactlyOneExists(hasText("This conversation link is unavailable"), 10_000)
         compose.onNode(hasText("Personal chat") and detailTitle).assertIsDisplayed()
         editor.assertTextContains("Source draft")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun offlineMessageLinkUsesCachedHistoryAndReturnsToSourceWhenHistoryIsUnavailable() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT#event-output)"
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        val historyRows = app.fixture.historyRows
+        app.fixture.historyRows = { request ->
+            if (
+                !app.connectivity.value &&
+                    request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT
+            )
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+            else historyRows(request)
+        }
+        fun setConnected(value: Boolean) {
+            compose.runOnIdle { app.connectivity.value = value }
+            compose.waitUntil(10_000) { currentList()?.offline == !value }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        awaitInlineLink("Project update")
+        val link = compose.onNodeWithText("Project update", substring = true)
+        val hit = hasTestTag("conversation_find_hit")
+        val unavailable = hasText("This conversation link is unavailable")
+
+        setConnected(false)
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(unavailable, 10_000)
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+
+        setConnected(true)
+        awaitInlineLink("Project update")
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hit, 10_000)
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithText("Personal chat").assertIsDisplayed()
+        awaitInlineLink("Project update")
+
+        setConnected(false)
+        link.performFirstLinkClick()
+        compose.waitUntilExactlyOneExists(hit, 10_000)
+        compose.onNodeWithText("Project chat").assertIsDisplayed()
+        compose.onNode(unavailable).assertDoesNotExist()
     }
 
     @Test
