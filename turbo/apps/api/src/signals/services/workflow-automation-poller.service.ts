@@ -1,3 +1,6 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
+import { executionAgentId } from "./execution-agent";
+import { agents } from "@okouai/db/schema/agent";
 import { selectDueMorningBriefWorkflow$ } from "./morning-brief-workflow-selection.service";
 import { workflowAutomationSnapshot } from "./workflow-automation-snapshot";
 import { MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY } from "@okouai/api-contracts/contracts/morning-brief-preference";
@@ -239,14 +242,24 @@ const dueWorkflowAutomationRows$ = command(
     const rows = await db
       .select({
         automation: workflowAutomationColumns(),
-        agentId: workflows.agentId,
+        agentId: agents.id,
         workflowName: workflows.name,
         workflowDisplayName: workflows.displayName,
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
         userTimezone: orgMembersMetadata.timezone,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
+      .innerJoin(
+        agents,
+        eq(
+          agents.id,
+          executionAgentId(
+            workflowAutomations.orgId,
+            workflowAutomations.ownerUserId,
+          ),
+        ),
+      )
       .leftJoin(
         workflowUserAutomationThreads,
         and(

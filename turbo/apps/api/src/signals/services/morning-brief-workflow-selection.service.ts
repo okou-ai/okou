@@ -6,14 +6,13 @@ import {
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
 import { and, eq, exists, isNotNull } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
@@ -29,7 +28,7 @@ import { loadProactiveWorkflowsEligibility$ } from "./proactive-workflows-eligib
 // internal-test-morning-brief, and remove these selection commands and callers.
 export const selectedMorningBriefDefinition$ = command(
   async (
-    { get, set },
+    { set },
     owner: {
       readonly orgId: string;
       readonly userId: string;
@@ -37,14 +36,12 @@ export const selectedMorningBriefDefinition$ = command(
     },
     signal: AbortSignal,
   ): Promise<string> => {
-    const [[org], features] = await Promise.all([
-      get(db$)
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, owner.orgId))
-        .limit(1),
-      set(loadUserFeatureSwitchContext$, owner.orgId, owner.userId, signal),
-    ]);
+    const features = await set(
+      loadUserFeatureSwitchContext$,
+      owner.orgId,
+      owner.userId,
+      signal,
+    );
     signal.throwIfAborted();
     const proactive = await set(
       loadProactiveWorkflowsEligibility$,
@@ -52,7 +49,7 @@ export const selectedMorningBriefDefinition$ = command(
       signal,
     );
     return proactive.suggestions.active &&
-      org?.defaultAgentId === owner.agentId &&
+      proactive.agentId === owner.agentId &&
       isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, features)
       ? INTERNAL_TEST_MORNING_BRIEF_DEFINITION_NAME
       : MORNING_BRIEF_OFFICIAL_DEFINITION_NAME;
@@ -140,7 +137,7 @@ export const selectDueMorningBriefWorkflow$ = command(
                     eq(workflows.id, automation.workflowId),
                     eq(workflows.orgId, automation.orgId),
                     eq(workflows.ownerUserId, automation.ownerUserId),
-                    eq(workflows.agentId, args.agentId),
+
                     eq(workflows.officialDefinitionName, args.workflowName),
                     eq(workflows.officialInstallationState, "installed"),
                   ),

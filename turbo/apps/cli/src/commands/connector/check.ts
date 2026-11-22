@@ -45,9 +45,9 @@ import {
 import {
   CALLBACK_PROMPT_PLACEHOLDER,
   connectorActionUrl,
-  connectorActionCallbackAvailable,
   printCallbackActionUrlExample,
 } from "./action-url";
+import { currentPermissionCallbackThread } from "./permission-action-url";
 import {
   isRunBoundConnectorContext,
   resolveRunConnectorAccountLookups,
@@ -397,7 +397,7 @@ function printPermissionRequestCommands(
     request,
   );
   console.log(`${introduction}: ${command}`);
-  if (!connectorActionCallbackAvailable()) {
+  if (!currentPermissionCallbackThread()) {
     return;
   }
 

@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -310,7 +311,7 @@ const loadChatRunFinishedAutomationTargets$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

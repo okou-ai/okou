@@ -1,9 +1,9 @@
+import { selectedExecutionAgent } from "./execution-agent";
 import { computed, type Computed } from "ccstate";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 import { eq } from "drizzle-orm";
 
@@ -136,19 +136,17 @@ function slackDefaultAgentName(args$: Computed<SlackStatusArgs>) {
     let defaultAgentName: string | null = null;
 
     const [orgMeta] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
+      .select()
+      .from(selectedExecutionAgent(args.orgId, args.userId));
 
-    if (orgMeta?.defaultAgentId) {
+    if (orgMeta?.id) {
       const [agent] = await db
         .select({
           displayName: agents.displayName,
           name: agents.name,
         })
         .from(agents)
-        .where(eq(agents.id, orgMeta.defaultAgentId))
+        .where(eq(agents.id, orgMeta.id))
         .limit(1);
       defaultAgentName = agent?.displayName ?? agent?.name ?? null;
     }

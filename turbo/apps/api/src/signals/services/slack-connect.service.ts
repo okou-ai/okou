@@ -1,10 +1,10 @@
+import { selectedExecutionAgent, executionAgentId } from "./execution-agent";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import { agents } from "@okouai/db/schema/agent";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { slackOrgConnections } from "@okouai/db/schema/slack-org-connection";
 import { slackOrgInstallations } from "@okouai/db/schema/slack-org-installation";
 import { and, eq, isNull, ne, or } from "drizzle-orm";
@@ -99,11 +99,11 @@ const refreshSlackAppHome$ = command(
     let agentName: string | undefined;
     if (args.installation.orgId) {
       const [metadata] = await db
-        .select({ defaultAgentId: orgMetadata.defaultAgentId })
-        .from(orgMetadata)
-        .where(eq(orgMetadata.orgId, args.installation.orgId))
-        .limit(1);
-      const defaultAgentId = metadata?.defaultAgentId ?? null;
+        .select()
+        .from(
+          selectedExecutionAgent(args.installation.orgId, connection.userId),
+        );
+      const defaultAgentId = metadata?.id ?? null;
       if (defaultAgentId) {
         const [agent] = await db
           .select({ name: agents.name, displayName: agents.displayName })
@@ -247,16 +247,14 @@ export function slackConnectStatus(
     }
 
     const [metadata] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
+      .select()
+      .from(selectedExecutionAgent(args.orgId, args.userId));
 
-    const [agent] = metadata?.defaultAgentId
+    const [agent] = metadata?.id
       ? await db
           .select({ name: agents.name })
           .from(agents)
-          .where(eq(agents.id, metadata.defaultAgentId))
+          .where(eq(agents.id, metadata.id))
           .limit(1)
       : [];
 
@@ -338,11 +336,10 @@ export const notifySlackConnect$ = command(
         agentDisplayName: agents.displayName,
       })
       .from(slackOrgConnections)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, args.orgId))
       .leftJoin(
         agents,
         and(
-          eq(agents.id, orgMetadata.defaultAgentId),
+          eq(agents.id, executionAgentId(args.orgId, args.userId)),
           eq(agents.orgId, args.orgId),
         ),
       )

@@ -1,3 +1,7 @@
+import {
+  iosWorkflowListTransform,
+  iosWorkflowDetailTransform,
+} from "./workflow-executor";
 import { iosChatUltrafastTransforms } from "./chat-ultrafast";
 import type { ClientResponseTransform } from "./types";
 import {
@@ -9,6 +13,8 @@ import {
 // their own transforms directly and never load this aggregate registry.
 export const iosResponseTransforms: readonly ClientResponseTransform[] = [
   ...Object.values(iosChatUltrafastTransforms),
+  iosWorkflowListTransform,
+  iosWorkflowDetailTransform,
   iosEmailChatRowsTransform,
   iosEmailChatCatchUpTransform,
 ];

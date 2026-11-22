@@ -1,13 +1,13 @@
+import { DEFAULT_AGENT_NAME } from "./default-agent-profile";
+import { executionAgentId } from "./execution-agent";
 import { computed, type Computed } from "ccstate";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
-import { and, count, desc, eq, notExists, or } from "drizzle-orm";
+import { and, count, desc, eq, or } from "drizzle-orm";
 import { agentAvatarUrlForDefaultAgent } from "@okouai/core/agent-avatar";
 import { agentDisplayName } from "@okouai/core/brand-presentation";
 
 import { db$ } from "../external/db";
-import { QueryBuilder } from "drizzle-orm/pg-core";
 
 export function agentResponse(row: {
   readonly agentId: string;
@@ -46,20 +46,11 @@ export function publicAgentCountReadPlan(orgId: string) {
   };
 }
 
-export function defaultAgentJoinCondition() {
+export function sharedExecutorCondition(orgId: string) {
   return and(
-    eq(agents.id, orgMetadata.defaultAgentId),
-    eq(agents.orgId, orgMetadata.orgId),
-  );
-}
-
-/** Apply the immutable workspace default identity at the write boundary. */
-export function nonDefaultAgentCondition(orgId: string) {
-  return notExists(
-    new QueryBuilder()
-      .select({ orgId: orgMetadata.orgId })
-      .from(orgMetadata)
-      .where(and(eq(orgMetadata.orgId, orgId), defaultAgentJoinCondition())),
+    eq(agents.orgId, orgId),
+    eq(agents.name, DEFAULT_AGENT_NAME),
+    eq(agents.visibility, "public"),
   );
 }
 
@@ -91,7 +82,7 @@ export function agentList(
     const rows = await get(db$)
       .select({
         agentId: agents.id,
-        defaultAgentId: orgMetadata.defaultAgentId,
+        defaultAgentId: executionAgentId(agents.orgId),
         owner: agents.owner,
         displayName: agents.displayName,
         description: agents.description,
@@ -100,7 +91,6 @@ export function agentList(
         visibility: agents.visibility,
       })
       .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
       .where(and(eq(agents.orgId, orgId), visibleAgentCondition(userId)))
       .orderBy(desc(agents.updatedAt));
 

@@ -1,3 +1,4 @@
+import { executionAgentId } from "./execution-agent";
 import { feishuCommandDisconnectSql } from "./feishu-disconnect-plan";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
 import {
@@ -70,7 +71,6 @@ export interface FeishuDispatchInstallation {
   readonly platform: FeishuPlatform;
   readonly orgId: string;
   readonly ownerUserId: string | null;
-  readonly defaultAgentId: string;
   readonly botName: string | null;
   readonly messageReceivedAt: Date | null;
 }
@@ -222,7 +222,10 @@ export function feishuEffectiveAgentReadPlan(args: {
   readonly installation: FeishuDispatchInstallation;
   readonly connection: FeishuDispatchConnection;
 }) {
-  const composeId = args.installation.defaultAgentId;
+  const composeId = executionAgentId(
+    args.installation.orgId,
+    args.connection.userId,
+  );
   return {
     visibleColumns: {
       id: agents.id,
