@@ -28,6 +28,7 @@ import androidx.core.graphics.ColorUtils
 
 internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
 internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
+internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
 
 private fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
     when (palette) {
@@ -94,6 +95,7 @@ fun OkouTheme(
             CompositionLocalProvider(
                 LocalActivityStatusColor provides activityStatusColor(palette, dark),
                 LocalUndoActionColor provides undoAction,
+                LocalOkouDarkMode provides dark,
                 LocalTextSelectionColors provides
                     TextSelectionColors(
                         handleColor = colors.onSurface,

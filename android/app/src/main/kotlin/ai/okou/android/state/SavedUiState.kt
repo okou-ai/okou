@@ -63,6 +63,67 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 }
 
 @Composable
+internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
+    mutableStateOf(false)
+}
+
+internal class ConnectorDirectoryState(
+    slug: String? = null,
+    category: String? = null,
+    connected: Boolean = false,
+    query: TextFieldValue = TextFieldValue(),
+) {
+    var slug by mutableStateOf(slug)
+    var category by mutableStateOf(category)
+    var connected by mutableStateOf(connected)
+    var query by mutableStateOf(query)
+        private set
+
+    var committedQuery by mutableStateOf(query)
+        private set
+
+    val hasPendingSearchInput: Boolean
+        get() = query.composition != null && query.text != committedQuery.text
+
+    fun editQuery(value: TextFieldValue) {
+        query = value
+        if (value.composition == null) committedQuery = value
+    }
+}
+
+@Composable
+internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+    rememberSaveable(
+        saver =
+            listSaver<ConnectorDirectoryState, Any>(
+                save = {
+                    val query =
+                        it.committedQuery.takeIf { value ->
+                            value.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS
+                        } ?: TextFieldValue()
+                    listOf(
+                        it.slug.orEmpty(),
+                        it.category.orEmpty(),
+                        it.connected,
+                        query.text,
+                        query.selection.start,
+                        query.selection.end,
+                    )
+                },
+                restore = {
+                    ConnectorDirectoryState(
+                        (it[0] as String).ifEmpty { null },
+                        (it[1] as String).ifEmpty { null },
+                        it[2] as Boolean,
+                        TextFieldValue(it[3] as String, TextRange(it[4] as Int, it[5] as Int)),
+                    )
+                },
+            )
+    ) {
+        ConnectorDirectoryState()
+    }
+
+@Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable

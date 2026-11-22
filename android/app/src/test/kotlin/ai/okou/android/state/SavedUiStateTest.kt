@@ -38,9 +38,12 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -51,6 +54,29 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun connectorSearchOnlyAppliesCommittedInput() {
+        val committed = TextFieldValue("Calendar", TextRange(8))
+        val composing = TextFieldValue("Calendar ri", TextRange(11), TextRange(9, 11))
+        val completed = TextFieldValue("Calendar 日", TextRange(10))
+        val route = ConnectorDirectoryState(query = committed)
+
+        route.editQuery(composing)
+        assertEquals(composing, route.query)
+        assertEquals(committed, route.committedQuery)
+        assertTrue(route.hasPendingSearchInput)
+
+        val submitted = composing.copy(composition = null)
+        route.editQuery(submitted)
+        route.editQuery(composing)
+        assertEquals(submitted, route.committedQuery)
+        assertFalse(route.hasPendingSearchInput)
+
+        route.editQuery(completed)
+        assertEquals(completed, route.query)
+        assertEquals(completed, route.committedQuery)
+    }
 
     @Test
     fun searchRestoresTheSameResultWhenCacheAddsAnEarlierMatch() {

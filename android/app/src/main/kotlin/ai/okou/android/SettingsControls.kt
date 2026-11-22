@@ -23,23 +23,24 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ModalBottomSheetProperties
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -217,19 +220,31 @@ internal fun SettingsSwitchRow(
         }
         Box(Modifier.width(52.dp)) {
             if (checked != null) {
-                val outline = MaterialTheme.colorScheme.onSurfaceVariant
-                Switch(
-                    checked,
-                    onCheckedChange = null,
-                    enabled = onCheckedChange != null,
-                    colors =
-                        SwitchDefaults.colors(
-                            uncheckedThumbColor = outline,
-                            uncheckedBorderColor = outline,
-                        ),
-                )
+                OkouSwitch(checked, enabled = onCheckedChange != null)
             }
         }
+    }
+}
+
+@Composable
+internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val dark = LocalOkouDarkMode.current
+    val activity = LocalActivityStatusColor.current
+    val switchColors =
+        remember(colors, dark, activity) {
+            colors.copy(
+                primary = if (dark) colors.primary else activity,
+                onPrimary = if (dark) colors.onPrimary else Color.White,
+                surfaceContainerHighest =
+                    colors.onSurface
+                        .copy(alpha = if (dark) 0.16f else 0.12f)
+                        .compositeOver(colors.surface),
+                outline = colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface),
+            )
+        }
+    MaterialTheme(colorScheme = switchColors) {
+        Switch(checked = checked, enabled = enabled, onCheckedChange = null)
     }
 }
 
@@ -275,13 +290,19 @@ internal fun SettingsTrigger(
 @Composable
 internal fun SettingsModal(
     onDismiss: () -> Unit,
+    dismissible: Boolean = true,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
     if (workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
             onDismissRequest = onDismiss,
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            properties =
+                DialogProperties(
+                    dismissOnBackPress = dismissible,
+                    dismissOnClickOutside = dismissible,
+                    usePlatformDefaultWidth = false,
+                ),
         ) {
             Surface(
                 Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
@@ -292,12 +313,24 @@ internal fun SettingsModal(
             }
         }
     } else {
+        val allowDismiss by rememberUpdatedState(dismissible)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState =
+                rememberBottomSheetState(
+                    initialValue = SheetValue.Hidden,
+                    enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+                    confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
+                ),
+            sheetGesturesEnabled = dismissible,
             sheetMaxWidth = 460.dp,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
+            properties =
+                ModalBottomSheetProperties(
+                    shouldDismissOnBackPress = dismissible,
+                    shouldDismissOnClickOutside = dismissible,
+                ),
         ) {
             content(false)
         }
@@ -343,39 +376,48 @@ internal fun SettingsSheet(
 }
 
 @Composable
-internal fun SettingsConfirmation(
+internal fun OkouConfirmationDialog(
     title: String,
-    message: String,
     confirm: String,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    confirmEnabled: Boolean = true,
+    dismissEnabled: Boolean = true,
+    content: @Composable () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val actions = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.widthIn(max = 360.dp),
         shape = RoundedCornerShape(28.dp),
-        containerColor = colors.surface,
-        title = { Text(title) },
-        text = { Text(message) },
+        containerColor = colors.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        titleContentColor = colors.onSurface,
+        textContentColor = colors.onSurfaceVariant,
+        properties =
+            DialogProperties(
+                dismissOnBackPress = dismissEnabled,
+                dismissOnClickOutside = dismissEnabled,
+            ),
+        title = { Text(title, Modifier.semantics { heading() }, fontWeight = FontWeight.SemiBold) },
+        text = content,
         dismissButton = {
             TextButton(
                 onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                modifier = Modifier.heightIn(min = 48.dp),
+                enabled = dismissEnabled,
+                colors = actions,
             ) {
                 Text(stringResource(R.string.settings_cancel))
             }
         },
         confirmButton = {
-            Button(
+            TextButton(
                 onClick = onConfirm,
-                shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.heightIn(min = 48.dp),
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = colors.inverseSurface,
-                        contentColor = colors.inverseOnSurface,
-                    ),
+                enabled = confirmEnabled,
+                colors = actions,
             ) {
                 Text(confirm)
             }

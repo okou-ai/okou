@@ -224,6 +224,16 @@ class ApiClient(
         api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
     }
 
+    internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        execute {
+            reads.request(it)
+        }
+
+    internal suspend fun <T> write(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        execute {
+            api.request(it)
+        }
+
     suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
         api.resetSubscription(
             it,

@@ -2,9 +2,9 @@ package ai.okou.android.auth
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouApp
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsChoiceRow
-import ai.okou.android.SettingsConfirmation
 import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
@@ -142,6 +142,7 @@ internal fun SessionRoot(
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,
                     chatArtifacts = ready?.chatArtifacts,
+                    connectors = ready?.connectors,
                     workspaceName = workspaceName,
                     workspaceAvatar = {
                         WorkspaceAvatar(
@@ -529,16 +530,17 @@ private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
         HorizontalDivider()
         SettingsTrigger(
             content = { dismiss ->
-                SettingsConfirmation(
+                OkouConfirmationDialog(
                     title = stringResource(R.string.settings_sign_out_title),
-                    message = stringResource(R.string.settings_sign_out_body),
                     confirm = stringResource(R.string.auth_sign_out),
                     onDismiss = dismiss,
                     onConfirm = {
                         dismiss()
                         signOut()
                     },
-                )
+                ) {
+                    Text(stringResource(R.string.settings_sign_out_body))
+                }
             }
         ) { modifier, open ->
             SettingsRow(

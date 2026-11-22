@@ -42,6 +42,18 @@ import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
+import { connectorCatalogContract } from "../contracts/connector-catalog";
+import { connectorAccountsContract } from "../contracts/connector-accounts";
+import { chatConnectorAccessContract } from "../contracts/chat-connector-access";
+import {
+  builtinConnectorAutomaticContract,
+  builtinConnectorExternalCodeSessionContract,
+  builtinConnectorManualGrantContract,
+  builtinConnectorNoAuthGrantContract,
+  builtinConnectorOauthDeviceAuthSessionContract,
+  builtinConnectorOauthStartContract,
+  builtinConnectorOpenIdStartContract,
+} from "../contracts/connectors";
 
 export interface KotlinRouteBinding {
   readonly authenticated?: boolean;
@@ -115,8 +127,135 @@ const historyReadBindings = [
   },
 ] satisfies readonly KotlinRouteBinding[];
 
+const connectorBindings = [
+  {
+    name: "connectorDiscovery",
+    response: "ConnectorDiscovery",
+    route: connectorCatalogContract.discovery,
+  },
+  {
+    name: "connectorDetail",
+    response: "ConnectorDetail",
+    route: connectorCatalogContract.get,
+  },
+  {
+    name: "connectorPermissions",
+    response: "ConnectorPermissions",
+    route: connectorCatalogContract.permissions,
+  },
+  {
+    name: "connectorOverview",
+    response: "ConnectorOverview",
+    route: chatConnectorAccessContract.overview,
+  },
+  {
+    name: "connectorAccountDefaults",
+    response: "ConnectorAccountDefaults",
+    route: chatConnectorAccessContract.accountDefaults,
+  },
+  {
+    name: "connectorAccountDefaultUpdate",
+    response: "ConnectorAccountDefault",
+    request: "ConnectorAccountDefaultRequest",
+    route: chatConnectorAccessContract.updateAccountDefault,
+  },
+  {
+    name: "connectorAccounts",
+    response: "ConnectorAccounts",
+    route: connectorAccountsContract.connections,
+  },
+  {
+    name: "connectorAccount",
+    response: "ConnectorAccount",
+    route: connectorAccountsContract.connection,
+  },
+  {
+    name: "connectorAccountInspect",
+    response: "ConnectorAccountInspection",
+    request: "ConnectorAccountInspectionRequest",
+    route: connectorAccountsContract.inspect,
+  },
+  {
+    name: "connectorAccountRename",
+    response: "ConnectorAccount",
+    request: "ConnectorAccountRenameRequest",
+    route: connectorAccountsContract.rename,
+  },
+  {
+    name: "connectorAccountImpact",
+    response: "ConnectorAccountImpact",
+    route: connectorAccountsContract.deletionImpact,
+  },
+  {
+    name: "connectorAccountDelete",
+    response: "ConnectorAccountDeletion",
+    request: "ConnectorAccountTargetRequest",
+    route: connectorAccountsContract.delete,
+  },
+  {
+    name: "connectorOauthCompletion",
+    response: "ConnectorOauthCompletion",
+    route: connectorAccountsContract.oauthCompletion,
+  },
+  {
+    name: "connectorOauthStart",
+    response: "ConnectorOauthStart",
+    request: "ConnectorOauthStartRequest",
+    route: builtinConnectorOauthStartContract.start,
+  },
+  {
+    name: "connectorOpenIdStart",
+    response: "ConnectorOauthStart",
+    request: "ConnectorOpenIdStartRequest",
+    route: builtinConnectorOpenIdStartContract.start,
+  },
+  {
+    name: "connectorAutomaticStart",
+    response: "ConnectorAutomaticStart",
+    request: "ConnectorAutomaticStartRequest",
+    route: builtinConnectorAutomaticContract.start,
+  },
+  {
+    name: "connectorNoAuth",
+    response: "ConnectorGrant",
+    request: "ConnectorNoAuthRequest",
+    route: builtinConnectorNoAuthGrantContract.connect,
+  },
+  {
+    name: "connectorManual",
+    response: "ConnectorGrant",
+    request: "ConnectorManualRequest",
+    route: builtinConnectorManualGrantContract.connect,
+  },
+  {
+    name: "connectorDeviceStart",
+    response: "ConnectorDeviceStart",
+    request: "ConnectorDeviceStartRequest",
+    route: builtinConnectorOauthDeviceAuthSessionContract.create,
+  },
+  {
+    name: "connectorDevicePoll",
+    response: "ConnectorDevicePoll",
+    request: "ConnectorDevicePollRequest",
+    route: builtinConnectorOauthDeviceAuthSessionContract.poll,
+  },
+  {
+    name: "connectorExternalStart",
+    response: "ConnectorExternalStart",
+    request: "ConnectorExternalStartRequest",
+    route: builtinConnectorExternalCodeSessionContract.create,
+  },
+  {
+    name: "connectorExternalComplete",
+    response: "ConnectorExternalComplete",
+    request: "ConnectorExternalCompleteRequest",
+    route: builtinConnectorExternalCodeSessionContract.complete,
+  },
+] as const satisfies readonly KotlinRouteBinding[];
+
 /** Only routes used by the installed native client, not every Web contract. */
 export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
+  ...connectorBindings,
   {
     name: "artifactCatalog",
     response: "ArtifactCatalog",
@@ -338,7 +477,33 @@ export interface KotlinTypeBinding {
   readonly preserveOptionalNullable?: readonly string[];
 }
 
+const connectorTypeBindings: KotlinTypeBinding[] = connectorBindings.flatMap(
+  (binding): KotlinTypeBinding[] => {
+    const response = {
+      name: binding.response,
+      schema: binding.route.responses[200],
+      direction: "output",
+    } as const;
+    if (!("request" in binding)) {
+      return [response];
+    }
+    return [
+      response,
+      {
+        name: binding.request,
+        schema: binding.route.body,
+        direction: "input",
+      },
+    ];
+  },
+);
+
 export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
+  ...new Map(
+    connectorTypeBindings.map((binding) => {
+      return [binding.name, binding] as const;
+    }),
+  ).values(),
   {
     name: "ArtifactCatalog",
     schema: artifactCatalogContract.list.responses[200],

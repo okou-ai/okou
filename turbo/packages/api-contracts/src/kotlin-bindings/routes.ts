@@ -148,7 +148,8 @@ export function queryBinding(
   if (!route.query) return { parameters: [] };
   // Query arguments describe post-coercion values. Defaults remain explicit.
   const schema = toJSONSchema(route.query, { io: "output" });
-  const union = Array.isArray(schema.anyOf) ? schema.anyOf : null;
+  const unionSchema = schema.anyOf ?? schema.oneOf;
+  const union = Array.isArray(unionSchema) ? unionSchema : null;
   const hasStringChoices =
     schemaObject(schema.properties) &&
     Object.values(schema.properties).some((value) => {
