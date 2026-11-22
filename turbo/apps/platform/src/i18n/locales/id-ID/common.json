@@ -2272,12 +2272,12 @@
       "unavailable": "Email ini tidak lagi tersedia."
     },
     "messageDocument": {
-      "voice": "Pesan suara",
-      "voiceClip": "Klip suara {{index}}",
       "agent": "[Agen: {{name}}]",
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Template: {{title}}]"
+      "template": "[Template: {{title}}]",
+      "voice": "Pesan suara",
+      "voiceClip": "Klip suara {{index}}"
     },
     "newChat": "Chat baru",
     "origins": {

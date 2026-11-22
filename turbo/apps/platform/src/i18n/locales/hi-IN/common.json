@@ -2281,12 +2281,12 @@
       "unavailable": "यह ईमेल अब उपलब्ध नहीं है."
     },
     "messageDocument": {
-      "voice": "वॉइस मैसेज",
-      "voiceClip": "वॉइस क्लिप {{index}}",
       "agent": "[एजेंट: {{name}}]",
       "chatThread": "[चैट थ्रेड: {{title}}]",
       "file": "[फ़ाइल: {{filename}}]",
-      "template": "[टेम्पलेट: {{title}}]"
+      "template": "[टेम्पलेट: {{title}}]",
+      "voice": "वॉइस मैसेज",
+      "voiceClip": "वॉइस क्लिप {{index}}"
     },
     "newChat": "नई चैट",
     "origins": {

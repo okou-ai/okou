@@ -2317,12 +2317,12 @@
       "unavailable": "Questa email non è più disponibile."
     },
     "messageDocument": {
-      "voice": "Messaggio vocale",
-      "voiceClip": "Clip vocale {{index}}",
       "agent": "[Agente: {{name}}]",
       "chatThread": "[Thread di chat: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Modello: {{title}}]"
+      "template": "[Modello: {{title}}]",
+      "voice": "Messaggio vocale",
+      "voiceClip": "Clip vocale {{index}}"
     },
     "newChat": "Nuova chat",
     "origins": {

@@ -48,6 +48,8 @@ export interface FeatureSwitchContext {
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.VoiceMessages]: {
     maintainer: "ethan@okou.ai",
+    description:
+      "Send voice messages and transcribe their recordings with model credits.",
     enabled: false,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {

@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
+import {
+  CLIENT_TYPE_ANDROID,
+  CLIENT_TYPE_IOS,
+  CLIENT_TYPE_HEADER,
+  CLIENT_VERSION_HEADER,
+} from "@okouai/api-contracts/contracts/client-headers";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import type { infer as zInfer } from "zod";
 import type { userMessageInputDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
@@ -80,6 +85,7 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
       contentType: "text/plain",
       size: 123,
     };
+    const recordingId = randomUUID();
     const draftUserMessage: UserMessageInputDocument = {
       version: 1,
       parts: [
@@ -89,6 +95,7 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
           filenameSnapshot: attachment.filename,
           contentType: attachment.contentType,
         },
+        { type: "voice", clips: [{ fileId: recordingId }] },
         { type: "text", text: "draft text" },
         {
           type: "feedback",
@@ -123,6 +130,26 @@ describe("GET/PATCH /api/agents/:id/draft", () => {
       draftUserMessage,
       draftAttachments: [attachment],
     });
+
+    for (const client of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
+      const native = await accept(
+        draftsClient().get({
+          params: { id: fixture.agentId },
+          headers: { ...authHeaders(), [CLIENT_TYPE_HEADER]: client },
+        }),
+        [200],
+      );
+      expect(native.body.draftUserMessage?.parts).toStrictEqual([
+        draftUserMessage.parts[0],
+        {
+          type: "file",
+          fileId: recordingId,
+          filenameSnapshot: "Voice clip 1",
+          contentType: "audio/*",
+        },
+        ...draftUserMessage.parts.slice(2),
+      ]);
+    }
 
     const updatedDraftUserMessage: UserMessageInputDocument = {
       version: 1,

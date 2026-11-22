@@ -2281,12 +2281,12 @@
       "unavailable": "This email is no longer available."
     },
     "messageDocument": {
-      "voice": "Voice message",
-      "voiceClip": "Voice clip {{index}}",
       "agent": "[Agent: {{name}}]",
       "chatThread": "[Chat thread: {{title}}]",
       "file": "[File: {{filename}}]",
-      "template": "[Template: {{title}}]"
+      "template": "[Template: {{title}}]",
+      "voice": "Voice message",
+      "voiceClip": "Voice clip {{index}}"
     },
     "newChat": "New chat",
     "origins": {
