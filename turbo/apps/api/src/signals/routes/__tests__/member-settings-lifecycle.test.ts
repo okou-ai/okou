@@ -51,7 +51,7 @@ async function switches(actor: ApiTestUser) {
   return response.body;
 }
 
-describe("Single Agent membership lifecycle", () => {
+describe("Member settings across membership changes", () => {
   it.each(["leave", "remove", "webhook"] as const)(
     "preserves member settings after %s and reinitialization",
     async (departure) => {

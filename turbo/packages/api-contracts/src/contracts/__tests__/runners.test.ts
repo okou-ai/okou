@@ -207,14 +207,14 @@ describe("runner execution context contract", () => {
       reuseKey: "thread:00000000-0000-4000-8000-000000020986",
       modelUsageProvider: "fixture-model",
       modelUsageLongContextMinTotalInputTokens: 272_001,
-      platformEnvironment: { OKOU_AGENT_ID: "fixture-agent-id" },
+      platformEnvironment: { OKOU_CHAT_THREAD_ID: "fixture-thread-id" },
       contentBundles: {
         format: "tar-gzip-v1",
         instructions: { sha256: "a".repeat(64), archiveBytes: 128 },
         skills: [{ mountPath: "/home/user/.codex/skills/fixture-skill" }],
       },
     });
-    expect(context.environment).not.toHaveProperty("OKOU_AGENT_ID");
+    expect(context.environment).not.toHaveProperty("OKOU_CHAT_THREAD_ID");
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
@@ -235,11 +235,11 @@ describe("runner execution context contract", () => {
         environment: {
           USER_VALUE: "user-value",
         },
-        platformEnvironment: { OKOU_AGENT_ID: "prepared-agent-id" },
+        platformEnvironment: { OKOU_CHAT_THREAD_ID: "prepared-thread-id" },
         featureFlags,
       });
       expect(preparedContext.platformEnvironment).toStrictEqual({
-        OKOU_AGENT_ID: "prepared-agent-id",
+        OKOU_CHAT_THREAD_ID: "prepared-thread-id",
       });
       expect(preparedContext.environment).toStrictEqual({
         USER_VALUE: "user-value",

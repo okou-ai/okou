@@ -309,7 +309,7 @@ async fn assert_final_telemetry_does_not_record_recursive_upload_op(status: u16)
 
     let telemetry_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes("before_final_telemetry");
         then.status(status)
             .header("Content-Type", "application/json")
@@ -366,7 +366,7 @@ fn final_telemetry_waits_for_background_producers_before_upload() {
                 let request_bodies_for_mock = Arc::clone(&request_bodies);
                 let telemetry_mock = server.mock(|when, then| {
                     when.method(POST)
-                        .path("/api/webhooks/agent/telemetry");
+                        .path("/api/webhooks/run/telemetry");
                     then.respond_with(move |request| {
                         request_bodies_for_mock.lock().unwrap().push(request.body_vec());
                         HttpMockResponse::builder()
@@ -850,7 +850,7 @@ fn complete_execution_attributes_proven_codex_child_oom_without_changing_wrapper
                             .json_body(json!({"success": true, "status": "failed"}));
                     });
                     let _telemetry = server.mock(|when, then| {
-                        when.method(POST).path("/api/webhooks/agent/telemetry");
+                        when.method(POST).path("/api/webhooks/run/telemetry");
                         then.status(200).json_body(json!({}));
                     });
                     let (exit, error, retained) = complete_after_workload_resource_limit(
@@ -972,7 +972,7 @@ async fn first_completion_classifies_proven_cli_oom_inner() {
                 .json_body(json!({"success":true,"status":"failed"}));
         });
         let _telemetry = server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/telemetry");
+            when.method(POST).path("/api/webhooks/run/telemetry");
             then.status(200).json_body(json!({}));
         });
         let (exit, error, retained) = complete_after_workload_resource_limit(
@@ -1011,7 +1011,7 @@ async fn complete_execution_writes_finalization_failure_diagnostic_inner() {
     }
 
     let _telemetry_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -1081,7 +1081,7 @@ async fn complete_execution_treats_combined_report_failure_as_finalization_failu
         then.status(500);
     });
     let _telemetry_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -1156,7 +1156,7 @@ async fn complete_execution_keeps_success_when_history_is_unavailable_inner() {
                 .json_body(json!({"success": true, "status": "completed"}));
         });
     let _telemetry_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -1255,7 +1255,7 @@ async fn complete_execution_after_cli_failure_inner(
             .json_body(json!({"success": true, "status": "failed"}));
     });
     let _telemetry_mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));

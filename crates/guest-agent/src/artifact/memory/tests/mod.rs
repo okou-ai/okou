@@ -143,7 +143,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
         let prepare_count = Arc::clone(&refreshes);
         let prepared_original = original_version.clone();
         server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/storages/prepare");
+            when.method(POST).path("/api/webhooks/run/storages/prepare");
             then.respond_with(move |request| {
                 let body: serde_json::Value = serde_json::from_slice(request.body_ref()).unwrap();
                 let files: Vec<FileEntry> = serde_json::from_value(body["files"].clone()).unwrap();
@@ -184,7 +184,7 @@ async fn memory_409_replays_original_delta_through_multiple_real_archive_publica
         let live_file = mount.path().join("own/new.md");
         let inherited_file = mount.path().join("inherited.md");
         let commit = server.mock(|when, then| {
-            when.method(POST).path("/api/webhooks/agent/storages/commit");
+            when.method(POST).path("/api/webhooks/run/storages/commit");
             then.respond_with(move |request| {
                 let body: serde_json::Value = serde_json::from_slice(request.body_ref()).unwrap();
                 if body["versionId"] == successful_version {

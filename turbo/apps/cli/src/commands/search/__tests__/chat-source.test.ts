@@ -84,7 +84,6 @@ describe("okou search --source chat", () => {
 
     const logs = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logs).toContain("thread-abc");
-    expect(logs).not.toContain("my-agent");
     expect(logs).toContain("OOM killed the build");
     expect(capturedUrl?.searchParams.toString()).toBe("keyword=OOM");
   });

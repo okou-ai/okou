@@ -25,10 +25,6 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
     });
     assert.ok(entry);
     await applyPendingMigrations(sql, { beforeMillis: entry.when });
-    const audit = await readFile(
-      new URL("./audit-workspace-workflow-identity.sql", import.meta.url),
-      "utf8",
-    );
     const migrate = () => {
       return applyPendingMigrations(sql, { beforeMillis: entry.when + 1 });
     };
@@ -47,19 +43,12 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
       await sql`INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, created_by, updated_by)
       VALUES (${org}, ${personal}, 'owner', 'hidden', 'public', 'owner', 'owner') RETURNING id`;
     assert.ok(hidden);
-    for (const [key, problem, visibility, a, b] of [
-      ["public_org_name", "public_name", "public", null, null],
-      ["ordinary_private_owner_name", "private_name", "private", null, null],
-      [
-        "official_owner_definition",
-        "official_installation",
-        "private",
-        "weekly",
-        "weekly",
-      ],
+    for (const [key, visibility, a, b] of [
+      ["public_org_name", "public", null, null],
+      ["ordinary_private_owner_name", "private", null, null],
+      ["official_owner_definition", "private", "weekly", "weekly"],
       [
         "morning_brief_owner",
-        "morning_brief",
         "private",
         "morning-brief",
         "internal-test-morning-brief",
@@ -73,9 +62,6 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
           official_installation_state, created_by, updated_by) VALUES (${org}, ${agentId}, 'owner',
           ${definition ?? "same-name"}, ${visibility}, ${definition}, ${definition ? "installed" : null}, 'owner', 'owner')`;
       }
-      const [conflict] = await sql.unsafe(audit);
-      assert.equal(conflict?.problem, problem);
-      assert.equal(conflict?.workflow_ids.length, 2);
       await assert.rejects(migrate(), {
         code: "23505",
         constraint_name: "idx_workflows_" + key + "_unique",
@@ -90,24 +76,20 @@ export async function validateWorkspaceWorkflowIdentity(databaseUrl: string) {
       VALUES (${org}, ${personal}, 'other', 'shared', 'public', 'other', 'other') RETURNING id`;
     assert.ok(shared);
     await sql`UPDATE workflows SET org_id = 'foreign' WHERE id = ${shared.id}`;
-    assert.equal((await sql.unsafe(audit))[0]?.problem, "foreign_workspace");
     await assert.rejects(migrate(), /foreign workspace/);
     await sql`UPDATE workflows SET org_id = ${org} WHERE id = ${shared.id}`;
     const [duplicate] =
       await sql`INSERT INTO workflows (org_id, agent_id, owner_user_id, name, visibility, created_by, updated_by)
       VALUES (${org}, ${first}, 'owner', 'shared', 'public', 'owner', 'owner') RETURNING id`;
     assert.ok(duplicate);
-    assert.equal((await sql.unsafe(audit))[0]?.problem, "public_name");
     await assert.rejects(migrate(), {
       code: "23505",
       constraint_name: "idx_workflows_public_org_name_unique",
     });
     await sql`DELETE FROM workflows WHERE id = ${duplicate.id}`;
     await sql`UPDATE org_metadata SET default_agent_id = ${second} WHERE org_id = ${org}`;
-    assert.equal((await sql.unsafe(audit))[0]?.problem, "default_executor");
     await assert.rejects(migrate(), /default executor differs/);
     await sql`UPDATE org_metadata SET default_agent_id = ${first} WHERE org_id = ${org}`;
-    assert.equal((await sql.unsafe(audit)).length, 0);
     const [before] =
       await sql`SELECT agent_id, visibility FROM workflows WHERE id = ${hidden.id}`;
     assert.equal(before?.agent_id, personal);

@@ -79,28 +79,6 @@ public actor ChatCache {
     connection = nil
   }
 
-  func previousComposerID() throws -> String? {
-    try withDatabase { database in
-      let query = try database.prepare(
-        """
-        SELECT json_extract(entry.value, '$.agentId')
-        FROM sidebar_navigation, json_each(CAST(snapshot AS TEXT), '$.agents') AS entry
-        WHERE sidebar_navigation.id = 1 AND json_extract(entry.value, '$.isDefaultAgent') = 1
-        LIMIT 1
-        """)
-      return try query.step() ? query.optionalText(at: 0) : nil
-    }
-  }
-
-  func restoringWorkspaceDraft(_ storage: ChatDraftStorage) throws -> ChatDraftStorage {
-    guard let previousID = try previousComposerID() else { return storage }
-    let recovery = storage.recoveringWorkspace(from: previousID)
-    if recovery.migrated {
-      try withDatabase { try $0.execute("DELETE FROM sidebar_navigation WHERE id = 1") }
-    }
-    return recovery.storage
-  }
-
   public func loadProjects() throws -> [ChatProject]? {
     try withDatabase { database in
       let query = try database.prepare("SELECT snapshot FROM project_list WHERE id = 1")
@@ -575,15 +553,6 @@ extension SQLiteDatabase {
     guard currentVersion == 0 || currentVersion == version else {
       throw ChatCacheError.unsupportedVersion
     }
-    // This additive table also works with caches written by the preceding build;
-    // earlier readers keep using the unchanged thread and history tables.
-    try execute(
-      """
-      CREATE TABLE IF NOT EXISTS sidebar_navigation (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        snapshot BLOB NOT NULL
-      )
-      """)
     try execute(
       """
       CREATE TABLE IF NOT EXISTS project_list (
@@ -666,15 +635,6 @@ extension SQLiteDatabase {
         return try query.integer(at: 0)
       }()
       guard legacyVersion == 1 else { throw ChatCacheError.unsupportedVersion }
-      let hasNavigation: Bool = try {
-        let query = try prepare(
-          "SELECT 1 FROM legacy.sqlite_master WHERE name = 'sidebar_navigation'")
-        return try query.step()
-      }()
-      if hasNavigation {
-        try execute(
-          "INSERT OR IGNORE INTO sidebar_navigation SELECT * FROM legacy.sidebar_navigation")
-      }
       func listCursor(_ prefix: String) throws -> Int? {
         let query = try prepare(
           "SELECT MAX(seq_id) FROM (SELECT snapshot_seq_id AS seq_id FROM \(prefix)thread_list UNION ALL SELECT seq_id FROM \(prefix)thread_events)"

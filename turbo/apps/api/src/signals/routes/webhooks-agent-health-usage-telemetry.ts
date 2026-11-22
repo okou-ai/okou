@@ -1054,10 +1054,6 @@ const telemetry$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 export const webhooksAgentHealthUsageTelemetryRoutes: readonly RouteEntry[] = [
   {
-    route: runWebhookContract.heartbeat,
-    handler: heartbeat$,
-  },
-  {
     route: webhookHeartbeatContract.send,
     handler: heartbeat$,
   },
@@ -1067,6 +1063,10 @@ export const webhooksAgentHealthUsageTelemetryRoutes: readonly RouteEntry[] = [
   },
   {
     route: webhookTelemetryContract.send,
+    handler: telemetry$,
+  },
+  {
+    route: runWebhookContract.telemetry,
     handler: telemetry$,
   },
 ];

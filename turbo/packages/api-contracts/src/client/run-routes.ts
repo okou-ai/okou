@@ -2,31 +2,15 @@
 // Regenerate: cd turbo && pnpm -F @okouai/api-contracts generate:client
 
 import type {
-  runAgentEventsContract as OriginalRunAgentEventsContract,
   runContextContract as OriginalRunContextContract,
   runNetworkLogsContract as OriginalRunNetworkLogsContract,
   runRunnerContract as OriginalRunRunnerContract,
+  runTelemetryEventsContract as OriginalRunTelemetryEventsContract,
   runsByIdContract as OriginalRunsByIdContract,
   runsCancelContract as OriginalRunsCancelContract,
   runsQueueContract as OriginalRunsQueueContract,
 } from "../contracts/run-routes";
 import type { ClientDescriptor } from "./types";
-
-export const runAgentEventsContract: ClientDescriptor<
-  typeof OriginalRunAgentEventsContract
-> = {
-  getAgentEvents: {
-    method: "GET",
-    path: "/api/runs/:id/telemetry/agent",
-    statuses: {
-      200: true,
-      400: true,
-      401: true,
-      403: true,
-      404: true,
-    },
-  },
-};
 
 export const runContextContract: ClientDescriptor<
   typeof OriginalRunContextContract
@@ -66,6 +50,22 @@ export const runRunnerContract: ClientDescriptor<
   getRunner: {
     method: "GET",
     path: "/api/runs/:id/runner",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+};
+
+export const runTelemetryEventsContract: ClientDescriptor<
+  typeof OriginalRunTelemetryEventsContract
+> = {
+  getTelemetryEvents: {
+    method: "GET",
+    path: "/api/runs/:id/telemetry/events",
     statuses: {
       200: true,
       400: true,

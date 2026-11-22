@@ -12,7 +12,7 @@ export function buildAgentRunVariables(args: {
   const orgVars: Record<string, string> = {};
   const userVars: Record<string, string> = {};
   for (const row of args.variables) {
-    if (row.name.startsWith("ZERO_") || row.name === "OKOU_AGENT_ID") {
+    if (row.name.startsWith("ZERO_")) {
       continue;
     }
     if (row.userId === ORG_SENTINEL_USER_ID) {

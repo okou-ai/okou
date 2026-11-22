@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runNetworkLogsContract,
 } from "@okouai/api-contracts/contracts/run-routes";
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
@@ -68,14 +68,17 @@ async function openNetworkActivity() {
       completedAt: "2026-09-24T06:00:04Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: null,
-    });
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [],
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: null,
+      });
+    },
+  );
   context.mocks.api(runNetworkLogsContract.getNetworkLogs, ({ respond }) => {
     return respond(200, { networkLogs: networkLogs(), hasMore: false });
   });

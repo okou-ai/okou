@@ -1,6 +1,6 @@
 import { computed } from "ccstate";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runContextContract,
   runNetworkLogsContract,
 } from "@okouai/api-contracts/contracts/run-routes";
@@ -59,10 +59,12 @@ const getNetworkLogsInner$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
-const getAgentEventsInner$ = computed(async (get) => {
+const getTelemetryEventsInner$ = computed(async (get) => {
   const auth = get(organizationAuthContext$);
-  const params = get(pathParamsOf(runAgentEventsContract.getAgentEvents));
-  const query = get(queryOf(runAgentEventsContract.getAgentEvents));
+  const params = get(
+    pathParamsOf(runTelemetryEventsContract.getTelemetryEvents),
+  );
+  const query = get(queryOf(runTelemetryEventsContract.getTelemetryEvents));
   const result = await get(
     runAgentEvents({
       runId: params.id,
@@ -81,6 +83,8 @@ const getAgentEventsInner$ = computed(async (get) => {
   return { status: 200 as const, body: result };
 });
 
+const telemetryEventsHandler = authRoute(runReadAuth, getTelemetryEventsInner$);
+
 export const runDetailRoutes: readonly RouteEntry[] = [
   {
     route: runContextContract.getContext,
@@ -91,7 +95,15 @@ export const runDetailRoutes: readonly RouteEntry[] = [
     handler: authRoute(runReadAuth, getNetworkLogsInner$),
   },
   {
-    route: runAgentEventsContract.getAgentEvents,
-    handler: authRoute(runReadAuth, getAgentEventsInner$),
+    route: runTelemetryEventsContract.getTelemetryEvents,
+    handler: telemetryEventsHandler,
+  },
+  {
+    // Older Activity tabs still request the original URL.
+    route: {
+      ...runTelemetryEventsContract.getTelemetryEvents,
+      path: "/api/runs/:id/telemetry/agent",
+    },
+    handler: telemetryEventsHandler,
   },
 ];

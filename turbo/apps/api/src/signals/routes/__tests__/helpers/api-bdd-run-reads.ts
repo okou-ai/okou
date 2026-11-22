@@ -5,7 +5,7 @@ import {
   logsListContract,
 } from "@okouai/api-contracts/contracts/logs";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runNetworkLogsContract,
 } from "@okouai/api-contracts/contracts/run-routes";
 
@@ -23,7 +23,7 @@ type AuthHeaders = {
   readonly authorization?: string;
 };
 type AgentEventsQuery = input<
-  (typeof runAgentEventsContract.getAgentEvents)["query"]
+  (typeof runTelemetryEventsContract.getTelemetryEvents)["query"]
 >;
 type NetworkLogsQuery = input<
   (typeof runNetworkLogsContract.getNetworkLogs)["query"]
@@ -84,8 +84,8 @@ export function createRunReadsApi(context: TestContext) {
     ) {
       return await accept(
         setupApp({ context, routes: runDetailRoutes })(
-          runAgentEventsContract,
-        ).getAgentEvents({
+          runTelemetryEventsContract,
+        ).getTelemetryEvents({
           headers: authenticate(context, actor),
           params: { id: runId },
           query,

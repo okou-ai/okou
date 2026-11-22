@@ -434,52 +434,6 @@ pub mod runners {
 
 /// Generated route bindings under `webhooks`.
 pub mod webhooks {
-    /// Generated route bindings under `webhooks::agent`.
-    pub mod agent {
-        /// Generated route bindings under `webhooks::agent::session_output`.
-        pub mod session_output {
-            /// Publish transient session output from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/session-output`.
-            pub const SEND: crate::Route = crate::Route {
-                method: crate::Method::Post,
-                path: "/api/webhooks/agent/session-output",
-            };
-        }
-
-        /// Generated route bindings under `webhooks::agent::storages`.
-        pub mod storages {
-            /// Generated route bindings under `webhooks::agent::storages::commit`.
-            pub mod commit {
-                /// Commit uploaded storage from sandbox.
-                /// Route contract: `POST /api/webhooks/agent/storages/commit`.
-                pub const COMMIT: crate::Route = crate::Route {
-                    method: crate::Method::Post,
-                    path: "/api/webhooks/agent/storages/commit",
-                };
-            }
-
-            /// Generated route bindings under `webhooks::agent::storages::prepare`.
-            pub mod prepare {
-                /// Prepare for direct S3 upload from sandbox.
-                /// Route contract: `POST /api/webhooks/agent/storages/prepare`.
-                pub const PREPARE: crate::Route = crate::Route {
-                    method: crate::Method::Post,
-                    path: "/api/webhooks/agent/storages/prepare",
-                };
-            }
-        }
-
-        /// Generated route bindings under `webhooks::agent::telemetry`.
-        pub mod telemetry {
-            /// Receive telemetry data from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/telemetry`.
-            pub const SEND: crate::Route = crate::Route {
-                method: crate::Method::Post,
-                path: "/api/webhooks/agent/telemetry",
-            };
-        }
-    }
-
     /// Generated route bindings under `webhooks::run`.
     pub mod run {
         /// Generated route bindings under `webhooks::run::complete`.
@@ -509,6 +463,49 @@ pub mod webhooks {
             pub const SEND: crate::Route = crate::Route {
                 method: crate::Method::Post,
                 path: "/api/webhooks/run/heartbeat",
+            };
+        }
+
+        /// Generated route bindings under `webhooks::run::session_output`.
+        pub mod session_output {
+            /// Publish transient session output from sandbox.
+            /// Route contract: `POST /api/webhooks/run/session-output`.
+            pub const SEND: crate::Route = crate::Route {
+                method: crate::Method::Post,
+                path: "/api/webhooks/run/session-output",
+            };
+        }
+
+        /// Generated route bindings under `webhooks::run::storages`.
+        pub mod storages {
+            /// Generated route bindings under `webhooks::run::storages::commit`.
+            pub mod commit {
+                /// Commit uploaded storage from sandbox.
+                /// Route contract: `POST /api/webhooks/run/storages/commit`.
+                pub const COMMIT: crate::Route = crate::Route {
+                    method: crate::Method::Post,
+                    path: "/api/webhooks/run/storages/commit",
+                };
+            }
+
+            /// Generated route bindings under `webhooks::run::storages::prepare`.
+            pub mod prepare {
+                /// Prepare for direct S3 upload from sandbox.
+                /// Route contract: `POST /api/webhooks/run/storages/prepare`.
+                pub const PREPARE: crate::Route = crate::Route {
+                    method: crate::Method::Post,
+                    path: "/api/webhooks/run/storages/prepare",
+                };
+            }
+        }
+
+        /// Generated route bindings under `webhooks::run::telemetry`.
+        pub mod telemetry {
+            /// Receive telemetry data from sandbox.
+            /// Route contract: `POST /api/webhooks/run/telemetry`.
+            pub const SEND: crate::Route = crate::Route {
+                method: crate::Method::Post,
+                path: "/api/webhooks/run/telemetry",
             };
         }
     }

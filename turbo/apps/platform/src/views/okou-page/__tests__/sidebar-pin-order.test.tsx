@@ -210,7 +210,7 @@ test.each([
   });
 });
 
-test("a member pin move survives a legacy agent reassignment", async () => {
+test("a pending member pin move survives a sort update", async () => {
   context.mocks.api(chatThreadPinOrderContract.reorder, ({ respond }) => {
     return respond(204);
   });

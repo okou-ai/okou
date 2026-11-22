@@ -19,7 +19,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-fn guest_config_for_agent_context(user_env: HashMap<String, String>) -> env::GuestConfig {
+fn guest_config_for_cli_test(user_env: HashMap<String, String>) -> env::GuestConfig {
     env::GuestConfig {
         sandbox_startup_path: None,
         run_id: "run-okou-env-test".to_string(),
@@ -63,7 +63,7 @@ fn assert_codex_service_tier_fast_mode(
     user_env: HashMap<String, String>,
     expected_fast_mode: bool,
 ) {
-    let config = guest_config_for_agent_context(user_env);
+    let config = guest_config_for_cli_test(user_env);
     let paths =
         crate::paths::GuestPaths::from_runtime_dir("/tmp/codex-service-tier-resolution-test");
     let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
@@ -262,16 +262,10 @@ fn framework_web_search_requires_exact_positive_opt_in() {
         ("1", true),
         ("", true),
     ] {
-        let config = guest_config_for_agent_context(HashMap::from([
-            (
-                super::OKOU_AGENT_ID_ENV_KEY.to_string(),
-                "agent-test".to_string(),
-            ),
-            (
-                super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR.to_string(),
-                value.to_string(),
-            ),
-        ]));
+        let config = guest_config_for_cli_test(HashMap::from([(
+            super::ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR.to_string(),
+            value.to_string(),
+        )]));
         let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/okou-env-test");
 
         let runtime = CliRuntimeConfig::from_config(&config, &paths, Instant::now()).unwrap();
@@ -320,7 +314,7 @@ fn codex_service_tier_preserves_canonical_semantics() {
 #[test]
 fn codex_ultrafast_reaches_startup_config() {
     let paths = crate::paths::GuestPaths::from_runtime_dir("/tmp/codex-ultrafast-config-test");
-    let config = guest_config_for_agent_context(HashMap::from([(
+    let config = guest_config_for_cli_test(HashMap::from([(
         super::CODEX_SERVICE_TIER_CANONICAL_ENV.to_string(),
         "ultrafast".to_string(),
     )]));
@@ -339,7 +333,7 @@ fn codex_service_tier_value_is_not_logged() {
     let system_log_guard = SystemLogOverrideGuard::set(&system_log_path);
     let paths = crate::paths::GuestPaths::from_runtime_dir(tmp.path());
     let value = "canonical-value-must-not-log";
-    let config = guest_config_for_agent_context(HashMap::from([(
+    let config = guest_config_for_cli_test(HashMap::from([(
         super::CODEX_SERVICE_TIER_CANONICAL_ENV.to_string(),
         value.to_string(),
     )]));

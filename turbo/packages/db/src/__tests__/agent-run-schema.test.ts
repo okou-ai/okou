@@ -31,7 +31,6 @@ describe("agentRuns ownership", () => {
     const { chatThreads: runtimeChatThreads } =
       await import("../runtime/chat-thread");
     expect(schema.agentRuns).toBe(runtimeAgentRuns);
-    expect(schema).not.toHaveProperty("agentSessions");
     expect(schema).not.toHaveProperty("conversations");
     expect(runtimeAgentRuns).not.toHaveProperty("sessionId");
     const runtimeThread = foreignKeyReference(

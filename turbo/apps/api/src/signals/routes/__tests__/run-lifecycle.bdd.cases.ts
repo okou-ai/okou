@@ -471,7 +471,6 @@ function expectCanonicalOkouRunEnvironment(args: {
   readonly runId: string;
 }): void {
   expect(args.platformEnvironment.OKOU_APP_URL).toBe(args.appUrl);
-  expect(args.platformEnvironment).not.toHaveProperty("OKOU_AGENT_ID");
   expect(
     Object.keys(args.environment ?? {}).filter((key) => {
       return key.startsWith("ZERO_");

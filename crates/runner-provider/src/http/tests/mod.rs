@@ -38,14 +38,14 @@ fn request_route_builds_request_from_generated_route() {
     let http = http_client("https://api.vm0.dev/");
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
     assert_eq!(request.method(), reqwest::Method::POST);
     assert_eq!(
         request.url().as_str(),
-        "https://api.vm0.dev/api/webhooks/agent/telemetry"
+        "https://api.vm0.dev/api/webhooks/run/telemetry"
     );
     assert_eq!(
         request
@@ -63,13 +63,13 @@ fn new_normalizes_api_url_before_building_routes() {
     let http = http_client("https://api.vm0.dev/prefix/");
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
     assert_eq!(
         request.url().as_str(),
-        "https://api.vm0.dev/prefix/api/webhooks/agent/telemetry"
+        "https://api.vm0.dev/prefix/api/webhooks/run/telemetry"
     );
 }
 
@@ -190,7 +190,7 @@ fn request_includes_vercel_bypass_header_when_configured() {
     .unwrap();
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
@@ -210,7 +210,7 @@ fn request_excludes_vercel_bypass_header_when_not_configured() {
     let http = http_client("https://api.vm0.dev/");
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
@@ -222,7 +222,7 @@ fn request_includes_client_headers() {
     let http = http_client("https://api.vm0.dev/");
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
@@ -251,7 +251,7 @@ fn request_uses_the_callers_runner_version_instead_of_the_library_version() {
     })
     .unwrap();
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
@@ -264,7 +264,7 @@ fn build_with_context_matches_generated_headers_and_excludes_sensitive_request_d
     let http = http_client("https://api.vm0.dev/");
 
     let (request, context) = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .json(&serde_json::json!({"secret": "body-secret"}))
         .build_with_context_for_test("telemetry")
         .unwrap();
@@ -272,7 +272,7 @@ fn build_with_context_matches_generated_headers_and_excludes_sensitive_request_d
     assert_eq!(context.endpoint_label, "telemetry");
     assert_eq!(context.method, "POST");
     assert_eq!(context.host, "api.vm0.dev");
-    assert_eq!(context.path, "/api/webhooks/agent/telemetry");
+    assert_eq!(context.path, "/api/webhooks/run/telemetry");
     assert_eq!(
         context.client_request_id,
         header_value(&request, CLIENT_REQUEST_ID_HEADER)
@@ -300,12 +300,12 @@ fn build_with_context_formats_ipv6_host_with_port_as_authority() {
     let http = http_client("http://[::1]:8080/base/");
 
     let (_, context) = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build_with_context_for_test("telemetry")
         .unwrap();
 
     assert_eq!(context.host, "[::1]:8080");
-    assert_eq!(context.path, "/base/api/webhooks/agent/telemetry");
+    assert_eq!(context.path, "/base/api/webhooks/run/telemetry");
 }
 
 #[tokio::test]
@@ -447,11 +447,11 @@ fn request_reuses_session_id_and_generates_fresh_request_id() {
     let http = http_client("https://api.vm0.dev/");
 
     let first = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
     let second = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .build()
         .unwrap();
 
@@ -470,7 +470,7 @@ fn generated_client_headers_override_caller_headers() {
     let http = http_client("https://api.vm0.dev/");
 
     let request = http
-        .request_route(routes::webhooks::agent::telemetry::SEND, "sandbox-token")
+        .request_route(routes::webhooks::run::telemetry::SEND, "sandbox-token")
         .header_for_test(CLIENT_VERSION_HEADER, "caller-version")
         .header_for_test(CLIENT_TYPE_HEADER, "caller-type")
         .header_for_test(CLIENT_SESSION_ID_HEADER, "caller-session")

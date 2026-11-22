@@ -3,7 +3,7 @@ import {
   logsByIdContract,
   type LogDetail,
 } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { expect, test } from "vitest";
 import { CHAT_RUN_USAGE_LIMIT_MESSAGE } from "@okouai/api-contracts/contracts/errors";
 
@@ -83,14 +83,17 @@ function mockActivity(
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, makeLogDetail(status, options.framework));
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [...events],
-      hasMore: false,
-      status,
-      lastEventSequence: lastSequence(events),
-    } satisfies AgentEventsResponse);
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [...events],
+        hasMore: false,
+        status,
+        lastEventSequence: lastSequence(events),
+      } satisfies AgentEventsResponse);
+    },
+  );
 }
 
 function openActivity(): Promise<void> {
@@ -112,14 +115,17 @@ test.each([
     context.mocks.api(logsByIdContract.getById, ({ respond }) => {
       return respond(200, { ...makeLogDetail("failed"), ...fields });
     });
-    context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-      return respond(200, {
-        events: [],
-        hasMore: false,
-        status: "failed",
-        lastEventSequence: null,
-      });
-    });
+    context.mocks.api(
+      runTelemetryEventsContract.getTelemetryEvents,
+      ({ respond }) => {
+        return respond(200, {
+          events: [],
+          hasMore: false,
+          status: "failed",
+          lastEventSequence: null,
+        });
+      },
+    );
     await openActivity();
     await expect(screen.findByText(expected)).resolves.toBeInTheDocument();
     expect(

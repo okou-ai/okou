@@ -177,7 +177,7 @@ async fn proxy_registration_exports_only_fixed_content_free_operations() {
     telemetry.flush().await;
     let requests = server.assert_finished_with_requests().await;
     assert_eq!(requests.len(), 1);
-    assert!(requests[0].starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(requests[0].starts_with("POST /api/webhooks/run/telemetry "));
     let payload: serde_json::Value =
         serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
     assert_eq!(payload["runId"], context.run_id.to_string());

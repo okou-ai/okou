@@ -112,7 +112,7 @@ async fn full_cached_home_is_replaced_with_current_inputs_and_only_final_cold_re
     });
     let startup = api.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/telemetry")
+            .path("/api/webhooks/run/telemetry")
             .body_includes("runner_sandbox_startup")
             .body_includes("sandboxPrepareFallback")
             .body_includes("bootstrap_home_disk_full")

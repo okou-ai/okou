@@ -1609,7 +1609,7 @@ test("Open and manage a deep-linked automation", async () => {
   expect(workflow.automations[1]?.enabled).toBeFalsy();
 });
 
-test("Block workflow publishing without permission on the owning agent", async () => {
+test("Block workflow publishing without workspace publish permission", async () => {
   const workflow = {
     ...opsPlaybook(),
     canManage: true,

@@ -3,7 +3,7 @@ import {
   logsByIdContract,
   type LogDetail,
 } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 
@@ -59,7 +59,7 @@ test("A completed activity appears only after its full event history is ready", 
     return respond(200, makeLogDetail({ status: "completed" }));
   });
   context.mocks.api(
-    runAgentEventsContract.getAgentEvents,
+    runTelemetryEventsContract.getTelemetryEvents,
     async ({ query, respond }) => {
       if (query.cursor === undefined) {
         return respond(200, {

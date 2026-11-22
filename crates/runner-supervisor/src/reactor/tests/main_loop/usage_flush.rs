@@ -169,7 +169,7 @@ async fn deferred_network_log_upload_drains_after_stopping_signal() {
                     .unwrap();
                 continue;
             }
-            assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+            assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
             if payload.get("networkLogs").is_some() {
                 upload_tx.send((socket, payload)).unwrap();
             } else {

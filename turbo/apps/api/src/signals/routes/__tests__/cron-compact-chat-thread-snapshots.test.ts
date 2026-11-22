@@ -140,7 +140,6 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
   const token = mcp.authorize(actor);
   const result = await mcp.call(token(), "get_chat_thread_list");
   expect(result.isError).not.toBeTruthy();
-  expect(result.content[0]?.text).not.toContain("agentId");
   expect(result.content[0]?.text).not.toContain(
     "https://snapshot-storage.example",
   );

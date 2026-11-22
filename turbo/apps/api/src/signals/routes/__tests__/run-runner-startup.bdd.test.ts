@@ -95,7 +95,7 @@ test.each(["sandbox", "home", "blank", "cold"] as const)(
         context,
         routes: webhooksAgentCompleteRoutes,
       });
-      const response = await request("/api/webhooks/agent/complete", {
+      const response = await request("/api/webhooks/run/complete", {
         method: "POST",
         headers: { ...sandboxHeaders, "content-type": "application/json" },
         body: JSON.stringify({

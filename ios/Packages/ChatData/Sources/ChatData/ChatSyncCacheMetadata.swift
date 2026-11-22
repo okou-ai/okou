@@ -13,19 +13,6 @@ extension ChatSync {
     try await cache?.acknowledgePrefetchReport(id)
   }
 
-  public func restoringWorkspaceDraft(_ storage: ChatDraftStorage?) async -> ChatDraftStorage? {
-    guard let storage else { return nil }
-    do {
-      return try await cache?.restoringWorkspaceDraft(storage) ?? storage
-    } catch {
-      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
-        .error(
-          "event=chat.draft.migration.failed error_domain=\((error as NSError).domain, privacy: .public) error_code=\((error as NSError).code) error=\(error.localizedDescription, privacy: .private)"
-        )
-      return storage
-    }
-  }
-
   public func cachedProjects() async -> [ChatProject]? {
     do { return try await cache?.loadProjects() } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")

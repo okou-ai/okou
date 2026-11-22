@@ -35,7 +35,6 @@ final class ChatConnectorTests: XCTestCase {
           threadID: FixtureData.threadID))
     }
     for value in [
-      "/connectors/slack/connect?agentId=\(FixtureData.siblingID)",
       "/connectors/slack/connect?threadId=\(FixtureData.siblingID)&callbackPrompt=Continue",
       "/connectors/slack/connect?threadId=\(FixtureData.siblingID)",
       "/connectors/slack/connect?callbackPrompt=Continue",

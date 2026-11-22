@@ -48,7 +48,7 @@
     "FIXTURE_MODEL": "fixture-model"
   },
   "platformEnvironment": {
-    "OKOU_AGENT_ID": "fixture-agent-id"
+    "OKOU_CHAT_THREAD_ID": "fixture-thread-id"
   },
   "secretValues": ["fixture-secret-value-not-real"],
   "secretConnectorMap": {
