@@ -875,6 +875,44 @@ class ChatListModelTest {
         }
     }
 
+    @Test
+    fun aLateRowRejectionCannotPublishOrScheduleReadbackForARetiredWorkspace() = runTest {
+        val response = CompletableDeferred<Unit>()
+        var authorized = true
+        var reads = 0
+        val source =
+            ArchiveService().apply {
+                beforeEvents = { reads++ }
+                beforeArchive = {
+                    withContext(NonCancellable) {
+                        response.await()
+                        throw ApiFailure.Http(404, null, null, null)
+                    }
+                }
+            }
+        withCatchUpModel(source, authorized = { authorized }) { model ->
+            try {
+                model.refresh()
+                runCurrent()
+                assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+                runCurrent()
+                val pending = model.uiState.value
+                val readsBeforeRetirement = reads
+                assertTrue(pending.threads.single { it.id == CHAT_PERSONAL }.archived)
+                assertEquals(ChatRowAction.Archive, pending.pendingRowActions[CHAT_PERSONAL])
+
+                authorized = false
+                response.complete(Unit)
+                runCurrent()
+
+                assertSame(pending, model.uiState.value)
+                assertEquals(readsBeforeRetirement, reads)
+            } finally {
+                response.complete(Unit)
+            }
+        }
+    }
+
     private fun tiedPinEvents(vararg threads: String): List<String> {
         fun id(seq: Long) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
         return threads.flatMapIndexed { index, thread ->
