@@ -13,12 +13,14 @@ import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListScreen
+import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.chat.ConfirmedProject
 import ai.okou.android.chat.ConversationFind
 import ai.okou.android.chat.ConversationFindVisit
 import ai.okou.android.chat.ConversationRoute
@@ -27,10 +29,14 @@ import ai.okou.android.chat.ConversationToolbarActions
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
 import ai.okou.android.chat.ProjectExpansionModel
+import ai.okou.android.chat.ProjectMoveFocus
+import ai.okou.android.chat.ProjectMovePicker
 import ai.okou.android.chat.ProvisionalChat
 import ai.okou.android.chat.RealtimeNotice
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.conversationRunControls
+import ai.okou.android.chat.projectDestinations
+import ai.okou.android.chat.rowActions
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.settings.DefaultModelSettings
@@ -69,7 +75,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -79,23 +84,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +112,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+private data class ChatMoveTarget(val threadId: String, val fromList: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,12 +139,13 @@ internal fun OkouApp(
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
 ) {
-    val list =
-        chats?.uiState?.collectAsStateWithLifecycle()?.value
-            ?: ChatListUiState(
-                listPhase =
-                    if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+    val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+    val listState =
+        chats?.uiState?.collectAsStateWithLifecycle()
+            ?: rememberUpdatedState(
+                remember(startupPhase) { ChatListUiState(listPhase = startupPhase) }
             )
+    val list by rememberWorkspaceChatNavigation(listState)
     var navigation by rememberWorkspaceNavigation()
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
@@ -353,58 +364,18 @@ internal fun OkouApp(
     val showConversationFeedback =
         settings == null && !showChatList && !showingConnectors && thread != null
     val showRowFeedback = showChatList || showConversationFeedback
-    LaunchedEffect(chats, showChatList) { if (!showChatList) chats?.clearRowUndo() }
-    if (showRowFeedback && chats != null) ChatUndoFeedback(chats, list, snackbar)
-    list.failedRowAction
-        ?.takeIf { list.rowUndo == null }
-        ?.let { failure ->
-            val action = failure.action
-            val message =
-                stringResource(
-                    when {
-                        failure.rejected -> R.string.chat_row_action_rejected
-                        action.updatesChat -> R.string.chat_row_action_failed
-                        else -> R.string.chat_read_action_failed
-                    }
-                )
-            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, failure, message, showRowFeedback) {
-                if (
-                    showRowFeedback &&
-                        snackbar.showSnackbar(
-                            message,
-                            actionLabel = refreshLabel,
-                            withDismissAction = !failure.rejected,
-                            duration =
-                                if (failure.rejected) SnackbarDuration.Short
-                                else SnackbarDuration.Indefinite,
-                        ) == SnackbarResult.ActionPerformed
-                ) {
-                    if (action.updatesChat) chats?.reloadAfterRowActionFailure()
-                    else chats?.refreshIndicators()
-                }
-                chats?.dismissRowActionFailure(failure)
-            }
-        }
-    list.markAllReadResult
-        ?.takeIf { list.rowUndo == null }
-        ?.let { result ->
-            val message =
-                if (result.confirmed == result.requested) {
-                    pluralStringResource(
-                        R.plurals.chat_mark_all_read_success,
-                        result.confirmed,
-                        result.confirmed,
-                    )
-                } else {
-                    stringResource(R.string.chat_mark_all_read_unconfirmed)
-                }
-            LaunchedEffect(chats, result, message, showChatList) {
-                if (showChatList)
-                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
-                chats?.dismissMarkAllReadResult(result)
-            }
-        }
+    var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
+    if (chats != null) {
+        WorkspaceChatFeedback(
+            chats,
+            listState,
+            snackbar,
+            showChatList,
+            showRowFeedback,
+            confirmingProjectDelete,
+            dismissProjectDelete = { confirmingProjectDelete = null },
+        )
+    }
 
     fun openConversation(threadId: String, destination: WorkspaceTarget, fromSearch: Boolean) {
         closeResources()
@@ -532,6 +503,25 @@ internal fun OkouApp(
         }
     val (pendingId, createdId) = submission ?: (null to null)
     val provisionalId = pendingId ?: createdId
+    val deletedNewChatProject =
+        newChat?.projectId?.takeIf { id ->
+            list.projectsSource == ChatListSource.Network &&
+                list.projectsPhase == ChatReadPhase.Ready &&
+                list.projects.none { it.id == id }
+        }
+    val composerRestored = composerInput?.value?.journal != null
+    LaunchedEffect(newChat, deletedNewChatProject, provisionalId, composerRestored) {
+        if (
+            deletedNewChatProject != null &&
+                provisionalId == null &&
+                composerRestored &&
+                navigation.target == newChat
+        ) {
+            // Project-scoped new chats share the workspace draft. An already submitted send
+            // keeps its original target until the composer confirms its own outcome.
+            navigation = navigation.copy(target = WorkspaceTarget.NewChat(null))
+        }
+    }
     val provisionalChat =
         provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
     val needsChatList =
@@ -696,13 +686,45 @@ internal fun OkouApp(
         )
             returnToList()
     }
+    val inputMode = LocalInputModeManager.current
+    var moveTarget by remember(chats) { mutableStateOf<ChatMoveTarget?>(null) }
+    var moveFocus by remember(chats) { mutableStateOf<ProjectMoveFocus?>(null) }
+    LaunchedEffect(showChatList) { if (!showChatList) moveFocus = null }
+    fun moveChat(from: ChatMoveTarget, destination: String?) {
+        if (
+            chats?.moveThreadToProject(from.threadId, destination) == true &&
+                from.fromList &&
+                destination != null &&
+                inputMode.inputMode == InputMode.Keyboard
+        ) {
+            moveFocus = ProjectMoveFocus(from.threadId, destination)
+        }
+    }
+    fun requestMove(id: String, fromList: Boolean) {
+        val list = listState.value
+        val chat = list.threads.firstOrNull { it.id == id && it.hidden != true } ?: return
+        if (ChatRowAction.MoveProject !in list.rowActions(chat) || id in list.pendingRowActions)
+            return
+        val destinations = list.projectDestinations(chat)
+        val from = ChatMoveTarget(id, fromList)
+        if (destinations.size == 1) moveChat(from, destinations[0].id)
+        else if (destinations.isNotEmpty()) moveTarget = from
+    }
+    moveTarget?.let { from ->
+        WorkspaceChatMovePicker(from.threadId, listState, dismiss = { moveTarget = null }) {
+            destination ->
+            moveTarget = null
+            moveChat(from, destination)
+        }
+    }
     val detailActions =
         @Composable {
             if (shortConversation) ConversationStatus(list.offline, runActions, short = true)
             ConversationToolbarActions(
-                state = list,
+                state = listState.value,
                 thread = thread,
                 onRowAction = ::rowAction,
+                onMove = { requestMove(it, fromList = false) },
                 onRename = { id, title -> chats?.renameThread(id, title) },
                 openResources =
                     thread
@@ -772,7 +794,7 @@ internal fun OkouApp(
             if (settings == null && !searchActive) {
                 WorkspaceToolbarActions(
                     showFilter = showList,
-                    list = list,
+                    list = listState.value,
                     selectFilter = chats?.let { it::selectFilter },
                     markAllRead = { chats?.markAllRead() },
                     update = updateToolbarAction.takeIf { showList },
@@ -958,7 +980,7 @@ internal fun OkouApp(
                         ) {
                             if (searchActive) {
                                 ChatTitleSearch(
-                                    state = list,
+                                    state = listState.value,
                                     search = searchState,
                                     widthDp = window.width,
                                     listWidth = listWidth,
@@ -971,6 +993,7 @@ internal fun OkouApp(
                                 )
                             } else {
                                 if (listWidth != null) listToolbar()
+                                val list = listState.value
                                 ChatListScreen(
                                     list,
                                     { chats?.retryList() },
@@ -980,8 +1003,15 @@ internal fun OkouApp(
                                     provisionalChats,
                                     ::openProvisionalChat,
                                     ::rowAction,
+                                    { requestMove(it, fromList = true) },
+                                    moveFocus = moveFocus,
+                                    onMoveFocusFinished = { request ->
+                                        if (moveFocus == request) moveFocus = null
+                                    },
                                     { id, title -> chats?.renameThread(id, title) },
                                     { id, name -> chats?.renameProject(id, name) },
+                                    { id -> confirmingProjectDelete = id },
+                                    confirmingProjectDelete,
                                     { id -> chats?.retryProjectRename(id) },
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],
@@ -1075,7 +1105,7 @@ internal fun OkouApp(
                                             ConversationRoute(
                                                 chats.history,
                                                 target.id,
-                                                list,
+                                                listState.value,
                                                 Modifier.weight(1f),
                                                 composer = composer,
                                                 historyAvailable = !awaitingCreatedChat,
@@ -1152,7 +1182,7 @@ internal fun OkouApp(
                                                 ConversationRoute(
                                                     chats.history,
                                                     provisionalId,
-                                                    list,
+                                                    listState.value,
                                                     Modifier.weight(1f),
                                                     composer = composer,
                                                     historyAvailable = provisionalChat != null,
@@ -1204,7 +1234,7 @@ internal fun OkouApp(
                                         onClick = chats::retryList,
                                         enabled =
                                             !list.offline &&
-                                                list.listReadFailure !=
+                                                listState.value.listReadFailure !=
                                                     ChatListReadFailure.Retrying &&
                                                 list.listPhase != ChatReadPhase.Loading,
                                     ) {
@@ -1217,6 +1247,55 @@ internal fun OkouApp(
                 }
             }
         }
+    }
+}
+
+internal data class WorkspaceChatNavigation(
+    val threads: List<ConfirmedChat>,
+    val projects: List<ConfirmedProject>,
+    val acceptedNewChats: List<ProvisionalChat>,
+    val listPhase: ChatReadPhase,
+    val projectsPhase: ChatReadPhase,
+    val projectsSource: ChatListSource?,
+    val offline: Boolean,
+)
+
+@Composable
+internal fun rememberWorkspaceChatNavigation(
+    listState: State<ChatListUiState>
+): State<WorkspaceChatNavigation> =
+    remember(listState) {
+        derivedStateOf(structuralEqualityPolicy()) {
+            val list = listState.value
+            WorkspaceChatNavigation(
+                list.threads,
+                list.projects,
+                list.acceptedNewChats,
+                list.listPhase,
+                list.projectsPhase,
+                list.projectsSource,
+                list.offline,
+            )
+        }
+    }
+
+@Composable
+private fun WorkspaceChatMovePicker(
+    threadId: String,
+    listState: State<ChatListUiState>,
+    dismiss: () -> Unit,
+    move: (String?) -> Unit,
+) {
+    val list = listState.value
+    val chat = list.threads.firstOrNull { it.id == threadId && it.hidden != true }
+    if (
+        chat != null &&
+            ChatRowAction.MoveProject in list.rowActions(chat) &&
+            threadId !in list.pendingRowActions
+    ) {
+        ProjectMovePicker(list.projectDestinations(chat), dismiss = dismiss, move = move)
+    } else {
+        LaunchedEffect(threadId) { dismiss() }
     }
 }
 

@@ -4788,6 +4788,13 @@ data class RenamedProject(
     val `sortOrder`: String? = null,
 )
 
+@Serializable
+data class MoveThreadToProjectRequest(val `eventId`: String, val `projectId`: String?)
+
+@Serializable data class ProjectMembership(val `threadId`: String, val `projectId`: String?)
+
+@Serializable data class DeleteProjectRequest(val `eventId`: String)
+
 @Serializable data class RenameThreadRequest(val `title`: String, val `eventId`: String? = null)
 
 @Serializable data class ReorderPinnedThreadRequest(val `pinOrder`: String, val `eventId`: String)

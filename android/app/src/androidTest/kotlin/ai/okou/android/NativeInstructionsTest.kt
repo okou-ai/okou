@@ -101,17 +101,20 @@ class NativeInstructionsTest {
                     )
                     .click()
             }
-            fun editor(requireFocus: Boolean = false) =
+            fun editor(requireFocus: Boolean = false, expectedText: String? = null) =
                 checkNotNull(
                     device.wait(
                         Until.findObject(
                             By.pkg(app.packageName).clazz("android.widget.EditText").apply {
                                 if (requireFocus) focused(true)
+                                if (expectedText != null) text(expectedText)
                             }
                         ),
                         10_000,
                     )
-                )
+                ) {
+                    "Instructions editor did not match focus=$requireFocus and text=$expectedText"
+                }
             fun imeVisible() =
                 instrumentation.uiAutomation.windows.any {
                     it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
@@ -188,7 +191,8 @@ class NativeInstructionsTest {
             reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             editor().text = "Keep this local draft"
-            fixture.externalEdit("Changed on Web")
+            val webText = "Changed on Web"
+            fixture.externalEdit(webText)
             scenario.onActivity {
                 checkNotNull(ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready)
                     .instructions
@@ -198,7 +202,7 @@ class NativeInstructionsTest {
             assertEquals("Keep this local draft", editor().text)
             assertEquals(1, fixture.requests.count { it.method == "PUT" })
             click(R.string.instructions_reload)
-            assertEquals("Changed on Web", editor().text)
+            assertEquals(webText, editor(expectedText = webText).text)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             reveal(app.getString(R.string.appearance))
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))

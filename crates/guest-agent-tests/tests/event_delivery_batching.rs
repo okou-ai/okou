@@ -133,7 +133,7 @@ async fn claude_code_drains_healthy_backlog_in_bounded_fifo_batches()
     });
 
     let first_request = server.next_request(Duration::from_secs(5)).await?;
-    common::wait_for_file_contains(
+    cli_test_support::readiness::wait_for_appended_file_contains(
         std::path::Path::new(&agent_log_file),
         "batching-sentinel",
         Duration::from_secs(5),
