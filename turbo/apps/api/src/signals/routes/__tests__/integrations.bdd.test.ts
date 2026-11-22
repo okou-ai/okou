@@ -6253,15 +6253,11 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     if (!orgId) {
       throw new Error("Expected GitHub admin test user to have an org");
     }
-    const agent = await bdd.createAgent(admin, {
-      displayName: "BDD GitHub setup agent",
-    });
     await integrations.readGithubInstallation(admin);
     const installWithState = await integrations.requestGithubOauthInstall(
       {
         orgId,
         userId: admin.userId,
-        composeId: agent.agentId,
       },
       [307],
       admin,
@@ -6292,19 +6288,6 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
       "Invalid%20state%20signature",
     );
 
-    const noDefaultAgent = integrations.user();
-    const installWithoutAgent = await integrations.requestGithubOauthInstall(
-      {
-        orgId: noDefaultAgent.orgId ?? undefined,
-        userId: noDefaultAgent.userId,
-      },
-      [307],
-      noDefaultAgent,
-    );
-    expect(
-      decodeURIComponent(installWithoutAgent.headers.get("location") ?? ""),
-    ).toContain("Finish workspace setup");
-
     await integrations.readGithubInstallation(admin);
     const requestSetup = await integrations.requestGithubAppSetupCallback(
       {
@@ -6320,7 +6303,7 @@ describe("INT-03: GitHub and AgentPhone integrations", () => {
     );
 
     const missingIdStart = await integrations.requestGithubOauthInstall(
-      { orgId, userId: admin.userId, composeId: agent.agentId },
+      { orgId, userId: admin.userId },
       [307],
       admin,
     );

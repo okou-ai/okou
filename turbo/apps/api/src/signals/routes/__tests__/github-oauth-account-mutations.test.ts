@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -47,21 +46,9 @@ async function connectGithubAdd(
 describe("GitHub OAuth account mutation selection", () => {
   it("links connector callbacks only to their organization's active installation", async () => {
     const first = bdd.user();
-    const firstAgent = await bdd.createAgent(first, {
-      displayName: `First GitHub organization ${randomUUID()}`,
-    });
-    const firstInstallation = await github.installGithubApp(
-      first,
-      firstAgent.agentId,
-    );
+    const firstInstallation = await github.installGithubApp(first);
     const second = bdd.user();
-    const secondAgent = await bdd.createAgent(second, {
-      displayName: `Second GitHub organization ${randomUUID()}`,
-    });
-    const secondInstallation = await github.installGithubApp(
-      second,
-      secondAgent.agentId,
-    );
+    const secondInstallation = await github.installGithubApp(second);
 
     await connectGithubAdd(first, {
       code: "github-first-organization-link",
@@ -116,10 +103,7 @@ describe("GitHub OAuth account mutation selection", () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
 
     const actor = bdd.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: `Okou GitHub setup ${randomUUID()}`,
-    });
-    const installation = await github.installGithubApp(actor, agent.agentId);
+    const installation = await github.installGithubApp(actor);
     await expect(github.readInstallation(actor)).resolves.toMatchObject({
       installation: {
         installationId: installation.remoteInstallationId,
@@ -307,11 +291,8 @@ describe("GitHub OAuth account mutation selection", () => {
     const secondBefore = beforeRefresh.find((account) => {
       return account.externalId === "502";
     });
-    const agent = await bdd.createAgent(actor, {
-      displayName: `GitHub account setup ${randomUUID()}`,
-    });
 
-    await github.installGithubApp(actor, agent.agentId, {
+    await github.installGithubApp(actor, {
       oauthCode: {
         code: "github-setup-existing",
         githubUserId: "502",
@@ -347,10 +328,7 @@ describe("GitHub OAuth account mutation selection", () => {
       userId: 601,
       login: "github-before-setup-sibling",
     });
-    const siblingAgent = await bdd.createAgent(siblingActor, {
-      displayName: `GitHub sibling setup ${randomUUID()}`,
-    });
-    await github.installGithubApp(siblingActor, siblingAgent.agentId, {
+    await github.installGithubApp(siblingActor, {
       oauthCode: {
         code: "github-setup-new-sibling",
         githubUserId: "602",

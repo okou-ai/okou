@@ -43,7 +43,7 @@ async function setupRelationships({
           { type: "text", text: "Inspect related conversations" },
           {
             type: "source",
-            kind: "agent",
+            kind: "chat",
             threadId: parent.id,
             runId: SOURCE_RUN,
             titleSnapshot: ORIGINAL_TITLE,

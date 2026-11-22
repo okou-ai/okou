@@ -1,5 +1,5 @@
 {
-  "id": "392c8ab5-6de6-472a-ba40-5c7274b350ae",
+  "id": "fb9a5c4a-de06-453f-8169-d51bf5b9e796",
   "prevId": "64edf074-a8b5-43ce-ae72-4efe78cdf8e7",
   "version": "7",
   "dialect": "postgresql",
@@ -24331,12 +24331,6 @@
           "notNull": true,
           "default": "'limited-free-1'"
         },
-        "default_agent_id": {
-          "name": "default_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "onboarding_payment_pending": {
           "name": "onboarding_payment_pending",
           "type": "boolean",
@@ -24626,21 +24620,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "org_metadata_default_agent_id_agents_id_fk": {
-          "name": "org_metadata_default_agent_id_agents_id_fk",
-          "tableFrom": "org_metadata",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "default_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -37620,12 +37600,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "agent_id": {
-          "name": "agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
         "name": {
           "name": "name",
           "type": "varchar(64)",
@@ -37727,27 +37701,6 @@
         }
       },
       "indexes": {
-        "idx_workflows_agent": {
-          "name": "idx_workflows_agent",
-          "columns": [
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "idx_workflows_import_session": {
           "name": "idx_workflows_import_session",
           "columns": [
@@ -37763,17 +37716,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_public_agent_name_unique": {
-          "name": "idx_workflows_public_agent_name_unique",
+        "idx_workflows_public_org_name_unique": {
+          "name": "idx_workflows_public_org_name_unique",
           "columns": [
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -37791,17 +37738,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_ordinary_private_owner_agent_name_unique": {
-          "name": "idx_workflows_ordinary_private_owner_agent_name_unique",
+        "idx_workflows_ordinary_private_owner_name_unique": {
+          "name": "idx_workflows_ordinary_private_owner_name_unique",
           "columns": [
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -37825,8 +37766,8 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_official_member_definition": {
-          "name": "idx_workflows_official_member_definition",
+        "idx_workflows_official_owner_definition_unique": {
+          "name": "idx_workflows_official_owner_definition_unique",
           "columns": [
             {
               "expression": "org_id",
@@ -37853,73 +37794,11 @@
           "method": "btree",
           "with": {}
         },
-        "idx_workflows_morning_brief_member": {
-          "name": "idx_workflows_morning_brief_member",
+        "idx_workflows_morning_brief_owner_unique": {
+          "name": "idx_workflows_morning_brief_owner_unique",
           "columns": [
             {
               "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "official_definition_name IN ('morning-brief', 'internal-test-morning-brief')",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_official_owner_agent_definition_unique": {
-          "name": "idx_workflows_official_owner_agent_definition_unique",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "owner_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "official_definition_name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "official_definition_name IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workflows_morning_brief_owner_agent_unique": {
-          "name": "idx_workflows_morning_brief_owner_agent_unique",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "agent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -37974,21 +37853,7 @@
           "with": {}
         }
       },
-      "foreignKeys": {
-        "workflows_agent_id_agents_id_fk": {
-          "name": "workflows_agent_id_agents_id_fk",
-          "tableFrom": "workflows",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

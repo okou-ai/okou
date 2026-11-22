@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { logger } from "../../lib/log";
 import {
   googleCalendarEventSnapshots,
@@ -547,7 +548,7 @@ const loadGoogleCalendarEventAutomations$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

@@ -161,7 +161,6 @@ export const feedItemTypeSchema = zEnum(["suggestion", "event"]);
 const feedItemBaseSchema = object({
   id: suggestionIdSchema,
   type: feedItemTypeSchema,
-  sourceType: literal("agent").optional(),
   priority: number().int().min(-2147483648).max(2147483647),
   createdAt: iso.datetime(),
   updatedAt: iso.datetime(),

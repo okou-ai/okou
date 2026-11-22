@@ -6,7 +6,6 @@ import type {
 import { connectors } from "@okouai/db/schema/connector";
 import { githubInstallations } from "@okouai/db/schema/github-installation";
 import { githubUserLinks } from "@okouai/db/schema/github-user-link";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { and, eq } from "drizzle-orm";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
@@ -35,7 +34,7 @@ function githubConnectStartUrl(origin: string): string {
 
 const githubInstallUrl$ = command(
   async (
-    { get, set },
+    { set },
     args: {
       readonly userId: string;
       readonly orgId: string;
@@ -49,22 +48,12 @@ const githubInstallUrl$ = command(
       return null;
     }
 
-    const db = get(db$);
-    const [orgRow] = await db
-      .select({ defaultAgentId: orgMetadata.defaultAgentId })
-      .from(orgMetadata)
-      .where(eq(orgMetadata.orgId, args.orgId))
-      .limit(1);
-    signal.throwIfAborted();
-    const composeId = orgRow?.defaultAgentId ?? null;
-
     return await set(
       buildGithubAppInstallUrl$,
       {
         appSlug,
         userId: args.userId,
         orgId: args.orgId,
-        composeId: composeId ?? undefined,
         callbackOrigin: args.callbackOrigin,
         providerCallbackOrigin: args.providerCallbackOrigin,
         secretsEncryptionKey: env("SECRETS_ENCRYPTION_KEY"),

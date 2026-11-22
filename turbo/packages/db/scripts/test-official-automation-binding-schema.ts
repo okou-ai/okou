@@ -36,7 +36,6 @@ export async function validateOfficialAutomationBindingSchema(
   const client = new Client({ connectionString: databaseUrl });
   const identity = randomUUID();
   const workflowId = randomUUID();
-  let workflowCreated = false;
 
   try {
     await client.connect();
@@ -56,7 +55,6 @@ export async function validateOfficialAutomationBindingSchema(
       `,
       [workflowId, orgId, definitionName, userId],
     );
-    workflowCreated = true;
     await client.query(
       `
         INSERT INTO "workflow_automations" (
@@ -119,11 +117,7 @@ export async function validateOfficialAutomationBindingSchema(
     );
   } finally {
     try {
-      if (workflowCreated) {
-        await client.query(`DELETE FROM "workflows" WHERE "id" = $1`, [
-          workflowId,
-        ]);
-      }
+      await client.query("DELETE FROM workflows WHERE id = $1", [workflowId]);
     } finally {
       await client.end();
     }

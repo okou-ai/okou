@@ -48,7 +48,22 @@ export function readStoredMessageParts(value: unknown): unknown {
       .filter((part) => {
         return keepStoredPart(part, messagePartTypes);
       })
-      .map((part) => {
+      .map((part: unknown) => {
+        if (
+          typeof part === "object" &&
+          part !== null &&
+          "type" in part &&
+          part.type === "source" &&
+          "kind" in part &&
+          part.kind === "agent"
+        ) {
+          // Append-only events can still name a forwarded conversation by its old kind.
+          const { agentId: _retiredId, ...source } = part as Record<
+            string,
+            unknown
+          >;
+          return { ...source, kind: "chat" };
+        }
         if (
           typeof part !== "object" ||
           part === null ||

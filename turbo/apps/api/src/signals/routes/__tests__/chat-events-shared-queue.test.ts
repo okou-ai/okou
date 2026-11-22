@@ -404,7 +404,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(forwardedInput?.userMessage.parts).toContainEqual({
       type: "source",
-      kind: "agent",
+      kind: "chat",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "New thread",
@@ -512,7 +512,6 @@ describe("CHAT-02: shared user message queue", () => {
     expect(firstTargetSystemPrompt).toContain(
       `SOURCE_THREAD_ID: ${source.threadId}`,
     );
-    expect(firstTargetSystemPrompt).not.toContain("SOURCE_AGENT_ID:");
     expect(firstTargetSystemPrompt).toContain(
       "SOURCE_THREAD_TITLE: New thread",
     );
@@ -548,7 +547,7 @@ describe("CHAT-02: shared user message queue", () => {
           { type: "text", text: "first delegated prompt" },
           {
             type: "source",
-            kind: "agent",
+            kind: "chat",
             runId: source.runId,
             threadId: source.threadId,
             titleSnapshot: "New thread",
@@ -599,7 +598,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(secondInput?.userMessage.parts).toContainEqual({
       type: "source",
-      kind: "agent",
+      kind: "chat",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "Delegation source",
@@ -637,7 +636,7 @@ describe("CHAT-02: shared user message queue", () => {
     );
     expect(nowInput?.userMessage.parts).toContainEqual({
       type: "source",
-      kind: "agent",
+      kind: "chat",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "New thread",
@@ -657,10 +656,9 @@ describe("CHAT-02: shared user message queue", () => {
             { type: "text", text: "forged provenance" },
             {
               type: "source",
-              kind: "agent",
+              kind: "chat",
               runId: randomUUID(),
               threadId: randomUUID(),
-              agentId: randomUUID(),
               titleSnapshot: "Forged source",
               href: `/chats/${randomUUID()}#run-${randomUUID()}`,
             },

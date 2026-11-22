@@ -1084,10 +1084,10 @@ const registerUserMessageRenderPart$ = command(
         return { type: "model", part };
       }
       case "source": {
-        return part.kind === "agent"
+        return part.kind === "chat"
           ? {
               type: part.type,
-              kind: "agent",
+              kind: "chat",
               part,
             }
           : part.kind === "mcp"

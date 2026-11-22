@@ -40,15 +40,15 @@ type FeedbackNotePartOfType<T extends FeedbackNotePart["type"]> = Extract<
   { type: T }
 >;
 type UserMessageSourcePart = UserMessagePartOfType<"source">;
-type UserMessageAgentSourcePart = Extract<
+type UserMessageChatSourcePart = Extract<
   UserMessageSourcePart,
-  { kind: "agent" }
+  { kind: "chat" }
 >;
 type UserMessageMcpSourcePart = Extract<UserMessageSourcePart, { kind: "mcp" }>;
 type UserMessageExternalSourcePart =
   | Exclude<
       UserMessageSourcePart,
-      UserMessageAgentSourcePart | UserMessageMcpSourcePart
+      UserMessageChatSourcePart | UserMessageMcpSourcePart
     >
   | {
       readonly type: "source";
@@ -93,8 +93,8 @@ export type UserMessageRenderPart =
     }
   | {
       readonly type: "source";
-      readonly kind: "agent";
-      readonly part: UserMessageAgentSourcePart;
+      readonly kind: "chat";
+      readonly part: UserMessageChatSourcePart;
     }
   | {
       readonly type: "source";

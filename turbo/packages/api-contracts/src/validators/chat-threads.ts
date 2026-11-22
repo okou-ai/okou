@@ -476,12 +476,11 @@ const userMessageMcpSourcePartSchema = object({
   clientName: string().trim().min(1).max(120).optional(),
 }).strict();
 
-const userMessageAgentSourcePartSchema = object({
+const userMessageChatSourcePartSchema = object({
   type: literal("source"),
-  kind: literal("agent"),
+  kind: literal("chat"),
   runId: uuid(),
   threadId: uuid(),
-  agentId: uuid().optional(),
   titleSnapshot: string().min(1),
   href: string().min(1),
 }).strict();
@@ -489,7 +488,7 @@ const userMessageAgentSourcePartSchema = object({
 const userMessageSourcePartSchema = discriminatedUnion("kind", [
   userMessageExternalSourcePartSchema,
   userMessageMcpSourcePartSchema,
-  userMessageAgentSourcePartSchema,
+  userMessageChatSourcePartSchema,
 ]);
 
 export const userMessageInputPartSchema = discriminatedUnion("type", [

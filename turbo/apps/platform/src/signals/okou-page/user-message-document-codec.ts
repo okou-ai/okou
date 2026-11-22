@@ -743,7 +743,7 @@ function feedbackNoteContent(note: readonly FeedbackNotePart[]): JSONContent[] {
 
 function formattedFeedbackParts(
   parts: readonly Extract<UserMessagePart, { type: "feedback" }>[],
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
 ): string {
   return formatFeedbackPrompt(
     parts.map((part) => {
@@ -753,15 +753,15 @@ function formattedFeedbackParts(
         ...(part.source ? { source: part.source } : {}),
       };
     }),
-    agentRunSourceTitle,
+    chatRunSourceTitle,
   );
 }
 
-function agentRunSourceTitle(
+function chatRunSourceTitle(
   parts: readonly UserMessagePart[],
 ): string | undefined {
   return parts.find((part) => {
-    return part.type === "source" && part.kind === "agent";
+    return part.type === "source" && part.kind === "chat";
   })?.titleSnapshot;
 }
 
@@ -935,7 +935,7 @@ export function messageDocumentToPrompt(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);
@@ -989,7 +989,7 @@ export function messageDocumentToDisplayText(value: unknown): string | null {
   const blocks: string[] = [];
   let inlineText = "";
   let feedbackParts: Extract<UserMessagePart, { type: "feedback" }>[] = [];
-  const sourceTitle = agentRunSourceTitle(parsed.data.parts);
+  const sourceTitle = chatRunSourceTitle(parsed.data.parts);
   const flushInlineText = () => {
     if (inlineText.length > 0) {
       blocks.push(inlineText);

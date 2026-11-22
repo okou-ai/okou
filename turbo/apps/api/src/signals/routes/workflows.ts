@@ -1194,7 +1194,6 @@ const publishCopiedWorkflow$ = command(
           workflow: workflows,
         })
         .from(workflows)
-
         .where(
           and(
             eq(workflows.orgId, args.orgId),
@@ -1561,7 +1560,6 @@ const loadVisibilityTransition$ = command(
         workflow: workflows,
       })
       .from(workflows)
-
       .where(
         and(
           eq(workflows.orgId, args.orgId),

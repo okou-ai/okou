@@ -4,15 +4,12 @@ import { orgMetadataCanonicalWrites } from "@okouai/db/operations/org-metadata-c
 import { orgPlanEntitlements } from "@okouai/db/runtime/org-plan-entitlement";
 import { agents } from "@okouai/db/schema/agent";
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
 import {
   and,
   eq,
   exists,
   getTableColumns,
-  isNotNull,
-  isNull,
   notInArray,
   notExists,
   sql,
@@ -121,19 +118,16 @@ function bootstrapAgentValues(args: BootstrapPublicationArgs) {
 function bootstrapMetadataPublication(args: BootstrapPublicationArgs): SQL {
   const at = nowDate();
   const nonPaid = notInArray(orgMetadataCanonicalWrites.tier, [...PAID_TIERS]);
-  // Both existing branches bind only an unbound reference. The actual conflict
-  // row decides whether the paid plan survives, including after a key wait.
+  // The current conflicting row decides whether a paid plan survives, including after a key wait.
   return sql`INSERT INTO ${orgMetadataCanonicalWrites}
-    (org_id, default_agent_id, tier, onboarding_payment_pending, onboarding_complete, updated_at)
-    SELECT ${args.orgId}, bootstrap_agent.id, 'limited-free-1', false, false,
+    (org_id, tier, onboarding_payment_pending, onboarding_complete, updated_at)
+    SELECT ${args.orgId}, 'limited-free-1', false, false,
       ${sql.param(at, orgMetadataCanonicalWrites.updatedAt)} FROM bootstrap_agent WHERE true
     ON CONFLICT (org_id) DO UPDATE SET
-      default_agent_id = EXCLUDED.default_agent_id,
       tier = CASE WHEN ${nonPaid} THEN EXCLUDED.tier ELSE ${orgMetadataCanonicalWrites.tier} END,
       onboarding_payment_pending = CASE WHEN ${nonPaid}
         THEN EXCLUDED.onboarding_payment_pending ELSE ${orgMetadataCanonicalWrites.onboardingPaymentPending} END,
       updated_at = EXCLUDED.updated_at
-    WHERE ${isNull(orgMetadataCanonicalWrites.defaultAgentId)}
     RETURNING org_id, tier`;
 }
 
@@ -170,13 +164,10 @@ export function orgLimitedFreeBootstrapPublicationSql(
 ): SQL {
   const query = new QueryBuilder();
   const existingDefault = query
-    .select({ id: orgMetadata.defaultAgentId })
-    .from(orgMetadata)
+    .select({ id: agents.id })
+    .from(agents)
     .where(
-      and(
-        eq(orgMetadata.orgId, args.orgId),
-        isNotNull(orgMetadata.defaultAgentId),
-      ),
+      and(eq(agents.orgId, args.orgId), eq(agents.name, DEFAULT_AGENT_NAME)),
     );
   const agent = publicationInsert(
     agents,

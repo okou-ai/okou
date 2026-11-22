@@ -8,7 +8,7 @@ import {
   workflowUserAutomationThreads,
 } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { command } from "ccstate";
 import { db$ } from "../external/db";
@@ -39,8 +39,6 @@ interface MorningBriefOwnership {
    * the enrollment owns; it never means the brief is enabled today.
    */
   readonly enrollment: MorningBriefEnrollment | undefined;
-  /** Every Morning Brief installation this member holds, oldest first. */
-  readonly installations: readonly MorningBriefInstallation[];
   /** The single installation the preference surface manages, if any. */
   readonly installation: MorningBriefInstallation | undefined;
 }
@@ -66,12 +64,6 @@ type MorningBriefInconsistency =
 interface MorningBriefStateBase {
   readonly owner: MorningBriefMemberIdentity;
   readonly enrollment: MorningBriefEnrollment | undefined;
-  /**
-   * Installations this member holds beyond the managed one. Holding several is
-   * legitimate: the catalog installs Morning Brief per Agent. They are
-   * reported as inventory and must never be adopted or mutated here.
-   */
-  readonly additionalInstallations: readonly MorningBriefInstallation[];
 }
 
 interface MorningBriefInstallationScope {
@@ -98,14 +90,14 @@ export type MorningBriefState =
         readonly reason: MorningBriefInconsistency;
       });
 
-const loadMorningBriefInstallations$ = command(
+const loadMorningBriefInstallation$ = command(
   async (
     { get },
     owner: MorningBriefMemberIdentity,
     signal: AbortSignal,
-  ): Promise<readonly MorningBriefInstallation[]> => {
+  ): Promise<MorningBriefInstallation | undefined> => {
     const db = get(db$);
-    const rows = await db
+    const [installation] = await db
       .select({
         id: workflows.id,
         installationState: workflows.officialInstallationState,
@@ -121,10 +113,10 @@ const loadMorningBriefInstallations$ = command(
           ]),
         ),
       )
-      .orderBy(asc(workflows.createdAt), asc(workflows.id));
+      .limit(1);
 
     signal.throwIfAborted();
-    return rows;
+    return installation;
   },
 );
 
@@ -142,16 +134,12 @@ export const loadMorningBriefOwnership$ = command(
       .where(morningBriefEnrollmentWhere(owner))
       .limit(1);
     signal.throwIfAborted();
-    const installations = await set(
-      loadMorningBriefInstallations$,
+    const installation = await set(
+      loadMorningBriefInstallation$,
       owner,
       signal,
     );
-    const installation =
-      installations.find(({ id }) => {
-        return id === enrollment?.workflowId;
-      }) ?? installations[0];
-    return { owner, enrollment, installations, installation };
+    return { owner, enrollment, installation };
   },
 );
 
@@ -232,13 +220,9 @@ export const loadMorningBriefState$ = command(
   ): Promise<MorningBriefState> => {
     const ownership = await set(loadMorningBriefOwnership$, owner, signal);
     const selected = ownership.installation;
-    const additionalInstallations = ownership.installations.filter(({ id }) => {
-      return id !== selected?.id;
-    });
     const base = {
       owner,
       enrollment: ownership.enrollment,
-      additionalInstallations,
     };
     if (!selected) {
       return { ...base, kind: "absent" };

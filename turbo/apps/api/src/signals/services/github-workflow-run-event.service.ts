@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   githubWorkflowRunCompletedEventConfigSchema,
   type GithubWorkflowRunCompletedEventConfig,
@@ -140,7 +141,7 @@ const loadGithubWorkflowRunAutomations$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

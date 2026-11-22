@@ -70,14 +70,13 @@ type UserMessageNonContentPart = Extract<
   { readonly type: "source" | "automation" }
 >;
 
-export interface ChatAgentRunSourceAnnotation {
+export interface ChatRunSourceAnnotation {
   readonly runId: string;
   readonly threadId: string;
-  readonly agentId?: string;
   readonly titleSnapshot: string;
 }
 
-export function agentRunSourceTitleSnapshot(title: string | null): string {
+export function chatRunSourceTitleSnapshot(title: string | null): string {
   const normalizedTitle = title?.trim();
   if (!normalizedTitle || normalizedTitle.toLowerCase() === "now") {
     return "New thread";
@@ -85,8 +84,8 @@ export function agentRunSourceTitleSnapshot(title: string | null): string {
   return normalizedTitle;
 }
 
-function chatAgentRunSourceHref(
-  source: Pick<ChatAgentRunSourceAnnotation, "runId" | "threadId">,
+function chatRunSourceHref(
+  source: Pick<ChatRunSourceAnnotation, "runId" | "threadId">,
 ): string {
   return `/chats/${source.threadId}#run-${source.runId}`;
 }
@@ -96,15 +95,14 @@ function chatAgentRunSourceHref(
  * annotation is the only place a claimed queue item still carries its source
  * run, because the queue head is read back as a document, not as a send body.
  */
-export function agentRunSourceAnnotation(
+export function chatRunSourceAnnotation(
   document: UserMessageDocument,
-): ChatAgentRunSourceAnnotation | null {
+): ChatRunSourceAnnotation | null {
   for (const part of document.parts) {
-    if (part.type === "source" && part.kind === "agent") {
+    if (part.type === "source" && part.kind === "chat") {
       return {
         runId: part.runId,
         threadId: part.threadId,
-        agentId: part.agentId,
         titleSnapshot: part.titleSnapshot,
       };
     }
@@ -159,24 +157,24 @@ export function userMessageReferences(
   };
 }
 
-export function hasAgentRunSourceAnnotation(
+export function hasChatRunSourceAnnotation(
   document: UserMessageDocument,
 ): boolean {
-  return agentRunSourceAnnotation(document) !== null;
+  return chatRunSourceAnnotation(document) !== null;
 }
 
 /** Replace client-owned annotations with authoritative agent-run provenance. */
-export function withAgentRunSourceAnnotation(
+export function withChatRunSourceAnnotation(
   document: UserMessageInputDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageInputDocument;
-export function withAgentRunSourceAnnotation(
+export function withChatRunSourceAnnotation(
   document: UserMessageDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageDocument;
-export function withAgentRunSourceAnnotation(
+export function withChatRunSourceAnnotation(
   document: UserMessageDocument,
-  source: ChatAgentRunSourceAnnotation,
+  source: ChatRunSourceAnnotation,
 ): UserMessageDocument {
   const contentParts = document.parts.filter((part) => {
     return part.type !== "source" && part.type !== "automation";
@@ -187,11 +185,11 @@ export function withAgentRunSourceAnnotation(
       ...contentParts,
       {
         type: "source",
-        kind: "agent",
+        kind: "chat",
         runId: source.runId,
         threadId: source.threadId,
         titleSnapshot: source.titleSnapshot,
-        href: chatAgentRunSourceHref(source),
+        href: chatRunSourceHref(source),
       },
     ],
   };
@@ -362,7 +360,7 @@ function formatFeedbackParts(
   serializeTemplate: (
     part: Extract<FeedbackNotePart, { type: "template" }>,
   ) => string,
-  agentRunSourceTitle: string | undefined,
+  chatRunSourceTitle: string | undefined,
   suggestionBackground = false,
 ): string {
   const firstMailSource = parts[0]?.source;
@@ -413,10 +411,10 @@ function formatFeedbackParts(
   });
   const intro = suggestionBackground
     ? "The user is following up on this suggestion background:"
-    : agentRunSourceTitle
+    : chatRunSourceTitle
       ? parts.length === 1
-        ? `The user forwarded this from the chat "${agentRunSourceTitle}":`
-        : `The user forwarded ${parts.length} parts from the chat "${agentRunSourceTitle}":`
+        ? `The user forwarded this from the chat "${chatRunSourceTitle}":`
+        : `The user forwarded ${parts.length} parts from the chat "${chatRunSourceTitle}":`
       : commonMailSource
         ? parts.length === 1
           ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
@@ -427,7 +425,7 @@ function formatFeedbackParts(
             ? "The user quoted this part of your reply:"
             : `The user quoted ${parts.length} parts of your reply:`;
   const commonMailContext =
-    agentRunSourceTitle && commonMailSource
+    chatRunSourceTitle && commonMailSource
       ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
       : "";
   return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
@@ -512,7 +510,7 @@ export function projectUserMessage(
   let primaryTemplate: LiveGenerationTemplate | undefined;
   const templates: LiveGenerationTemplate[] = [];
   let hasTextContent = false;
-  const agentRunSourceTitle = agentRunSourceAnnotation(document)?.titleSnapshot;
+  const chatRunSourceTitle = chatRunSourceAnnotation(document)?.titleSnapshot;
 
   const registerInlineTemplate = (part: {
     readonly titleSnapshot: string;
@@ -543,7 +541,7 @@ export function projectUserMessage(
     const projection = projectFeedbackParts(
       feedbackParts,
       registerInlineTemplate,
-      agentRunSourceTitle,
+      chatRunSourceTitle,
       templates.length,
       suggestionContexts,
     );
@@ -640,7 +638,7 @@ export function projectUserMessageForPublicShare(
       .filter((part) => {
         return (
           part.type !== "file" &&
-          !(part.type === "source" && part.kind === "agent")
+          !(part.type === "source" && part.kind === "chat")
         );
       })
       .map((part): UserMessagePart => {

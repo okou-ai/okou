@@ -102,7 +102,7 @@ async function expectAgentChatProvenance(args: {
   );
   expect(delegatedInput?.userMessage.parts).toContainEqual({
     type: "source",
-    kind: "agent",
+    kind: "chat",
     runId: args.source.runId,
     threadId: args.source.threadId,
     titleSnapshot: "New thread",

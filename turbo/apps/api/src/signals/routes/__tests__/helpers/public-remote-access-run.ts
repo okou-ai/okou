@@ -110,8 +110,8 @@ export function createPublicRemoteAccessRunApi(context: TestContext) {
     } else {
       const workflows = createWorkflowsBddApi(context);
       const workflowId = await workflows.createWorkflow(actor, {
-        visibility: "private",
         name: `remote-access-${randomUUID().slice(0, 8)}`,
+        visibility: "private",
         instruction: "Use the owner's currently authorized remote hosts.",
       });
       const automationApi = setupApp({

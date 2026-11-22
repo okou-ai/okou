@@ -398,7 +398,7 @@ test("Link the first-run agent source directly to its parent run", async () => {
     events: [
       prompt({
         type: "source",
-        kind: "agent",
+        kind: "chat",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",
@@ -454,7 +454,7 @@ test("List an agent origin once when it is also a related chat", async () => {
     events: [
       prompt({
         type: "source",
-        kind: "agent",
+        kind: "chat",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",
@@ -492,7 +492,7 @@ test("Keep the agent origin first in the collapsed preview when it is the oldest
     events: [
       prompt({
         type: "source",
-        kind: "agent",
+        kind: "chat",
         threadId: PEER,
         runId: OTHER_RUN,
         titleSnapshot: "Parent planning chat",

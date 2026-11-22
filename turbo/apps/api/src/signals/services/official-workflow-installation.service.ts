@@ -685,9 +685,12 @@ const insertInstallingWorkflow$ = command(
       if (
         isUniqueViolation(
           inserted.error,
-          "idx_workflows_official_member_definition",
+          "idx_workflows_official_owner_definition_unique",
         ) ||
-        isUniqueViolation(inserted.error, "idx_workflows_morning_brief_member")
+        isUniqueViolation(
+          inserted.error,
+          "idx_workflows_morning_brief_owner_unique",
+        )
       ) {
         return {
           kind: "conflict",

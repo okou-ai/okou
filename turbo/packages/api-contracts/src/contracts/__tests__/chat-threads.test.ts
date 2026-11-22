@@ -319,10 +319,9 @@ describe("chat thread generation template contract", () => {
           { type: "text", text: "Delegated prompt" },
           {
             type: "source",
-            kind: "agent",
+            kind: "chat",
             runId,
             threadId,
-            agentId: "00000000-0000-4000-8000-000000000003",
             titleSnapshot: "New thread",
             href: `/chats/${threadId}#run-${runId}`,
           },

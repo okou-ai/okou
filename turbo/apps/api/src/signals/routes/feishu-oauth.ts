@@ -19,7 +19,6 @@ import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oaut
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 
@@ -109,7 +108,6 @@ interface FeishuInstallationOAuthRow {
   readonly tenantKey: string | null;
   readonly setupCompletedAt: Date | null;
   readonly ownerUserId: string | null;
-  readonly defaultAgentId: string;
 }
 
 type FeishuCustomConnectorOAuthContext = Omit<
@@ -329,19 +327,11 @@ const loadInstallationForConnector$ = command(
         tenantKey: feishuOrgInstallations.feishuTenantKey,
         setupCompletedAt: feishuOrgInstallations.setupCompletedAt,
         ownerUserId: feishuOrgInstallations.ownerUserId,
-        defaultAgentId: orgMetadata.defaultAgentId,
       })
       .from(feishuOrgInstallations)
-      .leftJoin(
-        orgMetadata,
-        eq(orgMetadata.orgId, feishuOrgInstallations.orgId),
-      )
       .where(and(...conditions))
       .limit(1);
-    if (!installation?.defaultAgentId) {
-      return null;
-    }
-    return { ...installation, defaultAgentId: installation.defaultAgentId };
+    return installation ?? null;
   },
 );
 
@@ -388,12 +378,7 @@ const persistFeishuOAuthConnection$ = command(
       ),
     );
     signal.throwIfAborted();
-    if (!result?.agent) {
-      throw new Error(
-        "Failed to authorize Feishu custom connector: agentNotFound",
-      );
-    }
-    if (!result.credentialContract) {
+    if (!result?.credentialContract) {
       throw new Error(
         "Custom connector credential contract changed during OAuth connection",
       );

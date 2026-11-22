@@ -124,7 +124,7 @@ test("Delegated work links back to its source run", async () => {
     parts: [
       {
         type: "source",
-        kind: "agent",
+        kind: "chat",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 
@@ -235,7 +235,7 @@ test("Forwarded feedback names its source chat", async () => {
       },
       {
         type: "source",
-        kind: "agent",
+        kind: "chat",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 
@@ -308,7 +308,7 @@ async function openStructuredContextChat() {
     parts: [
       {
         type: "source",
-        kind: "agent",
+        kind: "chat",
         runId: SOURCE_RUN_ID,
         threadId: SOURCE_THREAD_ID,
 

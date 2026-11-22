@@ -829,7 +829,7 @@ test("Follow the Resources origin link to its parent run", async () => {
                 { type: "text", text: "Child message 1" },
                 {
                   type: "source",
-                  kind: "agent",
+                  kind: "chat",
                   threadId: DEEP_LINK_THREAD_ID,
                   runId: linkedRunId,
                   titleSnapshot: "Parent conversation",

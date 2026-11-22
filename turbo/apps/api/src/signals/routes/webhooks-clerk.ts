@@ -414,13 +414,6 @@ const handleOrganizationDeletedWebhook$ = command(
   },
 );
 
-/**
- * A new workspace's default agent only becomes usable when bootstrap
- * publishes it, which is after its creator's membership event has already
- * passed. Deliver the creator's welcome here, where the workspace is finally
- * able to answer for one. The identity-derived thread id makes the second
- * trigger for an already-served recipient a no-op.
- */
 const bootstrapOrgAndDeliverWelcome$ = command(
   async (
     { set },
@@ -431,15 +424,12 @@ const bootstrapOrgAndDeliverWelcome$ = command(
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const bootstrap = await set(
+    await set(
       ensureOrgLimitedFreeBootstrap$,
       { orgId: args.orgId, ownerUserId: args.userId },
       signal,
     );
     signal.throwIfAborted();
-    if (!bootstrap.agentId) {
-      return;
-    }
     enqueueWelcomeThreadDelivery({
       trigger: args.eventType,
       orgId: args.orgId,

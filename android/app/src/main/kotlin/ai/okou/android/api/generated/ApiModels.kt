@@ -494,7 +494,7 @@ enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type {
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Kind {
-    @SerialName("agent") AGENT
+    @SerialName("chat") CHAT
 }
 
 @Serializable
@@ -503,7 +503,6 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7(
     val `kind`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveWorkspaceDraftDraftUserMessagePartsItem
@@ -1477,7 +1476,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                     it.isString && it.content in setOf("source")
                 } == true &&
                     (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
+                        it.isString && it.content in setOf("chat")
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
@@ -1487,7 +1486,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                         (field is JsonPrimitive && field.isString && field.content == "source")
                     }) &&
                     (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
+                        (field is JsonPrimitive && field.isString && field.content == "chat")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")
@@ -2109,7 +2108,7 @@ enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Type {
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Kind {
-    @SerialName("agent") AGENT
+    @SerialName("chat") CHAT
 }
 
 @Serializable
@@ -2118,7 +2117,6 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant7(
     val `kind`: SaveThreadDraftDraftUserMessagePartsItemVariant7Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SaveThreadDraftDraftUserMessagePartsItem
@@ -3075,7 +3073,7 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                     it.isString && it.content in setOf("source")
                 } == true &&
                     (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
+                        it.isString && it.content in setOf("chat")
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
@@ -3085,7 +3083,7 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                         (field is JsonPrimitive && field.isString && field.content == "source")
                     }) &&
                     (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
+                        (field is JsonPrimitive && field.isString && field.content == "chat")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")
@@ -4170,7 +4168,7 @@ enum class SendRequestVariant1UserMessagePartsItemVariant7Type {
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant7Kind {
-    @SerialName("agent") AGENT
+    @SerialName("chat") CHAT
 }
 
 @Serializable
@@ -4179,7 +4177,6 @@ data class SendRequestVariant1UserMessagePartsItemVariant7(
     val `kind`: SendRequestVariant1UserMessagePartsItemVariant7Kind,
     val `runId`: String,
     val `threadId`: String,
-    val `agentId`: String? = null,
     val `titleSnapshot`: String,
     val `href`: String,
 ) : SendRequestVariant1UserMessagePartsItem
@@ -5153,7 +5150,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                     it.isString && it.content in setOf("source")
                 } == true &&
                     (value["kind"] as? JsonPrimitive)?.let {
-                        it.isString && it.content in setOf("agent")
+                        it.isString && it.content in setOf("chat")
                     } == true &&
                     value.containsKey("runId") &&
                     value.containsKey("threadId") &&
@@ -5163,7 +5160,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                         (field is JsonPrimitive && field.isString && field.content == "source")
                     }) &&
                     (value["kind"].let { field ->
-                        (field is JsonPrimitive && field.isString && field.content == "agent")
+                        (field is JsonPrimitive && field.isString && field.content == "chat")
                     }),
                 ((value["type"] as? JsonPrimitive)?.let {
                     it.isString && it.content in setOf("additional_info")

@@ -176,10 +176,10 @@ import {
 } from "./workflow-automation-account-classification.service";
 import {
   loadVisibleWorkflowById$,
-  visibleWorkflowCondition,
   workflowSummary,
   type WorkflowMember,
 } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   type WorkflowThreadPreparation,
   workflowUserAutomationThreadOwnerCondition,
@@ -1080,7 +1080,7 @@ export const loadAutomationWorkflowRunTarget$ = command(
         and(
           eq(workflows.orgId, args.orgId),
           eq(workflows.id, args.workflowId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);
@@ -1238,7 +1238,8 @@ export const listWorkspaceWorkflowAutomations$ = command(
         and(
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflowAutomations.ownerUserId, args.member.userId),
-          visibleWorkflowCondition(args.member),
+          eq(workflows.orgId, args.orgId),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .orderBy(asc(workflowAutomations.createdAt), asc(workflowAutomations.id));
@@ -1352,10 +1353,18 @@ export const listThreadBoundWorkflowAutomations$ = command(
           ),
         ),
       )
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(
+        workflows,
+        and(
+          eq(workflowAutomations.workflowId, workflows.id),
+          eq(workflows.orgId, workflowAutomations.orgId),
+        ),
+      )
       .where(
         and(
           eq(workflowAutomations.orgId, args.orgId),
+          eq(workflows.orgId, args.orgId),
+          visibleWorkflowCondition(args.userId),
           eq(workflowAutomations.ownerUserId, args.userId),
           eq(workflowUserAutomationThreads.chatThreadId, args.threadId),
           or(
@@ -7017,7 +7026,7 @@ const readWorkflowAutomationEnableTarget$ = command(
           eq(workflowAutomations.id, args.automationId),
           eq(workflowAutomations.orgId, args.orgId),
           eq(workflows.orgId, args.orgId),
-          visibleWorkflowCondition(args.member),
+          visibleWorkflowCondition(args.member.userId),
         ),
       )
       .limit(1);

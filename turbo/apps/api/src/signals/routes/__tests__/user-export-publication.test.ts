@@ -3,10 +3,6 @@ import { instructionsRoutes } from "../instructions";
 import { createHash, randomUUID } from "node:crypto";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 
-import {
-  agentInstructionsContract,
-  agentsMainContract,
-} from "@okouai/api-contracts/contracts/agents";
 import { userExportContract } from "@okouai/api-contracts/contracts/user-export";
 import { cronProcessBackgroundJobsContract } from "@okouai/api-contracts/contracts/cron";
 import {
@@ -24,8 +20,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { nowDate } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { agentsRoutes } from "../agents";
-import { agentInstructionsRoutes } from "../agent-instructions";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatThreadCreateRoutes } from "../chat-threads-create";
 import { chatThreadPatchRoutes } from "../chat-threads-patch";
@@ -43,9 +37,7 @@ import {
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
 const routes = Object.freeze([
-  ...agentsRoutes,
   ...instructionsRoutes,
-  ...agentInstructionsRoutes,
   ...chatThreadCreateRoutes,
   ...chatThreadPatchRoutes,
   ...workflowsRoutes,
@@ -103,18 +95,6 @@ function initialize(
 
 type Fixture = ReturnType<typeof initialize>;
 
-async function ownedAgent(fixture: Fixture, owner: ReturnType<typeof actor>) {
-  authenticate(owner);
-  const created = await accept(
-    fixture.app(agentsMainContract).create({
-      headers,
-      body: { displayName: "Exported private agent", visibility: "private" },
-    }),
-    [201],
-  );
-  return created.body.agentId;
-}
-
 async function startExport(fixture: Fixture, owner: ReturnType<typeof actor>) {
   authenticate(owner);
   const started = await accept(
@@ -148,7 +128,7 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
   const peer = actor(owner.orgId);
   const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer]);
-  await ownedAgent(fixture, owner);
+  authenticate(owner);
   const threads = [];
   for (const title of ["Saved draft", "No draft", "Cleared draft"]) {
     threads.push(
@@ -187,7 +167,7 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
     }),
     [204],
   );
-  await ownedAgent(fixture, peer);
+  authenticate(peer);
   const peerThread = await accept(
     fixture.app(chatThreadsContract).create({
       headers,
@@ -235,7 +215,6 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
       "id",
       "userId",
       "title",
-      "agentId",
       "orgId",
       "sourceScheduleRunId",
       "createdAt",
@@ -256,7 +235,6 @@ test("exports PATCH-created drafts with owned thread timestamps and absent draft
       id: thread.body.id,
       userId: owner.userId,
       title: thread.body.title,
-      agentId: null,
       orgId: owner.orgId,
       createdAt: thread.body.createdAt,
       sourceScheduleRunId: null,
@@ -283,18 +261,7 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
   const outsider = actor();
   const app = setupApp({ context, routes });
   const fixture = initialize(app, [owner, peer, outsider]);
-  const agentId = await ownedAgent(fixture, owner);
   authenticate(owner);
-  const rawInstructions =
-    "[AGENT_PROFILE]\nLegacy display metadata\n[/AGENT_PROFILE]\nExported current instructions";
-  await accept(
-    fixture.app(agentInstructionsContract).update({
-      headers,
-      params: { id: agentId },
-      body: { content: rawInstructions },
-    }),
-    [200],
-  );
   const workflow = await accept(
     fixture.app(workflowsCollectionContract).create({
       headers,
@@ -334,11 +301,6 @@ test("publishes an owned ZIP, deduplicates concurrent requests and excludes peer
     error: null,
   });
   const zip = archive(fixture, ready.job?.downloadUrl);
-  expect(JSON.parse(zip.readAsText(`agents/${agentId}.json`))).toMatchObject({
-    id: agentId,
-    visibility: "private",
-    instructions: "Exported current instructions",
-  });
   expect(
     JSON.parse(zip.readAsText(`workflows/${workflow.body.id}.json`)),
   ).toMatchObject({

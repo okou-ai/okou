@@ -39,14 +39,14 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 
-type AgentSourcePart = Extract<
+type ChatSourcePart = Extract<
   UserMessagePart,
-  { type: "source"; kind: "agent" }
+  { type: "source"; kind: "chat" }
 >;
 
-function useAgentOrigin(thread: ChatPanelSignals): AgentSourcePart | null {
+function useChatOrigin(thread: ChatPanelSignals): ChatSourcePart | null {
   const origin = useGet(thread.relations.origin$);
-  return origin?.kind === "source" && origin.part.kind === "agent"
+  return origin?.kind === "source" && origin.part.kind === "chat"
     ? origin.part
     : null;
 }
@@ -56,7 +56,7 @@ function useAgentOrigin(thread: ChatPanelSignals): AgentSourcePart | null {
 export function ChatOrigin({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const origin = useGet(thread.relations.origin$);
-  if (origin?.kind !== "source" || origin.part.kind === "agent") {
+  if (origin?.kind !== "source" || origin.part.kind === "chat") {
     return null;
   }
   const part = origin.part;
@@ -440,7 +440,7 @@ function ResourceChatRow({
 }
 
 // The parent is not always among the chats this one exchanged messages with.
-function UnlistedOriginRow({ part }: { readonly part: AgentSourcePart }) {
+function UnlistedOriginRow({ part }: { readonly part: ChatSourcePart }) {
   const titleReveal = useTitleReveal();
   return (
     <li>
@@ -472,7 +472,7 @@ export function ChatRelationships({
   const { t } = useTranslation();
   const signals = thread.relations;
   const chats = useLastLoadable(signals.chats.data$);
-  const origin = useAgentOrigin(thread);
+  const origin = useChatOrigin(thread);
   const expanded = useGet(thread.resources.expandedSections$).chats;
   const toggleSection = useSet(thread.resources.toggleSection$);
   if (chats.state === "loading") {

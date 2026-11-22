@@ -265,7 +265,7 @@ test("Forwarded feedback uses the document-level source title", () => {
       },
       {
         type: "source",
-        kind: "agent",
+        kind: "chat",
         runId: "d0000000-0000-4000-a000-000000000931",
         threadId: CHAT_THREAD_ID,
 
@@ -285,7 +285,7 @@ test("Forwarded feedback uses the document-level source title", () => {
 test("Forwarded mail feedback keeps common source identifiers", () => {
   const sourcePart = {
     type: "source",
-    kind: "agent",
+    kind: "chat",
     runId: "d0000000-0000-4000-a000-000000000932",
     threadId: CHAT_THREAD_ID,
 

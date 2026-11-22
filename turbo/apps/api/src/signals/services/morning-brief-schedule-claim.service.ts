@@ -4,7 +4,6 @@ import {
   MORNING_BRIEF_OFFICIAL_DEFINITION_NAMES,
 } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { morningBriefEnrollments } from "@okouai/db/schema/morning-brief-enrollment";
 import {
   morningBriefScheduleClaims,
   type MorningBriefScheduleClaimSettlement,
@@ -12,7 +11,7 @@ import {
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { command } from "ccstate";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { boolean, literal, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgTextDecoder } from "../../lib/db-structured-result";
@@ -68,18 +67,7 @@ export const isCanonicalMorningBriefAutomation$ = command(
     }
     const db = set(writeDb$);
     const owner = { orgId: automation.orgId, userId: automation.ownerUserId };
-    const [enrollment] = await db
-      .select({ workflowId: morningBriefEnrollments.workflowId })
-      .from(morningBriefEnrollments)
-      .where(
-        and(
-          eq(morningBriefEnrollments.orgId, owner.orgId),
-          eq(morningBriefEnrollments.userId, owner.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    const installations = await db
+    const [selected] = await db
       .select({
         id: workflows.id,
         installationState: workflows.officialInstallationState,
@@ -95,12 +83,8 @@ export const isCanonicalMorningBriefAutomation$ = command(
           ]),
         ),
       )
-      .orderBy(asc(workflows.createdAt), asc(workflows.id));
+      .limit(1);
     signal.throwIfAborted();
-    const selected =
-      installations.find((installation) => {
-        return installation.id === enrollment?.workflowId;
-      }) ?? installations[0];
     if (selected?.installationState !== "installed") {
       return false;
     }

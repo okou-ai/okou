@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 
 import { describe, expect, it } from "vitest";
 
@@ -22,10 +21,7 @@ const webhooks = createWebhookCallbackApi(context);
 describe("GitHub installation status", () => {
   it("removes only the deleted installation and accepts a replayed webhook", async () => {
     const owner = bdd.user();
-    const agent = await bdd.createAgent(owner, {
-      displayName: `GitHub deleted installation ${randomUUID()}`,
-    });
-    const installation = await github.installGithubApp(owner, agent.agentId, {
+    const installation = await github.installGithubApp(owner, {
       oauthCode: {
         code: "github-deleted-installation-owner",
         githubUserId: "901",
@@ -33,20 +29,13 @@ describe("GitHub installation status", () => {
       },
     });
     const other = bdd.user();
-    const otherAgent = await bdd.createAgent(other, {
-      displayName: `GitHub retained installation ${randomUUID()}`,
-    });
-    const otherInstallation = await github.installGithubApp(
-      other,
-      otherAgent.agentId,
-      {
-        oauthCode: {
-          code: "github-retained-installation-owner",
-          githubUserId: "902",
-          login: "github-retained-installation-owner",
-        },
+    const otherInstallation = await github.installGithubApp(other, {
+      oauthCode: {
+        code: "github-retained-installation-owner",
+        githubUserId: "902",
+        login: "github-retained-installation-owner",
       },
-    );
+    });
     webhooks.configureGithubWebhookSecret();
 
     for (const action of ["created", "suspend", "deleted", "deleted"]) {
@@ -90,9 +79,6 @@ describe("GitHub installation status", () => {
   it("reads installation and linked profile changes on subsequent requests", async () => {
     mockOptionalEnv("GITHUB_APP_SLUG", "bdd-github-app");
     const actor = bdd.user();
-    const agent = await bdd.createAgent(actor, {
-      displayName: `GitHub status ${randomUUID()}`,
-    });
     const missing = await github.requestReadInstallation(actor, [404]);
     expect(missing.body).toMatchObject({
       error: { code: "NOT_FOUND" },
@@ -101,7 +87,7 @@ describe("GitHub installation status", () => {
       ),
     });
 
-    const installation = await github.installGithubApp(actor, agent.agentId, {
+    const installation = await github.installGithubApp(actor, {
       oauthCode: {
         code: "github-status-initial",
         githubUserId: "701",
@@ -144,10 +130,7 @@ describe("GitHub installation status", () => {
 
   it("keeps linked account details scoped to the authenticated user and organization", async () => {
     const owner = bdd.user();
-    const agent = await bdd.createAgent(owner, {
-      displayName: `GitHub member status ${randomUUID()}`,
-    });
-    const installation = await github.installGithubApp(owner, agent.agentId, {
+    const installation = await github.installGithubApp(owner, {
       oauthCode: {
         code: "github-status-owner",
         githubUserId: "801",

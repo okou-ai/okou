@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   workflowUserAutomationThreads,
   workflowWebhookAutomations,
@@ -185,7 +186,7 @@ const loadWebhookAutomationForToken$ = command(
         workflowAutomations,
         eq(workflowWebhookAutomations.automationId, workflowAutomations.id),
       )
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -32,7 +33,7 @@ import {
   pickEnqueuedChatThread$,
 } from "./chat-thread-queue-drain.service";
 import { waitUntil } from "../context/wait-until";
-import { agentRunSourceTitleSnapshot } from "./chat-user-message.service";
+import { chatRunSourceTitleSnapshot } from "./chat-user-message.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import {
@@ -261,10 +262,10 @@ const admitChatRunFinishedAutomation$ = command(
             runId: event.runId,
           },
           apiStartTime: now(),
-          agentRunSource: {
+          chatRunSource: {
             runId: event.runId,
             threadId: event.chatThreadId,
-            titleSnapshot: agentRunSourceTitleSnapshot(event.sourceThreadTitle),
+            titleSnapshot: chatRunSourceTitleSnapshot(event.sourceThreadTitle),
           },
           triggerSource: "automation-event",
           triggerBrief: `Chat run ${event.runStatus} in watched thread`,
@@ -310,7 +311,7 @@ const loadChatRunFinishedAutomationTargets$ = command(
         chatThreadId: workflowUserAutomationThreads.chatThreadId,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .leftJoin(
         workflowUserAutomationThreads,
         and(

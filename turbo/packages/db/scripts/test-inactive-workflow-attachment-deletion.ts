@@ -81,6 +81,7 @@ export async function validateInactiveWorkflowAttachmentDeletion(
   } finally {
     try {
       await sql`DELETE FROM background_jobs WHERE org_id = ${orgId}`;
+      await sql`DELETE FROM workflows WHERE org_id = ${orgId}`;
     } finally {
       await sql.end();
     }

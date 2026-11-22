@@ -2,7 +2,7 @@ import type { BootstrapFeatureSwitchContext } from "../agent-run-context.signals
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import { computed, type Computed } from "ccstate";
 import {
-  agentRunSourceAnnotation,
+  chatRunSourceAnnotation,
   projectUserMessage,
   requiredUserMessageForEvent,
   userMessageReferences,
@@ -64,7 +64,7 @@ export function createWebThreadPrompt(
             generationTemplatePrompt: "",
             computerUseHostDisplayName: null,
             triggerSource,
-            agentRunSource: agentRunSourceAnnotation(message),
+            chatRunSource: chatRunSourceAnnotation(message),
             references: userMessageReferences(message),
             integrationNote: resolveIntegrationNotePrompt({
               triggerSource,

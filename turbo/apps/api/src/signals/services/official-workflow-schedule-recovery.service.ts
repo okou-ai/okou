@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { officialWorkflowCatalogState } from "@okouai/db/schema/official-workflow-catalog";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -151,7 +152,7 @@ export const recoverDueOfficialWorkflowSchedules$ = command(
         definitionName: workflows.officialDefinitionName,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflows.id, workflowAutomations.workflowId))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .where(
         and(
           eq(workflowAutomations.enabled, false),

@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { GoogleFormsSourceTransitionChangedError } from "./workflow-google-forms-queue.service";
 import {
   googleFormsResponseSubmittedEventConfigSchema,
@@ -212,7 +213,7 @@ const loadGoogleFormsEventAutomations$ = command(
         cursor: googleFormsAutomationCursors.lastSeenSubmittedTime,
       })
       .from(workflowAutomations)
-      .innerJoin(workflows, eq(workflowAutomations.workflowId, workflows.id))
+      .innerJoin(workflows, automationWorkflowJoinCondition())
       .innerJoin(
         googleFormsAutomationCursors,
         eq(googleFormsAutomationCursors.automationId, workflowAutomations.id),

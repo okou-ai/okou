@@ -77,23 +77,29 @@ export const workflows = pgTable(
       importSessionIdx: index("idx_workflows_import_session").on(
         table.importSessionId,
       ),
-      publicNameIdx: uniqueIndex("idx_workflows_public_name_unique")
+      // Public names are shared across the workspace; private names belong to members.
+      publicOrgNameIdx: uniqueIndex("idx_workflows_public_org_name_unique")
         .on(table.orgId, table.name)
         .where(sql`visibility = 'public'`),
       // Ordinary names and Official definitions have independent identities.
       ordinaryPrivateOwnerNameIdx: uniqueIndex(
-        "idx_workflows_private_owner_name_unique",
+        "idx_workflows_ordinary_private_owner_name_unique",
       )
         .on(table.orgId, table.ownerUserId, table.name)
         .where(
           sql`visibility = 'private' AND official_definition_name IS NULL`,
         ),
-      officialMemberDefinitionIdx: uniqueIndex(
-        "idx_workflows_official_member_definition",
+      officialOwnerDefinitionIdx: uniqueIndex(
+        "idx_workflows_official_owner_definition_unique",
       )
         .on(table.orgId, table.ownerUserId, table.officialDefinitionName)
         .where(sql`official_definition_name IS NOT NULL`),
-      morningBriefMemberIdx: uniqueIndex("idx_workflows_morning_brief_member")
+      // Both rollout definitions are one Morning Brief installation identity.
+      // At GA (#39591), remove this index after installations converge to
+      // morning-brief; the canonical Official definition index then suffices.
+      morningBriefOwnerIdx: uniqueIndex(
+        "idx_workflows_morning_brief_owner_unique",
+      )
         .on(table.orgId, table.ownerUserId)
         .where(
           sql`official_definition_name IN ('morning-brief', 'internal-test-morning-brief')`,

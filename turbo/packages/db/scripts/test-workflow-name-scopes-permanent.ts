@@ -42,16 +42,16 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
 
     await assert.rejects(
       insert("ordinary-first"),
-      duplicate("idx_workflows_private_owner_name_unique"),
+      duplicate("idx_workflows_ordinary_private_owner_name_unique"),
     );
     await assert.rejects(
       insert("ordinary-first", "public"),
-      duplicate("idx_workflows_public_name_unique"),
+      duplicate("idx_workflows_public_org_name_unique"),
     );
     for (const state of ["installing", "installed"] as const) {
       await assert.rejects(
         insert("ordinary-first", "private", "ordinary-first", state),
-        duplicate("idx_workflows_official_member_definition"),
+        duplicate("idx_workflows_official_owner_definition_unique"),
       );
     }
     assert.equal(
@@ -65,6 +65,16 @@ export async function validatePermanentWorkflowNameScopes(databaseUrl: string) {
       ).rowCount,
       1,
       "Ordinary readers select one identity even beside a same-name Official installation",
+    );
+    await insert("morning-brief", "private", "morning-brief", "installed");
+    await assert.rejects(
+      insert(
+        "internal-test-morning-brief",
+        "private",
+        "internal-test-morning-brief",
+        "installing",
+      ),
+      duplicate("idx_workflows_morning_brief_owner_unique"),
     );
   } finally {
     await client.query(`DELETE FROM workflows WHERE org_id = $1`, [orgId]);

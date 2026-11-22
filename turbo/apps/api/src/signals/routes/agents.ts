@@ -1,8 +1,9 @@
+import { executionAgentId } from "../services/execution-agent";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 import { randomUUID } from "node:crypto";
 
 import { command, computed } from "ccstate";
-import { and, eq, lt, or, sql } from "drizzle-orm";
+import { and, eq, lt, ne, or, sql } from "drizzle-orm";
 import { enum as zodEnum, int, object, string } from "zod";
 import {
   agentsByIdContract,
@@ -13,7 +14,7 @@ import {
 import { randomAvatarUrl } from "@okouai/core/agent-avatar";
 import { agentIdentityUpdateError } from "@okouai/core/agent-protection";
 import { agents } from "@okouai/db/schema/agent";
-import { orgMetadata } from "@okouai/db/schema/org-metadata";
+import { DEFAULT_AGENT_NAME } from "../services/default-agent-profile";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
@@ -32,7 +33,6 @@ import {
   agentResponse,
   visibleAgentIdentityCondition,
   agentList,
-  nonDefaultAgentCondition,
   publicAgentCountReadPlan,
 } from "../services/agent-data.service";
 import type { RouteEntry } from "../route-entry";
@@ -197,19 +197,6 @@ function agentConfigurationUpdateRejection(
   return null;
 }
 
-function agentUpdateResponseSelection() {
-  return {
-    agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
-    owner: agents.owner,
-    displayName: agents.displayName,
-    description: agents.description,
-    sound: agents.sound,
-    avatarUrl: agents.avatarUrl,
-    visibility: agents.visibility,
-  };
-}
-
 function agentCreateSelection(values: typeof agents.$inferSelect) {
   // Defer text admission until the eligible INSERT row is projected. Binding
   // raw NUL text would reject before the public-count predicate can run.
@@ -296,7 +283,7 @@ const createAgentBody$ = bodyResultOf(agentsMainContract.create);
 function createdAgentSelection() {
   return {
     agentId: agents.id,
-    defaultAgentId: orgMetadata.defaultAgentId,
+    defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
     owner: agents.owner,
     displayName: agents.displayName,
     description: agents.description,
@@ -315,7 +302,6 @@ const committedClientAgent$ = computed(async (get) => {
   const [agent] = await get(db$)
     .select(createdAgentSelection())
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(
       and(
         eq(agents.id, body.data.clientAgentId),
@@ -417,7 +403,6 @@ const createAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const [agent] = await writeDb
     .select(createdAgentSelection())
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(
       and(
         eq(agents.orgId, auth.orgId),
@@ -465,7 +450,7 @@ const getAgentInner$ = computed(async (get) => {
   const [row] = await get(db$)
     .select({
       agentId: agents.id,
-      defaultAgentId: orgMetadata.defaultAgentId,
+      defaultAgentId: executionAgentId(agents.orgId).as("default_executor_id"),
       owner: agents.owner,
       displayName: agents.displayName,
       description: agents.description,
@@ -474,7 +459,6 @@ const getAgentInner$ = computed(async (get) => {
       visibility: agents.visibility,
     })
     .from(agents)
-    .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
     .where(visibleAgentIdentityCondition(agentScope))
     .limit(1);
   const agent = row ? agentResponse(row) : null;
@@ -511,7 +495,9 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         id: agents.id,
         owner: agents.owner,
         visibility: agents.visibility,
-        defaultAgentId: orgMetadata.defaultAgentId,
+        defaultAgentId: executionAgentId(agents.orgId).as(
+          "default_executor_id",
+        ),
         publicAgentCount: (updateBody.visibility === "public"
           ? sql`CASE WHEN ${and(eq(agents.visibility, "private"), eq(agents.owner, member.userId))} THEN (${publicAgentCount}) ELSE 0::bigint END`
           : sql`0::bigint`
@@ -520,7 +506,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           .as("public_agent_count"),
       })
       .from(agents)
-      .leftJoin(orgMetadata, eq(orgMetadata.orgId, agents.orgId))
       .where(and(eq(agents.orgId, auth.orgId), eq(agents.id, params.id)))
       .for("update", { of: agents }),
   );
@@ -535,7 +520,10 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
           eq(agents.orgId, auth.orgId),
           eq(agents.id, locked.id),
           agentIdentityUpdateError(true, updateBody)
-            ? nonDefaultAgentCondition(auth.orgId)
+            ? or(
+                ne(agents.name, DEFAULT_AGENT_NAME),
+                ne(agents.visibility, "public"),
+              )
             : undefined,
           or(
             eq(locked.owner, member.userId),
@@ -555,8 +543,13 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
         ),
       )
       .returning({
-        ...agentUpdateResponseSelection(),
-        defaultAgentId: locked.defaultAgentId,
+        agentId: agents.id,
+        owner: agents.owner,
+        displayName: agents.displayName,
+        description: agents.description,
+        sound: agents.sound,
+        avatarUrl: agents.avatarUrl,
+        visibility: agents.visibility,
       }),
   );
   const [row] = await writeDb
@@ -571,7 +564,6 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       },
       agent: {
         agentId: updated.agentId,
-        defaultAgentId: updated.defaultAgentId,
         owner: updated.owner,
         displayName: updated.displayName,
         description: updated.description,
@@ -600,7 +592,10 @@ const updateAgentInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   return {
     status: 200 as const,
-    body: agentResponse(row.agent),
+    body: agentResponse({
+      ...row.agent,
+      defaultAgentId: row.existing.defaultAgentId,
+    }),
   };
 });
 

@@ -14,7 +14,7 @@ import {
 } from "./proactive-workflow-definitions";
 
 import { writeDb$ } from "../external/db";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 
 type WorkflowAutomationRow = typeof workflowAutomations.$inferSelect;
 
@@ -74,10 +74,7 @@ export const workflowAutomationCanFire$ = command(
         and(
           eq(workflows.id, automation.workflowId),
           eq(workflows.orgId, automation.orgId),
-          visibleWorkflowCondition({
-            userId: automation.ownerUserId,
-            role: member.role,
-          }),
+          visibleWorkflowCondition(automation.ownerUserId),
         ),
       )
       .limit(1);

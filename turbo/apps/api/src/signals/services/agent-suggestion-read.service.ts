@@ -37,7 +37,7 @@ import {
 } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { withSuggestionConsumeToken } from "./agent-suggestion-consumption-token";
-import { visibleWorkflowCondition } from "./workflow-data.service";
+import { visibleWorkflowCondition } from "./workflow-visibility";
 import {
   acceptedCatalogDefinitionRevision,
   acceptedOfficialWorkflowCatalogReadPlan,
@@ -181,10 +181,7 @@ const feedAutomationDescriptions$ = command(
         and(
           eq(workflows.orgId, auth.orgId),
           inArray(workflows.id, workflowIds),
-          visibleWorkflowCondition({
-            userId: auth.userId,
-            role: auth.orgRole ?? "member",
-          }),
+          visibleWorkflowCondition(auth.userId),
         ),
       );
     signal.throwIfAborted();

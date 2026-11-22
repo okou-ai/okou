@@ -5000,7 +5000,7 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
     expect(run.status).toBe("running");
     await runs.heartbeatRunner(runnerGroup);
     const execution = await runs.executionInput(run.runId);
-    await gh.installGithubApp(actor, agent.agentId, {
+    await gh.installGithubApp(actor, {
       oauthCode: {
         code: `whcb08a-${randomUUID().slice(0, 8)}`,
         githubUserId: newGithubUserId(),
@@ -5648,11 +5648,11 @@ describe("WHCB-08: Clerk deletion webhooks stop execution and retain account his
 
     it("does not revoke the deleted user's GitHub grant while preserving the shared organization", async () => {
       const fixture = await prepareUserDeletion();
-      const { doomed, sharedAgent } = fixture;
+      const { doomed } = fixture;
       const gh = createGithubBddApi(context);
       const revocations = acceptGithubGrantRevocations();
       // The GitHub provider is a surviving observer of credential retention.
-      await gh.installGithubApp(doomed, sharedAgent.agentId, {
+      await gh.installGithubApp(doomed, {
         oauthCode: {
           code: `whcb08b-${randomUUID().slice(0, 8)}`,
           githubUserId: newGithubUserId(),

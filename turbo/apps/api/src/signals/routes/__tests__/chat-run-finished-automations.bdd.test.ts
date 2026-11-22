@@ -285,7 +285,7 @@ async function expectAutomationSourceAnnotation(
       event.userMessage.parts.some((part) => {
         return (
           part.type === "source" &&
-          part.kind === "agent" &&
+          part.kind === "chat" &&
           part.runId === sourceRun.runId
         );
       })
@@ -307,7 +307,7 @@ async function expectAutomationSourceAnnotation(
   ).toStrictEqual([
     {
       type: "source",
-      kind: "agent",
+      kind: "chat",
       runId: sourceRun.runId,
       threadId: sourceRun.threadId,
       titleSnapshot: WATCHED_THREAD_TITLE,

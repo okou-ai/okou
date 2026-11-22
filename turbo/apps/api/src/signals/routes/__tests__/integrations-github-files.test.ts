@@ -68,7 +68,7 @@ describe("GitHub file integration routes", () => {
       displayName: "GitHub Files Agent",
       visibility: "private",
     });
-    const install = await github.installGithubApp(actor, agent.agentId, {
+    const install = await github.installGithubApp(actor, {
       targetLogin: "bdd-files-org",
     });
     return {

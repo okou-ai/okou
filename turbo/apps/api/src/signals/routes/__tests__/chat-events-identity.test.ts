@@ -272,7 +272,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
             parts: expect.arrayContaining([
               expect.objectContaining({
                 type: "source",
-                kind: "agent",
+                kind: "chat",
                 runId: caller.runId,
               }),
             ]),
@@ -329,7 +329,7 @@ describe("CHAT-02: run-scoped agent-token chat launches", () => {
       expect(promoted.userMessage.parts).toContainEqual(
         expect.objectContaining({
           type: "source",
-          kind: "agent",
+          kind: "chat",
           runId: caller.runId,
         }),
       );

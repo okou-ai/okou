@@ -1,3 +1,4 @@
+import { automationWorkflowJoinCondition } from "./workflow-visibility";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
@@ -74,7 +75,7 @@ export function currentWorkflowAutomationBindingSql(
   const lockAutomation =
     lock === "schedule-claim" ? sql`FOR NO KEY UPDATE` : sql`FOR SHARE`;
   return sql`SELECT ${workflowAutomations.id} FROM ${workflowAutomations}
-    JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
+    JOIN ${workflows} ON ${automationWorkflowJoinCondition()}
     JOIN ${binding} ON ${and(
       eq(binding.orgId, workflowAutomations.orgId),
       eq(binding.userId, workflowAutomations.ownerUserId),

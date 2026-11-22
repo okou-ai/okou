@@ -431,7 +431,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     expect(forwardedMessage?.userMessage?.parts).toContainEqual({
       type: "source",
-      kind: "agent",
+      kind: "chat",
       runId: source.runId,
       threadId: source.threadId,
       titleSnapshot: "Source launch plan",
@@ -579,7 +579,7 @@ describe("CHAT-02: generation templates and attachments", () => {
           ...scenario.userMessage.parts,
           expect.objectContaining({
             type: "source",
-            kind: "agent",
+            kind: "chat",
             runId: source.runId,
           }),
         ]),

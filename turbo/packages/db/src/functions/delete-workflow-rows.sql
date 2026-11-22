@@ -1,4 +1,3 @@
--- okou:non-transactional
 -- Preserve separate post-lock commands so an Automation's watch identity uses
 -- the fresh snapshot after a preceding lock owner commits.
 CREATE OR REPLACE FUNCTION public.delete_workflow_rows(
