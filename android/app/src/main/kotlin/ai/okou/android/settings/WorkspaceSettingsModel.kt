@@ -12,12 +12,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
@@ -50,9 +52,18 @@ internal data class SettingsRead<T>(
         get() = value == null && unavailable
 }
 
-private const val staleAfterMillis = 10 * 60_000L
-private const val maxReadAttempts = 3
-private const val readRetryDelayMillis = 3_000L
+internal fun SettingsRead<*>.isStale(nowMillis: Long): Boolean {
+    val age = nowMillis - (readAt ?: return false)
+    return age < 0 || age > 10 * 60_000L
+}
+
+internal const val settingsReadAttempts = 3
+internal const val settingsReadRetryDelayMillis = 3_000L
+
+internal fun Exception.retryableSettingsRead(): Boolean =
+    this is ApiFailure.Network ||
+        this is ApiFailure.Http && (status in 500..599 || status == 408 || status == 429)
+
 private val accountsSerializer = ListSerializer(RecoverySubscriptionsSubscriptionsItem.serializer())
 
 private enum class WorkspaceSettingsResource(val cacheKey: String) {
@@ -80,7 +91,6 @@ internal data class WorkspaceSettingsState(
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
     val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
-    val switchFailures: Set<ModelAccountProvider> = emptySet(),
     val offline: Boolean = false,
 )
 
@@ -99,6 +109,20 @@ internal constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkspaceSettingsState())
     internal val uiState = mutable.asStateFlow()
+    private val messages = Channel<SettingsNotice>(Channel.CONFLATED)
+    internal val notices = messages.receiveAsFlow()
+    internal val emailSubscription =
+        EmailSubscriptionSettings(
+            viewModelScope,
+            service,
+            identity,
+            cache,
+            authorized,
+            ::reportSessionFailure,
+            nowMillis,
+        ) {
+            messages.trySend(it)
+        }
     internal val defaultModel =
         DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
             reportSessionFailure(it)
@@ -116,6 +140,7 @@ internal constructor(
         viewModelScope.launch {
             connectivity.collect { online ->
                 defaultModel.online(online)
+                emailSubscription.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
                 if (changed) {
@@ -279,8 +304,9 @@ internal constructor(
                         state.copy(
                             accounts = result,
                             switching = state.switching - verifying.keys,
-                            switchFailures = state.switchFailures + rejected,
                         )
+                    if (rejected.isNotEmpty())
+                        messages.trySend(SettingsNotice.ModelAccountSwitchFailed)
                 }
             }
         }
@@ -305,7 +331,6 @@ internal constructor(
                 switching =
                     latest.switching +
                         (provider to AccountSwitch(accountId, AccountSwitchPhase.Submitting)),
-                switchFailures = latest.switchFailures - provider,
             )
         }
         viewModelScope.launch {
@@ -353,12 +378,8 @@ internal constructor(
                         error.status in 400..499 &&
                         error.status !in setOf(404, 408, 409)
                 ) {
-                    mutable.update {
-                        it.copy(
-                            switching = it.switching - provider,
-                            switchFailures = it.switchFailures + provider,
-                        )
-                    }
+                    mutable.update { it.copy(switching = it.switching - provider) }
+                    messages.trySend(SettingsNotice.ModelAccountSwitchFailed)
                 } else {
                     confirmSwitchByReading(provider, accountId)
                 }
@@ -389,9 +410,8 @@ internal constructor(
         try {
             val before = state()
             if (before.initialFailure) publish(SettingsRead())
-            val age = before.readAt?.let { nowMillis() - it }
-            showProgress(resource, age != null && (age < 0 || age > staleAfterMillis))
-            for (attempt in 1..maxReadAttempts) {
+            showProgress(resource, before.isStale(nowMillis()))
+            for (attempt in 1..settingsReadAttempts) {
                 if (!canRead()) return
                 try {
                     val data = fetch()
@@ -413,12 +433,8 @@ internal constructor(
                     currentCoroutineContext().ensureActive()
                     reportSessionFailure(error)
                     if (!authorized()) return
-                    val retryable =
-                        error is ApiFailure.Network ||
-                            error is ApiFailure.Http &&
-                                (error.status in 500..599 || error.status in setOf(408, 429))
-                    if (retryable && attempt < maxReadAttempts) {
-                        delay(readRetryDelayMillis)
+                    if (error.retryableSettingsRead() && attempt < settingsReadAttempts) {
+                        delay(settingsReadRetryDelayMillis)
                         continue
                     }
                     val current = state()

@@ -12965,6 +12965,30 @@ data class UpdateDefaultModelPreference(
 )
 
 @Serializable
+enum class EmailSubscriptionDeliveryStatus {
+    @SerialName("available") AVAILABLE,
+    @SerialName("suppressed") SUPPRESSED,
+    @SerialName("no-email") NO_EMAIL,
+}
+
+@Serializable
+data class EmailSubscription(
+    val `subscribed`: Boolean,
+    val `email`: String?,
+    val `deliveryStatus`: EmailSubscriptionDeliveryStatus,
+)
+
+@Serializable
+data class UpdateEmailSubscriptionRequest(
+    val `subscribed`: Boolean,
+)
+
+@Serializable
+data class EmailSubscriptionUpdate(
+    val `subscribed`: Boolean,
+)
+
+@Serializable
 data class FeatureSwitches(
     val `effectiveSwitches`: Map<String, Boolean>,
 )

@@ -30,6 +30,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,12 +41,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
@@ -65,6 +69,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -72,6 +77,7 @@ import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Composable
@@ -92,28 +98,57 @@ internal fun WorkspaceSettingsProgress(
             else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
         }
     if (refreshing && !state.offline) {
-        val description = stringResource(label)
-        val colors = MaterialTheme.colorScheme
-        val track = colors.primary.copy(alpha = 0.18f).compositeOver(colors.background)
-        val modifier =
-            Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description }
-        var animate by remember { mutableStateOf(false) }
-        LaunchedEffect(Unit) {
-            val motion = coroutineContext[MotionDurationScale]
-            motion?.scaleFactor
-            snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
+        SettingsRefreshProgress(stringResource(label))
+    }
+}
+
+@Composable
+internal fun SettingsRefreshProgress(
+    description: String,
+    background: Color = MaterialTheme.colorScheme.background,
+) {
+    val colors = MaterialTheme.colorScheme
+    val track = colors.primary.copy(alpha = 0.18f).compositeOver(background)
+    val modifier =
+        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description }
+    var animate by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val motion = coroutineContext[MotionDurationScale]
+        snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
+    }
+    if (animate) {
+        LinearProgressIndicator(
+            modifier = modifier,
+            color = colors.primary,
+            trackColor = track,
+            strokeCap = StrokeCap.Round,
+        )
+    } else {
+        val shape = RoundedCornerShape(2.dp)
+        Box(modifier.progressSemantics().background(track, shape)) {
+            Box(Modifier.fillMaxWidth(0.3f).fillMaxHeight().background(colors.primary, shape))
         }
-        if (animate) {
-            LinearProgressIndicator(
-                modifier = modifier,
-                color = colors.primary,
-                trackColor = track,
-                strokeCap = StrokeCap.Round,
-            )
-        } else {
-            val shape = RoundedCornerShape(2.dp)
-            Box(modifier.progressSemantics().background(track, shape)) {
-                Box(Modifier.fillMaxWidth(0.3f).fillMaxHeight().background(colors.primary, shape))
+    }
+}
+
+@Composable
+internal fun WorkspaceSettingsFeedback(model: WorkspaceSettingsModel, snackbar: SnackbarHostState) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val switchFailed by
+        rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
+    val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
+    val emailUnconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
+    LaunchedEffect(model, snackbar, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.notices.collectLatest { notice ->
+                val message =
+                    when (notice) {
+                        SettingsNotice.ModelAccountSwitchFailed -> switchFailed
+                        SettingsNotice.EmailSubscriptionFailed -> emailFailed
+                        SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
             }
         }
     }
@@ -170,7 +205,7 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-private fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
+internal fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -196,22 +231,26 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 }
 
 @Composable
-private fun SettingsPlaceholder() {
+internal fun SettingsPlaceholder(loadingLabel: String? = null) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         delay(250)
         visible = true
     }
-    Box(Modifier.alpha(if (visible) 1f else 0f)) {
+    val semantics =
+        if (visible && loadingLabel != null)
+            Modifier.semantics { contentDescription = loadingLabel }
+        else Modifier
+    Box(Modifier.alpha(if (visible) 1f else 0f).then(semantics)) {
         SettingsGroup {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 for (width in listOf(144.dp, 94.dp)) {
                     Box(
                         Modifier.width(width)
-                            .height(16.dp)
+                            .height(14.dp)
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(4.dp),
+                                RoundedCornerShape(8.dp),
                             ),
                     )
                 }
@@ -291,11 +330,6 @@ private fun ModelAccounts(
                                 )
                             }
                         }
-                    }
-                    if (provider in state.switchFailures) {
-                        SettingsDetailStatus(
-                            stringResource(R.string.settings_account_switch_failed),
-                        )
                     }
                 }
             }

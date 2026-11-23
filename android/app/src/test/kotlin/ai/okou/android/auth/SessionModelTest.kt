@@ -86,6 +86,11 @@ class SessionModelTest {
         override suspend fun activateModelAccount(accountId: String) =
             canonical.activateModelAccount(accountId)
 
+        override suspend fun emailSubscription() = canonical.emailSubscription()
+
+        override suspend fun updateEmailSubscription(subscribed: Boolean) =
+            canonical.updateEmailSubscription(subscribed)
+
         override suspend fun sendControl(request: SendRequest): AcceptedInput =
             error("No control backend in this fixture")
 

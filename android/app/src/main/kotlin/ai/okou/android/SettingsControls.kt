@@ -205,9 +205,13 @@ internal fun SettingsSwitchRow(
     supportingText: String? = null,
 ) {
     val action =
-        if (checked == null || onCheckedChange == null) {
+        if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
-        } else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
+        } else {
+            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                onCheckedChange?.invoke(it)
+            }
+        }
     Row(
         Modifier.fillMaxWidth()
             .then(action)
@@ -353,6 +357,8 @@ internal fun SettingsSheet(
     title: String,
     onDismiss: () -> Unit,
     actions: (@Composable () -> Unit)? = null,
+    titleInset: Dp = 0.dp,
+    progress: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
@@ -368,20 +374,26 @@ internal fun SettingsSheet(
                     bottom = 16.dp,
                 )
                 .verticalScroll(scroll),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                title,
-                Modifier.semantics { heading() },
-                style =
-                    MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp),
-            )
+            Box(Modifier.fillMaxWidth()) {
+                Text(
+                    title,
+                    Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
+                        .semantics { heading() },
+                    style =
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
+                        ),
+                )
+                if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
+            }
             Column(
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
-            actions?.invoke()
+            if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
         }
     }
 }

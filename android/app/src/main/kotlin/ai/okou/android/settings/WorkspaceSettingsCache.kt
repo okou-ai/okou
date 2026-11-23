@@ -1,6 +1,8 @@
 package ai.okou.android.settings
 
+import ai.okou.android.api.generated.EmailSubscription
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
 import androidx.datastore.core.DataStore
 import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
@@ -21,6 +23,7 @@ import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 @Serializable internal data class ConfirmedSetting<T>(val value: T, val readAt: Long)
 
@@ -48,9 +51,14 @@ internal constructor(
         identity: WorkspaceIdentity,
         resource: String,
         serializer: KSerializer<T>,
+    ): ConfirmedSetting<T>? = load(key(identity, resource), serializer)
+
+    private suspend fun <T> load(
+        key: Preferences.Key<String>,
+        serializer: KSerializer<T>,
     ): ConfirmedSetting<T>? = access.withLock {
         try {
-            preferences.data.first()[key(identity, resource)]?.let {
+            preferences.data.first()[key]?.let {
                 Json.decodeFromString(ConfirmedSetting.serializer(serializer), it)
             }
         } catch (_: IOException) {
@@ -65,13 +73,18 @@ internal constructor(
         resource: String,
         serializer: KSerializer<T>,
         data: ConfirmedSetting<T>?,
+    ) = save(key(identity, resource), serializer, data)
+
+    private fun <T> save(
+        key: Preferences.Key<String>,
+        serializer: KSerializer<T>,
+        data: ConfirmedSetting<T>?,
     ) {
         scope.launch(start = CoroutineStart.UNDISPATCHED) {
             // Queue accepted writes ahead of later restores, even when the page is closed.
             access.withLock {
                 try {
                     preferences.edit {
-                        val key = key(identity, resource)
                         if (data == null) it.remove(key)
                         else
                             it[key] =
@@ -83,6 +96,21 @@ internal constructor(
             }
         }
     }
+
+    internal suspend fun loadEmail(
+        identity: WorkspaceIdentity,
+    ): ConfirmedSetting<EmailSubscription>? =
+        load(emailKey(identity), EmailSubscription.serializer())
+
+    internal fun saveEmail(
+        identity: WorkspaceIdentity,
+        data: ConfirmedSetting<EmailSubscription>?,
+    ) = save(emailKey(identity), EmailSubscription.serializer(), data)
+
+    private fun emailKey(identity: WorkspaceIdentity) =
+        stringPreferencesKey(
+            "${scopeHash(listOf(identity.apiOrigin.toHttpUrl().toString(), identity.userId))}-email-subscription",
+        )
 
     private fun key(identity: WorkspaceIdentity, resource: String) =
         stringPreferencesKey(
