@@ -229,12 +229,17 @@ class NativeChatListTest {
             assertTrue(requested.await(10, TimeUnit.SECONDS))
             assertTrue(!device.hasObject(By.pkg(app.packageName).text("Personal chat")))
 
+            val syncing = By.pkg(app.packageName).desc(app.getString(R.string.chat_syncing))
+            assertFalse(device.hasObject(syncing))
             release.countDown()
-            text(app.getString(R.string.chat_refresh_failed))
+            assertTrue(device.wait(Until.hasObject(syncing), 10_000))
             text("Research")
+            assertFalse(
+                device.hasObject(By.pkg(app.packageName).text(app.getString(R.string.retry))),
+            )
             fail.set(false)
-            text(app.getString(R.string.retry)).click()
             text(app.getString(R.string.chat_empty_unread))
+            assertTrue(device.wait(Until.gone(syncing), 10_000))
         } catch (error: Throwable) {
             failures.add(error)
             try {

@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsPropertyKey
@@ -1335,7 +1336,7 @@ class ChatListRootTest {
         app.responseGate.countDown()
         compose.waitUntil(10_000) {
             compose
-                .onAllNodesWithText("Some Okou or Project information is unavailable.")
+                .onAllNodesWithText("Project information is temporarily unavailable.")
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
@@ -3231,31 +3232,128 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun unreadWithoutIndicatorsOffersRecoveryWhileInboxKeepsItsRows() {
+    fun initialUnreadKeepsItsSkeletonThroughTemporaryFailuresAndRecoversAutomatically() {
         val app = compose.activity.application as ChatListApplication
-        val failing = AtomicBoolean(true)
+        val attempts = AtomicInteger()
+        val firstRead = CountDownLatch(1)
         val indicators = app.fixture.indicators
         app.fixture.indicators = {
-            if (failing.get()) MockResponse().setResponseCode(503) else indicators()
+            val attempt = attempts.incrementAndGet()
+            if (attempt == 1) firstRead.await()
+            if (attempt <= 3) MockResponse().setResponseCode(503) else indicators()
+        }
+        val filter = compose.onNodeWithContentDescription("Filter")
+        try {
+            app.responseGate.countDown()
+            compose.waitUntil(10_000) { currentList()?.confirmedAt != null }
+            compose.onNodeWithText("Personal chat").assertIsDisplayed()
+            filter.performClick()
+            compose.onNodeWithText("Unread").performClick()
+            val loading = compose.activity.getString(R.string.chat_loading)
+            compose.waitUntilExactlyOneExists(hasContentDescription(loading), 10_000)
+            val skeleton = compose.onNodeWithContentDescription(loading)
+            val loadingBounds = skeleton.getUnclippedBoundsInRoot()
+            val toolbarBounds = filter.getUnclippedBoundsInRoot()
+
+            firstRead.countDown()
+            compose.waitUntil(10_000) { currentList()?.indicatorsRetryProgressVisible == true }
+            assertEquals(3, attempts.get())
+            assertEquals(loadingBounds, skeleton.getUnclippedBoundsInRoot())
+            compose
+                .onNodeWithContentDescription(compose.activity.getString(R.string.chat_syncing))
+                .assertDoesNotExist()
+            compose.onNodeWithTag("chat_list_first_read_status").assertDoesNotExist()
+            compose.onNodeWithText("No unread chats").assertDoesNotExist()
+            assertEquals(toolbarBounds, filter.getUnclippedBoundsInRoot())
+
+            awaitListAndNames()
+            assertEquals(4, attempts.get())
+            skeleton.assertDoesNotExist()
+            setResearchExpanded(true)
+            compose.onNodeWithText("Project chat").assertIsDisplayed()
+        } finally {
+            firstRead.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun definitiveInitialUnreadFailureReplacesTheSkeletonInPlace() {
+        val app = compose.activity.application as ChatListApplication
+        val firstRead = CountDownLatch(1)
+        app.fixture.indicators = {
+            firstRead.await()
+            MockResponse().setResponseCode(400)
+        }
+        val loadFailure = "Temporarily unable to load"
+        val filter = compose.onNodeWithContentDescription("Filter")
+        try {
+            app.responseGate.countDown()
+            compose.waitUntil(10_000) { currentList()?.confirmedAt != null }
+            compose.onNodeWithText("Personal chat").assertIsDisplayed()
+            filter.performClick()
+            compose.onNodeWithText("Unread").performClick()
+            val loading = compose.activity.getString(R.string.chat_loading)
+            compose.waitUntilExactlyOneExists(hasContentDescription(loading), 10_000)
+            compose.onNodeWithText(loadFailure).assertDoesNotExist()
+            val toolbarBounds = filter.getUnclippedBoundsInRoot()
+            val heading = compose.onNodeWithTag("chat_filter_heading").getUnclippedBoundsInRoot()
+
+            firstRead.countDown()
+            awaitListAndNames()
+            val status = compose.onNodeWithTag("chat_list_first_read_status")
+            status.assertIsDisplayed()
+            compose.onNodeWithContentDescription(loading).assertDoesNotExist()
+            compose.onNodeWithText("No unread chats").assertDoesNotExist()
+            compose.onNodeWithText("Try again").assertDoesNotExist()
+            val statusBounds = status.getUnclippedBoundsInRoot()
+            assertEquals(heading.left, statusBounds.left)
+            assertEquals(28.dp, statusBounds.top - heading.bottom)
+            assertEquals(
+                LiveRegionMode.Polite,
+                status.fetchSemanticsNode().config[SemanticsProperties.LiveRegion],
+            )
+            val statusLayouts = mutableListOf<TextLayoutResult>()
+            status.performSemanticsAction(SemanticsActions.GetTextLayoutResult) {
+                it(statusLayouts)
+            }
+            assertEquals(14.sp, statusLayouts.single().layoutInput.style.fontSize)
+            assertEquals(20.sp, statusLayouts.single().layoutInput.style.lineHeight)
+            assertEquals(toolbarBounds, filter.getUnclippedBoundsInRoot())
+        } finally {
+            firstRead.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun aProjectRefreshFailureIsVisibleAboveTheFirstRowOfALongInbox() {
+        val app = compose.activity.application as ChatListApplication
+        val rows =
+            (1..22).joinToString(",") { index ->
+                val suffix = index.toString().padStart(12, '0')
+                chatEventWire(
+                    id = "67000000-0000-4000-8000-$suffix",
+                    seq = index.toLong(),
+                    thread = "68000000-0000-4000-8000-$suffix",
+                    title = "Inbox row $index",
+                )
+            }
+        app.fixture.events = { request ->
+            val events = if (request.requestUrl?.queryParameter("sinceSeqId") == null) rows else ""
+            jsonResponse("""{"events":[$events],"hasMore":false}""")
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val loadFailure = "Temporarily unable to load"
-        compose.onNodeWithText("Personal chat").assertIsDisplayed()
-        compose.onNodeWithText(loadFailure).assertDoesNotExist()
-
-        compose.onNodeWithContentDescription("Filter").performClick()
-        compose.onNodeWithText("Unread").performClick()
-        awaitListAndNames()
-        compose.onNodeWithText(loadFailure).assertIsDisplayed()
-        compose.onNodeWithText("No unread chats").assertDoesNotExist()
-
-        failing.set(false)
-        compose.onNodeWithText("Try again").performClick()
-        awaitListAndNames()
-        compose.onNodeWithText(loadFailure).assertDoesNotExist()
-        setResearchExpanded(true)
-        compose.onNodeWithText("Project chat").assertIsDisplayed()
+        val project = compose.onNodeWithText("Research")
+        val before = project.getUnclippedBoundsInRoot()
+        app.fixture.projectEvents = { MockResponse().setResponseCode(503) }
+        reconnectList(app)
+        val message = "Project information is temporarily unavailable."
+        compose.waitUntilExactlyOneExists(hasText(message), 10_000)
+        compose.onNodeWithText(message).assertIsDisplayed()
+        project.assertIsDisplayed()
+        assertTrue(project.getUnclippedBoundsInRoot().top > before.top)
     }
 
     @Test

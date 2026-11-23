@@ -142,8 +142,8 @@
     <string name="realtime_connecting">正在连接实时更新…</string>
     <string name="realtime_unavailable">实时更新暂不可用，你仍可手动刷新。</string>
     <string name="settings_account">账户</string>
-    <string name="chat_project_expansion_read_failed">无法加载此设备上的项目展开状态。</string>
-    <string name="chat_project_expansion_save_failed">无法在此设备上保存项目展开状态。</string>
+    <string name="chat_project_expansion_read_failed">暂时无法读取 Project 展开记录。</string>
+    <string name="chat_project_expansion_save_failed">Project 展开状态未能保留到下次。</string>
     <string name="settings_cancel">取消</string>
     <string name="settings_saving">正在保存…</string>
     <string name="settings_sign_out_title">退出登录？</string>

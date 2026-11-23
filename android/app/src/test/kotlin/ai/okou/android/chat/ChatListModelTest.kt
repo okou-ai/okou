@@ -1637,7 +1637,7 @@ class ChatListModelTest {
             assertEquals(ChatRowAction.MarkRead, pending.failedRowAction?.action)
             assertNull(pending.rowUndo)
 
-            model.retryIndicators()
+            model.checkRowActionFailure(checkNotNull(pending.failedRowAction))
             advanceUntilIdle()
             assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
@@ -2221,7 +2221,7 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(1, attempts)
             assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
 
             model.listVisibilityChanged(false)
             connected.value = false
@@ -2229,6 +2229,7 @@ class ChatListModelTest {
             advanceTimeBy(15_000)
             runCurrent()
             assertEquals(1, attempts)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
 
             connected.value = true
             runCurrent()
@@ -2243,7 +2244,186 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(2, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            advanceTimeBy(1_000)
+            runCurrent()
             assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+        }
+    }
+
+    @Test
+    fun projectAndIndicatorReadsRecoverIndependentlyAndKeepConfirmedContent() = runTest {
+        val projectAttempts = mutableListOf<Long>()
+        val indicatorAttempts = mutableListOf<Long>()
+        val realtime = TestRealtimeService()
+        var failing = false
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val service =
+            object : Service() {
+                override suspend fun projectEvents(since: Long): ProjectEvents {
+                    if (failing) {
+                        projectAttempts.add(testScheduler.currentTime)
+                        if (projectAttempts.size == 1) throw ApiFailure.Http(429, null, null, 5)
+                    }
+                    return super.projectEvents(since)
+                }
+
+                override suspend fun indicators(): Indicators {
+                    if (!failing) return Indicators(emptyMap(), unread)
+                    indicatorAttempts.add(testScheduler.currentTime)
+                    throw ApiFailure.Network(IOException("No response"))
+                }
+            }
+        withCatchUpModel(service, realtime) { model ->
+            model.refresh()
+            model.updates.foreground(true)
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertNotNull(confirmed.projectsSource)
+            assertEquals(unread, confirmed.displayUnreadAt)
+            assertFalse(confirmed.threads.isEmpty())
+
+            failing = true
+            val start = testScheduler.currentTime
+            model.refresh()
+            runCurrent()
+            realtime.invalidate(ChatChanges(list = true, indicators = true))
+            runCurrent()
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(listOf(start), projectAttempts)
+            assertEquals(listOf(start), indicatorAttempts)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.projectsPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            assertEquals(confirmed.projects, model.uiState.value.projects)
+            assertEquals(confirmed.threads, model.uiState.value.threads)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(start, start + 3_000), indicatorAttempts)
+            assertEquals(listOf(start), projectAttempts)
+            advanceTimeBy(2_000)
+            runCurrent()
+            assertEquals(listOf(start, start + 5_000), projectAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.projectsPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            advanceTimeBy(1_000)
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+            advanceTimeBy(9_000)
+            runCurrent()
+            assertEquals(listOf(start, start + 3_000, start + 6_000), indicatorAttempts)
+            assertEquals(listOf(start, start + 5_000), projectAttempts)
+        }
+    }
+
+    @Test
+    fun activeUnreadRefreshKeepsRowsAndShowsProgressUntilTheFourthAttemptSucceeds() = runTest {
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        val refreshedUnread = Indicators(emptyMap(), unread)
+        val attempts = mutableListOf<Long>()
+        var failing = false
+        val service =
+            Service().apply {
+                statusRead = {
+                    if (failing) {
+                        attempts.add(testScheduler.currentTime)
+                        if (attempts.size <= 3) throw ApiFailure.Http(503, null, null, null)
+                    }
+                    refreshedUnread
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            model.selectFilter(ChatListFilter.Unread)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+            val start = testScheduler.currentTime
+            failing = true
+            model.refreshIndicators()
+            runCurrent()
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertEquals(listOf(start, start + 3_000), attempts)
+            assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+            advanceTimeBy(1)
+            runCurrent()
+            assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
+            assertEquals(unread, model.uiState.value.displayUnreadAt)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertEquals(3, attempts.size)
+            assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(listOf(start, start + 3_000, start + 6_000, start + 12_000), attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            assertFalse(model.uiState.value.indicatorsRetryProgressVisible)
+        }
+    }
+
+    @Test
+    fun continuousUnreadReadStopsSendingWhenTheSelectedScopeCloses() = runTest {
+        var attempts = 0
+        val service =
+            Service().apply {
+                statusRead = {
+                    attempts++
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.selectFilter(ChatListFilter.Unread)
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            model.selectFilter(ChatListFilter.Inbox)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertFalse(model.uiState.value.indicatorsNonRetryableFailure)
+        }
+    }
+
+    @Test
+    fun rowWriteVerificationDoesNotWaitForBackgroundIndicatorRetry() = runTest {
+        val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
+        var attempts = 0
+        val service =
+            object : Service() {
+                override suspend fun indicators(): Indicators =
+                    when (++attempts) {
+                        1 -> Indicators(emptyMap(), unread)
+                        2 -> throw ApiFailure.Http(503, null, null, null)
+                        else -> Indicators(emptyMap(), emptyMap())
+                    }
+
+                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            model.refreshIndicators()
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertEquals(3, attempts)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertNull(model.uiState.value.failedRowAction)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
         }
     }
 
