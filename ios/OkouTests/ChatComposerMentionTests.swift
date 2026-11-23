@@ -295,8 +295,9 @@ final class ChatComposerMentionTests: XCTestCase {
     // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
     // The candidate and the paste are separate edits on the old input. Match the pasted reference.
-    let pasted = expectation(forNotification: UITextView.textDidChangeNotification, object: input) {
-      _ in
+    let pasted = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
       MainActor.assumeIsolated {
         ComposerAttributedDocument.inlineDocument(input.attributedText).parts.contains(reference)
       }
