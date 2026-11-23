@@ -120,6 +120,18 @@ enum class SessionEntryFailure {
     SignOut,
 }
 
+private class EntrySelection(
+    private val session: NativeSession,
+    private val workspaceId: String,
+    val picker: SessionUiState,
+) {
+    fun matches(current: NativeSession?): Boolean =
+        current != null &&
+            current.sessionId == session.sessionId &&
+            current.userId == session.userId &&
+            current.workspaceId == workspaceId
+}
+
 /** One owner for authorization, pending work and the currently permitted workspace resource. */
 class SessionModel(
     private val authentication: Authentication,
@@ -150,6 +162,7 @@ class SessionModel(
     private var presentation: ViewModelStore? = null
     private var requiredUpdate = false
     private var workspaceSetupReturn: Long? = null
+    private var entrySelection: EntrySelection? = null
     private val foreground = MutableStateFlow(false)
     private val connected = MutableStateFlow(true)
     private val canRetryPreparation =
@@ -182,6 +195,7 @@ class SessionModel(
         }
         generation++
         workspaceSetupReturn = null
+        entrySelection = null
         operation?.cancel()
         operation = null
         membershipLoad?.cancel()
@@ -217,9 +231,10 @@ class SessionModel(
             mutable.value.takeIf {
                 it.checkingWorkspace && observed?.session == snapshot.session
             }
+        val session = snapshot.session
+        val selection = entrySelection?.takeIf { it.matches(session) }
         observed = snapshot
         retire()
-        val session = snapshot.session
         when {
             snapshot.failed -> mutable.value = SessionUiState(generation, SessionStage.Unavailable)
             !snapshot.initialized -> mutable.value = SessionUiState(generation)
@@ -230,13 +245,19 @@ class SessionModel(
                 prepare(
                     snapshot,
                     checkingFrom?.copy(generation = generation, checkingWorkspace = false),
+                    selection,
                 )
         }
     }
 
-    private fun prepare(snapshot: AuthenticationState, checkingFrom: SessionUiState? = null) {
+    private fun prepare(
+        snapshot: AuthenticationState,
+        checkingFrom: SessionUiState? = null,
+        selection: EntrySelection? = null,
+    ) {
         val session = checkNotNull(snapshot.session)
         val ticket = generation
+        entrySelection = selection
         val initialIdentity =
             session.workspaceId
                 ?.takeIf { snapshot.complete && session.active }
@@ -247,7 +268,12 @@ class SessionModel(
                     ticket,
                     SessionStage.LoadingWorkspace,
                     working = true,
-                    opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                    opening =
+                        initialIdentity
+                            ?.takeIf { selection == null }
+                            ?.let {
+                                OpeningWorkspace.CheckingAccess(it)
+                            },
                 )
         operation = viewModelScope.launch {
             val observedIdentity = initialIdentity?.let { identity ->
@@ -303,8 +329,14 @@ class SessionModel(
                 }
                 val role = fastAccess?.role ?: membership?.role
                 if (initialIdentity == null || role == null) {
+                    entrySelection = null
                     mutable.value =
-                        SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
+                        SessionUiState(
+                            generation,
+                            SessionStage.ChooseWorkspace,
+                            memberships,
+                            entryFailure = selection?.let { SessionEntryFailure.Selection },
+                        )
                     return@launch
                 }
                 val identity = initialIdentity.withAccess(role, refreshedAccess)
@@ -403,6 +435,7 @@ class SessionModel(
                             }
                         },
                     )
+                entrySelection = null
                 mutable.value =
                     mutable.value.copy(
                         stage = SessionStage.LoadingWorkspace,
@@ -435,6 +468,11 @@ class SessionModel(
                 } else if (
                     current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)
                 ) {
+                    val picker = entrySelection?.picker
+                    if (picker != null) {
+                        restoreEntryPicker(picker)
+                        return@launch
+                    }
                     val state = mutable.value
                     retire()
                     mutable.value =
@@ -460,7 +498,7 @@ class SessionModel(
         session: NativeSession,
     ): List<WorkspaceMembership> {
         var backoff = 3_000L
-        var firstRetry = true
+        var failures = 0
         while (true) {
             requireCurrent(ticket, snapshot)
             try {
@@ -472,16 +510,18 @@ class SessionModel(
             } catch (error: Exception) {
                 requireCurrent(ticket, snapshot)
                 val retryAfter = error.bootstrapRetryAfterMillis() ?: throw error
-                mutable.value =
-                    mutable.value.copy(
-                        stage = SessionStage.Unavailable,
-                        working = false,
-                        entryReadFailed = true,
-                    )
+                failures++
+                if (failures == 3) {
+                    mutable.value =
+                        mutable.value.copy(
+                            stage = SessionStage.Unavailable,
+                            working = false,
+                            entryReadFailed = true,
+                        )
+                }
                 delay(maxOf(backoff, retryAfter))
                 canRetryPreparation.first { it }
-                if (!firstRetry) backoff = (backoff * 2).coerceAtMost(48_000L)
-                firstRetry = false
+                if (failures >= 2) backoff = (backoff * 2).coerceAtMost(48_000L)
             }
         }
     }
@@ -795,30 +835,49 @@ class SessionModel(
         if (mutable.value.ready?.identity?.workspaceId == id) return
         retire()
         val ticket = generation
+        val selection =
+            if (previous.stage == SessionStage.ChooseWorkspace && previous.opening == null)
+                EntrySelection(session, id, previous)
+            else null
+        entrySelection = selection
         mutable.value = SessionUiState(generation, SessionStage.LoadingWorkspace, working = true)
         operation = viewModelScope.launch {
             try {
-                authentication.selectWorkspace(session, id)
+                if (
+                    selection == null ||
+                        !snapshot.complete ||
+                        !session.active ||
+                        !selection.matches(session)
+                ) {
+                    authentication.selectWorkspace(session, id)
+                }
                 currentCoroutineContext().ensureActive()
-                if (generation == ticket) reconcile(authentication.state.value, force = true)
+                val confirmed = authentication.state.value
+                if (
+                    generation == ticket &&
+                        (selection == null || selection.matches(confirmed.session))
+                ) {
+                    reconcile(confirmed, force = true)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
                 if (acceptsAction(ticket)) {
-                    mutable.value =
-                        if (
-                            previous.stage == SessionStage.ChooseWorkspace &&
-                                previous.opening == null
-                        )
-                            previous.copy(
-                                generation = ticket,
-                                checkingWorkspace = false,
-                                entryFailure = SessionEntryFailure.Selection,
-                            )
-                        else SessionUiState(ticket, SessionStage.Unavailable)
+                    if (selection != null) restoreEntryPicker(selection.picker)
+                    else mutable.value = SessionUiState(ticket, SessionStage.Unavailable)
                 }
             }
         }
+    }
+
+    private fun restoreEntryPicker(picker: SessionUiState) {
+        retire()
+        mutable.value =
+            picker.copy(
+                generation = generation,
+                checkingWorkspace = false,
+                entryFailure = SessionEntryFailure.Selection,
+            )
     }
 
     fun signOut(expectedGeneration: Long) {
