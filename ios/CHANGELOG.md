@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.0](https://github.com/okou-ai/okou/compare/ios-v0.54.0...ios-v0.55.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** prepare the first workspace after native signup ([#50108](https://github.com/okou-ai/okou/issues/50108)) ([9499f31](https://github.com/okou-ai/okou/commit/9499f31f58180a7010bfa12b87c4898ced5e3ea0))
+
 ## [0.54.0](https://github.com/okou-ai/okou/compare/ios-v0.53.3...ios-v0.54.0) (2026-11-23)
 
 

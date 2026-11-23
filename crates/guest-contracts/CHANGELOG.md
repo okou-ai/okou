@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.33](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.32...guest-contracts-v0.32.33) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
 ## [0.32.32](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.31...guest-contracts-v0.32.32) (2026-11-22)
 
 ## [0.32.31](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.30...guest-contracts-v0.32.31) (2026-11-22)

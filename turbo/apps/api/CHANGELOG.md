@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.105.1](https://github.com/okou-ai/okou/compare/api-v2.105.0...api-v2.105.1) (2026-11-23)
+
+
+### Performance Improvements
+
+* **api:** consolidate chat startup reads and advance package prefetch ([#50114](https://github.com/okou-ai/okou/issues/50114)) ([b275885](https://github.com/okou-ai/okou/commit/b2758859687e179dd43b826e46afa361611cdb73))
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.1
+    * @okouai/core bumped to 8.860.4
+    * @okouai/db bumped to 2.58.16
+    * @okouai/pi-agent-runtime bumped to 1.52.45
+
 ## [2.105.0](https://github.com/okou-ai/okou/compare/api-v2.104.5...api-v2.105.0) (2026-11-23)
 
 
