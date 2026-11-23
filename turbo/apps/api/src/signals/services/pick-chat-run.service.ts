@@ -501,11 +501,17 @@ function createPickObjects() {
       );
       // The pick owns preparation even if admission loses.
       waitUntil(settle(bundleUrls));
-      const prepared = await preparation;
+      waitUntil(settle(preparation.resources.memoryArchive));
+      waitUntil(settle(preparation.resources.networkPolicyInputs));
+      const prepared = await preparation.context;
       signal.throwIfAborted();
       const admitted = prepared
-        ? await set(claimed.admitRun$, prepared, signal)
+        ? set(claimed.admitRun$, prepared, preparation.resources, signal)
         : null;
+      if (admitted) {
+        waitUntil(settle(admitted.resources.memory));
+      }
+      const pending = admitted ? await admitted.pending : null;
       signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
@@ -520,11 +526,10 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (!admitted) {
+      if (!admitted || !pending) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
-      const { pending, resources } = admitted;
       if (pending.marketingRewardEventId) {
         waitUntil(
           set(
@@ -546,7 +551,7 @@ function createPickObjects() {
             prepareDirectRunDispatch$,
             pending.admittedLaunch,
             bundleUrls,
-            resources,
+            admitted.resources,
             signal,
           ),
         ],
