@@ -79,8 +79,8 @@ class ScreenshotScenario {
                 override fun apply(device: UiDevice) = rowFocused(label)
             }, 12_000)) { "Keyboard focus did not reach $label" }
         }
-        fun tabTo(label: String, maxSteps: Int = 12) {
-            repeat(maxSteps) {
+        fun tabTo(label: String) {
+            repeat(12) {
                 if (rowFocused(label)) return
                 check(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
                 device.waitForIdle()
@@ -127,8 +127,14 @@ class ScreenshotScenario {
         }
         fun openRegionTimezone() {
             settings()
-            tabTo("时区", maxSteps = 24)
-            check(device.pressEnter())
+            repeat(10) {
+                device.findObject(selector().text("时区"))?.let {
+                    it.click()
+                    return
+                }
+                find(selector().scrollable(true)).scroll(Direction.DOWN, 0.55f, 500)
+            }
+            text("时区").click()
         }
         fun returning() {
             find(selector().desc("返回")).click()
@@ -305,7 +311,7 @@ class ScreenshotScenario {
                     testAuthenticationState(user = "region-timezone-${UUID.randomUUID()}")
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     openRegionTimezone()
-                    awaitFocus("加德满都（UTC+5:45）")
+                    text("加德满都（UTC+5:45）")
                     val noteBounds = text("用于新建定时任务的默认时区。").visibleBounds
                     scenario.onActivity {
                         val statusBar = checkNotNull(ViewCompat.getRootWindowInsets(it.window.decorView))
@@ -323,7 +329,7 @@ class ScreenshotScenario {
                         check(it.resources.configuration.screenWidthDp in 640..839)
                     }
                     openRegionTimezone()
-                    awaitFocus("加德满都（UTC+5:45）")
+                    text("加德满都（UTC+5:45）")
                     capture("region-timezone-medium.png")
                 }
                 models.preference = savedModel
@@ -332,8 +338,7 @@ class ScreenshotScenario {
                 ActivityScenario.launch(MainActivity::class.java).use {
                     settings()
                     text("GPT 5.6 Sol")
-                    tabTo("默认模型", maxSteps = 16)
-                    check(device.pressEnter())
+                    text("默认模型").click()
                     text("快速模式")
                     capture("settings-model-medium.png")
                 }
@@ -365,7 +370,7 @@ class ScreenshotScenario {
                     }
                     openRegionTimezone()
                     text("用于新建定时任务的默认时区。")
-                    awaitFocus("加德满都（UTC+5:45）")
+                    text("加德满都（UTC+5:45）")
                     capture("region-timezone-wide.png")
                 }
 
@@ -376,7 +381,8 @@ class ScreenshotScenario {
                     openRegionTimezone()
                     val note = "用于新建定时任务的默认时区。"
                     text(note)
-                    awaitFocus("加德满都（UTC+5:45）")
+                    val startingZone = "加德满都（UTC+5:45）"
+                    text(startingZone)
                     device.waitForIdle()
                     val noteBounds = text(note).visibleBounds
                     val titleBounds = checkNotNull(
@@ -402,11 +408,18 @@ class ScreenshotScenario {
                     }
                     capture("region-timezone-short-open.png")
                     val openHeader = headerPixels()
-                    val offscreen = "廷布（UTC+6）"
-                    check(!device.hasObject(selector().text(offscreen)))
-                    for (label in listOf("比什凯克（UTC+6）", "查戈斯（UTC+6）", "达卡（UTC+6）", "鄂木斯克（UTC+6）", offscreen)) {
-                        check(device.pressDPadDown())
-                        awaitFocus(label)
+                    var bottomInset = 0
+                    scenario.onActivity {
+                        bottomInset = checkNotNull(ViewCompat.getRootWindowInsets(it.window.decorView))
+                            .getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+                    }
+                    val listBottom = device.displayHeight - bottomInset - 24
+                    val listTop = noteBounds.bottom + 24
+                    check(listBottom > listTop)
+                    val centerX = device.displayWidth / 2
+                    check(device.swipe(centerX, listBottom, centerX, listTop, 15))
+                    check(device.wait(Until.gone(selector().text(startingZone)), 12_000)) {
+                        "The short-window option list did not scroll past the selected row"
                     }
                     capture("region-timezone-short.png")
                     text(note)
