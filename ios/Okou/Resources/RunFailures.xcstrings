@@ -571,19 +571,19 @@
         "pt-BR": {"stringUnit":{"state":"translated","value":"Sem créditos"}}
       }
     },
-    "Check your workspace's plan or credit balance.": {
+    "The workspace did not have enough credits for this run.": {
       "localizations": {
-        "zh-Hans": {"stringUnit":{"state":"translated","value":"检查工作区的套餐或剩余额度。"}},
-        "zh-Hant": {"stringUnit":{"state":"translated","value":"檢查工作區的方案或剩餘額度。"}},
-        "ja": {"stringUnit":{"state":"translated","value":"ワークスペースのプランまたはクレジット残高を確認してください。"}},
-        "ko": {"stringUnit":{"state":"translated","value":"워크스페이스 요금제 또는 크레딧 잔액을 확인하세요."}},
-        "de": {"stringUnit":{"state":"translated","value":"Prüfe den Tarif oder das Credit-Guthaben deines Workspace."}},
-        "es": {"stringUnit":{"state":"translated","value":"Revisa el plan o el saldo de créditos de tu espacio de trabajo."}},
-        "fr": {"stringUnit":{"state":"translated","value":"Vérifiez le forfait ou le solde de crédits de votre espace de travail."}},
-        "hi": {"stringUnit":{"state":"translated","value":"अपने वर्कस्पेस का प्लान या क्रेडिट बैलेंस जाँचें।"}},
-        "id": {"stringUnit":{"state":"translated","value":"Periksa paket atau saldo kredit ruang kerja Anda."}},
-        "it": {"stringUnit":{"state":"translated","value":"Controlla il piano o il saldo dei crediti del tuo spazio di lavoro."}},
-        "pt-BR": {"stringUnit":{"state":"translated","value":"Verifique o plano ou o saldo de créditos do seu espaço de trabalho."}}
+        "zh-Hans": {"stringUnit":{"state":"translated","value":"工作区的额度不足，无法执行这次任务。"}},
+        "zh-Hant": {"stringUnit":{"state":"translated","value":"工作區的額度不足，無法執行這次任務。"}},
+        "ja": {"stringUnit":{"state":"translated","value":"このタスクを実行するためのワークスペースのクレジットが不足していました。"}},
+        "ko": {"stringUnit":{"state":"translated","value":"이 작업을 실행할 워크스페이스 크레딧이 부족했습니다."}},
+        "de": {"stringUnit":{"state":"translated","value":"Das Guthaben des Arbeitsbereichs reichte für diese Ausführung nicht aus."}},
+        "es": {"stringUnit":{"state":"translated","value":"El espacio de trabajo no tenía suficientes créditos para esta ejecución."}},
+        "fr": {"stringUnit":{"state":"translated","value":"L’espace de travail ne disposait pas de suffisamment de crédits pour cette exécution."}},
+        "hi": {"stringUnit":{"state":"translated","value":"इस कार्य के लिए वर्कस्पेस में पर्याप्त क्रेडिट नहीं थे।"}},
+        "id": {"stringUnit":{"state":"translated","value":"Kredit ruang kerja tidak cukup untuk menjalankan tugas ini."}},
+        "it": {"stringUnit":{"state":"translated","value":"L’area di lavoro non aveva crediti sufficienti per questa esecuzione."}},
+        "pt-BR": {"stringUnit":{"state":"translated","value":"O espaço de trabalho não tinha créditos suficientes para esta execução."}}
       }
     },
     "Claude account verification required": {

@@ -262,12 +262,6 @@ final class ChatModelSelectionStore {
     let selection = stored ?? models.configuration?.defaultSelection ?? ChatModelSelection()
     return models.configuration?.resolved(selection) ?? selection
   }
-  var modelsWebURL: URL {
-    models.webURL.appending(queryItems: [
-      URLQueryItem(name: "settings", value: "billing"),
-      URLQueryItem(name: "billingView", value: "plans")
-    ])
-  }
   var isMutating: Bool { isSaving || isSending }
   var isBusy: Bool { isMutating || isRefreshing }
   var canSend: Bool { !isRefreshing && canSendConfirmedSelection }
