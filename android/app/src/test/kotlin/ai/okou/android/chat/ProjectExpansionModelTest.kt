@@ -101,14 +101,13 @@ class ProjectExpansionModelTest {
         var readBarrier: CompletableDeferred<Unit>? = null
         var rejectWrites = false
 
-        override val data =
-            persisted.mapLatest { preferences ->
-                readBarrier?.await()
-                preferences
-            }
+        override val data = persisted.mapLatest { preferences ->
+            readBarrier?.await()
+            preferences
+        }
 
         override suspend fun updateData(
-            transform: suspend (Preferences) -> Preferences
+            transform: suspend (Preferences) -> Preferences,
         ): Preferences {
             if (rejectWrites) throw IOException("Storage unavailable")
             return transform(persisted.value).also { persisted.value = it }

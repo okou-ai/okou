@@ -1,3 +1,4 @@
+import type { Command } from "ccstate";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   googleWorkspaceTarget,
@@ -45,7 +46,7 @@ import type {
   ChatThreadArtifactFile,
   ChatThreadArtifactGoogleDriveRecovery,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { useGet, useLastResolved, useLoadable } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
@@ -67,6 +68,7 @@ import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
   googleDriveArtifactOperation$,
+  readNoSidebarOwner$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
 import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
@@ -107,6 +109,7 @@ function artifactDownloadFilename(
 }
 
 export type ArtifactDownloadSyncTarget = {
+  readonly readOwner$?: Command<AbortSignal | undefined, []>;
   readonly accountReady: boolean;
   readonly threadId: string;
   readonly disconnected: boolean;
@@ -405,6 +408,8 @@ function useGoogleDriveMenuAction(
     connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
 
+  const readOwner = useSet(syncTarget?.readOwner$ ?? readNoSidebarOwner$);
+
   const syncOrConnect = (
     availability: ReturnType<typeof useGoogleDriveAvailability>,
     mode: GoogleDriveUploadMode,
@@ -440,6 +445,12 @@ function useGoogleDriveMenuAction(
     ) {
       return;
     }
+    const authorizationSignal = syncTarget.readOwner$
+      ? readOwner()
+      : actionSignal;
+    if (!authorizationSignal) {
+      return;
+    }
     detach(
       connectGoogleDrive(
         {
@@ -465,7 +476,7 @@ function useGoogleDriveMenuAction(
             connectorLabel: availability.googleDriveConnector.label,
           },
         },
-        actionSignal,
+        authorizationSignal,
       ),
       Reason.DomCallback,
       "artifact google drive connect sync",
@@ -752,10 +763,12 @@ function MarkdownArtifactExportItem({
   format,
   onExport,
   pending,
+  paywallLocked,
 }: {
   readonly format: MarkdownArtifactExportFormat;
   readonly onExport: () => void;
   readonly pending: boolean;
+  readonly paywallLocked: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const label = t(
@@ -777,6 +790,11 @@ function MarkdownArtifactExportItem({
         <Download size={14} />
       )}
       {label}
+      {paywallLocked && (
+        <span className="ml-auto">
+          <ProBadge />
+        </span>
+      )}
     </DropdownMenuItem>
   );
 }
@@ -785,16 +803,19 @@ function MarkdownArtifactExportItems({
   docxPending,
   onExport,
   pdfPending,
+  paywallLocked,
 }: {
   readonly docxPending: boolean;
   readonly onExport: (format: MarkdownArtifactExportFormat) => void;
   readonly pdfPending: boolean;
+  readonly paywallLocked: boolean;
 }): ReactElement {
   return (
     <>
       <MarkdownArtifactExportItem
         format="pdf"
         pending={pdfPending}
+        paywallLocked={paywallLocked}
         onExport={() => {
           onExport("pdf");
         }}
@@ -802,6 +823,7 @@ function MarkdownArtifactExportItems({
       <MarkdownArtifactExportItem
         format="docx"
         pending={docxPending}
+        paywallLocked={paywallLocked}
         onExport={() => {
           onExport("docx");
         }}
@@ -971,6 +993,7 @@ export function ArtifactDownloadMenu({
             docxPending={docxExportPending}
             onExport={startMarkdownExport}
             pdfPending={pdfExportPending}
+            paywallLocked={paywallLocked}
           />
         )}
         {drive}

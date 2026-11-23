@@ -219,10 +219,9 @@ describe("runner execution context contract", () => {
   });
 
   it.each([
-    { featureFlags: { singleAgent: true, retainedDiagnosticFlag: false } },
+    { featureFlags: { retainedDiagnosticFlag: false } },
     {
       featureFlags: {
-        singleAgent: false,
         retainedDiagnosticFlag: true,
       },
     },

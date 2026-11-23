@@ -67,37 +67,37 @@ class NativeComposerDraftTest {
                             override fun apply(device: UiDevice) = condition()
                         },
                         10_000,
-                    )
+                    ),
                 )
             fun editor() =
                 checkNotNull(
                     device.wait(
                         Until.findObject(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
+                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true),
                         ),
                         10_000,
-                    )
+                    ),
                 )
             checkNotNull(device.wait(Until.findObject(chatListRegion(app)), 10_000))
             device
                 .findObject(
                     UiSelector()
                         .packageName(app.packageName)
-                        .text(app.getString(R.string.composer_new))
+                        .text(app.getString(R.string.composer_new)),
                 )
                 .click()
             checkNotNull(
                 device.wait(
                     Until.findObject(
-                        By.pkg(app.packageName).text(app.getString(R.string.composer_sync_loading))
+                        By.pkg(app.packageName).text(app.getString(R.string.composer_sync_loading)),
                     ),
                     10_000,
-                )
+                ),
             )
             scenario.onActivity {
                 val ready =
                     checkNotNull(
-                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                     )
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 listJob = ready.chats.viewModelScope.coroutineContext[Job]
@@ -118,7 +118,7 @@ class NativeComposerDraftTest {
             editor().text = ""
             await { fixture.drafts[path]?.plainText() == "" }
             assertTrue(
-                fixture.requests.any { it.method == "PATCH" && it.requestUrl?.encodedPath == path }
+                fixture.requests.any { it.method == "PATCH" && it.requestUrl?.encodedPath == path },
             )
         } catch (error: Throwable) {
             failures += error

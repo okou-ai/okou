@@ -119,7 +119,7 @@ class TestUsageReportingIdempotency:
 
         assert webhook.request_count == 1
         requests_by_path = {request.path: request for request in webhook.requests}
-        body = requests_by_path["/api/webhooks/agent/usage-event"].json_body()
+        body = requests_by_path["/api/webhooks/run/usage-event"].json_body()
         assert body["events"][0]["quantity"] == 10
         assert body["events"][0]["provider"] == "claude-sonnet-4-6"
         billing_key = body["events"][0]["idempotencyKey"]
@@ -154,7 +154,7 @@ class TestUsageReportingIdempotency:
 
         assert webhook.request_count == 1
         requests_by_path = {request.path: request for request in webhook.requests}
-        body = requests_by_path["/api/webhooks/agent/usage-event"].json_body()
+        body = requests_by_path["/api/webhooks/run/usage-event"].json_body()
         assert body["events"][0]["quantity"] == 10
         assert body["events"][0]["provider"] == "claude-sonnet-4-6"
         billing_key = body["events"][0]["idempotencyKey"]

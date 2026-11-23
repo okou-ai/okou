@@ -87,7 +87,8 @@ internal fun WorkspaceSettingsDataPage(
 internal fun SettingsWebAction(label: String, section: String) {
     TextButton(
         onClick = settingsWebClick(section),
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(label, fontWeight = FontWeight.SemiBold)
     }
@@ -140,7 +141,7 @@ private fun SettingsPlaceholder() {
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant,
                             RoundedCornerShape(4.dp),
-                        )
+                        ),
                 )
             }
         }
@@ -220,7 +221,7 @@ private fun ModelAccounts(
                     }
                     if (provider in state.switchFailures) {
                         SettingsDetailStatus(
-                            stringResource(R.string.settings_account_switch_failed)
+                            stringResource(R.string.settings_account_switch_failed),
                         )
                     }
                 }
@@ -318,7 +319,7 @@ private fun ModelAccountRow(
                         else -> formatBalance(credits.balance)
                     }
                 SettingsDetailStatus(
-                    stringResource(R.string.settings_provider_credit_balance, provider.name, value)
+                    stringResource(R.string.settings_provider_credit_balance, provider.name, value),
                 )
             }
         }

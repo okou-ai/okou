@@ -77,9 +77,9 @@ function userImageMessage(
 }
 
 async function closeFocusedPreview(): Promise<void> {
-  click(getNamedButton("Close"));
+  click(getNamedButton("Close artifact"));
   await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   });
 }
 
@@ -104,7 +104,7 @@ async function expectPrivateTextPreview(
   ).resolves.toBeInTheDocument();
 }
 
-test("A private attachment reuses one URL across reopen and split view", async () => {
+test("A private attachment reuses one URL across sidebar reopen", async () => {
   const filename = "private-notes.txt";
   const contentType = "text/plain";
   const fileId = "private-private-notes-txt";
@@ -161,18 +161,12 @@ test("A private attachment reuses one URL across reopen and split view", async (
 
   click(trigger);
   await expectPrivateTextPreview(
-    await screen.findByTestId("attachment-lightbox"),
+    await screen.findByTestId("artifact-sidebar"),
     filename,
   );
   await closeFocusedPreview();
 
   click(trigger);
-  await expectPrivateTextPreview(
-    await screen.findByTestId("attachment-lightbox"),
-    filename,
-  );
-
-  click(await findNamedButton("Open in split view"));
   await expectPrivateTextPreview(
     await screen.findByTestId("artifact-sidebar"),
     filename,
@@ -208,7 +202,6 @@ test("An open artifact sidebar reuses one pane", async () => {
 
   const sitePreview = await findNamedLink("Reference site");
   click(sitePreview);
-  click(await findNamedButton("Open in split view"));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   expect(
     within(sidebar).getByTestId("artifact-sidebar-body-html"),
@@ -216,7 +209,6 @@ test("An open artifact sidebar reuses one pane", async () => {
 
   click(sitePreview);
   expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
   expect(
     within(sidebar).getByTestId("artifact-sidebar-body-html"),
   ).toBeVisible();
@@ -228,7 +220,6 @@ test("An open artifact sidebar reuses one pane", async () => {
     ).toHaveAttribute("src", audioUrl);
   });
   expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
-  expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
 });
 
 test("A public hosted site header displays its title and links to its address", async () => {
@@ -261,9 +252,6 @@ test("A public hosted site header displays its title and links to its address", 
   };
 
   click(await findNamedLink("Reference site"));
-  expectSiteLink(await screen.findByTestId("attachment-lightbox"));
-
-  click(await findNamedButton("Open in split view"));
   expectSiteLink(await screen.findByTestId("artifact-sidebar"));
 });
 
@@ -284,7 +272,7 @@ test("A private hosted site header keeps its filename", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   click(await findNamedLink("Private site"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   expect(within(dialog).getByText("private-site.html")).toBeInTheDocument();
   expect(
     within(dialog).getByText(/^Hosted site · Updated at /),
@@ -377,7 +365,7 @@ test("Private attachment access stays scoped to the chat that owns it", async ()
 
   click(await findNamedLink("Preview shared.png", leftPane));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute(
     "src",
     "https://private-files.example/left-shared.png",
@@ -385,7 +373,7 @@ test("Private attachment access stays scoped to the chat that owns it", async ()
   await closeFocusedPreview();
   click(await findNamedLink("Preview shared.png", rightPane));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute(
     "src",
     "https://private-files.example/right-shared.png",
@@ -513,12 +501,12 @@ test("Image navigation remains inside its split-view chat", async () => {
   click(await findNamedButton("Next image artifact"));
 
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "alt",
       "right-second.png",
     );
   });
-  expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+  expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
     "src",
     "https://private-files.example/right-second.png?signature=first",
   );
@@ -528,12 +516,11 @@ test("Image navigation remains inside its split-view chat", async () => {
   click(await findNamedLink("Preview shared.png", leftPane));
   click(await findNamedButton("Next image artifact"));
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       "https://private-files.example/left-second.png?signature=first",
     );
   });
-  click(await findNamedButton("Open in split view"));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(sidebar).findByTestId("artifact-sidebar-body-image"),
@@ -602,33 +589,29 @@ test("A user's attachment preview withholds the sharing an agent artifact offers
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   click(await findNamedLink("Preview brief.png"));
-  const briefDialog = await screen.findByRole("dialog", {
-    name: "brief.png preview",
-  });
+  const briefDialog = await screen.findByTestId("artifact-sidebar");
   // The resolved private address proves the token the share action reads has
   // already settled, so a missing control is a decision, not a pending state.
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       "https://private-files.example/brief.png",
     );
   });
-  expect(getNamedButton("Download options", briefDialog)).toBeInTheDocument();
-  expect(queryNamedLink("Share", briefDialog)).toBeNull();
-  expect(queryNamedButton("Share", briefDialog)).toBeNull();
+  expect(getNamedButton("Download artifact", briefDialog)).toBeInTheDocument();
+  expect(queryNamedLink("Share artifact", briefDialog)).toBeNull();
+  expect(queryNamedButton("Share artifact", briefDialog)).toBeNull();
 
   click(await findNamedButton("Next image artifact", briefDialog));
-  const sketchDialog = await screen.findByRole("dialog", {
-    name: "sketch.png preview",
-  });
+  const sketchDialog = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       "https://private-files.example/sketch.png",
     );
   });
-  expect(queryNamedLink("Share", sketchDialog)).toBeNull();
-  expect(queryNamedButton("Share", sketchDialog)).toBeNull();
+  expect(queryNamedLink("Share artifact", sketchDialog)).toBeNull();
+  expect(queryNamedButton("Share artifact", sketchDialog)).toBeNull();
 
   await closeFocusedPreview();
 
@@ -638,10 +621,8 @@ test("A user's attachment preview withholds the sharing an agent artifact offers
     throw new Error("Expected the agent image to open a preview");
   }
   click(agentPreview);
-  const agentDialog = await screen.findByRole("dialog", {
-    name: "agent-chart.png preview",
-  });
-  click(await findNamedButton("Share", agentDialog));
+  const agentDialog = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Share artifact", agentDialog));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([agentImageUrl]);
   });
@@ -701,7 +682,7 @@ test("A private site card uses its resolved screenshot even when the thread arti
   ).toBeNull();
   click(card);
   await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+    expect(getPreviewFrame("artifact-sidebar-body-html")).toHaveAttribute(
       "src",
       previewUrl,
     );
@@ -748,7 +729,7 @@ test.each(["public", "private"] as const)(
     expect(frame).toHaveAttribute("tabindex", "-1");
     click(card);
     await waitFor(() => {
-      expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+      expect(getPreviewFrame("artifact-sidebar-body-html")).toHaveAttribute(
         "src",
         restricted ? previewUrl : site,
       );
@@ -796,7 +777,7 @@ test.each([
     code: "UNAUTHORIZED",
   },
 ] as const)(
-  "an inaccessible $filename ($status) shows an access card in the lightbox",
+  "an inaccessible $filename ($status) shows an access card in the sidebar",
   async ({ filename, status, code }) => {
     const reference = artifactShareReferencePath("restricted", filename);
     const url = new URL(reference, "http://localhost").href;
@@ -812,7 +793,7 @@ test.each([
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
     click(await findNamedLink("Restricted artifact"));
 
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     await expect(
       within(dialog).findByRole("heading", {
         name: "You can’t view this artifact",
@@ -848,19 +829,15 @@ test("an artifact service failure ends loading with a preview error", async () =
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Unavailable artifact"));
 
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(within(dialog).findByRole("status")).resolves.toHaveTextContent(
     "Preview unavailable.",
   );
 });
 
-test.each([
-  { status: 404, sidebar: false },
-  { status: 500, sidebar: false },
-  { status: 404, sidebar: true },
-] as const)(
-  "a website preview failure ($status, sidebar=$sidebar) shows its error inline without a toast",
-  async ({ status, sidebar }) => {
+test.each([{ status: 404 }, { status: 500 }] as const)(
+  "a website preview failure ($status) shows its error inline without a toast",
+  async ({ status }) => {
     const site = "https://unavailable-report.okou.app/";
     mockAttachmentChat(context, {
       chatEvents: [assistantMessage(`![Website report](${site})`)],
@@ -879,12 +856,7 @@ test.each([
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
     });
     click(await screen.findByTestId("attachment-preview-html"));
-    if (sidebar) {
-      click(await findNamedButton("Open in split view"));
-    }
-    const viewer = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
+    const viewer = await screen.findByTestId("artifact-sidebar");
     await expect(
       within(viewer).findByRole("heading", {
         name:
@@ -974,7 +946,7 @@ test.each([
       throw new Error("Expected a video preview button");
     }
     click(card);
-    const stage = await screen.findByTestId("artifact-dialog-video-stage");
+    const stage = await screen.findByTestId("artifact-sidebar-video-stage");
     await waitFor(() => {
       expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
     });
@@ -1017,7 +989,7 @@ test("A private video without a poster keeps an openable video fallback", async 
   expect(card).toBeEnabled();
 
   click(card);
-  const stage = await screen.findByTestId("artifact-dialog-video-stage");
+  const stage = await screen.findByTestId("artifact-sidebar-video-stage");
   await waitFor(() => {
     expect(stage.querySelector("video")).toHaveAttribute("src", videoUrl);
   });
@@ -1112,8 +1084,8 @@ test("a multi-file hosted publication downloads as a zip of every member", async
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
+  const dialog = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
 
   await waitFor(() => {
@@ -1147,8 +1119,8 @@ test("a publication that cannot be listed reports the failure instead of its ent
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
+  const dialog = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
 
   await expect(
@@ -1165,8 +1137,8 @@ test("a self-contained hosted page downloads as the page itself", async () => {
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
+  const dialog = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
 
   await waitFor(() => {

@@ -1424,7 +1424,7 @@ function ArtifactPreviewDialogActions({
       <ArtifactPreviewActionGroup
         key={preview.url}
         enabled={groupedActions}
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+        artifactId={artifact?.artifactId}
         metadataPending={actionsPending}
         shareAvailable={showShare}
         sharePending={share.state === "loading"}
@@ -1476,7 +1476,7 @@ function ArtifactPreviewDialogActions({
           url={preview.url}
         />
         <ArtifactDeleteButton
-          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+          artifactId={artifact?.artifactId}
           origin={{ kind: "preview-dialog" }}
           iconSize={18}
           menu={groupedActions}
@@ -1668,20 +1668,16 @@ export function FileAttachmentChip({
       type="button"
       onClick={() => {
         if (previewOfficeDocument) {
-          detach(
-            openFileLightbox(
-              {
-                threadId,
-                filename,
-                contentType,
-                url,
-                ...(preview ? { preview } : {}),
-                ...(shareAvailable === undefined ? {} : { shareAvailable }),
-              },
-              undefined,
-              pageSignal,
-            ),
-            Reason.DomCallback,
+          openFileLightbox(
+            {
+              threadId,
+              filename,
+              contentType,
+              url,
+              ...(preview ? { preview } : {}),
+              ...(shareAvailable === undefined ? {} : { shareAvailable }),
+            },
+            pageSignal,
           );
           return;
         }
@@ -1773,24 +1769,18 @@ export function PreviewableFileAttachmentChip({
     <button
       type="button"
       onClick={() => {
-        detach(
-          openDocumentLightbox(
-            {
-              threadId,
-              kind,
-              url,
-              filename,
-              ...(preview ? { preview } : {}),
-              ...(shareAvailable === undefined ? {} : { shareAvailable }),
-              ...(splitViewAvailable === undefined
-                ? {}
-                : { splitViewAvailable }),
-              ...(text$ ? { text$ } : {}),
-            },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openDocumentLightbox(
+          {
+            threadId,
+            kind,
+            url,
+            filename,
+            ...(preview ? { preview } : {}),
+            ...(shareAvailable === undefined ? {} : { shareAvailable }),
+            ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
+            ...(text$ ? { text$ } : {}),
+          },
+          pageSignal,
         );
       }}
       aria-label={t(
@@ -1838,23 +1828,17 @@ export function PreviewableAudioAttachmentChip({
     <button
       type="button"
       onClick={() => {
-        detach(
-          openAudioLightbox(
-            {
-              threadId,
-              url,
-              filename,
-              contentType,
-              ...(preview ? { preview } : {}),
-              ...(shareAvailable === undefined ? {} : { shareAvailable }),
-              ...(splitViewAvailable === undefined
-                ? {}
-                : { splitViewAvailable }),
-            },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openAudioLightbox(
+          {
+            threadId,
+            url,
+            filename,
+            contentType,
+            ...(preview ? { preview } : {}),
+            ...(shareAvailable === undefined ? {} : { shareAvailable }),
+            ...(splitViewAvailable === undefined ? {} : { splitViewAvailable }),
+          },
+          pageSignal,
         );
       }}
       aria-label={t(
@@ -2227,16 +2211,13 @@ function AttachmentChip({
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
           openPreview={(previewUrl, mediaPreview) => {
-            detach(
-              openAttachmentPreview(
-                attachment,
-                {
-                  url: previewUrl,
-                  preview: mediaPreview,
-                },
-                pageSignal,
-              ),
-              Reason.DomCallback,
+            openAttachmentPreview(
+              attachment,
+              {
+                url: previewUrl,
+                preview: mediaPreview,
+              },
+              pageSignal,
             );
           }}
           url={url}

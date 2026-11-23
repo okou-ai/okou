@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "Sidebar",
-      "chat": "Chat",
       "hideChatList": "Hide chat list",
       "mobile": {
         "invite": "Invite",

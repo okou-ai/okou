@@ -62,7 +62,6 @@ export interface AgentToolsPromptInputs {
   readonly presentationConvertEnabled: boolean;
   readonly markdownFirstOutputEnabled: boolean;
   readonly cloudBrowserEnabled: boolean;
-  readonly batchConnectorPermissionsEnabled: boolean;
   readonly artifactThreePointTimingEnabled: boolean;
 }
 
@@ -99,10 +98,6 @@ export function buildAgentToolsPromptInputs(args: {
       context,
     ),
     cloudBrowserEnabled: args.cloudBrowserEnabled,
-    batchConnectorPermissionsEnabled: isFeatureEnabled(
-      FeatureSwitchKey.BatchConnectorPermissions,
-      context,
-    ),
   };
 }
 
@@ -253,14 +248,8 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     "- Diagnose failed connector requests before attributing them to Okou permission policy: run `okou connector check --url <FAILED_URL> --method <METHOD> [--connector <slug>]`. Use the `url` field from a firewall denial response when present; omit query strings or fragments when they may contain secrets. Only request access when the check reports a deny or ask outcome.",
     "- Request missing permissions: for individual permission links, run the exact `okou connector permission-request` command printed by the immediately preceding URL check, one command per permission. Never construct a permission request from provider OAuth errors such as Slack `missing_scope` or `needed`; those values are provider scopes, not Okou permissions. The user chooses the grant duration in the confirmation UI.",
     "- Continue after a single access action: when the current web chat turn needs exactly one access action, add `--callback-prompt <prompt>` to its CLI request (connector permission, Browser, Computer Use, or `okou computer-use shell request-access`); keep the prompt concise and do not include secrets. `okou connector check` and `okou connector status` show a callback URL or permission-command example when the current environment has `OKOU_CHAT_THREAD_ID`. Use a callback command or URL only when this is the turn's only access action. After sharing it, end the current turn; when the user completes the action, Okou starts the next round with the callback prompt.",
-    ...(args.batchConnectorPermissionsEnabled
-      ? [
-          "- Batch permission approvals: after diagnosing each concrete builtin HTTP operation with `okou connector check`, use `okou connector permission-request --batch-file <path>` for multiple permissions. The JSON file contains `{ connector, permission, url, method }` entries, with the existing AWS diagnostic selectors when needed; use only the exact diagnosed operations, never provider OAuth scopes. The CLI rechecks every item and skips permissions already allowed. Return its single batch URL verbatim. A single batch approval may carry one `--callback-prompt <prompt>` when it is this turn's only access action; after sharing it, end the current turn. The user chooses one permission duration for the batch.",
-          "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. For Web Chat SSH or VNC host access plus connector permission approvals, a host `request-access` request declaring every `--require-permission` can own continuation; use ordinary non-callback permission links alongside it. Otherwise, return all generated links in one response, one link per line, and wait for the user to finish all of them.",
-        ]
-      : [
-          "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple access actions. The exception is a Web Chat SSH or VNC access request that declares every required connector permission with `--require-permission`: only that request owns continuation. Otherwise, return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
-        ]),
+    "- Batch permission approvals: after diagnosing each concrete builtin HTTP operation with `okou connector check`, use `okou connector permission-request --batch-file <path>` for multiple permissions. The JSON file contains `{ connector, permission, url, method }` entries, with the existing AWS diagnostic selectors when needed; use only the exact diagnosed operations, never provider OAuth scopes. The CLI rechecks every item and skips permissions already allowed. Return its single batch URL verbatim. A single batch approval may carry one `--callback-prompt <prompt>` when it is this turn's only access action; after sharing it, end the current turn. The user chooses one permission duration for the batch.",
+    "- Multiple access actions: a single batch permission link is one confirmation action, even when it lists several permissions. Do not use callbacks when additional connector connections, account switches, Browser/Computer Use authorizations, Shell approvals, or separate approval links are still needed. For Web Chat SSH or VNC host access plus connector permission approvals, a host `request-access` request declaring every `--require-permission` can own continuation; use ordinary non-callback permission links alongside it. Otherwise, return all generated links in one response, one link per line, and wait for the user to finish all of them.",
     "- Keep temporary downloads, synchronized chat histories, diffs, inventories and backups outside personal Memory. Store chat history caches under `/tmp/okou-chat-history` and other task scratch under `/tmp` or the workspace. Memory is saved after each Run; retain only durable knowledge and intentional evidence there, under the existing Memory authorization rules.",
     suggestionsFeedbackGuidance,
     PERSONAL_SCOPE_PROMPT,

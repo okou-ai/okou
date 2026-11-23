@@ -146,7 +146,7 @@ class UsageWebhookServer:
     def request_count(self) -> int:
         return self._http.request_count
 
-    def url(self, path: str = "/api/webhooks/agent/usage-event") -> str:
+    def url(self, path: str = "/api/webhooks/run/usage-event") -> str:
         if not path.startswith("/"):
             path = f"/{path}"
         return f"{self.api_url}{path}"
@@ -178,7 +178,7 @@ class UsageWebhookServer:
         return [
             event
             for request in self.requests
-            if request.path == "/api/webhooks/agent/usage-event"
+            if request.path == "/api/webhooks/run/usage-event"
             for body in [request.json_body()]
             for event in body.get("events", [])
             if isinstance(event, dict)

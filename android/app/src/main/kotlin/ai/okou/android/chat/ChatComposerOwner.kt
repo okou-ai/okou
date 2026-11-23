@@ -159,7 +159,7 @@ internal class ChatComposerOwner(
                     mutable.value.copy(
                         persistence =
                             if (result == ComposerCommit.Committed) ComposerPersistence.Durable
-                            else ComposerPersistence.Failed
+                            else ComposerPersistence.Failed,
                     )
         }
     }
@@ -187,32 +187,31 @@ internal class ChatComposerOwner(
     private fun restoreJournal() {
         if (mutable.value.journal != null || restoring?.isActive == true) return
         mutable.value = mutable.value.copy(persistence = ComposerPersistence.Loading)
-        restoring =
-            localScope.launch {
-                try {
-                    val saved = store.load(identity)
-                    if (connections.none { it.current() }) return@launch
-                    val restored = saved.journal.withServerDrafts()
-                    mutable.value =
-                        mutable.value.copy(
-                            journal = restored,
-                            persistence =
-                                if (saved.durable) ComposerPersistence.Durable
-                                else ComposerPersistence.Failed,
-                        )
-                    if (restored != saved.journal && saved.journal != ComposerJournal())
-                        replace(restored)
-                    val accepted = restored.acceptedNewChats()
-                    connections
-                        .filter { it.current() }
-                        .forEach { it.chatList?.retainAcceptedNewChats(accepted, restored = true) }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    if (connections.any { it.current() })
-                        mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
-                }
+        restoring = localScope.launch {
+            try {
+                val saved = store.load(identity)
+                if (connections.none { it.current() }) return@launch
+                val restored = saved.journal.withServerDrafts()
+                mutable.value =
+                    mutable.value.copy(
+                        journal = restored,
+                        persistence =
+                            if (saved.durable) ComposerPersistence.Durable
+                            else ComposerPersistence.Failed,
+                    )
+                if (restored != saved.journal && saved.journal != ComposerJournal())
+                    replace(restored)
+                val accepted = restored.acceptedNewChats()
+                connections
+                    .filter { it.current() }
+                    .forEach { it.chatList?.retainAcceptedNewChats(accepted, restored = true) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (connections.any { it.current() })
+                    mutable.value = mutable.value.copy(persistence = ComposerPersistence.Failed)
             }
+        }
     }
 
     fun open(connection: Connection, target: ComposerTarget): Job? {
@@ -232,7 +231,7 @@ internal class ChatComposerOwner(
                                 mutable.value.copy(
                                     context =
                                         if (ready) ComposerContext.Ready
-                                        else ComposerContext.Unavailable
+                                        else ComposerContext.Unavailable,
                                 )
                         }
                     } catch (cancelled: CancellationException) {
@@ -245,7 +244,7 @@ internal class ChatComposerOwner(
                                     context =
                                         if (error is ApiFailure.Network)
                                             ComposerContext.NetworkFailed
-                                        else ComposerContext.Failed
+                                        else ComposerContext.Failed,
                                 )
                         }
                     }
@@ -319,8 +318,8 @@ internal class ChatComposerOwner(
                                 dirty = true,
                                 revision = old.revision + 1,
                                 source = target.key,
-                            ))
-            )
+                            )),
+            ),
         )
         serverTarget(key)?.let { synchronize(connection, it) }
     }
@@ -343,7 +342,7 @@ internal class ChatComposerOwner(
                                 revision = draft.revision + 1,
                                 source = target.key,
                             )),
-            )
+            ),
         )
         serverTarget(draftKey)?.let { synchronize(connection, it) }
     }
@@ -415,8 +414,8 @@ internal class ChatComposerOwner(
                             replace(
                                 journal.copy(
                                     drafts =
-                                        journal.drafts + (target.key to local.copy(text = remote))
-                                )
+                                        journal.drafts + (target.key to local.copy(text = remote)),
+                                ),
                             )
                         }
                     }
@@ -449,8 +448,8 @@ internal class ChatComposerOwner(
                             replace(
                                 journal.copy(
                                     drafts =
-                                        journal.drafts + (target.key to draft.copy(dirty = false))
-                                )
+                                        journal.drafts + (target.key to draft.copy(dirty = false)),
+                                ),
                             )
                     }
                     if (current()) syncStatus(target.key, ComposerSync.Saved)
@@ -560,7 +559,7 @@ internal class ChatComposerOwner(
                                 SendRequestVariant1UserMessagePartsItemVariant1(
                                     SendRequestVariant1UserMessagePartsItemVariant1Type.TEXT,
                                     entry.text,
-                                )
+                                ),
                             ),
                         ),
                 ),
@@ -583,7 +582,7 @@ internal class ChatComposerOwner(
                                 revision = draft.revision + 1,
                                 source = target.key,
                             )),
-            )
+            ),
         )
         serverTarget(draftKey)?.let { synchronize(connection, it) }
         dispatch(op)
@@ -960,7 +959,7 @@ internal class ChatComposerOwner(
         if (create == null) list?.acknowledgeOutgoingActivity(pending)
         else
             list?.retainAcceptedNewChats(
-                listOf(ProvisionalChat(pending.threadId, create.projectId))
+                listOf(ProvisionalChat(pending.threadId, create.projectId)),
             )
         op.connection.accepted(pending.threadId)
     }

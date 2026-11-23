@@ -45,13 +45,15 @@ class AndroidUpdateClientTest {
             val notes = "\uD83D\uDE80".repeat(8_000)
             val release = updateRelease().copy(notes = notes)
             server.enqueue(
-                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release)))
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release))),
             )
             server.enqueue(
                 MockResponse()
                     .setBody(
-                        Json.encodeToString(AndroidUpdates(null, release.copy(notes = notes + "!")))
-                    )
+                        Json.encodeToString(
+                            AndroidUpdates(null, release.copy(notes = notes + "!")),
+                        ),
+                    ),
             )
             AndroidUpdateClient(
                     ApplicationProvider.getApplicationContext(),
@@ -123,10 +125,10 @@ class AndroidUpdateClientTest {
                         url =
                             server
                                 .url("/android-updates/releases/0.13.0/${"a".repeat(64)}.apk")
-                                .toString()
+                                .toString(),
                     )
             server.enqueue(
-                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release)))
+                MockResponse().setBody(Json.encodeToString(AndroidUpdates(null, release))),
             )
             server.enqueue(MockResponse().setResponseCode(404))
             val client =
@@ -151,7 +153,7 @@ class AndroidUpdateClientTest {
                 assertTrue(
                     directory.listFiles()!!.none {
                         it.name.endsWith(".apk") || it.name.endsWith(".part")
-                    }
+                    },
                 )
             }
         }
@@ -169,17 +171,17 @@ class AndroidUpdateClientTest {
                             url =
                                 server
                                     .url("/android-updates/releases/0.13.0/${"a".repeat(64)}.apk")
-                                    .toString()
+                                    .toString(),
                         )
                 server.enqueue(
                     MockResponse()
                         .setResponseCode(426)
                         .setBody(
-                            """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.13.0"}"""
-                        )
+                            """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.13.0"}""",
+                        ),
                 )
                 server.enqueue(
-                    MockResponse().setBody(Json.encodeToString(AndroidUpdates("0.13.0", release)))
+                    MockResponse().setBody(Json.encodeToString(AndroidUpdates("0.13.0", release))),
                 )
                 val requirements = mutableListOf<String?>()
                 ApiClient(

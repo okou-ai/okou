@@ -49,7 +49,7 @@ class ConversationHistorySync(
                 var cursor = state.cursor
                 for (row in page.rows) {
                     requireChatWire(
-                        row.threadId == threadId && row.seqId > cursor.seqId && ids.add(row.id)
+                        row.threadId == threadId && row.seqId > cursor.seqId && ids.add(row.id),
                     )
                     rows.add(row)
                     cursor = HistoryCursor(row.id, row.seqId)

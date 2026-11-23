@@ -52,7 +52,7 @@ internal fun ProjectMovePicker(
                 Icon(
                     painterResource(
                         if (destination.id == null) R.drawable.ic_folder_open
-                        else R.drawable.ic_folder
+                        else R.drawable.ic_folder,
                     ),
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),

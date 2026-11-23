@@ -49,7 +49,7 @@ class ConnectorServiceTest {
             )
             assertTrue(before.first { it.id == CONNECTOR_CALENDAR_PRIMARY }.defaultEnabled == true)
             assertFalse(
-                service.setDefaultEnabled(CONNECTOR_CALENDAR, CONNECTOR_CALENDAR_PRIMARY, false)
+                service.setDefaultEnabled(CONNECTOR_CALENDAR, CONNECTOR_CALENDAR_PRIMARY, false),
             )
             assertEquals(
                 "Renamed",

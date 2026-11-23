@@ -1058,15 +1058,15 @@ export const webhooksAgentHealthUsageTelemetryRoutes: readonly RouteEntry[] = [
     handler: heartbeat$,
   },
   {
+    route: runWebhookContract.usageEvent,
+    handler: usageEvent$,
+  },
+  {
     route: webhookUsageEventContract.send,
     handler: usageEvent$,
   },
   {
     route: webhookTelemetryContract.send,
-    handler: telemetry$,
-  },
-  {
-    route: runWebhookContract.telemetry,
     handler: telemetry$,
   },
 ];

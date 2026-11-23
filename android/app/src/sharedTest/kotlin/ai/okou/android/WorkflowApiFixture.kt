@@ -66,7 +66,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     if (calendarId != null) add(connector("google-calendar", "Google Calendar"))
                 }
                 jsonResponse(
-                    """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}"""
+                    """{"builtinConnectors":[${connectors.joinToString()}],"customConnectors":[]}""",
                 )
             }
             "/api/workflows" -> {
@@ -82,7 +82,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     if (instructionSaveConflict)
                         return jsonResponse(
-                                """{"error":{"code":"CONFLICT","message":"Workflow changed during update; retry the request"}}"""
+                                """{"error":{"code":"CONFLICT","message":"Workflow changed during update; retry the request"}}""",
                             )
                             .setResponseCode(409)
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
@@ -96,7 +96,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         shared(),
                         if (chinese) "整理发布发现。" else "Collect launch findings.",
                         if (hasSharedSchedule) "[${sharedSchedule()}]" else "[]",
-                    )
+                    ),
                 )
             "/api/workflow-automations" -> {
                 val rules = buildList {
@@ -148,14 +148,14 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                     jsonResponse(github())
                 } else {
                     jsonResponse(
-                            """{"error":{"code":"BAD_REQUEST","message":"Install GitHub before creating GitHub webhook automations"}}"""
+                            """{"error":{"code":"BAD_REQUEST","message":"Install GitHub before creating GitHub webhook automations"}}""",
                         )
                         .setResponseCode(400)
                 }
             }
             "/api/onboarding/status" ->
                 jsonResponse(
-                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}"""
+                    """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
                 )
             "/api/chat-drafts/composer" -> {
                 if (request.method == "GET") {

@@ -87,7 +87,7 @@ object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -182,7 +182,7 @@ data class HistoryRowsRowsItemVariant1Payload(
 
 @Serializable
 enum class HistoryRowsRowsItemVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
+    @SerialName("run.failed") RUN_FAILED,
 }
 
 @Serializable
@@ -396,7 +396,7 @@ object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -469,7 +469,7 @@ data class RawHistoryRowVariant1Payload(
 
 @Serializable
 enum class RawHistoryRowVariant1EventType {
-    @SerialName("run.failed") RUN_FAILED
+    @SerialName("run.failed") RUN_FAILED,
 }
 
 @Serializable

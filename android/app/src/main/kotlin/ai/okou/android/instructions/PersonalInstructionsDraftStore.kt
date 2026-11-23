@@ -91,14 +91,13 @@ class PersonalInstructionsDraftStore(
             latest[key] = write
             scope.launch {
                 try {
-                    val committed =
-                        io.withLock {
-                            // Skip obsolete queued edits, but finish the write already in progress.
-                            if (synchronized(guard) { latest[key] === write }) {
-                                withContext(dispatcher) { write(key, value) }
-                                InstructionsCommit.Committed
-                            } else InstructionsCommit.Superseded
-                        }
+                    val committed = io.withLock {
+                        // Skip obsolete queued edits, but finish the write already in progress.
+                        if (synchronized(guard) { latest[key] === write }) {
+                            withContext(dispatcher) { write(key, value) }
+                            InstructionsCommit.Committed
+                        } else InstructionsCommit.Superseded
+                    }
                     synchronized(guard) { if (latest[key] === write) latest.remove(key) }
                     write.done.complete(committed)
                 } catch (cancelled: CancellationException) {

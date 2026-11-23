@@ -29,11 +29,7 @@ final class WorkspaceResources {
   private let feedSummary: WorkspaceRead<Bool>
   private let feedItems: WorkspaceRead<[ForYouCard]>
   var forYouSummary: Computed<Task<Bool, Error>> { feedSummary.value }
-  private let billing: WorkspaceRead<WorkspaceBilling>
-  private let creditBalance: WorkspaceRead<WorkspaceCreditBalance>
   var featureSwitches: Computed<Task<SidebarFeatureSwitches, Error>> { features.value }
-  let billingValue: Computed<Task<WorkspaceBilling, Error>>
-  let billingCreditsValue: Computed<Task<Double, Error>>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(
@@ -76,28 +72,7 @@ final class WorkspaceResources {
     feedItems = WorkspaceRead(
       "For you items", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
       read: feed.cards)
-    let billingService = WorkspaceBillingService(client: client)
-    let billing = WorkspaceRead(
-      "billing", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: billingService.status)
-    self.billing = billing
-    billingValue = billing.value
-    let creditBalance = WorkspaceRead(
-      "credit balance", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
-      read: billingService.creditBalance)
-    self.creditBalance = creditBalance
     let featureValue = features.value
-    let balanceValue = creditBalance.value
-    let statusValue = billing.value
-    billingCreditsValue = computedTask { get, options in
-      guard try get(lifetime) else { throw CancellationError() }
-      let balance = try get(balanceValue)
-      let status = try get(statusValue)
-      let (credits, billing) = try await (balance.value, status.value)
-      try Task.checkCancellation()
-      try options.signal.checkCancellation()
-      return credits.availableCredits(organizationCredits: billing.credits)
-    }
     let projectReadiness: (@MainActor () async throws -> Void)?
     if let projectBootstrap {
       projectReadiness = {
@@ -206,18 +181,6 @@ final class WorkspaceResources {
 
   func prepareSettings() throws {
     try features.retryFailed(in: store)
-    try store.set(billing.reload)
-    try store.set(creditBalance.reload)
-  }
-
-  func loadSettingsBilling() async throws {
-    try Task.checkCancellation()
-    guard try store.get(lifetime) else { throw CancellationError() }
-    try billing.retryFailed(in: store)
-    try creditBalance.retryFailed(in: store)
-    let status = try store.get(billingValue)
-    let credits = try store.get(billingCreditsValue)
-    _ = try await (status.value, credits.value)
   }
 
   func close() {
@@ -231,8 +194,6 @@ final class WorkspaceResources {
     features.close()
     projects.close()
     sidebarDrafts.close()
-    billing.close()
-    creditBalance.close()
     do { try store.set(lifetime, false) } catch {
       Logger(subsystem: "ai.okou.ios", category: "WorkspaceResources")
         .error(

@@ -248,7 +248,8 @@ private fun SessionTextAction(@StringRes label: Int, onClick: () -> Unit) {
     TextButton(
         onClick = onClick,
         modifier = Modifier.heightIn(min = 48.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(stringResource(label), textAlign = TextAlign.Center)
     }

@@ -58,7 +58,7 @@ class RunControlsModelTest {
 
     private fun thread(id: String = CHAT_PERSONAL) =
         Json.decodeFromString<ChatArchive>(
-                """{"chatThreads":[{"id":"$id","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                """{"chatThreads":[{"id":"$id","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
             )
             .chatThreads
             .single()
@@ -96,7 +96,7 @@ class RunControlsModelTest {
             api.historyRows = { request ->
                 if (failRows.get())
                     jsonResponse(
-                            """{"error":{"code":"READ_FAILED","message":"Read unavailable"}}"""
+                            """{"error":{"code":"READ_FAILED","message":"Read unavailable"}}""",
                         )
                         .setResponseCode(503)
                 else {
@@ -107,7 +107,7 @@ class RunControlsModelTest {
                         selected.filter { it.seqId > since }.joinToString(",") { it.archiveJson() }
                     val last = selected.lastOrNull()
                     jsonResponse(
-                        """{"rows":[$tail],"cursor":{"lastEventId":${last?.let { "\"${it.id}\"" } ?: "null"},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""
+                        """{"rows":[$tail],"cursor":{"lastEventId":${last?.let { "\"${it.id}\"" } ?: "null"},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}""",
                     )
                 }
             }
@@ -209,7 +209,7 @@ class RunControlsModelTest {
                             retired,
                             dispatcher,
                             cache,
-                        )
+                        ),
                     )
                 } finally {
                     owners.clear()
@@ -343,7 +343,7 @@ class RunControlsModelTest {
                     assertTrue(
                         restored.controls.uiState.value.phases.values.all {
                             it == RunControlPhase.Unknown
-                        }
+                        },
                     )
                     runCurrent()
                     assertEquals(2, f.remote.posts.size)
@@ -500,7 +500,7 @@ class RunControlsModelTest {
                 f.api.historyRows = { request ->
                     if (request === held.get())
                         jsonResponse(
-                                """{"error":{"code":"UNAVAILABLE","message":"Old read failed"}}"""
+                                """{"error":{"code":"UNAVAILABLE","message":"Old read failed"}}""",
                             )
                             .setResponseCode(503)
                     else rows(request)
@@ -566,7 +566,7 @@ class RunControlsModelTest {
             withPeer(f) { peer ->
                 f.api.historyDetail = {
                     jsonResponse(
-                            """{"error":{"code":"UNAVAILABLE","message":"Metadata unavailable"}}"""
+                            """{"error":{"code":"UNAVAILABLE","message":"Metadata unavailable"}}""",
                         )
                         .setResponseCode(503)
                 }
@@ -707,7 +707,7 @@ class RunControlsModelTest {
                     .size,
             )
             assertTrue(
-                f.remote.requests.all { it.getHeader("Authorization") == "Bearer fixture-token" }
+                f.remote.requests.all { it.getHeader("Authorization") == "Bearer fixture-token" },
             )
             assertTrue(f.remote.posts.none { "prompt" in it || "revokesEventId" in it })
             assertEquals(2, f.store.load(f.api.identity).journal.pending.size)
@@ -823,7 +823,7 @@ class RunControlsModelTest {
                         payload = "null",
                         run = null,
                     ),
-                )
+                ),
         ) { f ->
             assertEquals(listOf(automation), f.history.uiState.value.transcript?.queuedEventIds)
             f.controls.skip(CHAT_PERSONAL, manual)
@@ -893,7 +893,7 @@ class RunControlsModelTest {
                 HISTORY_RUN,
             )
         for (retry in listOf(false, true)) withControls(
-            saved = RunControlJournal(pending = listOf(intent))
+            saved = RunControlJournal(pending = listOf(intent)),
         ) { f ->
             f.api.historyDetail = {
                 jsonResponse("""{"lastReadAt":null,"cancellationRecoveryPending":true}""")
@@ -975,7 +975,7 @@ class RunControlsModelTest {
                     entered.await()
                     f.api.historyDetail = {
                         jsonResponse(
-                                """{"error":{"code":"UNAVAILABLE","message":"Metadata unavailable"}}"""
+                                """{"error":{"code":"UNAVAILABLE","message":"Metadata unavailable"}}""",
                             )
                             .setResponseCode(503)
                     }
@@ -1295,7 +1295,7 @@ class RunControlsModelTest {
                         .load(f.api.identity.copy(userId = "another-member"))
                         .journal
                         .pending
-                        .isEmpty()
+                        .isEmpty(),
                 )
             } finally {
                 restoredOwners.clear()

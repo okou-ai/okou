@@ -75,7 +75,6 @@ test.each([false, true])(
       },
       featureSwitches: {
         [FeatureSwitchKey.MarkdownDocumentTypography]: typographyEnabled,
-        [FeatureSwitchKey.ArtifactSidebarPreview]: false,
       },
     });
     const chatHeading = await screen.findByRole("heading", {
@@ -83,26 +82,21 @@ test.each([false, true])(
       name: "Chat heading",
     });
     click(await findNamedLink("Heading hierarchy"));
-    const dialog = await screen.findByTestId("attachment-lightbox");
-    await within(dialog).findByRole("heading", {
-      level: 1,
-      name: "Document heading 1",
-    });
-    expectDocumentHeadings(dialog);
-
-    click(getNamedButton("Enter fullscreen", dialog));
-    await waitFor(() => {
-      expect(dialog).toHaveAttribute("data-mode", "fullscreen");
-    });
-    expectDocumentHeadings(dialog);
-
-    click(getNamedButton("Open in split view", dialog));
     const sidebar = await screen.findByTestId("artifact-sidebar");
     await within(sidebar).findByRole("heading", {
       level: 1,
       name: "Document heading 1",
     });
     expectDocumentHeadings(sidebar);
+    click(getNamedButton("Enter fullscreen", sidebar));
+    await waitFor(() => {
+      expect(getNamedButton("Exit fullscreen", sidebar)).toBeInTheDocument();
+    });
+    expectDocumentHeadings(sidebar);
+    click(getNamedButton("Exit fullscreen", sidebar));
+    await waitFor(() => {
+      expect(getNamedButton("Enter fullscreen", sidebar)).toBeInTheDocument();
+    });
     expect(chatHeading).toBeInTheDocument();
     expect(screen.getByText("Chat body copy.")).toBeInTheDocument();
   },
