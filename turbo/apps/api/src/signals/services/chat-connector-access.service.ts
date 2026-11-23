@@ -138,8 +138,8 @@ function policyColumns() {
   return {
     connectionId: connectors.id,
     defaultEnabledForChats: connectors.defaultEnabledForChats,
-    memberAccessAllowed: connectors.memberAccessAllowed,
-    memberAccessExpiresAt: connectors.memberAccessExpiresAt,
+    chatAccessAllowed: connectors.chatAccessAllowed,
+    chatAccessExpiresAt: connectors.chatAccessExpiresAt,
   };
 }
 
@@ -147,16 +147,16 @@ function accountPolicy(
   row: {
     readonly connectionId: string;
     readonly defaultEnabledForChats: boolean;
-    readonly memberAccessAllowed: boolean | null;
-    readonly memberAccessExpiresAt: Date | null;
+    readonly chatAccessAllowed: boolean | null;
+    readonly chatAccessExpiresAt: Date | null;
   },
   at: Date,
 ) {
   return {
     connectionId: row.connectionId,
-    allowed: row.memberAccessAllowed ?? row.defaultEnabledForChats,
+    allowed: row.chatAccessAllowed ?? row.defaultEnabledForChats,
     enabled: memberConnectorAccountAllowed(row, at),
-    expiresAt: row.memberAccessExpiresAt?.toISOString() ?? null,
+    expiresAt: row.chatAccessExpiresAt?.toISOString() ?? null,
   };
 }
 
@@ -203,8 +203,8 @@ export const updateConnectorAccountPolicy$ = command(
     const [row] = await set(writeDb$)
       .update(connectors)
       .set({
-        memberAccessAllowed: policy !== "deny",
-        memberAccessExpiresAt:
+        chatAccessAllowed: policy !== "deny",
+        chatAccessExpiresAt:
           hours === null ? null : new Date(at.getTime() + hours * 3_600_000),
         updatedAt: at,
       })

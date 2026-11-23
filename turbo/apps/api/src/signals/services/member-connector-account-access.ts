@@ -27,23 +27,22 @@ export function memberConnectorAccountAccessEnabledSql(owner: MemberIdentity) {
 export function memberConnectorAccountAllowed(
   account: {
     readonly defaultEnabledForChats: boolean;
-    readonly memberAccessAllowed: boolean | null;
-    readonly memberAccessExpiresAt: Date | null;
+    readonly chatAccessAllowed: boolean | null;
+    readonly chatAccessExpiresAt: Date | null;
   },
   at: Date,
 ) {
   return (
-    (account.memberAccessAllowed ?? account.defaultEnabledForChats) &&
-    (account.memberAccessExpiresAt === null ||
-      account.memberAccessExpiresAt > at)
+    (account.chatAccessAllowed ?? account.defaultEnabledForChats) &&
+    (account.chatAccessExpiresAt === null || account.chatAccessExpiresAt > at)
   );
 }
 
 function memberConnectorAccountAllowedSql() {
   const at = nowDateSql(sql`(statement_timestamp() AT TIME ZONE 'UTC')`);
-  return sql`coalesce(${connectors.memberAccessAllowed}, ${connectors.defaultEnabledForChats})
-    AND (${connectors.memberAccessExpiresAt} IS NULL
-      OR ${connectors.memberAccessExpiresAt} > ${at})`;
+  return sql`coalesce(${connectors.chatAccessAllowed}, ${connectors.defaultEnabledForChats})
+    AND (${connectors.chatAccessExpiresAt} IS NULL
+      OR ${connectors.chatAccessExpiresAt} > ${at})`;
 }
 
 export function legacyChatConnectorAccountAllowedSql() {
