@@ -188,8 +188,9 @@ final class ConnectorActionStore {
     if ["auth-code", "automatic", "openid-auth"].contains(flow.method?.grantKind ?? "")
       || flow.status.custom?.usesBrowserAuthorization == true
     {
-      flow.usesSystemAuthenticationSession = try await service.usesSystemAuthenticationSession()
+      let usesSystemSession = try await service.usesSystemAuthenticationSession()
       try check(flow)
+      flow.usesSystemAuthenticationSession = usesSystemSession
     }
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options)

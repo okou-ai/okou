@@ -43,8 +43,9 @@ struct ConnectorAuthenticationSessionView: UIViewControllerRepresentable {
       let presentation = Presentation(window: window)
       // Provider callbacks still finish at the API. Receipt verification dismisses
       // this session; no provider callback scheme or tokens are captured by iOS.
-      let session = ASWebAuthenticationSession(url: url, callbackURLScheme: nil) {
-        [weak self] _, error in
+      let session = ASWebAuthenticationSession(
+        url: url, callbackURLScheme: nil
+      ) { [weak self] _, error in
         Task { @MainActor [weak self] in self?.finish(id: id, url: url, error: error) }
       }
       session.presentationContextProvider = presentation
