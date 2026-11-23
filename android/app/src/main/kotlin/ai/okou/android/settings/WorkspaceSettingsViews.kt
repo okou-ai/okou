@@ -312,13 +312,14 @@ private fun ModelAccounts(
                         group.forEachIndexed { index, account ->
                             key(account.id) {
                                 if (index > 0) HorizontalDivider()
+                                val switch = state.switching[provider]
                                 ModelAccountRow(
                                     account,
                                     provider,
                                     index + 1,
-                                    state.switching[provider] == account.id,
+                                    switch?.takeIf { it.accountId == account.id }?.phase,
                                     state.offline,
-                                    provider in state.switching,
+                                    switch != null,
                                     activateAccount,
                                 )
                             }
@@ -341,7 +342,7 @@ private fun ModelAccountRow(
     account: RecoverySubscriptionsSubscriptionsItem,
     provider: ModelAccountProvider,
     index: Int,
-    switching: Boolean,
+    switchPhase: AccountSwitchPhase?,
     offline: Boolean,
     groupSwitching: Boolean,
     activateAccount: (String) -> Unit,
@@ -354,7 +355,10 @@ private fun ModelAccountRow(
         when {
             account.isActive == true -> stringResource(R.string.settings_account_current)
             account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
-            switching -> stringResource(R.string.settings_account_switching)
+            switchPhase == AccountSwitchPhase.Unconfirmed ||
+                switchPhase == AccountSwitchPhase.Confirming && offline ->
+                stringResource(R.string.settings_account_switch_unconfirmed)
+            switchPhase != null -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
         }
     val isActive = account.isActive == true

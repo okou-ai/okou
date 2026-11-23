@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -19,6 +20,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -39,14 +41,23 @@ class WorkspaceSettingsModelTest {
     @get:Rule val temporary = TemporaryFolder()
 
     @Test
-    fun usesTheReportedWindowsAndReconcilesAnAmbiguousActivationWithoutResending() = runTest {
+    fun preservesAccountOrderAndReconcilesAnUnconfirmedSwitchWithoutResending() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
+        val reopenedStore = ViewModelStore()
         try {
             ChatListApiFixture().use { api ->
                 val fixture = SettingsApiFixture(api)
-                val online = MutableStateFlow(true)
-                val model = settings(store, api, online = online)
+                val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                val cache = WorkspaceSettingsCache.create(backgroundScope) { file }
+                var accountReadsAvailable = true
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoverySubscriptions() =
+                            if (accountReadsAvailable) api.service.recoverySubscriptions()
+                            else throw ApiFailure.Http(503, null, null, null)
+                    }
+                val model = settings(store, api, cache = cache, service = service)
                 runCurrent()
                 assertEquals(0, fixture.accountReads.get())
                 model.visible(SettingsDestination.ModelAccounts)
@@ -90,22 +101,43 @@ class WorkspaceSettingsModelTest {
 
                 fixture.activationStatus = 500
                 fixture.activateBeforeError = true
+                accountReadsAvailable = false
                 model.activate(SettingsApiFixture.alternateAccount)
                 model.activate(SettingsApiFixture.alternateAccount)
                 val pending = model.uiState.value
                 assertEquals(
                     SettingsApiFixture.alternateAccount,
-                    pending.switching[ModelAccountProvider.ChatGPT],
+                    pending.switching[ModelAccountProvider.ChatGPT]?.accountId,
                 )
                 assertTrue(pending.accounts.value!!.first().isActive == true)
+                val unconfirmed =
+                    model.uiState.first {
+                        it.switching[ModelAccountProvider.ChatGPT]?.phase ==
+                            AccountSwitchPhase.Unconfirmed
+                    }
+                assertTrue(unconfirmed.accounts.value!!.first().isActive == true)
+                assertTrue(unconfirmed.switchFailures.isEmpty())
+                model.activate(SettingsApiFixture.alternateAccount)
+                model.visible(null)
+                accountReadsAvailable = true
+                model.visible(SettingsDestination.ModelAccounts)
                 val confirmed = model.uiState.first { it.switching.isEmpty() }
                 assertEquals(accounts.map { it.id }, confirmed.accounts.value!!.map { it.id })
                 assertTrue(confirmed.accounts.value[1].isActive == true)
                 assertTrue(confirmed.switchFailures.isEmpty())
                 assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
+
+                store.clear()
+                val reopened =
+                    settings(reopenedStore, api, online = MutableStateFlow(false), cache = cache)
+                reopened.visible(SettingsDestination.ModelAccounts)
+                val restored = reopened.uiState.first { it.accounts.value != null }
+                assertEquals(confirmed.accounts.value, restored.accounts.value)
             }
         } finally {
+            reopenedStore.clear()
             store.clear()
+            runCurrent()
             Dispatchers.resetMain()
         }
     }
@@ -145,6 +177,108 @@ class WorkspaceSettingsModelTest {
     }
 
     @Test
+    fun aDeniedBalanceIsRemovedFromDiskEvenWhenThePageClosesDuringTheWrite() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val reopenedStore = ViewModelStore()
+        val releaseStore = CompletableDeferred<Unit>()
+        try {
+            ChatListApiFixture().use { api ->
+                SettingsApiFixture(api)
+                val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                val preferences =
+                    PreferenceDataStoreFactory.create(scope = backgroundScope) { file }
+                val cache = WorkspaceSettingsCache(preferences, backgroundScope)
+                val cached = WorkspaceCreditSummary(2_400.0, emptyList())
+                cache.save(
+                    api.identity,
+                    "workspace-credits",
+                    WorkspaceCreditSummary.serializer(),
+                    ConfirmedSetting(cached, 0),
+                )
+                val deny = CompletableDeferred<Unit>()
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun recoveryBilling(): Nothing {
+                            deny.await()
+                            throw ApiFailure.Http(403, null, null, null)
+                        }
+                    }
+                val model = settings(store, api, admin = true, cache = cache, service = service)
+                model.visible(SettingsDestination.CreditBalance)
+                val initial =
+                    model.uiState.first {
+                        it.usagePack.value != null && it.workspaceCredits.value != null
+                    }
+                assertEquals(cached, initial.workspaceCredits.value)
+
+                val storeOccupied = CompletableDeferred<Unit>()
+                val pendingWrite = backgroundScope.launch {
+                    preferences.edit {
+                        storeOccupied.complete(Unit)
+                        releaseStore.await()
+                    }
+                }
+                storeOccupied.await()
+                deny.complete(Unit)
+                model.uiState.first { it.workspaceCredits.initialFailure }
+                model.visible(null)
+                store.clear()
+                releaseStore.complete(Unit)
+                pendingWrite.join()
+
+                val reopened =
+                    settings(
+                        reopenedStore,
+                        api,
+                        admin = true,
+                        online = MutableStateFlow(false),
+                        cache = cache,
+                    )
+                reopened.visible(SettingsDestination.CreditBalance)
+                val restored = reopened.uiState.first { it.usagePack.value != null }
+                assertEquals(initial.usagePack.value, restored.usagePack.value)
+                assertNull(restored.workspaceCredits.value)
+            }
+        } finally {
+            releaseStore.complete(Unit)
+            reopenedStore.clear()
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun confirmedBalancesRepopulateACorruptSettingsFile() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val reopenedStore = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                SettingsApiFixture(api)
+                val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                file.writeBytes(byteArrayOf(0x0a, 0x04, 0x0a))
+                val cache = WorkspaceSettingsCache.create(backgroundScope) { file }
+                val model = settings(store, api, cache = cache)
+                model.visible(SettingsDestination.CreditBalance)
+                val confirmed = model.uiState.first { it.usagePack.value != null }.usagePack.value
+                store.clear()
+                val reopened =
+                    settings(reopenedStore, api, online = MutableStateFlow(false), cache = cache)
+                reopened.visible(SettingsDestination.CreditBalance)
+                val restored = reopened.uiState.first { it.usagePack.value != null }
+                assertEquals(confirmed, restored.usagePack.value)
+            }
+        } finally {
+            reopenedStore.clear()
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun restoredCreditRemainsVisibleAndOnlyAStaleReadShowsProgress() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
@@ -155,24 +289,22 @@ class WorkspaceSettingsModelTest {
                 val saved = UsagePackCredits(100, 90, 10)
                 val writerScope = CoroutineScope(StandardTestDispatcher(testScheduler))
                 try {
-                    val writer =
-                        WorkspaceSettingsCache(
-                            PreferenceDataStoreFactory.create(scope = writerScope) { file },
-                        )
+                    val writer = WorkspaceSettingsCache.create(writerScope) { file }
                     writer.save(
                         api.identity,
                         "usage-pack",
                         creditsSerializer,
                         ConfirmedSetting(saved, 0),
                     )
+                    assertEquals(
+                        saved,
+                        writer.load(api.identity, "usage-pack", creditsSerializer)?.value,
+                    )
                 } finally {
                     writerScope.cancel()
                 }
                 runCurrent()
-                val cache =
-                    WorkspaceSettingsCache(
-                        PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
-                    )
+                val cache = WorkspaceSettingsCache.create(backgroundScope) { file }
                 val otherScopes =
                     listOf(
                         api.identity.copy(userId = "other-user"),

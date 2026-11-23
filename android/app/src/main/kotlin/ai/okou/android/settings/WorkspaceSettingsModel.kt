@@ -67,11 +67,19 @@ internal data class WorkspaceCreditSummary(
     val creditBreakdown: List<RecoveryBillingCreditBreakdownItem>,
 )
 
+internal enum class AccountSwitchPhase {
+    Submitting,
+    Confirming,
+    Unconfirmed,
+}
+
+internal data class AccountSwitch(val accountId: String, val phase: AccountSwitchPhase)
+
 internal data class WorkspaceSettingsState(
     val accounts: SettingsRead<List<RecoverySubscriptionsSubscriptionsItem>> = SettingsRead(),
     val usagePack: SettingsRead<UsagePackCredits> = SettingsRead(),
     val workspaceCredits: SettingsRead<WorkspaceCreditSummary> = SettingsRead(),
-    val switching: Map<ModelAccountProvider, String> = emptyMap(),
+    val switching: Map<ModelAccountProvider, AccountSwitch> = emptyMap(),
     val switchFailures: Set<ModelAccountProvider> = emptySet(),
     val offline: Boolean = false,
 )
@@ -102,7 +110,6 @@ internal constructor(
     private var accountsRead: Job? = null
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
-    private val verifying = mutableSetOf<ModelAccountProvider>()
     private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     init {
@@ -126,7 +133,10 @@ internal constructor(
     internal fun visible(destination: SettingsDestination?) {
         if (visible == destination) return
         visible = destination
-        if (destination != SettingsDestination.ModelAccounts && verifying.isEmpty())
+        if (
+            destination != SettingsDestination.ModelAccounts &&
+                mutable.value.switching.values.none { it.phase == AccountSwitchPhase.Confirming }
+        )
             accountsRead?.cancel()
         if (destination != SettingsDestination.CreditBalance) {
             usagePackRead?.cancel()
@@ -234,42 +244,65 @@ internal constructor(
     }
 
     private fun refreshAccounts() {
-        if (visible != SettingsDestination.ModelAccounts && verifying.isEmpty()) return
-        if (mutable.value.switching.keys.any { it !in verifying }) return
+        val switching = mutable.value.switching.values
+        if (switching.any { it.phase == AccountSwitchPhase.Submitting }) return
+        if (
+            visible != SettingsDestination.ModelAccounts &&
+                switching.none { it.phase == AccountSwitchPhase.Confirming }
+        )
+            return
         if (accountsRead?.isActive == true) return
         accountsRead = viewModelScope.launch {
             read(
                 WorkspaceSettingsResource.Accounts,
                 accountsSerializer,
                 {
-                    service.recoverySubscriptions().subscriptions.filter { it.provider != null }
+                    val subscriptions = service.recoverySubscriptions().subscriptions
+                    val previousOrder =
+                        mutable.value.accounts.value
+                            .orEmpty()
+                            .mapIndexed { index, item -> item.id to index }
+                            .toMap()
+                    subscriptions
+                        .filter { it.provider != null }
+                        .sortedBy {
+                            previousOrder[it.id] ?: Int.MAX_VALUE
+                        }
                 },
                 { mutable.value.accounts },
             ) { result ->
                 val state = mutable.value
                 val incoming = result.value
-                if (result.unavailable || incoming == null) {
-                    mutable.update { it.copy(accounts = result) }
-                } else {
-                    val previousOrder =
-                        state.accounts.value
-                            .orEmpty()
-                            .mapIndexed { index, item -> item.id to index }
-                            .toMap()
-                    val ordered = incoming.sortedBy { previousOrder[it.id] ?: Int.MAX_VALUE }
-                    val rejected =
-                        verifying.filterTo(mutableSetOf()) { provider ->
-                            incoming.none {
-                                it.id == state.switching[provider] && it.isActive == true
-                            }
-                        }
+                if (result.unavailable) {
                     mutable.value =
                         state.copy(
-                            accounts = result.copy(value = ordered),
-                            switching = state.switching - verifying,
+                            accounts = result,
+                            switching =
+                                state.switching.mapValues { (_, intent) ->
+                                    if (intent.phase == AccountSwitchPhase.Confirming)
+                                        intent.copy(phase = AccountSwitchPhase.Unconfirmed)
+                                    else intent
+                                },
+                        )
+                } else if (incoming == null) {
+                    mutable.update { it.copy(accounts = result) }
+                } else {
+                    val verifying =
+                        state.switching.filterValues { it.phase != AccountSwitchPhase.Submitting }
+                    val rejected =
+                        verifying
+                            .filterValues { intent ->
+                                incoming.none {
+                                    it.id == intent.accountId && it.isActive == true
+                                }
+                            }
+                            .keys
+                    mutable.value =
+                        state.copy(
+                            accounts = result,
+                            switching = state.switching - verifying.keys,
                             switchFailures = state.switchFailures + rejected,
                         )
-                    verifying.clear()
                 }
             }
         }
@@ -289,18 +322,21 @@ internal constructor(
             return
 
         accountsRead?.cancel()
-        mutable.value =
-            state.copy(
-                switching = state.switching + (provider to accountId),
-                switchFailures = state.switchFailures - provider,
+        mutable.update { latest ->
+            latest.copy(
+                switching =
+                    latest.switching +
+                        (provider to AccountSwitch(accountId, AccountSwitchPhase.Submitting)),
+                switchFailures = latest.switchFailures - provider,
             )
+        }
         viewModelScope.launch {
             try {
                 val reply = service.activateModelAccount(accountId)
                 currentCoroutineContext().ensureActive()
                 if (!authorized()) return@launch
                 if (reply.id != accountId || reply.isActive != true) {
-                    verifying += provider
+                    confirmSwitchByReading(provider, accountId)
                 } else {
                     mutable.update { latest ->
                         latest.copy(
@@ -346,10 +382,20 @@ internal constructor(
                         )
                     }
                 } else {
-                    verifying += provider
+                    confirmSwitchByReading(provider, accountId)
                 }
             }
             refresh()
+        }
+    }
+
+    private fun confirmSwitchByReading(provider: ModelAccountProvider, accountId: String) {
+        mutable.update {
+            it.copy(
+                switching =
+                    it.switching +
+                        (provider to AccountSwitch(accountId, AccountSwitchPhase.Confirming)),
+            )
         }
     }
 
@@ -398,8 +444,9 @@ internal constructor(
                         continue
                     }
                     val current = state()
-                    val value =
-                        current.value.takeUnless { error is ApiFailure.Http && error.status == 403 }
+                    val accessDenied = error is ApiFailure.Http && error.status == 403
+                    if (accessDenied) cache?.save(identity, resource.cacheKey, serializer, null)
+                    val value = current.value.takeUnless { accessDenied }
                     publish(
                         SettingsRead(
                             value,
@@ -407,9 +454,6 @@ internal constructor(
                             readAt = current.readAt.takeIf { value != null },
                         ),
                     )
-                    if (value == null && current.value != null) {
-                        cache?.save(identity, resource.cacheKey, serializer, null)
-                    }
                     return
                 }
             }

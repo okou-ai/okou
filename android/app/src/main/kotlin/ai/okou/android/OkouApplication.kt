@@ -78,11 +78,10 @@ open class OkouApplication : Application() {
     }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
     internal val workspaceSettingsCache by lazy {
-        WorkspaceSettingsCache(
-            PreferenceDataStoreFactory.create {
-                noBackupFilesDir.resolve("workspace-settings.preferences_pb")
-            },
-        )
+        val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        WorkspaceSettingsCache.create(storageScope) {
+            noBackupFilesDir.resolve("workspace-settings.preferences_pb")
+        }
     }
     open val composerJournal by lazy { ComposerJournalStore(this) }
     open val runControlJournal by lazy { RunControlJournalStore(this) }
