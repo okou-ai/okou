@@ -4,6 +4,7 @@
 import type {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
   dataRouterRequestContract as OriginalDataRouterRequestContract,
+  runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import type { ClientDescriptor } from "./types";
 
@@ -27,6 +28,22 @@ export const dataRouterRequestContract: ClientDescriptor<
   register: {
     method: "POST",
     path: "/api/webhooks/agent/data-request",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
+    },
+  },
+};
+
+export const runDataRouterRequestContract: ClientDescriptor<
+  typeof OriginalRunDataRouterRequestContract
+> = {
+  register: {
+    method: "POST",
+    path: "/api/webhooks/run/data-request",
     statuses: {
       200: true,
       400: true,

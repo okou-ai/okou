@@ -104,7 +104,7 @@ def test_usage_buffer_test_injections_accept_falsey_timer_factory_and_lock(tmp_p
     )
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -131,7 +131,7 @@ def test_timer_flush_reschedules_when_flush_owner_is_busy(tmp_path):
     )
     control_root = tmp_path / "delivery-control"
     usage.buffer_source_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -212,7 +212,7 @@ def test_shutdown_flush_waits_for_active_timer_flush_and_drains_live_usage(tmp_p
     )
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -296,7 +296,7 @@ def test_shutdown_flush_retries_active_timer_failure_without_rescheduling_timer(
         flush_owner_lock=flush_owner_lock,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -383,7 +383,7 @@ def test_shutdown_flush_drains_usage_deferred_by_threshold_flush_while_waiting(t
         flush_owner_lock=flush_owner_lock,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -416,7 +416,7 @@ def test_shutdown_flush_drains_usage_deferred_by_threshold_flush_while_waiting(t
         )
 
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-2",
             [
@@ -471,7 +471,7 @@ def test_shutdown_flush_drains_live_usage_buffered_during_own_enqueue(tmp_path):
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -503,7 +503,7 @@ def test_shutdown_flush_failure_preserves_retry_without_rescheduling_timer(tmp_p
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
     proxy_log_path = tmp_path / "proxy.jsonl"
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -571,7 +571,7 @@ def test_shutdown_partial_enqueue_failure_retains_unfinished_without_reschedulin
     proxy_log_path = tmp_path / "proxy.jsonl"
     for run_id, source_key in (("run-1", "source-1"), ("run-2", "source-2")):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             run_id,
             [event(source_key=source_key)],
@@ -629,7 +629,7 @@ def test_shutdown_saturated_flush_retains_without_rescheduling_timer(tmp_path):
     enqueue = RecordingEnqueue(return_value=False)
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -682,7 +682,7 @@ def test_timer_saturated_flush_reschedules_retry_without_real_sleep(tmp_path):
     enqueue = RecordingEnqueue(return_value=False)
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -743,7 +743,7 @@ def test_failed_timer_start_allows_idempotent_replay_to_reschedule(tmp_path):
 
     with pytest.raises(RuntimeError, match="can't start new thread"):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [source_event],
@@ -756,7 +756,7 @@ def test_failed_timer_start_allows_idempotent_replay_to_reschedule(tmp_path):
 
     assert (
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [source_event],
@@ -798,7 +798,7 @@ def test_failed_retained_retry_timer_allows_idempotent_replay_to_reschedule(tmp_
     source_event = event(source_key="source-1", quantity=10)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [source_event],
@@ -817,7 +817,7 @@ def test_failed_retained_retry_timer_allows_idempotent_replay_to_reschedule(tmp_
     enqueue.clear()
     assert (
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [source_event],
@@ -866,7 +866,7 @@ def test_failed_old_timer_start_does_not_clear_newer_timer(tmp_path):
 
     def buffer_first_event() -> None:
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1")],
@@ -881,7 +881,7 @@ def test_failed_old_timer_start_does_not_clear_newer_timer(tmp_path):
         assert usage.flush_usage_events(trigger="test") == 1
         enqueue.clear()
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-2")],
@@ -898,7 +898,7 @@ def test_failed_old_timer_start_does_not_clear_newer_timer(tmp_path):
         buffer_thread.raise_if_failed()
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-3")],
@@ -919,7 +919,7 @@ def test_timer_flush_uses_scheduled_callback_without_real_sleep(tmp_path):
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -949,7 +949,7 @@ def test_timer_flush_failure_reschedules_retry_without_real_sleep(tmp_path):
     timers = install_recording_usage_timer(enqueue_webhook=enqueue)
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -991,7 +991,7 @@ def test_timer_delivery_failure_after_enqueue_reschedules_retry(tmp_path):
 
     timers = install_recording_usage_timer(enqueue_webhook=enqueue_webhook)
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -1053,7 +1053,7 @@ def test_timer_delivery_retry_budget_exhaustion_drops_retained_usage(tmp_path):
         max_retained_batch_retries=1,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -1107,7 +1107,7 @@ def test_shutdown_saturated_retry_budget_exhaustion_drops_without_rescheduling_t
         max_retained_batch_retries=1,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1")],
@@ -1154,7 +1154,7 @@ def test_shutdown_retry_exhaustion_logs_underbilling_without_proxy_log_path(mitm
         max_retained_batch_retries=1,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1")],
@@ -1190,7 +1190,7 @@ def test_threshold_flush_cancels_scheduled_timer_and_allows_reschedule(tmp_path)
 
     for index in range(usage_buffer.MAX_BUFFERED_WEBHOOK_BATCHES - 1):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             f"run-{index}",
             [event(source_key=f"source-{index}")],
@@ -1203,7 +1203,7 @@ def test_threshold_flush_cancels_scheduled_timer_and_allows_reschedule(tmp_path)
     enqueue.assert_not_called()
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-threshold",
         [event(source_key="source-threshold")],
@@ -1214,7 +1214,7 @@ def test_threshold_flush_cancels_scheduled_timer_and_allows_reschedule(tmp_path)
     assert enqueue.call_count == usage_buffer.MAX_BUFFERED_WEBHOOK_BATCHES
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-next",
         [event(source_key="source-next")],

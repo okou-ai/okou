@@ -107,7 +107,7 @@ async def test_auth_and_registration_reuse_connection_without_sharing_request_au
             result = await auth_client.fetch_firewall_headers(firewall_auth_request())
             assert result.payload.headers == {}
             await _send(
-                origin, "/api/webhooks/agent/data-request", credential="different-synthetic"
+                origin, "/api/webhooks/run/data-request", credential="different-synthetic"
             )
             await _send(origin, "/third")
         assert [identity for identity, _ in peer.requests] == [0, 0, 0]
@@ -117,8 +117,8 @@ async def test_auth_and_registration_reuse_connection_without_sharing_request_au
         assert requests[1].headers["authorization"] == "Bearer different-synthetic"
         assert len({request.headers["x-client-request-id"] for request in requests}) == 3
         assert [request.target for request in requests] == [
-            "/api/webhooks/agent/firewall/auth",
-            "/api/webhooks/agent/data-request",
+            "/api/webhooks/run/firewall/auth",
+            "/api/webhooks/run/data-request",
             "/third",
         ]
         if tls:

@@ -453,7 +453,7 @@ async def fetch_firewall_headers(
     response headers, and the bounded response body.
     """
     api_url = platform_api.get_api_url()
-    url = f"{api_url}/api/webhooks/agent/firewall/auth"
+    url = f"{api_url}/api/webhooks/run/firewall/auth"
     body = (
         request.prepared_normal_body
         if not force_refresh and request.prepared_normal_body is not None

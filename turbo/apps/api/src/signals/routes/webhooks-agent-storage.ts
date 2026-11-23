@@ -1,6 +1,5 @@
 import { command } from "ccstate";
 import {
-  runWebhookContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
 } from "@okouai/api-contracts/contracts/webhooks";
@@ -69,15 +68,7 @@ export const webhooksAgentStorageRoutes: readonly RouteEntry[] = [
     handler: prepareStorage$,
   },
   {
-    route: runWebhookContract.storagePrepare,
-    handler: prepareStorage$,
-  },
-  {
     route: webhookStoragesCommitContract.commit,
-    handler: commitStorage$,
-  },
-  {
-    route: runWebhookContract.storageCommit,
     handler: commitStorage$,
   },
 ];

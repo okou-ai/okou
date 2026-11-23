@@ -22,8 +22,6 @@ export interface AdmittedExecutionFacts {
   readonly nativeContinuation: NativeContinuation;
   readonly featureFlags: {
     readonly [FeatureSwitchKey.ArtifactThreePointTiming]: boolean;
-    /** Execution mode consumed by released Runners. */
-    readonly singleAgent: boolean;
   };
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];

@@ -1,8 +1,5 @@
 import { command } from "ccstate";
-import {
-  runWebhookContract,
-  webhookSessionOutputContract,
-} from "@okouai/api-contracts/contracts/webhooks";
+import { webhookSessionOutputContract } from "@okouai/api-contracts/contracts/webhooks";
 
 import { eventDeliveryUnavailable } from "../../lib/error";
 import { now, nowDate } from "../../lib/time";
@@ -70,10 +67,6 @@ const publishSandboxSessionOutput$ = command(
 export const webhooksAgentSessionOutputRoutes: readonly RouteEntry[] = [
   {
     route: webhookSessionOutputContract.send,
-    handler: publishSandboxSessionOutput$,
-  },
-  {
-    route: runWebhookContract.sessionOutput,
     handler: publishSandboxSessionOutput$,
   },
 ];

@@ -8,9 +8,9 @@ import flow_metadata_keys as metadata_keys
 import platform_api
 
 SENSITIVE_WEBHOOK_URL = (
-    "https://user:pass@api.okou.ai/api/webhooks/agent/usage-event?token=secret#frag"
+    "https://user:pass@api.okou.ai/api/webhooks/run/usage-event?token=secret#frag"
 )
-SANITIZED_WEBHOOK_URL = "https://api.okou.ai/api/webhooks/agent/usage-event"
+SANITIZED_WEBHOOK_URL = "https://api.okou.ai/api/webhooks/run/usage-event"
 
 
 class QueuedUsageExecutor:

@@ -1,1 +1,0 @@
-The first-parent main commit adding this file supplies the Run session-output, telemetry and storage callbacks required by outgoing Runners during paired rollbacks.

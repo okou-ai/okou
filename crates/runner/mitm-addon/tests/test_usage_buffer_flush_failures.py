@@ -32,7 +32,7 @@ def test_pre_admission_failure_retains_source_event_and_releases_delivery_owners
     control_root = tmp_path / "delivery-control"
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     usage.buffer_source_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -79,7 +79,7 @@ def test_flush_failure_preserves_retryable_payload_with_same_idempotency_key(tmp
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -120,7 +120,7 @@ def test_segmented_aggregate_retry_preserves_payload_and_idempotency_keys(tmp_pa
     enqueue = RecordingEnqueue(return_value=False)
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -161,14 +161,14 @@ def test_partial_flush_failure_retains_only_unfinished_batch_after_completed_suc
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
         proxy_log_path,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-2",
         [event(source_key="source-2")],
@@ -237,14 +237,14 @@ def test_partial_flush_failure_waits_for_unfinished_admitted_batch(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=fail_second_batch)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
         proxy_log_path,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-2",
         [event(source_key="source-2")],
@@ -302,7 +302,7 @@ def test_threshold_flush_failure_preserves_retryable_payload_with_same_idempoten
 
     with pytest.raises(OSError, match="threshold enqueue failed"):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-threshold",
             events,
@@ -329,7 +329,7 @@ def test_saturated_flush_retains_retryable_payload_with_same_idempotency_key(tmp
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -365,14 +365,14 @@ def test_partial_saturated_flush_retries_only_unadmitted_batches(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
         proxy_log_path,
     )
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-2",
         [event(source_key="source-2")],
@@ -401,7 +401,7 @@ def test_retained_aggregate_batch_keeps_source_event_count(tmp_path):
     control_root = tmp_path / "delivery-control"
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -437,7 +437,7 @@ def test_pending_flush_retries_before_live_usage_snapshot(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-a",
         [event(source_key="source-a")],
@@ -448,7 +448,7 @@ def test_pending_flush_retries_before_live_usage_snapshot(tmp_path):
         usage.flush_usage_events(trigger="test")
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-b",
         [event(source_key="source-b")],
@@ -494,7 +494,7 @@ def test_overlapping_flush_defers_live_snapshot_while_enqueueing(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -530,7 +530,7 @@ def test_flush_preserves_events_buffered_during_enqueue(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -575,7 +575,7 @@ def test_timeout_delivery_failure_retains_batch_and_retries_with_same_key(
         return contextlib.nullcontext()
 
     usage.buffer_usage_events(
-        "https://api.okou.ai/api/webhooks/agent/usage-event",
+        "https://api.okou.ai/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -703,7 +703,7 @@ def test_same_priority_retained_batches_retry_fifo(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue_webhook)
     proxy_log_path = tmp_path / "proxy.jsonl"
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-a",
         [event(source_key="source-a")],
@@ -712,7 +712,7 @@ def test_same_priority_retained_batches_retry_fifo(tmp_path):
     assert usage.flush_usage_events(trigger="test") == 1
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-b",
         [event(source_key="source-b")],
@@ -771,7 +771,7 @@ def test_same_flush_retryable_batches_preserve_batch_order_after_out_of_order_ca
     proxy_log_path = tmp_path / "proxy.jsonl"
     for run_id, source_key in (("run-a", "source-a"), ("run-b", "source-b")):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             run_id,
             [event(source_key=source_key)],
@@ -834,7 +834,7 @@ def test_late_retryable_batch_precedes_saturated_suffix_from_same_flush(tmp_path
     proxy_log_path = tmp_path / "proxy.jsonl"
     for run_id, source_key in (("run-a", "source-a"), ("run-b", "source-b")):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             run_id,
             [event(source_key=source_key)],
@@ -899,7 +899,7 @@ def test_synchronous_retryable_delivery_before_admission_saturation_is_retained(
     proxy_log_path = tmp_path / "proxy.jsonl"
     for run_id, source_key in (("run-a", "source-a"), ("run-b", "source-b")):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             run_id,
             [event(source_key=source_key)],
@@ -948,7 +948,7 @@ def test_delivery_in_progress_does_not_block_live_usage_snapshot(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue_without_completion)
     proxy_log_path = tmp_path / "proxy.jsonl"
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1")],
@@ -964,7 +964,7 @@ def test_delivery_in_progress_does_not_block_live_usage_snapshot(tmp_path):
     )
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-2",
         [event(source_key="source-2")],

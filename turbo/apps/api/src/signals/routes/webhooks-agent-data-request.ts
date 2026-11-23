@@ -1,4 +1,7 @@
-import { dataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
+import {
+  runDataRouterRequestContract,
+  dataRouterRequestContract,
+} from "@okouai/api-contracts/contracts/data-router";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { dataRouterRequests } from "@okouai/db/schema/data-router-request";
 import { and, eq } from "drizzle-orm";
@@ -53,5 +56,6 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const webhooksAgentDataRequestRoutes: readonly RouteEntry[] = [
+  { route: runDataRouterRequestContract.register, handler: register$ },
   { route: dataRouterRequestContract.register, handler: register$ },
 ];

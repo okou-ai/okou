@@ -63,6 +63,33 @@ export const runWebhookContract: ClientDescriptor<
       500: true,
     },
   },
+  firewallAuth: {
+    method: "POST",
+    path: "/api/webhooks/run/firewall/auth",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      402: true,
+      403: true,
+      424: true,
+      500: true,
+      502: true,
+    },
+  },
+  usageEvent: {
+    method: "POST",
+    path: "/api/webhooks/run/usage-event",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      404: true,
+      409: true,
+      413: true,
+      500: true,
+    },
+  },
   sessionOutput: {
     method: "POST",
     path: "/api/webhooks/run/session-output",
@@ -307,7 +334,7 @@ export const webhookSessionOutputContract: ClientDescriptor<
 > = {
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/session-output",
+    path: "/api/webhooks/run/session-output",
     statuses: {
       204: true,
       400: true,
@@ -322,7 +349,7 @@ export const webhookStoragesCommitContract: ClientDescriptor<
 > = {
   commit: {
     method: "POST",
-    path: "/api/webhooks/agent/storages/commit",
+    path: "/api/webhooks/run/storages/commit",
     statuses: {
       200: true,
       400: true,
@@ -340,7 +367,7 @@ export const webhookStoragesPrepareContract: ClientDescriptor<
 > = {
   prepare: {
     method: "POST",
-    path: "/api/webhooks/agent/storages/prepare",
+    path: "/api/webhooks/run/storages/prepare",
     statuses: {
       200: true,
       400: true,
@@ -387,7 +414,7 @@ export const webhookTelemetryContract: ClientDescriptor<
 > = {
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/telemetry",
+    path: "/api/webhooks/run/telemetry",
     statuses: {
       200: true,
       400: true,

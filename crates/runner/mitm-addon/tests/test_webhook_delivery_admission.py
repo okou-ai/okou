@@ -138,7 +138,7 @@ def test_enqueue_log_failure_releases_delivery_capacity(tmp_path):
         for error in errors:
             with pytest.raises(OSError, match="disk full") as exc_info:
                 usage.webhook.enqueue_webhook_delivery(
-                    "https://api.okou.ai/api/webhooks/agent/usage-event",
+                    "https://api.okou.ai/api/webhooks/run/usage-event",
                     "tok",
                     {"runId": "run-1", "events": []},
                     str(tmp_path / "proxy.jsonl"),
@@ -160,7 +160,7 @@ def test_submit_failure_rolls_back_pending_report(tmp_path):
         pytest.raises(OSError, match="no threads"),
     ):
         usage.webhook.enqueue_webhook_delivery(
-            "https://api.okou.ai/api/webhooks/agent/usage-event",
+            "https://api.okou.ai/api/webhooks/run/usage-event",
             "tok",
             {"runId": "run-1", "events": [{"category": "tokens.input", "quantity": 1}]},
             "",
@@ -180,7 +180,7 @@ def test_sync_fallback_log_failure_rolls_back_pending_report(tmp_path):
         pytest.raises(OSError, match="disk full"),
     ):
         usage.webhook.enqueue_webhook_delivery(
-            "https://api.okou.ai/api/webhooks/agent/usage-event",
+            "https://api.okou.ai/api/webhooks/run/usage-event",
             "tok",
             {"runId": "run-1", "events": [{"category": "tokens.input", "quantity": 1}]},
             str(tmp_path / "proxy.jsonl"),
@@ -204,7 +204,7 @@ def test_does_not_admit_when_delivery_capacity_is_saturated(tmp_path):
     with patch.object(usage.webhook, "usage_executor", executor):
         for index in range(usage.webhook.MAX_PENDING_WEBHOOK_PAYLOADS):
             assert usage.webhook.enqueue_webhook_delivery(
-                "https://api.okou.ai/api/webhooks/agent/usage-event",
+                "https://api.okou.ai/api/webhooks/run/usage-event",
                 "tok",
                 {"runId": f"run-{index}", "events": []},
                 str(proxy_log),
@@ -212,7 +212,7 @@ def test_does_not_admit_when_delivery_capacity_is_saturated(tmp_path):
             )
 
         admitted = usage.webhook.enqueue_webhook_delivery(
-            "https://api.okou.ai/api/webhooks/agent/usage-event",
+            "https://api.okou.ai/api/webhooks/run/usage-event",
             "tok",
             {
                 "runId": "run-drop",

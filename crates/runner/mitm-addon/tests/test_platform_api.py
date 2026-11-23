@@ -52,12 +52,12 @@ class TestMakeApiRequest:
             patch.object(platform_api, "VERCEL_BYPASS", ""),
         ):
             req = platform_api.make_api_request(
-                "https://api.okou.ai/api/webhooks/agent/firewall/auth",
+                "https://api.okou.ai/api/webhooks/run/firewall/auth",
                 b"{}",
                 "tok-xyz",
             )
 
-        assert req.full_url == "https://api.okou.ai/api/webhooks/agent/firewall/auth"
+        assert req.full_url == "https://api.okou.ai/api/webhooks/run/firewall/auth"
         assert req.data == b"{}"
         headers = dict(req.header_items())
         assert headers["Content-type"] == "application/json"
@@ -75,7 +75,7 @@ class TestMakeApiRequest:
             patch.object(platform_api, "VERCEL_BYPASS", "secret-bypass-value"),
         ):
             req = platform_api.make_api_request(
-                "https://api.okou.ai/api/webhooks/agent/firewall/auth",
+                "https://api.okou.ai/api/webhooks/run/firewall/auth",
                 b"{}",
                 "tok-xyz",
             )
@@ -170,7 +170,7 @@ class TestMakeApiRequest:
             pytest.param("file:///etc/passwd", id="file"),
             pytest.param("ftp://example.com/api", id="ftp"),
             pytest.param(
-                "//api.okou.ai/api/webhooks/agent/firewall/auth",
+                "//api.okou.ai/api/webhooks/run/firewall/auth",
                 id="scheme-relative",
             ),
             pytest.param("https:path-without-host", id="https-without-host"),

@@ -16,7 +16,7 @@ def test_flush_aggregates_same_bucket_and_dedupes_source_key(tmp_path):
     proxy_log_path = str(tmp_path / "proxy.jsonl")
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -51,7 +51,7 @@ def test_flush_segments_aggregate_before_quantity_exceeds_exact_integer_range(tm
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -79,7 +79,7 @@ def test_rejects_out_of_range_source_quantity_before_recording_idempotency(tmp_p
 
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1", quantity=MAX_USAGE_QUANTITY + 1)],
@@ -91,7 +91,7 @@ def test_rejects_out_of_range_source_quantity_before_recording_idempotency(tmp_p
     assert accepted_source_keys == set()
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1", quantity=1)],
@@ -128,7 +128,7 @@ def test_out_of_range_atomic_group_rejects_every_member_before_idempotency(tmp_p
 
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             source_events,
@@ -140,7 +140,7 @@ def test_out_of_range_atomic_group_rejects_every_member_before_idempotency(tmp_p
     source_events[1]["quantity"] = 4
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             source_events,
@@ -163,7 +163,7 @@ def test_source_preserving_usage_buffer_keeps_source_idempotency_keys(tmp_path):
     accepted_source_keys: set[str] = set()
 
     usage.buffer_source_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -207,7 +207,7 @@ def test_source_preserving_atomic_group_rejects_repeated_group_key(tmp_path):
 
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [],
@@ -218,7 +218,7 @@ def test_source_preserving_atomic_group_rejects_repeated_group_key(tmp_path):
     )
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [
@@ -239,7 +239,7 @@ def test_source_preserving_atomic_group_rejects_repeated_group_key(tmp_path):
     rejected_source_keys: set[str] = set()
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [
@@ -284,7 +284,7 @@ def test_source_preserving_atomic_group_rejects_when_member_key_was_seen(tmp_pat
     enqueue = RecordingEnqueue()
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
     proxy_log_path = str(tmp_path / "proxy.jsonl")
-    url = "https://api.test/api/webhooks/agent/usage-event"
+    url = "https://api.test/api/webhooks/run/usage-event"
 
     assert (
         usage.buffer_source_usage_events(
@@ -338,7 +338,7 @@ def test_source_preserving_atomic_group_rejects_duplicate_member_keys(tmp_path):
 
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [
@@ -359,7 +359,7 @@ def test_source_preserving_atomic_group_rejects_duplicate_member_keys(tmp_path):
 
     assert (
         usage.buffer_source_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [
@@ -389,7 +389,7 @@ def test_flush_keeps_runs_categories_providers_and_destinations_separate(tmp_pat
     proxy_b_log_path = str(tmp_path / "proxy-b.jsonl")
 
     usage.buffer_usage_events(
-        "https://api-a.test/api/webhooks/agent/usage-event",
+        "https://api-a.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -399,14 +399,14 @@ def test_flush_keeps_runs_categories_providers_and_destinations_separate(tmp_pat
         proxy_a_log_path,
     )
     usage.buffer_usage_events(
-        "https://api-a.test/api/webhooks/agent/usage-event",
+        "https://api-a.test/api/webhooks/run/usage-event",
         "token-a",
         "run-2",
         [event(source_key="source-3", category="tokens.input", quantity=7)],
         proxy_a_log_path,
     )
     usage.buffer_usage_events(
-        "https://api-b.test/api/webhooks/agent/usage-event",
+        "https://api-b.test/api/webhooks/run/usage-event",
         "token-b",
         "run-1",
         [
@@ -444,7 +444,7 @@ def test_flush_keeps_runs_categories_providers_and_destinations_separate(tmp_pat
     }
     assert routed_batches == {
         (
-            "https://api-a.test/api/webhooks/agent/usage-event",
+            "https://api-a.test/api/webhooks/run/usage-event",
             "token-a",
             proxy_a_log_path,
             "usage_event",
@@ -457,7 +457,7 @@ def test_flush_keeps_runs_categories_providers_and_destinations_separate(tmp_pat
             ),
         ),
         (
-            "https://api-a.test/api/webhooks/agent/usage-event",
+            "https://api-a.test/api/webhooks/run/usage-event",
             "token-a",
             proxy_a_log_path,
             "usage_event",
@@ -465,7 +465,7 @@ def test_flush_keeps_runs_categories_providers_and_destinations_separate(tmp_pat
             frozenset({("model", "claude-sonnet-4-6", "tokens.input", 7)}),
         ),
         (
-            "https://api-b.test/api/webhooks/agent/usage-event",
+            "https://api-b.test/api/webhooks/run/usage-event",
             "token-b",
             proxy_b_log_path,
             "usage_event",
@@ -483,7 +483,7 @@ def test_flush_splits_aggregate_events_at_webhook_limit(tmp_path):
     ]
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         events,
@@ -507,7 +507,7 @@ def test_flushes_when_buffered_webhook_batch_count_reaches_bound(tmp_path):
 
     for index in range(3):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             f"run-{index}",
             [event(source_key=f"source-{index}")],
@@ -516,7 +516,7 @@ def test_flushes_when_buffered_webhook_batch_count_reaches_bound(tmp_path):
     enqueue.assert_not_called()
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-3",
         [event(source_key="source-3")],
@@ -536,7 +536,7 @@ def test_flushes_when_aggregate_bucket_count_reaches_exact_bound(tmp_path):
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -548,7 +548,7 @@ def test_flushes_when_aggregate_bucket_count_reaches_exact_bound(tmp_path):
     enqueue.assert_not_called()
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -571,7 +571,7 @@ def test_flushes_when_safe_quantity_segments_reach_aggregate_bucket_bound(tmp_pa
     usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
 
     accepted = usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -602,7 +602,7 @@ def test_flushes_when_source_event_count_reaches_bound(tmp_path):
     ]
 
     accepted = usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         events,

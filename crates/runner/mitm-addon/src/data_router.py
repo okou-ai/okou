@@ -56,5 +56,5 @@ async def register_response(flow: http.HTTPFlow) -> None:
     flow.metadata[_RESPONSE_REGISTRATION_ATTEMPTED] = True
     body = json.dumps({"runId": run_id, "requestId": request_id}).encode()
     await post_registration(
-        f"{platform_api.get_api_url()}/api/webhooks/agent/data-request", body, token
+        f"{platform_api.get_api_url()}/api/webhooks/run/data-request", body, token
     )

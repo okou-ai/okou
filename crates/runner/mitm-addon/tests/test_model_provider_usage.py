@@ -45,7 +45,7 @@ class TestReportModelProviderUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         body = webhook.requests[0].json_body()
         assert body["runId"] == "run-abc-123"
         assert set(body) == {"runId", "events"}
@@ -393,7 +393,7 @@ class TestReportModelProviderUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         usage_body = webhook.requests[0].json_body()
         assert usage_body["events"][0]["provider"] == "claude-sonnet-4-6"
         uuid.UUID(usage_body["events"][0]["idempotencyKey"])
@@ -607,7 +607,7 @@ class TestReportModelProviderUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         usage_body = webhook.requests[0].json_body()
         assert [
             {key: value for key, value in event.items() if key != "idempotencyKey"}
@@ -652,7 +652,7 @@ class TestReportModelProviderUsage:
             usage.flush_usage_events(trigger="test")
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         usage_body = webhook.requests[0].json_body()
         assert {
             (event["provider"], event["category"]): event["quantity"]
@@ -812,7 +812,7 @@ class TestModelProviderResponseHookUsage:
             fresh_usage_executor.shutdown(wait=True)
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         assert webhook.requests[0].json_body()["runId"] == "run-abc-123"
         [event] = webhook.usage_events()
         assert {key: value for key, value in event.items() if key != "idempotencyKey"} == {
@@ -907,7 +907,7 @@ class TestModelProviderResponseHookUsage:
             usage.webhook.usage_executor.shutdown(wait=True)
 
         assert webhook.request_count == 1
-        assert webhook.requests[0].path == "/api/webhooks/agent/usage-event"
+        assert webhook.requests[0].path == "/api/webhooks/run/usage-event"
         body = webhook.requests[0].json_body()
         assert body["runId"] == "run-int-001"
         by_category = {event["category"]: event for event in body["events"]}

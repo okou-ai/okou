@@ -25,6 +25,13 @@ export const dataRouterRequestContract = c.router({
   },
 });
 
+export const runDataRouterRequestContract = c.router({
+  register: {
+    ...dataRouterRequestContract.register,
+    path: "/api/webhooks/run/data-request",
+  },
+});
+
 /** User-scoped history IDs; Router itself never receives an Okou user identity. */
 export const dataRouterHistoryContract = c.router({
   list: {

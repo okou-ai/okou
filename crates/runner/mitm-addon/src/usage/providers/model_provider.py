@@ -17,7 +17,7 @@ should report for model token usage, and
 ``MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS`` to the long-context
 threshold the API captured from the run's route (``0``: explicit single tier).
 Billable rows
-go to ``/api/webhooks/agent/usage-event``.
+go to ``/api/webhooks/run/usage-event``.
 """
 
 import uuid

@@ -19,7 +19,7 @@ def test_flush_logs_aggregate_summary_without_token(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [
@@ -64,7 +64,7 @@ def test_flush_logs_isolate_summaries_across_proxy_log_paths(tmp_path):
     proxy_b_log_path = tmp_path / "proxy-b.jsonl"
 
     usage.buffer_usage_events(
-        "https://api-a-one.test/api/webhooks/agent/usage-event",
+        "https://api-a-one.test/api/webhooks/run/usage-event",
         "token-a-one",
         "run-a-1",
         [
@@ -74,14 +74,14 @@ def test_flush_logs_isolate_summaries_across_proxy_log_paths(tmp_path):
         str(proxy_a_log_path),
     )
     usage.buffer_usage_events(
-        "https://api-a-two.test/api/webhooks/agent/usage-event",
+        "https://api-a-two.test/api/webhooks/run/usage-event",
         "token-a-two",
         "run-a-2",
         [event(source_key="source-a-3", category="tokens.input", quantity=7)],
         str(proxy_a_log_path),
     )
     usage.buffer_usage_events(
-        "https://api-b.test/api/webhooks/agent/usage-event",
+        "https://api-b.test/api/webhooks/run/usage-event",
         "token-b",
         "run-b-1",
         [event(source_key="source-b-1", category="tokens.output", quantity=3)],
@@ -139,7 +139,7 @@ def test_flush_logs_retained_webhook_batches(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1")],
@@ -181,7 +181,7 @@ def test_flush_logs_delivery_retry_retained_counts(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [
@@ -222,7 +222,7 @@ def test_flush_logs_failure_without_token(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1")],
@@ -266,7 +266,7 @@ def test_flush_logs_only_unfinished_batch_after_partial_failure(tmp_path):
     proxy_log_path = tmp_path / "proxy.jsonl"
     for run_id, source_key in (("run-1", "source-1"), ("run-2", "source-2")):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "secret-token",
             run_id,
             [event(source_key=source_key)],
@@ -306,7 +306,7 @@ def test_flush_failure_excludes_retry_budget_drop_from_retained_counts(tmp_path)
     )
     proxy_log_path = tmp_path / "proxy.jsonl"
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "secret-token",
         "run-1",
         [event(source_key="source-1")],

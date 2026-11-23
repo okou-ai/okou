@@ -1,5 +1,8 @@
 import { command } from "ccstate";
-import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
+import {
+  runWebhookContract,
+  webhookFirewallAuthContract,
+} from "@okouai/api-contracts/contracts/webhooks";
 
 import { badRequestMessage } from "../../lib/error";
 import { authorization$ } from "../context/hono";
@@ -121,6 +124,10 @@ const firewallAuthRoute$ = command(
 );
 
 export const webhooksAgentFirewallAuthRoutes: readonly RouteEntry[] = [
+  {
+    route: runWebhookContract.firewallAuth,
+    handler: firewallAuthRoute$,
+  },
   {
     route: webhookFirewallAuthContract.resolve,
     handler: firewallAuthRoute$,

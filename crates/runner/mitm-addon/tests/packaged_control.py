@@ -455,9 +455,9 @@ def test_packaged_blocked_delivery_independent_progress_and_failure_outcome(tmp_
             flush = status_request() | {"method": "delivery.flush"}
             assert result_data(exchange(directory, flush))["state"] == "admitted"
             assert api.wait_for_request_count(3)
-            assert api.requests[0].path == "/api/webhooks/agent/firewall/auth"
+            assert api.requests[0].path == "/api/webhooks/run/firewall/auth"
             assert api.requests[1].path == "/api/test/responses"
-            assert api.requests[2].path == "/api/webhooks/agent/usage-event"
+            assert api.requests[2].path == "/api/webhooks/run/usage-event"
             assert api.requests[2].json_body()["runId"] == run_id
             state = result_data(
                 exchange(directory, status_request() | {"method": "delivery.status"})
@@ -559,7 +559,7 @@ def test_packaged_header_credit_error_reaches_tls_caller(tmp_path, dialect, uplo
             assert json.loads(body)["error"] == "insufficient_credits"
             assert response.getheader("Connection") == "close"
         assert api.request_count == 1
-        assert api.requests[0].path == "/api/webhooks/agent/firewall/auth"
+        assert api.requests[0].path == "/api/webhooks/run/firewall/auth"
         assert (
             result_data(exchange(directory, log_flush_request(log_path, info["runId"])))["state"]
             == "processed"

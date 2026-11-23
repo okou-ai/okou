@@ -11,7 +11,7 @@ The stable facade covers:
 - Billable connector responses (flagged by the web layer via
   ``billableFirewalls`` → ``metadata_keys.FIREWALL_BILLABLE``): compute
   per-permission billable resource counts and buffer them for aggregate
-  platform upload via ``/api/webhooks/agent/usage-event`` — see
+  platform upload via ``/api/webhooks/run/usage-event`` — see
   :mod:`usage.providers.connectors`.
 - Lifecycle coordination for buffering and flushing usage events, tracking
   in-flight flows and exposing coherent process-local delivery observations

@@ -43,7 +43,7 @@ def _resource_event(
 def _buffer(tmp_path, events: list[UsageEvent], *, run_id: str = _RUN_ID) -> int:
     # Ordinary admission must also preserve a resource source automatically.
     return usage.buffer_usage_events(
-        "https://api.okou.ai/api/webhooks/agent/usage-event",
+        "https://api.okou.ai/api/webhooks/run/usage-event",
         "token-a",
         run_id,
         events,

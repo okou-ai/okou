@@ -196,7 +196,7 @@ describe("X daily resource usage webhook", () => {
       const response = await setupRawAppRequest({
         context,
         routes: webhooksAgentHealthUsageTelemetryRoutes,
-      })("/api/webhooks/agent/usage-event", request);
+      })("/api/webhooks/run/usage-event", request);
       expect(response.status).toBe(413);
       // Nothing was claimed by the rejected oversized request.
       await accept(submit(fixture, [event]), [200]);

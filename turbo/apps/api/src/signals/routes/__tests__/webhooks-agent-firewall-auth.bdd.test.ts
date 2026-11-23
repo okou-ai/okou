@@ -74,7 +74,7 @@ const TEST_DATA_KEY = Buffer.from("0123456789abcdef0123456789abcdef", "utf8");
 
 /**
  * HOOK-02 / FW: firewall auth template resolution and connector refresh
- * through POST /api/webhooks/agent/firewall/auth.
+ * through POST /api/webhooks/run/firewall/auth.
  *
  * Corrected scenarios use public setup and authenticated Runner protocol flows.
  * Private metadata helpers and worker entry points do not justify preserving

@@ -494,7 +494,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
-    elif [[ "$*" == *run-webhook-callbacks* ]]; then
+    elif [[ "$*" == *run-mitm-webhooks* ]]; then
       printf '%s\n' "${MOCK_RUN_WEBHOOK_PATHS_COMMIT-a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7}"
     elif [[ "$*" == *hosted-site-url-routing* ]]; then
       printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"

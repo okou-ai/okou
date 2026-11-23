@@ -482,7 +482,7 @@ export const webhookFirewallAuthContract = c.router({
 export const webhookSessionOutputContract = c.router({
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/session-output",
+    path: "/api/webhooks/run/session-output",
     headers: authHeadersSchema,
     body: webhookSessionOutputBodySchema,
     responses: {
@@ -884,17 +884,17 @@ const sandboxOperationSchema = object({
 });
 
 /**
- * Webhook telemetry contract for /api/webhooks/agent/telemetry
+ * Webhook telemetry contract for /api/webhooks/run/telemetry
  */
 export const webhookTelemetryContract = c.router({
   /**
-   * POST /api/webhooks/agent/telemetry
+   * POST /api/webhooks/run/telemetry
    * Receive sandbox telemetry or authenticated Runner operation-only batches.
    * Runless requests cannot carry system logs, metrics, network logs or OOM evidence.
    */
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/telemetry",
+    path: "/api/webhooks/run/telemetry",
     headers: authHeadersSchema,
     body: object({
       runId: string().min(1, "runId is required").optional(),
@@ -939,7 +939,7 @@ const memoryMergeContextSchema = object({
 export type MemoryMergeContext = zInfer<typeof memoryMergeContextSchema>;
 
 /**
- * Webhook storage prepare contract for /api/webhooks/agent/storages/prepare
+ * Webhook storage prepare contract for /api/webhooks/run/storages/prepare
  *
  * Sandbox version of storage prepare endpoint.
  * Uses JWT sandbox token authentication and verifies runId matches token.
@@ -947,7 +947,7 @@ export type MemoryMergeContext = zInfer<typeof memoryMergeContextSchema>;
 export const webhookStoragesPrepareContract = c.router({
   prepare: {
     method: "POST",
-    path: "/api/webhooks/agent/storages/prepare",
+    path: "/api/webhooks/run/storages/prepare",
     headers: authHeadersSchema,
     body: object({
       runId: string().min(1, "runId is required"), // Required for webhook auth
@@ -986,7 +986,7 @@ export const webhookStoragesPrepareContract = c.router({
 });
 
 /**
- * Webhook storage commit contract for /api/webhooks/agent/storages/commit
+ * Webhook storage commit contract for /api/webhooks/run/storages/commit
  *
  * Sandbox version of storage commit endpoint.
  * Uses JWT sandbox token authentication and verifies runId matches token.
@@ -994,7 +994,7 @@ export const webhookStoragesPrepareContract = c.router({
 export const webhookStoragesCommitContract = c.router({
   commit: {
     method: "POST",
-    path: "/api/webhooks/agent/storages/commit",
+    path: "/api/webhooks/run/storages/commit",
     headers: authHeadersSchema,
     body: object({
       runId: string().min(1, "runId is required"), // Required for webhook auth
@@ -1127,20 +1127,16 @@ export const runWebhookContract = c.router({
   events: webhookEventsContract.send,
   complete: webhookCompleteContract.complete,
   heartbeat: webhookHeartbeatContract.send,
-  sessionOutput: {
-    ...webhookSessionOutputContract.send,
-    path: "/api/webhooks/run/session-output",
+  firewallAuth: {
+    ...webhookFirewallAuthContract.resolve,
+    path: "/api/webhooks/run/firewall/auth",
   },
-  telemetry: {
-    ...webhookTelemetryContract.send,
-    path: "/api/webhooks/run/telemetry",
+  usageEvent: {
+    ...webhookUsageEventContract.send,
+    path: "/api/webhooks/run/usage-event",
   },
-  storagePrepare: {
-    ...webhookStoragesPrepareContract.prepare,
-    path: "/api/webhooks/run/storages/prepare",
-  },
-  storageCommit: {
-    ...webhookStoragesCommitContract.commit,
-    path: "/api/webhooks/run/storages/commit",
-  },
+  sessionOutput: webhookSessionOutputContract.send,
+  telemetry: webhookTelemetryContract.send,
+  storagePrepare: webhookStoragesPrepareContract.prepare,
+  storageCommit: webhookStoragesCommitContract.commit,
 });
