@@ -10,6 +10,26 @@ import XCTest
 
 @MainActor
 final class ComposerDraftTests: XCTestCase {
+  func testSuggestionPrependsToOriginalDraftAndSyncsBothTexts() async throws {
+    let original = ComposerDraft(
+      document: ChatDraftDocument(parts: [
+        .object(["type": .string("text"), "text": .string("Keep my note")])
+      ]))
+    let server = DraftServer(remote: original)
+    let composer = server.composer(storage: server.storage(), target: .thread(draftThreadID))
+    defer { composer.close() }
+    let suggestion = ComposerDraft(
+      document: ChatDraftDocument(parts: [
+        .object(["type": .string("text"), "text": .string("Suggested step")])
+      ]))
+    try await composer.prependSuggestion(suggestion)
+    XCTAssertEqual(composer.document.text, "Suggested step\n\nKeep my note")
+    await composer.synchronize()
+    let saved = try await ChatDraftRepository(client: server.http.client).load(
+      .thread(draftThreadID))
+    XCTAssertEqual(saved.draftUserMessage?.text, composer.document.text)
+  }
+
   func testWhitespaceOnlyDraftsClearCloudContentWithoutTrimmingMeaningfulText() async throws {
     for target in [ChatDraftTarget.workspace, .thread(draftThreadID)] {
       let server = DraftServer()

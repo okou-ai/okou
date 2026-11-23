@@ -90,7 +90,7 @@ struct ForYouView: View {
       switch item {
       case .feedback(let card):
         ForYouFeedbackSheet { reason in
-          presentedSheet = nil
+          closeSheet()
           run { await store.respond(card, reason: reason) }
         }
       case .direction(let card):
