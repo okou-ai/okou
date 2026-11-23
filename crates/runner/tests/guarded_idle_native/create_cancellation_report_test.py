@@ -101,15 +101,7 @@ class CreateCancellationTests(unittest.TestCase):
         self.validate()
 
     def test_missing_duplicate_identity_and_real_file_source_are_refused(self):
-        original=self.witnesses
-        for index in range(len(original)):
-            self.witnesses=original.copy()
-            self.witnesses.pop(index)
-            with self.assertRaises(ValueError): self.validate()
-        self.witnesses=original.copy()
-        self.validate()
-        self.witnesses.append(copy.deepcopy(original[-1]))
-        with self.assertRaises(ValueError): self.validate()
+        report_test.assert_witness_omission_and_duplication_refused(self)
 
 
 if __name__ == "__main__": unittest.main()
