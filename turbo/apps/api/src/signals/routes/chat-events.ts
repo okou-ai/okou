@@ -1,4 +1,3 @@
-import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 /** Canonical ChatEvent route adapter. */
 import { command } from "ccstate";
 import {
@@ -33,6 +32,70 @@ import {
 } from "../services/agent-suggestions.service";
 
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
+
+const prepareSuggestionSend$ = command(
+  async (
+    { get, set },
+    {
+      data,
+      bootstrap,
+    }: {
+      readonly data: ChatEventSendBody;
+      readonly bootstrap: ReturnType<
+        (typeof startNormalSendBootstrap$)["write"]
+      >;
+    },
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const document = data.userMessage;
+    if (
+      auth.tokenType !== "session" ||
+      !document ||
+      !suggestionFeedbacks(document).length
+    ) {
+      return null;
+    }
+    const timing = get(chatEnqueueTiming$);
+    const access = await measureChatEnqueue(
+      timing,
+      "suggestion_access",
+      async () => {
+        const flags = bootstrap
+          ? await get(bootstrap.context.featureSwitches$)
+          : undefined;
+        signal.throwIfAborted();
+        return set(suggestionAccess$, signal, flags?.overrides);
+      },
+    );
+    signal.throwIfAborted();
+    if ("status" in access) {
+      return null;
+    }
+    const { threadId, clientEventId: eventId } = data;
+    if (!threadId || !eventId || hasEmptySuggestionNote(document)) {
+      return badRequestMessage(
+        "Add your question or direction before sending this suggestion.",
+      );
+    }
+    const result = await measureChatEnqueue(
+      timing,
+      "suggestion_validation",
+      () => {
+        return set(
+          validateSuggestionFollowup$,
+          auth,
+          { threadId, eventId, document },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    return result && "status" in result
+      ? result
+      : { eventId, acceptedDocument: result?.acceptedDocument };
+  },
+);
 
 export const sendValidatedChatEvent$ = command(
   async (
@@ -71,51 +134,16 @@ export const sendValidatedChatEvent$ = command(
         projectId ? "Project not found" : "Project or conversation not found",
       );
     }
-    const candidate =
-      auth.tokenType === "session" &&
-      data.userMessage &&
-      suggestionFeedbacks(data.userMessage).length > 0;
-    const access = candidate
-      ? await measureChatEnqueue(timing, "suggestion_access", async () => {
-          const flags = bootstrap
-            ? await get(bootstrap.context.featureSwitches$)
-            : undefined;
-          return set(suggestionAccess$, signal, flags?.overrides);
-        })
-      : null;
-    const custom = access !== null && !("status" in access);
-    let acceptedDocument: UserMessageDocument | undefined;
-    if (custom && data.userMessage) {
-      if (
-        !data.threadId ||
-        !data.clientEventId ||
-        hasEmptySuggestionNote(data.userMessage)
-      ) {
-        return badRequestMessage(
-          "Add your question or direction before sending this suggestion.",
-        );
-      }
-      const threadId = data.threadId;
-      const eventId = data.clientEventId;
-      const document = data.userMessage;
-      const invalid = await measureChatEnqueue(
-        timing,
-        "suggestion_validation",
-        () => {
-          return set(
-            validateSuggestionFollowup$,
-            auth,
-            { threadId, eventId, document },
-            signal,
-          );
-        },
-      );
-      signal.throwIfAborted();
-      if (invalid && "status" in invalid) {
-        return invalid;
-      }
-      acceptedDocument = invalid?.acceptedDocument;
+    const suggestion = await set(
+      prepareSuggestionSend$,
+      { data, bootstrap },
+      signal,
+    );
+    signal.throwIfAborted();
+    if (suggestion && "status" in suggestion) {
+      return suggestion;
     }
+    let acceptedDocument = suggestion?.acceptedDocument;
     const result = await set(
       handleSendChatEvent$,
       {
@@ -123,7 +151,7 @@ export const sendValidatedChatEvent$ = command(
         projectId,
         projectReferences,
         bootstrap,
-        onAcceptedDocument: custom
+        onAcceptedDocument: suggestion
           ? (document) => {
               acceptedDocument = document;
             }
@@ -131,14 +159,16 @@ export const sendValidatedChatEvent$ = command(
       },
       signal,
     );
-    if (custom && result.status === 201 && data.clientEventId) {
+    if (suggestion && result.status === 201) {
       await set(
         recordAcceptedSuggestionFollowup$,
         auth,
-        result.body.threadId,
-        data.clientEventId,
+        {
+          threadId: result.body.threadId,
+          eventId: suggestion.eventId,
+          acceptedDocument,
+        },
         signal,
-        acceptedDocument,
       );
     }
     return result;

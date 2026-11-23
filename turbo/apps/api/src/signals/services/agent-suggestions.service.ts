@@ -852,10 +852,16 @@ export const recordAcceptedSuggestionFollowup$ = command(
   async (
     { set },
     owner: Owner,
-    threadId: string,
-    eventId: string,
+    {
+      threadId,
+      eventId,
+      acceptedDocument,
+    }: {
+      readonly threadId: string;
+      readonly eventId: string;
+      readonly acceptedDocument?: UserMessageDocument;
+    },
     signal: AbortSignal,
-    acceptedDocument?: UserMessageDocument,
   ) => {
     const document =
       acceptedDocument ??
