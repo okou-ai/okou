@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.50.0](https://github.com/okou-ai/okou/compare/android-v0.49.0...android-v0.50.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
 ## [0.49.0](https://github.com/okou-ai/okou/compare/android-v0.48.0...android-v0.49.0) (2026-11-23)
 
 
