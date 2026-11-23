@@ -99,6 +99,7 @@ export const builtinConnectorOauthStartResponseSchema = object({
   nativeCallbackUrl: string().optional(),
   connectionId: uuid().optional(),
   oauthAttemptId: uuid(),
+  nativeAppAuthorization: object({ provider: literal("strava") }).optional(),
 });
 
 export type BuiltinConnectorOauthStartResponse = zInfer<

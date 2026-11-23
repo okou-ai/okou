@@ -1,3 +1,4 @@
+import { connectorNativeAppReturnUrl } from "@okouai/api-contracts/validators/connectors";
 import { waitUntil } from "../context/wait-until";
 import { deliverMarketingRewardEvents$ } from "../services/marketing-reward-event-delivery.service";
 import { command } from "ccstate";
@@ -75,9 +76,10 @@ import {
 } from "../../lib/connector-oauth-state";
 import { openIdRealmForOrigin } from "./connector-openid-auth-start";
 import {
-  connectorHttpsReturnFromResponse,
-  connectorHttpsReturnResponse,
-} from "./connector-https-return";
+  isStravaIosAuthorization,
+  nativeConnectorCallbackResponse,
+  nativeConnectorReturn,
+} from "./connector-native-app-authorization";
 
 const L = logger("connectors:oauth-callback");
 type CallbackIdentity = {
@@ -111,6 +113,7 @@ type CompleteOAuthCallbackInput = {
   readonly connectorSlug: ConnectorSlug;
   readonly account: ConnectorAccountMutationIntent;
   readonly insertConnectionId?: string;
+  readonly nativeGrantedScopes?: readonly string[];
 };
 
 type CompleteOpenIdCallbackInput = {
@@ -557,13 +560,13 @@ function callbackResultFromRedirect(
     return {
       status: "success",
       username: url.searchParams.get("username") || null,
-      nativeCallbackUrl: connectorHttpsReturnFromResponse(response),
+      nativeAppReturn: nativeConnectorReturn(response),
     };
   }
   if (url.pathname === "/connector/error") {
     return {
       status: "error",
-      nativeCallbackUrl: connectorHttpsReturnFromResponse(response),
+      nativeAppReturn: nativeConnectorReturn(response),
       message:
         url.searchParams.get("message") ||
         "OAuth authorization failed. Please try again.",
@@ -604,6 +607,31 @@ const completeOAuthCallback$ = command(
     });
     signal.throwIfAborted();
 
+    const tokenScopes = new Set(token.scopes);
+    const grantedScopes =
+      args.nativeGrantedScopes?.filter((scope) => {
+        return tokenScopes.has(scope);
+      }) ?? token.scopes;
+    if (args.nativeGrantedScopes) {
+      // Mobile consent lets athletes uncheck scopes. Do not declare a usable
+      // offline connection from the requested-scope fallback in older responses.
+      const granted = new Set(grantedScopes);
+      if (
+        args.oauthRequestedScopes.some((scope) => {
+          return !granted.has(scope);
+        }) ||
+        !token.outputs.refreshToken ||
+        !token.userInfo.id ||
+        !(token.expiresIn && token.expiresIn > 0)
+      ) {
+        return redirectWithError(
+          args.origin,
+          args.connectorSlug,
+          "Authorize all requested access to connect this account for background use.",
+          true,
+        );
+      }
+    }
     args.diagnostics.stage = "persist_connection";
     const result = await set(
       upsertBuiltinConnectorTokenConnection$,
@@ -615,7 +643,7 @@ const completeOAuthCallback$ = command(
         outputs: token.outputs,
         userInfo: token.userInfo,
         oauthRequestedScopes: args.oauthRequestedScopes,
-        oauthGrantedScopes: token.scopes,
+        oauthGrantedScopes: grantedScopes,
         expiresIn: token.expiresIn,
         extraConnectorSecrets: token.extraConnectorSecrets,
         account: args.account,
@@ -1071,8 +1099,8 @@ const authCodeProviderErrorResponse$ = command(
       if (!claimedState.ok) {
         return claimedState.response;
       }
-      callbackOrigin = appCallbackOrigin();
       storedState = claimedState.storedState;
+      callbackOrigin = appCallbackOrigin();
     }
     const response = redirectWithError(
       callbackOrigin,
@@ -1083,7 +1111,7 @@ const authCodeProviderErrorResponse$ = command(
       true,
     );
     return storedState
-      ? connectorHttpsReturnResponse(response, storedState)
+      ? nativeConnectorCallbackResponse(response, storedState)
       : response;
   },
 );
@@ -1192,7 +1220,7 @@ const handleAuthCodeConnectorCallback$ = command(
       signal,
     );
     if (!resolvedState.ok) {
-      return connectorHttpsReturnResponse(
+      return nativeConnectorCallbackResponse(
         resolvedState.response,
         claimedState.storedState,
       );
@@ -1222,6 +1250,11 @@ const handleAuthCodeConnectorCallback$ = command(
           identity: resolvedState.identity,
           account: resolvedState.account,
           insertConnectionId: resolvedState.insertConnectionId,
+          nativeGrantedScopes: isStravaIosAuthorization(
+            claimedState.storedState,
+          )
+            ? (args.query.scope ?? "").split(/[ ,]+/u).filter(Boolean)
+            : undefined,
           origin: callbackOrigin,
           connectorSlug: args.connectorSlug,
         },
@@ -1239,7 +1272,7 @@ const handleAuthCodeConnectorCallback$ = command(
     );
     signal.throwIfAborted();
 
-    return connectorHttpsReturnResponse(
+    return nativeConnectorCallbackResponse(
       callbackResponse ??
         redirectWithError(
           callbackOrigin,
@@ -1299,9 +1332,15 @@ const callbackBuiltinConnectorInner$ = command(
     signal.throwIfAborted();
 
     if (query.responseMode !== "json") {
-      const nativeUrl = connectorHttpsReturnFromResponse(response);
-      if (nativeUrl) {
-        response.headers.set("Location", nativeUrl);
+      const nativeReturn = nativeConnectorReturn(response);
+      if (nativeReturn) {
+        const nativeResponse = connectorOAuthRedirectResponse(
+          connectorNativeAppReturnUrl(nativeReturn),
+        );
+        nativeResponse.headers.set("Cache-Control", "no-store");
+        nativeResponse.headers.set("Referrer-Policy", "no-referrer");
+        clearConnectorOAuthCookies(nativeResponse);
+        return nativeResponse;
       }
       return response;
     }

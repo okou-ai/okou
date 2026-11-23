@@ -18,10 +18,10 @@ import {
 
 const context = testContext();
 
-test("A native OAuth completion returns to the HTTPS session before loading the catalog", async () => {
-  const navigation = context.mocks.browser.locationReplace();
-  const nativeCallbackUrl =
-    "https://app.okou.ai/native/connector-authorization?attemptId=11111111-2222-4333-8444-555555555555";
+test("returns an HTTPS attempt through the shared native publisher and removes provider parameters", async () => {
+  const navigation = context.mocks.browser.locationAssign();
+  const attemptId = "11111111-2222-4333-8444-555555555555";
+  const url = `https://app.okou.ai/native/connector-authorization?attemptId=${attemptId}`;
   context.mocks.api(
     builtinConnectorsSlugCallbackContract.callback,
     ({ query, respond }) => {
@@ -33,7 +33,11 @@ test("A native OAuth completion returns to the HTTPS session before loading the 
       return respond(200, {
         status: "success",
         username: null,
-        nativeCallbackUrl,
+        nativeAppReturn: {
+          platform: "ios",
+          attemptId,
+          httpsHost: "app.okou.ai",
+        },
       });
     },
   );
@@ -42,8 +46,102 @@ test("A native OAuth completion returns to the HTTPS session before loading the 
     path: "/connectors/github/callback?code=native-code&state=native-state",
     auth: null,
   });
-  expect(navigation.calls).toStrictEqual([nativeCallbackUrl]);
-  expect(search()).toBe("");
+  await waitFor(() => {
+    expect(navigation.calls).toContain(url);
+  });
+  expect(new URLSearchParams(search()).has("code")).toBeFalsy();
+  expect(new URLSearchParams(search()).has("state")).toBeFalsy();
+  expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+    "href",
+    url,
+  );
+});
+
+test("preserves the shared HTTPS return action on a refreshed denial page", async () => {
+  const attemptId = "11111111-2222-4333-8444-555555555555";
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      connector: publicStatusItem({ connectorSlug: "github", label: "GitHub" }),
+    });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/github/callback/error?nativeAppAttemptId=${attemptId}&nativeAppHttpsHost=staging-app.omby.ai&message=Access+denied`,
+    auth: null,
+  });
+  await waitFor(() => {
+    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+      "href",
+      `https://staging-app.omby.ai/native/connector-authorization?attemptId=${attemptId}`,
+    );
+  });
+});
+
+test("returns a backend-confirmed native attempt to Okou without carrying provider credentials", async () => {
+  const navigation = context.mocks.browser.locationAssign();
+  const attemptId = "98000000-0000-4000-8000-000000000005";
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      connector: publicStatusItem({ connectorSlug: "strava", label: "Strava" }),
+    });
+  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, respond }) => {
+      expect(query).toMatchObject({
+        code: "oauth-code",
+        state: "oauth-state",
+        scope: "read",
+        responseMode: "json",
+      });
+      return respond(200, {
+        status: "success",
+        username: null,
+        nativeAppReturn: { platform: "ios", attemptId },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors/strava/callback?code=oauth-code&state=oauth-state&scope=read",
+    auth: null,
+  });
+  const url = `ai.okou.ios://connector-authorization/${attemptId}`;
+  await waitFor(() => {
+    expect(navigation.calls).toContain(url);
+  });
+  await waitFor(() => {
+    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+      "href",
+      url,
+    );
+  });
+});
+
+test("keeps an explicit native return action after a denied callback page is refreshed", async () => {
+  const attemptId = "98000000-0000-4000-8000-000000000005";
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      connector: publicStatusItem({ connectorSlug: "strava", label: "Strava" }),
+    });
+  });
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ never }) => {
+      return never();
+    },
+  );
+  await setupPage({
+    context,
+    path: `/connectors/strava/callback/error?nativeAppAttemptId=${attemptId}&message=Access+denied`,
+    auth: null,
+  });
+  await waitFor(() => {
+    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+      "href",
+      `ai.okou.ios://connector-authorization/${attemptId}`,
+    );
+  });
 });
 
 function githubIcon(): PublicConnectorCatalogIcon {

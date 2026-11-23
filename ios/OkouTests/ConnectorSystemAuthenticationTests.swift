@@ -69,15 +69,16 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     let flow = try XCTUnwrap(store.active)
     let firstReturn = try XCTUnwrap(flow.session?.nativeCallbackUrl)
     let firstBrowser = try XCTUnwrap(flow.browserURL)
-    store.authenticationReturned(
+    store.receiveProviderReturn(
       try XCTUnwrap(
         URL(
           string:
             "https://evil.invalid/native/connector-authorization?attemptId=\(FixtureData.attemptID)"
         )))
     XCTAssertEqual(flow.browserURL, firstBrowser)
-    store.authenticationFinished(
-      flow: flow, url: firstBrowser, callbackURL: firstReturn, error: nil)
+    store.receiveProviderReturn(firstReturn)
+    XCTAssertNil(flow.browserURL)
+    XCTAssertNotNil(flow.session)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { flow.session == nil }
     XCTAssertFalse(continued.withLock { $0 })
@@ -86,7 +87,7 @@ final class ConnectorSystemAuthenticationTests: XCTestCase {
     store.submit()
     await fulfillment(of: [scheduled[1]], timeout: 3)
     let nextBrowser = try XCTUnwrap(flow.browserURL)
-    store.authenticationReturned(firstReturn)
+    store.receiveProviderReturn(firstReturn)
     XCTAssertEqual(flow.browserURL, nextBrowser)
     let nextReturn = try XCTUnwrap(flow.session?.nativeCallbackUrl)
     connected.withLock { $0 = true }

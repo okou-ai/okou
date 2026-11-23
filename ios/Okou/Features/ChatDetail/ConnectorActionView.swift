@@ -197,6 +197,7 @@ private struct ConnectorActionCardContent: View {
 }
 
 struct ConnectorAuthorizationSheet: View {
+  @Environment(\.scenePhase) private var scenePhase
   @Bindable var flow: ConnectorAuthorizationFlow
   let store: ConnectorActionStore
 
@@ -339,7 +340,10 @@ struct ConnectorAuthorizationSheet: View {
         .frame(width: 0, height: 0)
         .accessibilityHidden(true)
       }
-      .onOpenURL { store.authenticationReturned($0) }
+      .onOpenURL { store.receiveProviderReturn($0) }
+      .onChange(of: scenePhase) { _, phase in
+        store.providerSceneActive(phase == .active)
+      }
     }
   }
   private var confirmationTitle: LocalizedStringKey {

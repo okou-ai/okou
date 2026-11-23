@@ -94,11 +94,15 @@ public struct ChatConnectorStatus: Sendable {
 
 /// Operation receipts never identify an account through a mutable default projection.
 public struct ChatConnectorReceipt: Decodable, Sendable {
+  public struct NativeAppAuthorization: Decodable, Sendable {
+    public let provider: String
+  }
   public let result: String?
   public let status: String?
   public let authorizationUrl: URL?
   public let nativeCallbackUrl: URL?
   public let oauthAttemptId: String?
+  public let nativeAppAuthorization: NativeAppAuthorization?
   public let connectionId: String?
   public let sessionId: String?
   public let sessionToken: String?
@@ -271,7 +275,7 @@ public struct ChatConnectorService: Sendable {
   }
   public func start(
     status: ChatConnectorStatus, method: ChatConnectorMethod?,
-    values: [String: String], options: [String: String]
+    values: [String: String], options: [String: String], nativeAppAuthorization: Bool = false
   ) async throws -> ChatConnectorReceipt {
     struct Account: Encodable {
       let intent: String
@@ -282,6 +286,7 @@ public struct ChatConnectorService: Sendable {
       let authMethod: String
       var callbackTarget: String?
       var nativeCallback: String?
+      var nativeAppAuthorization: String?
       var values: [String: String]?
       var options: [String: String]?
     }
@@ -297,6 +302,8 @@ public struct ChatConnectorService: Sendable {
         account: account, authMethod: method.id,
         callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
         nativeCallback: method.grantKind == "auth-code" ? "ios-https" : nil,
+        nativeAppAuthorization: nativeAppAuthorization && method.grantKind == "auth-code"
+          ? "ios" : nil,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,
         options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)

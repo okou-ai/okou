@@ -1,7 +1,7 @@
 import { AlertCircle, Check, Loader2, WalletCards } from "lucide-react";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ConnectorFlowCard } from "./connector-flow-card.tsx";
@@ -21,6 +21,7 @@ export function ConnectorCallbackPage({
   status,
   username,
   errorMessage,
+  nativeReturnUrl,
 }: {
   readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
   readonly iconContent?: ReactNode;
@@ -29,6 +30,7 @@ export function ConnectorCallbackPage({
   readonly status: ConnectorCallbackPageStatus;
   readonly username: string | null;
   readonly errorMessage: string | null;
+  readonly nativeReturnUrl?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const title =
@@ -123,21 +125,41 @@ export function ConnectorCallbackPage({
                   })}
             </span>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              window.close();
-            }}
-          >
-            {t(($) => {
-              return $.connectors.actions.closeWindow;
-            })}
-          </Button>
+          <ConnectorCallbackAction nativeReturnUrl={nativeReturnUrl} />
         </div>
       )}
       {connectorSlug === "mercury" ? (
         <MercuryDisclosure className="w-full border-t border-border/50 pt-4 text-left" />
       ) : null}
     </ConnectorFlowCard>
+  );
+}
+
+function ConnectorCallbackAction({
+  nativeReturnUrl,
+}: {
+  readonly nativeReturnUrl?: string;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  return nativeReturnUrl ? (
+    <a
+      className={buttonVariants({ variant: "outline" })}
+      href={nativeReturnUrl}
+    >
+      {t(($) => {
+        return $.connectors.actions.returnToOkou;
+      })}
+    </a>
+  ) : (
+    <Button
+      variant="outline"
+      onClick={() => {
+        window.close();
+      }}
+    >
+      {t(($) => {
+        return $.connectors.actions.closeWindow;
+      })}
+    </Button>
   );
 }

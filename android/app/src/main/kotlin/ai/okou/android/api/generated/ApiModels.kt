@@ -1521,11 +1521,22 @@ data class ConnectorOauthCompletion(
 )
 
 @Serializable
+enum class ConnectorOauthStartNativeAppAuthorizationProvider {
+    @SerialName("strava") STRAVA,
+}
+
+@Serializable
+data class ConnectorOauthStartNativeAppAuthorization(
+    val `provider`: ConnectorOauthStartNativeAppAuthorizationProvider,
+)
+
+@Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
     val `nativeCallbackUrl`: String? = null,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
+    val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
 )
 
 @Serializable
@@ -1536,6 +1547,11 @@ enum class ConnectorOauthStartRequestCallbackTarget {
 @Serializable
 enum class ConnectorOauthStartRequestNativeCallback {
     @SerialName("ios-https") IOS_HTTPS,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeAppAuthorization {
+    @SerialName("ios") IOS,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1631,6 +1647,7 @@ data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
     val `nativeCallback`: ConnectorOauthStartRequestNativeCallback? = null,
+    val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
@@ -9387,7 +9404,9 @@ data class ChatMessageSearchResponseResultsItem(
 )
 
 @Serializable
-data class ChatMessageSearchResponse(val `results`: List<ChatMessageSearchResponseResultsItem>)
+data class ChatMessageSearchResponse(
+    val `results`: List<ChatMessageSearchResponseResultsItem>,
+)
 
 @Serializable
 data class RenameProjectRequest(

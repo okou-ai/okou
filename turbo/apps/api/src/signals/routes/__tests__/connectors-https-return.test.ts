@@ -151,7 +151,11 @@ test.each(slugs)(
     );
     expect(callback.body).toMatchObject({
       status: "success",
-      nativeCallbackUrl: returnUrl,
+      nativeAppReturn: {
+        platform: "ios",
+        attemptId: started.oauthAttemptId,
+        httpsHost: "app.okou.ai",
+      },
     });
     const completed = await receipt(connectorSlug, started.oauthAttemptId);
     expect(completed.status).toBe(200);
@@ -189,7 +193,11 @@ test("returns provider refusal to iOS without creating a connection or allowing 
   );
   expect(denied.body).toMatchObject({
     status: "error",
-    nativeCallbackUrl: started.nativeCallbackUrl,
+    nativeAppReturn: {
+      platform: "ios",
+      attemptId: started.oauthAttemptId,
+      httpsHost: "app.okou.ai",
+    },
   });
   expect((await receipt("github", started.oauthAttemptId)).status).toBe(404);
   const replay = await accept(
@@ -200,7 +208,7 @@ test("returns provider refusal to iOS without creating a connection or allowing 
     [200],
   );
   expect(replay.body).toMatchObject({ status: "error" });
-  expect(replay.body.nativeCallbackUrl).toBeUndefined();
+  expect(replay.body.nativeAppReturn).toBeUndefined();
 });
 
 test("uses the HTTPS return for direct callbacks and ignores unclaimed native-looking state", async () => {
@@ -238,7 +246,7 @@ test("keeps ordinary web grants and providers outside this delivery on the exist
     [200],
   );
   expect(result.body).toMatchObject({ status: "error" });
-  expect(result.body.nativeCallbackUrl).toBeUndefined();
+  expect(result.body.nativeAppReturn).toBeUndefined();
 });
 
 test("keeps staging returns on their associated domain and omits HTTPS mode on arbitrary previews", async () => {

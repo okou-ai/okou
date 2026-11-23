@@ -44,6 +44,7 @@ import {
   getBuiltinConnectorOpenIdCallbackOriginForMethod,
 } from "./connector-oauth-origin";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
+import { connectorNativeAppAuthorization } from "./connector-native-app-authorization";
 import {
   connectorHttpsCallbackUrl,
   connectorHttpsReturnState,
@@ -435,7 +436,7 @@ const startBuiltinConnectorOauthInner$ = command(
       connectorSlug: resolved.connectorSlug,
       nativeCallback: bodyResult.data.nativeCallback,
     });
-    const authResult = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
+    const authorization = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
       connectorSlug: resolved.connectorSlug,
       authMethodId: resolved.authMethodId,
       method,
@@ -444,6 +445,13 @@ const startBuiltinConnectorOauthInner$ = command(
       state,
     });
     signal.throwIfAborted();
+    const authResult = connectorNativeAppAuthorization({
+      authorization,
+      platform: bodyResult.data.nativeAppAuthorization,
+      callbackTarget: bodyResult.data.callbackTarget,
+      connectorSlug: resolved.connectorSlug,
+      authMethodId: resolved.authMethodId,
+    });
 
     const selection = await get(builtinOauthStartAccountSelection$);
     signal.throwIfAborted();
@@ -494,10 +502,8 @@ const startBuiltinConnectorOauthInner$ = command(
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
-        nativeCallbackUrl: connectorHttpsCallbackUrl({
-          state,
-          attemptId: oauthState.id,
-        }),
+        nativeCallbackUrl: connectorHttpsCallbackUrl(state, oauthState.id),
+        nativeAppAuthorization: authResult.nativeAppAuthorization,
         connectionId:
           bodyResult.data.account.intent === "add" ? oauthState.id : undefined,
         oauthAttemptId: oauthState.id,
