@@ -8,6 +8,7 @@ import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -300,18 +301,28 @@ class ChatConnectorOptionsTest {
         inSheet(hasContentDescription("Back")).performClick()
         waitTag(primaryTag)
         compose.onNodeWithTag(primaryTag).assertIsOff()
-        closeOptions()
+        dismissSheet()
+        dismissParentOptions()
     }
 
     private fun closeOptions() {
         inSheet(hasContentDescription("Back")).performClick()
+        dismissParentOptions()
+    }
+
+    private fun dismissParentOptions() {
         waitTag("chat-options-connectors")
-        compose
-            .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
-            .performSemanticsAction(SemanticsActions.Dismiss)
+        compose.onNodeWithTag("chat-options-connectors").assertIsDisplayed()
+        dismissSheet()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("chat-options-connectors").fetchSemanticsNodes().isEmpty()
         }
+    }
+
+    private fun dismissSheet() {
+        compose
+            .onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.Dismiss))
+            .performSemanticsAction(SemanticsActions.Dismiss)
     }
 
     private fun inSheet(matcher: SemanticsMatcher) =
