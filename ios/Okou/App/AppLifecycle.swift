@@ -247,6 +247,7 @@ final class WorkspaceLifecycle {
           try Task.checkCancellation()
           workspaceStore.startNewChat()
           workspaceStore.newChatDraft = prompt
+          NewChatRequests.shared.request()
         }
       })
   }

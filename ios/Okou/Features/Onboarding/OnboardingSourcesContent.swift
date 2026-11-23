@@ -52,21 +52,5 @@ struct OnboardingSourcesContent: View {
       }
     }
     .task { await store.connectors.refresh() }
-    .sheet(
-      item: Binding(
-        get: { store.connectors.authorization.active },
-        set: { if $0 == nil { store.connectors.authorization.cancel() } })
-    ) { flow in
-      ConnectorAuthorizationSheet(flow: flow, store: store.connectors.authorization)
-        .okouSheetBackground()
-    }
-    .sheet(
-      item: Binding(
-        get: { store.connectors.webDestination },
-        set: { store.connectors.webDestination = $0 }),
-      onDismiss: { Task { await store.connectors.refresh() } },
-      content: { destination in
-        ConnectorSafariView(url: destination.url) { store.connectors.webDestination = nil }
-      })
   }
 }

@@ -84,6 +84,8 @@ struct OnboardingView: View {
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
+    let connectorAuthorization = store.connectors.authorization.active
+    let connectorPage = store.connectors.webDestination
     NavigationStack {
       Group {
         if store.isPrepared {
@@ -130,6 +132,22 @@ struct OnboardingView: View {
       .signOutConfirmation(isPresented: $confirmsSignOut) {
         Task { await store.signOut() }
       }
+      .sheet(
+        item: Binding(
+          get: { connectorAuthorization },
+          set: { if $0 == nil { store.connectors.authorization.cancel() } })
+      ) { flow in
+        ConnectorAuthorizationSheet(flow: flow, store: store.connectors.authorization)
+          .okouSheetBackground()
+      }
+      .sheet(
+        item: Binding(
+          get: { connectorPage },
+          set: { store.connectors.webDestination = $0 }),
+        onDismiss: { Task { await store.connectors.refresh() } },
+        content: { destination in
+          ConnectorSafariView(url: destination.url) { store.connectors.webDestination = nil }
+        })
       .sheet(item: $channelPage) { page in
         ConnectorSafariView(url: page.url) { channelPage = nil }
       }
