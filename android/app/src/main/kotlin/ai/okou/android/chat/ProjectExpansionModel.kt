@@ -16,8 +16,6 @@ import kotlinx.coroutines.launch
 
 internal data class ProjectExpansionState(
     val expandedIds: Set<String>? = null,
-    val readFailed: Boolean = false,
-    val writeFailed: Boolean = false,
     val hasLocalChoices: Boolean = false,
 )
 
@@ -30,14 +28,12 @@ internal constructor(
     internal val state = mutable.asStateFlow()
     private var observation: Job? = null
     private var confirmedIds: Set<String>? = null
-    private var readFailed = false
 
     private class Choice(val expanded: Boolean)
 
     private val choices = mutableMapOf<String, Choice>()
     private val savingIds = mutableSetOf<String>()
     private val savedIds = mutableSetOf<String>()
-    private val failedIds = mutableSetOf<String>()
 
     init {
         observe()
@@ -63,15 +59,13 @@ internal constructor(
                     .collect { ids ->
                         ensureActive()
                         confirmedIds = ids
-                        readFailed = false
                         choices.keys.removeAll(savedIds)
                         savedIds.clear()
                         publish()
                     }
             } catch (_: IOException) {
                 ensureActive()
-                readFailed = true
-                publish()
+                // Keep the last visible choices when the saved record is unavailable.
             }
         }
     }
@@ -80,7 +74,6 @@ internal constructor(
         val expanded = state.value.expandedIds?.contains(projectId) == true
         choices[projectId] = Choice(!expanded)
         savedIds.remove(projectId)
-        failedIds.remove(projectId)
         publish()
         if (!savingIds.add(projectId)) return
         viewModelScope.launch {
@@ -93,9 +86,6 @@ internal constructor(
                         savedIds.add(projectId)
                         // A new subscription observes this commit or a later one.
                         observe()
-                    } else {
-                        failedIds.add(projectId)
-                        publish()
                     }
                     break
                 }
@@ -132,12 +122,6 @@ internal constructor(
                         if (choice.expanded) add(id) else remove(id)
                     }
                 }
-        mutable.value =
-            ProjectExpansionState(
-                expanded,
-                readFailed,
-                failedIds.isNotEmpty(),
-                choices.isNotEmpty(),
-            )
+        mutable.value = ProjectExpansionState(expanded, choices.isNotEmpty())
     }
 }
