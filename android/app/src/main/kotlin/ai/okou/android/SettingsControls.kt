@@ -363,6 +363,7 @@ internal fun SettingsSheet(
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
+    actionSpacing: Dp = 8.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
@@ -394,7 +395,7 @@ internal fun SettingsSheet(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
-            if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
+            if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
         }
     }
 }

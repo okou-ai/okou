@@ -1,16 +1,17 @@
 package ai.okou.android.connectors
 
 import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemManualFieldsItemInputType
+import ai.okou.android.okouFormInputStyle
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
@@ -439,19 +439,23 @@ private fun ConnectorInput(
 ) {
     val colors = MaterialTheme.colorScheme
     val field =
-        modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("connector-input").semantics {
-            contentDescription = label
-            if (errorMessage != null) error(errorMessage)
-        }
-    val shape = RoundedCornerShape(12.dp)
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
+            .testTag("connector-input")
+            .semantics {
+                contentDescription = label
+                if (errorMessage != null) error(errorMessage)
+            }
+    val shape = MaterialTheme.shapes.medium
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
-    val padding = PaddingValues(12.dp)
+    val padding = OkouFormLayout.FieldPadding
     val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
         { Text(it, style = connectorBodyType()) }
     }
     Column(Modifier.fillMaxWidth()) {
         Text(label, style = connectorFeedbackType())
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(OkouFormLayout.LabelGap))
         if (secret) {
             OutlinedSecureTextField(
                 state = state,
@@ -459,7 +463,7 @@ private fun ConnectorInput(
                 inputTransformation = InputTransformation { if (readOnly) revertAllChanges() },
                 textObfuscationMode = TextObfuscationMode.Hidden,
                 shape = shape,
-                textStyle = connectorBodyType(),
+                textStyle = okouFormInputStyle(),
                 colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
@@ -472,7 +476,7 @@ private fun ConnectorInput(
                 isError = errorMessage != null,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 shape = shape,
-                textStyle = connectorBodyType(),
+                textStyle = okouFormInputStyle(),
                 colors = fieldColors,
                 placeholder = placeholderContent,
                 contentPadding = padding,
@@ -481,11 +485,11 @@ private fun ConnectorInput(
         val supportStyle =
             MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp)
         if (supportingText != null) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
             Text(supportingText, style = supportStyle, color = colors.onSurfaceVariant)
         }
         if (errorMessage != null) {
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
             Text(errorMessage, style = supportStyle, color = colors.error)
         }
     }
@@ -499,19 +503,15 @@ private fun ConnectorFormActions(
     cancelEnabled: Boolean,
     submit: () -> Unit,
 ) {
-    FlowRow(
-        Modifier.fillMaxWidth().padding(top = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        ConnectorButton(
-            stringResource(R.string.settings_cancel),
-            cancel,
-            enabled = cancelEnabled,
-            treatment = ConnectorButtonTreatment.Text,
-        )
-        if (label != null) ConnectorButton(label, submit, enabled = enabled)
-    }
+    OkouFormActions(
+        cancelLabel = stringResource(R.string.settings_cancel),
+        confirmLabel = label,
+        cancel = cancel,
+        confirm = submit,
+        confirmEnabled = enabled,
+        modifier = Modifier.padding(top = OkouFormLayout.ActionGap),
+        cancelEnabled = cancelEnabled,
+    )
 }
 
 private fun launchConnectorBrowser(context: Context, url: HttpUrl): Boolean =
