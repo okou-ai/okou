@@ -397,7 +397,7 @@ class PendingWorkspaceRootTest {
     fun cacheMissWaitsForChatsInTheIdentifiedWorkspaceShell() {
         compose.runOnIdle { app.authorizationResponse.complete(Unit) }
         compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         val empty = compose.activity.getString(R.string.chat_empty)
         compose.onNodeWithText(empty).assertDoesNotExist()
@@ -410,6 +410,30 @@ class PendingWorkspaceRootTest {
             compose.onAllNodesWithText(empty).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(application = UncachedWorkspaceApplication::class)
+    fun aFastChatListReadShowsTheEmptyStateWithoutASkeleton() {
+        compose.onNodeWithTag("chat_list").assertExists()
+        val skeleton = compose.onNodeWithContentDescription("Loading chats…")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.mainClock.advanceTimeBy(160)
+            skeleton.assertDoesNotExist()
+            compose.runOnIdle {
+                app.listResponse.complete(Unit)
+                app.authorizationResponse.complete(Unit)
+            }
+            compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
+            compose.mainClock.advanceTimeBy(160)
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.chat_empty))
+                .assertIsDisplayed()
+            skeleton.assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
     }
 
     @Test
@@ -431,7 +455,7 @@ class PendingWorkspaceRootTest {
     @Test
     fun authorizedCacheOpensChatAndSearchWhilePreferencesAndLiveChatsWait() {
         compose.onNodeWithTag("chat_list").assertExists()
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         compose.onNodeWithContentDescription("Search workspace").assertDoesNotExist()

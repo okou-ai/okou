@@ -29,6 +29,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -48,6 +49,7 @@ import kotlinx.coroutines.flow.first
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+internal const val ChatListSkeletonDelayMillis = 250L
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
 
@@ -124,8 +126,12 @@ internal fun ChatListViewport(
             if (syncing) {
                 subcompose(ListLayer.Sync) {
                         val label = stringResource(R.string.chat_syncing)
+                        val colors = MaterialTheme.colorScheme
                         LinearProgressIndicator(
                             Modifier.fillMaxWidth().semantics { contentDescription = label },
+                            color = colors.primary,
+                            trackColor =
+                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
                         )
                     }
                     .single()

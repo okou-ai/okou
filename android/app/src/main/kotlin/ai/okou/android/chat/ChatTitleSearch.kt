@@ -197,7 +197,7 @@ internal fun ChatTitleSearch(
         val retryEnabled = state.listPhase != ChatReadPhase.Loading
         val awaitingResults =
             displayedState.confirmedAt == null && !state.offline && retryFailedRead == null
-        val showSkeleton = rememberChatWaitIndicator(awaitingResults)
+        val showSkeleton = rememberChatWaitIndicator(awaitingResults, ChatListSkeletonDelayMillis)
         val resultsWidth = contentWidth.weight(1f).padding(horizontal = 16.dp)
         if (displayedState.confirmedAt == null) {
             // Let the restored list position apply to the result rows once data is available.

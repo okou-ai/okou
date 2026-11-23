@@ -1352,7 +1352,7 @@ class ChatListRootTest {
             currentList()?.listReadFailure == ChatListReadFailure.Retrying
         }
         compose.onNodeWithTag("chat_search").assertExists()
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText("Temporarily unable to load").assertDoesNotExist()
         shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
@@ -1368,8 +1368,11 @@ class ChatListRootTest {
     @Test
     fun heldTransportKeepsNavigationAndRestoresTheListWithProjectStatus() {
         compose.onNodeWithContentDescription("Chats").assertExists()
-        compose.mainClock.advanceTimeBy(120)
-        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+        val skeleton = compose.onNodeWithContentDescription("Loading chats…")
+        compose.mainClock.advanceTimeBy(160)
+        skeleton.assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(144)
+        skeleton.assertExists()
         compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNode(hasText("Workspace A") and isSelectable()).assertIsSelected().performClick()

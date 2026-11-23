@@ -311,7 +311,7 @@ internal fun ChatListScreen(
             !(missingUnread && state.offline) &&
             !firstLoadFailed &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList)
+    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
     val syncConfirmation =
         state.confirmedAt?.takeIf {
             !missingUnread && !state.offline && state.listPhase == ChatReadPhase.Loading
