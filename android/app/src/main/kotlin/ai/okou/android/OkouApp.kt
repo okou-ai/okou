@@ -162,6 +162,7 @@ internal fun OkouApp(
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
+    settingsProgress: @Composable (SettingsDestination) -> Unit = {},
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
     val listState =
@@ -991,15 +992,26 @@ internal fun OkouApp(
             maxOf(TopAppBarDefaults.TopAppBarExpandedHeight, textHeight + 16.dp)
         }
     val shortConversation = window.height < 480
+    val controlThreadId =
+        when (target) {
+            is WorkspaceTarget.Chat -> target.id.takeIf { thread != null || awaitingCreatedChat }
+            is WorkspaceTarget.NewChat -> createdId
+            else -> null
+        }
     val runActions =
         if (
             settings == null &&
-                thread != null &&
+                controlThreadId != null &&
                 controls != null &&
                 pendingNewChat == null &&
                 (!searchActive || listWidth != null)
         )
-            conversationRunControls(controls, checkNotNull(chats).history, thread.id, list.offline)
+            conversationRunControls(
+                controls,
+                checkNotNull(chats).history,
+                controlThreadId,
+                list.offline,
+            )
         else null
     fun rowAction(id: String, action: ChatRowAction, fromConversation: Boolean = false) {
         val started =
@@ -1299,7 +1311,7 @@ internal fun OkouApp(
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (settings != null) {
-                SettingsPage(subpagePosition) {
+                SettingsPage(subpagePosition, progress = { settingsProgress(settings) }) {
                     settingsContent(
                         settings,
                         { destination -> navigation = navigation.copy(settings = destination) },
@@ -1457,6 +1469,12 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                showComposerStatus =
+                                                    !shortConversation &&
+                                                        composerTarget != null &&
+                                                        pendingNewChat == null &&
+                                                        composer != null &&
+                                                        controls != null,
                                                 artifactActions =
                                                     if (chatArtifacts == null || thread == null)
                                                         null
@@ -1520,12 +1538,6 @@ internal fun OkouApp(
                                                     composer != null &&
                                                     controls != null
                                             ) {
-                                                if (!shortConversation)
-                                                    ConversationStatus(
-                                                        list.offline,
-                                                        runActions,
-                                                        short = false,
-                                                    )
                                                 ChatComposerField(
                                                     composer,
                                                     composerTarget,
@@ -1546,6 +1558,12 @@ internal fun OkouApp(
                                                     historyAvailable = provisionalChat != null,
                                                     realtime =
                                                         chats.updates.takeIf { workspaceReady },
+                                                    controls = runActions,
+                                                    showComposerStatus =
+                                                        !shortConversation &&
+                                                            createdId == null &&
+                                                            newTarget != null &&
+                                                            composer != null,
                                                 )
                                             }
                                         } else {
@@ -1567,7 +1585,7 @@ internal fun OkouApp(
                                                 newTarget != null &&
                                                 composer != null
                                         ) {
-                                            if (!shortConversation)
+                                            if (!shortConversation && provisionalId == null)
                                                 ConversationStatus(
                                                     list.offline,
                                                     null,

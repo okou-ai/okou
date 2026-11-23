@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { channel } from "node:diagnostics_channel";
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import { runnerDispatchResponseSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
 import {
   OFFICIAL_RUNNER_TOKEN_PREFIX,
@@ -18,6 +20,7 @@ import { recordSandboxOperation } from "./sandbox-op-log";
 import {
   currentRunnerDispatchTransport,
   runnerDispatchPath,
+  type RunnerDispatchEncoding,
   type RunnerDispatchTiming,
   type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
@@ -26,6 +29,28 @@ type DispatchObservation =
   "accepted" | "rejected" | "busy" | "unknown" | "not-delivered";
 
 const dispatchTimingHeader = "x-okou-runner-dispatch-timing";
+const gzipMinBodyBytes = 256 * 1024;
+const gzipAsync = promisify(gzip);
+
+export function runnerDispatchEncoding(
+  bodyBytes: number,
+): RunnerDispatchEncoding {
+  return bodyBytes >= gzipMinBodyBytes ? "gzip" : "identity";
+}
+
+export async function gzipRunnerDispatchBody(body: string, bodyBytes: number) {
+  const startedAt = monotonicNow();
+  const compressed = await settleIncludingAbort(() => {
+    return gzipAsync(body, { level: 1 });
+  });
+  return {
+    bytes:
+      compressed.ok && compressed.value.byteLength < bodyBytes
+        ? Uint8Array.from(compressed.value)
+        : undefined,
+    elapsedMs: monotonicNow() - startedAt,
+  };
+}
 const runnerElapsedMs = number().nonnegative().optional();
 const runnerDispatchTimingSchema = object({
   runnerVersion: runnerVersionSchema,
@@ -120,7 +145,10 @@ function definitelyNotConnected(error: unknown): boolean {
   return error.cause instanceof Error && definitelyNotConnected(error.cause);
 }
 
-function dispatchRequestOptions(serviceToken: string) {
+function dispatchRequestOptions(
+  serviceToken: string,
+  encoding: RunnerDispatchEncoding,
+) {
   return {
     method: "POST",
     redirect: "error" as const,
@@ -128,6 +156,7 @@ function dispatchRequestOptions(serviceToken: string) {
     headers: {
       authorization: `Bearer ${serviceToken}`,
       "content-type": "application/json",
+      ...(encoding === "gzip" ? { "content-encoding": "gzip" } : {}),
     },
   };
 }
@@ -136,6 +165,7 @@ export function reserveRunnerDispatch(
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,
+  encoding: RunnerDispatchEncoding = "identity",
 ): void {
   const transport = currentRunnerDispatchTransport();
   if (!transport) {
@@ -150,7 +180,7 @@ export function reserveRunnerDispatch(
     (body, connectionSignal) => {
       const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
       const options: RequestInit = {
-        ...dispatchRequestOptions(serviceToken),
+        ...dispatchRequestOptions(serviceToken, encoding),
         body,
         duplex: "half",
         signal: connectionSignal,
@@ -163,25 +193,30 @@ export function reserveRunnerDispatch(
       };
     },
     signal,
+    encoding,
   );
+}
+
+interface RunnerDispatchPost {
+  readonly target: DirectRunTarget;
+  readonly runId: string;
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  readonly bodyBytes: number;
+  readonly gzipEncodeMs: number | undefined;
+  readonly serviceToken: string;
+  readonly timeoutMs: number;
+  readonly firstRankedTarget: boolean;
+  readonly firstCandidateReadyAt: number | undefined;
 }
 
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
-  args: {
-    readonly target: DirectRunTarget;
-    readonly runId: string;
-    readonly body: string;
-    readonly bodyBytes: number;
-    readonly serviceToken: string;
-    readonly timeoutMs: number;
-    readonly firstRankedTarget: boolean;
-    readonly firstCandidateReadyAt: number | undefined;
-  },
+  args: RunnerDispatchPost,
   signal: AbortSignal,
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
+  const encoding = typeof body === "string" ? "identity" : "gzip";
   let response: Response | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
@@ -206,10 +241,11 @@ export async function postRunnerDispatch(
       body,
       startedAt,
       deadline,
+      encoding,
     );
     const dispatch = () => {
       return fetch(url, {
-        ...dispatchRequestOptions(serviceToken),
+        ...dispatchRequestOptions(serviceToken, encoding),
         body,
         signal: deadline,
       });
@@ -261,6 +297,10 @@ export async function postRunnerDispatch(
           api_commit_sha:
             normalizeBuildCommitSha(env("GIT_COMMIT_SHA")) ?? undefined,
           body_bytes: bodyBytes,
+          body_wire_bytes:
+            typeof body === "string" ? bodyBytes : body.byteLength,
+          body_encoding: encoding,
+          api_body_gzip_encode_ms: args.gzipEncodeMs,
           first_ranked_target: args.firstRankedTarget,
           first_candidate_lead_ms:
             args.firstCandidateReadyAt === undefined

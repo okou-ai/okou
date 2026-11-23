@@ -108,6 +108,46 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
   }
 
+  func testReturnKeyRefreshLeavesTheKeyboardDownWhileASheetCoversTheEditor() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    preferences.setReturnKey(.send)
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(state: conversation.composer)
+        .environment(\.composerPreferences, preferences))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    try await eventually(message: mentionInputStatus(input)) {
+      input.returnKeyType == .send && input.enablesReturnKeyAutomatically
+    }
+
+    // UIKit puts the keyboard away under a sheet and leaves the editor first responder.
+    host.present(UIViewController(), animated: false)
+    defer { host.dismiss(animated: false) }
+    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
+    let ended = EndedEditingSessions()
+    let observer = NotificationCenter.default.addObserver(
+      forName: UITextView.textDidEndEditingNotification, object: input, queue: nil
+    ) { _ in MainActor.assumeIsolated { ended.count += 1 } }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    // An empty editor leaving Send asks for a new input session, which shows the keyboard.
+    preferences.setReturnKey(.newline)
+    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .default }
+    // The trait change queued its keyboard refresh on the main queue. Queue the test behind it.
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+    XCTAssertEqual(ended.count, 0, mentionInputStatus(input))
+    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
+  }
+
   func testRepeatedKeyboardSendDoesNotStopTheExistingWorkAfterTheDraftClears() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
@@ -304,4 +344,10 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       + "ownsEditor=\(input.mentionEditor === workspace.newComposer.editor); "
       + "requests=\(paths); " + mentionState(input, in: host)
   }
+}
+
+/// The editing sessions UIKit reports ending for one editor, counted as they are posted.
+@MainActor
+private final class EndedEditingSessions {
+  var count = 0
 }

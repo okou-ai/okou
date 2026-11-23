@@ -29,6 +29,7 @@
     <string name="settings_account_select">Auswählen</string>
     <string name="settings_account_reconnect">Erneute Verbindung erforderlich</string>
     <string name="settings_account_switching">Wird gewechselt…</string>
+    <string name="settings_account_switch_unconfirmed">Wechsel unbestätigt</string>
     <string name="settings_account_switch_failed">Kontowechsel fehlgeschlagen.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">Sehr hoch</string>
     <string name="settings_model_effort_max">Maximal</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Modellkonten werden aktualisiert</string>
+    <string name="settings_refreshing_credit_balance">Guthaben wird aktualisiert</string>
 </resources>

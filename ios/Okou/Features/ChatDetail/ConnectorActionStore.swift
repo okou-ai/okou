@@ -30,6 +30,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
       .id ?? ""
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
+  var usesSystemAuthenticationSession: Bool { session?.oauthAttemptId != nil }
   var waiting: Bool { session != nil }
   var isExternalCode: Bool { method?.grantKind == "external-code" && waiting }
   var needsConnection: Bool {
@@ -203,9 +204,10 @@ final class ConnectorActionStore {
     }
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
+      let url = try browserURL(result.authorizationUrl)
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
-      flow.browserURL = try browserURL(result.authorizationUrl)
+      flow.browserURL = url
       startPolling(flow)
       return
     }
@@ -348,6 +350,24 @@ final class ConnectorActionStore {
     guard let flow = active else { return }
     flow.browserURL = nil
     flow.browserClosed = true
+  }
+
+  func authenticationFinished(
+    flow: ConnectorAuthorizationFlow, url: URL, error: Error?
+  ) {
+    guard !closed, active === flow, flow.browserURL == url else { return }
+    if let error, !(error is CancellationError) {
+      task?.cancel()
+      task = nil
+      flow.session = nil
+      flow.browserURL = nil
+      flow.error = String(localized: "Could not open connector")
+      didFail(error)
+      return
+    }
+    // Closing the system session does not establish whether the API committed.
+    // The existing completion check resolves that race before allowing a retry.
+    browserDismissed()
   }
 
   func cancel() {

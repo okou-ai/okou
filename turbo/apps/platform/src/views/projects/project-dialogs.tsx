@@ -406,7 +406,7 @@ function ProjectDeleteChoices({
         </Button>
         {(threads.state !== "hasData" || threads.data.length > 0) && (
           <Button
-            variant="outline"
+            variant="destructive"
             disabled={pending || threads.state !== "hasData"}
             onClick={() => {
               detach(confirmThreads(signal), Reason.DomCallback);

@@ -120,6 +120,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.MarkdownArtifactQuote]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown artifact quotes",
+    description:
+      "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
     displayName: "Project title reveal",
@@ -210,6 +217,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Lay out the website Share menu's banner and Customize URL as menu rows under the access options, with the current address and a chevron on Customize URL and a full-width Copy link.",
     enabled: true,
+  },
+  [FeatureSwitchKey.HostedSiteEmailSharing]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Website email sharing",
+    description:
+      "Share websites with existing accounts or invite verified email recipients.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",

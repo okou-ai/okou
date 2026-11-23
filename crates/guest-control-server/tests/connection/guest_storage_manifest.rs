@@ -219,18 +219,22 @@ printf 'helper stderr\n' >&2
 }
 
 #[test]
-fn fragmented_large_storage_input_reaches_helper_and_preserves_next_frame() {
+fn fragmented_medium_storage_input_reaches_helper_and_preserves_next_frame() {
     use guest_control_proto::{MSG_PING, MSG_PONG};
 
-    let input = storage_input(16);
+    let input = storage_input(6);
     #[cfg(target_os = "linux")]
     let argument = storage_files::SEALED_STDIN_ARGUMENT;
     #[cfg(not(target_os = "linux"))]
     let argument = storage_files::STDIN_ARGUMENT;
-    let (_directory, program) = create_program_comparing_stdin(
-        &format!("[ \"$1\" = '{argument}' ]; [ \"$OKOU_RUN_ID\" = storage-run ]"),
-        &input,
+    let checks = format!("[ \"$1\" = '{argument}' ]; [ \"$OKOU_RUN_ID\" = storage-run ]");
+    // Streamed stdin keeps the RPC context before the helper's starting offset.
+    #[cfg(target_os = "linux")]
+    let checks = format!(
+        "{checks}; [ \"$(stat -Lc %s /proc/self/fd/0)\" -gt {} ]",
+        input.len()
     );
+    let (_directory, program) = create_program_comparing_stdin(&checks, &input);
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
 
     let mut frame = request_frame(420, 5_000, "storage-run", "/run/storage-run", &input);
@@ -326,7 +330,7 @@ fn assert_storage_input_transport(input: &[u8], argument: &str, file_test: &str)
 }
 
 #[test]
-fn truncated_large_storage_input_does_not_start_helper() {
+fn truncated_medium_storage_input_does_not_start_helper() {
     let (_directory, program) = create_program(r#"touch "$0.started""#);
     let sentinel = program.with_extension("started");
     let (handle, mut host) = start_guest_connection_with_storage_manifest_program(program);
@@ -336,7 +340,7 @@ fn truncated_large_storage_input_does_not_start_helper() {
         5_000,
         "storage-run",
         "/run/storage-run",
-        &storage_input(32),
+        &storage_input(6),
     );
     frame.pop().unwrap();
     host.write_all(&frame).unwrap();

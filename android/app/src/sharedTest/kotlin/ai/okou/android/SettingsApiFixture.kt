@@ -77,9 +77,10 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
     }
 
     private fun accounts() =
-        listOf(primaryAccount, alternateAccount, claudeAccount).joinToString(",", "[", "]") {
-            account(it).toString()
-        }
+        (listOf(primaryAccount, alternateAccount).sortedBy { it != activeAccount } + claudeAccount)
+            .joinToString(",", "[", "]") {
+                account(it).toString()
+            }
 
     private fun account(id: String): JsonObject {
         val claude = id == claudeAccount

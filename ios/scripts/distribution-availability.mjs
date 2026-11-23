@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { appleClientFromEnvironment, required } from "./testflight.mjs";
 
-const appId = "6815550027";
+export const appId = "6815550027";
 const bundleId = "ai.okou.ios";
 
 function one(resources, description) {
@@ -53,6 +53,20 @@ export function releaseCommit(read, version, build) {
   );
 }
 
+export function publishedReleaseCommit(version, build) {
+  const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
+  const read = (path, paginate) => {
+    const raw = execFileSync(
+      "gh",
+      ["api", ...(paginate ? ["--paginate", "--slurp"] : []), prefix + path],
+      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+    const data = JSON.parse(raw);
+    return paginate ? data.flatMap((page) => page.jobs) : data;
+  };
+  return releaseCommit(read, version, build);
+}
+
 export function storefronts(value) {
   const countries = value
     .split(",")
@@ -82,6 +96,18 @@ async function catalog(country) {
 }
 
 const marketingVersion = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}$/u;
+export function checkBuild(version, build) {
+  if (
+    typeof version !== "string" ||
+    !marketingVersion.test(version) ||
+    typeof build !== "string" ||
+    !/^[1-9]\d{0,3}$/u.test(build)
+  ) {
+    throw new Error(
+      "Supply a stable marketing version and an integer Apple build number",
+    );
+  }
+}
 const numericVersions = new Intl.Collator("en", { numeric: true });
 
 // App Store Connect uses three-letter territory IDs, the public catalog uses two.
@@ -155,6 +181,7 @@ export async function verifyDistribution(
     territoryCodes,
     internalGroup,
     externalGroups,
+    requireAppStoreEligible = false,
   },
   lookup = catalog,
 ) {
@@ -210,7 +237,7 @@ export async function verifyDistribution(
     throw new Error("A TestFlight check requires an internal group");
   const uploaded = one(
     await client.list(
-      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS" })}`,
+      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS", "fields[builds]": "version,expired,expirationDate,processingState,buildAudienceType" })}`,
     ),
     "iOS TestFlight build",
   );
@@ -227,6 +254,14 @@ export async function verifyDistribution(
     !(Date.parse(expirationDate) > Date.now())
   ) {
     throw new Error("TestFlight build is invalid or expired");
+  }
+  if (
+    requireAppStoreEligible &&
+    uploaded.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE"
+  ) {
+    throw new Error(
+      "App Review requires an App Store eligible build; check its audience in App Store Connect",
+    );
   }
   const detail = (
     await client.request(`/v1/builds/${uploaded.id}/buildBetaDetail`)
@@ -275,22 +310,8 @@ if (
     const version = required("IOS_VERSION");
     const build = required("IOS_BUILD_NUMBER");
     const channel = required("IOS_CHANNEL");
-    if (!marketingVersion.test(version) || !/^[1-9]\d{0,3}$/u.test(build)) {
-      throw new Error(
-        "Supply a stable marketing version and an integer Apple build number",
-      );
-    }
-    const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
-    const read = (path, paginate) => {
-      const raw = execFileSync(
-        "gh",
-        ["api", ...(paginate ? ["--paginate", "--slurp"] : []), prefix + path],
-        { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      );
-      const data = JSON.parse(raw);
-      return paginate ? data.flatMap((page) => page.jobs) : data;
-    };
-    const commit = releaseCommit(read, version, build);
+    checkBuild(version, build);
+    const commit = publishedReleaseCommit(version, build);
     const availability = await verifyDistribution(
       appleClientFromEnvironment(),
       {

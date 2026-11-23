@@ -281,7 +281,7 @@ standard Android build configuration; the project maintains one test entry.
 
 Text composer suites exercise the real private journal, shared controllers, frozen
 submission identity, duplicate taps, newer edits, disconnected acceptance and
-explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+automatic original-ID recovery. `ChatComposerApiTest` uses the installed generated
 201 methods and bounded input-status read; `ChatComposerRootTest` holds default
 availability and write responses through the actual native route.
 `NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
@@ -724,8 +724,8 @@ per target, and delayed hydration/save completions cannot replace newer local
 input. Independent clients retain Web's existing unconditional last-writer
 behavior; no server compare-and-swap or revision protocol is added.
 
-Format 3 separates canonical editable drafts/dirty intent from frozen sends and
-recovery records. Existing formats 1/2 migrate without changing request UUIDs.
+Format 3 stores canonical editable drafts, dirty intent and assistant recovery
+records. Existing formats 1/2 retain independent draft text and recovery identity.
 Divergent legacy Project drafts remain available for explicit restoration into
 an empty editor. Failed reads are never interpreted as empty. Rich documents,
 attachments or unknown content pause automatic synchronization rather than
@@ -733,16 +733,26 @@ publishing a plain-text subset; the full server draft remains available on Web
 and local text stays on this device. Retry rechecks the server before saving.
 Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
-uncertain submissions retain their original identities and never replay on open.
+uncertain submissions retain their original identities in memory. Legacy pending
+text is available for explicit draft restoration after upgrade.
 
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation
-and list catch-up run. The editor keeps its recovery controls until the first send
-and chat row are confirmed. Canonical history replaces the local bubble by input
-ID, including rejection and revocation. The existing journal restores unresolved
-input after recreation. Receipt-backed bubbles stay in workspace memory until
-history arrives, with confirmed messages read from canonical history after process
-restart.
+and list catch-up run. The same progress indicator stays visible during submit,
+readback and retry. After an ambiguous write the composer checks the original
+input, then only resends within the server's event retention window. Canonical
+history replaces the local bubble by input ID. A receipt removes progress while
+the queue state remains independently driven by input status and history.
+Status-confirmed queue entries can be withdrawn while the chat list and history
+catch up. An observed delivery or revocation also supersedes an older queued
+history row. The composer groups outstanding messages and workflow triggers in an
+independently scrolling queue, ordered by server sequence above the editor.
+Pending controls keep their feedback on the affected row while it is queued.
+Checking a withdrawal changes the request phase on that row only. A confirmed
+outcome removes the row even when the conversation still shows an older history
+checkpoint.
+Pending ordinary sends survive Activity recreation in memory. After process
+restart the app reads confirmed messages and queue entries from canonical history.
 
 Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
 serialized edits/clears, offline store reopening and send/recovery preservation.
@@ -811,7 +821,8 @@ Queued history and detail invalidations retain the selected conversation's
 generation. Their requests and failure states are independent: a held or failed
 detail read cannot delay history or erase its confirmation. Manual refresh and
 full resynchronization request both resources.
-Drafts and pending sends retain their existing durable journal ownership.
+Drafts retain their durable journal ownership. Pending ordinary sends belong to
+the in-process composer.
 
 Foreground message/recovery signals also request independent confirmed-history
 warming. Detail-only notifications do not request warming. Like Web, the
