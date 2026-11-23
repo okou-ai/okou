@@ -58,10 +58,8 @@ import {
   type ComposerUiSignalGroups,
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
-import {
-  presentationOutputFormat$,
-  presentationOutputFormatEnabled$,
-} from "./presentation-output-format.ts";
+import { presentationOutputFormat$ } from "./presentation-output-format.ts";
+import { authenticatedSessionGuard$ } from "../auth.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
 import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
@@ -144,6 +142,8 @@ type ComposerModelUiSignals = ComposerUiSignalGroups["model"];
 type ComposerTemplateUiSignals = ComposerUiSignalGroups["template"];
 
 export interface ComposerSubmission {
+  /** Client-only ownership check retained through request token acquisition. */
+  readonly assertOwner: () => void;
   readonly prompt: string;
   readonly generationTemplate: GenerationTemplateRequest | undefined;
   readonly editorDocument: WorkflowComposerSubmissionSnapshot["editorDocument"];
@@ -1005,6 +1005,8 @@ function createSubmitCurrentInput({
       if (action !== "send" && action !== "queue") {
         return false;
       }
+      const assertOwner = await get(authenticatedSessionGuard$);
+      signal.throwIfAborted();
       const menuRevision = get(taskChips.home.menuRevision$);
       if (!(await get(draft.attachmentUploadsReady$))) {
         return false;
@@ -1015,6 +1017,8 @@ function createSubmitCurrentInput({
       if (voiceState.status !== "idle") {
         return false;
       }
+      const presentationFormat =
+        (await get(presentationOutputFormat$)) ?? undefined;
       const submission = await set(
         workflowComposer.readInputForSubmission$,
         signal,
@@ -1043,11 +1047,6 @@ function createSubmitCurrentInput({
         taskSelection.task === "visualization"
           ? taskSelection.visualization
           : undefined;
-      const presentationFormat =
-        (await get(presentationOutputFormatEnabled$)) &&
-        (mode === "presentation" || visualization?.output === "presentation")
-          ? get(presentationOutputFormat$)
-          : undefined;
       const composerAdditionalInfo = buildComposerAdditionalInfo(
         mode,
         get(create.presentationSlideCount$),
@@ -1068,6 +1067,7 @@ function createSubmitCurrentInput({
           )
         : submission.editorDocument;
       const nextSubmission: ComposerSubmission = {
+        assertOwner,
         prompt: visiblePrompt,
         generationTemplate: get(draft.generationTemplate$),
         editorDocument,
@@ -1083,6 +1083,8 @@ function createSubmitCurrentInput({
         workflowComposer.workflows$,
         signal,
       );
+      signal.throwIfAborted();
+      assertOwner();
       const recencySignal = get(rootSignal$);
       const submitted = await set(
         submitMessage$,

@@ -31,6 +31,7 @@ export interface ChatRunSource {
 }
 
 export interface SendInputChatEvent {
+  readonly assertOwner?: () => void;
   readonly suggestionDirection?: SuggestionDirection;
   readonly kind: "input";
   readonly delivery: "run" | "queue";
@@ -75,6 +76,7 @@ function createSendInputChatEvent({
   return command(
     async ({ get, set }, input: SendInputChatEvent, signal: AbortSignal) => {
       signal.throwIfAborted();
+      input.assertOwner?.();
       const clientEventId = crypto.randomUUID();
       const createdAt = nowDate().toISOString();
       const chatThreadSortEventId = crypto.randomUUID();
@@ -142,6 +144,7 @@ function createSendInputChatEvent({
           },
           signal,
           input.suggestionDirection,
+          input.assertOwner,
         ),
         (async () => {
           await Promise.resolve(input.onOptimisticSend?.());

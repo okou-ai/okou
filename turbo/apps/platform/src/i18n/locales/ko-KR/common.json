@@ -2588,11 +2588,6 @@
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
     "taskChips": {
-      "presentationFormat": "프레젠테이션 형식",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
       "shelf": {

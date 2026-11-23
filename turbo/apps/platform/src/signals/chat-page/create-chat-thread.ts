@@ -3198,6 +3198,7 @@ function sendInputForRequest(args: {
   return {
     kind: "input",
     delivery: "run",
+    assertOwner: request.options?.assertOwner,
     prompt: result.prompt,
     hasTextContent: result.hasTextContent,
     userMessage: args.userMessage,
@@ -3263,6 +3264,7 @@ function createPerformSendMessage(deps: SendMessageDeps) {
       const suggestionDirection = request.options?.editorDocument
         ? get(draft.suggestionDirection$)
         : undefined;
+      request.options?.assertOwner?.();
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
@@ -3367,6 +3369,7 @@ function createQueueMessage(deps: SendMessageDeps) {
       signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
       const suggestionDirection = get(draft.suggestionDirection$);
+      options.assertOwner?.();
 
       set(cancelDraftSync$);
       set(draft.clear$);
@@ -3382,6 +3385,7 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
+            assertOwner: options.assertOwner,
             suggestionDirection,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
@@ -3647,6 +3651,7 @@ function createThreadSubmitMessageSignal(
               messageActions.queueMessage$,
               submission.prompt,
               {
+                assertOwner: submission.assertOwner,
                 computerUseHostId: explicit ? computerUseHostId : undefined,
                 cloudBrowserEnabled: explicit ? cloudBrowserEnabled : undefined,
                 generationTemplate: submission.generationTemplate,
@@ -3660,6 +3665,7 @@ function createThreadSubmitMessageSignal(
               messageActions.sendMessage$,
               submission.prompt,
               {
+                assertOwner: submission.assertOwner,
                 ...(explicit ? { computerUseHostId } : {}),
                 ...(explicit ? { cloudBrowserEnabled } : {}),
                 generationTemplate: submission.generationTemplate,

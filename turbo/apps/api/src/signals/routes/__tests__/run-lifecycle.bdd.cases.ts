@@ -8745,9 +8745,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
       });
 
-      it.each([false, true])(
-        "defaults presentation delivery to HTML and gates explicitly requested PPTX conversion (%s)",
-        async (enabled) => {
+      it.each([
+        { enabled: false, savedFormat: "pptx", requestedFormat: "HTML" },
+        { enabled: true, savedFormat: "html", requestedFormat: "PPTX" },
+      ] as const)(
+        "resolves explicit $requestedFormat over saved $savedFormat presentation preferences and gates existing HTML deck conversion ($enabled)",
+        async ({ enabled, savedFormat, requestedFormat }) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
           const webhooks = createWebhookCallbackApi(context);
@@ -8756,13 +8759,72 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           await connectors.updateFeatureSwitches(actor, {
             [FeatureSwitchKey.PresentationConvert]: enabled,
           });
-          const run = await api.createThreadRun(actor, {
-            prompt: "make me a deck about our quarterly plan",
-          });
-          expect(run.status).toBe("running");
+          const request = `Make a deck about our quarterly plan. Please deliver ${requestedFormat} this time.`;
+          const preference = `# Presentation Output Preference\n- Output format: ${savedFormat.toUpperCase()} format`;
+          const run = await createChatFilesBddApi(context).sendAndLaunch(
+            actor,
+            {
+              prompt: request,
+              userMessage: {
+                version: 1,
+                parts: [
+                  { type: "additional_info", text: preference },
+                  { type: "text", text: request },
+                  {
+                    type: "template",
+                    titleSnapshot: "Schoolhouse",
+                    template: {
+                      type: "presentation",
+                      selection: {
+                        templateId: "template:html-ppt-schoolhouse",
+                        outputFormat: savedFormat,
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+          );
           await api.heartbeatRunner(runnerGroup);
           const execution = await api.executionInput(run.runId);
+          expect(execution.prompt).toContain(request);
+          expect(execution.prompt).toContain(preference);
           const prompt = execution.appendSystemPrompt ?? "";
+          expect(prompt).toContain(
+            `Output format: ${savedFormat.toUpperCase()}`,
+          );
+          expect(prompt).toContain(
+            savedFormat === "pptx"
+              ? "okou resource pull template:pptx-schoolhouse-runbook"
+              : "okou resource pull template:html-ppt-schoolhouse-runbook",
+          );
+          expect(prompt).toContain(
+            'okou generate presentation --format <html|pptx> --template template:html-ppt-schoolhouse --prompt "<user request>"',
+          );
+          expect(prompt).toContain(
+            "The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead",
+          );
+          if (savedFormat === "pptx") {
+            expect(prompt).toContain(
+              "Author an editable native PPTX directly with the selected package when generating a new deck with resolved PPTX output",
+            );
+            expect(prompt).toContain(
+              "- Only when the resolved output format is PPTX: Follow the package's PowerPoint export and verification workflow",
+            );
+            expect(prompt).toContain(
+              "- Only when the resolved output format is PPTX: Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead.",
+            );
+            expect(prompt).toContain(
+              "- Only when the resolved output format is PPTX: Return the exact URL printed by the file delivery command.",
+            );
+          } else {
+            expect(prompt).toContain(
+              "- Only when the resolved output format is HTML: Keep all slides and visible content in index.html",
+            );
+            expect(prompt).toContain(
+              "Follow the HTML authoring, preview, and hosting steps below only when the resolved output format is HTML",
+            );
+          }
           const token = execution.platformEnvironment.OKOU_TOKEN;
           if (!token) {
             throw new Error("Expected a minted Run token");
@@ -8770,9 +8832,24 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const capabilities = verifyOkouToken(token)?.capabilities;
           expect(capabilities).toBeDefined();
           expect(prompt).toContain("Presentation delivery:");
-          expect(prompt).toContain("first author and check the deck as HTML");
           expect(prompt).toContain(
-            "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+            "use an explicit format in the current request first, then the saved default in the CURRENT message's `# Presentation Output Preference`",
+          );
+          expect(prompt).toContain(
+            "(`- Output format: HTML format` or `- Output format: PPTX format`), then HTML",
+          );
+          expect(prompt).toContain(
+            "The preference alone does not request a presentation or change other output types",
+          );
+          expect(prompt).toContain(
+            "Do not infer a format from earlier messages, Memory, or intended use, and do not query or update preferences",
+          );
+          expect(prompt).toContain(
+            "For a new PPTX deck, follow the matching native PPTX package's authoring and verification workflow",
+          );
+          expect(prompt).toContain("For HTML output, author and check HTML");
+          expect(prompt).toContain(
+            "Only an explicit current request to convert an existing HTML deck uses the enabled conversion workflow instead of new-deck generation",
           );
           expect(prompt).toContain(
             "Deliver one format unless the user requests multiple formats",

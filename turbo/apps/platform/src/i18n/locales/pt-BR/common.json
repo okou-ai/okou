@@ -2653,11 +2653,6 @@
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato da apresentação",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
       "shelf": {

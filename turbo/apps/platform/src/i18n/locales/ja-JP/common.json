@@ -2588,11 +2588,6 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "presentationFormat": "プレゼンテーション形式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {

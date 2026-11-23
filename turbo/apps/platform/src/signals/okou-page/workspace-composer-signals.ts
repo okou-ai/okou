@@ -141,6 +141,7 @@ function createSubmitMessage(
           ...(options.projectId ? { projectId: options.projectId } : {}),
           ...(options.title ? { title: options.title } : {}),
           draft,
+          assertOwner: submission.assertOwner,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
           editorDocument: submission.editorDocument,

@@ -14,7 +14,6 @@ import {
   COMPOSER_SECTION_LABEL,
   ComposerOutputPicker,
 } from "./composer-output-picker.tsx";
-import { ComposerPresentationOutputPicker } from "./composer-presentation-output-picker.tsx";
 
 function VisualizationOutputPicker({
   signals,
@@ -34,19 +33,14 @@ function VisualizationOutputPicker({
   const selectedOutput = useGet(signals.taskChips.visualization.output$);
   const setOutput = useSet(signals.taskChips.visualization.setOutput$);
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <ComposerOutputPicker
-        label={outputFormat}
-        options={VISUALIZATION_OUTPUTS.map((value) => {
-          return { value, label: outputs[value] };
-        })}
-        selectedValue={selectedOutput}
-        onSelect={setOutput}
-      />
-      {selectedOutput === "presentation" && (
-        <ComposerPresentationOutputPicker nested />
-      )}
-    </div>
+    <ComposerOutputPicker
+      label={outputFormat}
+      options={VISUALIZATION_OUTPUTS.map((value) => {
+        return { value, label: outputs[value] };
+      })}
+      selectedValue={selectedOutput}
+      onSelect={setOutput}
+    />
   );
 }
 

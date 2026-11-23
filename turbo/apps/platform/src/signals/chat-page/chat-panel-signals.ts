@@ -104,6 +104,7 @@ export interface MessageListSignals {
 }
 
 export interface SendMessageOptions {
+  readonly assertOwner?: () => void;
   readonly revokesEventId?: string;
   readonly includeDraftAttachments?: boolean;
   readonly computerUseHostId?: string | null;
@@ -115,6 +116,7 @@ export interface SendMessageOptions {
 }
 
 export interface QueueMessageOptions {
+  readonly assertOwner?: () => void;
   readonly computerUseHostId: string | null | undefined;
   readonly cloudBrowserEnabled: boolean | undefined;
   readonly generationTemplate: GenerationTemplateRequest | undefined;

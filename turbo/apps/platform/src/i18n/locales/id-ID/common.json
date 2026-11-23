@@ -2588,11 +2588,6 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
-      "presentationFormat": "Format presentasi",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {

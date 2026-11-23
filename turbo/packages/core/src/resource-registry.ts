@@ -3616,7 +3616,7 @@ export function buildPresentationRunbookInstructionLines(args: {
     `Color system token: ${colorSystemToken}`,
     "",
     "To produce the presentation:",
-    `- If the user's message requests a different output format, resolve this style for that format with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling a package. The message wins over the selected format preference.`,
+    `- If the output format resolved from the current request or its current-message product preference differs from this package, resolve this style for that format with \`okou generate presentation --format <html|pptx> --template ${pkg.templateId} --prompt "<user request>"\` before pulling a package. The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead. The message wins over the selected format preference.`,
     `- Pull the selected package once: okou resource pull ${pkg.resourceId} --dir ${resourceDir}`,
     "- If the selected package is unavailable, stop and report it; do not substitute another format, an HTML conversion, or a different source.",
     `- Before preparing sources, planning slides, or authoring, read ${packageDir}/SKILL.md fully and follow its template, authoring, and verification instructions.`,

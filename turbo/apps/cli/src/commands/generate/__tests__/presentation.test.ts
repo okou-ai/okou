@@ -157,17 +157,34 @@ describe("okou generate presentation command", () => {
       '- For HTML delivery, host the finished deck: okou host <output-dir> --site team-plan --title "<presentation title>" --artifact-kind presentation-html --visibility org --preview ./generated/previews/cover.png --json',
     ]);
     expect(stdout).toContain(
-      "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX",
+      "use an explicit format in the current request first, then the saved default in the CURRENT message's `# Presentation Output Preference`",
     );
     expect(stdout).toContain(
-      "Do not infer a conversion request from remembered preferences or intended use",
+      "(`- Output format: HTML format` or `- Output format: PPTX format`), then HTML",
+    );
+    expect(stdout).toContain(
+      "The preference alone does not request a presentation or change other output types",
+    );
+    expect(stdout).toContain(
+      "Do not infer a format from earlier messages, Memory, or intended use, and do not query or update preferences",
     );
     expect(stdout).toContain(
       "Deliver one format unless the user requests multiple formats",
     );
     expect(stdout).toContain(
-      "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below",
+      "Follow the HTML authoring, preview, and hosting steps below only when the resolved output format is HTML",
     );
+    expect(stdout).toContain(
+      "Only an explicit current request to convert an existing HTML deck uses the enabled conversion workflow instead of new-deck generation",
+    );
+    if (templateArgs.length > 0) {
+      expect(stdout).toContain(
+        "- Only when the resolved output format is HTML: Keep all slides and visible content in index.html",
+      );
+      expect(stdout).toContain(
+        "The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead",
+      );
+    }
     expect(stdout).toContain("okou web upload-file -f <file> --visibility org");
     expect(stdout).toContain(
       "Keep supporting generated media at its default visibility",
@@ -205,7 +222,25 @@ describe("okou generate presentation command", () => {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("Requested output format: pptx");
       expect(stdout).toContain(
+        "the saved default in the CURRENT message's `# Presentation Output Preference`",
+      );
+      expect(stdout).toContain(
+        "an attached native PPTX package does not override an explicit HTML request",
+      );
+      expect(stdout).toContain(
+        "For a new PPTX deck, follow the matching native PPTX package's authoring and verification workflow",
+      );
+      expect(stdout).toContain(
         "Author an editable native PPTX directly with the selected package",
+      );
+      expect(stdout).toContain(
+        "- Only when the resolved output format is PPTX: Follow the package's PowerPoint export and verification workflow",
+      );
+      expect(stdout).toContain(
+        "- Only when the resolved output format is PPTX: Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead.",
+      );
+      expect(stdout).toContain(
+        "- Only when the resolved output format is PPTX: Return the exact URL printed by the file delivery command.",
       );
       expect(stdout).toContain("template:pptx-schoolhouse-runbook");
       expect(stdout).toContain("--dir ./generated/resources/pptx");
@@ -220,6 +255,15 @@ describe("okou generate presentation command", () => {
       expect(stdout).not.toContain("convert to PPTX");
 
       if (templateArgs.length > 0) {
+        expect(stdout).toContain(
+          'okou generate presentation --format <html|pptx> --template template:html-ppt-schoolhouse --prompt "<user request>"',
+        );
+        expect(stdout).toContain(
+          "The message wins over the selected format preference",
+        );
+        expect(stdout).toContain(
+          "The newly resolved same-style packet supersedes all remaining instructions in this mismatched packet; follow that packet instead",
+        );
         expect(stdout).toContain(
           "okou resource pull template:pptx-schoolhouse-runbook --dir ./generated/resources/pptx",
         );
