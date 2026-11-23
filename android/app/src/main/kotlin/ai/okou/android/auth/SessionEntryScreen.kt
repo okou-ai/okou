@@ -1,9 +1,11 @@
 package ai.okou.android.auth
 
+import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -39,6 +42,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -127,7 +131,19 @@ internal fun SessionEntryScreen(
                             if (index != 0) {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
-                            SessionWorkspaceRow(workspace) { chooseWorkspace(workspace.id) }
+                            val top = if (index == 0) 16.dp else 0.dp
+                            val bottom = if (index == state.memberships.lastIndex) 16.dp else 0.dp
+                            SessionWorkspaceRow(
+                                workspace,
+                                RoundedCornerShape(
+                                    topStart = top,
+                                    topEnd = top,
+                                    bottomEnd = bottom,
+                                    bottomStart = bottom,
+                                ),
+                            ) {
+                                chooseWorkspace(workspace.id)
+                            }
                         }
                     }
                 }
@@ -204,9 +220,14 @@ internal fun SessionEntryScreen(
 }
 
 @Composable
-private fun SessionWorkspaceRow(workspace: WorkspaceMembership, onClick: () -> Unit) {
+private fun SessionWorkspaceRow(
+    workspace: WorkspaceMembership,
+    shape: Shape,
+    onClick: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth()
+            .updateFocusOutline(shape, LocalActivityStatusColor.current)
             .clickable(role = Role.Button, onClick = onClick)
             .heightIn(min = 64.dp)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -293,17 +314,24 @@ private fun SessionPrimaryAction(
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
-    val colors = ButtonDefaults.buttonColors()
+    val colors = MaterialTheme.colorScheme
+    val shape = ButtonDefaults.shape
     Button(
         onClick = { if (enabled) onClick() },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).sessionActionAvailability(enabled),
+        modifier =
+            Modifier.fillMaxWidth()
+                .heightIn(min = 48.dp)
+                .updateFocusOutline(
+                    shape,
+                    if (enabled) colors.onPrimary else LocalActivityStatusColor.current,
+                )
+                .sessionActionAvailability(enabled),
+        shape = shape,
         colors =
-            if (enabled) colors
-            else
-                ButtonDefaults.buttonColors(
-                    containerColor = colors.disabledContainerColor,
-                    contentColor = colors.disabledContentColor,
-                ),
+            ButtonDefaults.buttonColors(
+                containerColor = if (enabled) colors.primary else colors.surfaceVariant,
+                contentColor = if (enabled) colors.onPrimary else colors.onSurfaceVariant,
+            ),
     ) {
         Text(stringResource(label), textAlign = TextAlign.Center)
     }
@@ -311,16 +339,19 @@ private fun SessionPrimaryAction(
 
 @Composable
 private fun SessionTextAction(@StringRes label: Int, onClick: () -> Unit, enabled: Boolean = true) {
-    val colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+    val colors = MaterialTheme.colorScheme
+    val shape = ButtonDefaults.textShape
     TextButton(
         onClick = { if (enabled) onClick() },
-        modifier = Modifier.heightIn(min = 48.dp).sessionActionAvailability(enabled),
+        modifier =
+            Modifier.heightIn(min = 48.dp)
+                .updateFocusOutline(shape, LocalActivityStatusColor.current)
+                .sessionActionAvailability(enabled),
+        shape = shape,
         colors =
-            if (enabled) colors
-            else
-                ButtonDefaults.textButtonColors(
-                    contentColor = colors.disabledContentColor,
-                ),
+            ButtonDefaults.textButtonColors(
+                contentColor = if (enabled) colors.onSurface else colors.onSurfaceVariant,
+            ),
     ) {
         Text(stringResource(label), textAlign = TextAlign.Center)
     }
