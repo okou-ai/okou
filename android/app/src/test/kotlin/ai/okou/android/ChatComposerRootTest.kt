@@ -15,11 +15,13 @@ import ai.okou.android.chat.RunControlPersistence
 import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
@@ -36,6 +38,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
@@ -44,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
+import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -797,8 +801,11 @@ class ChatComposerRootTest {
             } else composerResponse(request)
         }
 
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
         app.contextGate.countDown()
         try {
+            compose.activityRule.scenario.recreate()
             compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
             compose.onNodeWithText("Personal chat").performClick()
             captureOwners()
@@ -816,7 +823,10 @@ class ChatComposerRootTest {
                 ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
                     ready.controls.uiState.value.persistence == RunControlPersistence.Durable
             }
-            withdraw.assertIsEnabled()
+            withdraw
+                .assertIsEnabled()
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
             holdHistory.set(true)
             compose.runOnIdle { ready.chats.history.refresh() }
             awaitConversation { historyRequested.count == 0L }
@@ -826,6 +836,9 @@ class ChatComposerRootTest {
                 hasText(app.getString(R.string.controls_check)),
                 10_000,
             )
+            compose.onNodeWithTag("message_$manualId").assertIsFocused()
+            messageText(manualId, manualText).assertIsDisplayed()
+            messageText(automationId, workflowName).assertIsDisplayed()
             checkOutcome.assertIsEnabled().performClick()
             awaitConversation {
                 ready.controls.uiState.value.journal?.pending?.isEmpty() == true
@@ -839,7 +852,8 @@ class ChatComposerRootTest {
             )
             messageText(manualId, manualText).assertDoesNotExist()
             messageText(automationId, workflowName).assertIsDisplayed()
-            compose.onNodeWithText(app.getString(R.string.controls_recorded)).assertDoesNotExist()
+            compose.onNodeWithTag("message_$automationId").assertIsFocused()
+            checkOutcome.assertDoesNotExist()
             releaseHistory.countDown()
             awaitConversation {
                 ready.chats.history.uiState.value.transcript?.pendingInputIds == setOf(automationId)
@@ -847,6 +861,7 @@ class ChatComposerRootTest {
             messageText(manualId, manualText).assertDoesNotExist()
         } finally {
             releaseHistory.countDown()
+            instrumentation.resetInTouchMode()
         }
     }
 

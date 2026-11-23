@@ -127,6 +127,8 @@ private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.i
 internal fun QueuedMessageCard(
     entry: ConversationMessage,
     controls: ConversationRunControls?,
+    modifier: Modifier,
+    beforeAction: () -> Unit,
 ) {
     val message = entry.message
     val workflow = message.queuedWorkflow
@@ -136,25 +138,13 @@ internal fun QueuedMessageCard(
     val colors = MaterialTheme.colorScheme
     val queued = stringResource(R.string.history_queued)
     val status =
-        when (phase) {
-            null,
-            RunControlPhase.Retryable ->
-                if (workflow == null) queued
-                else
-                    "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
-            RunControlPhase.Unknown ->
-                stringResource(
-                    if (workflow == null) R.string.conversation_withdraw_unknown
-                    else R.string.conversation_skip_unknown,
-                )
-            else ->
-                stringResource(
-                    if (workflow == null) R.string.conversation_withdrawing
-                    else R.string.conversation_skipping,
-                )
-        }
+        if (phase != null && phase != RunControlPhase.Retryable)
+            stringResource(withdrawalStatus(phase, automation = workflow != null))
+        else if (workflow == null) queued
+        else
+            "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
     Surface(
-        modifier = Modifier.fillMaxWidth().testTag("message_${message.id}"),
+        modifier = modifier.fillMaxWidth().testTag("message_${message.id}"),
         shape = RoundedCornerShape(12.dp),
         color = colors.surface,
         border = BorderStroke(1.dp, colors.outline),
@@ -165,26 +155,40 @@ internal fun QueuedMessageCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                    ConversationMeta(status)
-                    if (phase == RunControlPhase.Retryable)
-                        ConversationMeta(
-                            stringResource(
-                                if (workflow == null) R.string.conversation_withdraw_failed
-                                else R.string.conversation_skip_failed,
-                            ),
+                val polite = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                if (phase == RunControlPhase.Unknown) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ConversationMeta(status, modifier = polite.weight(1f))
+                        ControlTextAction(
+                            R.string.controls_check,
+                            check?.let { action ->
+                                {
+                                    beforeAction()
+                                    action()
+                                }
+                            },
                         )
+                    }
+                } else {
+                    Column(polite) {
+                        ConversationMeta(status)
+                        if (phase == RunControlPhase.Retryable)
+                            ConversationMeta(
+                                stringResource(
+                                    withdrawalStatus(phase, automation = workflow != null),
+                                ),
+                            )
+                    }
                 }
                 if (workflow?.name != null)
                     Text(workflow.name, style = MaterialTheme.typography.bodyMedium)
                 else MessageBody(message, compact = true)
-                if (phase == RunControlPhase.Unknown)
-                    TextButton(onClick = { check?.invoke() }, enabled = check != null) {
-                        Text(stringResource(R.string.controls_check))
-                    }
             }
             IconButton(
-                onClick = { revoke?.invoke() },
+                onClick = {
+                    beforeAction()
+                    revoke?.invoke()
+                },
                 enabled = revoke != null,
                 modifier = Modifier.size(48.dp),
                 colors =
@@ -435,9 +439,14 @@ internal fun ConversationActivity(
 }
 
 @Composable
-private fun ConversationMeta(text: String, maxLines: Int = Int.MAX_VALUE) {
+private fun ConversationMeta(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int = Int.MAX_VALUE,
+) {
     Text(
         text,
+        modifier,
         style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,

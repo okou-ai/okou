@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,6 +44,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -122,7 +125,7 @@ internal fun ConversationRoute(
     val content = presentation.messages
     val queue = presentation.queue
     val queueIds = remember(queue) { queue.mapTo(hashSetOf()) { it.message.id } }
-    val showControlFeedback = controls?.hasFeedback(queueIds) == true
+    val showControlFeedback = controls?.hasFeedback == true
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
     val missing = thread != null && state.phase == HistoryPhase.Missing
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
@@ -162,7 +165,10 @@ internal fun ConversationRoute(
             else -> null
         }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
-    val execution = transcript?.execution?.takeUnless { list.offline || missing }
+    val execution =
+        transcript?.execution?.takeUnless {
+            list.offline || missing || controls?.suppressRunActivity == true
+        }
     val activity =
         R.string.conversation_processing.takeIf {
             execution == HistoryExecution.Running && content.isNotEmpty()
@@ -277,6 +283,7 @@ internal fun ConversationRoute(
         }
     key(model, threadId) {
         val position = rememberLazyListState()
+        val timelineFocus = remember { FocusRequester() }
         val holdTimeline by
             remember(position) {
                 derivedStateOf {
@@ -521,6 +528,8 @@ internal fun ConversationRoute(
                     contentWidth
                         .fillMaxSize()
                         .testTag("conversation")
+                        .focusRequester(timelineFocus)
+                        .focusable()
                         .then(
                             if (awaitingFindPosition)
                                 Modifier.onGloballyPositioned { findViewport = it }
@@ -545,15 +554,7 @@ internal fun ConversationRoute(
                                 recentSizes[TimelineEnd] = it.height
                             },
                         ) {
-                            if (feedback != null || showControlFeedback)
-                                Column(
-                                    Modifier.padding(top = 8.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    feedback?.invoke()
-                                    if (showControlFeedback)
-                                        RunControlsFeedback(checkNotNull(controls), queueIds)
-                                }
+                            if (feedback != null) Box(Modifier.padding(top = 8.dp)) { feedback() }
                         }
                     }
                     itemsIndexed(timeline, key = { _, entry -> entry.key }) { index, entry ->
@@ -669,11 +670,17 @@ internal fun ConversationRoute(
                     }
                 }
             }
-            if (showComposerStatus || (!missing && queue.isNotEmpty())) {
+            if (!missing) {
                 Column(contentWidth) {
-                    if (showComposerStatus)
-                        ConversationStatus(list.offline, controls, short = false)
-                    if (!missing) ConversationQueue(queue, controls)
+                    ConversationStatus(
+                        offline = showComposerStatus && list.offline,
+                        controls = controls,
+                        short = false,
+                        showStop = showComposerStatus,
+                    )
+                    if (controls != null && showControlFeedback)
+                        ConversationControlNotes(controls, queueIds)
+                    ConversationQueue(queue, controls, timelineFocus)
                 }
             }
         }

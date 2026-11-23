@@ -13,6 +13,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -189,13 +190,14 @@ internal class RunControlsOwner(
     fun stop(connection: Connection, threadId: String, displayedRunIds: List<String>) {
         if (!current(connection)) return
         val state = connection.history.uiState.value
-        val thread = state.thread?.takeIf { it.id == threadId } ?: return
+        if (state.thread?.id != threadId) return
         val eligible = state.controlRunIds(connection.history.output.state.value).toSet()
+        val settled = mutable.value.settledRuns[threadId].orEmpty()
         append(
             connection,
             displayedRunIds
                 .distinct()
-                .filter { it in eligible }
+                .filter { it in eligible && it !in settled }
                 .map {
                     RunControlIntent(
                         UUID.randomUUID().toString(),
@@ -319,13 +321,13 @@ internal class RunControlsOwner(
         mutable.value.journal?.pending?.any { it.threadId == threadId } == true
 
     /** Read-only reconciliation; foreground/navigation/reconnect never call sendControl. */
-    fun check(connection: Connection, threadId: String, withdrawalId: String? = null) {
+    fun check(connection: Connection, threadId: String, intentId: String? = null) {
         if (!current(connection) || threadId in reads) return
         val pending =
             mutable.value.journal?.pending.orEmpty().filter {
                 it.threadId == threadId &&
-                    (withdrawalId == null ||
-                        it.kind == RunControlKind.Revoke && it.targetId == withdrawalId)
+                    (intentId == null ||
+                        it.id == intentId && mutable.value.phases[it.id] == RunControlPhase.Unknown)
             }
         if (pending.isEmpty() || pending.any { it.id in writes }) return
         val checkedIds = pending.mapTo(hashSetOf()) { it.id }
@@ -370,6 +372,7 @@ internal class RunControlsOwner(
                                             RunControlNotice(
                                                 threadId,
                                                 RunControlNoticeKind.ReadFailed,
+                                                RunControlKind.Interrupt,
                                             )
                                         else state.notice,
                                 )
@@ -394,8 +397,9 @@ internal class RunControlsOwner(
         val journal = state.journal ?: return
         val threadId = checkpoint.threadId
         val priorSettledQueue = state.settledQueueInputs[threadId].orEmpty()
+        val priorSettledRuns = state.settledRuns[threadId].orEmpty()
         val intents = journal.pending.filter { it.threadId == threadId }
-        if (intents.isEmpty() && priorSettledQueue.isEmpty()) return
+        if (intents.isEmpty() && priorSettledQueue.isEmpty() && priorSettledRuns.isEmpty()) return
         val results =
             if (intents.isEmpty()) emptyMap()
             else intents.associateWith(RunControlObservation(checkpoint)::evidence)
@@ -411,52 +415,87 @@ internal class RunControlsOwner(
                     (intent.id to
                         if (evidence == RunControlEvidence.Eligible) RunControlPhase.Retryable
                         else RunControlPhase.Unknown)
-        val noticeKind =
+        val settledElsewhere =
+            resolved.entries.lastOrNull {
+                it.value == RunControlEvidence.TargetSettled
+            }
+        val notice =
             when {
-                resolved.any { (intent, evidence) ->
-                    intent.kind == RunControlKind.Interrupt &&
-                        evidence == RunControlEvidence.Recorded
-                } -> RunControlNoticeKind.Recorded
-                resolved.values.any { it == RunControlEvidence.TargetSettled } ->
-                    RunControlNoticeKind.TargetSettled
+                settledElsewhere != null ->
+                    RunControlNotice(
+                        threadId,
+                        RunControlNoticeKind.TargetSettled,
+                        settledElsewhere.key.kind,
+                    )
                 results.any { (intent, evidence) ->
                     intent.kind == RunControlKind.Interrupt &&
                         evidence == RunControlEvidence.Invalid
-                } -> RunControlNoticeKind.ReadFailed
+                } ->
+                    RunControlNotice(
+                        threadId,
+                        RunControlNoticeKind.ReadFailed,
+                        RunControlKind.Interrupt,
+                    )
                 else -> null
             }
         val settledQueue =
-            queueInputsAwaitingHistory(
+            targetsAwaitingHistory(
                 threadId,
                 resolved.keys
                     .filter { it.kind == RunControlKind.Revoke }
                     .mapTo(priorSettledQueue.toMutableSet()) { it.targetId },
-            )
+            ) { transcript, id ->
+                transcript.hasSettledInput(id)
+            }
+        val settledRuns =
+            targetsAwaitingHistory(
+                threadId,
+                resolved.keys
+                    .filter { it.kind == RunControlKind.Interrupt }
+                    .mapTo(priorSettledRuns.toMutableSet()) { it.targetId },
+            ) { transcript, id ->
+                id in transcript.terminatedRunIds
+            }
         val next =
             state.copy(
                 phases = phases,
-                notice = noticeKind?.let { RunControlNotice(threadId, it) } ?: state.notice,
+                notice = notice ?: state.notice,
                 settledQueueInputs =
                     if (settledQueue.isEmpty()) state.settledQueueInputs - threadId
                     else state.settledQueueInputs + (threadId to settledQueue),
+                settledRuns =
+                    if (settledRuns.isEmpty()) state.settledRuns - threadId
+                    else state.settledRuns + (threadId to settledRuns),
             )
         if (ids.isNotEmpty())
             persist(journal.copy(pending = journal.pending.filterNot { it.id in ids }), next)
         else if (next != state) mutable.value = next
+        if (notice?.kind == RunControlNoticeKind.TargetSettled) {
+            localScope.launch {
+                delay(4_000)
+                if (mutable.value.notice === notice)
+                    mutable.value = mutable.value.copy(notice = null)
+            }
+        }
     }
 
-    /** A validated control read can settle inputs before the selected histories catch up. */
-    private fun queueInputsAwaitingHistory(threadId: String, eventIds: Set<String>): Set<String> {
-        if (eventIds.isEmpty()) return eventIds
+    /** A validated control read can settle targets before the selected histories catch up. */
+    private fun targetsAwaitingHistory(
+        threadId: String,
+        targets: Set<String>,
+        isSettled: (HistoryTranscript, String) -> Boolean,
+    ): Set<String> {
+        if (targets.isEmpty()) return targets
         val selected = connections.mapNotNull { connection ->
             connection.history.uiState.value.takeIf {
                 current(connection) && it.thread?.id == threadId
             }
         }
-        if (selected.isEmpty()) return eventIds
-        return eventIds.filterTo(hashSetOf()) { id ->
-            selected.any {
-                it.phase != HistoryPhase.Missing && it.transcript?.hasSettledInput(id) != true
+        if (selected.isEmpty()) return targets
+        return targets.filterTo(hashSetOf()) { id ->
+            selected.any { state ->
+                state.phase != HistoryPhase.Missing &&
+                    state.transcript?.let { isSettled(it, id) } != true
             }
         }
     }

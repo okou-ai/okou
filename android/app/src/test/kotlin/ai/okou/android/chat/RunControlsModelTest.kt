@@ -512,11 +512,55 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
             val intents = checkNotNull(unknown.journal).pending.associateBy { it.targetId }
             val manualAttempt = intents.getValue(manual).id
             val automationAttempt = intents.getValue(automation).id
-            f.controls.checkWithdrawal(CHAT_PERSONAL, manual)
+            f.controls.checkIntent(CHAT_PERSONAL, manualAttempt)
             val checked =
                 f.controls.uiState.first { it.phases[manualAttempt] == RunControlPhase.Retryable }
             assertEquals(RunControlPhase.Unknown, checked.phases[automationAttempt])
             assertEquals(2, f.remote.posts.size)
+        }
+    }
+
+    @Test
+    fun aStopSettledByReadbackCannotBeSubmittedAgainAgainstHeldHistory() = runTest {
+        val intent =
+            RunControlIntent(
+                eventId("stopping run"),
+                CHAT_PERSONAL,
+                RunControlKind.Interrupt,
+                HISTORY_RUN,
+            )
+        withControls(saved = RunControlJournal(pending = listOf(intent))) { f ->
+            val entered = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            val firstRows = AtomicBoolean(true)
+            f.api.beforeHistoryResponse = { request ->
+                if (
+                    request.requestUrl?.pathSegments?.last() == "event-rows" &&
+                        firstRows.getAndSet(false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+            }
+            try {
+                f.history.refresh()
+                entered.await()
+                f.remote.set(
+                    input("input", 1),
+                    historyEventWire(intent.id, 2, type = "control.interrupt", payload = "null"),
+                )
+                f.controls.checkIntent(CHAT_PERSONAL, intent.id)
+                val settled = f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
+                assertEquals(setOf(HISTORY_RUN), settled.settledRuns[CHAT_PERSONAL])
+                assertEquals(HISTORY_RUN, f.history.uiState.value.transcript?.activeRunId)
+                f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
+                runCurrent()
+                assertTrue(f.remote.posts.isEmpty())
+            } finally {
+                release.countDown()
+            }
+            f.history.uiState.first { HISTORY_RUN in it.transcript?.terminatedRunIds.orEmpty() }
+            f.controls.uiState.first { it.settledRuns[CHAT_PERSONAL].isNullOrEmpty() }
         }
     }
 

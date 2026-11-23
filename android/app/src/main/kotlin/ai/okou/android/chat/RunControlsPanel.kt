@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,33 +41,43 @@ internal class ConversationRunControls(
     val threadId: String,
     val state: RunControlsState,
     val confirmed: ConversationUiState?,
-    val currentRunId: String?,
+    displayedRunId: String?,
     val pending: List<RunControlIntent>,
     val offline: Boolean,
 ) {
     val settledQueueInputs = state.settledQueueInputs[threadId].orEmpty()
+    private val stopSettled = displayedRunId in state.settledRuns[threadId].orEmpty()
+    val currentRunId = displayedRunId.takeUnless { stopSettled }
+    val stopIntent = pending.lastOrNull {
+        it.kind == RunControlKind.Interrupt && it.targetId == currentRunId
+    }
+    val stopPhase = stopIntent?.let(::phase)
+    val suppressRunActivity = stopSettled || stopPhase.awaitingOutcome()
+    val recoveryPending = confirmed?.detail?.cancellationRecoveryPending == true
+    val settledNotice =
+        state.notice?.takeIf {
+            it.threadId == threadId && it.kind == RunControlNoticeKind.TargetSettled
+        }
 
-    fun pendingOutsideQueue(queueIds: Set<String>) = pending.filterNot {
-        it.kind == RunControlKind.Revoke && it.targetId in queueIds
+    fun detachedIntents(queueIds: Set<String>) = pending.filterNot {
+        it == stopIntent || it.kind == RunControlKind.Revoke && it.targetId in queueIds
     }
 
-    fun hasFeedback(queueIds: Set<String>) =
+    val hasFeedback =
         state.persistence == RunControlPersistence.Failed ||
-            pendingOutsideQueue(queueIds).isNotEmpty() ||
-            state.notice?.threadId == threadId ||
-            confirmed?.detailPhase == ChatReadPhase.Failed ||
-            confirmed?.detail?.cancellationRecoveryPending == true
+            pending.isNotEmpty() ||
+            settledNotice != null ||
+            recoveryPending
 
     private val available =
         !offline && state.journal != null && state.persistence != RunControlPersistence.Failed
 
-    val canStop =
-        currentRunId != null &&
-            available &&
-            pending.none { it.kind == RunControlKind.Interrupt && it.targetId == currentRunId }
+    val canStop = currentRunId != null && available && !stopPhase.awaitingOutcome()
 
     fun stop() {
-        if (canStop) model.stop(threadId, listOf(checkNotNull(currentRunId)))
+        if (!canStop) return
+        if (stopIntent == null) model.stop(threadId, listOf(checkNotNull(currentRunId)))
+        else model.retry(stopIntent.id)
     }
 
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
@@ -77,7 +90,7 @@ internal class ConversationRunControls(
         val intent = withdrawal(eventId)
         return when {
             intent == null -> ({ model.skip(threadId, eventId, preview) })
-            state.phases[intent.id] == RunControlPhase.Retryable -> ({ model.retry(intent.id) })
+            phase(intent) == RunControlPhase.Retryable -> ({ model.retry(intent.id) })
             else -> null
         }
     }
@@ -86,13 +99,25 @@ internal class ConversationRunControls(
         it.kind == RunControlKind.Revoke && it.targetId == eventId
     }
 
-    fun withdrawalPhase(eventId: String) = withdrawal(eventId)?.let { state.phases.getValue(it.id) }
+    fun phase(intent: RunControlIntent) = state.phases.getValue(intent.id)
 
-    fun checkWithdrawal(eventId: String): (() -> Unit)? =
-        if (available && withdrawalPhase(eventId) == RunControlPhase.Unknown)
-            ({ model.checkWithdrawal(threadId, eventId) })
+    fun withdrawalPhase(eventId: String) = withdrawal(eventId)?.let(::phase)
+
+    fun checkWithdrawal(eventId: String) = withdrawal(eventId)?.let(::check)
+
+    fun check(intent: RunControlIntent): (() -> Unit)? =
+        if (
+            available &&
+                phase(intent) == RunControlPhase.Unknown &&
+                pending.none { phase(it) == RunControlPhase.Checking }
+        )
+            ({ model.checkIntent(threadId, intent.id) })
         else null
+
+    fun canRetry(intent: RunControlIntent) = available && phase(intent) == RunControlPhase.Retryable
 }
+
+private fun RunControlPhase?.awaitingOutcome() = this != null && this != RunControlPhase.Retryable
 
 @Composable
 internal fun conversationRunControls(
@@ -130,9 +155,9 @@ internal fun ConversationStatus(
     offline: Boolean,
     controls: ConversationRunControls?,
     short: Boolean,
+    showStop: Boolean = true,
 ) {
-    val stop = controls?.takeIf { it.currentRunId != null }
-    if (!offline && stop == null) return
+    val stop = controls?.takeIf { showStop && it.currentRunId != null }
     if (short) {
         if (offline) ConversationOffline(short = true)
         if (stop != null) {
@@ -149,35 +174,47 @@ internal fun ConversationStatus(
                 )
             }
         }
-    } else {
-        Row(
-            Modifier.fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .padding(horizontal = composerHorizontalInset(currentWindowSizeDp())),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        return
+    }
+
+    val phase = controls?.stopPhase
+    if (!offline && stop == null && phase == null) return
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .padding(horizontal = composerHorizontalInset(currentWindowSizeDp())),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (phase != null) {
+            ControlStatusText(stopStatus(phase), Modifier.weight(1f))
+        } else {
             if (offline) ConversationOffline(short = false)
             Spacer(Modifier.weight(1f))
-            if (stop != null)
-                TextButton(
-                    onClick = stop::stop,
-                    enabled = stop.canStop,
-                    colors =
-                        ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface,
+        }
+        if (phase == RunControlPhase.Unknown) {
+            val action = controls.stopIntent?.let(controls::check)
+            ControlTextAction(R.string.controls_check, action)
+        } else if (stop != null && !phase.awaitingOutcome()) {
+            TextButton(
+                onClick = stop::stop,
+                enabled = stop.canStop,
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors =
+                    ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+            ) {
+                Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(16.dp))
+                Text(
+                    stringResource(R.string.conversation_stop),
+                    Modifier.padding(start = 4.dp),
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
                         ),
-                ) {
-                    Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(16.dp))
-                    Text(
-                        stringResource(R.string.conversation_stop),
-                        Modifier.padding(start = 4.dp),
-                        style =
-                            MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                            ),
-                    )
-                }
+                )
+            }
         }
     }
 }
@@ -206,85 +243,130 @@ private fun ConversationOffline(short: Boolean) {
 }
 
 @Composable
-internal fun RunControlsFeedback(controls: ConversationRunControls, queueIds: Set<String>) {
-    val model = controls.model
-    val threadId = controls.threadId
-    val state = controls.state
-    val pending = controls.pendingOutsideQueue(queueIds)
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (state.persistence == RunControlPersistence.Failed) {
-            Text(stringResource(R.string.controls_storage_failed))
-            TextButton(onClick = model::retryLocal) { Text(stringResource(R.string.retry)) }
+internal fun ConversationControlNotes(controls: ConversationRunControls, queueIds: Set<String>) {
+    val pending = controls.detachedIntents(queueIds)
+    val storageFailed = controls.state.persistence == RunControlPersistence.Failed
+    if (
+        pending.isEmpty() &&
+            !storageFailed &&
+            controls.settledNotice == null &&
+            !controls.recoveryPending
+    )
+        return
+    Column(
+        Modifier.fillMaxWidth()
+            .padding(horizontal = composerHorizontalInset(currentWindowSizeDp())),
+    ) {
+        if (storageFailed) {
+            ControlNote(
+                R.string.controls_storage_failed,
+                R.string.retry,
+                controls.model::retryLocal,
+            )
         }
         for (intent in pending) {
-            val phase = state.phases.getValue(intent.id)
-            Text(
-                stringResource(
-                    when (phase) {
-                        RunControlPhase.Preparing -> R.string.controls_preparing
-                        RunControlPhase.Sending -> R.string.controls_sending
-                        RunControlPhase.Accepted -> R.string.controls_accepted
-                        RunControlPhase.Checking -> R.string.controls_checking
-                        RunControlPhase.Unknown -> R.string.controls_unknown
-                        RunControlPhase.Retryable -> R.string.controls_retryable
-                    },
-                ),
-            )
-            if (phase == RunControlPhase.Retryable)
-                TextButton(onClick = { model.retry(intent.id) }, enabled = !controls.offline) {
-                    Text(stringResource(R.string.controls_retry_original))
+            val phase = controls.phase(intent)
+            val label =
+                when (intent.kind) {
+                    RunControlKind.Interrupt -> stopStatus(phase)
+                    RunControlKind.Revoke -> withdrawalStatus(phase, automation = false)
                 }
+            when (phase) {
+                RunControlPhase.Unknown ->
+                    ControlNote(label, R.string.controls_check, controls.check(intent))
+                RunControlPhase.Retryable ->
+                    ControlNote(
+                        label,
+                        R.string.controls_retry_original,
+                        if (controls.canRetry(intent)) ({ controls.model.retry(intent.id) })
+                        else null,
+                    )
+                else -> ControlNote(label)
+            }
         }
-        if (pending.isNotEmpty())
-            TextButton(
-                onClick = { model.check(threadId) },
-                enabled =
-                    !controls.offline &&
-                        pending.none {
-                            state.phases[it.id] in
-                                setOf(
-                                    RunControlPhase.Preparing,
-                                    RunControlPhase.Sending,
-                                    RunControlPhase.Checking,
-                                )
-                        },
-            ) {
-                Text(stringResource(R.string.controls_check))
-            }
-        state.notice
-            ?.takeIf { it.threadId == threadId }
-            ?.let {
-                Text(
-                    stringResource(
-                        when (it.kind) {
-                            RunControlNoticeKind.Recorded -> R.string.controls_recorded
-                            RunControlNoticeKind.TargetSettled -> R.string.controls_target_settled
-                            RunControlNoticeKind.ReadFailed -> R.string.controls_read_failed
-                        },
-                    ),
+        controls.settledNotice?.let {
+            ControlNote(
+                if (it.operation == RunControlKind.Interrupt) R.string.controls_run_ended
+                else R.string.controls_input_left_queue,
+            )
+        }
+        if (controls.recoveryPending) {
+            if (controls.confirmed?.detailPhase == ChatReadPhase.Failed) {
+                ControlNote(
+                    R.string.controls_recovery_failed,
+                    R.string.retry,
+                    if (controls.offline) null
+                    else ({ controls.model.refreshRecovery(controls.threadId) }),
                 )
-            }
-        controls.confirmed?.let {
-            if (it.detailPhase == ChatReadPhase.Failed) {
-                Text(stringResource(R.string.controls_recovery_failed))
-                TextButton(
-                    onClick = { model.refreshRecovery(threadId) },
-                    enabled = !controls.offline,
-                ) {
-                    Text(stringResource(R.string.retry))
-                }
-            } else if (
-                it.detailPhase == ChatReadPhase.Ready &&
-                    it.detail?.cancellationRecoveryPending == true
-            ) {
-                Text(stringResource(R.string.controls_recovering))
-                TextButton(
-                    onClick = { model.refreshRecovery(threadId) },
-                    enabled = !controls.offline,
-                ) {
-                    Text(stringResource(R.string.controls_check))
-                }
+            } else {
+                ControlNote(R.string.controls_recovering)
             }
         }
     }
+}
+
+@StringRes
+private fun stopStatus(phase: RunControlPhase) =
+    when (phase) {
+        RunControlPhase.Preparing,
+        RunControlPhase.Sending -> R.string.controls_stopping
+        RunControlPhase.Accepted -> R.string.controls_stop_accepted
+        RunControlPhase.Checking -> R.string.controls_stop_checking
+        RunControlPhase.Unknown -> R.string.controls_stop_unknown
+        RunControlPhase.Retryable -> R.string.controls_stop_failed
+    }
+
+@StringRes
+internal fun withdrawalStatus(phase: RunControlPhase, automation: Boolean) =
+    when (phase) {
+        RunControlPhase.Unknown ->
+            if (automation) R.string.conversation_skip_unknown
+            else R.string.conversation_withdraw_unknown
+        RunControlPhase.Retryable ->
+            if (automation) R.string.conversation_skip_failed
+            else R.string.conversation_withdraw_failed
+        RunControlPhase.Checking -> R.string.controls_checking_result
+        else ->
+            if (automation) R.string.conversation_skipping else R.string.conversation_withdrawing
+    }
+
+@Composable
+private fun ControlNote(
+    @StringRes label: Int,
+    @StringRes actionLabel: Int? = null,
+    action: (() -> Unit)? = null,
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ControlStatusText(label, Modifier.weight(1f))
+        if (actionLabel != null) ControlTextAction(actionLabel, action)
+    }
+}
+
+@Composable
+internal fun ControlTextAction(@StringRes label: Int, action: (() -> Unit)?) {
+    TextButton(
+        onClick = { action?.invoke() },
+        enabled = action != null,
+        modifier = Modifier.heightIn(min = 48.dp),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+    ) {
+        Text(
+            stringResource(label),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+        )
+    }
+}
+
+@Composable
+private fun ControlStatusText(@StringRes label: Int, modifier: Modifier) {
+    Text(
+        stringResource(label),
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    )
 }

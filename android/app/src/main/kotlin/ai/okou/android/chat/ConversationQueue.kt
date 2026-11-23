@@ -2,14 +2,25 @@ package ai.okou.android.chat
 
 import ai.okou.android.R
 import ai.okou.android.currentWindowSizeDp
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -20,6 +31,8 @@ internal data class ConversationContent(
     val messages: List<ConversationMessage>,
     val queue: List<ConversationMessage>,
 )
+
+private data class QueueFocus(val id: String, val index: Int)
 
 internal fun conversationContent(
     transcript: HistoryTranscript?,
@@ -88,7 +101,22 @@ internal fun conversationContent(
 internal fun ConversationQueue(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
+    timelineFocus: FocusRequester,
 ) {
+    var focused by remember { mutableStateOf<QueueFocus?>(null) }
+    val latestEntries by rememberUpdatedState(entries)
+    val requesters = remember { mutableMapOf<String, FocusRequester>() }
+    LaunchedEffect(entries) {
+        val previous = focused ?: return@LaunchedEffect
+        val currentIndex = entries.indexOfFirst { it.message.id == previous.id }
+        if (currentIndex >= 0) {
+            focused = previous.copy(index = currentIndex)
+            return@LaunchedEffect
+        }
+        focused = null
+        val nextId = entries.getOrNull(previous.index)?.message?.id
+        if (requesters[nextId]?.requestFocus() != true) timelineFocus.requestFocus()
+    }
     if (entries.isEmpty()) return
     val window = currentWindowSizeDp()
     val label = stringResource(R.string.conversation_queue)
@@ -97,6 +125,7 @@ internal fun ConversationQueue(
             .padding(
                 start = composerHorizontalInset(window),
                 end = composerHorizontalInset(window),
+                // The composer's 4 dp top inset completes the 8 dp gap.
                 bottom = 4.dp,
             )
             .heightIn(max = minOf(200.dp, window.height.dp * 0.22f))
@@ -104,8 +133,26 @@ internal fun ConversationQueue(
             .semantics { contentDescription = label },
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(entries, key = { it.message.id }) { entry ->
-            QueuedMessageCard(entry, controls)
+        itemsIndexed(entries, key = { _, entry -> entry.message.id }) { index, entry ->
+            val id = entry.message.id
+            val focus = remember { FocusRequester() }
+            DisposableEffect(id, focus) {
+                requesters[id] = focus
+                onDispose { requesters.remove(id, focus) }
+            }
+            QueuedMessageCard(
+                entry,
+                controls,
+                modifier =
+                    Modifier.focusRequester(focus)
+                        .onFocusChanged { state ->
+                            if (state.hasFocus) focused = QueueFocus(id, index)
+                            else if (focused?.id == id && latestEntries.any { it.message.id == id })
+                                focused = null
+                        }
+                        .focusable(),
+                beforeAction = { if (focused?.id == id) focus.requestFocus() },
+            )
         }
     }
 }

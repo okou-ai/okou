@@ -24,12 +24,15 @@ enum class RunControlPhase {
 }
 
 enum class RunControlNoticeKind {
-    Recorded,
     TargetSettled,
     ReadFailed,
 }
 
-data class RunControlNotice(val threadId: String, val kind: RunControlNoticeKind)
+data class RunControlNotice(
+    val threadId: String,
+    val kind: RunControlNoticeKind,
+    val operation: RunControlKind,
+)
 
 data class RunControlsState(
     val journal: RunControlJournal? = null,
@@ -37,6 +40,7 @@ data class RunControlsState(
     val phases: Map<String, RunControlPhase> = emptyMap(),
     val notice: RunControlNotice? = null,
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
+    internal val settledRuns: Map<String, Set<String>> = emptyMap(),
 )
 
 fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
@@ -113,8 +117,8 @@ class RunControlsModel(
         else refreshRecovery(threadId)
     }
 
-    internal fun checkWithdrawal(threadId: String, eventId: String) =
-        owner.check(connection, threadId, withdrawalId = eventId)
+    internal fun checkIntent(threadId: String, intentId: String) =
+        owner.check(connection, threadId, intentId = intentId)
 
     fun refreshRecovery(threadId: String) {
         if (connection.current() && history.uiState.value.thread?.id == threadId)

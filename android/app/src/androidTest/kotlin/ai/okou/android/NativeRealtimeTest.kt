@@ -583,6 +583,8 @@ class NativeRealtimeTest {
                     controls?.uiState?.value?.phases?.values?.singleOrNull() ==
                         RunControlPhase.Sending
             }
+            text(app.getString(R.string.controls_stopping))
+            assertFalse(device.hasObject(label(app.getString(R.string.conversation_processing))))
             controlResponse.countDown()
             condition("Ambiguous interrupt response publishes Unknown") {
                 controls?.uiState?.value?.phases?.values?.singleOrNull() == RunControlPhase.Unknown
@@ -591,16 +593,10 @@ class NativeRealtimeTest {
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // An ambiguous receipt keeps Stop unavailable until readback settles it.
-            reveal(app.getString(R.string.controls_unknown))
-            val pendingStop =
-                device.findObject(
-                    By.pkg(app.packageName)
-                        .clickable(true)
-                        .hasDescendant(label(app.getString(R.string.conversation_stop))),
-                )
-            checkNotNull(pendingStop)
-            assertTrue(!pendingStop.isEnabled)
+            // The fixed operation row replaces Stop in a regular window until it can be verified.
+            text(app.getString(R.string.controls_stop_unknown))
+            text(app.getString(R.string.controls_check))
+            assertFalse(device.hasObject(label(app.getString(R.string.conversation_stop))))
             device.waitForIdle()
             scenario.onActivity {
                 assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
@@ -617,7 +613,8 @@ class NativeRealtimeTest {
                     changes = ChatChanges(resync = true),
                 )
             condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
-            reveal("Control recorded in conversation history.")
+            text(app.getString(R.string.controls_recovering))
+            reveal(app.getString(R.string.history_cancelled))
             assertEquals(1, controlPosts.get())
             assertTrue(
                 chats?.history?.uiState?.value?.transcript?.messages?.any {
