@@ -464,6 +464,39 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun failedDraftReadKeepsFocusOnTheTabTheUserMovedTo() = withHardwareKeyboard {
+        app.gate.countDown()
+        waitFor("Personal chat")
+        openWorkflowDetail()
+        app.connectivity.value = false
+        app.fixture.disconnectDraftRead = true
+        val requested = CountDownLatch(1)
+        val releaseDraft = CountDownLatch(1)
+        app.fixture.beforeDraftRead = {
+            requested.countDown()
+            releaseDraft.await()
+        }
+        val use = compose.onNodeWithTag("workflow_use")
+        val history = compose.onNodeWithTag("workflow_tab_history")
+        try {
+            use.pressEnter()
+            compose.waitUntil(10_000) { compose.runOnIdle { requested.count == 0L } }
+            use.assertIsNotEnabled().assertIsFocused()
+            history.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        } finally {
+            releaseDraft.countDown()
+        }
+        compose.waitUntil(10_000) {
+            compose
+                .onAllNodesWithText("Could not open the new chat draft", substring = true)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        use.assertIsEnabled()
+        history.assertIsFocused()
+    }
+
+    @Test
     fun offlineEditorAttemptsSaveAndRetainsInputAndFocusAfterTransportFailure() =
         withHardwareKeyboard {
             openWorkflowDetail()

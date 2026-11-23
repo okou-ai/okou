@@ -812,6 +812,11 @@ internal fun OkouApp(
                     }
                 }
             } finally {
+                if (
+                    draftReturn?.restoreFocus == true &&
+                        workflowRoute.mode == WorkflowsMode.Directory
+                )
+                    workflowRoute = workflowRoute.copy(draftReturn = null)
                 handoffPending = false
             }
         }

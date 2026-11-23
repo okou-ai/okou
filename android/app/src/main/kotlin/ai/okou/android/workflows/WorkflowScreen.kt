@@ -109,6 +109,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -161,6 +162,8 @@ internal fun WorkflowScreen(
     var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
+    val draftFocusAction = route.draftReturn?.action
+    val canNavigate = editor == null && !state.writing
     fun exitEditor() {
         if (state.writing) return
         if (editor?.changed == true) discard = true else model.edit(null)
@@ -205,9 +208,12 @@ internal fun WorkflowScreen(
                     else Modifier.weight(1f).fillMaxHeight(),
                 onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
                 onCreate = onCreate,
-                restoreCreateFocus = route.draftReturn?.action == WorkflowDraftAction.Create,
+                restoreCreateFocus =
+                    !handoffPending && draftFocusAction == WorkflowDraftAction.Create,
                 onCreateFocusRestored = onDraftFocusRestored,
-                canNavigate = editor == null && !state.writing && !handoffPending,
+                canNavigate = canNavigate && !handoffPending,
+                keepCreateFocus =
+                    canNavigate && handoffPending && draftFocusAction == WorkflowDraftAction.Create,
                 createError = createError,
                 onScope = {
                     query.position.requestScrollToItem(0)
@@ -275,7 +281,10 @@ internal fun WorkflowScreen(
                             handoffPending = handoffPending,
                             useError = useError,
                             onUse = { focused -> onUse(detail, focused) },
-                            restoreUseFocus = route.draftReturn?.action == WorkflowDraftAction.Use,
+                            restoreUseFocus =
+                                !handoffPending && draftFocusAction == WorkflowDraftAction.Use,
+                            keepUseFocus =
+                                handoffPending && draftFocusAction == WorkflowDraftAction.Use,
                             onUseFocusRestored = onDraftFocusRestored,
                             sourceChatAvailable = sourceChatAvailable,
                             restoreHistoryRunId = restoreHistoryRunId,
@@ -402,6 +411,7 @@ private fun WorkflowDirectory(
     query: ChatSearchState,
     modifier: Modifier,
     canNavigate: Boolean,
+    keepCreateFocus: Boolean,
     createError: Int?,
     onBack: () -> Unit,
     onCreate: (Boolean) -> Unit,
@@ -447,15 +457,18 @@ private fun WorkflowDirectory(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         WorkflowToolbar(stringResource(R.string.workspace_workflows), onBack) {
-            val enabled = canNavigate && state.catalogFailure != WorkflowReadFailure.Unavailable
+            val enabled =
+                (canNavigate || keepCreateFocus) &&
+                    state.catalogFailure != WorkflowReadFailure.Unavailable
             val actionFocus =
                 rememberWorkflowReturnFocus(restoreCreateFocus, enabled, onCreateFocusRestored)
             val shape = RoundedCornerShape(12.dp)
             TextButton(
-                onClick = { onCreate(actionFocus.keyboardFocused) },
+                onClick = { if (!keepCreateFocus) onCreate(actionFocus.keyboardFocused) },
                 enabled = enabled,
                 modifier =
                     actionFocus.modifier
+                        .semantics { if (keepCreateFocus) disabled() }
                         .heightIn(min = 48.dp)
                         .updateFocusOutline(shape, LocalActivityStatusColor.current)
                         .testTag("workflow_create"),
@@ -778,6 +791,7 @@ private fun WorkflowDetailPane(
     useError: Int?,
     onUse: (Boolean) -> Unit,
     restoreUseFocus: Boolean,
+    keepUseFocus: Boolean,
     onUseFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     restoreHistoryRunId: String?,
@@ -928,7 +942,9 @@ private fun WorkflowDetailPane(
         )
         WorkflowUseBar(
             wide = wide,
-            enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
+            enabled =
+                detail.shadowedBy == null && (!handoffPending || keepUseFocus) && !state.writing,
+            pending = keepUseFocus,
             notice = if (detail.shadowedBy != null) R.string.workflow_shadowed else useError,
             onUse = onUse,
             restoreFocus = restoreUseFocus,
@@ -958,6 +974,7 @@ private fun WorkflowUseBar(
     enabled: Boolean,
     notice: Int? = null,
     restoreFocus: Boolean = false,
+    pending: Boolean = false,
     onFocusRestored: () -> Unit = {},
     onUse: (Boolean) -> Unit,
 ) {
@@ -973,11 +990,12 @@ private fun WorkflowUseBar(
         val actionFocus = rememberWorkflowReturnFocus(restoreFocus, enabled, onFocusRestored)
         WorkflowAction(
             stringResource(R.string.workflow_use_in_chat),
-            { onUse(actionFocus.keyboardFocused) },
+            { if (!pending) onUse(actionFocus.keyboardFocused) },
             enabled = enabled,
             primary = true,
             modifier =
                 actionFocus.modifier
+                    .semantics { if (pending) disabled() }
                     .then(if (wide) Modifier else Modifier.fillMaxWidth())
                     .testTag("workflow_use"),
         )
