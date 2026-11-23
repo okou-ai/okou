@@ -70,11 +70,9 @@ export const projectsContract = c.router({
       archived: boolean().optional(),
     })
       .strict()
-      .refine(
-        ({ name, archived }) =>
-          (name === undefined) !== (archived === undefined),
-        "Provide a name or an archive state",
-      ),
+      .refine(({ name, archived }) => {
+        return (name === undefined) !== (archived === undefined);
+      }, "Provide a name or an archive state"),
     responses: { 200: projectSchema, ...errors },
   },
   delete: {

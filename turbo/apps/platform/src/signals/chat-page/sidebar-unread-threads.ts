@@ -33,10 +33,14 @@ export const sidebarUnreadThreadIds$ = computed(
     const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
     const marks = get(optimisticReadMarks$);
     const projects = new Map(
-      get(projects$).map((project) => [project.id, project]),
+      get(projects$).map((project) => {
+        return [project.id, project];
+      }),
     );
     const threads = new Map(
-      get(eventDrivenChatThreads$).map((thread) => [thread.id, thread]),
+      get(eventDrivenChatThreads$).map((thread) => {
+        return [thread.id, thread];
+      }),
     );
     const ids = new Set<string>();
     for (const [threadId, timestamp] of Object.entries(unreadAt)) {

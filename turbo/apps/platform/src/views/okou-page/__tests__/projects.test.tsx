@@ -1184,17 +1184,21 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     });
   });
   context.mocks.api(projectsContract.update, ({ params, body, respond }) => {
+    const { name } = body;
+    if (name === undefined) {
+      throw new Error("Expected a Project rename");
+    }
     events.push({
       id: body.eventId,
       projectId: params.id,
       seqId: 3,
       kind: "renamed",
-      name: body.name,
+      name,
       createdAt: at,
     });
     return respond(200, {
       id: params.id,
-      name: body.name,
+      name,
       createdAt: at,
       updatedAt: at,
     });
@@ -2831,6 +2835,10 @@ test("Project rename closes immediately and yields to persisted events", async (
     });
   });
   context.mocks.api(projectsContract.update, async ({ body, respond }) => {
+    const { name } = body;
+    if (name === undefined) {
+      throw new Error("Expected a Project rename");
+    }
     await confirmation.promise;
     events.push(
       {
@@ -2838,7 +2846,7 @@ test("Project rename closes immediately and yields to persisted events", async (
         seqId: 2,
         projectId: id,
         kind: "renamed",
-        name: body.name,
+        name,
         createdAt: at,
       },
       {
@@ -2852,7 +2860,7 @@ test("Project rename closes immediately and yields to persisted events", async (
     );
     return respond(200, {
       id,
-      name: body.name,
+      name,
       createdAt: at,
       updatedAt: at,
     });
@@ -2898,6 +2906,10 @@ test("A rejected Project name does not replace the confirmed name of a later sav
   });
   let rejected = false;
   context.mocks.api(projectsContract.update, ({ body, respond }) => {
+    const { name } = body;
+    if (name === undefined) {
+      throw new Error("Expected a Project rename");
+    }
     if (!rejected) {
       rejected = true;
       return respond(409, {
@@ -2910,7 +2922,7 @@ test("A rejected Project name does not replace the confirmed name of a later sav
         seqId: 2,
         projectId: id,
         kind: "renamed",
-        name: body.name,
+        name,
         createdAt: at,
       },
       {
@@ -2924,7 +2936,7 @@ test("A rejected Project name does not replace the confirmed name of a later sav
     );
     return respond(200, {
       id,
-      name: body.name,
+      name,
       createdAt: at,
       updatedAt: at,
     });

@@ -243,12 +243,22 @@ function ProjectMenu({
           }}
         >
           {project.archived
-            ? t(($) => $.projects.restoreProject, {
-                defaultValue: "Restore project",
-              })
-            : t(($) => $.projects.archiveProject, {
-                defaultValue: "Archive project",
-              })}
+            ? t(
+                ($) => {
+                  return $.projects.restoreProject;
+                },
+                {
+                  defaultValue: "Restore project",
+                },
+              )
+            : t(
+                ($) => {
+                  return $.projects.archiveProject;
+                },
+                {
+                  defaultValue: "Archive project",
+                },
+              )}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -422,7 +432,9 @@ function ProjectTrigger({
       )}
       {project.archived && (
         <span className="ml-1 shrink-0 text-xs text-nav-copy-muted">
-          {t(($) => $.chat.sidebar.archived)}
+          {t(($) => {
+            return $.chat.sidebar.archived;
+          })}
         </span>
       )}
       {indicator !== null && (

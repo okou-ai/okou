@@ -1,4 +1,3 @@
-import { recallProjectForUnread$ } from "./project.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -24,7 +23,10 @@ import {
   insertRecommendedFollowupsEvent$,
   touchChatThreadLastMessageAtIndependently$,
 } from "./chat-event-shared.service";
-import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
+import {
+  dispatchConfiguredChatRunFinishedEvent$,
+  dispatchProjectRecall$,
+} from "./chat-run-finished-event-dispatch.service";
 import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
 import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -716,7 +718,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(input),
       signal,
     );
-    await set(recallProjectForUnread$, input, inserted.markerCreatedAt, signal);
+    await set(dispatchProjectRecall$, input, inserted.markerCreatedAt, signal);
     await set(publishAssistantErrorEventSignals$, input, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -1037,7 +1039,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    await set(recallProjectForUnread$, args, inserted.markerCreatedAt, signal);
+    await set(dispatchProjectRecall$, args, inserted.markerCreatedAt, signal);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return {
