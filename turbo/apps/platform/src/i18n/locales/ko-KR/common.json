@@ -570,6 +570,24 @@
       "text": "텍스트",
       "video": "비디오"
     },
+    "library": {
+      "allArtifacts": "모든 아티팩트",
+      "allTypes": "모든 유형",
+      "clearFilters": "필터 지우기",
+      "clearSearch": "검색 지우기",
+      "created": "생성일",
+      "emptyDescription": "다른 이름이나 유형으로 검색해 보세요.",
+      "emptyTitle": "아티팩트를 찾을 수 없습니다",
+      "loadMore": "더 불러오기",
+      "modified": "마지막 수정일",
+      "name": "이름",
+      "retry": "다시 시도",
+      "search": "아티팩트 검색",
+      "sort": "아티팩트 정렬",
+      "sortAscending": "오름차순 정렬",
+      "sortDescending": "내림차순 정렬",
+      "type": "유형"
+    },
     "metadata": {
       "generated": "생성됨 {{date}}",
       "updated": "업데이트됨 {{date}}"

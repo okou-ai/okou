@@ -1,7 +1,9 @@
 import { command } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
-import { notFound } from "../../lib/error";
+import { notFound, resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
@@ -12,12 +14,25 @@ import {
 import { ownedGoogleDriveThreadContext$ } from "../services/artifact-google-drive-authorization.service";
 import { googleDriveArtifactDetailStatus$ } from "../services/google-drive-artifact-sync.service";
 import { deleteArtifact$ } from "../services/artifact-deletion.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
 const listArtifactCatalogInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(artifactCatalogContract.list));
+    if (query.sort !== undefined || query.direction !== undefined) {
+      const featureContext = await set(
+        loadUserFeatureSwitchContext$,
+        auth.orgId,
+        auth.userId,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (!isFeatureEnabled(FeatureSwitchKey.ArtifactLibrary, featureContext)) {
+        return resourceUnavailable("Artifact library is not available");
+      }
+    }
     const result = await set(
       listArtifactCatalog$,
       {
@@ -28,10 +43,15 @@ const listArtifactCatalogInner$ = command(
         kind: query.kind,
         chatThreadId: query.chatThreadId,
         keyword: query.keyword,
+        sort: query.sort,
+        direction: query.direction,
       },
       signal,
     );
     signal.throwIfAborted();
+    if (!result) {
+      return resourceUnavailable("Artifact cursor does not match this query");
+    }
 
     return {
       status: 200 as const,

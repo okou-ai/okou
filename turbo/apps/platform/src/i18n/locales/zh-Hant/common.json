@@ -570,6 +570,24 @@
       "text": "文字",
       "video": "影片"
     },
+    "library": {
+      "allArtifacts": "全部成果",
+      "allTypes": "全部類型",
+      "clearFilters": "清除篩選",
+      "clearSearch": "清除搜尋",
+      "created": "建立時間",
+      "emptyDescription": "請嘗試其他名稱或類型。",
+      "emptyTitle": "沒有找到成果",
+      "loadMore": "載入更多",
+      "modified": "最後修改時間",
+      "name": "名稱",
+      "retry": "重試",
+      "search": "搜尋成果",
+      "sort": "成果排序",
+      "sortAscending": "升冪排序",
+      "sortDescending": "降冪排序",
+      "type": "類型"
+    },
     "metadata": {
       "generated": "生成於 {{date}}",
       "updated": "更新於 {{date}}"

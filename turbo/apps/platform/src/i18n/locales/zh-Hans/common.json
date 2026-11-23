@@ -570,6 +570,24 @@
       "text": "文本",
       "video": "视频"
     },
+    "library": {
+      "allArtifacts": "全部成果",
+      "allTypes": "全部类型",
+      "clearFilters": "清除筛选",
+      "clearSearch": "清除搜索",
+      "created": "创建时间",
+      "emptyDescription": "尝试其他名称或类型。",
+      "emptyTitle": "没有找到成果",
+      "loadMore": "加载更多",
+      "modified": "最后修改时间",
+      "name": "名称",
+      "retry": "重试",
+      "search": "搜索成果",
+      "sort": "成果排序",
+      "sortAscending": "升序排列",
+      "sortDescending": "降序排列",
+      "type": "类型"
+    },
     "metadata": {
       "generated": "生成于 {{date}}",
       "updated": "更新于 {{date}}"

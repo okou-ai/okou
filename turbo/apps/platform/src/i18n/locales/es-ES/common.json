@@ -587,6 +587,24 @@
       "text": "Texto",
       "video": "Vídeo"
     },
+    "library": {
+      "allArtifacts": "Todos los artefactos",
+      "allTypes": "Todos los tipos",
+      "clearFilters": "Borrar filtros",
+      "clearSearch": "Borrar búsqueda",
+      "created": "Creado",
+      "emptyDescription": "Prueba con otro nombre o tipo.",
+      "emptyTitle": "No se han encontrado artefactos",
+      "loadMore": "Cargar más",
+      "modified": "Última modificación",
+      "name": "Nombre",
+      "retry": "Intentar de nuevo",
+      "search": "Buscar artefactos",
+      "sort": "Ordenar artefactos",
+      "sortAscending": "Ordenar de forma ascendente",
+      "sortDescending": "Ordenar de forma descendente",
+      "type": "Tipo"
+    },
     "metadata": {
       "generated": "Generado el {{date}}",
       "updated": "Actualizado el {{date}}"

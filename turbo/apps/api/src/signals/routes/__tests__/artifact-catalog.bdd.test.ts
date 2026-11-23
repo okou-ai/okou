@@ -6,6 +6,8 @@ import {
 } from "@aws-sdk/client-s3";
 
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactCatalogContract,
   chatArtifactCatalogChangedEvent,
@@ -25,6 +27,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import type { RouteEntry } from "../../route-entry";
 import { artifactCatalogRoutes } from "../artifact-catalog";
 import { sharedThreadRoutes } from "../shared-threads";
+import { featureSwitchesRoutes } from "../feature-switches";
 import {
   createBddApi,
   expectApiError,
@@ -181,6 +184,18 @@ interface ReadSharedThreadResult {
 function authenticateSharedThread(actor: ApiTestUser) {
   routeMocks.clerk.session(actor.userId, actor.orgId, actor.orgRole);
   return { authorization: "Bearer clerk-session" };
+}
+
+async function enableArtifactLibrary(actor: ApiTestUser) {
+  await accept(
+    setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    ).update({
+      headers: authenticateSharedThread(actor),
+      body: { switches: { [FeatureSwitchKey.ArtifactLibrary]: true } },
+    }),
+    [200],
+  );
 }
 
 function sharedThreadTestApp() {
@@ -643,7 +658,13 @@ describe("GET /api/artifacts/catalog", () => {
     const entry = catalog.artifacts.find((artifact) => {
       return artifact.kind === "hosted-site";
     });
-    expect(entry).toMatchObject({ title: "Quarterly sales report" });
+    expect(entry).toMatchObject({
+      title: "Quarterly sales report",
+      modifiedAt: expect.any(String),
+    });
+    if (!entry?.modifiedAt) {
+      throw new Error("Expected the hosted content version timestamp");
+    }
     const headers = { authorization: "Bearer clerk-session" };
     routeMocks.clerk.session(
       owner.actor.userId,
@@ -667,8 +688,23 @@ describe("GET /api/artifacts/catalog", () => {
       chat.getArtifactCatalogEntry(owner.actor, entry!.id),
     ).resolves.toMatchObject({
       title: "季度销售报告",
+      modifiedAt: entry.modifiedAt,
       site: { url: published.url, publicSlug: published.publicSlug },
     });
+    await enableArtifactLibrary(owner.actor);
+    // The title no longer contains the site name, but its actual projection
+    // filename does. Legacy searches remain title-only.
+    await expect(
+      chat.listArtifactCatalog(owner.actor, { keyword: site }),
+    ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
+    const filenameMatch = await chat.listArtifactCatalog(owner.actor, {
+      keyword: site,
+      sort: "title",
+      direction: "asc",
+    });
+    expect(filenameMatch.artifacts).toStrictEqual([
+      expect.objectContaining({ id: entry.id, title: "季度销售报告" }),
+    ]);
     const redeployed = await publishHostedSite({
       owner,
       site,
@@ -680,6 +716,10 @@ describe("GET /api/artifacts/catalog", () => {
     expect(afterRedeploy.artifacts).toStrictEqual([
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
+    expect(Date.parse(afterRedeploy.artifacts[0]!.modifiedAt!)).toBeGreaterThan(
+      Date.parse(entry.modifiedAt),
+    );
+    expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry.createdAt);
     const threadArtifacts = await chat.listThreadArtifacts(
       owner.actor,
       published.threadId,
@@ -812,6 +852,7 @@ describe("GET /api/artifacts/catalog", () => {
         thumbnail: null,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
+        modifiedAt: null,
       },
     ]);
 
@@ -1672,6 +1713,49 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual([site]);
   }, 180_000);
 
+  it("sorts verified content versions before unknown upload times in both directions", async () => {
+    const owner = await catalogActor("Library content time owner");
+    for (const title of ["First content", "Second content"]) {
+      await publishHostedSite({
+        owner,
+        site: `content-time-${randomUUID().slice(0, 8)}`,
+        title,
+      });
+    }
+    await uploadFile({
+      owner,
+      prompt: "Upload a file with no content modification clock",
+      filename: "unknown-time.txt",
+      contentType: "text/plain",
+    });
+    await enableArtifactLibrary(owner.actor);
+    for (const direction of ["asc", "desc"] as const) {
+      const titles: string[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await chat.listArtifactCatalog(owner.actor, {
+          sort: "modifiedAt",
+          direction,
+          limit: 1,
+          cursor,
+        });
+        titles.push(
+          ...page.artifacts.map((artifact) => {
+            return artifact.title;
+          }),
+        );
+        cursor = page.nextCursor ?? undefined;
+        expect(titles.length).toBeLessThanOrEqual(3);
+      } while (cursor);
+      expect(titles).toStrictEqual([
+        ...(direction === "asc"
+          ? ["First content", "Second content"]
+          : ["Second content", "First content"]),
+        "unknown-time.txt",
+      ]);
+    }
+  });
+
   it("searches artifact titles literally before applying the page limit", async () => {
     const owner = await catalogActor("Artifact catalog search owner");
     await uploadFile({
@@ -2089,6 +2173,12 @@ describe("shared thread routes", () => {
     }
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
     expect(detail.kind).toBe("shared-thread");
+    expect(detail.modifiedAt).toBe(detail.createdAt);
+    expect(
+      catalog.artifacts.every((artifact) => {
+        return artifact.modifiedAt === artifact.createdAt;
+      }),
+    ).toBeTruthy();
     const { sourceChatThreadId, ...detailWithoutSource } = detail;
     expect(sourceChatThreadId).toBe(run.threadId);
     // Neither selected message contains a file. The source-thread association

@@ -59,6 +59,8 @@ interface ArtifactSummaryBase {
   videoSourceUrl?: string;
   createdAt: string;
   updatedAt: string;
+  /** Content-version time when established by its writer; not catalog maintenance. */
+  modifiedAt?: string | null;
 }
 
 export type ArtifactSummary = ArtifactSummaryBase &
@@ -147,12 +149,17 @@ export interface ArtifactCatalogAuthHeaders {
   readonly authorization?: string;
 }
 
+export type ArtifactCatalogSort = "createdAt" | "modifiedAt" | "title";
+export type ArtifactCatalogDirection = "asc" | "desc";
+
 export interface ArtifactCatalogListQuery {
   readonly limit?: number;
   readonly cursor?: string;
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
+  readonly sort?: ArtifactCatalogSort;
+  readonly direction?: ArtifactCatalogDirection;
 }
 
 export interface ArtifactCatalogListClientQuery {
@@ -161,6 +168,8 @@ export interface ArtifactCatalogListClientQuery {
   readonly kind?: ArtifactCatalogKind;
   readonly chatThreadId?: string;
   readonly keyword?: string;
+  readonly sort?: ArtifactCatalogSort;
+  readonly direction?: ArtifactCatalogDirection;
 }
 
 export interface ArtifactCatalogGetQuery {
@@ -279,7 +288,8 @@ const artifactThumbnailSchema = object({
  * The catalog list returns only the metadata every kind shares. Kind-specific
  * attributes are loaded from the detail endpoint after a card is opened. Shared
  * conversations include their destination identity so native links need no
- * detail request. The list query never joins a kind table.
+ * detail request. Content-version time remains nullable when the source writer
+ * does not establish it.
  */
 const artifactSummaryBaseSchema = object({
   id: uuid(),
@@ -292,6 +302,7 @@ const artifactSummaryBaseSchema = object({
   videoSourceUrl: string().optional(),
   createdAt: string(),
   updatedAt: string(),
+  modifiedAt: string().nullable().optional(),
 });
 
 const artifactSummarySchema = discriminatedUnion("kind", [
@@ -310,6 +321,8 @@ const artifactCatalogListQuerySchema = object({
   kind: artifactKindSchema.optional(),
   chatThreadId: uuid().optional(),
   keyword: string().trim().min(1).max(256).optional(),
+  sort: zEnum(["createdAt", "modifiedAt", "title"]).optional(),
+  direction: zEnum(["asc", "desc"]).optional(),
 });
 
 const artifactCatalogGetQuerySchema = object({
