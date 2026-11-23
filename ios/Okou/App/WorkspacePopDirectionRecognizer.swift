@@ -59,7 +59,9 @@ final class WorkspacePopDirectionRecognizer: UIGestureRecognizer {
 
   override func canPrevent(_ preventedGestureRecognizer: UIGestureRecognizer) -> Bool { false }
 
-  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool { false }
+  override func canBePrevented(by preventingGestureRecognizer: UIGestureRecognizer) -> Bool {
+    false
+  }
 
   private func startsInHorizontalScroll(_ target: UIView?) -> Bool {
     var ancestor = target
