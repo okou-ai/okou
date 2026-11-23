@@ -31,7 +31,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
+private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 internal val chatReadRetryDelays = listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L)
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
@@ -42,6 +42,11 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     return if (confirmedAt > 0 && age in 0 until unreadSnapshotLifetimeMillis) {
         unreadSnapshotLifetimeMillis - age
     } else 0
+}
+
+internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
+    val age = (now - confirmedAt).coerceAtLeast(0)
+    return (chatSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
 }
 
 internal fun chatReadRetryAfterMillis(error: Exception): Long? {
@@ -1645,7 +1650,7 @@ class ChatListModel(
 
     private fun staleListRead(state: ChatListUiState): Boolean =
         state.listPhase == ChatReadPhase.Loading &&
-            state.confirmedAt?.let { wallMillis() - it > ChatListSyncNoticeAgeMillis } == true
+            state.confirmedAt?.let { chatSyncNoticeDelayMillis(it, wallMillis()) == 0L } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()
