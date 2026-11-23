@@ -617,34 +617,37 @@ export type SuggestionDirection =
 
 type SuggestionEvent =
   | {
-      name: "suggestion_card_shown";
+      eventName: "suggestion_card_shown";
       properties: SuggestionImpression & {
         option_ids: string[];
         option_count: number;
       };
     }
   | {
-      name: "suggestion_card_action_clicked";
+      eventName: "suggestion_card_action_clicked";
       properties:
         | (SuggestionImpression & { action: "view_source" | "open_custom" })
         | (SuggestionPreset & { action: "select_option" });
     }
   | {
-      name: "suggestion_card_feedback_recorded";
+      eventName: "suggestion_card_feedback_recorded";
       properties: SuggestionImpression & {
         feedback_kind: SuggestionFeedbackKind;
         operation: "apply" | "undo";
       };
     }
-  | { name: "suggestion_card_message_sent"; properties: SuggestionDirection };
+  | {
+      eventName: "suggestion_card_message_sent";
+      properties: SuggestionDirection;
+    };
 
 export function captureSuggestionCard(
-  { name, properties }: SuggestionEvent,
+  { eventName, properties }: SuggestionEvent,
   eventId?: string,
 ): void {
   runPostHog(() => {
     posthog.capture(
-      name,
+      eventName,
       { surface: "home_suggestions", ...properties },
       eventId ? { uuid: eventId } : undefined,
     );

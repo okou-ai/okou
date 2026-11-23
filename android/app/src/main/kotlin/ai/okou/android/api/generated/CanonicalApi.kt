@@ -272,7 +272,7 @@ internal interface CanonicalApi {
     suspend fun `threadDraft`(
         @Header("Authorization") token: String,
         @Path("id") `pathId`: String,
-    ): Response<ComposerDraft>
+    ): Response<ThreadDraft>
 
     @PATCH("/api/chat-drafts/composer")
     suspend fun `saveWorkspaceDraft`(

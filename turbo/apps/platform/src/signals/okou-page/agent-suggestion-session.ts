@@ -58,7 +58,7 @@ function createSuggestionImpression(item: Suggestion) {
     });
     set(activeImpression$, impression);
     captureSuggestionCard({
-      name: "suggestion_card_shown",
+      eventName: "suggestion_card_shown",
       properties: { ...impression, option_ids: ids, option_count: ids.length },
     });
     return impression;
@@ -138,7 +138,7 @@ function createSuggestionEntry(item: Suggestion) {
         } else {
           captureSuggestionCard(
             {
-              name: "suggestion_card_feedback_recorded",
+              eventName: "suggestion_card_feedback_recorded",
               properties: {
                 ...mutation.impression,
                 feedback_kind: mutation.kind,

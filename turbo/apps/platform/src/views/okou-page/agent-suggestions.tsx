@@ -333,7 +333,7 @@ function SuggestionHeading({
   const show = useSet(entry.show$);
   const recordClick = () => {
     captureSuggestionCard({
-      name: "suggestion_card_action_clicked",
+      eventName: "suggestion_card_action_clicked",
       properties: { ...show(), action: "view_source" },
     });
   };

@@ -280,7 +280,7 @@ export const openSuggestionDirection$ = command(
   ): Promise<void> => {
     const impression = set(entry.show$);
     captureSuggestionCard({
-      name: "suggestion_card_action_clicked",
+      eventName: "suggestion_card_action_clicked",
       properties: { ...impression, action: "open_custom" },
     });
     const signal = set(resetDirection$, pageSignal);
@@ -452,7 +452,7 @@ export const startAgentSuggestion$ = command(
       option_position: position,
     };
     captureSuggestionCard({
-      name: "suggestion_card_action_clicked",
+      eventName: "suggestion_card_action_clicked",
       properties: { ...preset, action: "select_option" },
     });
     const direction = { ...preset, direction_type: "preset" as const };

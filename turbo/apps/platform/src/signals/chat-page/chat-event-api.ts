@@ -32,7 +32,7 @@ export async function sendChatEvent(
   ) {
     captureSuggestionCard(
       {
-        name: "suggestion_card_message_sent",
+        eventName: "suggestion_card_message_sent",
         properties: direction,
       },
       body.clientEventId,
