@@ -56,7 +56,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -171,10 +170,10 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-private fun SettingsDetailStatus(text: String) {
+private fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodyMedium,
     )
@@ -182,13 +181,9 @@ private fun SettingsDetailStatus(text: String) {
 
 @Composable
 private fun SettingsReadError(@StringRes label: Int) {
-    Text(
+    SettingsDetailStatus(
         stringResource(label),
-        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp).semantics {
-            heading()
-            liveRegion = LiveRegionMode.Polite
-        },
-        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+        Modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp, bottom = 12.dp),
     )
 }
 
