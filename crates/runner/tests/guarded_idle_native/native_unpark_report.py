@@ -58,12 +58,11 @@ def validate(directory):
             path_error="invalid or replayed native unpark status path",
             receipt_error="native unpark changed original inputs",
         )
-        history, operation = later.history_operation(
-            captured, identities, "native unpark replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            captured, identities, baseline, identity[0],
+            replay_error="native unpark replayed run or resource identity",
+            binding_error="native unpark lost original history binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key":reuse,"sandbox_id":identity[0]}],
-              "native unpark lost original history binding")
         started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         request_sha = wire(captured.get("request_raw"))
