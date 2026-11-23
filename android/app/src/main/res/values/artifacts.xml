@@ -35,7 +35,8 @@
     <string name="artifact_missing">This artifact is no longer available</string>
     <string name="artifact_unavailable">Temporarily unavailable</string>
     <string name="artifact_preview_unsupported">No preview is available for this file</string>
-    <string name="artifact_online_preview">Connect to load the preview</string>
+    <string name="artifact_preview_unavailable">Temporarily unable to load preview</string>
+    <string name="artifact_preview_source_unavailable">Source unavailable</string>
     <string name="artifact_preview_only">Preview only</string>
     <string name="artifact_source_name">Source conversation · %1$s</string>
     <string name="artifact_view_source">View source conversation</string>
