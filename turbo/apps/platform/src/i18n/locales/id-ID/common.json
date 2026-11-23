@@ -5171,7 +5171,7 @@
     }
   },
   "projects": {
-    "archiveProject": "",
+    "archiveProject": "Arsipkan proyek",
     "back": "Back",
     "close": "Close",
     "collapse": "Ciutkan",
@@ -5208,7 +5208,7 @@
     "removeFromNewChat": "Hapus {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
-    "restoreProject": "",
+    "restoreProject": "Pulihkan proyek",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",

@@ -5171,7 +5171,7 @@
     }
   },
   "projects": {
-    "archiveProject": "",
+    "archiveProject": "プロジェクトをアーカイブ",
     "back": "Back",
     "close": "Close",
     "collapse": "折りたたむ",
@@ -5208,7 +5208,7 @@
     "removeFromNewChat": "{{name}}を削除",
     "rename": "Rename",
     "renameProject": "Rename Project",
-    "restoreProject": "",
+    "restoreProject": "プロジェクトを復元",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
