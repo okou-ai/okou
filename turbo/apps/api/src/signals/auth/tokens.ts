@@ -94,8 +94,8 @@ const sandboxTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("sandbox"),
 });
 
-// Only the host firewall resolver accepts this scope. Guest identities must
-// never authorize retrieval of reusable upstream credentials on their own.
+// The firewall resolver and post-Run Memory archive lookup require this
+// host-only scope before checking the Run's authority.
 const firewallTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("firewall"),
 });
