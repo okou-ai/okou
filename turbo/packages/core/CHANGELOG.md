@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.860.0](https://github.com/okou-ai/okou/compare/core-v8.859.10...core-v8.860.0) (2026-11-23)
+
+
+### Features
+
+* use the first follow-up as the composer placeholder behind a switch ([#50040](https://github.com/okou-ai/okou/issues/50040)) ([0d24270](https://github.com/okou-ai/okou/commit/0d24270d99eb810341fd81597c7c3e74ef718b07))
+
 ## [8.859.10](https://github.com/okou-ai/okou/compare/core-v8.859.9...core-v8.859.10) (2026-11-23)
 
 
