@@ -129,6 +129,12 @@ async function listedIds(actor: ApiTestUser) {
 }
 
 test("archives and restores a Project with its original member", async () => {
+  const { installWorkflowVolumeS3Fixture } =
+    await import("./helpers/workflow-volume-s3");
+  const { gunzipSync } = await import("node:zlib");
+  const { projectSnapshotArchiveSchema } =
+    await import("@okouai/api-contracts/validators/projects");
+  const storage = installWorkflowVolumeS3Fixture(context);
   const actor = owner();
   const project = await create(actor);
   const member = await thread(actor, project.id);
@@ -149,7 +155,35 @@ test("archives and restores a Project with its original member", async () => {
     archived: true,
     lastArchivedAt: expect.any(String),
   });
+  const { body: snapshot } = await accept(
+    client().snapshot({ headers: headers(actor) }),
+    [200],
+  );
+  const snapshotObject = [...storage.objects.entries()].find(([key]) => {
+    return key.startsWith("project-snapshots/v1/");
+  });
+  if (!snapshotObject) {
+    throw new Error("Project snapshot was not uploaded");
+  }
+  const persisted = projectSnapshotArchiveSchema.parse(
+    JSON.parse(gunzipSync(snapshotObject[1]).toString("utf8")),
+  );
+  expect(persisted.projects).toStrictEqual([archived]);
   const restored = await update(false);
+  const { body: tail } = await accept(
+    client().events({
+      headers: headers(actor),
+      query: { sinceSeqId: snapshot.latestSeqId },
+    }),
+    [200],
+  );
+  expect(tail.events).toMatchObject([
+    {
+      projectId: project.id,
+      archived: false,
+      lastArchivedAt: archived.lastArchivedAt,
+    },
+  ]);
   expect(restored).toMatchObject({
     archived: false,
     lastArchivedAt: archived.lastArchivedAt,
