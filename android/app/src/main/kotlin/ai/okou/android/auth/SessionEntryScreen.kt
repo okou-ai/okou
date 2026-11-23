@@ -316,21 +316,19 @@ private fun SessionPrimaryAction(
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = ButtonDefaults.shape
+    val foreground = if (enabled) colors.onPrimary else colors.onSurfaceVariant
     Button(
         onClick = { if (enabled) onClick() },
         modifier =
             Modifier.fillMaxWidth()
                 .heightIn(min = 48.dp)
-                .updateFocusOutline(
-                    shape,
-                    if (enabled) colors.onPrimary else LocalActivityStatusColor.current,
-                )
+                .updateFocusOutline(shape, foreground)
                 .sessionActionAvailability(enabled),
         shape = shape,
         colors =
             ButtonDefaults.buttonColors(
                 containerColor = if (enabled) colors.primary else colors.surfaceVariant,
-                contentColor = if (enabled) colors.onPrimary else colors.onSurfaceVariant,
+                contentColor = foreground,
             ),
     ) {
         Text(stringResource(label), textAlign = TextAlign.Center)
