@@ -256,8 +256,13 @@ internal fun ConversationRoute(
         remember(model, threadId) { mutableStateOf<ConversationFindTarget?>(null) }
     val searchTarget = if (messageSequence == null) revealedSearchTarget else requestedSearchTarget
     val readingTarget = findTarget ?: linkTarget ?: searchTarget
+    // Keep cached history usable while a failed lookup awaits a retry.
     val waitingForSearch =
-        messageSequence != null && searchTarget == null && !list.offline && !missing
+        messageSequence != null &&
+            searchTarget == null &&
+            !list.offline &&
+            !missing &&
+            state.phase != HistoryPhase.Failed
     LaunchedEffect(model, thread?.id, messageSequence, list.offline) {
         val sequence = messageSequence ?: return@LaunchedEffect
         if (thread != null && !list.offline && model.searchMessageIsMissing(threadId, sequence)) {

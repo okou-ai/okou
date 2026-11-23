@@ -49,6 +49,7 @@ import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
@@ -858,6 +859,8 @@ class ChatListRootTest {
     fun workspaceMessageSearchCatchesUpAnAlreadyOpenHistoryBeforeRevealingTheHit() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
+        fixture.historyReply =
+            List(40) { "Cached history paragraph ${it + 1}" }.joinToString("\n\n")
         val text = "New search message"
         val eventId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
         fixture.searchMessages = {
@@ -892,6 +895,7 @@ class ChatListRootTest {
         val release = CountDownLatch(1)
         val oldRows = fixture.historyRows
         val nextReadIsStale = AtomicBoolean(true)
+        val allowCatchUp = AtomicBoolean()
         fixture.historyRows = { request ->
             val url = checkNotNull(request.requestUrl)
             if (url.pathSegments[2] != CHAT_PERSONAL || url.queryParameter("sinceSeqId") != "37") {
@@ -900,6 +904,8 @@ class ChatListRootTest {
                 staleRead.countDown()
                 release.await()
                 oldRows(request)
+            } else if (!allowCatchUp.get()) {
+                MockResponse().setResponseCode(400)
             } else {
                 val event =
                     historyEventWire(id = eventId, seq = 41, payload = """{"content":"$text"}""")
@@ -920,6 +926,13 @@ class ChatListRootTest {
             compose.onNodeWithTag("chat_search").assertDoesNotExist()
             release.countDown()
 
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Failed }
+            }
+            compose.onNodeWithTag("conversation").performScrollToKey("input")
+            compose.onNodeWithContentDescription("Back to latest").assertIsDisplayed()
+            allowCatchUp.set(true)
+            compose.runOnIdle { history.refresh() }
             compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
             compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
             compose.onNodeWithText(text).assertIsDisplayed()
