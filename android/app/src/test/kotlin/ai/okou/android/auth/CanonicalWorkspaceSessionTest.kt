@@ -1,13 +1,15 @@
 package ai.okou.android.auth
 
-import ai.okou.android.TEST_PREFERENCES
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestLocale
+import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.testPreferences
 import java.util.Locale
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -30,9 +32,12 @@ class CanonicalWorkspaceSessionTest {
             "Asia/Shanghai",
         )
 
+    private fun preferencesResponse(value: UserPreferences = testPreferences()) =
+        MockResponse().setBody(Json.encodeToString(value))
+
     @Test
     fun preferenceUpdateUsesTheCanonicalScopedRouteAndOnlyTheSelectedFields() = runTest {
-        server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
+        server.enqueue(preferencesResponse())
         owner().use {
             it.updatePreferences(
                 UpdatePreferencesRequest(locale = UpdatePreferencesRequestLocale.ZH_HANT)
@@ -48,7 +53,7 @@ class CanonicalWorkspaceSessionTest {
 
     @Test
     fun initializedCanonicalPreferencesNeedNoWrite() = runTest {
-        server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
+        server.enqueue(preferencesResponse())
         owner().use { assertTrue(it.preferences().memoryInitialized) }
         assertEquals(1, server.requestCount)
         assertEquals("/api/user-preferences", server.takeRequest().path)
@@ -56,7 +61,7 @@ class CanonicalWorkspaceSessionTest {
 
     @Test
     fun canonicalTimezoneIsNotRewrittenUsingTheDevicesTimezoneCatalog() = runTest {
-        server.enqueue(MockResponse().setBody(TEST_PREFERENCES.replace("UTC", "America/Coyhaique")))
+        server.enqueue(preferencesResponse(testPreferences().copy(timezone = "America/Coyhaique")))
         owner().use { assertEquals("America/Coyhaique", it.preferences().timezone) }
     }
 
@@ -67,16 +72,10 @@ class CanonicalWorkspaceSessionTest {
                 MockResponse()
                     .setResponseCode(409)
                     .setBody("""{"error":{"code":"NOT_INITIALIZED","message":"Initialize"}}"""),
-                MockResponse()
-                    .setBody(
-                        TEST_PREFERENCES.replace(
-                            "\"memoryInitialized\":true",
-                            "\"memoryInitialized\":false",
-                        )
-                    ),
+                preferencesResponse(testPreferences().copy(memoryInitialized = false)),
             )) {
             server.enqueue(response)
-            server.enqueue(MockResponse().setBody(TEST_PREFERENCES))
+            server.enqueue(preferencesResponse())
             owner().use { assertTrue(it.preferences().memoryInitialized) }
             server.takeRequest()
             val initialize = server.takeRequest()
@@ -117,10 +116,9 @@ class CanonicalWorkspaceSessionTest {
 
     @Test
     fun incompleteInitializationNeverGrantsReadyPreferences() = runTest {
-        val uninitialized =
-            TEST_PREFERENCES.replace("\"memoryInitialized\":true", "\"memoryInitialized\":false")
-        server.enqueue(MockResponse().setBody(uninitialized))
-        server.enqueue(MockResponse().setBody(uninitialized))
+        val uninitialized = testPreferences().copy(memoryInitialized = false)
+        server.enqueue(preferencesResponse(uninitialized))
+        server.enqueue(preferencesResponse(uninitialized))
         owner().use {
             assertTrue(runCatching { it.preferences() }.exceptionOrNull() is IllegalStateException)
         }
