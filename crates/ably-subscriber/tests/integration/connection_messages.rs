@@ -1,6 +1,6 @@
 use crate::support::*;
 use ably_subscriber::protocol::{
-    AblyMessage, ConnectionDetails, ErrorInfo, ProtocolMessage, action, encode_msg, error_code,
+    AblyMessage, ErrorInfo, ProtocolMessage, action, encode_msg, error_code,
 };
 use ably_subscriber::{Event, subscribe};
 use futures_util::{SinkExt, StreamExt};
@@ -56,23 +56,7 @@ async fn initial_attach_is_clean_without_resume_or_serial() {
     let (connected_seen_tx, connected_seen_rx) = tokio::sync::oneshot::channel::<()>();
     let server_task = tokio::spawn(async move {
         let mut conn = ws.accept_raw().await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-1".into()),
-            connection_key: Some("conn-1!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-1!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn.send(tungstenite::Message::Binary(
-            encode_msg(&connected).unwrap().into(),
-        ))
-        .await
-        .unwrap();
+        send_connected(&mut conn, "conn-1").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn, "initial ATTACH")
             .await
@@ -370,23 +354,7 @@ async fn closed_during_initial_attach_closes_websocket() {
     let ws_port = ws.port;
     let server_task = tokio::spawn(async move {
         let mut conn = ws.accept_raw().await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-1".into()),
-            connection_key: Some("conn-1!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-1!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn.send(tungstenite::Message::Binary(
-            encode_msg(&connected).unwrap().into(),
-        ))
-        .await
-        .unwrap();
+        send_connected(&mut conn, "conn-1").await.unwrap();
 
         let attach = expect_protocol_msg(&mut conn, "initial ATTACH")
             .await
