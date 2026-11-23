@@ -986,7 +986,14 @@ internal fun OkouApp(
             conversationRunControls(controls, checkNotNull(chats).history, thread.id, list.offline)
         else null
     fun rowAction(id: String, action: ChatRowAction, fromConversation: Boolean = false) {
-        val started = chats?.performRowAction(id, action, fromConversation) == true
+        val started =
+            chats?.performRowAction(
+                id,
+                action,
+                fromConversation,
+                deleteFromWorkflow =
+                    action == ChatRowAction.Delete && fromConversation && chatFromWorkflows,
+            ) == true
         if (
             started && action == ChatRowAction.Delete && (target as? WorkspaceTarget.Chat)?.id == id
         ) {

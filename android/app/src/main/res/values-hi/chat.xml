@@ -73,6 +73,7 @@
     <string name="chat_rename_confirm">नाम बदलें</string>
     <string name="chat_rename_cancel">रद्द करें</string>
     <string name="chat_delete">चैट हटाएं</string>
+    <string name="chat_delete_rejected">चैट हटाई नहीं जा सकी।</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
     <string name="chat_delete_confirm">हटाएँ</string>

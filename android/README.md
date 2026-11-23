@@ -119,10 +119,13 @@ store described above.
 
 Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their
-local edits immediately, including any unsent reorder steps. Canonical event
-IDs settle submitted changes, including events observed before a snapshot
-rebase. Chat list reads retry while the foreground needs the list, after 3, 3,
-6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend the wait.
+local edits immediately, including any unsent reorder steps. A rejected chat
+deletion restores the row and shows one Snackbar in the chat list. Deleting a
+linked chat from a workflow run returns feedback to the run history.
+Canonical event IDs settle submitted changes, including events observed before
+a snapshot rebase. Chat list reads retry while the foreground needs the list,
+after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
+the wait.
 Known loss of connectivity pauses reads. Reconnecting retries immediately,
 subject to a server `Retry-After` deadline. A first read with no available list
 shows the skeleton after 250 ms. Failures keep the available list or skeleton

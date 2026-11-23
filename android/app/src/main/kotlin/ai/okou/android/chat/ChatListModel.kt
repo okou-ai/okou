@@ -163,6 +163,7 @@ internal constructor(
     internal val connectionFailed: Boolean = false,
     internal val readIntent: ChatReadIntent? = null,
     internal val conversationId: String? = null,
+    internal val deleteFromWorkflow: Boolean = false,
 )
 
 internal enum class ChatUndoPhase {
@@ -941,9 +942,16 @@ class ChatListModel(
         threadId: String,
         action: ChatRowAction,
         fromConversation: Boolean = false,
+        deleteFromWorkflow: Boolean = false,
     ): Boolean =
         action != ChatRowAction.MoveProject &&
-            performRowAction(threadId, action, value = null, fromConversation = fromConversation)
+            performRowAction(
+                threadId,
+                action,
+                value = null,
+                fromConversation = fromConversation,
+                deleteFromWorkflow = deleteFromWorkflow,
+            )
 
     internal fun renameThread(threadId: String, title: String, fromConversation: Boolean = false) {
         performRowAction(
@@ -972,6 +980,7 @@ class ChatListModel(
         value: String?,
         undoRequest: ChatRowUndo? = null,
         fromConversation: Boolean = false,
+        deleteFromWorkflow: Boolean = false,
     ): Boolean {
         if (!current()) return false
         val state = mutable.value
@@ -1050,6 +1059,7 @@ class ChatListModel(
                                         action,
                                         rejected = true,
                                         conversationId = conversationId,
+                                        deleteFromWorkflow = deleteFromWorkflow,
                                     ),
                             )
                         return@launch
@@ -1119,6 +1129,7 @@ class ChatListModel(
                                             rollback ==
                                                 ChatRowMutationOwner.Rollback.ConnectionFailed,
                                         conversationId = conversationId,
+                                        deleteFromWorkflow = deleteFromWorkflow,
                                     ),
                             ),
                     )
@@ -1160,7 +1171,13 @@ class ChatListModel(
                             }
                         }
                     if (submission == null) return@coroutineScope false
-                    val confirmation = rowMutations.confirm(submission, rollback, conversationId)
+                    val confirmation =
+                        rowMutations.confirm(
+                            submission,
+                            rollback,
+                            conversationId,
+                            deleteFromWorkflow,
+                        )
                     val failure = confirmation.failure
                     if (undoRequest == null) {
                         if (failure != null) {

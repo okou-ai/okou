@@ -73,6 +73,7 @@
     <string name="chat_rename_confirm">Umbenennen</string>
     <string name="chat_rename_cancel">Abbrechen</string>
     <string name="chat_delete">Chat löschen</string>
+    <string name="chat_delete_rejected">Der Chat konnte nicht gelöscht werden.</string>
     <string name="chat_delete_title">Chat löschen?</string>
     <string name="chat_delete_description">Nachrichten und Entwürfe in „%1$s“ werden dauerhaft gelöscht. Laufende Aufgaben werden gestoppt und verknüpfte Automatisierungen pausiert.</string>
     <string name="chat_delete_confirm">Löschen</string>

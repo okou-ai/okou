@@ -75,6 +75,7 @@
     <string name="chat_rename_confirm">Renomear</string>
     <string name="chat_rename_cancel">Cancelar</string>
     <string name="chat_delete">Excluir</string>
+    <string name="chat_delete_rejected">Não foi possível excluir a conversa.</string>
     <string name="chat_delete_title">Excluir conversa?</string>
     <string name="chat_delete_description">As mensagens e os rascunhos de “%1$s” serão excluídos permanentemente. As tarefas em andamento serão interrompidas e as automações vinculadas serão pausadas.</string>
     <string name="chat_delete_confirm">Excluir</string>

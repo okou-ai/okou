@@ -75,6 +75,7 @@
     <string name="chat_rename_confirm">Rinomina</string>
     <string name="chat_rename_cancel">Annulla</string>
     <string name="chat_delete">Elimina la chat</string>
+    <string name="chat_delete_rejected">Impossibile eliminare la chat.</string>
     <string name="chat_delete_title">Eliminare la chat?</string>
     <string name="chat_delete_description">I messaggi e le bozze di «%1$s» verranno eliminati definitivamente. Le attività in corso verranno interrotte e le automazioni collegate verranno sospese.</string>
     <string name="chat_delete_confirm">Elimina</string>

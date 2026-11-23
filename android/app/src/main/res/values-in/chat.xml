@@ -71,6 +71,7 @@
     <string name="chat_rename_confirm">Ubah nama</string>
     <string name="chat_rename_cancel">Batal</string>
     <string name="chat_delete">Hapus chat</string>
+    <string name="chat_delete_rejected">Chat tidak dapat dihapus.</string>
     <string name="chat_delete_title">Hapus chat?</string>
     <string name="chat_delete_description">Pesan dan draf di “%1$s” akan dihapus secara permanen. Tugas yang sedang berjalan akan dihentikan dan automasi tertaut akan dijeda.</string>
     <string name="chat_delete_confirm">Hapus</string>

@@ -2455,6 +2455,57 @@ class ChatListRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun rejectedChatDeletionShowsOneMessageInTheListAfterNavigation() {
+        val app = compose.activity.application as ChatListApplication
+        val deleteStarted = CountDownLatch(1)
+        val rejectDelete = CountDownLatch(1)
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/chat-threads/$CHAT_PERSONAL"
+            ) {
+                deleteStarted.countDown()
+                rejectDelete.await()
+                MockResponse().setResponseCode(400)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        val otherRow = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT")
+        val back = compose.onNodeWithContentDescription("Back")
+        val failure = "Could not delete the chat."
+        try {
+            setResearchExpanded(true)
+            row.performClick()
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Delete chat").performClick()
+            compose.onNodeWithText("Delete").performClick()
+            compose.waitUntil(10_000) { deleteStarted.count == 0L }
+            row.assertDoesNotExist()
+            otherRow.performClick()
+            compose.onNodeWithTag("chat_list").assertDoesNotExist()
+
+            rejectDelete.countDown()
+            compose.waitUntil(10_000) { currentList()?.failedRowAction?.rejected == true }
+            compose.onNodeWithText(failure).assertDoesNotExist()
+            back.performClick()
+            row.assertIsDisplayed()
+            val listFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
+            compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
+
+            otherRow.performClick()
+            compose.waitUntil(10_000) { currentList()?.failedRowAction == null }
+            back.performClick()
+            row.assertIsDisplayed()
+            compose.onNodeWithText(failure).assertDoesNotExist()
+        } finally {
+            rejectDelete.countDown()
+        }
+    }
+
+    @Test
     fun aRejectedArchiveSwipeRestoresTheRowDuringRefreshAndCanBeRetried() {
         val app = compose.activity.application as ChatListApplication
         val requests = AtomicInteger()

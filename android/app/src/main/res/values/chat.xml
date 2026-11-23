@@ -73,6 +73,7 @@
     <string name="chat_rename_confirm">Rename</string>
     <string name="chat_rename_cancel">Cancel</string>
     <string name="chat_delete">Delete chat</string>
+    <string name="chat_delete_rejected">Could not delete the chat.</string>
     <string name="chat_delete_title">Delete chat?</string>
     <string name="chat_delete_description">Messages and drafts in “%1$s” will be permanently deleted. Running tasks will stop and linked automations will pause.</string>
     <string name="chat_delete_confirm">Delete</string>

@@ -75,6 +75,7 @@
     <string name="chat_rename_confirm">Renombrar</string>
     <string name="chat_rename_cancel">Cancelar</string>
     <string name="chat_delete">Eliminar chat</string>
+    <string name="chat_delete_rejected">No se pudo eliminar el chat.</string>
     <string name="chat_delete_title">¿Eliminar el chat?</string>
     <string name="chat_delete_description">Los mensajes y borradores de «%1$s» se eliminarán permanentemente. Se detendrán las tareas en curso y se pausarán las automatizaciones vinculadas.</string>
     <string name="chat_delete_confirm">Eliminar</string>

@@ -71,6 +71,7 @@
     <string name="chat_rename_confirm">名前の変更</string>
     <string name="chat_rename_cancel">キャンセル</string>
     <string name="chat_delete">チャットを削除する</string>
+    <string name="chat_delete_rejected">チャットを削除できませんでした。</string>
     <string name="chat_delete_title">チャットを削除しますか?</string>
     <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
     <string name="chat_delete_confirm">削除</string>

@@ -75,6 +75,7 @@
     <string name="chat_rename_confirm">Renommer</string>
     <string name="chat_rename_cancel">Annuler</string>
     <string name="chat_delete">Supprimer la discussion</string>
+    <string name="chat_delete_rejected">Impossible de supprimer la discussion.</string>
     <string name="chat_delete_title">Supprimer la discussion ?</string>
     <string name="chat_delete_description">Les messages et brouillons de « %1$s » seront définitivement supprimés. Les tâches en cours seront arrêtées et les automatisations liées seront mises en pause.</string>
     <string name="chat_delete_confirm">Supprimer</string>

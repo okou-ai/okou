@@ -71,6 +71,7 @@
     <string name="chat_rename_confirm">이름 변경</string>
     <string name="chat_rename_cancel">취소</string>
     <string name="chat_delete">채팅 삭제</string>
+    <string name="chat_delete_rejected">채팅을 삭제할 수 없어요.</string>
     <string name="chat_delete_title">채팅을 삭제하시겠습니까?</string>
     <string name="chat_delete_description">‘%1$s’의 메시지와 초안이 영구 삭제됩니다. 실행 중인 작업은 중단되고 연결된 자동화는 일시 중지됩니다.</string>
     <string name="chat_delete_confirm">삭제</string>

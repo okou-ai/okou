@@ -283,6 +283,18 @@ private fun ChatRowFailureFeedback(
 ) {
     val failure = list.failedRowAction ?: return
     val action = failure.action
+    if (action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow) {
+        val message = stringResource(R.string.chat_delete_rejected)
+        LaunchedEffect(chats, snackbar, failure, showChatList) {
+            if (!showChatList) return@LaunchedEffect
+            try {
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
+            } finally {
+                chats.dismissRowActionFailure(failure)
+            }
+        }
+        return
+    }
     val visible =
         if (action.recoversInBackground) {
             val origin = failure.conversationId

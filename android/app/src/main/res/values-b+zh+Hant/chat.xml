@@ -71,6 +71,7 @@
     <string name="chat_rename_confirm">重新命名</string>
     <string name="chat_rename_cancel">取消</string>
     <string name="chat_delete">刪除聊天</string>
+    <string name="chat_delete_rejected">未能刪除聊天</string>
     <string name="chat_delete_title">刪除聊天？</string>
     <string name="chat_delete_description">「%1$s」的訊息與草稿將永久刪除。正在執行的任務會停止，關聯的自動化會暫停。</string>
     <string name="chat_delete_confirm">刪除</string>
