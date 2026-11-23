@@ -319,6 +319,42 @@ internal class WorkflowModelTest : WorkflowModelTestFixture() {
     }
 
     @Test
+    fun reconnectRefreshesTheFailedCatalogWhileOnlySearchIsOpen() = check { service, model ->
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        val saved = listOf(service.summary)
+        assertEquals(saved, model.state.value.catalog)
+        model.searchVisibilityChanged(false)
+
+        model.connectivityChanged(true)
+        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(4, service.catalogReads)
+        assertEquals(saved, model.state.value.catalog)
+        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+
+        val refreshed = listOf(service.summary.copy(displayName = "Refreshed"))
+        service.catalogRead = { refreshed }
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+        assertEquals(refreshed, model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+        assertEquals(0, service.ruleReads)
+        assertEquals(0, service.connectionReads)
+
+        model.searchVisibilityChanged(false)
+        advanceTimeBy(600_000)
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+    }
+
+    @Test
     fun reconnectKeepsAnActiveReadOnItsServerSchedule() = check { service, model ->
         service.catalogRead = {
             when (service.catalogReads) {
