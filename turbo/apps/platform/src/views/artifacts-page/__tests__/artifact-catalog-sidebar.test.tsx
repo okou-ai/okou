@@ -4,7 +4,9 @@ import {
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import { strToU8, zipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -266,4 +268,62 @@ test("The catalog sidebar refreshes a private website after publication changes"
     "src",
     "https://pv-private-release-v2.okou.app/",
   );
+});
+
+async function inspectArchive(size: number, bytes: Uint8Array<ArrayBuffer>) {
+  const summary = artifact({ title: "Harbor records.zip" });
+  serveCatalog(summary);
+  const { detail, url } = storedFile(summary, "records.zip", "application/zip");
+  if (detail.kind !== "file") {
+    throw new Error("The archive fixture must represent a file");
+  }
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, { ...detail, file: { ...detail.file, size } });
+  });
+  context.mocks.http.get(url, () => {
+    return new HttpResponse(bytes.buffer, {
+      headers: { "Content-Type": "application/zip" },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/artifacts",
+    featureSwitches: { [FeatureSwitchKey.ZipArtifactPreview]: true },
+  });
+  click(await findArtifactAction(summary.title));
+  return within(await screen.findByTestId("artifact-sidebar"));
+}
+
+test("Opening entries in a catalog ZIP changes the document shown in its sidebar", async () => {
+  const archive = zipSync({
+    "logs/departure.txt": strToU8("The ferry left at noon."),
+    "logs/arrival.md": strToU8("# Arrival manifest"),
+    "private.html": strToU8("<p>Not an interactive archive entry.</p>"),
+  }).slice();
+  const panel = await inspectArchive(archive.byteLength, archive);
+  const first = await panel.findByText("logs/departure.txt");
+  expect(panel.getByText("private.html").closest("button")).toBeNull();
+  expect(panel.queryByText("The ferry left at noon.")).toBeNull();
+  click(first);
+  await expect(
+    panel.findByText("The ferry left at noon."),
+  ).resolves.toBeVisible();
+  click(panel.getByText("logs/arrival.md"));
+  await expect(
+    panel.findByRole("heading", { name: "Arrival manifest" }),
+  ).resolves.toBeVisible();
+  expect(panel.queryByText("The ferry left at noon.")).toBeNull();
+  expect(getButtonByName("Download artifact")).toBeEnabled();
+});
+
+test("The catalog offers the download fallback for a ZIP whose declared size exceeds the preview limit", async () => {
+  const archive = zipSync({
+    "small.txt": strToU8("Previewable if admitted"),
+  }).slice();
+  const panel = await inspectArchive(5 * 1024 * 1024 + 1, archive);
+  await expect(
+    panel.findByText("No inline preview available for this file."),
+  ).resolves.toBeVisible();
+  expect(panel.queryByText("small.txt")).toBeNull();
+  expect(getButtonByName("Download artifact")).toBeEnabled();
 });

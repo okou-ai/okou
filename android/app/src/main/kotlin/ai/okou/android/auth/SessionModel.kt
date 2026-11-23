@@ -53,6 +53,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 
 enum class SessionStage {
@@ -296,12 +298,26 @@ class SessionModel(
                 val owner =
                     factory.create(
                         identity,
-                        WorkspaceTokenProvider {
-                            requireCurrent(ticket, snapshot)
-                            val token = authentication.token(session)
-                            currentCoroutineContext().ensureActive()
-                            requireCurrent(ticket, snapshot)
-                            token
+                        object : WorkspaceTokenProvider {
+                            private val renewal = Mutex()
+
+                            override suspend fun token(): String? = whileCurrent {
+                                authentication.token(session)
+                            }
+
+                            override suspend fun renew(rejectedToken: String): String? =
+                                renewal.withLock {
+                                    token()?.takeIf { it != rejectedToken }
+                                        ?: whileCurrent { authentication.renewToken(session) }
+                                }
+
+                            private suspend fun whileCurrent(read: suspend () -> String?): String? {
+                                requireCurrent(ticket, snapshot)
+                                val credential = read()
+                                currentCoroutineContext().ensureActive()
+                                requireCurrent(ticket, snapshot)
+                                return credential
+                            }
                         },
                     )
                 workspace = owner
@@ -361,6 +377,7 @@ class SessionModel(
                         recovery,
                         chats.history,
                         chats,
+                        owner.connectors,
                     )
                 }
                 val opened =
@@ -663,8 +680,9 @@ class SessionModel(
         }
         val stage =
             when {
+                error is ApiFailure.Http && error.status == 401 -> SessionStage.Unavailable
                 error is ApiFailure.Unauthenticated ||
-                    error is ApiFailure.Http && error.status in setOf(401, 403, 404) ->
+                    error is ApiFailure.Http && error.status in setOf(403, 404) ->
                     SessionStage.AccessRemoved
                 else -> return false
             }

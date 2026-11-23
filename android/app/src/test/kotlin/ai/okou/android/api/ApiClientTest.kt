@@ -169,6 +169,53 @@ class ApiClientTest {
     }
 
     @Test
+    fun rejectedReadsUseOneReplacementAndWritesAreNotReplayed() = runTest {
+        val renewals = mutableListOf<String>()
+        val provider =
+            object : WorkspaceTokenProvider {
+                override suspend fun token() = "initial"
+
+                override suspend fun renew(rejectedToken: String): String {
+                    renewals += rejectedToken
+                    return "replacement"
+                }
+            }
+        client(provider).use { api ->
+            server.enqueue(MockResponse().setResponseCode(401))
+            server.enqueue(MockResponse().setBody("""{"results":[]}"""))
+            assertTrue(api.searchChatMessages("fixture").results.isEmpty())
+            val first = server.takeRequest()
+            val replay = server.takeRequest()
+            assertEquals("Bearer initial", first.getHeader("Authorization"))
+            assertEquals("Bearer replacement", replay.getHeader("Authorization"))
+            assertEquals("/api/chat/search", replay.requestUrl?.encodedPath)
+            assertEquals(first.path, replay.path)
+            assertNotEquals(
+                first.getHeader("X-Client-Request-Id"),
+                replay.getHeader("X-Client-Request-Id"),
+            )
+
+            server.enqueue(MockResponse().setResponseCode(401))
+            server.enqueue(MockResponse().setResponseCode(401))
+            assertEquals(401, failure<ApiFailure.Http> { api.organization() }.status)
+            assertEquals(4, server.requestCount)
+
+            server.enqueue(MockResponse().setResponseCode(401))
+            val write =
+                failure<ApiFailure.Http> {
+                    api.initializePreferences(
+                        InitializePreferencesRequest(
+                            locale = InitializePreferencesRequestLocale.EN_US,
+                        ),
+                    )
+                }
+            assertEquals(401, write.status)
+            assertEquals(5, server.requestCount)
+            assertEquals(listOf("initial", "initial"), renewals)
+        }
+    }
+
+    @Test
     fun aRetryAfterZeroWriteIsNotReplayed() = runTest {
         server.dispatcher =
             object : Dispatcher() {

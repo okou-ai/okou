@@ -7,6 +7,7 @@ import ai.okou.android.SettingsModal
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.currentWindowSizeDp
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -32,6 +33,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -39,6 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +53,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -74,16 +79,32 @@ internal fun ConnectorDetails(
     state: ConnectorUiState,
     preview: ConnectorEntry?,
     wide: Boolean,
+    initialAccountId: String? = null,
+    onCloseInitialAccount: () -> Unit = {},
 ) {
     val detail = state.detail.data
     val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
+    if (entry == null && (detailUnavailable || !state.offline && state.detail.failure != null)) {
+        Box(
+            Modifier.fillMaxSize().testTag("connector-detail"),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            ConnectorReadError(
+                R.string.connector_load_failed,
+                Modifier.widthIn(max = 666.dp),
+            )
+        }
+        return
+    }
     val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
     val hasAccountContent =
         state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
     val showsAddAccount = hasAccountContent && detail?.methods?.isNotEmpty() == true
     var panel by remember { mutableStateOf<ConnectorPanel?>(null) }
     var accountId by remember { mutableStateOf<String?>(null) }
+    var resolvingInitialAccount by
+        remember(initialAccountId) { mutableStateOf(initialAccountId != null) }
     var restoreAccountFocus by remember { mutableStateOf(false) }
     var restoreActionFocus by remember { mutableStateOf<FocusRequester?>(null) }
     val accountFocus = remember { FocusRequester() }
@@ -99,12 +120,30 @@ internal fun ConnectorDetails(
     val canModify = state.canChangeAccounts
     val color = MaterialTheme.colorScheme
 
+    LaunchedEffect(initialAccountId, state.accounts.isConfirmed) {
+        if (resolvingInitialAccount && state.accounts.isConfirmed) {
+            resolvingInitialAccount = false
+            if (accounts.any { it.id == initialAccountId }) {
+                accountId = initialAccountId
+                panel = ConnectorPanel.Account
+            }
+        }
+    }
+
     fun dismissPanel() {
         if (busy) return
         val previous = panel
         if (previous == ConnectorPanel.Permissions) model.hidePermissions()
         if (disconnectImpact != null) model.clearImpact()
         model.dismissAction()
+        if (
+            previous == ConnectorPanel.Account &&
+                initialAccountId != null &&
+                account?.id == initialAccountId
+        ) {
+            onCloseInitialAccount()
+            return
+        }
         when (previous) {
             ConnectorPanel.Rename,
             ConnectorPanel.Authorize -> {
@@ -299,20 +338,15 @@ internal fun ConnectorDetails(
                         hasAccountContent &&
                             state.accounts.failure == ConnectorReadFailure.Unavailable ->
                             ConnectorStatusBanner(R.string.connector_accounts_failed)
-                        state.detail.failure == ConnectorReadFailure.Sustained ||
-                            hasAccountContent &&
-                                state.accounts.failure == ConnectorReadFailure.Sustained ->
+                        state.detail.failure != null ||
+                            hasAccountContent && state.accounts.failure != null ->
                             ConnectorStatusBanner(R.string.connector_refresh_failed)
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (detailUnavailable) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
             } else if (state.offline) {
                 ConnectorLoadWhenOnline()
-            } else if (state.detail.failure != null) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
-            } else if (rememberChatWaitIndicator(waiting = true)) {
+            } else if (rememberChatWaitIndicator(waiting = true, delayMillis = 250)) {
                 val label = stringResource(R.string.connector_loading)
                 Column(
                     Modifier.fillMaxWidth().semantics { contentDescription = label },
@@ -355,7 +389,12 @@ internal fun ConnectorDetails(
                     )
                 ConnectorPanel.Account ->
                     if (account != null) {
-                        ConnectorSheet(account.label(), ::dismissPanel, dismissible = !busy) {
+                        ConnectorSheet(
+                            account.label(),
+                            ::dismissPanel,
+                            dismissible = !busy,
+                            back = if (account.id == initialAccountId) ::dismissPanel else null,
+                        ) {
                             ConnectorAccountActions(
                                 account,
                                 canModify,
@@ -487,12 +526,13 @@ internal fun ConnectorSheet(
     dismiss: () -> Unit,
     dismissible: Boolean = true,
     expandInShortWindow: Boolean = false,
+    back: (() -> Unit)? = null,
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
     val fullScreen = expandInShortWindow && windowHeight < 480.dp
-    val scroll = rememberScrollState()
+    val scroll = key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
             MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp, lineHeight = 24.sp)
@@ -500,7 +540,12 @@ internal fun ConnectorSheet(
     SettingsModal(dismiss, dismissible, fullScreen) { centered ->
         val frame =
             if (fullScreen) Modifier.fillMaxSize()
-            else Modifier.fillMaxWidth().heightIn(max = windowHeight * 0.80f)
+            else
+                Modifier.fillMaxWidth()
+                    .heightIn(max = windowHeight * 0.80f)
+                    .animateContentSize(
+                        alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
+                    )
         BoxWithConstraints(
             frame
                 .testTag("connector-sheet")
@@ -526,11 +571,22 @@ internal fun ConnectorSheet(
                 },
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    title,
-                    Modifier.semantics { heading() },
-                    style = titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (back != null) {
+                        IconButton(back, enabled = dismissible, modifier = Modifier.size(48.dp)) {
+                            Icon(
+                                painterResource(R.drawable.ic_arrow_back),
+                                stringResource(R.string.back),
+                            )
+                        }
+                    }
+                    Text(
+                        title,
+                        Modifier.semantics { heading() },
+                        style =
+                            titleStyle.copy(letterSpacing = 0.sp, fontWeight = FontWeight.SemiBold),
+                    )
+                }
                 Column(
                     if (scrollAll) Modifier.fillMaxWidth()
                     else

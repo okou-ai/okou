@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme
 import ai.okou.android.api.generated.UpdatePreferencesRequestLocale
@@ -151,6 +152,7 @@ class MemberPreferencesModel(
     private var request: Job? = null
     private var recovery: Job? = null
     private var retryDelay = 5_000L
+    private var readFailures = 0
     private var readRequested = false
     private var settingsVisible = false
     private var needsWriteReadback = false
@@ -165,6 +167,7 @@ class MemberPreferencesModel(
                     recovery = null
                 } else if (reconnected) {
                     retryDelay = 5_000L
+                    readFailures = 0
                     if (mutable.value.pending == null && settingsVisible) readRequested = true
                     if (
                         mutable.value.recovering ||
@@ -218,7 +221,9 @@ class MemberPreferencesModel(
     }
 
     fun refresh() {
-        if (!current() || request != null || mutable.value.pending != null) return
+        if (!current() || request != null || recovery != null || mutable.value.pending != null)
+            return
+        readFailures = 0
         readRequested = true
         synchronize()
     }
@@ -283,6 +288,7 @@ class MemberPreferencesModel(
                         needsWriteReadback = false
                         mutable.value = MemberPreferencesState(confirmed, pending)
                         retryDelay = 5_000L
+                        readFailures = 0
                         success = true
                     }
                 } catch (cancelled: CancellationException) {
@@ -302,6 +308,7 @@ class MemberPreferencesModel(
         recovery?.cancel()
         recovery = null
         retryDelay = 5_000L
+        readFailures = 0
     }
 
     private fun fail(error: Exception, saving: Boolean, sent: PreferenceChange?) {
@@ -322,6 +329,19 @@ class MemberPreferencesModel(
                     error.status == 408 || error.status == 429 || error.status in 500..599
                 else -> false
             }
+        if (!saving && !pending) {
+            val wait = if (recoverable) finiteReadRetryDelays.getOrNull(readFailures++) else null
+            val retry = wait != null
+            mutable.value =
+                state.copy(
+                    status =
+                        if (retry) PreferenceStatus.Refreshing else PreferenceStatus.RefreshFailed,
+                    recovering = retry,
+                )
+            readRequested = retry
+            if (wait != null && online) scheduleRecovery(wait)
+            return
+        }
         mutable.value =
             state.copy(
                 status =
@@ -333,12 +353,16 @@ class MemberPreferencesModel(
             if (online) {
                 val wait = retryDelay
                 retryDelay = (retryDelay * 2).coerceAtMost(60_000L)
-                recovery = viewModelScope.launch {
-                    delay(wait)
-                    recovery = null
-                    synchronize()
-                }
+                scheduleRecovery(wait)
             }
+        }
+    }
+
+    private fun scheduleRecovery(wait: Long) {
+        recovery = viewModelScope.launch {
+            delay(wait)
+            recovery = null
+            synchronize()
         }
     }
 

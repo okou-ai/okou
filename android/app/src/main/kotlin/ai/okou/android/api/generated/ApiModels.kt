@@ -420,6 +420,198 @@ data class ConnectorOverviewItem(
 
 typealias ConnectorOverview = List<ConnectorOverviewItem>
 
+@Serializable(with = ChatConnectorAccessTargetSerializer::class)
+sealed interface ChatConnectorAccessTarget
+
+@Serializable
+enum class ChatConnectorAccessTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN,
+}
+
+@Serializable
+data class ChatConnectorAccessTargetVariant1(
+    val `kind`: ChatConnectorAccessTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ChatConnectorAccessTarget
+
+@Serializable
+enum class ChatConnectorAccessTargetVariant2Kind {
+    @SerialName("custom") CUSTOM,
+}
+
+@Serializable
+data class ChatConnectorAccessTargetVariant2(
+    val `kind`: ChatConnectorAccessTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ChatConnectorAccessTarget
+
+object ChatConnectorAccessTargetSerializer : KSerializer<ChatConnectorAccessTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ChatConnectorAccessTarget")
+
+    override fun deserialize(decoder: Decoder): ChatConnectorAccessTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ChatConnectorAccessTarget",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ChatConnectorAccessTarget")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ChatConnectorAccessTarget variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorAccessTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorAccessTargetVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ChatConnectorAccessTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatConnectorAccessTarget) {
+        when (value) {
+            is ChatConnectorAccessTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorAccessTargetVariant1.serializer(),
+                    value,
+                )
+            is ChatConnectorAccessTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorAccessTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ChatConnectorAccessAccountsItem(
+    val `connectionId`: String,
+    val `displayName`: String?,
+    val `defaultEnabled`: Boolean,
+    val `isDefault`: Boolean,
+    val `overrideEnabled`: Boolean?,
+    val `enabled`: Boolean,
+)
+
+@Serializable
+data class ChatConnectorAccess(
+    val `target`: ChatConnectorAccessTarget,
+    val `accounts`: List<ChatConnectorAccessAccountsItem>,
+    val `currentConnectionId`: String?,
+    val `available`: Boolean,
+)
+
+@Serializable(with = ChatConnectorOverrideRequestTargetSerializer::class)
+sealed interface ChatConnectorOverrideRequestTarget
+
+@Serializable
+enum class ChatConnectorOverrideRequestTargetVariant1Kind {
+    @SerialName("builtin") BUILTIN,
+}
+
+@Serializable
+data class ChatConnectorOverrideRequestTargetVariant1(
+    val `kind`: ChatConnectorOverrideRequestTargetVariant1Kind,
+    val `connectorSlug`: String,
+) : ChatConnectorOverrideRequestTarget
+
+@Serializable
+enum class ChatConnectorOverrideRequestTargetVariant2Kind {
+    @SerialName("custom") CUSTOM,
+}
+
+@Serializable
+data class ChatConnectorOverrideRequestTargetVariant2(
+    val `kind`: ChatConnectorOverrideRequestTargetVariant2Kind,
+    val `customConnectorId`: String,
+) : ChatConnectorOverrideRequestTarget
+
+object ChatConnectorOverrideRequestTargetSerializer :
+    KSerializer<ChatConnectorOverrideRequestTarget> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.ChatConnectorOverrideRequestTarget",
+        )
+
+    override fun deserialize(decoder: Decoder): ChatConnectorOverrideRequestTarget {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for ChatConnectorOverrideRequestTarget",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for ChatConnectorOverrideRequestTarget",
+                )
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous ChatConnectorOverrideRequestTarget variant",
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorOverrideRequestTargetVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorOverrideRequestTargetVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown ChatConnectorOverrideRequestTarget variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatConnectorOverrideRequestTarget) {
+        when (value) {
+            is ChatConnectorOverrideRequestTargetVariant1 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorOverrideRequestTargetVariant1.serializer(),
+                    value,
+                )
+            is ChatConnectorOverrideRequestTargetVariant2 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorOverrideRequestTargetVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class ChatConnectorOverrideRequest(
+    val `target`: ChatConnectorOverrideRequestTarget,
+    val `enabled`: Boolean?,
+)
+
 @Serializable
 data class ConnectorAccountDefaultsItem(
     val `connectionId`: String,
@@ -16255,6 +16447,84 @@ data class ProjectArchive(
     val `latestEventId`: String?,
     val `latestSeqId`: Long,
 )
+
+@Serializable(with = ChatConnectorAccessQuerySerializer::class)
+sealed interface ChatConnectorAccessQuery
+
+@Serializable
+enum class ChatConnectorAccessQueryVariant1Kind {
+    @SerialName("builtin") BUILTIN,
+}
+
+@Serializable
+data class ChatConnectorAccessQueryVariant1(
+    val `kind`: ChatConnectorAccessQueryVariant1Kind,
+    val `connectorSlug`: String,
+) : ChatConnectorAccessQuery
+
+@Serializable
+enum class ChatConnectorAccessQueryVariant2Kind {
+    @SerialName("custom") CUSTOM,
+}
+
+@Serializable
+data class ChatConnectorAccessQueryVariant2(
+    val `kind`: ChatConnectorAccessQueryVariant2Kind,
+    val `customConnectorId`: String,
+) : ChatConnectorAccessQuery
+
+object ChatConnectorAccessQuerySerializer : KSerializer<ChatConnectorAccessQuery> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.ChatConnectorAccessQuery")
+
+    override fun deserialize(decoder: Decoder): ChatConnectorAccessQuery {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for ChatConnectorAccessQuery")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for ChatConnectorAccessQuery")
+        val matches =
+            listOf(
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("builtin")
+                } == true,
+                (value["kind"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("custom")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous ChatConnectorAccessQuery variant")
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorAccessQueryVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    ChatConnectorAccessQueryVariant2.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown ChatConnectorAccessQuery variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: ChatConnectorAccessQuery) {
+        when (value) {
+            is ChatConnectorAccessQueryVariant1 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorAccessQueryVariant1.serializer(),
+                    value,
+                )
+            is ChatConnectorAccessQueryVariant2 ->
+                encoder.encodeSerializableValue(
+                    ChatConnectorAccessQueryVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable(with = ConnectorAccountDefaultsQuerySerializer::class)
 sealed interface ConnectorAccountDefaultsQuery

@@ -828,6 +828,36 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 )
 internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
+    fun unavailableConnectorAnnouncesTheReadFailureAndReturnsToTheDraft() {
+        app.connectorFixture.unavailableCatalogSlugs = setOf("gmail")
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").performClick()
+        compose.onNodeWithText("Schedule").performClick()
+        compose.onNodeWithText("Gmail message received").performClick()
+        val subject = compose.onNodeWithContentDescription("Subject contains")
+        subject.performTextReplacement("Release summary")
+        waitFor("View connections")
+        compose.onNodeWithText("View connections").performClick()
+
+        waitFor("Could not load connectors.")
+        val error = compose.onNodeWithText("Could not load connectors.")
+        error.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+        )
+        val paneBounds = compose.onNodeWithTag("connector-detail").getUnclippedBoundsInRoot()
+        val errorBounds = error.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, errorBounds.top - paneBounds.top)
+        assertEquals(12.dp, errorBounds.left - paneBounds.left)
+        assertEquals(12.dp, paneBounds.right - errorBounds.right)
+        compose.onNodeWithContentDescription("Back").performClick()
+
+        waitFor("View connections")
+        subject.assertTextContains("Release summary")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+    }
+
+    @Test
     fun historyShowsConfirmedResultsAndOnlyLinksAvailableSourceChats() {
         val page = app.fixture.firstRunHistory
         val earlierRun =

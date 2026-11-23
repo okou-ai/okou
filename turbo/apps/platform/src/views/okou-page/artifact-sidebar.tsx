@@ -3,6 +3,8 @@ import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import type { ZipArtifactPreviewScope } from "../../signals/zip-artifact-preview.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
@@ -46,6 +48,7 @@ import {
   type ChatArtifactPreviewItem,
 } from "../../signals/chat-page/chat-artifact-preview.ts";
 import {
+  ArtifactZipBody,
   CsvPreviewTable,
   parseCsvPreviewRows,
   TextPreviewLoader,
@@ -334,6 +337,7 @@ export function ArtifactSidebarContent({
   return (
     <ArtifactSidebarResolvedContent
       actionsPending={actionsPending}
+      zipPreview={artifactRef.zipPreview}
       artifactId={artifactId ?? syncTarget?.artifactId}
       managementAction={
         <ArtifactDeleteButton
@@ -380,6 +384,7 @@ type ArtifactSidebarResolvedContentProps = {
   readonly syncTarget?: ArtifactDownloadSyncTarget;
   readonly text$?: TextPreviewComputed;
   readonly toggleFullscreen: () => void;
+  readonly zipPreview?: ZipArtifactPreviewScope | undefined;
 };
 
 function ArtifactSidebarResolvedContent({
@@ -401,7 +406,11 @@ function ArtifactSidebarResolvedContent({
   syncTarget,
   text$,
   toggleFullscreen,
+  zipPreview,
 }: ArtifactSidebarResolvedContentProps) {
+  const zipEnabled =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ZipArtifactPreview] ??
+    false;
   return (
     <FullscreenPanel
       fullscreen={fullscreen}
@@ -440,23 +449,34 @@ function ArtifactSidebarResolvedContent({
         onClose={closePreview}
       />
       <div className="min-h-0 flex-1 overflow-hidden bg-background">
-        {(display.kind === "image" ? null : recovery) ?? (
-          <ArtifactBody
-            recovery={recovery}
-            resourceUrl={resourceUrl}
-            shareUrl={shareUrl}
-            url={display.url}
-            kind={display.kind}
-            filename={display.filename}
-            artifactKind={display.artifactKind}
-            imageNavigation={imageNavigation}
-            imageCanvasSignals={imageCanvasSignals}
-            fullscreen={fullscreen}
-            markdownTree$={markdownTree$}
-            markdownSelection={markdownSelection}
-            text$={text$}
-          />
-        )}
+        {(display.kind === "image" ? null : recovery) ??
+          (zipEnabled &&
+          zipPreview &&
+          display.kind === "file" &&
+          isZipArtifact(display.filename, display.contentType) ? (
+            <ArtifactZipBody
+              url={resourceUrl}
+              scope={zipPreview}
+              fullscreen={fullscreen}
+              fallback={<ArtifactGenericBody filename={display.filename} />}
+            />
+          ) : (
+            <ArtifactBody
+              recovery={recovery}
+              resourceUrl={resourceUrl}
+              shareUrl={shareUrl}
+              url={display.url}
+              kind={display.kind}
+              filename={display.filename}
+              artifactKind={display.artifactKind}
+              imageNavigation={imageNavigation}
+              imageCanvasSignals={imageCanvasSignals}
+              fullscreen={fullscreen}
+              markdownTree$={markdownTree$}
+              markdownSelection={markdownSelection}
+              text$={text$}
+            />
+          ))}
       </div>
     </FullscreenPanel>
   );
