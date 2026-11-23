@@ -104,7 +104,7 @@ test("Lab groups active feature switches", async () => {
 
 test.each([
   FeatureSwitchKey.PresentationOutputFormat,
-  FeatureSwitchKey.MarkdownDocumentTypography,
+  FeatureSwitchKey.MarkdownFirstOutput,
 ])("Staff see %s enabled by default in Beta", async (featureKey) => {
   const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
   await setupPage({
@@ -130,10 +130,8 @@ test.each([
   ).toHaveAttribute("aria-checked", "true");
 });
 
-test.each([
-  FeatureSwitchKey.PresentationOutputFormat,
-  FeatureSwitchKey.MarkdownDocumentTypography,
-])("External peers cannot opt into %s in Lab", async (featureKey) => {
+test("External peers cannot opt into presentation format in Lab", async () => {
+  const featureKey = FeatureSwitchKey.PresentationOutputFormat;
   await setupPage({
     context,
     path: "/_/lab",
@@ -190,6 +188,7 @@ test("Maintainer filters narrow the feature list", async () => {
 test.each([
   [FeatureSwitchKey.TestOauthConnector, false],
   [FeatureSwitchKey.Dummy, true],
+  [FeatureSwitchKey.MarkdownFirstOutput, false],
 ] as const)(
   "Toggle and reset a Lab override: %s",
   async (featureKey, defaultEnabled) => {

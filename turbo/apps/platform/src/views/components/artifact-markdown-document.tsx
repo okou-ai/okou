@@ -9,7 +9,7 @@ import { MarkdownEventBody } from "./markdown.tsx";
 export function ArtifactMarkdownDocument({ tree }: { readonly tree: Root }) {
   const typographyEnabled =
     useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.MarkdownDocumentTypography
+      FeatureSwitchKey.MarkdownFirstOutput
     ] === true;
 
   return (
