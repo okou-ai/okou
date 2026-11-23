@@ -101,7 +101,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-class ChatListApplication : TestOkouApplication() {
+open class ChatListApplication : TestOkouApplication() {
     lateinit var fixture: ChatListApiFixture
     lateinit var cacheSnapshot: ChatCacheSnapshot
     val responseGate = CountDownLatch(1)
@@ -110,10 +110,16 @@ class ChatListApplication : TestOkouApplication() {
         fixture = ChatListApiFixture()
         fixture.beforeResponse = { responseGate.await() }
         chatService = fixture.service
-        composerService = fixture.service
         searchService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
+    }
+}
+
+class ChatListDraftApplication : ChatListApplication() {
+    override fun onCreate() {
+        super.onCreate()
+        composerService = fixture.service
     }
 }
 
@@ -233,11 +239,14 @@ internal abstract class ChatListRootTestFixture {
 }
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
-internal class ChatListRootTest : ChatListRootTestFixture() {
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w1000dp-h800dp",
+    application = ChatListDraftApplication::class,
+)
+internal class ChatListDraftRootTest : ChatListRootTestFixture() {
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun wideSingleLineComposerMatchesTheFloatingActionHeightAndBottom() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
@@ -262,7 +271,6 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun openedChatsDraftReadUpdatesThePencilAfterAnOlderIndex() {
         val app = compose.activity.application as ChatListApplication
         val webDraft = "Draft saved on Web"
@@ -287,7 +295,6 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.setThreadDraft(CHAT_PERSONAL, "Existing draft")
@@ -351,7 +358,11 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             releaseIndex.countDown()
         }
     }
+}
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
+internal class ChatListRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun inPlaceRowMenuActionReturnsFocusToItsKeyboardTrigger() {
