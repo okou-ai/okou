@@ -913,7 +913,7 @@ test("Undo an archive from its toast and explain the muted exception", async () 
   ).resolves.toBeInTheDocument();
 });
 
-test("Find archived chats in All and Chats workspace search results", async () => {
+test("Find archived chats in workspace search results", async () => {
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
   const archivedThread = createThread(ARCHIVED_THREAD_ID, "Archived context", {
     archived: true,
@@ -940,19 +940,8 @@ test("Find archived chats in All and Chats workspace search results", async () =
     "archived context",
   );
 
-  await waitFor(() => {
-    expect(buttonByText("All", dialog)).toHaveAttribute("aria-pressed", "true");
-    expect(within(dialog).getByText("Archived context")).toBeInTheDocument();
-  });
-
-  click(buttonByText("Chats", dialog));
-  await waitFor(() => {
-    expect(buttonByText("Chats", dialog)).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-    expect(within(dialog).getByText("Archived context")).toBeInTheDocument();
-  });
+  const chats = await within(dialog).findByRole("group", { name: "Threads" });
+  expect(within(chats).getByText("Archived context")).toBeInTheDocument();
 });
 
 test("Find conversations by title in workspace search", async () => {

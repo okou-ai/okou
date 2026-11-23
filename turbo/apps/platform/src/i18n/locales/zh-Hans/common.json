@@ -6354,17 +6354,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部标为已读",
     "noResults": "没有找到结果",
     "resultCount_other": "{{count}} 条结果",
     "searching": "搜索中…",
     "searchWorkspace": "搜索工作区…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "消息",
-      "workflows": "工作流"
+      "threads": "会话"
     }
   },
   "ssh": {

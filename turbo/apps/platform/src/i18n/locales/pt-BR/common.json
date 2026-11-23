@@ -6449,7 +6449,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Todos",
     "markAllRead": "Marcar tudo como lido",
     "noResults": "Nenhum resultado encontrado",
     "resultCount_one": "{{count}} resultado",
@@ -6458,10 +6457,8 @@
     "searching": "Pesquisando...",
     "searchWorkspace": "Pesquisar no espaço de trabalho...",
     "sections": {
-      "artifacts": "Artefatos",
-      "chats": "Conversas",
       "messages": "Mensagens",
-      "workflows": "Fluxos de trabalho"
+      "threads": "Threads"
     }
   },
   "ssh": {
