@@ -2468,6 +2468,23 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    refreshArtifactPreviews$: command(({ get, set }) => {
+      set(resources.artifactCardSignals.refresh$);
+      const target = get(effects.sidebar.target$);
+      if (target?.type !== "artifact" || target.source.kind !== "attachment") {
+        return;
+      }
+      const refresh$ = target.source.ref.refresh$;
+      // Raw URLs own a graph outside the card registry; shared card refs
+      // were already invalidated above.
+      if (
+        !get(resources.artifactCardSignals.values$).some((card) => {
+          return card.refresh$ === refresh$;
+        })
+      ) {
+        set(refresh$);
+      }
+    }),
     resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
@@ -2556,7 +2573,11 @@ interface RunTrackingDeps {
   threadId: string;
   messages: Pick<
     MessageListSignals,
-    "setup$" | "catchUp$" | "subscribeBrowserSessions$" | "sidebar"
+    | "setup$"
+    | "catchUp$"
+    | "subscribeBrowserSessions$"
+    | "sidebar"
+    | "refreshArtifactPreviews$"
   >;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -3018,9 +3039,13 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [messages.sidebar.artifactCatalog.reload$],
+            artifactCatalog: [
+              messages.sidebar.artifactCatalog.reload$,
+              messages.refreshArtifactPreviews$,
+            ],
             artifacts: [
               messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
+              messages.refreshArtifactPreviews$,
             ],
             threadDetail: [
               cancellationRecovery.reload$,
