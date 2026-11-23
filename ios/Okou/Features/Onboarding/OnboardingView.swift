@@ -138,8 +138,13 @@ struct OnboardingView: View {
         ConnectorSafariView(url: page.url) { channelPage = nil }
       }
     }
-    .task { await store.prepare() }
+    .task {
+      store.startLiveUpdates()
+      await store.prepare()
+    }
+    .onDisappear { store.stopLiveUpdates() }
     .onChange(of: scenePhase) { _, phase in
+      store.setForeground(phase == .active)
       if phase == .active, store.step == .ready { Task { await store.refreshReady() } }
       if phase == .active, store.step == .skills { Task { await store.prepareSkills() } }
     }

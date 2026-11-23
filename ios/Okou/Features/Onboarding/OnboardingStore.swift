@@ -16,6 +16,8 @@ final class OnboardingStore {
   private(set) var skillSession: OnboardingSkillSession?
   private(set) var importedSkills: [OnboardingImportedSkill] = []
   private(set) var completedPrompt: String?
+  private let client: APIClient
+  private var realtime: RealtimeService?
   private let signOutAction: (@MainActor () async throws -> Void)?
   private let didComplete: @MainActor (String?) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
@@ -29,6 +31,7 @@ final class OnboardingStore {
     signOut: (@MainActor () async throws -> Void)? = nil,
     didComplete: @escaping @MainActor (String?) async throws -> Void
   ) {
+    self.client = client
     let production = webURL.host == "app.okou.ai"
     resources = OnboardingResources(
       client: client,
@@ -58,6 +61,35 @@ final class OnboardingStore {
       !draft.answers.startingPromptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     default: true
     }
+  }
+
+  func startLiveUpdates() {
+    guard !closed, realtime == nil, let member = client.member else { return }
+    let realtime = RealtimeService(
+      userID: member.userID, workspaceID: member.workspaceID,
+      tokenProvider: { [client] in
+        try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
+      },
+      onChange: { _ in },
+      onConnection: { [weak self] status in
+        if status == .connected { self?.invalidateRecommendation() }
+      },
+      onRecommendationChanged: { [weak self] in self?.invalidateRecommendation() })
+    self.realtime = realtime
+    realtime.setForeground(true)
+    realtime.start()
+  }
+
+  func setForeground(_ active: Bool) { realtime?.setForeground(active) }
+
+  func stopLiveUpdates() {
+    realtime?.stop()
+    realtime = nil
+  }
+
+  private func invalidateRecommendation() {
+    guard !closed else { return }
+    do { try resources.retry(.recommendation) } catch { didFail(error) }
   }
 
   var canSignOut: Bool { signOutAction != nil }
@@ -310,6 +342,7 @@ final class OnboardingStore {
   func close() {
     closed = true
     operation?.cancel()
+    stopLiveUpdates()
     resources.close()
     connectors.close()
     subscriptions.close()

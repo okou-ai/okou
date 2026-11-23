@@ -25,7 +25,7 @@ private struct NativeWorkspaceSetupContent: View {
   @Bindable var store: WorkspaceCreationStore
   let webURL: URL
   @LoadableValue private var status: Loadable<OnboardingStatus>
-  @FocusState private var focused: Bool
+  @FocusState private var isNameFocused: Bool
 
   init(store: WorkspaceCreationStore, webURL: URL) {
     self.store = store

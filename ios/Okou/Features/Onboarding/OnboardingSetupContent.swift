@@ -122,9 +122,11 @@ struct OnboardingReadyContent: View {
     _recommendation = LoadableValue(task: store.resources.recommendation)
   }
 
+  private var currentRecommendation: OnboardingRecommendation? { recommendation.data ?? nil }
+
   var body: some View {
     Section {
-      if let value = recommendation.data?.recommendation {
+      if let value = currentRecommendation?.recommendation {
         Text(value.title).font(.okou(.headline))
         Text(value.outcome).foregroundStyle(OkouColor.mutedForeground)
         Text(value.profile.overview).font(.okou(.footnote)).foregroundStyle(
@@ -158,5 +160,8 @@ struct OnboardingReadyContent: View {
         .okouSectionNote()
     }
     .task { await store.refreshReady() }
+    .onChange(of: currentRecommendation?.recommendation?.prompt) { _, _ in
+      store.acceptRecommendation(currentRecommendation)
+    }
   }
 }

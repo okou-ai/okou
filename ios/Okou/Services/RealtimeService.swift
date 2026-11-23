@@ -24,6 +24,7 @@ final class RealtimeService {
   private let tokenProvider: @Sendable () async throws -> Data
   private let onChange: @MainActor (ChatInvalidation) -> Void
   private let onConnection: @MainActor (RealtimeConnectionStatus) -> Void
+  private let onRecommendationChanged: @MainActor () -> Void
   private let createRealtime: ClientFactory
   private var isForeground = false
   private var realtime: ARTRealtime?
@@ -54,7 +55,8 @@ final class RealtimeService {
     onChange: @escaping @MainActor (ChatInvalidation) -> Void,
     onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void,
     createRealtime: ClientFactory? = nil,
-    lifecycleTasks: LifecycleTasks? = nil
+    lifecycleTasks: LifecycleTasks? = nil,
+    onRecommendationChanged: @escaping @MainActor () -> Void = {}
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.userID = userID
@@ -62,6 +64,7 @@ final class RealtimeService {
     self.tokenProvider = tokenProvider
     self.onChange = onChange
     self.onConnection = onConnection
+    self.onRecommendationChanged = onRecommendationChanged
     self.createRealtime = createRealtime ?? { ARTRealtime(options: $0) }
   }
 
@@ -97,10 +100,13 @@ final class RealtimeService {
     for name in channelNames {
       let channel = realtime.channels.get(name)
       channel.subscribe { [weak self] message in
-        guard let invalidation = ChatInvalidation(notification: message.name ?? "") else { return }
+        let topic = message.name ?? ""
+        let invalidation = ChatInvalidation(notification: topic)
+        guard invalidation != nil || topic == "onboardingRecommendationChanged" else { return }
         Task { @MainActor [weak self] in
           guard let self, self.generation == generation else { return }
-          onChange(invalidation)
+          if let invalidation { onChange(invalidation) }
+          if topic == "onboardingRecommendationChanged" { onRecommendationChanged() }
         }
       }
       channel.on { [weak self] change in
