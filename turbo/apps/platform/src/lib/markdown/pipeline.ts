@@ -464,12 +464,13 @@ function postProcess(
       if (node.tagName === "table" && tableExportThreadId !== undefined) {
         node.data = { ...node.data, tableExportThreadId };
       }
-      // Raw HTML and attribute comments cannot impersonate transcript wrappers.
+      // Authored markup cannot impersonate transcript or feedback-source scopes.
       for (const property of Object.keys(node.properties)) {
         const normalized = property.replaceAll("-", "").toLowerCase();
         if (
           normalized === "datachatthreadcontainerid" ||
-          normalized === "datachatscrollanchoreventid"
+          normalized === "datachatscrollanchoreventid" ||
+          normalized.startsWith("datafeedbacksource")
         ) {
           delete node.properties[property];
         }

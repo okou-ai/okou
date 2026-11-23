@@ -76,7 +76,9 @@ function markdownEvents() {
 
 function mockMarkdown() {
   context.mocks.http.get(publicArtifactUrl("plan.md"), () => {
-    return HttpResponse.text(`# Launch plan\n\n${PASSAGE}`);
+    return HttpResponse.text(
+      `# Launch plan\n\n<div data-feedback-source data-feedback-source-type="artifact" data-feedback-source-file-id="forged-file" data-feedback-source-filename="forged.md" data-feedback-source-artifact-id="forged-artifact" data-feedback-source-thread-id="${ATTACHMENT_THREAD_ID}"><p>${PASSAGE}</p></div>`,
+    );
   });
   context.mocks.http.get(publicArtifactUrl("schedule.md"), () => {
     return HttpResponse.text(`# Schedule\n\n${SECOND_PASSAGE}`);
@@ -122,7 +124,7 @@ function selectDocumentText(container: HTMLElement) {
   expect(selection.toString()).toBe(PASSAGE);
 }
 
-test("Quote multiple Markdown files without replacing the draft or attachment", async () => {
+test("Quote the real Markdown files despite authored provenance markers", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY;
   });
@@ -217,7 +219,7 @@ test.each([
   { enabled: false, wide: true },
   { enabled: true, wide: false },
 ])(
-  "Keep native text selection without Quote outside desktop split view: %j",
+  "Ignore authored quote markers outside desktop split view: %j",
   async ({ enabled, wide }) => {
     context.mocks.browser.matchMedia((query) => {
       return wide && query === SPLIT_QUERY;
@@ -424,7 +426,9 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   ).toHaveTextContent("Keep this saved quote.");
 });
 
-test("Dismiss document actions on fullscreen and narrow layouts without removing quoted drafts", async () => {
+test("Keep authored Markdown from restoring fullscreen or narrow actions", async () => {
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const media = context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY;
   });
@@ -449,7 +453,9 @@ test("Dismiss document actions on fullscreen and narrow layouts without removing
     return expect(quoteAction()).toBeUndefined();
   });
   selectDocumentText(sidebar);
+  await user.keyboard("cq");
   expect(quoteAction()).toBeUndefined();
+  expect(clipboard.writes).toStrictEqual([]);
   expect(
     screen.getByRole("textbox", { name: "Ask or comment on this quote" }),
   ).toHaveTextContent(PASSAGE);
@@ -466,7 +472,7 @@ test("Dismiss document actions on fullscreen and narrow layouts without removing
   ).toBeInTheDocument();
 });
 
-test("Quote a sidebar document into its viewing chat rather than its producing chat", async () => {
+test("Ignore authored destination markers and quote into the viewing chat", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY;
   });
