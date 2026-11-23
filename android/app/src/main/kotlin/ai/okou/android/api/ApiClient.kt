@@ -322,6 +322,14 @@ class ApiClient(
 
     suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
 
+    internal suspend fun relatedCreatedChats(threadId: String) = read {
+        relatedCreatedChats(it, threadId)
+    }
+
+    internal suspend fun relatedCommunicatingChats(threadId: String) = read {
+        relatedCommunicatingChats(it, threadId)
+    }
+
     internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = read {
         artifactCatalog(it, query)
     }

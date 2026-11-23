@@ -51,4 +51,7 @@
     <string name="artifact_play_media">Lecture multimédia</string>
     <string name="artifact_catalog_access_denied">Vous n’avez pas accès à ce catalogue d’artefacts</string>
     <string name="artifact_catalog_missing">Ce catalogue d’artefacts n’est plus disponible</string>
+    <string name="chat_resources_related">Conversations associées</string>
+    <string name="chat_resources_related_load_failed">Chargement des conversations associées temporairement indisponible</string>
+    <string name="chat_resources_related_access_lost">Les conversations associées ne sont plus disponibles</string>
 </resources>

@@ -481,6 +481,18 @@ internal interface CanonicalApi {
         @Query("sinceSeqId") `querySinceSeqId`: Long,
     ): Response<ProjectEvents>
 
+    @GET("/api/chat-threads/{id}/relations/children")
+    suspend fun `relatedCreatedChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCreatedChats>
+
+    @GET("/api/chat-threads/{id}/relations/communications")
+    suspend fun `relatedCommunicatingChats`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<RelatedCommunicatingChats>
+
     @POST("/api/chat/events/catch-up")
     suspend fun `historyCatchUp`(
         @Header("Authorization") token: String,

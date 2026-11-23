@@ -13,6 +13,9 @@ import ai.okou.android.artifacts.ArtifactItem
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChatRead
+import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.RelatedChatResource
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.chatEventWire
 import ai.okou.android.jsonResponse
@@ -129,6 +132,7 @@ class ChatCacheStoreTest {
             )
             it.execSQL("DROP TABLE chat_artifact_items")
             it.execSQL("DROP TABLE chat_artifact_catalogs")
+            it.execSQL("DROP TABLE chat_related_resources")
             it.execSQL("PRAGMA user_version = 2")
         }
 
@@ -155,6 +159,16 @@ class ChatCacheStoreTest {
             val prefix = ConfirmedArtifactCatalog(ArtifactPage(listOf(first), "page-2"), 3_000)
             val all = prefix.copy(page = ArtifactPage(listOf(first, second), null))
             val empty = ConfirmedArtifactCatalog(ArtifactPage(emptyList(), null), 4_000)
+            val relations =
+                ConfirmedRelatedChats(
+                    created =
+                        ConfirmedRelatedChatRead(
+                            listOf(
+                                RelatedChatResource(CHAT_PROJECT, "Related chat", CHAT_DATE, true),
+                            ),
+                            4_000,
+                        ),
+                )
             val store = cache(root)
             store
                 .open(identity) { true }
@@ -163,6 +177,7 @@ class ChatCacheStoreTest {
                     lease.saveArtifactCatalog(CHAT_PERSONAL, prefix, appendedTo = null)
                     lease.saveArtifactCatalog(CHAT_PERSONAL, all, appendedTo = prefix)
                     lease.saveArtifactCatalog(CHAT_PROJECT, empty, appendedTo = null)
+                    lease.saveRelatedResources(CHAT_PERSONAL, relations)
                 }
             store.close()
             val reopened = cache(root)
@@ -176,12 +191,16 @@ class ChatCacheStoreTest {
                     .open(owner) { true }
                     .use { lease ->
                         assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))
+                        assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
                     }
             }
             reopened
                 .open(identity.copy(sessionId = "new")) { true }
                 .use { lease ->
                     assertEquals(all, lease.loadArtifactCatalog(CHAT_PERSONAL))
+                    assertEquals(relations, lease.loadRelatedResources(CHAT_PERSONAL))
+                    lease.deleteRelatedResources(CHAT_PERSONAL)
+                    assertNull(lease.loadRelatedResources(CHAT_PERSONAL))
                     assertEquals(empty, lease.loadArtifactCatalog(CHAT_PROJECT))
                     lease.deleteArtifactCatalog(CHAT_PERSONAL)
                     assertNull(lease.loadArtifactCatalog(CHAT_PERSONAL))

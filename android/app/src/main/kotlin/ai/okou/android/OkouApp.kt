@@ -373,6 +373,11 @@ internal fun OkouApp(
 
     fun clearConversationLinks() {
         linkSnackbar.currentSnackbarData?.dismiss()
+        linkReturns.forEach { link ->
+            link.navigation.chatResourcesId?.let {
+                resourcesPageState.removeState("chat-resources:$it")
+            }
+        }
         linkReturns = emptyList()
         linkPosition = null
         linkFocusKey = null
@@ -444,7 +449,11 @@ internal fun OkouApp(
         artifactPageState.removeState("artifacts")
     }
 
-    fun closeResources(returnToActions: Boolean = false, returnToCard: Boolean = false) {
+    fun closeResources(
+        returnToActions: Boolean = false,
+        returnToCard: Boolean = false,
+        preservePage: Boolean = false,
+    ) {
         if (navigation.chatArtifactLink != null) {
             navigation =
                 navigation.copy(
@@ -457,11 +466,11 @@ internal fun OkouApp(
         if (!returnToCard && navigation.chatArtifactFocusKey != null) {
             navigation = navigation.copy(chatArtifactFocusKey = null)
         }
-        if (navigation.chatResourcesId == null) return
+        val resourcesThread = navigation.chatResourcesId ?: return
         if (!returnToActions) restoreConversationActionsFocus = false
         navigation = navigation.copy(chatResourcesId = null)
         chatArtifacts?.select(null)
-        resourcesPageState.removeState("chat-resources")
+        if (!preservePage) resourcesPageState.removeState("chat-resources:$resourcesThread")
     }
 
     fun releaseSearchFocus() {
@@ -594,7 +603,7 @@ internal fun OkouApp(
         messageSequence: Long? = null,
     ) {
         if (!fromLink) clearConversationLinks()
-        closeResources()
+        closeResources(preservePage = fromLink)
         if (artifactSource != null && !fromLink) closeArtifacts(restoreFocus = false)
         val search =
             when {
@@ -673,10 +682,18 @@ internal fun OkouApp(
                 }
                 if (destination.id == current.id && link.anchor == null) return
                 linkSnackbar.currentSnackbarData?.dismiss()
-                linkReturns =
+                val next =
                     (linkReturns + ConversationLinkReturn(navigation, current.id, source)).takeLast(
                         16,
                     )
+                if (linkReturns.size == 16) {
+                    linkReturns.first().navigation.chatResourcesId?.let { dropped ->
+                        if (next.none { it.navigation.chatResourcesId == dropped }) {
+                            resourcesPageState.removeState("chat-resources:$dropped")
+                        }
+                    }
+                }
+                linkReturns = next
                 linkPosition =
                     ConversationLinkPosition(
                         destination =
@@ -1650,12 +1667,28 @@ internal fun OkouApp(
                                 return@detailPane
                             }
                             if (resourcesId != null && chatArtifacts != null) {
-                                resourcesPageState.SaveableStateProvider("chat-resources") {
+                                resourcesPageState.SaveableStateProvider(
+                                    "chat-resources:$resourcesId",
+                                ) {
                                     ChatArtifactResources(
                                         chatArtifacts,
                                         resourcesId,
                                         listWidth != null,
                                         onClose = { closeResources(returnToActions = true) },
+                                        relatedFocusKey = linkFocusKey,
+                                        availableRelatedChats =
+                                            list.threads
+                                                .asSequence()
+                                                .filter { it.hidden != true }
+                                                .map { it.id }
+                                                .toSet(),
+                                        onRelatedFocusRestored = { linkFocusKey = null },
+                                        onRelatedChat = { id, key ->
+                                            openMessageLink(
+                                                ConversationLink.Chat(id, null),
+                                                ConversationLinkSource(key, null),
+                                            )
+                                        },
                                     )
                                 }
                                 return@detailPane
