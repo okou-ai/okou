@@ -10,7 +10,6 @@
     <string name="history_rejected">Não enviado</string>
     <string name="history_unsupported">Este conteúdo é exibido em sua forma original.</string>
     <string name="history_reference">Referência</string>
-    <string name="history_completed">Concluído</string>
     <string name="history_cancelled">Interrompido</string>
     <string name="history_run_failed">Falha</string>
 </resources>

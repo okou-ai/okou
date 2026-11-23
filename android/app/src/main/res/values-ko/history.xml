@@ -10,7 +10,6 @@
     <string name="history_rejected">전송되지 않음</string>
     <string name="history_unsupported">이 콘텐츠는 원래 형식으로 표시됩니다.</string>
     <string name="history_reference">참조</string>
-    <string name="history_completed">완료</string>
     <string name="history_cancelled">중지됨</string>
     <string name="history_run_failed">실패</string>
 </resources>
