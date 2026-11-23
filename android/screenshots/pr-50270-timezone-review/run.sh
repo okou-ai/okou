@@ -6,4 +6,4 @@ bash android/scripts/capture-screenshot-scenario.sh "$scenario" \
   proactive-choices.png proactive-enabled.png proactive-rollback.png \
   proactive-timezone.png proactive-timezone-picker.png proactive-timezone-return.png \
   proactive-dark-large-type.png region-timezone-picker.png region-timezone-wide.png \
-  region-timezone-short.png
+  region-timezone-short-open.png region-timezone-short.png

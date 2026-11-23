@@ -274,8 +274,8 @@ class ScreenshotScenario {
                     scenario.onActivity { check(it.resources.configuration.fontScale >= 1.99f) }
                     openRegionTimezone()
                     val note = "用于新建定时任务的默认时区。"
-                    val options = find(selector().scrollable(true).hasDescendant(By.textContains("加德满都")))
                     text(note)
+                    tabTo("加德满都（UTC+5:45）")
                     device.waitForIdle()
                     val noteBounds = text(note).visibleBounds
                     fun titleAbove(noteTop: Int) =
@@ -284,7 +284,13 @@ class ScreenshotScenario {
                             .filter { it.bottom <= noteTop }
                             .maxByOrNull { it.bottom }
                     val titleBounds = checkNotNull(titleAbove(noteBounds.top))
-                    check(options.scroll(Direction.DOWN, 0.70f, 500))
+                    capture("region-timezone-short-open.png")
+                    val offscreen = "廷布（UTC+6）"
+                    check(!device.hasObject(selector().text(offscreen)))
+                    for (label in listOf("比什凯克（UTC+6）", "查戈斯（UTC+6）", "达卡（UTC+6）", "鄂木斯克（UTC+6）", offscreen)) {
+                        check(device.pressDPadDown())
+                        awaitFocus(label)
+                    }
                     capture("region-timezone-short.png")
                     val newNoteBounds = text(note).visibleBounds
                     val newTitleBounds = titleAbove(newNoteBounds.top)
