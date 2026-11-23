@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
 import { on, once } from "node:events";

@@ -40,9 +40,9 @@ export function runnerDispatchEncoding(
 
 export async function gzipRunnerDispatchBody(body: string, bodyBytes: number) {
   const startedAt = monotonicNow();
-  const compressed = await settleIncludingAbort(() =>
-    gzipAsync(body, { level: 1 }),
-  );
+  const compressed = await settleIncludingAbort(() => {
+    return gzipAsync(body, { level: 1 });
+  });
   return {
     bytes:
       compressed.ok && compressed.value.byteLength < bodyBytes
