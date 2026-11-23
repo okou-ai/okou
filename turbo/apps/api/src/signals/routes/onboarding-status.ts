@@ -13,6 +13,7 @@ import { memberOnboardingStatus } from "../services/onboarding.service";
 const statusHandler$ = command(async ({ get }, signal: AbortSignal) => {
   const auth = get(authContext$);
   const body = await get(memberOnboardingStatus(auth));
+  signal.throwIfAborted();
   if (get(request$).header("X-Client-Type") !== "iOS") {
     signal.throwIfAborted();
     return { status: 200 as const, body };
