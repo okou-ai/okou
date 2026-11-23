@@ -49,7 +49,7 @@ async function openPresentation() {
     name: "Explore Okou capabilities",
   });
   click(button("Presentation", discovery));
-  return await screen.findByRole("group", { name: "Output format" });
+  return await screen.findByRole("group", { name: "Default output format" });
 }
 
 async function openChart() {
@@ -76,6 +76,9 @@ test.each(["HTML", "PPTX"] as const)(
     });
     const editor = await findComposerEditor();
     const formats = await openPresentation();
+    expect(formats).toHaveAccessibleDescription(
+      "Your choice becomes the default in this browser.",
+    );
     expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
     expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "false");
     // A format is always selected, even when the selected option is clicked again.
@@ -208,69 +211,82 @@ test("A restored feedback template freezes the changed format when sent", async 
   });
 });
 
-test("A changed format survives a fresh page and is shared by Chart presentation output", async () => {
-  mockTemplateChat();
-  await setupPage({
-    context,
-    auth: ownerAuth,
-    path: `/`,
-    featureSwitches: enabledFeatures,
-  });
-  await findComposerEditor();
-  const formats = await openPresentation();
-  const user = userEvent.setup({ delay: null });
-  button("PPTX", formats).focus();
-  await user.keyboard("{Enter}");
-  expect(button("PPTX", formats)).toHaveAttribute("aria-pressed", "true");
+test.each(["PPTX", "HTML"] as const)(
+  "The selected %s default survives a fresh page and is shared by Chart presentation output",
+  async (format) => {
+    mockTemplateChat();
+    await setupPage({
+      context,
+      auth: ownerAuth,
+      path: `/`,
+      featureSwitches: enabledFeatures,
+    });
+    await findComposerEditor();
+    const formats = await openPresentation();
+    const user = userEvent.setup({ delay: null });
+    click(button(format === "PPTX" ? "HTML" : "PPTX", formats));
+    button(format, formats).focus();
+    await user.keyboard("{Enter}");
+    expect(button(format, formats)).toHaveAttribute("aria-pressed", "true");
 
-  // Replace the app graph, keeping browser storage as a page reload does.
-  cleanup();
-  vi.mocked(window.history.pushState).mockRestore();
-  vi.mocked(window.history.replaceState).mockRestore();
-  vi.mocked(window.history.back).mockRestore();
-  vi.mocked(window.history.forward).mockRestore();
-  const capture = mockTemplateChat();
-  await setupPage({
-    context: reloadedContext,
-    auth: ownerAuth,
-    path: `/`,
-    featureSwitches: enabledFeatures,
-  });
-  const editor = await findComposerEditor();
-  const restored = await openPresentation();
-  expect(button("PPTX", restored)).toHaveAttribute("aria-pressed", "true");
-  const chart = await openChart();
-  const outputs = within(chart).getByRole("group", { name: "Output format" });
-  click(button("Presentation", outputs));
-  const chartFormats = await within(chart).findByRole("group", {
-    name: "Presentation format",
-  });
-  expect(button("PPTX", chartFormats)).toHaveAttribute("aria-pressed", "true");
-  await fill(editor, "Explain our quarterly results");
-  click(button("Send"));
-  await waitFor(() => {
-    expect(capture.sentMessages).toHaveLength(1);
-  });
-  expect(capture.sentMessages[0]?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(
-      "- Preferred output format: presentation (PPTX format)",
-    ),
-  });
-  expect(capture.sentMessages[0]?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(
-      'okou generate presentation --format pptx --prompt "<user request>"',
-    ),
-  });
-  // Keep the structured selection compatible with message summaries.
-  expect(capture.sentMessages[0]?.parts).toContainEqual({
-    type: "additional_info",
-    text: expect.stringContaining(
-      "- User-selected output format: presentation",
-    ),
-  });
-});
+    // Replace the app graph, keeping browser storage as a page reload does.
+    cleanup();
+    vi.mocked(window.history.pushState).mockRestore();
+    vi.mocked(window.history.replaceState).mockRestore();
+    vi.mocked(window.history.back).mockRestore();
+    vi.mocked(window.history.forward).mockRestore();
+    const capture = mockTemplateChat();
+    await setupPage({
+      context: reloadedContext,
+      auth: ownerAuth,
+      path: `/`,
+      featureSwitches: enabledFeatures,
+    });
+    const editor = await findComposerEditor();
+    const restored = await openPresentation();
+    expect(button(format, restored)).toHaveAttribute("aria-pressed", "true");
+    expect(restored).toHaveAccessibleDescription(
+      "Your choice becomes the default in this browser.",
+    );
+    const chart = await openChart();
+    const outputs = within(chart).getByRole("group", { name: "Output format" });
+    click(button("Presentation", outputs));
+    const chartFormats = await within(chart).findByRole("group", {
+      name: "Default presentation format",
+    });
+    expect(button(format, chartFormats)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(chartFormats).toHaveAccessibleDescription(
+      "Your choice becomes the default in this browser.",
+    );
+    await fill(editor, "Explain our quarterly results");
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.sentMessages).toHaveLength(1);
+    });
+    expect(capture.sentMessages[0]?.parts).toContainEqual({
+      type: "additional_info",
+      text: expect.stringContaining(
+        `- Preferred output format: presentation (${format} format)`,
+      ),
+    });
+    expect(capture.sentMessages[0]?.parts).toContainEqual({
+      type: "additional_info",
+      text: expect.stringContaining(
+        `okou generate presentation --format ${format.toLowerCase()} --prompt "<user request>"`,
+      ),
+    });
+    // Keep the structured selection compatible with message summaries.
+    expect(capture.sentMessages[0]?.parts).toContainEqual({
+      type: "additional_info",
+      text: expect.stringContaining(
+        "- User-selected output format: presentation",
+      ),
+    });
+  },
+);
 
 test("Chart presentation output uses HTML until the user changes the preference", async () => {
   const capture = mockTemplateChat();
@@ -286,7 +302,7 @@ test("Chart presentation output uses HTML until the user changes the preference"
   const outputs = within(chart).getByRole("group", { name: "Output format" });
   click(button("Presentation", outputs));
   const formats = await within(chart).findByRole("group", {
-    name: "Presentation format",
+    name: "Default presentation format",
   });
   expect(button("HTML", formats)).toHaveAttribute("aria-pressed", "true");
   await fill(editor, "Visualize our results");
@@ -347,7 +363,9 @@ test("Peers cannot enable presentation format through a stored opt-in", async ()
   const shelf = await screen.findByRole("group", {
     name: "Presentation templates",
   });
-  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  expect(
+    screen.queryByRole("group", { name: "Default output format" }),
+  ).toBeNull();
   await fill(editor, "Prepare our deck");
   click(button(PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!.title, shelf));
   click(button("Send"));
@@ -375,7 +393,9 @@ test("Presentation uses its existing defaults when output format selection is di
   });
   click(button("Presentation", tasks));
   await screen.findByRole("group", { name: "Presentation templates" });
-  expect(screen.queryByRole("group", { name: "Output format" })).toBeNull();
+  expect(
+    screen.queryByRole("group", { name: "Default output format" }),
+  ).toBeNull();
   await fill(editor, "Prepare our deck");
   const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
   const shelf = screen.getByRole("group", { name: "Presentation templates" });

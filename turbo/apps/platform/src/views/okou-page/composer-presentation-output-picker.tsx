@@ -31,7 +31,10 @@ export function ComposerPresentationOutputPicker({
       label={t(($) => {
         return nested
           ? $.chat.taskChips.presentationFormat
-          : $.chat.taskChips.visualization.outputFormat;
+          : $.chat.taskChips.defaultOutputFormat;
+      })}
+      description={t(($) => {
+        return $.chat.taskChips.presentationFormatHint;
       })}
       options={PRESENTATION_OUTPUT_FORMATS.map((value) => {
         return { value, label: formats[value] };

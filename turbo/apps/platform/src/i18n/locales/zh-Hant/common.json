@@ -2561,7 +2561,9 @@
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
     "taskChips": {
-      "presentationFormat": "簡報格式",
+      "defaultOutputFormat": "預設輸出格式",
+      "presentationFormat": "預設簡報格式",
+      "presentationFormatHint": "點選後儲存為此瀏覽器的預設格式。",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

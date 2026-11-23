@@ -2626,7 +2626,9 @@
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
-      "presentationFormat": "Format de présentation",
+      "defaultOutputFormat": "Format de sortie par défaut",
+      "presentationFormat": "Format de présentation par défaut",
+      "presentationFormatHint": "Votre choix devient le format par défaut dans ce navigateur.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

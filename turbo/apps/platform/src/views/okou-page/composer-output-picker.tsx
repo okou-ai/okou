@@ -7,11 +7,13 @@ export const COMPOSER_SECTION_LABEL = cn(
 
 export function ComposerOutputPicker<Value extends string>({
   label,
+  description,
   options,
   selectedValue,
   onSelect,
 }: {
   readonly label: string;
+  readonly description?: string;
   readonly options: readonly {
     readonly value: Value;
     readonly label: string;
@@ -24,6 +26,7 @@ export function ComposerOutputPicker<Value extends string>({
       className="flex min-w-0 flex-col gap-3"
       role="group"
       aria-label={label}
+      aria-description={description}
     >
       <p className={COMPOSER_SECTION_LABEL}>{label}</p>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -51,6 +54,9 @@ export function ComposerOutputPicker<Value extends string>({
           );
         })}
       </div>
+      {description && (
+        <p className="text-xs text-muted-foreground">{description}</p>
+      )}
     </div>
   );
 }

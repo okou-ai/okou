@@ -2626,7 +2626,9 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato della presentazione",
+      "defaultOutputFormat": "Formato di output predefinito",
+      "presentationFormat": "Formato di presentazione predefinito",
+      "presentationFormatHint": "La tua scelta viene salvata come predefinita in questo browser.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

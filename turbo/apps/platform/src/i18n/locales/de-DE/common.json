@@ -2576,7 +2576,9 @@
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
     "taskChips": {
-      "presentationFormat": "Präsentationsformat",
+      "defaultOutputFormat": "Standardausgabeformat",
+      "presentationFormat": "Standardformat für Präsentationen",
+      "presentationFormatHint": "Deine Auswahl wird in diesem Browser als Standard gespeichert.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

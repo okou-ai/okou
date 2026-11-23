@@ -2561,7 +2561,9 @@
       "unsupported": "수동 초기화는 지원되지 않으며 사용량은 자동으로 복구됩니다."
     },
     "taskChips": {
-      "presentationFormat": "프레젠테이션 형식",
+      "defaultOutputFormat": "기본 출력 형식",
+      "presentationFormat": "기본 프레젠테이션 형식",
+      "presentationFormatHint": "선택한 형식이 이 브라우저의 기본값으로 저장됩니다.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

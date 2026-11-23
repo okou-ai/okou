@@ -2561,7 +2561,9 @@
       "unsupported": "Reset manual tidak didukung; penggunaan akan pulih secara otomatis."
     },
     "taskChips": {
-      "presentationFormat": "Format presentasi",
+      "defaultOutputFormat": "Format keluaran default",
+      "presentationFormat": "Format presentasi default",
+      "presentationFormatHint": "Pilihanmu disimpan sebagai default di browser ini.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

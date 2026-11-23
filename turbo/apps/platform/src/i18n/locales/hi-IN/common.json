@@ -2576,7 +2576,9 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "presentationFormat": "प्रस्तुति का प्रारूप",
+      "defaultOutputFormat": "डिफ़ॉल्ट आउटपुट प्रारूप",
+      "presentationFormat": "डिफ़ॉल्ट प्रस्तुति प्रारूप",
+      "presentationFormatHint": "आपका चयन इस ब्राउज़र में डिफ़ॉल्ट प्रारूप के रूप में सहेजा जाता है।",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

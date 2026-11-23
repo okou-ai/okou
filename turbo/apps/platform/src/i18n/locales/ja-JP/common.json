@@ -2561,7 +2561,9 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "presentationFormat": "プレゼンテーション形式",
+      "defaultOutputFormat": "デフォルトの出力形式",
+      "presentationFormat": "デフォルトのプレゼンテーション形式",
+      "presentationFormatHint": "選択した形式が、このブラウザーのデフォルトとして保存されます。",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

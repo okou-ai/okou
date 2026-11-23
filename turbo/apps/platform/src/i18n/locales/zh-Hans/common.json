@@ -2561,7 +2561,9 @@
       "unsupported": "不支持手动重置；用量将自然恢复。"
     },
     "taskChips": {
-      "presentationFormat": "演示文稿格式",
+      "defaultOutputFormat": "默认输出格式",
+      "presentationFormat": "默认演示文稿格式",
+      "presentationFormatHint": "点击后保存为此浏览器的默认格式。",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

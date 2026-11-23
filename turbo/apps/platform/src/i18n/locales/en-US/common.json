@@ -2576,7 +2576,9 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
-      "presentationFormat": "Presentation format",
+      "defaultOutputFormat": "Default output format",
+      "presentationFormat": "Default presentation format",
+      "presentationFormatHint": "Your choice becomes the default in this browser.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"

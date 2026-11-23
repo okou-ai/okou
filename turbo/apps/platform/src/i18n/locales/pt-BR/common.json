@@ -2626,7 +2626,9 @@
       "unsupported": "A redefinição manual não é compatível; o uso se recupera automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato da apresentação",
+      "defaultOutputFormat": "Formato de saída padrão",
+      "presentationFormat": "Formato de apresentação padrão",
+      "presentationFormatHint": "Sua escolha é salva como padrão neste navegador.",
       "presentationFormats": {
         "html": "HTML",
         "pptx": "PPTX"
