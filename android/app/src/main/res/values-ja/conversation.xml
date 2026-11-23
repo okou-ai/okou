@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">返信の操作</string>
     <string name="conversation_copy_reply">返信をコピー</string>
     <string name="conversation_reply_copied">返信をコピーしました</string>
-    <string name="conversation_revoke">取り消す</string>
+    <string name="conversation_revoke">待機中のメッセージを取り消す</string>
+    <string name="conversation_queue">キュー</string>
+    <string name="conversation_queue_automation">ワークフローの自動化</string>
+    <string name="conversation_skip_automation">今回の自動化をスキップ</string>
+    <string name="conversation_withdrawing">取り消し中…</string>
+    <string name="conversation_skipping">スキップ中…</string>
+    <string name="conversation_withdraw_unknown">取り消し結果を確認する必要があります</string>
+    <string name="conversation_skip_unknown">スキップ結果を確認する必要があります</string>
+    <string name="conversation_withdraw_failed">取り消せませんでした</string>
+    <string name="conversation_skip_failed">スキップできませんでした</string>
     <string name="conversation_stop">停止</string>
     <string name="conversation_find">メッセージを検索</string>
     <string name="conversation_find_turns">やり取りを表示</string>

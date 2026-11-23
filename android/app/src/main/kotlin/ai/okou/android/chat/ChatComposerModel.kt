@@ -36,7 +36,7 @@ class ChatComposerModel(
                 history.uiState.collect { state ->
                     val threadId = state.thread?.id ?: return@collect
                     val transcript = state.transcript ?: return@collect
-                    owner.reconcileMessages(connection, threadId, transcript.persistedIds)
+                    owner.reconcileMessages(connection, threadId, transcript)
                     if (recovery != null)
                         history.checkpoint(threadId)?.let {
                             owner.reconcileRecovery(connection, it)

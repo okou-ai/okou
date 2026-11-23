@@ -312,7 +312,11 @@ private fun ComposerFeedback(
         }
     }
     val busy = target.key in state.busy
-    if (entry.pending != null && (!busy || target.key in state.checking)) {
+    if (
+        entry.pending != null &&
+            entry.pending.started == null &&
+            (!busy || target.key in state.checking)
+    ) {
         FlowRow {
             TextButton(
                 onClick = { model.observe(target) },

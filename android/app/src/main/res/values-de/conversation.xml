@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">Antwortaktionen</string>
     <string name="conversation_copy_reply">Antwort kopieren</string>
     <string name="conversation_reply_copied">Antwort kopiert</string>
-    <string name="conversation_revoke">Zurückziehen</string>
+    <string name="conversation_revoke">Nachricht in der Warteschlange zurückziehen</string>
+    <string name="conversation_queue">Warteschlange</string>
+    <string name="conversation_queue_automation">Workflow-Automatisierung</string>
+    <string name="conversation_skip_automation">Diese Automatisierung überspringen</string>
+    <string name="conversation_withdrawing">Wird zurückgezogen…</string>
+    <string name="conversation_skipping">Wird übersprungen…</string>
+    <string name="conversation_withdraw_unknown">Ergebnis des Zurückziehens unklar</string>
+    <string name="conversation_skip_unknown">Ergebnis des Überspringens unklar</string>
+    <string name="conversation_withdraw_failed">Zurückziehen fehlgeschlagen</string>
+    <string name="conversation_skip_failed">Überspringen fehlgeschlagen</string>
     <string name="conversation_stop">Stopp</string>
     <string name="conversation_find">Nachrichten suchen</string>
     <string name="conversation_find_turns">Unterhaltungsrunden durchsuchen</string>
