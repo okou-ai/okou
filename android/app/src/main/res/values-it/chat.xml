@@ -77,7 +77,6 @@
     <string name="chat_delete_rejected">Impossibile eliminare la chat.</string>
     <string name="chat_delete_title">Eliminare la chat?</string>
     <string name="chat_delete_description">I messaggi e le bozze di «%1$s» verranno eliminati definitivamente. Le attività in corso verranno interrotte e le automazioni collegate verranno sospese.</string>
-    <string name="chat_delete_confirm">Elimina</string>
     <string name="chat_rename_project">Rinomina progetto</string>
     <string name="chat_project_name">Nome del progetto</string>
     <string name="chat_project_rename_unconfirmed">Impossibile confermare il nome del progetto.</string>
@@ -99,4 +98,12 @@
     <string name="chat_project_delete_unconfirmed">Impossibile confermare l’eliminazione del progetto.</string>
     <string name="chat_row_action_rejected_named">Impossibile completare «%1$s».</string>
     <string name="chat_row_action_offline_named">Impossibile completare «%1$s». Controlla la connessione e riprova.</string>
+    <string name="chat_rename_save_failed">Impossibile salvare. Le modifiche sono state mantenute.</string>
+    <string name="chat_rename_check_result">Verifica risultato</string>
+    <string name="chat_rename_trim_hint">Gli spazi iniziali e finali vengono rimossi.</string>
+    <string name="chat_rename_required">Inserisci un nome.</string>
+    <string name="chat_rename_checking_result">Verifica del risultato…</string>
+    <string name="chat_rename_save_unconfirmed">Il risultato del salvataggio non è ancora confermato.</string>
+    <string name="chat_title_saved">Titolo della chat salvato</string>
+    <string name="chat_project_name_saved">Nome del progetto salvato</string>
 </resources>
