@@ -149,7 +149,7 @@
     <string name="settings_sign_out_body">इस डिवाइस पर फिर से Okou इस्तेमाल करने के लिए साइन इन करें। ड्राफ़्ट इसी खाते में रहेंगे।</string>
     <string name="updates_waiting_to_check">जाँच का इंतज़ार</string>
     <string name="updates_waiting_to_install">इंस्टॉल होने की प्रतीक्षा है</string>
-    <string name="updates_waiting_to_download">डाउनलोड का इंतज़ार</string>
+    <string name="updates_waiting_to_recover">फिर से शुरू होने का इंतज़ार</string>
     <string name="instructions_placeholder">आप चाहते हैं कि Okou किन बातों का ध्यान रखे?</string>
     <string name="instructions_save_when_online">बदलाव सहेजने के लिए इंटरनेट से कनेक्ट करें।</string>
     <string name="settings_timezone">समय क्षेत्र</string>

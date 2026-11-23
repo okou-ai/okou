@@ -149,7 +149,7 @@
     <string name="settings_sign_out_body">Per usare di nuovo Okou su questo dispositivo, accedi di nuovo. Le bozze restano associate a questo account.</string>
     <string name="updates_waiting_to_check">Verifica in attesa</string>
     <string name="updates_waiting_to_install">In attesa di installazione</string>
-    <string name="updates_waiting_to_download">Download in attesa</string>
+    <string name="updates_waiting_to_recover">In attesa di riprendere</string>
     <string name="instructions_placeholder">Che cosa vuoi che Okou tenga a mente?</string>
     <string name="instructions_save_when_online">Connettiti per salvare le modifiche.</string>
     <string name="settings_timezone">Fuso orario</string>

@@ -244,6 +244,38 @@ class UpdateRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w360dp-h200dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun shortUpdateDetailsRevealNewFailureWithoutMovingTheActions() {
+        val originalFontScale = RuntimeEnvironment.getFontScale()
+        try {
+            RuntimeEnvironment.setFontScale(1.5f)
+            compose.activityRule.scenario.recreate()
+            app.fixture.response =
+                AndroidUpdates(null, updateRelease("99.0.0").copy(minimumSdk = 36))
+            checkNotNull(app.fixture.heldCheck).complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.available }
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+            val heading = updateDetailsHeading()
+            val close = updateDetailText("Close")
+            val headingBounds = heading.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val closeBounds = close.assertIsDisplayed().getUnclippedBoundsInRoot()
+            compose.runOnIdle { app.fixture.failCheck = true }
+            updateDetailText("Check versions").performClick()
+            val error =
+                compose
+                    .onNodeWithText(app.getString(R.string.updates_error_check))
+                    .assertIsDisplayed()
+            assertTrue(error.getUnclippedBoundsInRoot().bottom <= closeBounds.top)
+            assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
+            assertEquals(closeBounds, close.getUnclippedBoundsInRoot())
+        } finally {
+            RuntimeEnvironment.setFontScale(originalFontScale)
+        }
+    }
+
+    @Test
     @Config(qualifiers = "w240dp-h200dp")
     fun requiredUpdateActionIsReachableInACompactWindow() {
         app.fixture.heldCheck!!.complete(Unit)
