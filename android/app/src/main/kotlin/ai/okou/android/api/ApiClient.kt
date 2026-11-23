@@ -133,7 +133,7 @@ class ApiClient(
     private val required = MutableStateFlow<RequiredUpdate?>(null)
     val updateRequired = required.asStateFlow()
     private val http: okhttp3.OkHttpClient
-    private val api: CanonicalApi
+    private val writes: CanonicalApi
     private val reads: CanonicalApi
 
     init {
@@ -174,7 +174,7 @@ class ApiClient(
                 .addConverterFactory(StreamingJsonConverterFactory(json))
                 .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
                 .build()
-        api = retrofit.create(CanonicalApi::class.java)
+        writes = retrofit.create(CanonicalApi::class.java)
         reads =
             retrofit
                 .newBuilder()
@@ -183,134 +183,122 @@ class ApiClient(
                 .create(CanonicalApi::class.java)
     }
 
-    suspend fun organization(): Organization = executeRead { reads.organization(it) }
+    suspend fun organization(): Organization = read { organization(it) }
 
-    suspend fun workflows() = executeRead { reads.workflows(it, WorkflowsQuery()) }
+    suspend fun workflows() = read { workflows(it, WorkflowsQuery()) }
 
-    suspend fun workflow(id: String) = executeRead { reads.workflow(it, id) }
+    suspend fun workflow(id: String) = read { workflow(it, id) }
 
-    internal suspend fun workflowRunHistory(id: String, cursor: String?) = executeRead {
-        reads.workflowRunHistory(it, id, cursor)
+    internal suspend fun workflowRunHistory(id: String, cursor: String?) = read {
+        workflowRunHistory(it, id, cursor)
     }
 
-    suspend fun workspaceWorkflowAutomations() = executeRead {
-        reads.workspaceWorkflowAutomations(it)
+    suspend fun workspaceWorkflowAutomations() = read {
+        workspaceWorkflowAutomations(it)
     }
 
-    suspend fun workflowConnections() = executeRead {
-        reads.connectedConnectors(it)
+    suspend fun workflowConnections() = read {
+        connectedConnectors(it)
     }
         .builtinConnectors
         .mapTo(mutableSetOf()) { it.slug }
 
-    suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = execute {
-        api.updateWorkflow(it, id, body)
+    suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = write {
+        updateWorkflow(it, id, body)
     }
 
     suspend fun createWorkflowAutomation(id: String, body: CreateWorkflowAutomationRequest) =
-        execute(201) { api.createWorkflowAutomation(it, id, body) }
+        write(201) { createWorkflowAutomation(it, id, body) }
 
     suspend fun updateWorkflowAutomation(id: String, body: UpdateWorkflowAutomationRequest) =
-        execute {
-            api.updateWorkflowAutomation(it, id, body)
+        write {
+            updateWorkflowAutomation(it, id, body)
         }
 
-    suspend fun setWorkflowAutomationEnabled(id: String, enabled: Boolean) = execute {
-        if (enabled) api.enableWorkflowAutomation(it, id) else api.disableWorkflowAutomation(it, id)
+    suspend fun setWorkflowAutomationEnabled(id: String, enabled: Boolean) = write {
+        if (enabled) enableWorkflowAutomation(it, id) else disableWorkflowAutomation(it, id)
     }
 
-    suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
+    suspend fun realtimeToken() = write { realtimeToken(it, RealtimeTokenRequest) }
 
-    suspend fun personalInstructions(): PersonalInstructions = executeRead {
-        reads.personalInstructions(it)
+    suspend fun personalInstructions(): PersonalInstructions = read {
+        personalInstructions(it)
     }
 
     suspend fun updatePersonalInstructions(body: UpdateInstructionsRequest): PersonalInstructions =
-        execute {
-            api.updatePersonalInstructions(it, body)
+        write {
+            updatePersonalInstructions(it, body)
         }
 
-    suspend fun chatSnapshot(): ChatSnapshot = executeRead { reads.chatSnapshot(it) }
+    suspend fun chatSnapshot(): ChatSnapshot = read { chatSnapshot(it) }
 
-    suspend fun chatEvents(since: Long?): ChatEvents = executeRead { reads.chatEvents(it, since) }
+    suspend fun chatEvents(since: Long?): ChatEvents = read { chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = executeRead {
-        reads.indicators(it, queryIncludeActiveUnread = "true")
+    suspend fun indicators(): Indicators = read {
+        indicators(it, queryIncludeActiveUnread = "true")
     }
 
-    suspend fun createThread(body: CreateThreadRequest) =
-        execute(201) { api.createThread(it, body) }
+    suspend fun createThread(body: CreateThreadRequest) = write(201) { createThread(it, body) }
 
-    suspend fun sendInput(body: SendRequest) = execute(201) { api.sendInput(it, body) }
+    suspend fun sendInput(body: SendRequest) = write(201) { sendInput(it, body) }
 
-    suspend fun inputStatus(threadId: String, eventId: String) = executeRead {
-        reads.inputStatus(it, threadId, eventId)
+    suspend fun inputStatus(threadId: String, eventId: String) = read {
+        inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = executeRead { reads.onboardingStatus(it) }
+    suspend fun onboardingStatus() = read { onboardingStatus(it) }
 
-    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = executeRead {
-        if (target.threadId != null) reads.threadDraft(it, target.threadId)
-        else reads.workspaceDraft(it)
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = read {
+        if (target.threadId != null) threadDraft(it, target.threadId) else workspaceDraft(it)
     }
 
     suspend fun saveComposerDraft(target: ServerDraftTarget, text: String) {
         val body = plainDraftDocument(text)
-        executeResponse(204) {
+        writeNoContent {
             if (target.threadId != null)
-                api.saveThreadDraft(
+                saveThreadDraft(
                     it,
                     target.threadId,
                     json.decodeFromJsonElement<SaveThreadDraft>(body),
                 )
-            else api.saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
+            else saveWorkspaceDraft(it, json.decodeFromJsonElement<SaveWorkspaceDraft>(body))
         }
     }
 
-    suspend fun recoveryCatalog() = executeRead { reads.recoveryCatalog(it) }
+    suspend fun recoveryCatalog() = read { recoveryCatalog(it) }
 
-    suspend fun recoveryModels() = executeRead { reads.recoveryModels(it) }
+    suspend fun recoveryModels() = read { recoveryModels(it) }
 
-    suspend fun recoverySubscriptions() = executeRead { reads.recoverySubscriptions(it) }
+    suspend fun recoverySubscriptions() = read { recoverySubscriptions(it) }
 
-    suspend fun recoveryBilling() = executeRead { reads.recoveryBilling(it) }
+    suspend fun recoveryBilling() = read { recoveryBilling(it) }
 
-    suspend fun usagePackCredits() = executeRead { reads.usagePackCredits(it) }
+    suspend fun usagePackCredits() = read { usagePackCredits(it) }
 
-    suspend fun activateModelAccount(accountId: String) = execute {
-        api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
+    suspend fun activateModelAccount(accountId: String) = write {
+        activateModelAccount(it, accountId, ActivateModelAccountRequest)
     }
 
-    internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
-        executeRead {
-            reads.request(it)
-        }
-
-    internal suspend fun <T> write(request: suspend CanonicalApi.(String) -> Response<T>): T =
-        execute {
-            api.request(it)
-        }
-
-    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = execute {
-        api.resetSubscription(
+    suspend fun resetSubscription(accountId: String, idempotencyKey: String) = write {
+        resetSubscription(
             it,
             accountId,
             ai.okou.android.api.generated.ResetSubscriptionRequest(idempotencyKey),
         )
     }
 
-    suspend fun projectSnapshot(): ProjectSnapshot = executeRead { reads.projectSnapshot(it) }
+    suspend fun projectSnapshot(): ProjectSnapshot = read { projectSnapshot(it) }
 
-    suspend fun projectEvents(since: Long): ProjectEvents = executeRead {
-        reads.projectEvents(it, since)
+    suspend fun projectEvents(since: Long): ProjectEvents = read {
+        projectEvents(it, since)
     }
 
-    suspend fun historySnapshot(threadId: String) = executeRead {
-        reads.historySnapshot(it, threadId)
+    suspend fun historySnapshot(threadId: String) = read {
+        historySnapshot(it, threadId)
     }
 
-    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = executeRead { token ->
-        reads.historyCatchUp(
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = read { token ->
+        historyCatchUp(
             token,
             cursors.map { (threadId, cursor) ->
                 cursor.validate()
@@ -319,114 +307,112 @@ class ApiClient(
         )
     }
 
-    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = executeRead {
+    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = read {
         cursor.validate()
         val query =
             if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
             else HistoryRowsQueryVariant2(cursor.seqId, cursor.eventId, 50.0)
-        reads.historyRows(it, threadId, query)
+        historyRows(it, threadId, query)
     }
 
-    suspend fun threadDetail(threadId: String) = executeRead { reads.threadDetail(it, threadId) }
+    suspend fun threadDetail(threadId: String) = read { threadDetail(it, threadId) }
 
-    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = executeRead {
-        reads.artifactCatalog(it, query)
+    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = read {
+        artifactCatalog(it, query)
     }
 
-    internal suspend fun artifactDetail(id: String) = executeRead {
-        reads.artifactDetail(it, id, ArtifactDetailQuery())
+    internal suspend fun artifactDetail(id: String) = read {
+        artifactDetail(it, id, ArtifactDetailQuery())
     }
 
-    internal suspend fun resolveArtifactReference(reference: String) = executeRead {
-        reads.resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
+    internal suspend fun resolveArtifactReference(reference: String) = read {
+        resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
     }
 
-    internal suspend fun artifactDownload(reference: String) = executeRead {
-        reads.artifactDownload(it, reference)
+    internal suspend fun artifactDownload(reference: String) = read {
+        artifactDownload(it, reference)
     }
 
-    internal suspend fun artifactSitePreview(slug: String, host: String) = executeRead {
-        reads.artifactSitePreview(it, slug, host)
+    internal suspend fun artifactSitePreview(slug: String, host: String) = read {
+        artifactSitePreview(it, slug, host)
     }
 
-    suspend fun searchChatMessages(keyword: String) = executeRead {
-        reads.searchChatMessages(it, keyword)
+    suspend fun searchChatMessages(keyword: String) = read {
+        searchChatMessages(it, keyword)
     }
 
-    suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
+    suspend fun markRead(threadId: String) = write { markRead(it, threadId) }
 
-    suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
+    suspend fun markUnread(threadId: String) = write { markUnread(it, threadId) }
 
     suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
-        executeResponse(204) {
-            if (muted) api.muteThread(it, threadId, eventId)
-            else api.unmuteThread(it, threadId, eventId)
+        writeNoContent {
+            if (muted) muteThread(it, threadId, eventId) else unmuteThread(it, threadId, eventId)
         }
     }
 
     suspend fun setArchived(threadId: String, archived: Boolean, eventId: String) {
-        executeResponse(204) {
-            if (archived) api.archiveThread(it, threadId, eventId)
-            else api.unarchiveThread(it, threadId, eventId)
+        writeNoContent {
+            if (archived) archiveThread(it, threadId, eventId)
+            else unarchiveThread(it, threadId, eventId)
         }
     }
 
     suspend fun deleteThread(threadId: String, eventId: String) {
-        executeResponse(204) { api.deleteThread(it, threadId, eventId) }
+        writeNoContent { deleteThread(it, threadId, eventId) }
     }
 
     suspend fun renameProject(projectId: String, name: String, eventId: String) {
-        execute {
-            api.renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
+        write {
+            renameProject(it, projectId, RenameProjectRequest(eventId = eventId, name = name))
         }
     }
 
     suspend fun moveThreadToProject(threadId: String, projectId: String?, eventId: String) {
-        val membership = execute {
-            api.moveThreadToProject(it, threadId, MoveThreadToProjectRequest(eventId, projectId))
+        val membership = write {
+            moveThreadToProject(it, threadId, MoveThreadToProjectRequest(eventId, projectId))
         }
         if (membership.threadId != threadId || membership.projectId != projectId)
             throw ApiFailure.IncompatibleResponse()
     }
 
     suspend fun deleteProject(projectId: String, eventId: String) {
-        executeResponse(204) { api.deleteProject(it, projectId, DeleteProjectRequest(eventId)) }
+        writeNoContent { deleteProject(it, projectId, DeleteProjectRequest(eventId)) }
     }
 
     suspend fun renameThread(threadId: String, title: String, eventId: String) {
-        executeResponse(204) { api.renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
+        writeNoContent { renameThread(it, threadId, RenameThreadRequest(title, eventId)) }
     }
 
     suspend fun setPinned(threadId: String, pinOrder: String?, eventId: String) {
-        executeResponse(204) {
-            if (pinOrder != null) api.pinThread(it, threadId, eventId, pinOrder)
-            else api.unpinThread(it, threadId, eventId)
+        writeNoContent {
+            if (pinOrder != null) pinThread(it, threadId, eventId, pinOrder)
+            else unpinThread(it, threadId, eventId)
         }
     }
 
     suspend fun reorderPinnedThread(threadId: String, pinOrder: String, eventId: String) {
-        executeResponse(204) {
-            api.reorderPinnedThread(it, threadId, ReorderPinnedThreadRequest(pinOrder, eventId))
+        writeNoContent {
+            reorderPinnedThread(it, threadId, ReorderPinnedThreadRequest(pinOrder, eventId))
         }
     }
 
-    suspend fun preferences(): UserPreferences = executeRead { reads.preferences(it) }
+    suspend fun preferences(): UserPreferences = read { preferences(it) }
 
-    suspend fun defaultModelPreference() = executeRead { reads.defaultModelPreference(it) }
+    suspend fun defaultModelPreference() = read { defaultModelPreference(it) }
 
-    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
-        api.updateDefaultModelPreference(it, update)
+    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = write {
+        updateDefaultModelPreference(it, update)
     }
 
-    suspend fun featureSwitches() = executeRead { reads.featureSwitches(it) }
+    suspend fun featureSwitches() = read { featureSwitches(it) }
 
-    suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
-        execute {
-            api.initializePreferences(it, body)
-        }
+    suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences = write {
+        initializePreferences(it, body)
+    }
 
-    suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = execute {
-        api.updatePreferences(it, body)
+    suspend fun updatePreferences(body: UpdatePreferencesRequest): UserPreferences = write {
+        updatePreferences(it, body)
     }
 
     private fun checkAccess() {
@@ -434,20 +420,27 @@ class ApiClient(
         required.value?.let { throw ApiFailure.UpdateRequired(it) }
     }
 
-    private suspend fun <T> execute(
-        success: Int = 200,
-        request: suspend (String) -> Response<T>,
-    ): T =
-        executeResponse(success, request = request).body()
+    internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        send(200, renewOnUnauthorized = true) { reads.request(it) }.body()
             ?: throw ApiFailure.IncompatibleResponse()
 
-    private suspend fun <T> executeRead(request: suspend (String) -> Response<T>): T =
-        executeResponse(200, renewOnUnauthorized = true, request = request).body()
-            ?: throw ApiFailure.IncompatibleResponse()
+    internal suspend fun <T> write(request: suspend CanonicalApi.(String) -> Response<T>): T =
+        write(200, request)
 
-    private suspend fun <T> executeResponse(
+    private suspend fun <T> write(
         success: Int,
-        renewOnUnauthorized: Boolean = false,
+        request: suspend CanonicalApi.(String) -> Response<T>,
+    ): T =
+        send(success, renewOnUnauthorized = false) { writes.request(it) }.body()
+            ?: throw ApiFailure.IncompatibleResponse()
+
+    private suspend fun writeNoContent(request: suspend CanonicalApi.(String) -> Response<Unit>) {
+        send(204, renewOnUnauthorized = false) { writes.request(it) }
+    }
+
+    private suspend fun <T> send(
+        success: Int,
+        renewOnUnauthorized: Boolean,
         request: suspend (String) -> Response<T>,
     ): Response<T> =
         withContext(dispatcher) {
