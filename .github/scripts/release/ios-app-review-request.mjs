@@ -206,7 +206,10 @@ async function main() {
     RUNNER_TEMP: temp,
   } = process.env;
   checkBuild(version, build);
-  if (requestKey((await latestRequest(repo)) ?? {}) !== requestKey(run))
+  if (
+    requestKey((await latestRequest(repo, { version, build })) ?? {}) !==
+    requestKey(run)
+  )
     throw new Error("A newer manual request superseded this one");
   const path = join(temp, "ios-app-review-proof.json");
   if (process.argv[2] === "verify") {

@@ -56,18 +56,18 @@ export async function triggerEligible(repo, source) {
 }
 
 export async function pendingRequest(repo, source, serving) {
+  const target = (await repo.policy("main")).policy.reviewCandidate;
+  if (!target) return { reason: "There is no active candidate on main" };
   if (!(await triggerEligible(repo, source)))
     return { reason: "No successful API promotion or manual review request" };
-  const run = await latestRequest(repo);
+  const run = await latestRequest(repo, target);
   if (run?.status !== "completed" || run.conclusion !== "success")
-    return { reason: "No completed current manual request" };
+    return { reason: "No completed current manual request for the candidate" };
   if (
     source.event === "workflow_dispatch" &&
     requestKey(source) !== requestKey(run)
   )
-    return { reason: "This manual request was superseded" };
-  if (!(await repo.policy("main")).policy.reviewCandidate)
-    return { reason: "There is no active candidate on main" };
+    return { reason: "This manual request does not own the active candidate" };
   const name = `ios-app-review-request-${run.run_attempt}`;
   const { artifacts } = await repo.api(
     `actions/runs/${run.id}/artifacts?name=${name}&per_page=100`,
@@ -150,7 +150,7 @@ async function main() {
   )
     throw new Error("Manual request changed before submission");
   const assertCurrent = async () => {
-    const latest = await latestRequest(repo);
+    const latest = await latestRequest(repo, request);
     if (
       latest?.conclusion !== "success" ||
       latest.status !== "completed" ||

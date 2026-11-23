@@ -6,6 +6,9 @@ on:
     types: [completed]
     branches: [main]
 
+env:
+  npm_config_audit: "false"
+
 permissions:
   actions: read
   contents: read

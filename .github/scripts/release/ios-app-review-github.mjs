@@ -114,14 +114,23 @@ export function nativeRun(run, repo, workflow, event) {
   );
 }
 
-export async function latestRequest(repo) {
-  const { workflow_runs: runs } = await repo.api(
-    `actions/workflows/${requestWorkflow}/runs?branch=main&event=workflow_dispatch&per_page=1`,
-  );
-  const run = runs[0];
-  return nativeRun(run, repo.name, requestWorkflow, "workflow_dispatch")
-    ? run
-    : undefined;
+function requestTitle({ version, build }) {
+  return `Request App Review for iOS ${version} (${build})`;
+}
+
+export async function latestRequest(repo, target) {
+  // A conflicting request cannot displace the build already registered on main.
+  // For this build, a newer failed or pending attempt supersedes its old receipt.
+  for await (const run of repo.pages(
+    `actions/workflows/${requestWorkflow}/runs?branch=main&event=workflow_dispatch`,
+    "workflow_runs",
+  )) {
+    if (
+      nativeRun(run, repo.name, requestWorkflow, "workflow_dispatch") &&
+      run.display_title === requestTitle(target)
+    )
+      return run;
+  }
 }
 
 export function requestKey(run) {
@@ -132,6 +141,7 @@ export function checkRequest(request, run) {
   checkBuild(request.version, request.build);
   if (
     request.request !== requestKey(run) ||
+    run.display_title !== requestTitle(request) ||
     request.appId !== appId ||
     !isSha(request.commit) ||
     typeof request.appleBuildId !== "string" ||

@@ -211,7 +211,8 @@ receipt. Verification does not submit a build or change a minimum version.
    marketing version and TestFlight build number. Use a release for which the
    publisher recorded a source commit. The run links the protected TestFlight
    receipt and a candidate policy PR. Repeating the request for the same
-   build reuses its open or merged registration.
+   build reuses its open or merged registration. A conflicting request for
+   another build leaves the registered candidate in place.
 2. Install that build from TestFlight, point it at production, sign in, send
    a message and view the result. Check the QA item in the candidate PR body
    and merge the PR through the normal queue. If the compatibility check's

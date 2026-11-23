@@ -29,6 +29,7 @@ const target = {
 };
 const manual = {
   id: 12,
+  display_title: "Request App Review for iOS 0.54.0 (196)",
   run_attempt: 1,
   path: `.github/workflows/${requestWorkflow}`,
   event: "workflow_dispatch",
@@ -104,8 +105,6 @@ function repository(options = {}) {
     url: `https://github.com/${repoName}`,
     async api(path, method = "GET", data) {
       calls.push({ path, method, data });
-      if (path.startsWith("actions/workflows/"))
-        return { workflow_runs: [run] };
       if (path.includes("/artifacts?"))
         return {
           artifacts: [
@@ -153,6 +152,10 @@ function repository(options = {}) {
       return { sha: "blob", policy: policies[ref] };
     },
     async *pages(path) {
+      if (path.startsWith("actions/workflows/")) {
+        yield* options.runs ?? [run];
+        return;
+      }
       if (path.startsWith("commits?")) {
         for (const id of options.changes ?? [main, merge, before])
           yield { sha: id };
@@ -476,4 +479,43 @@ test("an existing candidate branch with an unrelated change or floor edit cannot
     await assert.rejects(register(repo, target, manual), /other changes/);
     assert.ok(calls.every((call) => call.method === "GET"));
   }
+});
+
+test("a conflicting request for a different build cannot cancel or authorize the deployed candidate", async () => {
+  const other = {
+    ...manual,
+    id: 13,
+    display_title: "Request App Review for iOS 0.54.0 (197)",
+    conclusion: "failure",
+  };
+  const release = {
+    ...manual,
+    id: 14,
+    event: "push",
+    path: ".github/workflows/release-please.yml",
+    head_sha: main,
+  };
+  const jobs = [
+    { name: "promote-api-production", head_sha: main, conclusion: "success" },
+  ];
+  assert.equal(
+    (
+      await pendingRequest(
+        repository({ jobs, runs: [other, manual] }).repo,
+        release,
+        () => production,
+      )
+    ).reason,
+    null,
+  );
+  assert.match(
+    (
+      await pendingRequest(
+        repository({ jobs, runs: [other] }).repo,
+        release,
+        () => production,
+      )
+    ).reason,
+    /No completed current manual request/,
+  );
 });
