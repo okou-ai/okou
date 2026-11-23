@@ -149,7 +149,7 @@ test("Join an invited workspace from the workspace switcher", async () => {
   });
 });
 
-test("Show the brand default for workspaces that never uploaded a logo", async () => {
+test("Show only the default texture for workspaces that never uploaded a logo", async () => {
   // Clerk fills `imageUrl` with a generated placeholder for every organization,
   // so only `hasImage` says whether a logo was uploaded.
   const clerkPlaceholder = "https://img.clerk.test/default-organization.png";
@@ -218,7 +218,9 @@ test("Show the brand default for workspaces that never uploaded a logo", async (
     expect(within(menu).getByText("Invited Org")).toBeInTheDocument();
   });
   for (const name of ["workspace-3e46915f", "Design Org", "Invited Org"]) {
-    expect(within(menu).getByRole("img", { name })).not.toHaveAttribute("src");
+    const logo = within(menu).getByRole("img", { name });
+    expect(logo).not.toHaveAttribute("src");
+    expect(logo).toBeEmptyDOMElement();
   }
   expect(
     within(orgSwitcher).getByRole("img", { name: "workspace-3e46915f" }),
