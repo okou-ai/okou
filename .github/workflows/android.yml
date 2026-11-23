@@ -68,6 +68,11 @@ jobs:
     if: needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        forks: [1, 2]
+        trial: [1, 2]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
@@ -101,14 +106,36 @@ jobs:
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Test native state and application, lint, and assemble
-        run: bash android/scripts/check.sh
+        env:
+          TEST_FORKS: ${{ matrix.forks }}
+        run: |
+          set -euo pipefail
+          nproc
+          free -m
+          cat > "$RUNNER_TEMP/test-forks.gradle" <<'EOF'
+          gradle.projectsEvaluated {
+              rootProject.project(':app').tasks.named('testDebugUnitTest', Test) {
+                  maxParallelForks = System.getenv('TEST_FORKS').toInteger()
+              }
+          }
+          EOF
+          /usr/bin/time -v bash android/scripts/check.sh --profile --init-script "$RUNNER_TEMP/test-forks.gradle"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: okou-android-debug-${{ github.sha }}
+          name: okou-android-debug-${{ github.sha }}-${{ matrix.forks }}-${{ matrix.trial }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           overwrite: true
           retention-days: 7
+
+      - name: Retain benchmark test and timing reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: build-test-benchmark-${{ matrix.forks }}-${{ matrix.trial }}
+          path: |
+            android/app/build/test-results/testDebugUnitTest/*.xml
+            android/build/reports/profile/*.html
 
   instrumentation:
     needs: detect
