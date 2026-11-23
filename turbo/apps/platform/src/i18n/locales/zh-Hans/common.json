@@ -5157,7 +5157,7 @@
     "delete": "删除",
     "deleteChoiceDescription": "可以只删除 Project 并保留聊天，也可以同时删除其中的聊天。",
     "deleteError": "无法删除 Project",
-    "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天…",
+    "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天",
     "deleteProjectOnly": "仅删除 Project",
     "deleteThreadsDescription_other": "永久删除此 Project 和 {{count}} 个聊天，包括归档聊天及其历史记录。正在运行的任务会停止，关联的自动化会暂停。此操作无法撤销。",
     "deleteThreadsError": "删除已停止。部分聊天可能已被永久删除，请检查 Project 和剩余聊天后再继续。",

@@ -209,7 +209,7 @@ test("Project deletion confirmation includes every archived page and returns saf
   });
   const first = await openDeletion();
   const fullDelete = await waitFor(() => {
-    return button("Delete project and 101 threads…", first);
+    return button("Delete project and 101 threads", first);
   });
   click(fullDelete);
   const confirmation = await screen.findByRole("dialog", {
@@ -268,7 +268,7 @@ test("Retry reconciles an unknown deletion of the open thread and recovers navig
   const first = await openDeletion();
   click(
     await waitFor(() => {
-      return button("Delete project and 3 threads…", first);
+      return button("Delete project and 3 threads", first);
     }),
   );
   const confirmation = await screen.findByRole("dialog", {
@@ -304,7 +304,7 @@ test("A new Project member requires reviewing the changed list before deleting a
   const first = await openDeletion();
   click(
     await waitFor(() => {
-      return button("Delete project and 1 thread…", first);
+      return button("Delete project and 1 thread", first);
     }),
   );
   const confirmation = await screen.findByRole("dialog", {
@@ -375,7 +375,7 @@ test("Deleting the open Project thread finishes the batch before navigating to a
   const first = await openDeletion();
   click(
     await waitFor(() => {
-      return button("Delete project and 3 threads…", first);
+      return button("Delete project and 3 threads", first);
     }),
   );
   const confirmation = await screen.findByRole("dialog", {
@@ -424,7 +424,7 @@ test("Retry reconciles a final Project deletion that committed before its error 
   const first = await openDeletion();
   click(
     await waitFor(() => {
-      return button("Delete project and 1 thread…", first);
+      return button("Delete project and 1 thread", first);
     }),
   );
   const confirmation = await screen.findByRole("dialog", {
