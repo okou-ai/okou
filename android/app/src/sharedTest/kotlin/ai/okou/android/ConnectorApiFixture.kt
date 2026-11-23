@@ -32,12 +32,20 @@ internal const val CONNECTOR_DEVICE_EXAMPLE = "device-example"
 internal const val CONNECTOR_MANUAL_EXAMPLE = "manual-example"
 internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
+internal data class FixtureConnectorIcon(
+    val asset: String,
+    val invertInDarkMode: Boolean = false,
+    val scale: Double? = null,
+)
+
 internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
     val service: ConnectorService
+    @Volatile var icons: Map<String, FixtureConnectorIcon> = emptyMap()
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
+    @Volatile var detailReplyGate: CountDownLatch? = null
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
@@ -134,6 +142,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
@@ -157,7 +166,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         }
                         return json(
                             buildJsonObject {
-                                put("connectors", JsonArray(matched.map(CatalogEntry::body)))
+                                put("connectors", JsonArray(matched.map { it.body(icon(it.slug)) }))
                                 put("totalConnectorCount", available.size)
                                 put(
                                     "categoryConnectorCounts",
@@ -172,6 +181,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         )
                     }
                     val response = synchronized(accounts) { respond(request) }
+                    if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
+                        detailReplyGate?.await()
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -219,6 +230,15 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    private fun icon(slug: String): JsonObject {
+        val artwork = icons[slug]
+        return buildJsonObject {
+            put("url", https.server.url("/fixture-icons/${artwork?.asset ?: slug}.svg").toString())
+            put("invertInDarkMode", artwork?.invertInDarkMode ?: false)
+            artwork?.scale?.let { put("scale", it) }
+        }
+    }
+
     private fun respond(request: RecordedRequest): MockResponse {
         val url = checkNotNull(request.requestUrl)
         val path = url.encodedPath
@@ -234,7 +254,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                 buildJsonObject {
                                     put("target", target(slug))
                                     put("label", entries.first { it.slug == slug }.name)
-                                    put("icon", Json.parseToJsonElement(icon))
+                                    put("icon", icon(slug))
                                     put("hasPermissions", true)
                                     put("currentConnectionId", Json.parseToJsonElement("null"))
                                     put(
@@ -280,9 +300,9 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
-                } else json(buildJsonObject { put("connector", entry.body()) })
+                } else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
             }
             path == "/api/connector-accounts/inspect" -> {
                 val selected = body(request).getValue("selections").jsonArray
@@ -464,6 +484,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
 
     override fun close() {
         discoveryGate?.countDown()
+        detailReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         https.use { api.close() }
@@ -477,7 +498,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         val rank: Int?,
         val grantKind: String = "auth-code",
     ) {
-        fun body(): JsonObject {
+        fun body(icon: JsonObject): JsonObject {
             val method = if (grantKind == "auth-code") "oauth" else grantKind
             val methodLabel = if (grantKind == "auth-code") "OAuth" else method
             val singleAuth = if (grantKind == "auth-code") "\"oauth\"" else "null"
@@ -544,9 +565,6 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     }
 
     companion object {
-        private const val icon =
-            """{"url":"https://static.example/icon.svg","invertInDarkMode":false}"""
-
         private fun body(request: RecordedRequest) =
             Json.parseToJsonElement(request.body.readUtf8()).jsonObject
 

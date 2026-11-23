@@ -2202,6 +2202,7 @@ export const clientContractImportManifest = [
       "webhookGoogleFormsContract",
       "webhookGoogleWorkspaceEventsContract",
       "webhookHeartbeatContract",
+      "webhookMemoryArchiveContract",
       "webhookNotionContract",
       "webhookSessionOutputContract",
       "webhookStoragesCommitContract",

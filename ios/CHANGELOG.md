@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.54.0](https://github.com/okou-ai/okou/compare/ios-v0.53.3...ios-v0.54.0) (2026-11-23)
+
+
+### Features
+
+* **api:** separate app store and testflight minimum versions ([#50101](https://github.com/okou-ai/okou/issues/50101)) ([fe33370](https://github.com/okou-ai/okou/commit/fe333701c6a92676741d61982e3aeadd99fd0f85))
+
 ## [0.53.3](https://github.com/okou-ai/okou/compare/ios-v0.53.2...ios-v0.53.3) (2026-11-23)
 
 

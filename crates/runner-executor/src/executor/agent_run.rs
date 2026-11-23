@@ -192,6 +192,7 @@ pub(super) struct AgentExecutionResult {
     pub(super) sandbox_reuse_disposition: SandboxReuseDisposition,
     pub(super) stdout_stream_diagnostics: AgentStdoutStreamDiagnostics,
     pub(super) reusable_session_identity: Option<RestoredSessionIdentity>,
+    pub(super) memory_published: bool,
 }
 
 impl AgentExecutionResult {
@@ -206,6 +207,7 @@ impl AgentExecutionResult {
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
             reusable_session_identity: None,
+            memory_published: false,
         }
     }
 
@@ -220,6 +222,7 @@ impl AgentExecutionResult {
             sandbox_reuse_disposition: SandboxReuseDisposition::default(),
             stdout_stream_diagnostics: AgentStdoutStreamDiagnostics::default(),
             reusable_session_identity: None,
+            memory_published: false,
         }
     }
 
@@ -2499,6 +2502,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     ),
                     stdout_stream_diagnostics: stdout_stream_diagnostics_on_wait_error,
                     reusable_session_identity: None,
+                    memory_published: false,
                 });
             }
             let resource_diagnostics = if explicit_enospc_evidence([error.as_str()]) {
@@ -2738,6 +2742,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
             reusable_session_identity: None,
+            memory_published: false,
         },
         None => AgentExecutionResult {
             pre_agent_retry: None,
@@ -2745,6 +2750,7 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
             sandbox_reuse_disposition,
             stdout_stream_diagnostics,
             reusable_session_identity,
+            memory_published: stdout_drain_report.memory_published && !exit.stream_overflowed,
         },
     };
     telemetry.record(

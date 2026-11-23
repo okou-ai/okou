@@ -12,6 +12,7 @@ import {
 import {
   runWebhookContract,
   webhookFirewallAuthContract,
+  webhookMemoryArchiveContract,
   webhookUsageEventContract,
 } from "../contracts/webhooks";
 import { iosRouteBindings } from "./ios-routes";
@@ -107,6 +108,11 @@ const runtimeServiceRouteBindings = [
     id: "webhooks.run.storages.commit",
     owner: "guest-agent",
     route: runWebhookContract.storageCommit,
+  },
+  {
+    id: "webhooks.run.storages.memoryArchive",
+    owner: "runner",
+    route: webhookMemoryArchiveContract.read,
   },
   {
     id: "webhooks.run.firewall.auth",
