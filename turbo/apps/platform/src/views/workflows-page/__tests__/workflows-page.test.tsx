@@ -1277,3 +1277,25 @@ test("workflows-page-038 a completed reconnection clears the selected Calendar r
   });
   expect(screen.getByRole("switch")).toBeChecked();
 });
+
+test("workflows-page-068 the Sales Research title reveals the initials of its own author on hover", async () => {
+  const { sales } = directory();
+  context.mocks.api(
+    workflowsDetailContract.ownerProfile,
+    ({ params, respond }) => {
+      const author =
+        params.workflowId === sales.id ? "Test User" : "Olivia Park";
+      return respond(200, { displayName: author, imageUrl: null });
+    },
+  );
+  await setupPage({ context, path: "/workflows" });
+  await screen.findByRole("heading", { name: "Workflows" });
+  const title = await screen.findByText("Sales Research", { exact: true });
+  expect(screen.queryByText("TU", { exact: true })).toBeNull();
+  await userEvent.hover(title);
+  const tooltip = await screen.findByRole("tooltip");
+  expect(within(tooltip).getByText("TU", { exact: true })).toBeInTheDocument();
+  expect(
+    within(tooltip).getByText("Test User", { exact: true }),
+  ).toBeInTheDocument();
+});

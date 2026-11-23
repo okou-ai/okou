@@ -115,3 +115,60 @@ test("chat-capability-connectors-013 Enabling public data from the conversation 
     }
   }
 });
+
+test("chat-capability-connectors-011 the member continues with Canonical Drive's healthy default account", async () => {
+  const drive = catalogConnector({
+    slug: "canonical-drive",
+    label: "Canonical Drive",
+    method: noAuthMethod(),
+  });
+  const account = connectorAccountFixture(
+    { kind: "builtin", connectorSlug: drive.slug },
+    { authMethod: "public", displayName: "Archive desk" },
+  );
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector: drive });
+  });
+  context.mocks.api(
+    connectorAccountsContract.connections,
+    ({ query, respond }) => {
+      const match =
+        query.kind === "builtin" && query.connectorSlug === drive.slug;
+      return respond(200, {
+        connections: match ? [account] : [],
+        defaultConnection: match ? account : null,
+        nextCursor: null,
+      });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      return params.connectionId === account.id
+        ? respond(200, account)
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Unknown account" },
+          });
+    },
+  );
+  const next = "Resume canonical drive";
+  const href = new URL(
+    connectorActionUrl({ slug: drive.slug, callbackPrompt: next }),
+  );
+  createChatCapabilityHelpers(context).installCapabilityChat({
+    events: completedConversation(
+      "[Use Canonical Drive](" + href.pathname + href.search + ")",
+    ),
+  });
+  await setupPage({ context, path: RUN_PATH });
+  const card = await screen.findByTestId("connector-action-card");
+  expect(screen.queryByText(next, { exact: true })).toBeNull();
+  click(await findFastControl("button", "Continue", card));
+  await expect(screen.findByText(next, { exact: true })).resolves.toBeVisible();
+  await waitFor(() => {
+    expect(
+      within(card).getByText("Connected", { selector: "button" }),
+    ).toBeDisabled();
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+});

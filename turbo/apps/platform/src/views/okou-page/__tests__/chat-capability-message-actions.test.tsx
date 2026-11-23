@@ -18,6 +18,8 @@ import {
   RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 
+import { parseChatClipboardPayload } from "./chat-clipboard-test-helpers.ts";
+
 const context = testContext();
 const { installRunChat } = createChatRunFixtures(context);
 const LAUNCH_RUN_ID = "d0000000-0000-4000-a000-000000000c01";
@@ -315,6 +317,18 @@ test("Copy and paste a structured chat message from the keyboard without flatten
   );
   expect(plain).not.toContain("Legacy flattened launch notes");
   expect(html).not.toContain("Legacy flattened launch notes");
+  const exported = parseChatClipboardPayload(html);
+  expect(exported.text).toContain("Tighten the launch plan");
+  expect(exported.attachments).toMatchObject([
+    {
+      id: "file-launch-plan",
+      filename: "launch-plan.pdf",
+      url: new URL(
+        "/api/web/file-url?file_id=file-launch-plan",
+        location.origin,
+      ).href,
+    },
+  ]);
 
   const composer = screen.getByRole("textbox", { name: "Message" });
   await user.click(composer);

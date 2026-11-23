@@ -644,3 +644,107 @@ test("Manual reconnect creates the next tab in the reassigned window after its d
     );
   });
 });
+
+async function recoveringBrowser() {
+  const live = await online();
+  const handshake = live.cdp.holdNext(
+    "Target.attachToTarget",
+    primary.targetId,
+  );
+  const surface = screen
+    .getByRole<HTMLCanvasElement>("img", { name: "Live browser view" })
+    .getContext("2d");
+  if (!surface) {
+    throw new Error("Missing visible browser canvas");
+  }
+  let paintedWidth = 0;
+  let replacementWasCleared = false;
+  vi.spyOn(surface, "drawImage").mockImplementation((source) => {
+    paintedWidth = (source as ImageBitmap).width;
+  });
+  vi.spyOn(surface, "clearRect").mockImplementation(() => {
+    if (paintedWidth === 1491) {
+      replacementWasCleared = true;
+    }
+    paintedWidth = 0;
+  });
+  live.cdp.disconnect({ code: 1006 }, 0);
+  live.time(0, 16);
+  await handshake.received;
+  expect(proxy()).toBeDisabled();
+
+  return {
+    live,
+    handshake,
+    paintedWidth: () => {
+      return paintedWidth;
+    },
+    replacementWasCleared: () => {
+      return replacementWasCleared;
+    },
+  };
+}
+
+test("A recovering Ledger needs its pending browser handshake to accept typing", async () => {
+  const { live, handshake, paintedWidth } = await recoveringBrowser();
+  let received = false;
+  await handshake.release(undefined, () => {
+    received = true;
+  });
+  expect(received).toBeTruthy();
+  await expectStreamingAt(primary.url);
+  await write(live, "z");
+  expect(paintedWidth()).toBe(1440);
+});
+
+test.each([
+  ["browser-automatic-recovery-054", "binding"],
+  ["browser-automatic-recovery-055", "chat"],
+] as const)(
+  "%s replacing the %s preserves the next picture and input after the old handshake is released",
+  async (_id, change) => {
+    const { live, handshake, paintedWidth, replacementWasCleared } =
+      await recoveringBrowser();
+    const nextChat = "d0000000-0000-4000-9000-000000000005";
+    const threadId =
+      change === "chat" ? nextChat : live.viewer.browser.threadId;
+    const browser = {
+      ...live.viewer.browser,
+      threadId,
+      window: {
+        instanceId: "d0000000-0000-4000-9000-000000000019",
+        primaryWindowId: foreign.windowId,
+      },
+    };
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return respond(200, {
+        browser,
+        viewer: { ...live.viewer, browser, cdpUrl: endpoint },
+      });
+    });
+    if (change === "chat") {
+      history.replaceState(null, "", "/browsers/" + nextChat);
+      history.pushState(null, "", "/browsers/" + live.viewer.browser.threadId);
+      history.back();
+    } else {
+      context.mocks.ably.trigger("browserSessionChanged", { threadId });
+    }
+    await expectStreamingAt(foreign.url);
+    expect(pageTab(foreign.title)).toHaveAttribute("aria-selected", "true");
+    live.cdp.frame("AAAA", live.cdp.pageSession(foreign.targetId), 1491, 2);
+    await waitFor(() => {
+      return expect(paintedWidth()).toBe(1491);
+    });
+    await write(live, "a", foreign.targetId);
+    let oldTransportRead = false;
+    await handshake.release(undefined, () => {
+      oldTransportRead = true;
+    });
+    expect(oldTransportRead).toBeFalsy();
+    expect(paintedWidth()).toBe(1491);
+    await write(live, "z", foreign.targetId);
+    await expectStreamingAt(foreign.url);
+    expect(pageTab(foreign.title)).toHaveAttribute("aria-selected", "true");
+    expect(replacementWasCleared()).toBeFalsy();
+  },
+);

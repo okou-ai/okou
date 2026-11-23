@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
@@ -106,4 +106,60 @@ test("chat-composer-connectors-015 The custom directory offers Acme Search and e
   ).resolves.toBeEnabled();
   expect(within(browser).queryByText("Feishu", { exact: true })).toBeNull();
   expect(queryFastControl("button", "Connect Feishu", browser)).toBeNull();
+});
+
+async function startAnalyticsSignIn() {
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const { fixture } = await menu({
+    catalog: [
+      builtinConnector({
+        slug: "google-analytics",
+        label: "Google Analytics",
+        hasAccount: false,
+      }),
+    ],
+    featuredConnectorSlugs: ["google-analytics"],
+  });
+  const catalog = await directory();
+  const filter = within(catalog).getByPlaceholderText("Find connectors...");
+  await fill(filter, "Google Analytics");
+  const submit = await findFastControl(
+    "button",
+    "Connect Google Analytics",
+    catalog,
+  );
+  click(submit);
+  await waitFor(() => {
+    expect(popup.location.href).toBe(
+      "https://accounts.example.test/google-analytics",
+    );
+  });
+  return { popup, catalog, filter, submit, fixture };
+}
+
+test("chat-composer-connectors-007 closing member sign-in leaves the Analytics search available for retry", async () => {
+  const { popup, filter, submit } = await startAnalyticsSignIn();
+  expect(submit).toBeDisabled();
+  popup.close();
+  await waitFor(() => {
+    expect(submit).toBeEnabled();
+  });
+  expect(filter).toHaveValue("Google Analytics");
+});
+
+test("chat-composer-connectors-009 the member finishes Analytics authorization from the open provider window", async () => {
+  const { popup, catalog, fixture } = await startAnalyticsSignIn();
+  expect(popup.closed).toBeFalsy();
+  fixture.completeOAuth(crypto.randomUUID());
+  expect(popup.closed).toBeFalsy();
+  popup.close();
+  await waitFor(() => {
+    expect(catalog).not.toBeInTheDocument();
+  });
+  click(await findFastControl("button", "Connectors"));
+  await expect(
+    findFastControl("button", /^Google Analytics/u),
+  ).resolves.toBeVisible();
 });

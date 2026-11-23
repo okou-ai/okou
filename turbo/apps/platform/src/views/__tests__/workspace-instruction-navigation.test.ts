@@ -119,3 +119,13 @@ test("my-okou-010 Switching back to Alpha restores only its personal Instruction
   await expect(reopen()).resolves.toHaveTextContent("Alpha local draft");
   await expect(editor()).resolves.not.toHaveTextContent("Beta local draft");
 });
+
+test("A retired agent profile link offers Home, where the member can open personal Instructions", async () => {
+  await start("/agents/c0000000-0000-4000-a000-000000000001?tab=profile");
+  await screen.findByText("That page isn't here.");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  click(await screen.findByText("Back to home"));
+  await screen.findByLabelText("Switch workspace");
+  await expect(reopen()).resolves.toHaveTextContent("Alpha saved instructions");
+  expect(location.pathname).toBe("/");
+});
