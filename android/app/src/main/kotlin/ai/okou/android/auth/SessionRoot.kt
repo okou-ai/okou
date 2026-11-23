@@ -128,6 +128,7 @@ internal fun SessionRoot(
                         ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value?.timezone
                             ?: java.util.TimeZone.getDefault().id,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
+                    renamePresentation = ready?.renamePresentation ?: opened?.renamePresentation,
                     settingsContent = { destination, open, close ->
                         WorkspaceSettingsContent(
                             destination,
