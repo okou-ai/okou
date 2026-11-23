@@ -21,7 +21,7 @@ const context = testContext();
 function defaultNames() {
   return ["alpha", "beta", "charlie", "delta", "echo", "zulu"];
 }
-const key = "okou_recent-workflows";
+const key = "okou_recent-workflows:org_default:test-user-123";
 // A browser-owned storage area shared by the app and the simulated second tab.
 
 function installBrowserStorage() {

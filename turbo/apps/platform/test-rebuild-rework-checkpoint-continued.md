@@ -3175,7 +3175,7 @@ The fixed assignment covers 30 frozen files and 41 unique IDs. Two IDs receive f
 
 The artifact sidebar shows one title and the download saves the distinct source filename. Exchanging the two names changes the saved filename accordingly. The delete menu, cancellation focus and confirmed preview closure pass. The original title-as-filename clause remains open. Retrying a chat after interrupted creation preserves the admitted payload, chat and event identities. Opening the chat verifies the original prompt with Personal access.
 
-The merge from main preserves the existing weekday automation run and both success and failure outcomes of the optional recency write introduced in [#50189](https://github.com/okou-ai/okou/pull/50189). The associated tests run separately from the selected IDs.
+The merge from main preserves the existing weekday automation run and both success and failure outcomes of the optional recency write introduced in [#50189](https://github.com/okou-ai/okou/pull/50189). The browser-storage fixture for workflow recency uses the workspace and member key introduced by that change. The associated tests run separately from the selected IDs.
 
 The workflow picker shows four recent items under [#40543](https://github.com/okou-ai/okou/pull/40543). Event links land 28% down the viewport under [#41809](https://github.com/okou-ai/okou/pull/41809). The desktop QR and narrow-screen SMS invitation follow [#37478](https://github.com/okou-ai/okou/pull/37478).
 
