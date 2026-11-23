@@ -50,5 +50,4 @@ export enum FeatureSwitchKey {
   BillingSurvey = "billingSurvey",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
-  OkouRailEntry = "okouRailEntry",
 }

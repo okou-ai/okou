@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "サイドバー",
-      "chat": "チャット",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",

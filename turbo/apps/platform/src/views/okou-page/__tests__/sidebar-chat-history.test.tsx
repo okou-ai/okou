@@ -40,7 +40,6 @@ import {
   chatThreadMarkUnreadContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   fill,
@@ -1036,7 +1035,7 @@ test("Open a new My Okou Chat from a retained conversation", async () => {
     expect(pathname()).toBe("/");
   });
 
-  const chatLink = within(rail).getByLabelText("Chat");
+  const chatLink = within(rail).getByLabelText("Okou");
   expect(chatLink).toHaveAttribute("href", "/");
   click(chatLink);
 
@@ -1135,7 +1134,7 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
 
   const rail = await screen.findByTestId("labeled-nav-rail");
   await screen.findByPlaceholderText(PLACEHOLDER);
-  const chatLink = within(rail).getByLabelText("Chat");
+  const chatLink = within(rail).getByLabelText("Okou");
   expect(chatLink).toHaveAttribute("href", "/");
 
   fireEvent.keyDown(document, {
@@ -1191,7 +1190,7 @@ test("My Okou's Chat link returns a filtered chat list to the inbox", async () =
   });
   expect(header).toHaveTextContent("Archived");
 
-  click(within(rail).getByLabelText("Chat"));
+  click(within(rail).getByLabelText("Okou"));
 
   await waitFor(() => {
     expect(pathname()).toBe("/");
@@ -1208,9 +1207,6 @@ test("The Okou rail entry opens My Okou's chat page at /", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.OkouRailEntry]: true,
-    },
   });
 
   const rail = await screen.findByTestId("labeled-nav-rail");
@@ -1218,7 +1214,6 @@ test("The Okou rail entry opens My Okou's chat page at /", async () => {
   const okouLink = within(rail).getByLabelText("Okou");
   expect(okouLink).toHaveTextContent("Okou");
   expect(okouLink).toHaveAttribute("href", "/");
-  expect(within(rail).queryByLabelText("Chat")).toBeNull();
 
   click(okouLink);
   await waitFor(() => {
