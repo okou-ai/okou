@@ -106,8 +106,6 @@
     <string name="updates_current">Você está na versão mais recente</string>
     <string name="updates_preparing">Preparando…</string>
     <string name="updates_installing">Instalando…</string>
-    <string name="updates_install_failed">Falha na instalação</string>
-    <string name="updates_waiting_for_connection">Aguardando conexão</string>
     <string name="updates_connect_to_check">Conecte-se à internet para verificar se há atualizações.</string>
     <string name="updates_connect_to_download">Conecte-se à internet para baixar a atualização.</string>
     <string name="updates_check">Verificar atualizações</string>
@@ -123,16 +121,14 @@
     <string name="updates_permission">O Android precisa da sua permissão para instalar esta atualização. Permita que o Okou instale aplicativos nas Configurações e volte para instalar.</string>
     <string name="updates_required">Atualize o Okou para continuar</string>
     <string name="updates_required_description">Esta versão não é mais compatível. Atualize o app para continuar trabalhando.</string>
-    <string name="updates_download_percent">Download %1$s</string>
     <string name="updates_downloading">Baixando · %1$s</string>
-    <string name="updates_new_version">Nova versão disponível</string>
+    <string name="updates_needed">Atualização necessária</string>
+    <string name="updates_not_needed">Não é preciso atualizar</string>
     <string name="updates_package_size">Pacote: %1$s</string>
     <string name="updates_check_in_progress">Verificando…</string>
-    <string name="updates_check_failed">Falha na verificação</string>
     <string name="updates_version">Nova versão: %1$s</string>
     <string name="updates_open_settings">Abrir Configurações</string>
     <string name="updates_close">Fechar</string>
-    <string name="updates_interrupted">Atualização interrompida</string>
     <string name="updates_error_check">Não foi possível verificar atualizações.</string>
     <string name="updates_error_download">O download não terminou.</string>
     <string name="updates_error_integrity">Não foi possível verificar o pacote.</string>

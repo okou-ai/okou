@@ -114,9 +114,6 @@ private fun downloadLabel(fraction: Float?): String =
 private val UpdateUiState.interrupted
     get() = transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Interrupted
 
-private val UpdateUiState.installFailed
-    get() = problem == UpdateProblem.Install
-
 private val UpdateUiState.requiresNewerAndroid
     get() = displayedRelease?.let { (available || required) && it.minimumSdk > sdk } == true
 
@@ -264,41 +261,9 @@ internal fun UpdateHost(
 @Composable
 internal fun AppUpdateSettings(
     state: UpdateUiState,
-    @StringRes installProgress: Int?,
     open: () -> Unit,
     detailsOpen: Boolean = false,
 ) {
-    val transfer = state.transfer
-    val newVersion = state.canDownload && !state.interrupted
-    val summary =
-        when {
-            state.preparing -> stringResource(R.string.updates_preparing)
-            transfer is UpdateTransfer.Downloading ->
-                transfer.fraction()?.let {
-                    stringResource(R.string.updates_download_percent, updatePercent(it))
-                } ?: stringResource(R.string.updates_preparing)
-            state.canInstall ->
-                stringResource(
-                    installProgress
-                        ?: if (state.installFailed) R.string.updates_install_failed
-                        else R.string.updates_ready,
-                )
-            (transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Waiting) &&
-                state.available -> stringResource(R.string.updates_download_failed)
-            transfer is UpdateTransfer.Interrupted && state.available ->
-                stringResource(R.string.updates_interrupted)
-            state.requiresNewerAndroid -> stringResource(R.string.updates_android_unsupported)
-            newVersion -> stringResource(R.string.updates_new_version)
-            state.offline && !state.available ->
-                stringResource(R.string.updates_waiting_for_connection)
-            state.check == UpdateCheck.Checking ->
-                stringResource(R.string.updates_check_in_progress)
-            state.available -> stringResource(R.string.updates_new_version)
-            state.check == UpdateCheck.Failed || state.check == UpdateCheck.Waiting ->
-                stringResource(R.string.updates_check_failed)
-            state.check == UpdateCheck.Checked -> stringResource(R.string.updates_current)
-            else -> state.installedVersion
-        }
     val focus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
@@ -315,7 +280,10 @@ internal fun AppUpdateSettings(
             Modifier.focusRequester(focus)
                 .onFocusChanged { focused = it.isFocused }
                 .updateFocusOutline(RoundedCornerShape(12.dp), LocalActivityStatusColor.current),
-        value = summary,
+        value =
+            stringResource(
+                if (state.available) R.string.updates_needed else R.string.updates_not_needed,
+            ),
         valueMaxLines = 1,
         reserveValueSpace = true,
         onClick = {
@@ -323,7 +291,7 @@ internal fun AppUpdateSettings(
             open()
         },
         valueLeading =
-            if (newVersion) {
+            if (state.available) {
                 {
                     Box(
                         Modifier.size(8.dp)

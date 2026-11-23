@@ -106,8 +106,6 @@
     <string name="updates_current">Vous utilisez la dernière version</string>
     <string name="updates_preparing">Préparation…</string>
     <string name="updates_installing">Installation…</string>
-    <string name="updates_install_failed">Installation impossible</string>
-    <string name="updates_waiting_for_connection">En attente de connexion</string>
     <string name="updates_connect_to_check">Connectez-vous à Internet pour rechercher des mises à jour.</string>
     <string name="updates_connect_to_download">Connectez-vous à Internet pour télécharger la mise à jour.</string>
     <string name="updates_check">Rechercher des mises à jour</string>
@@ -123,16 +121,14 @@
     <string name="updates_permission">Android demande votre autorisation pour installer cette mise à jour. Autorisez Okou comme source d’installation dans les paramètres, puis revenez.</string>
     <string name="updates_required">Mettez Okou à jour pour continuer</string>
     <string name="updates_required_description">Cette version n’est plus prise en charge. Mettez à jour l’application pour reprendre votre travail.</string>
-    <string name="updates_download_percent">Téléchargé à %1$s</string>
     <string name="updates_downloading">Téléchargement · %1$s</string>
-    <string name="updates_new_version">Nouvelle version disponible</string>
+    <string name="updates_needed">Mise à jour nécessaire</string>
+    <string name="updates_not_needed">Aucune mise à jour requise</string>
     <string name="updates_package_size">Paquet : %1$s</string>
     <string name="updates_check_in_progress">Recherche…</string>
-    <string name="updates_check_failed">Échec de la recherche</string>
     <string name="updates_version">Nouvelle version : %1$s</string>
     <string name="updates_open_settings">Ouvrir les paramètres</string>
     <string name="updates_close">Fermer</string>
-    <string name="updates_interrupted">Mise à jour interrompue</string>
     <string name="updates_error_check">Impossible de rechercher les mises à jour.</string>
     <string name="updates_error_download">Le téléchargement est incomplet.</string>
     <string name="updates_error_integrity">Impossible de vérifier le fichier.</string>

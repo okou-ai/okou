@@ -107,8 +107,6 @@
     <string name="updates_current">You are up to date</string>
     <string name="updates_preparing">Preparing…</string>
     <string name="updates_installing">Installing…</string>
-    <string name="updates_install_failed">Installation failed</string>
-    <string name="updates_waiting_for_connection">Waiting for connection</string>
     <string name="updates_connect_to_check">Connect to the internet to check for updates.</string>
     <string name="updates_connect_to_download">Connect to the internet to download the update.</string>
     <string name="updates_check">Check for updates</string>
@@ -124,16 +122,14 @@
     <string name="updates_permission">Android needs your permission to install this update. Allow Okou as an installation source in Settings, then return to install.</string>
     <string name="updates_required">Update Okou to continue</string>
     <string name="updates_required_description">This version is no longer supported. Update to keep working.</string>
-    <string name="updates_download_percent">Download %1$s</string>
     <string name="updates_downloading">Downloading · %1$s</string>
-    <string name="updates_new_version">New version available</string>
+    <string name="updates_needed">Update needed</string>
+    <string name="updates_not_needed">No update needed</string>
     <string name="updates_package_size">Package: %1$s</string>
     <string name="updates_check_in_progress">Checking…</string>
-    <string name="updates_check_failed">Check failed</string>
     <string name="updates_version">New version: %1$s</string>
     <string name="updates_open_settings">Open Settings</string>
     <string name="updates_close">Close</string>
-    <string name="updates_interrupted">Update interrupted</string>
     <string name="updates_error_check">Unable to check for updates.</string>
     <string name="updates_error_download">The download did not finish.</string>
     <string name="updates_error_integrity">The downloaded package could not be verified.</string>

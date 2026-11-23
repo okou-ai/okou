@@ -218,7 +218,6 @@ class MainActivity : AppCompatActivity() {
                         appUpdates = {
                             AppUpdateSettings(
                                 updateState,
-                                installProgress,
                                 openUpdates,
                                 updateDetails.value,
                             )

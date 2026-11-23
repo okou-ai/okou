@@ -121,7 +121,7 @@ class NativeUpdateTest {
             fun click(label: Int) =
                 button(By.pkg(app.packageName).text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
-            fun revealSettingsUpdate(label: String = app.getString(R.string.updates_title)) {
+            fun revealSettingsUpdate(label: String) {
                 val target = By.pkg(app.packageName).text(label)
                 if (device.hasObject(target)) return
                 val settings = checkNotNull(find(By.pkg(app.packageName).scrollable(true)))
@@ -174,7 +174,17 @@ class NativeUpdateTest {
                 device.awaitChatList(app)
             }
             button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
-            revealSettingsUpdate()
+            val noUpdateNeeded = app.getString(R.string.updates_not_needed)
+            val updateNeeded = app.getString(R.string.updates_needed)
+            val settingsUpdate = By.pkg(app.packageName).text(app.getString(R.string.updates_title))
+            revealSettingsUpdate(noUpdateNeeded)
+            captureState("settings-current")
+            val settingsUpdateBounds = button(settingsUpdate).visibleBounds
+            fun assertSettingsRowSize() {
+                val bounds = button(settingsUpdate).visibleBounds
+                assertEquals(settingsUpdateBounds.width(), bounds.width())
+                assertEquals(settingsUpdateBounds.height(), bounds.height())
+            }
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
@@ -261,10 +271,8 @@ class NativeUpdateTest {
                 requireNotNull(device.wait(Until.findObject(By.desc(moreLabel)), 10_000)).click()
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(app.getString(R.string.updates_new_version))
-            exists(R.string.updates_new_version)
-            val settingsUpdate = By.pkg(app.packageName).text(app.getString(R.string.updates_title))
-            val settingsTitleBounds = button(settingsUpdate).visibleBounds
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-available")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
@@ -298,12 +306,8 @@ class NativeUpdateTest {
 
             openOverflow()
             click(R.string.settings)
-            val settingsProgress = app.getString(R.string.updates_download_percent, percent)
-            revealSettingsUpdate(settingsProgress)
-            assertNotNull(text(settingsProgress))
-            val progressTitleBounds = button(settingsUpdate).visibleBounds
-            assertEquals(settingsTitleBounds.width(), progressTitleBounds.width())
-            assertEquals(settingsTitleBounds.height(), progressTitleBounds.height())
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-progress")
             backToChatList()
 
@@ -344,8 +348,8 @@ class NativeUpdateTest {
             captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(app.getString(R.string.updates_ready))
-            exists(R.string.updates_ready)
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-ready")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))

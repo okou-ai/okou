@@ -106,8 +106,6 @@
     <string name="updates_current">已是最新版本</string>
     <string name="updates_preparing">准备中…</string>
     <string name="updates_installing">正在安装…</string>
-    <string name="updates_install_failed">安装失败</string>
-    <string name="updates_waiting_for_connection">等待联网</string>
     <string name="updates_connect_to_check">联网后检查更新。</string>
     <string name="updates_connect_to_download">联网后下载更新。</string>
     <string name="updates_check">检查更新</string>
@@ -123,16 +121,14 @@
     <string name="updates_permission">请在 Android 设置中允许 Okou 安装应用。授权后回到这里，继续安装已下载的更新。</string>
     <string name="updates_required">更新后继续使用 Okou</string>
     <string name="updates_required_description">当前版本已不受支持。请更新到新版本，继续你的工作。</string>
-    <string name="updates_download_percent">下载 %1$s</string>
     <string name="updates_downloading">下载中 %1$s</string>
-    <string name="updates_new_version">有新版本</string>
+    <string name="updates_needed">需要更新</string>
+    <string name="updates_not_needed">不需要更新</string>
     <string name="updates_package_size">安装包 %1$s</string>
     <string name="updates_check_in_progress">检查中</string>
-    <string name="updates_check_failed">检查失败</string>
     <string name="updates_version">新版本 %1$s</string>
     <string name="updates_open_settings">前往设置</string>
     <string name="updates_close">关闭</string>
-    <string name="updates_interrupted">更新中断</string>
     <string name="updates_error_check">暂时无法检查更新。</string>
     <string name="updates_error_download">下载未完成。</string>
     <string name="updates_error_integrity">无法验证安装包。</string>

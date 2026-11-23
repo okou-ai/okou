@@ -106,8 +106,6 @@
     <string name="updates_current">Tienes la versión más reciente</string>
     <string name="updates_preparing">Preparando…</string>
     <string name="updates_installing">Instalando…</string>
-    <string name="updates_install_failed">Error de instalación</string>
-    <string name="updates_waiting_for_connection">Esperando conexión</string>
     <string name="updates_connect_to_check">Conéctate a internet para buscar actualizaciones.</string>
     <string name="updates_connect_to_download">Conéctate a internet para descargar la actualización.</string>
     <string name="updates_check">Buscar actualizaciones</string>
@@ -123,16 +121,14 @@
     <string name="updates_permission">Android necesita tu permiso para instalar esta actualización. Permite que Okou instale aplicaciones en Ajustes y vuelve para instalar.</string>
     <string name="updates_required">Actualiza Okou para continuar</string>
     <string name="updates_required_description">Esta versión ya no es compatible. Actualiza para seguir trabajando.</string>
-    <string name="updates_download_percent">Descarga %1$s</string>
     <string name="updates_downloading">Descargando · %1$s</string>
-    <string name="updates_new_version">Nueva versión disponible</string>
+    <string name="updates_needed">Actualización necesaria</string>
+    <string name="updates_not_needed">No hace falta actualizar</string>
     <string name="updates_package_size">Paquete: %1$s</string>
     <string name="updates_check_in_progress">Buscando…</string>
-    <string name="updates_check_failed">Error al buscar</string>
     <string name="updates_version">Nueva versión: %1$s</string>
     <string name="updates_open_settings">Abrir Ajustes</string>
     <string name="updates_close">Cerrar</string>
-    <string name="updates_interrupted">Actualización interrumpida</string>
     <string name="updates_error_check">No se pudieron buscar actualizaciones.</string>
     <string name="updates_error_download">La descarga no terminó.</string>
     <string name="updates_error_integrity">No se pudo verificar el paquete.</string>

@@ -106,8 +106,6 @@
     <string name="updates_current">Anda menggunakan versi terbaru</string>
     <string name="updates_preparing">Menyiapkan…</string>
     <string name="updates_installing">Menginstal…</string>
-    <string name="updates_install_failed">Instalasi gagal</string>
-    <string name="updates_waiting_for_connection">Menunggu koneksi</string>
     <string name="updates_connect_to_check">Sambungkan ke internet untuk memeriksa pembaruan.</string>
     <string name="updates_connect_to_download">Sambungkan ke internet untuk mengunduh pembaruan.</string>
     <string name="updates_check">Periksa pembaruan</string>
@@ -123,16 +121,14 @@
     <string name="updates_permission">Android memerlukan izin untuk menginstal pembaruan ini. Izinkan Okou sebagai sumber pemasangan di Setelan, lalu kembali untuk menginstal.</string>
     <string name="updates_required">Perbarui Okou untuk melanjutkan</string>
     <string name="updates_required_description">Versi ini sudah tidak didukung. Perbarui aplikasi untuk melanjutkan pekerjaan.</string>
-    <string name="updates_download_percent">Unduh %1$s</string>
     <string name="updates_downloading">Mengunduh · %1$s</string>
-    <string name="updates_new_version">Versi baru tersedia</string>
+    <string name="updates_needed">Perlu diperbarui</string>
+    <string name="updates_not_needed">Tidak perlu diperbarui</string>
     <string name="updates_package_size">Paket: %1$s</string>
     <string name="updates_check_in_progress">Memeriksa…</string>
-    <string name="updates_check_failed">Pemeriksaan gagal</string>
     <string name="updates_version">Versi baru: %1$s</string>
     <string name="updates_open_settings">Buka Setelan</string>
     <string name="updates_close">Tutup</string>
-    <string name="updates_interrupted">Pembaruan terhenti</string>
     <string name="updates_error_check">Tidak dapat memeriksa pembaruan.</string>
     <string name="updates_error_download">Unduhan belum selesai.</string>
     <string name="updates_error_integrity">Paket tidak dapat diverifikasi.</string>
