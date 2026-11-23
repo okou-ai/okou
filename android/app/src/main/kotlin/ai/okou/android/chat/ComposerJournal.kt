@@ -38,6 +38,9 @@ enum class TextDisposition {
     Revoked,
 }
 
+internal val TextDisposition.hasLeftQueue: Boolean
+    get() = this != TextDisposition.Accepted && this != TextDisposition.Queued
+
 @Serializable
 data class TextReceipt(val threadId: String, val eventId: String, val disposition: TextDisposition)
 
@@ -54,6 +57,7 @@ data class ComposerMessagePreview(
     val text: String,
     val disposition: TextDisposition? = null,
     val pendingDelivery: PendingDelivery? = null,
+    val sequence: Long? = null,
 )
 
 @Serializable
@@ -196,4 +200,5 @@ data class ComposerState(
 internal fun PendingText.preview(
     disposition: TextDisposition? = null,
     pendingDelivery: PendingDelivery? = null,
-) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery)
+    sequence: Long? = null,
+) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery, sequence)

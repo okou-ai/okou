@@ -10,6 +10,7 @@ data class InputObservation(
     val threadId: String,
     val eventId: String,
     val disposition: TextDisposition?,
+    val sequence: Long? = null,
 )
 
 interface ChatComposerService {

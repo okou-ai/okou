@@ -754,12 +754,16 @@ internal class ChatComposerOwner(
             put(key, entry.copy(recovery = null))
     }
 
-    fun reconcileMessages(connection: Connection, threadId: String, persistedIds: Set<String>) {
+    fun reconcileMessages(
+        connection: Connection,
+        threadId: String,
+        transcript: HistoryTranscript,
+    ) {
         if (!connection.current()) return
         val state = mutable.value
         val matched =
             state.receiptMessages.values
-                .filter { it.threadId == threadId && it.eventId in persistedIds }
+                .filter { it.threadId == threadId && transcript.hasSettledInput(it.eventId) }
                 .map { it.eventId }
         if (matched.isNotEmpty())
             mutable.value = state.copy(receiptMessages = state.receiptMessages - matched)
@@ -768,11 +772,11 @@ internal class ChatComposerOwner(
             if (
                 pending.started == null ||
                     pending.threadId != threadId ||
-                    pending.eventId !in persistedIds ||
+                    pending.eventId !in transcript.persistedIds ||
                     !current(op)
             )
                 continue
-            settle(op, pending, TextDisposition.Accepted, fromHistory = true)
+            settle(op, pending, TextDisposition.Accepted, transcript = transcript)
             finish(op)
             op.job?.cancel()
         }
@@ -849,7 +853,7 @@ internal class ChatComposerOwner(
                     )
                         throw ApiFailure.IncompatibleResponse()
                     observed.disposition?.let {
-                        settle(op, pending, it)
+                        settle(op, pending, it, sequence = observed.sequence)
                         return
                     }
                 }
@@ -935,7 +939,7 @@ internal class ChatComposerOwner(
                 if (observed.threadId != pending.threadId || observed.eventId != pending.eventId)
                     throw ApiFailure.IncompatibleResponse()
                 if (observed.disposition != null) {
-                    settle(op, pending, observed.disposition)
+                    settle(op, pending, observed.disposition, sequence = observed.sequence)
                     return
                 }
             }
@@ -993,7 +997,12 @@ internal class ChatComposerOwner(
                     val latest = mutable.value.journal?.entries?.get(op.key) ?: return@launch
                     if (latest.pending?.eventId == event) {
                         if (observed.disposition != null)
-                            settle(op, checkNotNull(latest.pending), observed.disposition)
+                            settle(
+                                op,
+                                checkNotNull(latest.pending),
+                                observed.disposition,
+                                sequence = observed.sequence,
+                            )
                         else
                             mutable.value =
                                 mutable.value.copy(unobserved = mutable.value.unobserved + op.key)
@@ -1006,7 +1015,11 @@ internal class ChatComposerOwner(
                             if (preview == null) messages
                             else
                                 messages +
-                                    (event to preview.copy(disposition = observed.disposition)),
+                                    (event to
+                                        preview.copy(
+                                            disposition = observed.disposition,
+                                            sequence = observed.sequence ?: preview.sequence,
+                                        )),
                         )
                         connection.accepted(thread)
                     }
@@ -1024,7 +1037,8 @@ internal class ChatComposerOwner(
         op: Operation,
         pending: PendingText,
         disposition: TextDisposition,
-        fromHistory: Boolean = false,
+        transcript: HistoryTranscript? = null,
+        sequence: Long? = null,
     ) {
         if (!current(op)) return
         val journal = mutable.value.journal ?: return
@@ -1072,15 +1086,16 @@ internal class ChatComposerOwner(
             }
         }
         val history = op.connection.history?.uiState?.value
-        val hasMessage =
-            history?.thread?.id == pending.threadId &&
-                pending.eventId in history.transcript?.persistedIds.orEmpty()
+        val canonical =
+            transcript ?: history?.takeIf { it.thread?.id == pending.threadId }?.transcript
         val receiptMessages = mutable.value.receiptMessages
         replace(
             journal.copy(entries = entries, drafts = drafts),
             receiptMessages =
-                if (hasMessage || fromHistory) receiptMessages
-                else receiptMessages + (pending.eventId to pending.preview(disposition)),
+                if (canonical?.hasSettledInput(pending.eventId) == true) receiptMessages
+                else
+                    receiptMessages +
+                        (pending.eventId to pending.preview(disposition, sequence = sequence)),
         )
         if (pending.create != null) {
             synchronize(op.connection, ServerDraftTarget())

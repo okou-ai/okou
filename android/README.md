@@ -719,7 +719,10 @@ input, then only resends within the server's event retention window. Canonical
 history replaces the local bubble by input ID. A receipt removes progress while
 the queue state remains independently driven by input status and history.
 Status-confirmed queue entries can be withdrawn while the chat list and history
-catch up. Confirmed history determines eligibility once it has seen the input.
+catch up. An observed delivery or revocation also supersedes an older queued
+history row. The composer groups outstanding messages and workflow triggers in an
+independently scrolling queue, ordered by server sequence above the editor.
+Pending controls keep their feedback on the affected row while it is queued.
 Pending ordinary sends survive Activity recreation in memory. After process
 restart the app reads confirmed messages and queue entries from canonical history.
 

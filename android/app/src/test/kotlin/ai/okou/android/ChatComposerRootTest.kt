@@ -15,15 +15,19 @@ import android.content.Intent
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -34,6 +38,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
@@ -357,17 +362,20 @@ class ChatComposerRootTest {
             awaitConversation { historyStarted.count == 0L }
             messageText(pending.eventId, prompt).assertIsDisplayed()
             history.countDown()
+            val withdrawalLabel = app.getString(R.string.conversation_revoke)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty() &&
                     compose
                         .onAllNodesWithTag("message_${pending.eventId}")
                         .fetchSemanticsNodes()
                         .size == 1 &&
-                    pending.eventId !in editor?.uiState?.value?.receiptMessages.orEmpty()
+                    compose
+                        .onAllNodesWithContentDescription(withdrawalLabel)
+                        .fetchSemanticsNodes()
+                        .size == 1
             }
             messageText(pending.eventId, prompt).assertIsDisplayed()
-            messageText(pending.eventId, app.getString(R.string.conversation_revoke))
-                .assertIsDisplayed()
+            compose.onNodeWithContentDescription(withdrawalLabel).assertIsDisplayed()
             assertEquals(1, app.fixture.inputs.size)
         } finally {
             create.countDown()
@@ -690,16 +698,67 @@ class ChatComposerRootTest {
             }
             compose
                 .onNode(
-                    hasText(app.getString(R.string.conversation_revoke)) and
+                    hasContentDescription(app.getString(R.string.conversation_revoke)) and
                         hasAnyAncestor(hasTestTag("message_$eventId")),
                 )
                 .assertIsDisplayed()
                 .assertIsEnabled()
+                .assertWidthIsEqualTo(48.dp)
+                .assertHeightIsEqualTo(48.dp)
                 .performClick()
             awaitConversation { withdrawal.get() != null }
             val request = checkNotNull(withdrawal.get())
             assertEquals(input.getValue("threadId"), request.getValue("threadId"))
             assertEquals(eventId, request.getValue("revokesEventId").jsonPrimitive.content)
+            assertEquals(1, app.fixture.inputs.size)
+            messageText(eventId, app.getString(R.string.conversation_withdrawing))
+                .assertIsDisplayed()
+        } finally {
+            releaseList.countDown()
+        }
+    }
+
+    @Test
+    fun deliveredInputStatusKeepsTheBubbleWhenOlderQueuedHistoryArrives() {
+        val app = compose.activity.application as ComposerRootApplication
+        app.contextGate.countDown()
+        app.fixture.disconnectSend = true
+        app.fixture.inputDisposition = "consumed"
+        val releaseList = CountDownLatch(1)
+        app.fixture.beforeListReturn = { if (it) releaseList.await() }
+        try {
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            awaitConversation { editor?.uiState?.value?.journal != null }
+            val prompt = "Already delivered to the run"
+            compose.onNodeWithTag("message_input").performTextInput(prompt)
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            awaitConversation { app.fixture.inputs.size == 1 }
+            val (eventId, input) = app.fixture.inputs.entries.single()
+            val threadId = input.getValue("threadId").jsonPrimitive.content
+            app.sendGate.countDown()
+            awaitConversation {
+                editor?.uiState?.value?.entry(ComposerTarget(threadId))?.receipt?.disposition ==
+                    ai.okou.android.chat.TextDisposition.Consumed
+            }
+            messageText(eventId, prompt).assertIsDisplayed()
+            messageDelivery(eventId, "Sending…").assertDoesNotExist()
+            releaseList.countDown()
+            val history = compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready,
+                    )
+                    .chats
+                    .history
+            }
+            awaitConversation {
+                eventId in history.uiState.value.transcript?.pendingInputIds.orEmpty()
+            }
+            messageText(eventId, prompt).assertIsDisplayed()
+            compose.onNodeWithTag("conversation_queue").assertDoesNotExist()
             assertEquals(1, app.fixture.inputs.size)
         } finally {
             releaseList.countDown()

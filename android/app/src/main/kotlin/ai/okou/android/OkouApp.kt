@@ -1411,6 +1411,12 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                showComposerStatus =
+                                                    !shortConversation &&
+                                                        composerTarget != null &&
+                                                        pendingNewChat == null &&
+                                                        composer != null &&
+                                                        controls != null,
                                                 artifactActions =
                                                     if (chatArtifacts == null || thread == null)
                                                         null
@@ -1474,12 +1480,6 @@ internal fun OkouApp(
                                                     composer != null &&
                                                     controls != null
                                             ) {
-                                                if (!shortConversation)
-                                                    ConversationStatus(
-                                                        list.offline,
-                                                        runActions,
-                                                        short = false,
-                                                    )
                                                 ChatComposerField(
                                                     composer,
                                                     composerTarget,
@@ -1501,6 +1501,11 @@ internal fun OkouApp(
                                                     realtime =
                                                         chats.updates.takeIf { workspaceReady },
                                                     controls = runActions,
+                                                    showComposerStatus =
+                                                        !shortConversation &&
+                                                            createdId == null &&
+                                                            newTarget != null &&
+                                                            composer != null,
                                                 )
                                             }
                                         } else {
@@ -1522,7 +1527,7 @@ internal fun OkouApp(
                                                 newTarget != null &&
                                                 composer != null
                                         ) {
-                                            if (!shortConversation)
+                                            if (!shortConversation && provisionalId == null)
                                                 ConversationStatus(
                                                     list.offline,
                                                     null,

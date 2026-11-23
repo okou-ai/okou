@@ -42,9 +42,13 @@ internal class ConversationRunControls(
     val pending: List<RunControlIntent>,
     val offline: Boolean,
 ) {
-    val hasFeedback =
+    fun pendingOutsideQueue(queueIds: Set<String>) = pending.filterNot {
+        it.kind == RunControlKind.Revoke && it.targetId in queueIds
+    }
+
+    fun hasFeedback(queueIds: Set<String>) =
         state.persistence == RunControlPersistence.Failed ||
-            pending.isNotEmpty() ||
+            pendingOutsideQueue(queueIds).isNotEmpty() ||
             state.notice?.threadId == threadId ||
             confirmed?.detailPhase == ChatReadPhase.Failed ||
             confirmed?.detail?.cancellationRecoveryPending == true
@@ -62,14 +66,25 @@ internal class ConversationRunControls(
     }
 
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
-        if (
-            !available ||
-                !confirmed.canWithdrawInput(threadId, eventId, preview) ||
-                pending.any { it.kind == RunControlKind.Revoke && it.targetId == eventId }
-        )
-            return null
-        return { model.skip(threadId, eventId, preview) }
+        if (!available || !confirmed.canWithdrawInput(threadId, eventId, preview)) return null
+        val intent = withdrawal(eventId)
+        return when {
+            intent == null -> ({ model.skip(threadId, eventId, preview) })
+            state.phases[intent.id] == RunControlPhase.Retryable -> ({ model.retry(intent.id) })
+            else -> null
+        }
     }
+
+    private fun withdrawal(eventId: String) = pending.firstOrNull {
+        it.kind == RunControlKind.Revoke && it.targetId == eventId
+    }
+
+    fun withdrawalPhase(eventId: String) = withdrawal(eventId)?.let { state.phases.getValue(it.id) }
+
+    fun checkWithdrawal(eventId: String): (() -> Unit)? =
+        if (available && withdrawalPhase(eventId) == RunControlPhase.Unknown)
+            ({ model.check(threadId) })
+        else null
 }
 
 @Composable
@@ -184,11 +199,11 @@ private fun ConversationOffline(short: Boolean) {
 }
 
 @Composable
-internal fun RunControlsFeedback(controls: ConversationRunControls) {
+internal fun RunControlsFeedback(controls: ConversationRunControls, queueIds: Set<String>) {
     val model = controls.model
     val threadId = controls.threadId
     val state = controls.state
-    val pending = controls.pending
+    val pending = controls.pendingOutsideQueue(queueIds)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.persistence == RunControlPersistence.Failed) {
             Text(stringResource(R.string.controls_storage_failed))

@@ -271,6 +271,7 @@ class CanonicalWorkspaceSession(
                             InputStatusVariant3Status.REVOKED -> TextDisposition.Revoked
                             InputStatusVariant3Status.UNAVAILABLE -> null
                         },
+                        observed.input?.seqId,
                     )
             }
         if (result.threadId != threadId || result.eventId != eventId)

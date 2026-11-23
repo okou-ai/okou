@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">Tindakan balasan</string>
     <string name="conversation_copy_reply">Salin balasan</string>
     <string name="conversation_reply_copied">Balasan disalin</string>
-    <string name="conversation_revoke">Tarik</string>
+    <string name="conversation_revoke">Tarik pesan dari antrean</string>
+    <string name="conversation_queue">Antrean</string>
+    <string name="conversation_queue_automation">Otomatisasi alur kerja</string>
+    <string name="conversation_skip_automation">Lewati otomatisasi ini</string>
+    <string name="conversation_withdrawing">Menarik…</string>
+    <string name="conversation_skipping">Melewati…</string>
+    <string name="conversation_withdraw_unknown">Hasil penarikan belum diketahui</string>
+    <string name="conversation_skip_unknown">Hasil pelewatan belum diketahui</string>
+    <string name="conversation_withdraw_failed">Pesan tidak dapat ditarik</string>
+    <string name="conversation_skip_failed">Otomatisasi tidak dapat dilewati</string>
     <string name="conversation_stop">Hentikan</string>
     <string name="conversation_find">Cari pesan</string>
     <string name="conversation_find_turns">Jelajahi giliran percakapan</string>
