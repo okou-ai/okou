@@ -18,24 +18,39 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.progressSemantics
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -54,13 +69,95 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
 import java.text.DateFormat
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import okhttp3.HttpUrl.Companion.toHttpUrl
+
+@Composable
+internal fun WorkspaceSettingsProgress(
+    destination: SettingsDestination,
+    model: WorkspaceSettingsModel,
+) {
+    val label =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> R.string.settings_refreshing_model_accounts
+            SettingsDestination.CreditBalance -> R.string.settings_refreshing_credit_balance
+            else -> return
+        }
+    val state by model.uiState.collectAsStateWithLifecycle()
+    val refreshing =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> state.accounts.refreshing
+            else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
+        }
+    if (refreshing && !state.offline) {
+        SettingsRefreshProgress(stringResource(label))
+    }
+}
+
+@Composable
+internal fun SettingsRefreshProgress(
+    description: String,
+    background: Color = MaterialTheme.colorScheme.background,
+) {
+    val colors = MaterialTheme.colorScheme
+    val track = colors.primary.copy(alpha = 0.18f).compositeOver(background)
+    val modifier =
+        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description }
+    var animate by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val motion = coroutineContext[MotionDurationScale]
+        snapshotFlow { motion?.scaleFactor != 0f }.collect { animate = it }
+    }
+    if (animate) {
+        LinearProgressIndicator(
+            modifier = modifier,
+            color = colors.primary,
+            trackColor = track,
+            strokeCap = StrokeCap.Round,
+        )
+    } else {
+        val shape = RoundedCornerShape(2.dp)
+        Box(modifier.progressSemantics().background(track, shape)) {
+            Box(Modifier.fillMaxWidth(0.3f).fillMaxHeight().background(colors.primary, shape))
+        }
+    }
+}
+
+@Composable
+internal fun WorkspaceSettingsFeedback(
+    model: WorkspaceSettingsModel,
+    snackbar: SnackbarHostState,
+    destination: SettingsDestination,
+    inOverlay: Boolean,
+) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val switchFailed by
+        rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
+    val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
+    val emailUnconfirmed by
+        rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
+    LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.notices.collectLatest { notice ->
+                val message =
+                    when (notice) {
+                        SettingsNotice.ModelAccountSwitchFailed -> switchFailed
+                        SettingsNotice.EmailSubscriptionFailed -> emailFailed
+                        SettingsNotice.EmailSubscriptionUnconfirmed -> emailUnconfirmed
+                    }
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            }
+        }
+    }
+}
 
 @Composable
 internal fun WorkspaceSettingsDataPage(
@@ -113,12 +210,20 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-private fun SettingsDetailStatus(text: String) {
+internal fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
-        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        modifier.semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodyMedium,
+    )
+}
+
+@Composable
+private fun SettingsReadError(@StringRes label: Int) {
+    SettingsDetailStatus(
+        stringResource(label),
+        Modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp, bottom = 12.dp),
     )
 }
 
@@ -131,18 +236,29 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 }
 
 @Composable
-private fun SettingsPlaceholder() {
-    SettingsGroup {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            for (width in listOf(144.dp, 94.dp)) {
-                Box(
-                    Modifier.width(width)
-                        .height(16.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp),
-                        ),
-                )
+internal fun SettingsPlaceholder(loadingLabel: String? = null) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(250)
+        visible = true
+    }
+    val semantics =
+        if (visible && loadingLabel != null)
+            Modifier.semantics { contentDescription = loadingLabel }
+        else Modifier
+    Box(Modifier.alpha(if (visible) 1f else 0f).then(semantics)) {
+        SettingsGroup {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (width in listOf(144.dp, 94.dp)) {
+                    Box(
+                        Modifier.width(width)
+                            .height(14.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(8.dp),
+                            ),
+                    )
+                }
             }
         }
     }
@@ -170,7 +286,7 @@ private fun ModelAccounts(
     SettingsPageIntro(workspace, scope, status)
     when {
         accounts == null && (state.accounts.unavailable || state.offline) ->
-            SettingsDetailStatus(stringResource(R.string.settings_accounts_unavailable))
+            SettingsReadError(R.string.settings_accounts_unavailable)
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
                 SettingsSection(provider.name) { SettingsPlaceholder() }
@@ -207,22 +323,18 @@ private fun ModelAccounts(
                         group.forEachIndexed { index, account ->
                             key(account.id) {
                                 if (index > 0) HorizontalDivider()
+                                val switch = state.switching[provider]
                                 ModelAccountRow(
                                     account,
                                     provider,
                                     index + 1,
-                                    state.switching[provider] == account.id,
+                                    switch?.takeIf { it.accountId == account.id }?.phase,
                                     state.offline,
-                                    provider in state.switching,
+                                    switch != null,
                                     activateAccount,
                                 )
                             }
                         }
-                    }
-                    if (provider in state.switchFailures) {
-                        SettingsDetailStatus(
-                            stringResource(R.string.settings_account_switch_failed),
-                        )
                     }
                 }
             }
@@ -236,7 +348,7 @@ private fun ModelAccountRow(
     account: RecoverySubscriptionsSubscriptionsItem,
     provider: ModelAccountProvider,
     index: Int,
-    switching: Boolean,
+    switchPhase: AccountSwitchPhase?,
     offline: Boolean,
     groupSwitching: Boolean,
     activateAccount: (String) -> Unit,
@@ -249,7 +361,10 @@ private fun ModelAccountRow(
         when {
             account.isActive == true -> stringResource(R.string.settings_account_current)
             account.needsReconnect -> stringResource(R.string.settings_account_reconnect)
-            switching -> stringResource(R.string.settings_account_switching)
+            switchPhase == AccountSwitchPhase.Unconfirmed ||
+                switchPhase == AccountSwitchPhase.Confirming && offline ->
+                stringResource(R.string.settings_account_switch_unconfirmed)
+            switchPhase != null -> stringResource(R.string.settings_account_switching)
             else -> stringResource(R.string.settings_account_select)
         }
     val isActive = account.isActive == true
@@ -438,7 +553,7 @@ private fun CreditBalance(
                     stringResource(R.string.settings_credit_bonus) to member.bonusCredits,
                 ),
             )
-        } else CreditReadState(state.offline || state.usagePack.unavailable)
+        } else CreditReadState(state.usagePack, state.offline)
     }
     if (showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
@@ -464,20 +579,16 @@ private fun CreditBalance(
                         stringResource(label) to credits
                     },
                 )
-            } else CreditReadState(state.offline || state.workspaceCredits.unavailable)
+            } else CreditReadState(state.workspaceCredits, state.offline)
         }
     }
     SettingsWebAction(stringResource(R.string.settings_credit_web), "usage")
 }
 
 @Composable
-private fun CreditReadState(unavailable: Boolean) {
-    if (unavailable) {
-        SettingsGroup {
-            Box(Modifier.padding(16.dp)) {
-                SettingsDetailStatus(stringResource(R.string.settings_credit_unavailable))
-            }
-        }
+private fun CreditReadState(state: SettingsRead<*>, offline: Boolean) {
+    if (state.initialFailure || offline) {
+        SettingsReadError(R.string.settings_credit_unavailable)
     } else SettingsPlaceholder()
 }
 

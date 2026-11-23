@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
@@ -103,7 +104,9 @@ class AndroidUpdateClientTest {
                             it.check == UpdateCheck.Waiting || it.check == UpdateCheck.Failed
                         }
                     assertEquals(UpdateCheck.Waiting, rejected.check)
-                    advanceTimeBy(59_999)
+                    advanceTimeBy(2_999)
+                    runCurrent()
+                    assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                     assertEquals(1, server.requestCount)
 
                     advanceTimeBy(1)

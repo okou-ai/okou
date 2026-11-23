@@ -64,6 +64,7 @@ private class SessionModelTestFixture(private val temporary: TemporaryFolder) {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ChatComposerService by TestChatComposerService() {
         var closed = false
         private val canonical = CanonicalWorkspaceSession(identity, tokens)
@@ -81,6 +82,11 @@ private class SessionModelTestFixture(private val temporary: TemporaryFolder) {
 
         override suspend fun activateModelAccount(accountId: String) =
             canonical.activateModelAccount(accountId)
+
+        override suspend fun emailSubscription() = canonical.emailSubscription()
+
+        override suspend fun updateEmailSubscription(subscribed: Boolean) =
+            canonical.updateEmailSubscription(subscribed)
 
         override suspend fun sendControl(request: SendRequest): AcceptedInput =
             error("No control backend in this fixture")

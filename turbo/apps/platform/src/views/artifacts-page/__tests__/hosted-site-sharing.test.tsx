@@ -1,6 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -50,7 +51,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({ shareRows = false, groupedActions = false } = {}) {
+async function openSite({ shareRows = false, emailSharing = false } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -78,7 +79,7 @@ async function openSite({ shareRows = false, groupedActions = false } = {}) {
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
+      [FeatureSwitchKey.HostedSiteEmailSharing]: emailSharing,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -97,13 +98,13 @@ beforeEach(() => {
 
 async function openShare(label = "Share artifact") {
   await waitFor(() => {
-    expect(queryButtonByName(label)).toBeDefined();
+    expect(getButtonByName(label)).toBeVisible();
   });
   click(getButtonByName(label));
   await screen.findByRole("dialog", { name: label });
 }
 
-test("opening a site preloads its share URL and shows a skeleton until the current address is ready", async () => {
+test("opening a site waits for its current address before revealing Share", async () => {
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const currentSite = {
@@ -120,14 +121,13 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
 
   await openSite();
   await requested.promise;
-  await openShare();
   try {
-    const menu = await screen.findByRole("dialog", { name: "Share artifact" });
-    expect(menu.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getByLabelText("Share artifact")).not.toBeVisible();
+    expect(getButtonByName("Close artifact")).toBeEnabled();
   } finally {
     response.resolve();
   }
-
+  await openShare();
   await waitFor(() => {
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
@@ -549,7 +549,7 @@ test("the grouped toolbar does not wait for banner settings", async () => {
     return respond(200, { siteId, showBanner: false, revision: null });
   });
 
-  await openSite({ groupedActions: true });
+  await openSite();
   const preview = await screen.findByTestId("artifact-sidebar");
   const shareLabel = "Share artifact";
   await waitFor(() => {
@@ -969,7 +969,7 @@ test.each([{ refreshFails: false }, { refreshFails: true }])(
         expiresAt: "2099-01-01T00:00:00Z",
       });
     });
-    await openSite({ groupedActions: true });
+    await openSite();
     const label = "Share artifact";
     await openShare(label);
     await expectPermission("Only me");
@@ -1014,7 +1014,7 @@ test("the grouped toolbar waits for website permissions before revealing Share",
     await response.promise;
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  await openSite({ groupedActions: true });
+  await openSite();
   await requested.promise;
   const label = "Share artifact";
   try {
@@ -1026,28 +1026,6 @@ test("the grouped toolbar waits for website permissions before revealing Share",
     expect(getButtonByName(label)).toBeVisible();
   });
   await openShare(label);
-  await expectPermission("Only me");
-});
-
-test("permissions preload without claiming public access while their read is pending", async () => {
-  mockSiteAlias();
-  const requested = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(200, { siteId, visibility: "private", revision: null });
-  });
-  await openSite();
-  await requested.promise;
-  await openShare();
-  try {
-    await screen.findByRole("status", { name: "Loading permissions" });
-    expect(queryAllByRoleFast("radio")).toHaveLength(0);
-    expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
-  } finally {
-    response.resolve();
-  }
   await expectPermission("Only me");
 });
 
@@ -1158,30 +1136,6 @@ test("Share directly copies non-owners' website links without a settings popover
   expect(screen.queryByRole("dialog", { name: label })).not.toBeInTheDocument();
 });
 
-test("a pending Share copies the link once ownership resolves without owner settings", async () => {
-  mockSiteAlias();
-  const requested = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(hostContract.siteUrl, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Published website not found" },
-    });
-  });
-  await openSite();
-  await requested.promise;
-  await openShare();
-  await screen.findByRole("status", { name: "Loading permissions" });
-  response.resolve();
-  await screen.findByText("Link copied");
-  expect(clipboard.writes).toStrictEqual([site.url]);
-  expect(
-    screen.queryByRole("dialog", { name: "Share artifact" }),
-  ).not.toBeInTheDocument();
-});
-
 test("rapid permission choices settle on the latest audience using the refreshed revision", async () => {
   mockSiteAlias();
   const requested = createDeferredPromise<void>(context.signal);
@@ -1233,4 +1187,263 @@ test("rapid permission choices settle on the latest audience using the refreshed
   await waitFor(() => {
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
+});
+
+test("owners search accounts in Share, grant access, and remove a named viewer", async () => {
+  const shareId = "00000000-0000-4000-8000-000000000009";
+  const account = {
+    userId: "user_viewer",
+    name: "Taylor Viewer",
+    email: "taylor@example.com",
+  };
+  let shared = false;
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, {
+      shares: shared ? [{ id: shareId, email: account.email }] : [],
+    });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+    expect(query.query.toLowerCase()).toContain("ta");
+    return respond(200, { accounts: [account] });
+  });
+  context.mocks.api(
+    hostedSiteSharingContract.share,
+    ({ body, params, respond }) => {
+      expect(params.siteId).toBe(siteId);
+      expect(body.email).toBe(account.email);
+      shared = true;
+      return respond(200, {
+        share: { id: shareId, email: account.email },
+      });
+    },
+  );
+  context.mocks.api(hostedSiteSharingContract.remove, ({ params, respond }) => {
+    expect(params.shareId).toBe(shareId);
+    shared = false;
+    return respond(200, { removed: shareId });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "Ta");
+  expect(getButtonByName("Invite", menu)).toBeDisabled();
+  click(await screen.findByRole("option", { name: /Taylor Viewer/ }));
+  await waitFor(() => {
+    return expect(input).toHaveValue(account.email);
+  });
+  click(getButtonByName("Invite", menu));
+  await waitFor(() => {
+    expect(
+      queryButtonByName(`Remove access for ${account.email}`, menu),
+    ).toBeDefined();
+  });
+  const remove = getButtonByName(`Remove access for ${account.email}`, menu);
+  expect(input).toHaveValue("");
+  await expect(
+    screen.findByText("Sharing invitation processed"),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText("Can view")).not.toBeInTheDocument();
+  click(remove);
+  await waitFor(() => {
+    return expect(
+      within(menu).queryByText("taylor@example.com"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("a complete email can be invited without a matching account and private access includes invitees", async () => {
+  const email = "new-person@example.com";
+  const shareId = "00000000-0000-4000-8000-000000000010";
+  let invited = false;
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+    return respond(200, { accounts: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, {
+      shares: invited ? [{ id: shareId, email }] : [],
+    });
+  });
+  context.mocks.api(hostedSiteSharingContract.share, ({ body, respond }) => {
+    expect(body.email).toBe(email);
+    invited = true;
+    return respond(200, {
+      share: { id: shareId, email },
+    });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  expect(permission("Invited people")).toBeChecked();
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, email);
+  await screen.findByText(
+    "No workspace matches. Enter a full email to invite.",
+  );
+  click(getButtonByName("Invite", menu));
+  await expect(
+    screen.findByText("Sharing invitation processed"),
+  ).resolves.toBeInTheDocument();
+  await expect(within(menu).findByText(email)).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText("Can view")).not.toBeInTheDocument();
+  expect(within(menu).queryByText("Invited")).not.toBeInTheDocument();
+  expect(within(menu).getByText(email)).toBeInTheDocument();
+});
+
+test("email sharing stays hidden until its feature switch is enabled", async () => {
+  await openSite();
+  await openShare();
+  expect(
+    screen.queryByRole("combobox", { name: "Share with people" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "Only me" })).toBeInTheDocument();
+});
+
+test("a limited member search shows a recoverable message while complete email sharing remains available", async () => {
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, { shares: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+    return query.query === "Taylor"
+      ? respond(429, {
+          error: {
+            code: "RATE_LIMITED",
+            message: "Too many website sharing requests. Try again later.",
+          },
+        })
+      : respond(200, { accounts: [] });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "Taylor");
+  await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
+    "Member search is temporarily unavailable. Try again shortly.",
+  );
+  expect(getButtonByName("Invite", menu)).toBeDisabled();
+  await fill(input, "taylor@external.example");
+  await within(menu).findByText(
+    "No workspace matches. Enter a full email to invite.",
+  );
+  expect(within(menu).queryByRole("alert")).not.toBeInTheDocument();
+  expect(getButtonByName("Invite", menu)).toBeEnabled();
+});
+
+test("a limited invitation keeps its email draft and shows no success confirmation", async () => {
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, { shares: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+    return respond(200, { accounts: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.share, ({ respond }) => {
+    return respond(429, {
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many website sharing requests. Try again later.",
+      },
+    });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "taylor@external.example");
+  click(getButtonByName("Invite", menu));
+  await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not update sharing. Try again shortly.",
+  );
+  expect(input).toHaveValue("taylor@external.example");
+  expect(
+    screen.queryByText("Sharing invitation processed"),
+  ).not.toBeInTheDocument();
+  expect(
+    queryButtonByName("Remove access for taylor@external.example", menu),
+  ).toBeUndefined();
+  expect(getButtonByName("Invite", menu)).toBeEnabled();
+});
+
+test("audience choices hide people controls and retain drafts and invitations", async () => {
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "private",
+    revision: null,
+  };
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
+    status = {
+      ...status,
+      visibility: body.visibility,
+      revision: crypto.randomUUID(),
+    };
+    return respond(200, status);
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, {
+      shares: [
+        {
+          id: "00000000-0000-4000-8000-000000000011",
+          email: "invited@example.com",
+        },
+      ],
+    });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+    return respond(200, { accounts: [] });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share artifact" });
+  await expectPermission("Invited people");
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await within(menu).findByRole("list", { name: "People with access" });
+  await fill(input, "draft@example.com");
+
+  click(permission("Workspace"));
+  await expectPermission("Workspace");
+  expect(
+    within(menu).getByText("Default Org members and invited people"),
+  ).toBeInTheDocument();
+  expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
+  expect(within(menu).queryByRole("list")).not.toBeInTheDocument();
+
+  click(permission("Anyone"));
+  await expectPermission("Anyone");
+  expect(within(menu).getByText("Anyone with the link")).toBeInTheDocument();
+  expect(within(menu).queryByRole("combobox")).not.toBeInTheDocument();
+
+  click(permission("Invited people"));
+  await expectPermission("Invited people");
+  expect(
+    within(menu).getByRole("combobox", { name: "Share with people" }),
+  ).toHaveValue("draft@example.com");
+  expect(
+    within(menu).getByRole("list", { name: "People with access" }),
+  ).toHaveTextContent("invited@example.com");
+  expect(getButtonByName("Copy link", menu)).toBeEnabled();
 });

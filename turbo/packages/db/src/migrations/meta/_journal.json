@@ -3795,6 +3795,27 @@
       "when": 1795412018406,
       "tag": "1620_drop_custom_connector_skill_publication_view",
       "breakpoints": true
+    },
+    {
+      "idx": 1621,
+      "version": "7",
+      "when": 1795420969285,
+      "tag": "1621_hosted_site_email_sharing",
+      "breakpoints": true
+    },
+    {
+      "idx": 1622,
+      "version": "7",
+      "when": 1795428787258,
+      "tag": "1622_member_connector_account_access",
+      "breakpoints": true
+    },
+    {
+      "idx": 1623,
+      "version": "7",
+      "when": 1795432954375,
+      "tag": "1623_burly_jack_murdock",
+      "breakpoints": true
     }
   ]
 }

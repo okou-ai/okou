@@ -101,7 +101,7 @@ class UpdateRecoveryRootTest {
         compose.waitUntil(10_000) { app.updates.state.value.canDownload }
         compose.onNodeWithText("New version: 99.1.0").assertExists()
         compose
-            .onNodeWithText("Retry download")
+            .onNodeWithText("Download update")
             .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()

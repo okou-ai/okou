@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.249.113](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.112...runner-rs-v0.249.113) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share guarded idle reuse key prefix ([#50211](https://github.com/okou-ai/okou/issues/50211)) ([de1d66e](https://github.com/okou-ai/okou/commit/de1d66ef7cf2dcde2bffd698b9a36f9f7200988c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.112](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.111...runner-rs-v0.249.112) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.111](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.110...runner-rs-v0.249.111) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share guarded idle history payload construction ([#50161](https://github.com/okou-ai/okou/issues/50161)) ([f88b877](https://github.com/okou-ai/okou/commit/f88b877447ffb173d532fa58104765dd3936ab76))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.110](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.109...runner-rs-v0.249.110) (2026-11-23)
 
 

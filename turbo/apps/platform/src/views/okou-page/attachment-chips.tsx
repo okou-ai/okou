@@ -1,7 +1,5 @@
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import {
   ArtifactPreviewCloseButton,
   ArtifactPreviewDialogFrame,
@@ -1401,10 +1399,6 @@ function ArtifactPreviewDialogActions({
   const downloadMetadata = artifact ?? preview;
   const filename = artifact?.filename ?? artifactDialogFilename(preview);
   const showShare = preview.shareAvailable !== false;
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   const showSplitView = preview.splitViewAvailable !== false;
   const annotateLightboxImage = useSet(annotateLightboxImage$);
   const annotationTarget =
@@ -1423,7 +1417,6 @@ function ArtifactPreviewDialogActions({
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactPreviewActionGroup
         key={preview.url}
-        enabled={groupedActions}
         artifactId={artifact?.artifactId}
         metadataPending={actionsPending}
         shareAvailable={showShare}
@@ -1479,7 +1472,7 @@ function ArtifactPreviewDialogActions({
           artifactId={artifact?.artifactId}
           origin={{ kind: "preview-dialog" }}
           iconSize={18}
-          menu={groupedActions}
+          menu
         />
         <ArtifactActionSeparator />
         {showSplitView && (

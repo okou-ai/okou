@@ -302,13 +302,16 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     try await waitForBusinessResult { store.active != nil }
     store.submit()
     await fulfillment(of: [scheduled], timeout: 3)
-    XCTAssertNotNil(store.active?.browserURL)
+    let flow = try XCTUnwrap(store.active)
+    let url = try XCTUnwrap(flow.browserURL)
+    XCTAssertTrue(flow.usesSystemAuthenticationSession)
     XCTAssertEqual(callbacks.withLock { $0 }, 0)
-    store.browserDismissed()
+    store.authenticationFinished(flow: flow, url: url, error: CancellationError())
     clock.advance(.seconds(2))
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
   }
+
   func testDeviceAuthorizationPollsSessionTokenAndCompletesOnlyAfterServerReadiness() async throws {
     let scheduled = (1...2).map { expectation(description: "Device poll \($0) was scheduled") }
     let sleeps = Mutex(0)

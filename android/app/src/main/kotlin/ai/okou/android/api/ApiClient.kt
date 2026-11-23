@@ -34,6 +34,7 @@ import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
+import ai.okou.android.api.generated.UpdateEmailSubscriptionRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -82,6 +83,8 @@ fun interface WorkspaceTokenProvider {
 }
 
 data class RequiredUpdate(val minimumSupportedVersion: String?)
+
+internal val finiteReadRetryDelays = listOf(3_000L, 3_000L)
 
 sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Unauthenticated : ApiFailure("An authenticated workspace session is required")
@@ -340,6 +343,10 @@ class ApiClient(
         reads.artifactSitePreview(it, slug, host)
     }
 
+    suspend fun searchChatMessages(keyword: String) = execute {
+        reads.searchChatMessages(it, keyword)
+    }
+
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }
 
     suspend fun markUnread(threadId: String) = execute { api.markUnread(it, threadId) }
@@ -403,6 +410,12 @@ class ApiClient(
 
     suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
         api.updateDefaultModelPreference(it, update)
+    }
+
+    suspend fun emailSubscription() = execute { reads.emailSubscription(it) }
+
+    suspend fun updateEmailSubscription(subscribed: Boolean) = execute {
+        api.updateEmailSubscription(it, UpdateEmailSubscriptionRequest(subscribed))
     }
 
     suspend fun featureSwitches() = execute { reads.featureSwitches(it) }

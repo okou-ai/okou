@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.47.0](https://github.com/okou-ai/okou/compare/android-v0.46.1...android-v0.47.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### CI
+
+* **android:** shard debug jvm and instrumentation tests ([#50162](https://github.com/okou-ai/okou/issues/50162)) ([95dc02a](https://github.com/okou-ai/okou/commit/95dc02a356934d3be75ec6003e68e36962bbaf2a))
+
+## [0.46.1](https://github.com/okou-ai/okou/compare/android-v0.46.0...android-v0.46.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **android:** align app update surfaces with design ([#50122](https://github.com/okou-ai/okou/issues/50122)) ([99f3aa6](https://github.com/okou-ai/okou/commit/99f3aa67b5ba71a324b309efeb18d4313d5dd481))
+* **android:** restore cached model accounts and credit balances ([#50120](https://github.com/okou-ai/okou/issues/50120)) ([b17e345](https://github.com/okou-ai/okou/commit/b17e34584e42a8908be4b202287f7fe3a28953be))
+
+## [0.46.0](https://github.com/okou-ai/okou/compare/android-v0.45.2...android-v0.46.0) (2026-11-23)
+
+
+### Features
+
+* **app:** track suggestion card impressions and outcomes ([#50158](https://github.com/okou-ai/okou/issues/50158)) ([d1cb596](https://github.com/okou-ai/okou/commit/d1cb596036a9079ecd0eb85072610dce8d44f5fb))
+
+
+### Bug Fixes
+
+* **android:** recover chat list actions and reorder filtered pins ([#50016](https://github.com/okou-ai/okou/issues/50016)) ([0a63489](https://github.com/okou-ai/okou/commit/0a634898d4de6ff3c8f27de5506c1ccd447bd6d1))
+
 ## [0.45.2](https://github.com/okou-ai/okou/compare/android-v0.45.1...android-v0.45.2) (2026-11-23)
 
 

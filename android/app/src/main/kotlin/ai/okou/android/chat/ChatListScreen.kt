@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -107,9 +108,6 @@ private val immediatePlacement = snap<IntOffset>()
 @Composable
 internal fun ChatListScreen(
     state: ChatListUiState,
-    retryList: () -> Unit,
-    retryMetadata: () -> Unit,
-    retryIndicators: () -> Unit,
     open: (ConfirmedChat) -> Unit,
     provisionalChats: List<ProvisionalChat>,
     openProvisional: (ProvisionalChat) -> Unit,
@@ -229,7 +227,9 @@ internal fun ChatListScreen(
         remember(listState, projectExpansion) { ChatListProjectIds(savedExpansion) }
     val precedingIds = previousExpansion.ids
     val expansionChanged =
-        precedingIds != null && savedExpansion != null && precedingIds != savedExpansion
+        savedExpansion != null &&
+            (precedingIds != null || expansion.hasLocalChoices) &&
+            precedingIds.orEmpty() != savedExpansion
     val newlyExpanded =
         if (expansionChanged) expandedProjectIds - precedingIds.orEmpty() else emptySet()
     // Give Compose stable lazy item positions without animating the initial disk restore.
@@ -288,21 +288,15 @@ internal fun ChatListScreen(
         }
     val runningFrame = rememberRunningWaveFrame(listState, runningKeys)
     val metadataUsable = state.projectsSource != null
-    val metadataMissing =
-        state.projectsSource == null && state.projectsPhase == ChatReadPhase.Failed
     val listLabel = stringResource(R.string.chat_list_title)
     val widthDp = currentWindowSizeDp().width
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outline
-    val missingUnread =
-        state.confirmedAt != null &&
-            state.filter == ChatListFilter.Unread &&
-            unreadAt == null &&
-            groups.all { it.threads.isEmpty() }
+    val missingUnread = state.confirmedAt != null && state.waitingForUnreadIndicators
     val firstLoadFailed =
         !state.offline &&
-            if (missingUnread) state.indicatorsPhase == ChatReadPhase.Failed
+            if (missingUnread) state.indicatorsNonRetryableFailure
             else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val awaitingFirstList =
         (state.confirmedAt == null || missingUnread) &&
@@ -311,9 +305,21 @@ internal fun ChatListScreen(
             !firstLoadFailed &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
     val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
+    val unreadFilter = state.filter == ChatListFilter.Unread
+    val hasUsableList = state.confirmedAt != null && !missingUnread
     val syncConfirmation =
-        state.confirmedAt?.takeIf {
-            !missingUnread && !state.offline && state.listPhase == ChatReadPhase.Loading
+        if (!hasUsableList || state.offline) null
+        else {
+            val listRead = state.confirmedAt.takeIf { state.listPhase == ChatReadPhase.Loading }
+            val unreadRead =
+                state.unreadConfirmedAt?.takeIf {
+                    unreadFilter && state.indicatorsPhase == ChatReadPhase.Loading
+                }
+            when {
+                listRead == null -> unreadRead
+                unreadRead == null -> listRead
+                else -> minOf(listRead, unreadRead)
+            }
         }
     val syncDelay =
         remember(syncConfirmation) {
@@ -326,7 +332,11 @@ internal fun ChatListScreen(
     val syncDelayReached =
         rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
     val syncVisible =
-        !missingUnread && (state.listRetryProgressVisible || syncDelay == 0L || syncDelayReached)
+        hasUsableList &&
+            (state.listRetryProgressVisible ||
+                unreadFilter && state.indicatorsRetryProgressVisible ||
+                syncDelay == 0L ||
+                syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {
@@ -352,6 +362,10 @@ internal fun ChatListScreen(
                     add(key to content)
                 }
                 if (inlineControls != null) row("list_controls", inlineControls)
+                else if (state.filter == ChatListFilter.Inbox) {
+                    // Keep the top inset keyed so a new notice is visible from the top.
+                    row("list_top_inset") { Spacer(Modifier.height(4.dp)) }
+                }
                 if (startupRecovery != null) row("workspace_recovery", startupRecovery)
                 if (state.filter != ChatListFilter.Inbox) {
                     row("filter_heading") {
@@ -386,49 +400,36 @@ internal fun ChatListScreen(
                                 ChatContentLoadNotice(R.string.chat_list_load_when_online)
                             }
                         firstLoadFailed ->
-                            row("list_first_load_failure") {
-                                ChatContentLoadNotice(
+                            row("list_first_read") {
+                                ContentReadFeedback(
                                     R.string.chat_list_first_load_failed,
-                                    retry = if (missingUnread) retryIndicators else retryList,
-                                    retryEnabled =
-                                        missingUnread || state.listPhase != ChatReadPhase.Loading,
+                                    Modifier.padding(start = 12.dp, top = 24.dp, end = 12.dp)
+                                        .testTag("chat_list_first_read_status"),
                                 )
                             }
-                        skeletonVisible -> row("list_skeleton") { ChatListSkeleton() }
+                        skeletonVisible -> row("list_first_read") { ChatListSkeleton() }
                     }
                 }
                 if (state.cacheUnavailable || state.projectCacheUnavailable)
                     row("list_cache_unavailable") { ChatNotice(R.string.chat_cache_unavailable) }
                 if (
                     state.confirmedAt != null &&
-                        state.filter == ChatListFilter.Unread &&
                         !missingUnread &&
                         !state.offline &&
-                        state.indicators == null &&
-                        state.indicatorsPhase == ChatReadPhase.Failed
+                        state.indicatorsPhase == ChatReadPhase.Failed &&
+                        (!unreadFilter || state.indicatorsNonRetryableFailure)
                 ) {
                     row("list_indicators_unavailable") {
-                        ChatNotice(R.string.chat_refresh_failed)
-                        ChatAction(R.string.retry, retryIndicators)
+                        ChatListDependencyNotice(R.string.chat_refresh_failed)
                     }
                 }
                 if (
-                    projectExpansion != null &&
-                        expansion != null &&
-                        (expansion.readFailed || expansion.failedWrites.isNotEmpty())
-                ) {
-                    row("list_expansion_unavailable") {
-                        ChatNotice(
-                            if (expansion.readFailed) R.string.chat_project_expansion_read_failed
-                            else R.string.chat_project_expansion_save_failed,
-                        )
-                        ChatAction(R.string.retry, projectExpansion::retry)
-                    }
-                }
-                if (!state.offline && metadataMissing)
+                    state.confirmedAt != null &&
+                        !state.offline &&
+                        state.projectsPhase == ChatReadPhase.Failed
+                )
                     row("list_metadata_unavailable") {
-                        ChatNotice(R.string.chat_metadata_unavailable)
-                        ChatAction(R.string.retry, retryMetadata)
+                        ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }
             }
         KeepChatListProjectAnchor(listState, knownProjects) { key, offset ->
@@ -457,9 +458,6 @@ internal fun ChatListScreen(
                 PaddingValues(
                     start = listInset,
                     end = listInset,
-                    top =
-                        if (inlineControls == null && state.filter == ChatListFilter.Inbox) 4.dp
-                        else 0.dp,
                     bottom = bottomSpace,
                 ),
             state = listState,
@@ -478,9 +476,7 @@ internal fun ChatListScreen(
                                 activity = collapsedActivity[project.id],
                                 runningFrame = runningFrame,
                                 row = section.firstRow,
-                                toggle = {
-                                    projectExpansion?.setExpanded(project.id, section.collapsed)
-                                },
+                                toggle = { projectExpansion?.toggle(project.id) },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
                                 rename = { renamingProjectId = project.id },
                                 canRename = canRenameProject,
@@ -1332,20 +1328,30 @@ internal fun ChatContentLoadNotice(
             Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
             contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                stringResource(message),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        letterSpacing = 0.sp,
-                    ),
-            )
+            ContentReadFeedback(message)
         }
         if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
     }
+}
+
+@Composable
+private fun ChatListDependencyNotice(@StringRes message: Int) {
+    ContentReadFeedback(message, Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+}
+
+@Composable
+internal fun ContentReadFeedback(@StringRes message: Int, modifier: Modifier = Modifier) {
+    Text(
+        stringResource(message),
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style =
+            MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.sp,
+            ),
+    )
 }
 
 @Composable

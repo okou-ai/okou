@@ -19,7 +19,10 @@ import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.PreferenceFeedback
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
+import ai.okou.android.settings.EmailSubscriptionSetting
 import ai.okou.android.settings.WorkspaceSettingsDataPage
+import ai.okou.android.settings.WorkspaceSettingsFeedback
+import ai.okou.android.settings.WorkspaceSettingsProgress
 import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.rememberSettingsFlag
@@ -138,14 +141,18 @@ internal fun SessionRoot(
                             appUpdates,
                             retry,
                             snackbar,
+                            feedbackInOverlay,
                             { feedbackInOverlay = it },
                         )
+                    },
+                    settingsProgress = { destination ->
+                        if (ready != null) WorkspaceSettingsProgress(destination, ready.settings)
                     },
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,
                     chatArtifacts = ready?.chatArtifacts,
                     connectors = ready?.connectors,
-                    workspaceName = workspaceName,
+                    workspaceSearch = ready?.search ?: opened?.search,
                     workspaceAvatar = {
                         WorkspaceAvatar(
                             identity.workspaceId,
@@ -248,9 +255,13 @@ private fun WorkspaceSettingsContent(
     appUpdates: @Composable (() -> Unit)?,
     retry: () -> Unit,
     snackbar: SnackbarHostState,
+    feedbackInOverlay: Boolean,
     onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
     val ready = state.ready
+    if (ready != null) {
+        WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
+    }
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }
     var restore by rememberSettingsReturnFocus()
@@ -341,6 +352,14 @@ private fun WorkspaceSettingsContent(
                                 modifier = focusFor(SettingsDestination.Account),
                                 onClick = { openPage(SettingsDestination.Account) },
                             )
+                            HorizontalDivider()
+                            EmailSubscriptionSetting(
+                                ready?.settings?.emailSubscription,
+                                snackbar,
+                                onFeedbackInOverlay,
+                            ) {
+                                openPage(SettingsDestination.Account)
+                            }
                         }
                     }
                 },

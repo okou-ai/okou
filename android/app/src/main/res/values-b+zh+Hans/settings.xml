@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">邮件更新</string>
+    <string name="settings_email_scope">接收所有工作区的简报、提醒和更新。</string>
+    <string name="settings_email_receive">接收邮件</string>
+    <string name="settings_email_unavailable">邮件不可用</string>
+    <string name="settings_email_check_address">核对账号邮箱</string>
+    <string name="settings_email_load_failed">暂时无法加载邮件订阅。</string>
+    <string name="settings_email_refresh_failed">暂时无法同步，正在显示已保存的订阅状态。</string>
+    <string name="settings_email_refreshing">正在同步邮件订阅</string>
+    <string name="settings_email_save_failed">未能更新邮件订阅</string>
+    <string name="settings_email_save_unconfirmed">邮件订阅的保存结果尚未确认</string>
     <string name="settings_models">模型</string>
     <string name="settings_tools">工具</string>
     <string name="settings_my_okou">我的 Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">选择</string>
     <string name="settings_account_reconnect">需要重新连接</string>
     <string name="settings_account_switching">正在切换…</string>
-    <string name="settings_account_switch_failed">未能切换账号。</string>
+    <string name="settings_account_switch_unconfirmed">切换结果尚未确认</string>
+    <string name="settings_account_switch_failed">未能切换模型账号</string>
     <string name="settings_quota">配额</string>
     <string name="settings_hour_quota">%1$d 小时额度</string>
     <string name="settings_day_quota">%1$d 天额度</string>
@@ -70,4 +81,6 @@
     <string name="settings_model_effort_extra">超高</string>
     <string name="settings_model_effort_max">最高</string>
     <string name="settings_model_effort_ultra">极高</string>
+    <string name="settings_refreshing_model_accounts">正在刷新模型账号</string>
+    <string name="settings_refreshing_credit_balance">正在刷新积分余额</string>
 </resources>

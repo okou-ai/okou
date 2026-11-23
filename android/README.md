@@ -258,8 +258,8 @@ cd android
 ```
 
 The chat suites exercise real disk reopening, the generated canonical HTTP/codec
-boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
-holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+boundary, cursor/replay recovery and retired-owner publication. The chat-list
+Compose suites hold real HTTP responses while exercising native navigation. `NativeChatListTest`
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
@@ -281,7 +281,7 @@ standard Android build configuration; the project maintains one test entry.
 
 Text composer suites exercise the real private journal, shared controllers, frozen
 submission identity, duplicate taps, newer edits, disconnected acceptance and
-explicit original-ID recovery. `ChatComposerApiTest` uses the installed generated
+automatic original-ID recovery. `ChatComposerApiTest` uses the installed generated
 201 methods and bounded input-status read; `ChatComposerRootTest` holds default
 availability and write responses through the actual native route.
 `NativeTextSendTest` covers new/existing sends, IME/Back and Activity recreation
@@ -409,9 +409,21 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 ```
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
-`:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
-in the `android-instrumentation-api35-<revision>` artifact.
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI runs
+three `instrumentation` shards on separate runners and verifies the combined
+JUnit results at `ci-gate-android`. JUnit, Test Storage, and logcat diagnostics
+are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with an
+attempt suffix on reruns.
+
+CI also runs three `build-test` shards on separate runners with two test JVMs
+each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
+Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The local commands above run the full suites by default. See
+[test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
+for case budgets and class boundaries.
+
+After running the full `:app:testDebugUnitTest` suite, check the JVM class size limit from
+`android/` with `python3 scripts/check-jvm-test-counts.py app/build/test-results/testDebugUnitTest`.
 
 ### Release Smoke Tests
 
@@ -481,14 +493,14 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. Two separate Linux/KVM jobs run the Debug device integration tests and
-the Release smoke tests. The Release job uploads the unsigned APK and compressed
-R8 map for seven days.
+assets. Three jobs run the Debug JVM suite. Shard 0 also runs lint and uploads
+the Debug APK for seven days. Separate Linux/KVM jobs run the three Debug device
+shards and the Release smoke tests. The Release job uploads the unsigned APK and
+compressed R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and all three jobs
-to pass when Android checks are selected. Cancellation, failure or an unexpected
-skip fails the gate. Emulator functional evidence does not establish OEM
+non-release changes it requires successful change detection and every selected
+job to pass. Cancellation, failure or an unexpected skip fails the gate.
+Emulator functional evidence does not establish OEM
 input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler
@@ -712,8 +724,8 @@ per target, and delayed hydration/save completions cannot replace newer local
 input. Independent clients retain Web's existing unconditional last-writer
 behavior; no server compare-and-swap or revision protocol is added.
 
-Format 3 separates canonical editable drafts/dirty intent from frozen sends and
-recovery records. Existing formats 1/2 migrate without changing request UUIDs.
+Format 3 stores canonical editable drafts, dirty intent and assistant recovery
+records. Existing formats 1/2 retain independent draft text and recovery identity.
 Divergent legacy Project drafts remain available for explicit restoration into
 an empty editor. Failed reads are never interpreted as empty. Rich documents,
 attachments or unknown content pause automatic synchronization rather than
@@ -721,16 +733,35 @@ publishing a plain-text subset; the full server draft remains available on Web
 and local text stays on this device. Retry rechecks the server before saving.
 Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
-uncertain submissions retain their original identities and never replay on open.
+uncertain submissions retain their original identities in memory. Legacy pending
+text is available for explicit draft restoration after upgrade.
+
+Chat options lets users choose built-in connector accounts. Format 4 stores
+explicit account choices with the workspace draft shared by the ordinary and
+Project new-chat entry points. The first input carries those choices in memory
+until the client confirms them on the created chat. A rejected chat creation
+retains the original choices so they can be restored with the draft. A rejected
+connector choice leaves the unsent input and its identities available for
+correction in the current process. Existing chats save exact account overrides
+through the canonical chat API and display confirmed values.
 
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation
-and list catch-up run. The editor keeps its recovery controls until the first send
-and chat row are confirmed. Canonical history replaces the local bubble by input
-ID, including rejection and revocation. The existing journal restores unresolved
-input after recreation. Receipt-backed bubbles stay in workspace memory until
-history arrives, with confirmed messages read from canonical history after process
-restart.
+and list catch-up run. The same progress indicator stays visible during submit,
+readback and retry. After an ambiguous write the composer checks the original
+input, then only resends within the server's event retention window. Canonical
+history replaces the local bubble by input ID. A receipt removes progress while
+the queue state remains independently driven by input status and history.
+Status-confirmed queue entries can be withdrawn while the chat list and history
+catch up. An observed delivery or revocation also supersedes an older queued
+history row. The composer groups outstanding messages and workflow triggers in an
+independently scrolling queue, ordered by server sequence above the editor.
+Pending controls keep their feedback on the affected row while it is queued.
+Checking a withdrawal changes the request phase on that row only. A confirmed
+outcome removes the row even when the conversation still shows an older history
+checkpoint.
+Pending ordinary sends survive Activity recreation in memory. After process
+restart the app reads confirmed messages and queue entries from canonical history.
 
 Focused JVM/controlled HTTPS tests cover Web codec/204 responses, held hydration,
 serialized edits/clears, offline store reopening and send/recovery preservation.
@@ -799,7 +830,8 @@ Queued history and detail invalidations retain the selected conversation's
 generation. Their requests and failure states are independent: a held or failed
 detail read cannot delay history or erase its confirmation. Manual refresh and
 full resynchronization request both resources.
-Drafts and pending sends retain their existing durable journal ownership.
+Drafts retain their durable journal ownership. Pending ordinary sends belong to
+the in-process composer.
 
 Foreground message/recovery signals also request independent confirmed-history
 warming. Detail-only notifications do not request warming. Like Web, the

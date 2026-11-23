@@ -18,6 +18,14 @@ final class ForYouStore {
     let feedbackID: String
     let undoID = UUID().uuidString
   }
+  /// One card this visit settled, for the recap that closes it.
+  struct Handled: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    var threadID: String?
+    var undo: Undo?
+  }
   private struct Selection {
     let cardID: String
     let optionID: String
@@ -50,6 +58,7 @@ final class ForYouStore {
   private(set) var busy = false
   var error: String?
   var notice: Notice?
+  private(set) var handled: [Handled] = []
   private(set) var direction: ForYouDirection?
   private var artworkByID: [String: String] = [:]
 
@@ -64,6 +73,12 @@ final class ForYouStore {
     self.resources = resources
     self.feed = feed
     self.commands = commands
+  }
+
+  /// A visit starts without the previous one's confirmations.
+  func beginVisit() {
+    handled = []
+    notice = nil
   }
 
   func load() async {
@@ -119,9 +134,10 @@ final class ForYouStore {
         notice = Notice(text: String(localized: "This suggestion was already handled."))
         return
       }
+      let undo = Undo(card: card, position: position, feedbackID: id)
       notice = Notice(
-        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"),
-        undo: Undo(card: card, position: position, feedbackID: id))
+        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"), undo: undo)
+      record(card, detail: reason?.title ?? String(localized: "Dismissed"), undo: undo)
       remove(card)
       feedbackID = nil
     }
@@ -131,6 +147,10 @@ final class ForYouStore {
     await perform {
       let restored = try await feed.feedback(
         action.card, reason: nil, id: action.undoID, undoing: action.feedbackID)
+      if let index = handled.firstIndex(where: { $0.id == action.card.id }) {
+        // A card that came back is no longer settled; one that is gone can not be undone again.
+        if restored { handled.remove(at: index) } else { handled[index].undo = nil }
+      }
       if restored {
         if let index = cards.firstIndex(where: { $0.id == action.card.id }) {
           position = index
@@ -151,6 +171,7 @@ final class ForYouStore {
       notice = Notice(
         text: enable
           ? String(localized: "Automation enabled") : String(localized: "Event dismissed"))
+      record(card, detail: enable ? String(localized: "Enabled") : String(localized: "Dismissed"))
       remove(card)
     }
   }
@@ -180,9 +201,14 @@ final class ForYouStore {
         guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
-      if !openChat {
-        notice = Notice(
-          text: String(localized: "Sent to a new chat"), threadID: selections[card.id]?.threadID)
+      if openChat {
+        record(
+          card, detail: String(localized: "Draft ready · \(option.label)"),
+          threadID: option.threadId)
+      } else {
+        let threadID = selections[card.id]?.threadID
+        notice = Notice(text: String(localized: "Sent to a new chat"), threadID: threadID)
+        record(card, detail: String(localized: "Sent · \(option.label)"), threadID: threadID)
       }
       remove(card)
     }
@@ -227,6 +253,7 @@ final class ForYouStore {
         text: destination == target
           ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
         threadID: destination)
+      record(card, detail: String(localized: "Sent"), threadID: destination)
       // Accepting the annotated message consumes the card on the server.
       remove(card)
     }
@@ -302,6 +329,14 @@ final class ForYouStore {
     return destination
   }
 
+  private func record(
+    _ card: ForYouCard, detail: String, threadID: String? = nil, undo: Undo? = nil
+  ) {
+    handled.removeAll { $0.id == card.id }
+    handled.append(
+      Handled(id: card.id, title: card.title, detail: detail, threadID: threadID, undo: undo))
+  }
+
   private func remove(_ card: ForYouCard) {
     if direction?.cardID == card.id { closeDirection() }
     cards.removeAll { $0.id == card.id }
@@ -319,6 +354,16 @@ final class ForYouStore {
       try await operation()
     } catch is CancellationError {} catch {
       self.error = error.localizedDescription
+    }
+  }
+}
+
+extension ForYouCard {
+  fileprivate var title: String {
+    switch content {
+    case .suggestion(let suggestion): suggestion.title
+    case .automation(let event): event.automationName
+    case .unsupported: ""
     }
   }
 }

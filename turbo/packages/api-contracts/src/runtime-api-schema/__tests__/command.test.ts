@@ -99,7 +99,6 @@ async function floors(
       ? {
           appStoreMinimumSupportedVersion: version,
           testFlightMinimumSupportedVersion: floor,
-          reviewCandidate: null,
         }
       : { minimumSupportedVersion: version };
   };

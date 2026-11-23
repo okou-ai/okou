@@ -9,7 +9,9 @@ import kotlin.time.Instant
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 
 internal class SettingsApiFixture(api: ChatListApiFixture) {
@@ -18,6 +20,13 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
     @Volatile var activateBeforeError = false
     @Volatile var billingStatus = 200
     @Volatile var usagePackStatus = 200
+    @Volatile var emailSubscribed = false
+    @Volatile var emailDelivery = "available"
+    @Volatile var emailReadStatus = 200
+    @Volatile var emailWriteStatus = 200
+    @Volatile var applySubscriptionBeforeError = false
+    val emailReads = AtomicInteger()
+    val emailWrites = CopyOnWriteArrayList<Boolean>()
     val activations = CopyOnWriteArrayList<String>()
     val accountReads = AtomicInteger()
     val billingReads = AtomicInteger()
@@ -29,6 +38,36 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
         api.commandResponse = { request ->
             val path = request.requestUrl?.encodedPath.orEmpty()
             when {
+                path == emailPath -> {
+                    check(request.getHeader("Authorization") == "Bearer fixture-token")
+                    when (request.method) {
+                        "GET" -> {
+                            emailReads.incrementAndGet()
+                            val address =
+                                if (emailDelivery == "no-email") "null" else "\"$emailAddress\""
+                            if (emailReadStatus != 200) failed(emailReadStatus)
+                            else
+                                jsonResponse(
+                                    """{"subscribed":$emailSubscribed,"email":$address,"deliveryStatus":"$emailDelivery"}""",
+                                )
+                        }
+                        "PUT" -> {
+                            val subscribed =
+                                Json.parseToJsonElement(request.body.readUtf8())
+                                    .jsonObject
+                                    .getValue("subscribed")
+                                    .jsonPrimitive
+                                    .boolean
+                            emailWrites += subscribed
+                            if (emailWriteStatus == 200 || applySubscriptionBeforeError) {
+                                emailSubscribed = subscribed
+                            }
+                            if (emailWriteStatus != 200) failed(emailWriteStatus)
+                            else jsonResponse("""{"subscribed":$subscribed}""")
+                        }
+                        else -> error("Unexpected email subscription method: ${request.method}")
+                    }
+                }
                 path == "/api/me/3rd-party-subscriptions" -> {
                     accountReads.incrementAndGet()
                     jsonResponse("""{"subscriptions":${accounts()}}""")
@@ -77,9 +116,10 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
     }
 
     private fun accounts() =
-        listOf(primaryAccount, alternateAccount, claudeAccount).joinToString(",", "[", "]") {
-            account(it).toString()
-        }
+        (listOf(primaryAccount, alternateAccount).sortedBy { it != activeAccount } + claudeAccount)
+            .joinToString(",", "[", "]") {
+                account(it).toString()
+            }
 
     private fun account(id: String): JsonObject {
         val claude = id == claudeAccount
@@ -115,6 +155,8 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
             .setResponseCode(status)
 
     companion object {
+        const val emailPath = "/api/preferences/email-subscription"
+        const val emailAddress = "hello@example.com"
         const val primaryAccount = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         const val alternateAccount = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
         const val claudeAccount = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"

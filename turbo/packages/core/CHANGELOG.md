@@ -1,5 +1,42 @@
 # Changelog
 
+## [8.862.1](https://github.com/okou-ai/okou/compare/core-v8.862.0...core-v8.862.1) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+
+## [8.862.0](https://github.com/okou-ai/okou/compare/core-v8.861.1...core-v8.862.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+
+## [8.861.1](https://github.com/okou-ai/okou/compare/core-v8.861.0...core-v8.861.1) (2026-11-23)
+
+
+### Refactoring
+
+* unify markdown document feature switches ([#50138](https://github.com/okou-ai/okou/issues/50138)) ([b47cda1](https://github.com/okou-ai/okou/commit/b47cda1efae2c75c66bc0131e3ee64e6d79d2599))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.108.0
+
 ## [8.861.0](https://github.com/okou-ai/okou/compare/core-v8.860.4...core-v8.861.0) (2026-11-23)
 
 

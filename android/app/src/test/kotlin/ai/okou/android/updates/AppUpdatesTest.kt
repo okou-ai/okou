@@ -166,7 +166,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun recentDiscoveryIsReusedAcrossProcessesAndAutomaticChecksHonorTheirCooldown() = runTest {
+    fun automaticChecksUseLastSuccessfulDiscoveryAcrossProcesses() = runTest {
         val store = MemoryUpdateStore()
         val original =
             ControlledUpdates().apply { response = AndroidUpdates(null, updateRelease("0.12.0")) }
@@ -211,11 +211,7 @@ class AppUpdatesTest {
             service.failCheck = false
             owner.check(false)
             advanceUntilIdle()
-            assertEquals(UpdateCheck.Failed, owner.state.value.check)
-
-            now += 60_000
-            owner.check(false)
-            advanceUntilIdle()
+            assertEquals(UpdateCheck.Checked, owner.state.value.check)
             assertEquals("0.14.0", owner.state.value.displayedRelease?.version)
         }
         runCurrent()
@@ -274,7 +270,7 @@ class AppUpdatesTest {
                 runCurrent()
                 assertEquals(UpdateCheck.Waiting, owner.state.value.check)
                 service.timeoutCheck = false
-                advanceTimeBy(59_999)
+                advanceTimeBy(2_999)
                 runCurrent()
                 assertEquals(1, service.checks)
                 advanceTimeBy(1)
@@ -291,9 +287,39 @@ class AppUpdatesTest {
                 assertEquals(updateRelease(), store.record?.target)
                 service.transfer = CompletableDeferred(File("verified.apk"))
                 network.value = true
+                advanceTimeBy(3_000)
                 runCurrent()
                 assertEquals(UpdateTransfer.Ready(updateRelease()), owner.state.value.transfer)
                 assertEquals(listOf(updateRelease(), updateRelease()), service.downloadedReleases)
+            }
+    }
+
+    @Test
+    fun temporaryFailuresStopAfterTwoRetries() = runTest {
+        val service = ControlledUpdates().apply { timeoutCheck = true }
+        AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+            )
+            .use { owner ->
+                owner.check()
+                advanceTimeBy(6_000)
+                runCurrent()
+                assertEquals(3, service.checks)
+                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+
+                service.timeoutCheck = false
+                owner.check()
+                runCurrent()
+                service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                assertTrue(owner.download(updateRelease()))
+                advanceTimeBy(6_000)
+                runCurrent()
+                assertEquals(List(3) { updateRelease() }, service.downloadedReleases)
+                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
             }
     }
 

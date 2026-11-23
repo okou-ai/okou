@@ -154,18 +154,11 @@ internal class RunControlsOwner(
 
     private fun persist(
         journal: RunControlJournal,
-        phases: Map<String, RunControlPhase> = mutable.value.phases,
-        notice: RunControlNotice? = mutable.value.notice,
+        state: RunControlsState = mutable.value,
     ): Deferred<Unit> {
         val ticket = ++revision
         val write = store.persist(identity, journal)
-        mutable.value =
-            mutable.value.copy(
-                journal = journal,
-                phases = phases,
-                notice = notice,
-                persistence = RunControlPersistence.Pending,
-            )
+        mutable.value = state.copy(journal = journal, persistence = RunControlPersistence.Pending)
         localScope.launch {
             val durable =
                 try {
@@ -214,14 +207,15 @@ internal class RunControlsOwner(
         )
     }
 
-    fun skip(connection: Connection, threadId: String, eventId: String) {
+    fun skip(
+        connection: Connection,
+        threadId: String,
+        eventId: String,
+        preview: ComposerMessagePreview?,
+    ) {
         if (!current(connection)) return
-        val state = connection.history.uiState.value
-        if (
-            state.thread?.id != threadId ||
-                eventId !in state.transcript?.revocableInputIds.orEmpty()
-        )
-            return
+        if (eventId in mutable.value.settledQueueInputs[threadId].orEmpty()) return
+        if (!connection.history.uiState.value.canWithdrawInput(threadId, eventId, preview)) return
         append(
             connection,
             listOf(
@@ -249,7 +243,9 @@ internal class RunControlsOwner(
         if (fresh.isEmpty()) return
         persist(
             journal.copy(pending = journal.pending + fresh),
-            state.phases + fresh.associate { it.id to RunControlPhase.Preparing },
+            state.copy(
+                phases = state.phases + fresh.associate { it.id to RunControlPhase.Preparing },
+            ),
         )
         fresh.forEach { launch(connection, it, false) }
     }
@@ -323,15 +319,15 @@ internal class RunControlsOwner(
         mutable.value.journal?.pending?.any { it.threadId == threadId } == true
 
     /** Read-only reconciliation; foreground/navigation/reconnect never call sendControl. */
-    fun check(connection: Connection, threadId: String) {
-        if (
-            !current(connection) ||
-                threadId in reads ||
-                writes.values.any { it.intent.threadId == threadId }
-        )
-            return
-        val pending = mutable.value.journal?.pending?.filter { it.threadId == threadId }.orEmpty()
-        if (pending.isEmpty()) return
+    fun check(connection: Connection, threadId: String, withdrawalId: String? = null) {
+        if (!current(connection) || threadId in reads) return
+        val pending =
+            mutable.value.journal?.pending.orEmpty().filter {
+                it.threadId == threadId &&
+                    (withdrawalId == null ||
+                        it.kind == RunControlKind.Revoke && it.targetId == withdrawalId)
+            }
+        if (pending.isEmpty() || pending.any { it.id in writes }) return
         val checkedIds = pending.mapTo(hashSetOf()) { it.id }
         mutable.value =
             mutable.value.copy(
@@ -360,14 +356,24 @@ internal class RunControlsOwner(
                         if (!current(connection)) return@launch
                         val remaining =
                             mutable.value.journal?.pending.orEmpty().filter { it.id in checkedIds }
-                        mutable.value =
-                            mutable.value.copy(
-                                phases =
-                                    mutable.value.phases +
-                                        remaining.associate { it.id to RunControlPhase.Unknown },
-                                notice =
-                                    RunControlNotice(threadId, RunControlNoticeKind.ReadFailed),
-                            )
+                        if (remaining.isNotEmpty()) {
+                            val state = mutable.value
+                            mutable.value =
+                                state.copy(
+                                    phases =
+                                        state.phases +
+                                            remaining.associate {
+                                                it.id to RunControlPhase.Unknown
+                                            },
+                                    notice =
+                                        if (remaining.any { it.kind == RunControlKind.Interrupt })
+                                            RunControlNotice(
+                                                threadId,
+                                                RunControlNoticeKind.ReadFailed,
+                                            )
+                                        else state.notice,
+                                )
+                        }
                     }
                 } finally {
                     if (reads[threadId] === reading) {
@@ -384,16 +390,20 @@ internal class RunControlsOwner(
         checkedIds: Set<String> = emptySet(),
     ) {
         if (!current(connection)) return
-        val journal = mutable.value.journal ?: return
-        val intents = journal.pending.filter { it.threadId == checkpoint.threadId }
-        if (intents.isEmpty()) return
-        val observation = RunControlObservation(checkpoint)
-        val results = intents.associateWith { observation.evidence(it) }
+        val state = mutable.value
+        val journal = state.journal ?: return
+        val threadId = checkpoint.threadId
+        val priorSettledQueue = state.settledQueueInputs[threadId].orEmpty()
+        val intents = journal.pending.filter { it.threadId == threadId }
+        if (intents.isEmpty() && priorSettledQueue.isEmpty()) return
+        val results =
+            if (intents.isEmpty()) emptyMap()
+            else intents.associateWith(RunControlObservation(checkpoint)::evidence)
         val resolved = results.filterValues {
             it == RunControlEvidence.Recorded || it == RunControlEvidence.TargetSettled
         }
         val ids = resolved.keys.mapTo(hashSetOf()) { it.id }
-        var phases = mutable.value.phases - ids
+        var phases = state.phases - ids
         // Only commands captured by this read receive request phases; newer writes keep theirs.
         for ((intent, evidence) in results) if (intent.id in checkedIds && intent.id !in ids)
             phases =
@@ -401,27 +411,54 @@ internal class RunControlsOwner(
                     (intent.id to
                         if (evidence == RunControlEvidence.Eligible) RunControlPhase.Retryable
                         else RunControlPhase.Unknown)
-        val notice =
+        val noticeKind =
             when {
-                resolved.isNotEmpty() ->
-                    RunControlNotice(
-                        checkpoint.threadId,
-                        if (resolved.values.any { it == RunControlEvidence.Recorded })
-                            RunControlNoticeKind.Recorded
-                        else RunControlNoticeKind.TargetSettled,
-                    )
-                results.values.any { it == RunControlEvidence.Invalid } ->
-                    RunControlNotice(checkpoint.threadId, RunControlNoticeKind.ReadFailed)
-                else -> mutable.value.notice
+                resolved.any { (intent, evidence) ->
+                    intent.kind == RunControlKind.Interrupt &&
+                        evidence == RunControlEvidence.Recorded
+                } -> RunControlNoticeKind.Recorded
+                resolved.values.any { it == RunControlEvidence.TargetSettled } ->
+                    RunControlNoticeKind.TargetSettled
+                results.any { (intent, evidence) ->
+                    intent.kind == RunControlKind.Interrupt &&
+                        evidence == RunControlEvidence.Invalid
+                } -> RunControlNoticeKind.ReadFailed
+                else -> null
             }
-        if (ids.isNotEmpty())
-            persist(
-                journal.copy(pending = journal.pending.filterNot { it.id in ids }),
-                phases,
-                notice,
+        val settledQueue =
+            queueInputsAwaitingHistory(
+                threadId,
+                resolved.keys
+                    .filter { it.kind == RunControlKind.Revoke }
+                    .mapTo(priorSettledQueue.toMutableSet()) { it.targetId },
             )
-        else if (phases != mutable.value.phases || notice != mutable.value.notice)
-            mutable.value = mutable.value.copy(phases = phases, notice = notice)
+        val next =
+            state.copy(
+                phases = phases,
+                notice = noticeKind?.let { RunControlNotice(threadId, it) } ?: state.notice,
+                settledQueueInputs =
+                    if (settledQueue.isEmpty()) state.settledQueueInputs - threadId
+                    else state.settledQueueInputs + (threadId to settledQueue),
+            )
+        if (ids.isNotEmpty())
+            persist(journal.copy(pending = journal.pending.filterNot { it.id in ids }), next)
+        else if (next != state) mutable.value = next
+    }
+
+    /** A validated control read can settle inputs before the selected histories catch up. */
+    private fun queueInputsAwaitingHistory(threadId: String, eventIds: Set<String>): Set<String> {
+        if (eventIds.isEmpty()) return eventIds
+        val selected = connections.mapNotNull { connection ->
+            connection.history.uiState.value.takeIf {
+                current(connection) && it.thread?.id == threadId
+            }
+        }
+        if (selected.isEmpty()) return eventIds
+        return eventIds.filterTo(hashSetOf()) { id ->
+            selected.any {
+                it.phase != HistoryPhase.Missing && it.transcript?.hasSettledInput(id) != true
+            }
+        }
     }
 
     private fun invalidate(threadId: String) {

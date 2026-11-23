@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">回覆操作</string>
     <string name="conversation_copy_reply">複製回覆</string>
     <string name="conversation_reply_copied">已複製回覆</string>
-    <string name="conversation_revoke">撤回</string>
+    <string name="conversation_revoke">撤回排隊訊息</string>
+    <string name="conversation_queue">佇列</string>
+    <string name="conversation_queue_automation">工作流程自動化</string>
+    <string name="conversation_skip_automation">略過此次自動化</string>
+    <string name="conversation_withdrawing">正在撤回</string>
+    <string name="conversation_skipping">正在略過</string>
+    <string name="conversation_withdraw_unknown">撤回結果待確認</string>
+    <string name="conversation_skip_unknown">略過結果待確認</string>
+    <string name="conversation_withdraw_failed">無法撤回</string>
+    <string name="conversation_skip_failed">無法略過</string>
     <string name="conversation_stop">停止</string>
     <string name="conversation_find">尋找訊息</string>
     <string name="conversation_find_turns">按輪次瀏覽</string>

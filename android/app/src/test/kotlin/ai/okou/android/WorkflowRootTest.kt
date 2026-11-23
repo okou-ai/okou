@@ -6,10 +6,12 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -30,18 +32,26 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -62,10 +72,11 @@ class WorkflowRootApplication : TestOkouApplication() {
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
-        fixture = WorkflowApiFixture()
+        fixture = WorkflowApiFixture(chats = ComposerApiFixture(simulateHistory = false).chats)
         fixture.beforeCatalog = { gate.await() }
         chatService = fixture.service
         composerService = fixture.service
+        searchService = fixture.service
         workflows = fixture.service
         connectorFixture = ConnectorApiFixture()
         connectorService = connectorFixture.service
@@ -75,15 +86,9 @@ class WorkflowRootApplication : TestOkouApplication() {
     }
 }
 
-@RunWith(RobolectricTestRunner::class)
-@Config(
-    sdk = [35],
-    qualifiers = "en-rUS-w412dp-h840dp",
-    application = WorkflowRootApplication::class,
-)
-class WorkflowRootTest {
+internal abstract class WorkflowRootTestFixture {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    private val app
+    protected val app
         get() = compose.activity.application as WorkflowRootApplication
 
     @After
@@ -101,6 +106,7 @@ class WorkflowRootTest {
                             listOfNotNull(
                                 it.chats.viewModelScope.coroutineContext[Job],
                                 it.composer.viewModelScope.coroutineContext[Job],
+                                it.search.viewModelScope.coroutineContext[Job],
                                 it.workflows?.viewModelScope?.coroutineContext?.get(Job),
                                 it.connectors?.viewModelScope?.coroutineContext?.get(Job),
                             )
@@ -118,6 +124,118 @@ class WorkflowRootTest {
                 }
             }
         }
+    }
+
+    protected fun openWorkflowDetail(id: String = WORKFLOW_RELEASE) {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val row = "workflow_row_$id"
+        waitForTag(row)
+        compose.onNodeWithTag(row).performClick()
+        waitForTag("workflow_detail_title")
+    }
+
+    protected fun withHardwareKeyboard(run: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            run()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    protected fun selectScope(label: String) =
+        compose
+            .onNode(
+                hasText(label) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+            )
+            .performClick()
+
+    protected fun waitFor(label: String) =
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
+        }
+
+    protected fun waitForTag(tag: String) =
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+        }
+
+    protected fun back() = compose.runOnIdle {
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowRootTest : WorkflowRootTestFixture() {
+    @Test
+    fun terminalCatalogFailureReplacesTheSkeletonBelowTheFilters() {
+        val fixture = app.fixture
+        val gate = app.gate
+        val response = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                gate.await()
+                MockResponse().setResponseCode(400)
+            } else response(request)
+        }
+
+        val loading = compose.onNodeWithTag("workflow_loading")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(200)
+            loading.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(80)
+            loading.assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        gate.countDown()
+        waitFor("Could not load workflows")
+        val feedback =
+            compose
+                .onNodeWithText("Could not load workflows")
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+        compose.onNodeWithTag("workflow_loading").assertDoesNotExist()
+        compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_create").assertIsEnabled()
+        val filter =
+            compose
+                .onNode(
+                    hasText("All") and
+                        SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+                )
+                .getUnclippedBoundsInRoot()
+        val bounds = feedback.getUnclippedBoundsInRoot()
+        val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, bounds.left - directory.left)
+        assertEquals(32.dp, bounds.top - filter.bottom)
+        val layouts = mutableListOf<TextLayoutResult>()
+        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        selectScope("Workspace shared")
+        feedback.assertIsDisplayed()
+        back()
+        compose.onNodeWithContentDescription("Workflows").assertIsDisplayed()
     }
 
     @Test
@@ -352,6 +470,30 @@ class WorkflowRootTest {
     }
 
     @Test
+    fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
+        openWorkflowDetail()
+        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+        val automations = compose.onNodeWithTag("workflow_tab_automations")
+        val history = compose.onNodeWithTag("workflow_tab_history")
+
+        instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        instructions.performKeyInput { pressKey(Key.DirectionRight) }
+        automations.assertIsSelected().assertIsFocused()
+        automations.performKeyInput { pressKey(Key.MoveEnd) }
+        history.assertIsSelected().assertIsFocused()
+        history.performKeyInput { pressKey(Key.DirectionRight) }
+        instructions.assertIsSelected().assertIsFocused()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
+    @Test
     fun newScheduleUsesTheLocalTimezoneBeforePreferencesSync() {
         openWorkflowDetail()
         app.connectivity.value = false
@@ -479,25 +621,65 @@ class WorkflowRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
-    fun memberCanPauseEditAndEnableTheirRuleOnASharedWorkflow() {
-        app.fixture.hasSharedSchedule = true
+    fun memberCanCreateEditEnableAndPauseTheirRuleOnASharedWorkflow() {
+        val fixture = app.fixture
+        val releaseCreate = CountDownLatch(1)
+        fixture.beforeSharedScheduleCreate = { releaseCreate.await() }
         openWorkflowDetail(WORKFLOW_SHARED)
         compose.onNodeWithText("Edit instructions").assertDoesNotExist()
+        val useBounds = compose.onNodeWithTag("workflow_use").getUnclippedBoundsInRoot()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
-        waitFor("Weekdays at 09:00")
-        compose.onNodeWithText("Add automation").assertDoesNotExist()
+        compose.onNodeWithText("No automations yet").assertIsDisplayed()
+        val add = compose.onNodeWithText("Add automation").assertIsEnabled()
+        val addBounds = add.getUnclippedBoundsInRoot()
+        assertTrue(addBounds.bottom - addBounds.top >= 48.dp)
+        add.performClick()
 
-        val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
-        toggle.assertIsDisplayed().assertIsEnabled().performClick()
+        val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        assertTrue(saveBounds.bottom - saveBounds.top >= 48.dp)
+        assertEquals(useBounds.right, saveBounds.right)
+        val time = compose.onNodeWithContentDescription("Time (HH:mm)")
+        val timeBounds = time.getUnclippedBoundsInRoot()
+        assertTrue(timeBounds.bottom - timeBounds.top >= 56.dp)
+        time.performTextReplacement("09:30")
+        val createPath = "/api/workflows/$WORKFLOW_SHARED/automations"
+        try {
+            save.performClick()
+            compose.waitUntil(10_000) {
+                fixture.requests.any {
+                    it.method == "POST" && it.requestUrl?.encodedPath == createPath
+                }
+            }
+            save.assertIsNotEnabled()
+            time.assertTextContains("09:30")
+        } finally {
+            releaseCreate.countDown()
+        }
+
+        waitFor("Weekdays at 09:30")
         waitFor("Paused")
+        val create =
+            fixture.requests.single {
+                it.method == "POST" && it.requestUrl?.encodedPath == createPath
+            }
+        val body = Json.parseToJsonElement(create.body.clone().readUtf8()).jsonObject
+        assertFalse(body.getValue("enabled").jsonPrimitive.boolean)
+        val schedule = body.getValue("schedule").jsonObject
+        assertEquals("30 9 * * 1-5", schedule.getValue("cronExpression").jsonPrimitive.content)
+        assertEquals("UTC", schedule.getValue("timezone").jsonPrimitive.content)
+
         compose
             .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")))
             .performClick()
         compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
-        compose.onNodeWithTag("workflow_save").assertIsEnabled().performClick()
+        save.assertIsEnabled().performClick()
         waitFor("Weekdays at 10:00")
+        val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
         toggle.assertIsEnabled().performClick()
         waitFor("Enabled")
+        toggle.assertIsEnabled().performClick()
+        waitFor("Paused")
         compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
     }
 
@@ -537,22 +719,6 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
-        openWorkflowDetail()
-        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
-        val automations = compose.onNodeWithTag("workflow_tab_automations")
-        val history = compose.onNodeWithTag("workflow_tab_history")
-
-        instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
-        instructions.performKeyInput { pressKey(Key.DirectionRight) }
-        automations.assertIsSelected().assertIsFocused()
-        automations.performKeyInput { pressKey(Key.MoveEnd) }
-        history.assertIsSelected().assertIsFocused()
-        history.performKeyInput { pressKey(Key.DirectionRight) }
-        instructions.assertIsSelected().assertIsFocused()
-    }
-
-    @Test
     fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() = withHardwareKeyboard {
         app.fixture.gmailEnabled.set(true)
         openWorkflowDetail()
@@ -584,7 +750,7 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun connectingAnAccountPreservesTheRuleEditorAndEnablesSave() = withHardwareKeyboard {
+    fun connectingAnAccountPreservesTheSharedRuleEditorAndEnablesSave() = withHardwareKeyboard {
         val releaseConnections = CountDownLatch(1)
         app.fixture.beforeConnectionsRead = { releaseConnections.await() }
         val save = compose.onNodeWithTag("workflow_save")
@@ -592,7 +758,7 @@ class WorkflowRootTest {
         val subject = compose.onNodeWithContentDescription("Subject contains")
 
         try {
-            openWorkflowDetail()
+            openWorkflowDetail(WORKFLOW_SHARED)
             compose.onNodeWithTag("workflow_tab_automations").performClick()
             compose.onNodeWithText("Add automation").performClick()
             compose.onNodeWithText("Schedule").performClick()
@@ -650,6 +816,44 @@ class WorkflowRootTest {
 
         waitFor("View connections")
         calendar.assertTextContains("test-calendar")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
+    @Test
+    fun unavailableConnectorAnnouncesTheReadFailureAndReturnsToTheDraft() {
+        app.connectorFixture.unavailableCatalogSlugs = setOf("gmail")
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").performClick()
+        compose.onNodeWithText("Schedule").performClick()
+        compose.onNodeWithText("Gmail message received").performClick()
+        val subject = compose.onNodeWithContentDescription("Subject contains")
+        subject.performTextReplacement("Release summary")
+        waitFor("View connections")
+        compose.onNodeWithText("View connections").performClick()
+
+        waitFor("Could not load connectors.")
+        val error = compose.onNodeWithText("Could not load connectors.")
+        error.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+        )
+        val paneBounds = compose.onNodeWithTag("connector-detail").getUnclippedBoundsInRoot()
+        val errorBounds = error.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, errorBounds.top - paneBounds.top)
+        assertEquals(12.dp, errorBounds.left - paneBounds.left)
+        assertEquals(12.dp, paneBounds.right - errorBounds.right)
+        compose.onNodeWithContentDescription("Back").performClick()
+
+        waitFor("View connections")
+        subject.assertTextContains("Release summary")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
     }
 
@@ -859,46 +1063,302 @@ class WorkflowRootTest {
             releaseDelete.countDown()
         }
     }
+}
 
-    private fun openWorkflowDetail(id: String = WORKFLOW_RELEASE) {
-        app.gate.countDown()
-        compose.onNodeWithContentDescription("Workflows").performClick()
-        val row = "workflow_row_$id"
-        waitForTag(row)
-        compose.onNodeWithTag(row).performClick()
-        waitForTag("workflow_detail_title")
-    }
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideArtifactSearchPreviewKeepsTheWorkflowDraftReturnPath() {
+        val fixture = ArtifactApiFixture(app.fixture.chats).apply { install() }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
 
-    private fun withHardwareKeyboard(run: () -> Unit) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.setInTouchMode(false)
-        try {
-            compose.activityRule.scenario.recreate()
-            run()
-        } finally {
-            instrumentation.resetInTouchMode()
-        }
-    }
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        val scope = compose.onNodeWithTag("search_type_Artifacts")
+        scope.performScrollTo().performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("Product launch")
+        waitFor(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        waitFor("Artifact preview")
+        compose.onNodeWithContentDescription("Close artifact preview").performClick()
 
-    private fun selectScope(label: String) =
+        query.assertTextContains("Product launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        back()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
         compose
-            .onNode(
-                hasText(label) and
-                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideMessageSearchOpensAChatIndependentlyOfThePreviousWorkflow() {
+        val reply = "Project handoff found by search"
+        app.fixture.chats.historyReply = reply
+        app.fixture.chats.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_IN_PROJECT","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_IN_PROJECT","role":"assistant",
+                    "content":"$reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":0,"end":7}]}]}
+                """,
             )
-            .performClick()
-
-    private fun waitFor(label: String) =
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
         }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
 
-    private fun waitForTag(tag: String) =
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("Project")
+        val hit = hasText(reply) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntil(10_000) { compose.onAllNodes(hit).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hit).performClick()
+        waitForTag("conversation_find_hit")
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideWorkflowSearchOpensADraftIndependentlyOfThePreviousWorkflow() {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        compose.onNodeWithText("Add to new chat draft").performClick()
+
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("chat_search").fetchSemanticsNodes().isEmpty()
         }
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
 
-    private fun back() = compose.runOnIdle {
-        compose.activity.onBackPressedDispatcher.onBackPressed()
+    @Test
+    fun searchWorkflowDetailsAndDraftReturnToTheSameSearch() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+        compose.onNodeWithText("Official launch workflow").assertDoesNotExist()
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        val renamed = "Launch planning"
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            compose.onNodeWithText("Edit instructions").performClick()
+            compose.onNodeWithText(originalTitle).performTextReplacement(renamed)
+            compose.onNodeWithTag("workflow_save").performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            compose.onNodeWithText(renamed).assertIsDisplayed()
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
+        compose.onNodeWithText(renamed).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        assertFalse(
+            app.fixture.requests.any {
+                it.method == "POST" &&
+                    it.requestUrl?.encodedPath in setOf("/api/chat-threads", "/api/chat/events")
+            },
+        )
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(renamed).assertIsDisplayed()
+    }
+
+    @Test
+    fun returningFromWorkflowDetailsKeepsSearchResultsDuringCatalogRefresh() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            compose.onNodeWithText(originalTitle).assertIsDisplayed()
+
+            val updatedTitle = "Launch planning"
+            app.fixture.releaseTitle = updatedTitle
+            releaseCatalog.countDown()
+            waitFor(updatedTitle)
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
+    }
+
+    @Test
+    fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
+        val messagesRequested = CountDownLatch(1)
+        val releaseMessages = CountDownLatch(1)
+        app.fixture.chats.searchMessages = {
+            messagesRequested.countDown()
+            releaseMessages.await()
+            jsonResponse("""{"results":[]}""")
+        }
+        val releaseCatalog = CountDownLatch(1)
+        try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            val scope = compose.onNodeWithTag("search_type_All")
+            val query = compose.onNodeWithTag("chat_search_query")
+            query.performTextInput("checklist")
+            val originalTitle = app.fixture.releaseTitle
+            waitFor(originalTitle)
+            shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
+            compose.waitUntil(5_000) { messagesRequested.count == 0L }
+
+            val catalogRequested = CountDownLatch(1)
+            app.fixture.beforeCatalog = {
+                catalogRequested.countDown()
+                releaseCatalog.await()
+            }
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            back()
+
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            val updatedTitle = "Launch planning"
+            app.fixture.releaseTitle = updatedTitle
+            releaseCatalog.countDown()
+
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("View workflow details").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+            compose.onNodeWithTag("chat_search_results").assertIsFocused()
+            scope.assertIsSelected()
+
+            query.performTextReplacement("launch")
+            waitFor(updatedTitle)
+            compose.onNodeWithText("View workflow details").assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+            releaseMessages.countDown()
+        }
+    }
+
+    @Test
+    fun workspaceSearchKeepsItsReturnPathWhenTheWorkflowDraftBecomesAChat() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Send").performClick()
+
+        waitFor("New conversation")
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
+    }
+
+    @Test
+    fun workspaceSearchLoadsAndKeepsTheWorkflowIntroWithAnOfflineSignal() {
+        app.gate.countDown()
+        waitForTag("workspace_search_entry")
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                ViewModelProvider(compose.activity)[SessionModel::class.java]
+                    .uiState
+                    .value
+                    .ready
+                    ?.workflows != null
+            }
+        }
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("View workflow details")
+        compose.onNodeWithText("Add to new chat draft").assertIsEnabled()
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.onNodeWithText("View workflow details").assertIsDisplayed()
     }
 }

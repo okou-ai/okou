@@ -9,6 +9,8 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.EmailSubscription
+import ai.okou.android.api.generated.EmailSubscriptionUpdate
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
@@ -28,6 +30,7 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.artifacts.ArtifactQuery
 import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
@@ -44,8 +47,12 @@ import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.chat.RunOutputSignal
 import ai.okou.android.chat.RunOutputTarget
+import ai.okou.android.chat.SearchArtifactHit
+import ai.okou.android.chat.SearchArtifactPage
+import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.WorkspaceSearchService
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
@@ -82,6 +89,7 @@ interface WorkspaceSession :
     ChatComposerService,
     RealtimeService,
     RunControlService,
+    WorkspaceSearchService,
     AssistantRecoveryService {
     val artifacts: ArtifactService
     val connectors: ConnectorService?
@@ -105,6 +113,10 @@ interface WorkspaceSession :
     suspend fun updateDefaultModelPreference(
         update: UpdateDefaultModelPreference,
     ): DefaultModelPreference
+
+    suspend fun emailSubscription(): EmailSubscription
+
+    suspend fun updateEmailSubscription(subscribed: Boolean): EmailSubscriptionUpdate
 
     suspend fun featureSwitches(): FeatureSwitches
 
@@ -167,6 +179,34 @@ class CanonicalWorkspaceSession(
 
     override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
         api.setWorkflowAutomationEnabled(id, enabled)
+
+    override suspend fun searchArtifacts(keyword: String, cursor: String?): SearchArtifactPage {
+        val page = artifacts.page(ArtifactQuery(keyword = keyword), cursor = cursor, limit = 25)
+        return SearchArtifactPage(
+            page.items.map { SearchArtifactHit(it.id, it.title, it.kind) },
+            page.nextCursor,
+        )
+    }
+
+    override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
+        api.searchChatMessages(keyword).results.mapNotNull { result ->
+            val match = result.matchedMessage
+            if (result.chatThreadId != match.chatThreadId) return@mapNotNull null
+            SearchMessageHit(
+                match.chatThreadId,
+                match.seqId,
+                match.content,
+                result.matchedRanges.mapNotNull { range ->
+                    if (
+                        range.start < 0 ||
+                            range.end <= range.start ||
+                            range.end > match.content.length
+                    )
+                        null
+                    else range.start.toInt() until range.end.toInt()
+                },
+            )
+        }
 
     override suspend fun observeRealtime(
         target: StateFlow<RunOutputTarget?>,
@@ -231,6 +271,11 @@ class CanonicalWorkspaceSession(
     override suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) =
         api.updateDefaultModelPreference(update)
 
+    override suspend fun emailSubscription() = api.emailSubscription()
+
+    override suspend fun updateEmailSubscription(subscribed: Boolean) =
+        api.updateEmailSubscription(subscribed)
+
     override suspend fun featureSwitches() = api.featureSwitches()
 
     override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
@@ -271,6 +316,7 @@ class CanonicalWorkspaceSession(
                             InputStatusVariant3Status.REVOKED -> TextDisposition.Revoked
                             InputStatusVariant3Status.UNAVAILABLE -> null
                         },
+                        observed.input?.seqId,
                     )
             }
         if (result.threadId != threadId || result.eventId != eventId)

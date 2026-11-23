@@ -29,7 +29,7 @@ def bind_history_operation(evidence, identities, baseline, sandbox, *, replay_er
     if history == operation or history in identities or operation in identities:
         raise ValueError(replay_error)
     identities.update((history, operation))
-    reuse = "thread:native-guarded-" + history
+    reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX + history
     exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": sandbox}], binding_error)
     return history, operation, reuse
 

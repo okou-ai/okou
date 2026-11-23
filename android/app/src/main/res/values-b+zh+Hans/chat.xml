@@ -13,15 +13,14 @@
     <string name="chat_undo_unconfirmed">撤销结果尚未确认</string>
     <string name="chat_feedback_dismiss">关闭提示</string>
     <string name="chat_list_offline">离线</string>
-    <string name="chat_list_refresh_failed">列表刷新失败</string>
     <string name="chat_list_first_load_failed">暂时无法加载</string>
     <string name="chat_list_load_when_online">联网后加载聊天。</string>
     <string name="chat_list_title">聊天</string>
     <string name="chat_refresh">刷新聊天</string>
     <string name="chat_loading">正在加载聊天…</string>
-    <string name="chat_refresh_failed">无法刷新，正在显示上次加载的聊天。</string>
+    <string name="chat_refresh_failed">暂时无法刷新未读状态。</string>
     <string name="chat_cache_unavailable">离线存储不可用，重启后可能无法查看这些聊天。</string>
-    <string name="chat_metadata_unavailable">部分 Okou 或项目信息不可用。</string>
+    <string name="chat_metadata_unavailable">暂时无法获取 Project 信息。</string>
     <string name="chat_inbox">收件箱</string>
     <string name="chat_mark_all_read">全部标为已读</string>
     <string name="chat_mark_all_read_unconfirmed">有些聊天可能仍未读。</string>

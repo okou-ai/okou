@@ -5,6 +5,7 @@ import {
 } from "@okouai/db/schema/gmail-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
 
 export interface GmailQueueSource {
   readonly orgId: string;
@@ -49,7 +50,7 @@ function gmailQueueAutomationCondition(source: GmailQueueSource) {
 
 /** Queue admission gated by the current account, consumer and watch rows. */
 function gmailQueueAdmissionSql(source: GmailQueueSource) {
-  return sql`SELECT 1 WHERE EXISTS (
+  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(source, source.connectorId)} AND EXISTS (
       SELECT 1 FROM ${connectors}
       WHERE ${and(
         eq(connectors.id, source.connectorId),

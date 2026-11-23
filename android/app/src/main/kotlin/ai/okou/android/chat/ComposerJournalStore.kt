@@ -3,9 +3,13 @@ package ai.okou.android.chat
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.workspaceStorageKey
 import android.content.Context
+import android.os.SystemClock
 import android.util.AtomicFile
 import java.io.File
 import java.io.IOException
+import kotlin.time.AbstractLongTimeSource
+import kotlin.time.DurationUnit
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -34,6 +38,10 @@ class ComposerJournalStore(
     context: Context,
     private val directory: File = context.noBackupFilesDir.resolve("chat-input"),
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    internal val sendClock: TimeSource =
+        object : AbstractLongTimeSource(DurationUnit.NANOSECONDS) {
+            override fun read() = SystemClock.elapsedRealtimeNanos()
+        },
 ) {
     private class Write(val journal: ComposerJournal) {
         val done = CompletableDeferred<ComposerCommit>()
@@ -126,10 +134,14 @@ class ComposerJournalStore(
             .use { stream -> json.decodeFromStream<ComposerJournal>(stream) }
             .also {
                 if (
-                    it.format !in 1..3 ||
+                    it.format !in 1..CONNECTOR_DRAFT_JOURNAL_FORMAT ||
                         it.format == 1 &&
                             it.entries.values.any { entry -> entry.recovery != null } ||
-                        it.format < 3 && (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty())
+                        it.format < 3 &&
+                            (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty()) ||
+                        it.format < CONNECTOR_DRAFT_JOURNAL_FORMAT &&
+                            (it.newChatConnectorOverrides.isNotEmpty() ||
+                                it.retainedDraftConnectorOverrides.isNotEmpty())
                 )
                     throw IOException("Unsupported composer journal format")
             }

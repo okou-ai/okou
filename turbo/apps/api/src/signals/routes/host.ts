@@ -1,4 +1,5 @@
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
+import { hostedSiteSharingRoutes } from "./hosted-site-sharing";
 import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
 import { hostedSitePresentation$ } from "../services/hosted-site-banner.service";
 import {
@@ -263,6 +264,7 @@ export const hostRoutes: readonly RouteEntry[] = [
   ...hostedSiteTitleRoutes,
   ...hostedSiteUrlRoutes,
   ...hostedSiteAccessRoutes,
+  ...hostedSiteSharingRoutes,
   {
     route: hostContract.deliveryAuthorization,
     handler: deliveryAuthorization$,

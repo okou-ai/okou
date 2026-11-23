@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Email updates</string>
+    <string name="settings_email_scope">Receive briefs, reminders, and updates from all workspaces.</string>
+    <string name="settings_email_receive">Receive emails</string>
+    <string name="settings_email_unavailable">Email unavailable</string>
+    <string name="settings_email_check_address">Check your account email</string>
+    <string name="settings_email_load_failed">Email settings are temporarily unavailable.</string>
+    <string name="settings_email_refresh_failed">Could not sync. Showing the last saved subscription.</string>
+    <string name="settings_email_refreshing">Updating email subscription</string>
+    <string name="settings_email_save_failed">Could not update email subscription.</string>
+    <string name="settings_email_save_unconfirmed">The email subscription update is still unconfirmed.</string>
     <string name="settings_models">Models</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">My Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">Select</string>
     <string name="settings_account_reconnect">Reconnect required</string>
     <string name="settings_account_switching">Switching…</string>
-    <string name="settings_account_switch_failed">Unable to switch accounts.</string>
+    <string name="settings_account_switch_unconfirmed">Switch unconfirmed</string>
+    <string name="settings_account_switch_failed">Unable to switch model accounts.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">%1$d-hour quota</string>
     <string name="settings_day_quota">%1$d-day quota</string>
@@ -71,4 +82,6 @@
     <string name="settings_model_effort_extra">Extra high</string>
     <string name="settings_model_effort_max">Max</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Refreshing model accounts</string>
+    <string name="settings_refreshing_credit_balance">Refreshing credit balance</string>
 </resources>

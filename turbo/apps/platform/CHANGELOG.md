@@ -13,6 +13,70 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1168.0](https://github.com/okou-ai/okou/compare/app-v0.1167.0...app-v0.1168.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### Bug Fixes
+
+* simplify slash action hint copy ([#50215](https://github.com/okou-ai/okou/issues/50215)) ([c9ae929](https://github.com/okou-ai/okou/commit/c9ae92932b7da7fbfd74d0321cbc2f83957dcc95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+    * @okouai/core bumped to 8.862.1
+    * @okouai/ui bumped to 1.21.106
+
+## [0.1167.0](https://github.com/okou-ai/okou/compare/app-v0.1166.0...app-v0.1167.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+    * @okouai/core bumped to 8.862.0
+    * @okouai/ui bumped to 1.21.105
+
+## [0.1166.0](https://github.com/okou-ai/okou/compare/app-v0.1165.5...app-v0.1166.0) (2026-11-23)
+
+
+### Features
+
+* **app:** track suggestion card impressions and outcomes ([#50158](https://github.com/okou-ai/okou/issues/50158)) ([d1cb596](https://github.com/okou-ai/okou/commit/d1cb596036a9079ecd0eb85072610dce8d44f5fb))
+* **platform:** redraw for you completion fireworks in brand colors ([#50155](https://github.com/okou-ai/okou/issues/50155)) ([4a7e693](https://github.com/okou-ai/okou/commit/4a7e693bd21cd97365d9f5b5f90bfa0d67bce9d6))
+
+
+### Bug Fixes
+
+* **app:** refresh retained artifact previews after content updates ([#50176](https://github.com/okou-ai/okou/issues/50176)) ([df0ee6c](https://github.com/okou-ai/okou/commit/df0ee6c264c8b5a3090b5ee4b4b40324420e0a3e))
+
+
+### Refactoring
+
+* unify markdown document feature switches ([#50138](https://github.com/okou-ai/okou/issues/50138)) ([b47cda1](https://github.com/okou-ai/okou/commit/b47cda1efae2c75c66bc0131e3ee64e6d79d2599))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.108.0
+    * @okouai/core bumped to 8.861.1
+    * @okouai/ui bumped to 1.21.104
+
 ## [0.1165.5](https://github.com/okou-ai/okou/compare/app-v0.1165.4...app-v0.1165.5) (2026-11-23)
 
 
