@@ -214,14 +214,12 @@ struct OnboardingView: View {
       .buttonStyle(OkouButtonStyle(isPrimary: true))
       .disabled(!store.canContinue || store.isWorking)
       .accessibilityIdentifier("onboarding-continue")
-      if store.step != .industry {
-        Button(store.step == .ready ? "Explore on my own" : "Not now") {
-          Task { await store.next(skip: true) }
-        }
-        .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-        .disabled(store.isWorking)
-        .accessibilityIdentifier("onboarding-skip")
+      Button(store.step == .ready ? "Explore on my own" : "Not now") {
+        Task { await store.next(skip: true) }
       }
+      .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
+      .disabled(store.isWorking)
+      .accessibilityIdentifier("onboarding-skip")
     }
     .padding(.horizontal, OkouControl.pageInset)
     .padding(.vertical, OkouSpace.md)
