@@ -2459,7 +2459,6 @@ data class ArtifactCatalogArtifactsItemVariant1(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
 ) : ArtifactCatalogArtifactsItem
 
 @Serializable
@@ -2489,7 +2488,6 @@ data class ArtifactCatalogArtifactsItemVariant2(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
 ) : ArtifactCatalogArtifactsItem
 
 object ArtifactCatalogArtifactsItemSerializer : KSerializer<ArtifactCatalogArtifactsItem> {
@@ -2848,7 +2846,6 @@ data class ArtifactDetailVariant1(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant1GoogleDriveSync? = null,
@@ -3144,7 +3141,6 @@ data class ArtifactDetailVariant2(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant2GoogleDriveSync? = null,
@@ -3442,7 +3438,6 @@ data class ArtifactDetailVariant3(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant3GoogleDriveSync? = null,
@@ -3740,7 +3735,6 @@ data class ArtifactDetailVariant4(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant4GoogleDriveSync? = null,
@@ -4039,7 +4033,6 @@ data class ArtifactDetailVariant5(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant5GoogleDriveSync? = null,
@@ -4336,7 +4329,6 @@ data class ArtifactDetailVariant6(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant6GoogleDriveSync? = null,
@@ -4627,7 +4619,6 @@ data class ArtifactDetailVariant7(
     val `videoSourceUrl`: String? = null,
     val `createdAt`: String,
     val `updatedAt`: String,
-    val `modifiedAt`: String? = null,
     val `sourceChatThreadId`: String? = null,
     val `googleDriveConnectionId`: String? = null,
     val `googleDriveSync`: ArtifactDetailVariant7GoogleDriveSync? = null,
@@ -16577,7 +16568,6 @@ enum class ArtifactCatalogQueryKind {
 @Serializable
 enum class ArtifactCatalogQuerySort {
     @SerialName("createdAt") CREATEDAT,
-    @SerialName("modifiedAt") MODIFIEDAT,
     @SerialName("title") TITLE,
 }
 

@@ -87,7 +87,7 @@ function getDeleteMenuItem(menu: HTMLElement): HTMLElement {
 
 function textDetail(id: string, title: string): ArtifactDetail {
   return {
-    ...artifact({ id, title, modifiedAt: "2026-11-20T12:00:00Z" }),
+    ...artifact({ id, title }),
     kind: "file",
     file: {
       id,
@@ -116,7 +116,6 @@ test("The enabled Library starts with all kinds ordered by creation and does not
           title: "launch-image.png",
           createdAt: "2026-02-01T00:00:00Z",
           updatedAt: "2026-11-21T12:00:00Z",
-          modifiedAt: "2026-11-20T12:00:00Z",
         }),
       ],
       nextCursor: null,
@@ -149,8 +148,10 @@ test("The enabled Library starts with all kinds ordered by creation and does not
     screen.getByRole("combobox", { name: "Sort artifacts" }),
   ).toHaveTextContent("Created");
   expect(
-    within(viewport).queryByText(/Last modified/u),
-  ).not.toBeInTheDocument();
+    queryAllByRoleFast("columnheader", viewport).map((heading) => {
+      return heading.textContent?.trim();
+    }),
+  ).toStrictEqual(["Name", "Created", "Type", "More artifact actions"]);
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("complementary", { name: "Artifact" }),
@@ -203,37 +204,6 @@ test("The enabled Library starts with all kinds ordered by creation and does not
     "File",
   ]);
   click(within(choices).getByRole("option", { name: "All types" }));
-});
-
-test("An old modifiedAt route requests Created descending at the HTTP boundary", async () => {
-  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
-    expect(query).toStrictEqual({
-      limit: 60,
-      kind: "file",
-      keyword: "launch",
-      sort: "createdAt",
-      direction: "desc",
-    });
-    return respond(200, {
-      artifacts: [artifact({ title: "launch-created-first.txt" })],
-      nextCursor: null,
-    });
-  });
-
-  await setupLibraryPage(
-    "/artifacts?tab=file&q=launch&sort=modifiedAt&direction=asc",
-  );
-
-  await expect(
-    findArtifactAction("launch-created-first.txt"),
-  ).resolves.toBeInTheDocument();
-  expect(getSortHeading("Created").closest("th")).toHaveAttribute(
-    "aria-sort",
-    "descending",
-  );
-  expect(
-    screen.getByRole("combobox", { name: "Sort artifacts" }),
-  ).toHaveTextContent("Created");
 });
 
 test.each([undefined, false])(

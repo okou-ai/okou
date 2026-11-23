@@ -872,7 +872,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                         value["sort"].let { field ->
                             (field is JsonPrimitive &&
                                 field.isString &&
-                                field.content in setOf("createdAt", "modifiedAt", "title"))
+                                field.content in setOf("createdAt", "title"))
                         }) &&
                     (!value.containsKey("direction") ||
                         value["direction"].let { field ->

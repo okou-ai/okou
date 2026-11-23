@@ -106,10 +106,7 @@ describe("artifact library list queries", () => {
     await upload("first.txt");
     await upload("second.txt");
     const legacy = await list({ limit: 1 });
-    expect(legacy.artifacts[0]).toMatchObject({
-      title: "second.txt",
-      modifiedAt: null,
-    });
+    expect(legacy.artifacts[0]).toMatchObject({ title: "second.txt" });
     expect(legacy.nextCursor).toStrictEqual(expect.any(String));
     for (const query of [
       { sort: "createdAt" as const },
@@ -128,20 +125,11 @@ describe("artifact library list queries", () => {
         return artifact.title;
       }),
     ).toStrictEqual(["first.txt", "second.txt"]);
-    const detail = await accept(
-      client()(artifactCatalogContract).get({
-        headers,
-        params: { artifactId: library.artifacts[0]!.id },
-      }),
-      [200],
-    );
-    expect(detail.body.modifiedAt).toBeNull();
-
     await enableLibrary(false);
     await accept(
       client()(artifactCatalogContract).list({
         headers,
-        query: { sort: "modifiedAt", direction: "desc" },
+        query: { sort: "title", direction: "desc" },
       }),
       [403],
     );
@@ -212,26 +200,6 @@ describe("artifact library list queries", () => {
           },
         ),
       );
-      const unknownTimes = await collect({
-        sort: "modifiedAt",
-        direction,
-        kind: "file",
-      });
-      expect(
-        unknownTimes.every((artifact) => {
-          return artifact.modifiedAt === null;
-        }),
-      ).toBeTruthy();
-      const ids = legacyFiles
-        .map((artifact) => {
-          return artifact.id;
-        })
-        .sort();
-      expect(
-        unknownTimes.map((artifact) => {
-          return artifact.id;
-        }),
-      ).toStrictEqual(direction === "asc" ? ids : ids.reverse());
     }
     const deck = await list({
       kind: "presentation",

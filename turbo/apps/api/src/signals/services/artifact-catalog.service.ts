@@ -119,7 +119,7 @@ function encodeArtifactCursor(
 const artifactLibraryCursorSchema = object({
   version: literal(2),
   query: string(),
-  value: string().nullable(),
+  value: string(),
   id: uuid(),
 });
 type ArtifactLibraryCursor = zInfer<typeof artifactLibraryCursorSchema>;
@@ -244,37 +244,6 @@ function artifactCatalogEffectiveKind() {
 
 function artifactCatalogKindFilter(kind: ArtifactCatalogKind): SQL {
   return eq(artifactCatalogEffectiveKind(), kind);
-}
-
-/**
- * Projection creation identifies an immutable generated image, conversation
- * snapshot, or versioned hosted deployment. Replaying previews or renaming a
- * site does not change it. Generic uploads have no content-change clock, legacy
- * hosted aliases can replace content in place, and retained video/avatar
- * producers are not present here; leave those times unknown.
- */
-function artifactContentModifiedAt() {
-  const qb = new QueryBuilder();
-  const versionedHostedFile = exists(
-    qb
-      .select({ id: runUploadedFiles.id })
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.id, artifacts.projectionFileId),
-          eq(runUploadedFiles.orgId, artifacts.orgId),
-          sql`${runUploadedFiles.metadata}->>'deploymentVersion' ~ '^[1-9][0-9]*$'`,
-          isNotNull(sql`${runUploadedFiles.metadata}->>'deploymentId'`),
-        ),
-      ),
-  );
-  return sql`case
-    when ${artifacts.logicalKey} like 'shared-thread:%'
-      or ${artifacts.kind} = 'image'
-      or (${inArray(artifacts.kind, ["hosted-site", "presentation"])} and ${versionedHostedFile})
-    then ${artifacts.projectionCreatedAt}
-    else null
-  end`.mapWith(nullableDriverValueDecoder(artifacts.projectionCreatedAt));
 }
 
 function hostedArtifactKind(
@@ -1366,7 +1335,6 @@ function toArtifactSummary(row: {
   readonly thumbnail: ArtifactThumbnail | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
-  readonly modifiedAt: Date | null;
 }): ArtifactSummary {
   const kind =
     row.displayKind ?? catalogArtifactKind(row.kind, null, row.logicalKey);
@@ -1379,7 +1347,6 @@ function toArtifactSummary(row: {
     ...(row.videoSourceUrl ? { videoSourceUrl: row.videoSourceUrl } : {}),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
-    modifiedAt: row.modifiedAt?.toISOString() ?? null,
   };
   return kind === "shared-thread"
     ? { ...summary, kind, sharedThreadId: row.entityId }
@@ -1428,28 +1395,20 @@ function isArtifactCatalogCursorValid(
   if (!libraryQuery || cursor.query !== queryHash) {
     return false;
   }
-  if (cursor.value === null) {
-    return sort === "modifiedAt";
-  }
   return (
     sort === "title" ||
     iso.datetime({ precision: 6 }).safeParse(cursor.value).success
   );
 }
 
-function artifactCatalogSortColumn(sort: ArtifactCatalogSort, modifiedAt: SQL) {
-  return sort === "title"
-    ? artifacts.title
-    : sort === "modifiedAt"
-      ? modifiedAt
-      : artifacts.createdAt;
+function artifactCatalogSortColumn(sort: ArtifactCatalogSort) {
+  return sort === "title" ? artifacts.title : artifacts.createdAt;
 }
 
 function artifactCatalogCursorFilter(
   cursor: ArtifactCursor | ArtifactLibraryCursor | null,
   sort: ArtifactCatalogSort,
   direction: ArtifactCatalogDirection,
-  modifiedAt: SQL,
 ): SQL | undefined {
   if (!cursor) {
     return undefined;
@@ -1460,27 +1419,18 @@ function artifactCatalogCursorFilter(
       sql`(${cursor.createdAt}::timestamptz AT TIME ZONE 'UTC', ${cursor.id}::uuid)`,
     );
   }
-  const idAfter =
-    direction === "asc"
-      ? gt(artifacts.id, cursor.id)
-      : lt(artifacts.id, cursor.id);
-  if (cursor.value === null) {
-    return and(isNull(modifiedAt), idAfter);
-  }
-  const sortColumn = artifactCatalogSortColumn(sort, modifiedAt);
+  const sortColumn = artifactCatalogSortColumn(sort);
   const value =
     sort === "title" ? sql`${cursor.value}` : sql`${cursor.value}::timestamp`;
-  const after =
-    direction === "asc"
-      ? gt(
-          sql`(${sortColumn}, ${artifacts.id})`,
-          sql`(${value}, ${cursor.id}::uuid)`,
-        )
-      : lt(
-          sql`(${sortColumn}, ${artifacts.id})`,
-          sql`(${value}, ${cursor.id}::uuid)`,
-        );
-  return sort === "modifiedAt" ? or(after, isNull(modifiedAt)) : after;
+  return direction === "asc"
+    ? gt(
+        sql`(${sortColumn}, ${artifacts.id})`,
+        sql`(${value}, ${cursor.id}::uuid)`,
+      )
+    : lt(
+        sql`(${sortColumn}, ${artifacts.id})`,
+        sql`(${value}, ${cursor.id}::uuid)`,
+      );
 }
 
 function artifactCatalogKeywordFilter(
@@ -1517,12 +1467,10 @@ function artifactCatalogKeywordFilter(
 function artifactCatalogOrderBy(
   sort: ArtifactCatalogSort,
   direction: ArtifactCatalogDirection,
-  modifiedAt: SQL,
 ): SQL[] {
-  const column = artifactCatalogSortColumn(sort, modifiedAt);
-  const order = direction === "asc" ? asc(column) : desc(column);
+  const column = artifactCatalogSortColumn(sort);
   return [
-    sort === "modifiedAt" ? sql`${order} nulls last` : order,
+    direction === "asc" ? asc(column) : desc(column),
     direction === "asc" ? asc(artifacts.id) : desc(artifacts.id),
   ];
 }
@@ -1547,14 +1495,8 @@ export const listArtifactCatalog$ = command(
     ) {
       return null;
     }
-    const modifiedAt = artifactContentModifiedAt();
-    const sortColumn = artifactCatalogSortColumn(sort, modifiedAt);
-    const cursorFilter = artifactCatalogCursorFilter(
-      cursor,
-      sort,
-      direction,
-      modifiedAt,
-    );
+    const sortColumn = artifactCatalogSortColumn(sort);
+    const cursorFilter = artifactCatalogCursorFilter(cursor, sort, direction);
     const keywordFilter = artifactCatalogKeywordFilter(
       args.keyword,
       libraryQuery,
@@ -1573,14 +1515,13 @@ export const listArtifactCatalog$ = command(
         thumbnail: artifacts.thumbnail,
         createdAt: artifacts.createdAt,
         updatedAt: artifacts.updatedAt,
-        modifiedAt,
         // Preserve PostgreSQL microseconds in new keyset cursors; Date truncates
         // them and can skip records sharing a millisecond at a page boundary.
         sortValue:
           !libraryQuery || sort === "title"
             ? artifacts.title
             : sql`to_char(${sortColumn}, 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`.mapWith(
-                nullableDriverValueDecoder(pgTextDecoder),
+                pgTextDecoder,
               ),
       })
       .from(artifacts)
@@ -1597,7 +1538,7 @@ export const listArtifactCatalog$ = command(
           cursorFilter,
         ),
       )
-      .orderBy(...artifactCatalogOrderBy(sort, direction, modifiedAt))
+      .orderBy(...artifactCatalogOrderBy(sort, direction))
       .limit(limit + 1);
     signal.throwIfAborted();
 
@@ -2000,7 +1941,6 @@ function selectArtifactCatalogEntry(
       thumbnail: artifacts.thumbnail,
       createdAt: artifacts.createdAt,
       updatedAt: artifacts.updatedAt,
-      modifiedAt: artifactContentModifiedAt(),
     })
     .from(artifacts)
     .leftJoin(

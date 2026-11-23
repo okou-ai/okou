@@ -658,13 +658,7 @@ describe("GET /api/artifacts/catalog", () => {
     const entry = catalog.artifacts.find((artifact) => {
       return artifact.kind === "hosted-site";
     });
-    expect(entry).toMatchObject({
-      title: "Quarterly sales report",
-      modifiedAt: expect.any(String),
-    });
-    if (!entry?.modifiedAt) {
-      throw new Error("Expected the hosted content version timestamp");
-    }
+    expect(entry).toMatchObject({ title: "Quarterly sales report" });
     const headers = { authorization: "Bearer clerk-session" };
     routeMocks.clerk.session(
       owner.actor.userId,
@@ -688,7 +682,6 @@ describe("GET /api/artifacts/catalog", () => {
       chat.getArtifactCatalogEntry(owner.actor, entry!.id),
     ).resolves.toMatchObject({
       title: "季度销售报告",
-      modifiedAt: entry.modifiedAt,
       site: { url: published.url, publicSlug: published.publicSlug },
     });
     await enableArtifactLibrary(owner.actor);
@@ -703,7 +696,7 @@ describe("GET /api/artifacts/catalog", () => {
       direction: "asc",
     });
     expect(filenameMatch.artifacts).toStrictEqual([
-      expect.objectContaining({ id: entry.id, title: "季度销售报告" }),
+      expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
     const redeployed = await publishHostedSite({
       owner,
@@ -716,10 +709,7 @@ describe("GET /api/artifacts/catalog", () => {
     expect(afterRedeploy.artifacts).toStrictEqual([
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
-    expect(Date.parse(afterRedeploy.artifacts[0]!.modifiedAt!)).toBeGreaterThan(
-      Date.parse(entry.modifiedAt),
-    );
-    expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry.createdAt);
+    expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry!.createdAt);
     const threadArtifacts = await chat.listThreadArtifacts(
       owner.actor,
       published.threadId,
@@ -852,7 +842,6 @@ describe("GET /api/artifacts/catalog", () => {
         thumbnail: null,
         createdAt: expect.any(String),
         updatedAt: expect.any(String),
-        modifiedAt: null,
       },
     ]);
 
@@ -1713,49 +1702,6 @@ describe("GET /api/artifacts/catalog", () => {
     ).toStrictEqual([site]);
   }, 180_000);
 
-  it("sorts verified content versions before unknown upload times in both directions", async () => {
-    const owner = await catalogActor("Library content time owner");
-    for (const title of ["First content", "Second content"]) {
-      await publishHostedSite({
-        owner,
-        site: `content-time-${randomUUID().slice(0, 8)}`,
-        title,
-      });
-    }
-    await uploadFile({
-      owner,
-      prompt: "Upload a file with no content modification clock",
-      filename: "unknown-time.txt",
-      contentType: "text/plain",
-    });
-    await enableArtifactLibrary(owner.actor);
-    for (const direction of ["asc", "desc"] as const) {
-      const titles: string[] = [];
-      let cursor: string | undefined;
-      do {
-        const page = await chat.listArtifactCatalog(owner.actor, {
-          sort: "modifiedAt",
-          direction,
-          limit: 1,
-          cursor,
-        });
-        titles.push(
-          ...page.artifacts.map((artifact) => {
-            return artifact.title;
-          }),
-        );
-        cursor = page.nextCursor ?? undefined;
-        expect(titles.length).toBeLessThanOrEqual(3);
-      } while (cursor);
-      expect(titles).toStrictEqual([
-        ...(direction === "asc"
-          ? ["First content", "Second content"]
-          : ["Second content", "First content"]),
-        "unknown-time.txt",
-      ]);
-    }
-  });
-
   it("searches artifact titles literally before applying the page limit", async () => {
     const owner = await catalogActor("Artifact catalog search owner");
     await uploadFile({
@@ -2173,12 +2119,6 @@ describe("shared thread routes", () => {
     }
     const detail = await chat.getArtifactCatalogEntry(owner.actor, artifactId);
     expect(detail.kind).toBe("shared-thread");
-    expect(detail.modifiedAt).toBe(detail.createdAt);
-    expect(
-      catalog.artifacts.every((artifact) => {
-        return artifact.modifiedAt === artifact.createdAt;
-      }),
-    ).toBeTruthy();
     const { sourceChatThreadId, ...detailWithoutSource } = detail;
     expect(sourceChatThreadId).toBe(run.threadId);
     // Neither selected message contains a file. The source-thread association
