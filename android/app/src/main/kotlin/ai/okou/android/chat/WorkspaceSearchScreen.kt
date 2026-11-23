@@ -70,7 +70,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -97,7 +96,6 @@ internal fun WorkspaceSearchScreen(
     search: ChatSearchState,
     widthDp: Int,
     listWidth: Int?,
-    workspaceName: String?,
     focusOnEntry: Boolean,
     onFocused: () -> Unit,
     onClose: () -> Unit,
@@ -185,10 +183,7 @@ internal fun WorkspaceSearchScreen(
                                 if (!it.isFocused) search.cancelComposition()
                             }
                             .testTag("chat_search_query")
-                            .semantics {
-                                contentDescription =
-                                    workspaceName?.let { "$searchLabel, $it" } ?: searchLabel
-                            },
+                            .semantics { contentDescription = searchLabel },
                     textStyle = inputStyle,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -233,17 +228,6 @@ internal fun WorkspaceSearchScreen(
                 )
             },
         )
-        if (workspaceName != null) {
-            Text(
-                workspaceName,
-                contentWidth
-                    .padding(start = 16.dp, end = 16.dp, bottom = 4.dp)
-                    .clearAndSetSemantics {},
-                color = colors.onSurfaceVariant,
-                fontSize = 13.sp,
-                lineHeight = 20.sp,
-            )
-        }
         SearchTypes(search.type, allTabFocus, contentWidth, ::selectType)
         SearchResults(
             resultList,
