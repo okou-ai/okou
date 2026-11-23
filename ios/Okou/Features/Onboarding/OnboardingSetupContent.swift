@@ -34,7 +34,7 @@ struct OnboardingIndustryContent: View {
 
 struct OnboardingExperienceContent: View {
   let store: OnboardingStore
-  let connect: () -> Void
+  let onConnect: () -> Void
 
   var body: some View {
     Section {
@@ -45,7 +45,7 @@ struct OnboardingExperienceContent: View {
     }
     if store.draft.answers.provider != nil {
       Section {
-        Button(action: connect) {
+        Button(action: onConnect) {
           OkouRowLabel("Connect subscription", okouSymbol: "plus")
         }
         ForEach(store.subscriptions.accounts.filter { !$0.needsReconnect }) { account in

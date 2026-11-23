@@ -34,22 +34,25 @@ final class OnboardingResources {
   lazy var sources = read(.sources) { [service] in try await service.sources() }
   lazy var preferences = read(.preferences) { [service] in try await service.toolPreferences() }
   lazy var tools = read(.tools) { [catalog, locale] in try await catalog.tools(locale: locale) }
-  lazy var recommendation: Computed<Task<OnboardingRecommendation?, Error>> = Computed {
-    [weak self] get, options in
-    guard let self, try get(alive) else { throw CancellationError() }
-    _ = try get(revisions[.recommendation]!)
-    let id = try get(jobID)
-    let signal = options.signal
-    let task = Task { @MainActor [service] in
-      guard let id else { return nil as OnboardingRecommendation? }
-      let value = try await service.recommendation(id)
-      try Task.checkCancellation()
-      try signal.checkCancellation()
-      return value
+  lazy var recommendation = makeRecommendation()
+
+  private func makeRecommendation() -> Computed<Task<OnboardingRecommendation?, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, try get(alive) else { throw CancellationError() }
+      _ = try get(revisions[.recommendation]!)
+      let id = try get(jobID)
+      let signal = options.signal
+      let task = Task { @MainActor [service] in
+        guard let id else { return nil as OnboardingRecommendation? }
+        let value = try await service.recommendation(id)
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        return value
+      }
+      cancellations[.recommendation] = { task.cancel() }
+      signal.onCancel { task.cancel() }
+      return task
     }
-    cancellations[.recommendation] = { task.cancel() }
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   private func read<Value: Sendable>(

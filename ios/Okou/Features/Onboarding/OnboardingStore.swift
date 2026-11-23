@@ -16,6 +16,7 @@ final class OnboardingStore {
   private(set) var skillSession: OnboardingSkillSession?
   private(set) var importedSkills: [OnboardingImportedSkill] = []
   private(set) var completedPrompt: String?
+  private let signOutAction: (@MainActor () async throws -> Void)?
   private let didComplete: @MainActor (String?) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
   private var operation: Task<Void, Never>?
@@ -25,6 +26,7 @@ final class OnboardingStore {
   init(
     client: APIClient, webURL: URL, locale: String = "en-US",
     didFail: @escaping @MainActor (Error) -> Void,
+    signOut: (@MainActor () async throws -> Void)? = nil,
     didComplete: @escaping @MainActor (String?) async throws -> Void
   ) {
     let production = webURL.host == "app.okou.ai"
@@ -39,6 +41,7 @@ final class OnboardingStore {
       authorizationService: ChatConnectorService(client: client), webURL: webURL, didFail: didFail)
     subscriptions = PersonalSubscriptionStore(client: client, didFail: didFail)
     self.didFail = didFail
+    signOutAction = signOut
     self.didComplete = didComplete
   }
 
@@ -55,6 +58,11 @@ final class OnboardingStore {
       !draft.answers.startingPromptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     default: true
     }
+  }
+
+  var canSignOut: Bool { signOutAction != nil }
+  func signOut() async {
+    await perform { try await self.signOutAction?() }
   }
 
   func prepare() async {

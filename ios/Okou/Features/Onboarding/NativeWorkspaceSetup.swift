@@ -48,8 +48,8 @@ private struct NativeWorkspaceSetupContent: View {
             .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
           TextField("Workspace name", text: $store.name)
             .textContentType(.organizationName)
-            .textFieldStyle(OkouTextFieldStyle(isFocused: focused))
-            .focused($focused)
+            .textFieldStyle(OkouTextFieldStyle(isFocused: isNameFocused))
+            .focused($isNameFocused)
             .submitLabel(.continue)
             .onSubmit { Task { await store.create() } }
             .disabled(store.isCreating)

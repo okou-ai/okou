@@ -25,9 +25,8 @@ public struct OnboardingToolCatalog: Sendable {
         at: url, cursor: cursor, session: session)
       try Task.checkCancellation()
       let page = try JSONDecoder().decode(OnboardingRouterEnvelope.self, from: data).result
-      for family in page._meta.data.families where !families.contains(where: { $0.id == family.id })
-      {
-        families.append(family)
+      for family in page._meta.data.families {
+        if !families.contains(where: { $0.id == family.id }) { families.append(family) }
       }
       listed.formUnion(page.tools.compactMap { $0._meta?.data?.family })
       cursor = page.nextCursor

@@ -18,13 +18,14 @@ private struct OnboardingGateContent<Content: View>: View {
   let store: OnboardingStore
   let needsUpgrade: Bool
   let content: () -> Content
+  @Environment(\.scenePhase) private var scenePhase
   @LoadableValue private var status: Loadable<OnboardingStatus>
 
   init(store: OnboardingStore, needsUpgrade: Bool, content: @escaping () -> Content) {
     self.store = store
     self.needsUpgrade = needsUpgrade
     self.content = content
-    _status = LoadableValue(task: store.resources.status)
+    _status = LoadableValue(task: store.resources.status, keepLast: true)
   }
 
   var body: some View {
@@ -48,6 +49,10 @@ private struct OnboardingGateContent<Content: View>: View {
           ) {
             Button("Try again") { retryStatus() }
               .buttonStyle(OkouButtonStyle(isPrimary: true))
+            if store.canSignOut {
+              Button("Sign out") { Task { await store.signOut() } }
+                .buttonStyle(OkouButtonStyle(isPrimary: false))
+            }
           }
         case .hasData(let value):
           if value.presentsOnboarding {
@@ -59,10 +64,15 @@ private struct OnboardingGateContent<Content: View>: View {
       }
     }
     .background(OkouColor.background.ignoresSafeArea())
+    .onChange(of: scenePhase) { _, phase in
+      if phase == .active, status.data?.presentsOnboarding == true, !store.isWorking {
+        store.retry(.status)
+      }
+    }
   }
 
   private func retryStatus() {
-    do { try store.resources.retry(.status) } catch { /* Retired owners cannot retry. */  }
+    store.retry(.status)
   }
 }
 
@@ -70,7 +80,8 @@ struct OnboardingView: View {
   @Bindable var store: OnboardingStore
   @State private var showsConnectors = false
   @State private var showsSubscriptions = false
-  @State private var channelURL: URL?
+  @State private var confirmsSignOut = false
+  @State private var channelPage: ComposerConnectorStore.WebDestination?
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -99,9 +110,16 @@ struct OnboardingView: View {
           }
         }
         ToolbarItem(placement: .topBarTrailing) {
-          Text("\(store.stepIndex + 1) of \(store.steps.count)")
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            .accessibilityLabel("Step \(store.stepIndex + 1) of \(store.steps.count)")
+          Menu {
+            if store.canSignOut {
+              Button("Sign out", role: .destructive) { confirmsSignOut = true }
+            }
+          } label: {
+            Text("\(store.stepIndex + 1) of \(store.steps.count)")
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+              .accessibilityLabel(
+                "Step \(store.stepIndex + 1) of \(store.steps.count), account options")
+          }
         }
       }
       .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -110,15 +128,14 @@ struct OnboardingView: View {
       .sheet(isPresented: $showsConnectors) {
         ComposerConnectorSheet(store: store.connectors)
       }
-      .sheet(isPresented: $showsSubscriptions) {
-        NavigationStack {
-          PersonalSubscriptionsView(store: store.subscriptions)
-            .toolbar { OkouCloseToolbarItem { showsSubscriptions = false } }
-        }
+      .sheet(isPresented: $showsSubscriptions, onDismiss: store.subscriptions.cancelAuth) {
+        SubscriptionAuthorizationView(store: store.subscriptions)
       }
-      .sheet(isPresented: Binding(get: { channelURL != nil }, set: { if !$0 { channelURL = nil } }))
-      {
-        if let channelURL { ConnectorSafariView(url: channelURL) { self.channelURL = nil } }
+      .signOutConfirmation(isPresented: $confirmsSignOut) {
+        Task { await store.signOut() }
+      }
+      .sheet(item: $channelPage) { page in
+        ConnectorSafariView(url: page.url) { channelPage = nil }
       }
     }
     .task { await store.prepare() }
@@ -145,14 +162,21 @@ struct OnboardingView: View {
       case .industry: OnboardingIndustryContent(store: store)
       case .sources:
         OnboardingSourcesContent(
-          store: store, isBrowsing: showsConnectors, showAll: { showsConnectors = true })
+          store: store, isBrowsing: showsConnectors, onShowAll: { showsConnectors = true })
       case .experience:
-        OnboardingExperienceContent(store: store, connect: { showsSubscriptions = true })
+        OnboardingExperienceContent(
+          store: store,
+          onConnect: {
+            guard let provider = store.draft.answers.provider else { return }
+            store.subscriptions.start(type: provider == "codex" ? .codex : .claude)
+            showsSubscriptions = true
+          })
       case .skills: OnboardingSkillsContent(store: store)
       case .slack:
         Section {
           Button {
-            channelURL = store.connectors.webURL.appending(path: "works")
+            channelPage = ComposerConnectorStore.WebDestination(
+              url: store.connectors.webURL.appending(path: "works"))
           } label: {
             OkouRowLabel("Connect chat apps", okouSymbol: "messages-square")
           }

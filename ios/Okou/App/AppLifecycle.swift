@@ -239,6 +239,7 @@ final class WorkspaceLifecycle {
     onboarding = OnboardingStore(
       client: data.client, webURL: configuration.webURL,
       didFail: { [weak workspaceStore] in workspaceStore?.reportWorkspaceFailure($0) },
+      signOut: { try await authentication.signOut() },
       didComplete: { [weak workspaceStore] prompt in
         guard let workspaceStore, !workspaceStore.isClosed else { throw CancellationError() }
         if let prompt {

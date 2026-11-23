@@ -143,7 +143,7 @@ private final class OnboardingHTTPFixture: Sendable {
           var draft = saved
           draft.revision = UUID().uuidString.lowercased()
           $0.draft = draft
-          $0.savedJSON = String(decoding: body, as: UTF8.self)
+          $0.savedJSON = String(data: body, encoding: .utf8)
           return ChatHTTPResponse(body: "{\"revision\":\"\(draft.revision!)\"}")
         }
       case ("POST", "/api/onboarding/recommendations"):
