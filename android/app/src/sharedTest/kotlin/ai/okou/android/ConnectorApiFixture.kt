@@ -36,6 +36,7 @@ internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
+    val svg: String? = null,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
 )
@@ -161,7 +162,15 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) {
+                        val asset = url.pathSegments.last().removeSuffix(".svg")
+                        val artwork =
+                            icons.values.firstOrNull { it.asset == asset }?.svg
+                                ?: return rejected(404)
+                        return MockResponse()
+                            .setHeader("Content-Type", "image/svg+xml")
+                            .setBody(artwork)
+                    }
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
