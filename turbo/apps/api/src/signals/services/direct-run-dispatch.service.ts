@@ -228,12 +228,6 @@ const offerToProcess$ = command(
     let gzipBody:
       Awaited<ReturnType<typeof gzipRunnerDispatchBody>> | undefined;
     for (;;) {
-      // Runner reconciles cancellation asynchronously after binding the supplied
-      // input. Check ownership immediately before the first offer and after waits.
-      const state = await set(readDirectRunState$, args.runId, signal);
-      if (!isCurrentOwner(state, args.target)) {
-        return uncertain ? ("uncertain" as const) : ("stopped" as const);
-      }
       offer ??= createDispatchOffer(
         args.envelope,
         args.body,
@@ -249,6 +243,12 @@ const offerToProcess$ = command(
         gzipBody = await gzipRunnerDispatchBody(offer.body, offer.bodyBytes);
         gzipEncodeMs = gzipBody.elapsedMs;
         signal.throwIfAborted();
+      }
+      // Runner reconciles cancellation asynchronously after binding the supplied
+      // input. Verify ownership after encoding and before each POST.
+      const state = await set(readDirectRunState$, args.runId, signal);
+      if (!isCurrentOwner(state, args.target)) {
+        return uncertain ? ("uncertain" as const) : ("stopped" as const);
       }
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
