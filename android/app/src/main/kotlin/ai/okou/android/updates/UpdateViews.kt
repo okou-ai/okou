@@ -377,18 +377,20 @@ private fun UpdateSheet(
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
                 else MaterialTheme.typography.headlineSmall
             val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
+            val bodyLineHeight =
+                with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
             val resultSpacing = 4.dp
             // Match the rounding of each text row and the gap.
             val resultMinHeight =
                 with(LocalDensity.current) {
-                    val lineHeight = MaterialTheme.typography.bodyMedium.lineHeight.toDp()
-                    (lineHeight.roundToPx() * 2 + resultSpacing.roundToPx()).toDp()
+                    (bodyLineHeight.roundToPx() * 2 + resultSpacing.roundToPx()).toDp()
                 }
             val scroll = rememberScrollState()
             val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
             val headingGap = if (short) 4.dp else 8.dp
             val scrollWholePanel =
-                maxHeight < actions.height + headingGap + contentSpacing + titleLineHeight
+                maxHeight <
+                    actions.height + headingGap + contentSpacing + titleLineHeight + bodyLineHeight
             Column(
                 if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
                 else Modifier.fillMaxWidth(),

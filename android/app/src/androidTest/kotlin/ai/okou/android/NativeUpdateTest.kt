@@ -356,12 +356,12 @@ class NativeUpdateTest {
                 device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
             val fontScale = device.executeShellCommand("settings get system font_scale").trim()
             try {
-                device.executeShellCommand("wm size 740x790")
+                device.executeShellCommand("wm size 780x850")
                 device.executeShellCommand("settings put system font_scale 2.0")
                 val resized =
                     object : Condition<UiDevice, Boolean> {
                         override fun apply(device: UiDevice) =
-                            device.displayHeight == 790 &&
+                            device.displayHeight == 850 &&
                                 app.resources.configuration.fontScale >= 2f
                     }
                 assertTrue(device.wait(resized, 10_000) == true)
