@@ -3,6 +3,7 @@ package ai.okou.android.state
 import ai.okou.android.OkouTheme
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
@@ -12,6 +13,7 @@ import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.WorkspaceSearchResults
 import ai.okou.android.chat.WorkspaceSearchScreen
+import ai.okou.android.chat.WorkspaceSearchType
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -29,11 +31,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -102,7 +106,6 @@ class SavedUiStateTest {
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                 )
             }
         }
@@ -124,7 +127,14 @@ class SavedUiStateTest {
     fun searchReportsReadFailuresAndShowsConfirmedEmptyResultsWithAnOfflineSignal() {
         val search = ChatSearchState(TextFieldValue("Release"))
         val savedChat = searchResult("release", "Release notes")
-        var retries = 0
+        var chats by
+            mutableStateOf(
+                ChatListUiState(
+                    offline = true,
+                    confirmedAt = 1L,
+                    threadsByRecency = listOf(savedChat),
+                ),
+            )
         var remote by
             mutableStateOf(
                 WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Failed),
@@ -132,12 +142,7 @@ class SavedUiStateTest {
         compose.setContent {
             OkouTheme(false) {
                 WorkspaceSearchScreen(
-                    state =
-                        ChatListUiState(
-                            offline = true,
-                            confirmedAt = 1L,
-                            threadsByRecency = listOf(savedChat),
-                        ),
+                    state = chats,
                     search = search,
                     widthDp = 400,
                     listWidth = null,
@@ -146,12 +151,7 @@ class SavedUiStateTest {
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                     remote = remote,
-                    onRetrySearch = {
-                        retries++
-                        remote = remote.copy(messages = SearchRead.Retrying)
-                    },
                 )
             }
         }
@@ -164,20 +164,39 @@ class SavedUiStateTest {
         compose.onNodeWithTag("search_type_Messages").performClick()
         compose.onNodeWithText("Couldn’t search messages").assertIsDisplayed()
         compose.onNodeWithText("No matching messages").assertDoesNotExist()
+        retry.assertDoesNotExist()
 
-        retry.performClick()
-        assertEquals(1, retries)
-        compose.mainClock.advanceTimeBy(260)
-        compose.onNodeWithContentDescription("Loading chats…").assertIsDisplayed()
-        compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+        compose.runOnIdle {
+            search.edit(TextFieldValue("Deployment"))
+            remote = WorkspaceSearchResults(keyword = "Deployment", messages = SearchRead.Retrying)
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(280)
+        compose
+            .onNodeWithContentDescription("Searching…")
+            .assertIsDisplayed()
+            .assert(!searchProgress)
         compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
 
         compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
         compose.onNodeWithText("No matching messages").assertIsDisplayed()
         compose.onNodeWithText("Search all types").assertIsDisplayed()
         compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
         compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
+
+        compose.runOnIdle {
+            search.selectType(WorkspaceSearchType.Chats)
+            chats =
+                ChatListUiState(
+                    listPhase = ChatReadPhase.Failed,
+                    listReadFailure = ChatListReadFailure.Retrying,
+                )
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithContentDescription("Loading chats…").assertIsDisplayed()
+        compose.onNodeWithText("No matching chats").assertDoesNotExist()
+        retry.assertDoesNotExist()
     }
 
     @Test
@@ -209,21 +228,20 @@ class SavedUiStateTest {
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                     remote = remote,
                     workflowResults = SearchRead.Ready(workflows),
                     onOpenWorkflow = {},
                 )
             }
         }
-        val progress = compose.onNodeWithContentDescription("Searching…")
+        val progress = compose.onNode(searchProgress)
         val notice = compose.onNodeWithText("Some results couldn’t load")
         val first = compose.onNodeWithText("Release chat 0")
         val scrolled = compose.onNodeWithText("Release chat 2")
         val results = compose.onNodeWithTag("chat_search_results")
         compose.mainClock.advanceTimeBy(260)
         progress.assertIsDisplayed()
-        compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Searching…") and !searchProgress).assertDoesNotExist()
         first.assertIsDisplayed()
         results.performScrollToIndex(3)
         val top = scrolled.fetchSemanticsNode().boundsInRoot.top
@@ -320,7 +338,6 @@ class SavedUiStateTest {
                         onFocused = {},
                         onClose = {},
                         onOpen = {},
-                        retry = {},
                         remote = remote,
                         workflowResults = SearchRead.Ready(listOf(workflow)),
                         onOpenWorkflow = { detailsOpen = true },
@@ -389,7 +406,6 @@ class SavedUiStateTest {
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                 )
             }
         }
@@ -423,6 +439,10 @@ class SavedUiStateTest {
             renamedAt = null,
         )
     }
+
+    private val searchProgress =
+        hasContentDescription("Searching…") and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)
 
     @Test
     fun restoredSelectionWaitsForTheJournalBody() {
