@@ -59,7 +59,10 @@ import { validateOfficialWorkflowStorageRetirement } from "./test-official-workf
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
 import { validateStaffWorkflowAttachmentDeletion } from "./test-staff-workflow-attachment-deletion";
 import { validateInactiveWorkflowAttachmentDeletion } from "./test-inactive-workflow-attachment-deletion";
-import { validateCustomConnectorSkillCutover } from "./test-custom-connector-skill-cutover";
+import {
+  validateCustomConnectorSkillCutover,
+  validateCustomConnectorSkillPublicationViewRetirement,
+} from "./test-custom-connector-skill-cutover";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
@@ -2877,6 +2880,12 @@ async function main(): Promise<void> {
     await validateLegacyAgentApiProfileRetirement(
       dbUrl1,
       await migrationTimestamp("1618_drop_legacy_agent_api_profiles"),
+    );
+    await validateCustomConnectorSkillPublicationViewRetirement(
+      dbUrl1,
+      await migrationTimestamp(
+        "1620_drop_custom_connector_skill_publication_view",
+      ),
     );
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");

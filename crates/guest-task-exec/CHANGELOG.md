@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.2.98](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.97...guest-task-exec-v0.2.98) (2026-11-23)
+
 ## [0.2.97](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.96...guest-task-exec-v0.2.97) (2026-11-22)
 
 ## [0.2.96](https://github.com/okou-ai/okou/compare/guest-task-exec-v0.2.95...guest-task-exec-v0.2.96) (2026-11-22)

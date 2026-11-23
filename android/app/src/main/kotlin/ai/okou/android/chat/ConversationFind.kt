@@ -78,11 +78,14 @@ import kotlinx.serialization.json.JsonObject
 
 /** The snapshot and native search state live for one visit in the current conversation. */
 internal class ConversationFindVisit(
-    private val messages: List<HistoryMessage>,
+    transcript: HistoryTranscript?,
     private val rows: List<HistoryEvent>,
     private val artifactCards: Boolean,
     val restoreActionsFocus: Boolean,
 ) {
+    private val messages = transcript?.messages.orEmpty()
+    private val pendingInputIds = transcript?.pendingInputIds.orEmpty()
+
     val hasLoadedMessages: Boolean
         get() = messages.isNotEmpty()
 
@@ -116,7 +119,10 @@ internal class ConversationFindVisit(
 
     suspend fun prepareIndex() {
         if (index == null) {
-            index = withContext(Dispatchers.Default) { findMessages(messages, rows, artifactCards) }
+            index =
+                withContext(Dispatchers.Default) {
+                    findMessages(messages, rows, pendingInputIds, artifactCards)
+                }
         }
     }
 
@@ -191,15 +197,16 @@ internal data class FindResult(
     val passage: FindPassage? = null,
 )
 
-internal fun findMessages(
+private fun findMessages(
     messages: List<HistoryMessage>,
     rows: List<HistoryEvent>,
+    pendingInputIds: Set<String>,
     artifactCards: Boolean,
 ): List<FindMessage> {
     val byId = messages.associateBy { it.id }
     return rows.asReversed().mapNotNull { row ->
         val message = byId[row.id] ?: return@mapNotNull null
-        if (message.role == HistoryRole.System || message.rejected || message.queued)
+        if (message.role == HistoryRole.System || message.rejected || row.id in pendingInputIds)
             return@mapNotNull null
         val parts =
             message.blocks
