@@ -464,3 +464,107 @@ test("onboarding-sources-first-flow-009 the invited member receives the delayed 
   expect(accessed.has("/api/onboarding/sources")).toBeTruthy();
   expect(accessed.has("/api/connector-catalog/status")).toBeFalsy();
 });
+
+test.each(["owner", "invited member"] as const)(
+  "The %s starts the chosen task only after the ready-step completion is accepted",
+  async (role) => {
+    const owner = role === "owner";
+    newcomer(owner);
+    mockSlack(context, {
+      isAdmin: owner,
+      installUrl: owner ? "/slack/install" : null,
+    });
+    const proposed =
+      "Compare the public content of three competitors and suggest three angles for my brand. Ask me which brand and audience to focus on.";
+    const edited = owner ? "Prepare my field guide" : "Draft my meeting agenda";
+    if (owner) {
+      mockOnboardingConnectorCatalog(context, [connectedGmailSource()]);
+      savedPlan(edited);
+    } else {
+      unconnectedGmail();
+    }
+    const submitting = context.mocks.deferred<string>();
+    const release = context.mocks.deferred<void>();
+    let accepted = false;
+    context.mocks.api(
+      onboardingCompleteContract.complete,
+      async ({ respond }) => {
+        if (!submitting.settled()) {
+          submitting.resolve(location.pathname);
+        }
+        await release.promise;
+        accepted = true;
+        context.mocks.data.onboardingStatus({
+          onboardingComplete: true,
+          needsOnboarding: false,
+        });
+        return respond(200, {
+          onboardingComplete: true,
+          needsOnboarding: false,
+        });
+      },
+    );
+    const sent = context.mocks.deferred<{
+      text: string | undefined;
+      ready: boolean;
+      to: string | undefined;
+    }>();
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      const to = body.threadId;
+      if (!to) {
+        throw new Error("Expected a conversation for the first task");
+      }
+      if (!sent.settled()) {
+        sent.resolve({ text: body.prompt, ready: accepted, to });
+      }
+      return respond(201, { threadId: to, createdAt: "2026-10-18T09:00:00Z" });
+    });
+    try {
+      await setupPage({
+        context,
+        path: owner ? "/onboarding/ready" : "/onboarding",
+      });
+      if (!owner) {
+        click(
+          await screen.findByRole("radio", { name: /Marketing & content/ }),
+        );
+        click(await findAction("button", "Continue"));
+        click(await findAction("button", "Skip"));
+        click(
+          await findAction(
+            "button",
+            "Skip for now",
+            await screen.findByRole("dialog"),
+          ),
+        );
+        click(await screen.findByText("Start with Okou"));
+        click(await findAction("button", "Continue"));
+        click(await findAction("button", "Not now"));
+        await screen.findByRole("heading", {
+          name: "More ways to get your work done",
+        });
+        click(await findAction("button", "Continue"));
+      }
+      const editor = await screen.findByLabelText("Your first task");
+      expect(editor).toHaveValue(owner ? edited : proposed);
+      if (!owner) {
+        await fill(editor, edited);
+      }
+      click(await findAction("button", "Start my first task"));
+      await expect(submitting.promise).resolves.toBe("/onboarding/ready");
+      expect(editor).toHaveValue(edited);
+      release.resolve();
+      const run = await sent.promise;
+      expect(run.text).toBe(edited);
+      expect(run.ready).toBeTruthy();
+      await findSentPrompt(edited);
+      await waitFor(() => {
+        return expect(location.pathname).toBe("/chats/" + run.to);
+      });
+    } finally {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    }
+  },
+);

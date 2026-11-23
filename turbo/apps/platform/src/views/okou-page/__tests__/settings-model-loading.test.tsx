@@ -56,3 +56,45 @@ test("settings-model-loading-003 a billing notification updates the reopened bal
     within(after).findByText("25,000 credits"),
   ).resolves.toBeVisible();
 });
+
+test("Returning to model settings presents account setup while the updated balance is held", async () => {
+  const resume = context.mocks.deferred<void>();
+  const refreshing = context.mocks.deferred<void>();
+  let suspend = false;
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    if (suspend) {
+      refreshing.resolve();
+      await resume.promise;
+    }
+    return respond(200, defaultBillingStatus());
+  });
+  try {
+    await setupPage({ context, path: "/?settings=model" });
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      findAction("button", "Connect account", dialog),
+    ).resolves.toBeEnabled();
+    click(getAction("button", "Preference", dialog));
+    await within(dialog).findByRole("heading", { name: "Preference" });
+    suspend = true;
+    context.mocks.ably.trigger("billing:changed");
+    click(getAction("button", "Models", dialog));
+    await refreshing.promise;
+    await expect(
+      within(dialog).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
+    await expect(
+      findAction("button", "Connect account", dialog),
+    ).resolves.toBeEnabled();
+    for (const name of ["Claude", "ChatGPT (Codex)"]) {
+      const provider = within(dialog).getByRole("heading", {
+        name,
+      }).parentElement!;
+      expect(
+        within(provider).getByText("No accounts connected."),
+      ).toBeInTheDocument();
+    }
+  } finally {
+    resume.resolve();
+  }
+});

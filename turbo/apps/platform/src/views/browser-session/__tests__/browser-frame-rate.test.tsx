@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
@@ -181,4 +181,31 @@ test("The browser settings radio reflects the 128-by-48 FPS overlay and regains 
   await waitFor(() => {
     expect(settings()).toHaveFocus();
   });
+});
+
+test("The frame-rate display can be changed while remote text entry awaits its receipt", async () => {
+  const { openPage, cdp } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt(example.url);
+  const held = cdp.holdNext("Input.insertText");
+  const field = screen.getByLabelText("Remote browser input");
+  await userEvent.click(field);
+  fireEvent.input(field, {
+    target: { value: "Harbor" },
+    inputType: "insertText",
+    data: "Harbor",
+  });
+  await held.received;
+  try {
+    await toggleFPS("On");
+    await expect(screen.findByLabelText(/ FPS$/)).resolves.toBeInTheDocument();
+    await toggleFPS("Off");
+    await waitFor(() => {
+      return expect(screen.queryByLabelText(/ FPS$/)).toBeNull();
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue(example.url);
+  } finally {
+    await held.release();
+  }
+  expect(field).toBeEnabled();
 });

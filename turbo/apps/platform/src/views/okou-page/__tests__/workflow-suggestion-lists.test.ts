@@ -1,6 +1,6 @@
 import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
@@ -50,25 +50,29 @@ test("chat-composer-slash-panel-023 Manage workflows opens the workflow director
   ).resolves.toBeVisible();
 });
 
-test("Expanding the desktop list preserves the draft until its last workflow is selected", async () => {
+test("The workflow picker exposes the complete ordered daily catalog without replacing the draft", async () => {
   const { panel, editor } = await slashMenu(context, { many: true });
-  const menu = within(panel);
-  const initial = Array.from(panel.querySelectorAll("button"), (el) => {
-    return el.textContent?.match(/\/daily-\d+/)?.[0];
-  }).filter(Boolean);
-  expect(initial).toContain("/daily-1");
-  expect(initial).not.toContain("/daily-9");
-  const draft = editor.textContent;
+  const expected = Array.from({ length: 12 }, (_, index) => {
+    return "/daily-" + (index + 1);
+  }).sort();
+  const choices = () => {
+    return queryAllByRoleFast("button", panel).flatMap((button) => {
+      const label = button.textContent?.match(/\/daily-\d+/)?.[0];
+      return label ? [label] : [];
+    });
+  };
+  expect(choices()).toStrictEqual(expected.slice(0, 4));
+  const text = editor.textContent;
   click(await findFastControl("button", "Show 8 more", panel));
-  const last = await findFastControl("button", /\/daily-12\b/, panel);
-  const nine = await findFastControl("button", /\/daily-9\b/, panel);
+  expect(choices()).toStrictEqual(expected);
+  const ninth = await findFastControl("button", /\/daily-9\b/, panel);
+  const create = within(panel).getByText("New workflow");
   expect(
-    nine.compareDocumentPosition(menu.getByText("New workflow")) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    ninth.compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  expect(menu.getByText("Manage workflows")).toBeVisible();
-  expect(editor.textContent).toBe(draft);
-  click(last);
+  expect(within(panel).getByText("Manage workflows")).toBeInTheDocument();
+  expect(editor.textContent).toBe(text);
+  click(await findFastControl("button", /\/daily-12\b/, panel));
   await closed(panel);
-  expect(editor.textContent).toContain("/daily-12");
+  expect(editor).toHaveTextContent("Draft /daily-12");
 });

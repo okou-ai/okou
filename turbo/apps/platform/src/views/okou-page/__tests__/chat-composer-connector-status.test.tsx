@@ -156,8 +156,11 @@ test("Accounts requiring reconnection remain discoverable in both directory tabs
   ).resolves.toBeEnabled();
   await fill(search, "");
   await customTab();
-  await expect(acme()).resolves.toBeEnabled();
+  const account = await acme();
+  expect(account).toBeEnabled();
   expect(screen.queryByLabelText("Secret")).toBeNull();
+  click(account);
+  await expect(screen.findByLabelText("Secret")).resolves.toBeEnabled();
 });
 
 test("Feishu still opens its managed connection flow when account inventory fails", async () => {
@@ -174,6 +177,10 @@ test("Feishu still opens its managed connection flow when account inventory fail
   );
   expect(queryFastControl("button", "Connect Acme Search", catalog)).toBeNull();
   expect(within(catalog).queryByText("No accounts")).toBeNull();
+  const search = within(catalog).getByRole("textbox");
+  await fill(search, "Acme Search");
+  expect(queryFastControl("button", "Connect Acme Search", catalog)).toBeNull();
+  await fill(search, "Feishu");
   const managed = await findFastControl("button", "Connect Feishu", catalog);
   click(managed);
   await screen.findByRole("dialog", { name: /Feishu/i });

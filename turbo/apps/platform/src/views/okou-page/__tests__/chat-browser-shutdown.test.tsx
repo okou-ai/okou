@@ -127,7 +127,7 @@ test("chat-browser-shutdown-003 a rejected Shift release preserves the protocol 
   });
 });
 
-test("Reopening the browser while the original keyboard release is pending resumes text input", async () => {
+test("The prior browser releases Shift before the reopened viewer sends typing on its new connection", async () => {
   const { cdp, close, errors } = await sidebar();
   const user = userEvent.setup({ delay: null });
   await user.click(screen.getByLabelText("Remote browser input"));
@@ -163,6 +163,8 @@ test("Reopening the browser while the original keyboard release is pending resum
       return r.params?.key === "q" || r.params?.text === "q";
     });
     expect(q?.params?.key ?? q?.params?.text).toBe("q");
+    expect(q?.connectionId).toBeDefined();
+    expect(q?.connectionId).not.toBe(held.connectionId);
   });
   expect(errors.reports).toStrictEqual([]);
 });

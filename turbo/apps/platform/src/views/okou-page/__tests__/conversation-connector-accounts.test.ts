@@ -36,6 +36,10 @@ async function openChat(
     defaults?: readonly boolean[];
     failSelection?: boolean;
     beforeOverride?: (signal: AbortSignal) => Promise<void>;
+    beforeCurrent?: (
+      threadId: string,
+      selected: string | null,
+    ) => Promise<void>;
     remoteHost?: string;
   } = {},
 ) {
@@ -132,7 +136,8 @@ async function openChat(
   );
   context.mocks.api(
     chatConnectorAccessContract.setThreadCurrent,
-    ({ body, respond }) => {
+    async ({ body, params, respond }) => {
+      await options.beforeCurrent?.(params.threadId, body.connectionId);
       if (reject) {
         reject = false;
         return respond(400, {
@@ -375,9 +380,20 @@ test("chat-composer-chat-connector-access-003 the same composer opens its enable
 });
 
 test("The new conversation restores Personal access on reopening and applies it before its first prompt", async () => {
+  const selecting = context.mocks.deferred<{
+    thread: string;
+    account: string | null;
+  }>();
+  const accept = context.mocks.deferred<void>();
   const { atRun } = await openChat({
     path: "/?compose=1",
     defaults: [true, true],
+    beforeCurrent: async (thread, account) => {
+      if (!selecting.settled()) {
+        selecting.resolve({ thread, account });
+      }
+      await accept.promise;
+    },
   });
   const first = await choices();
   await expect(toggle(first.panel, "Work")).resolves.toBeChecked();
@@ -398,10 +414,15 @@ test("The new conversation restores Personal access on reopening and applies it 
   await fill(editor, "List my personal repository issues");
   await user.click(editor);
   await user.keyboard("{Enter}");
+  const selection = await selecting.promise;
+  expect(selection.account).toBe(personal);
+  expect(atRun).toStrictEqual([]);
+  accept.resolve();
   await screen.findByText("List my personal repository issues", {
     selector: "[data-role=user] *",
   });
   expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
+  expect(location.pathname).toBe("/chats/" + selection.thread);
 });
 
 test("A new chat inherits both account choices after leaving a pending thread override", async () => {
@@ -494,4 +515,31 @@ test("A rejected Personal selection leaves the attached field report and message
   await screen.findByText(message, { selector: "[data-role=user] *" });
   await screen.findByText(attachment.filename);
   expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
+});
+
+test("A new composer can change local account access before a conversation exists", async () => {
+  const write = context.mocks.deferred<void>();
+  await openChat({
+    path: "/?compose=1",
+    defaults: [true, true],
+    beforeOverride: () => {
+      if (!write.settled()) {
+        write.resolve();
+      }
+      return Promise.resolve();
+    },
+  });
+  const first = await choices();
+  click(await toggle(first.panel, "Work"));
+  await waitFor(() => {
+    return expect(
+      within(first.panel).getByRole("switch", { name: "Work access" }),
+    ).not.toBeChecked();
+  });
+  await userEvent.keyboard("{Escape}{Escape}");
+  const again = await choices();
+  await expect(toggle(again.panel, "Work")).resolves.not.toBeChecked();
+  await expect(toggle(again.panel, "Personal")).resolves.toBeChecked();
+  expect(location.pathname).toBe("/");
+  expect(write.settled()).toBeFalsy();
 });

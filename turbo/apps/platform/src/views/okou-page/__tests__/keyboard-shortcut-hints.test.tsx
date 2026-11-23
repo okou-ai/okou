@@ -54,10 +54,15 @@ test("The Mac toggle advertises its shortcut on the currently available list con
   if (hide) {
     await keyboard.click(hide);
   }
-  await screen.findByLabelText("Show chat list");
+  const expand = await screen.findByLabelText("Show chat list");
+  await keyboard.hover(expand);
+  const openingTip = await screen.findByRole("tooltip");
+  expect(openingTip).toHaveTextContent("⌘B");
+  await keyboard.unhover(expand);
   await keyboard.click(composer);
   await keyboard.keyboard("{Meta>}b{/Meta}");
   const collapse = await screen.findByLabelText("Hide chat list");
+  expect(screen.queryByLabelText("Show chat list")).toBeNull();
   await keyboard.hover(collapse);
   const tip = await screen.findByRole("tooltip");
   expect(tip).toHaveTextContent("⌘B");

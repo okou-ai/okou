@@ -165,7 +165,7 @@ test("chat-navigation-browser-012 Narrow Page 12 admission releases after both n
 });
 
 test("Leaving the selected browser page removes its panel while preserving the chat list", async () => {
-  nativeGeometry(180);
+  const resize = nativeGeometry(180);
   const motion = nativeTransitions();
   const { open } = await openBrowserChat(context, "live", false, {
     many: true,
@@ -197,7 +197,14 @@ test("Leaving the selected browser page removes its panel while preserving the c
   await remoteBrowserInput();
   expect(owner("panel")).not.toBe(old);
   expect(owner("chat-list")).toBe(list);
-  await waitFor(() => {
-    expect(tabs()).toHaveLength(2);
-  });
+  const restored = owner("panel");
+  await admission(2, "Example");
+  motion(restored, true);
+  resize(800);
+  await admission(2, "Example");
+  motion(list, false);
+  await admission(2, "Example");
+  motion(restored, false);
+  await admission(12, "Example");
+  expect(tabs()).toContain("Page 12");
 });

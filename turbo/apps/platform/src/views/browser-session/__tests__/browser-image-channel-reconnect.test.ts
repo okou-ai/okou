@@ -123,5 +123,24 @@ test("The other tab remains navigable after a failed in-flight text entry on the
       params: { text },
     }),
   );
+  const otherSession = cdp.pageSession(viewer.other);
+  const replacementText = "Harbor inspection";
+  await userEvent.click(input());
+  fireEvent.input(input(), {
+    target: { value: replacementText },
+    inputType: "insertText",
+    data: replacementText,
+  });
+  await waitFor(() => {
+    return expect(cdp.requests).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        sessionId: otherSession,
+        params: { text: replacementText },
+      }),
+    );
+  });
+  expect(otherSession).not.toBe(inputSession);
+  expect(screen.getByLabelText("Address")).toHaveValue(nextUrl);
   expect(viewer.control()).toBe(original);
 });

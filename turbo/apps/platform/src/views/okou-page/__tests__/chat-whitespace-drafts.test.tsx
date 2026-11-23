@@ -131,31 +131,43 @@ test("The member workspace saves a blank draft after whitespace-only input", asy
   await expect(findAction("button", "Send")).resolves.toBeDisabled();
 });
 
-test("An active workspace draft save is cancelled when the writer replaces its text", async () => {
-  const prior = context.mocks.deferred<AbortSignal>();
-  const finish = context.mocks.deferred<void>();
-  const saved = context.mocks.deferred<string>();
-  context.mocks.api(
-    composerDraftContract.patch,
-    async ({ body, request, respond }) => {
-      const content = draftPlainText(body.draftUserMessage);
-      if (content === "old" && !prior.settled()) {
-        prior.resolve(request.signal);
-        await finish.promise;
-      }
-      if (content === "new" && !saved.settled()) {
-        saved.resolve(content);
-      }
-      return respond(204);
-    },
-  );
-  await setupPage({ context, path: "/" });
-  const editor = await findComposerEditor();
-  await fill(editor, "old");
-  const signal = await prior.promise;
-  await fill(editor, "new");
-  await expect(saved.promise).resolves.toBe("new");
-  expect(signal.aborted).toBeTruthy();
-  finish.resolve();
-  expect(editor).toHaveTextContent("new");
-});
+test.each(["deliver", "withhold"] as const)(
+  "The edited draft stays visible when the cancelled save is set to %s",
+  async (delivery) => {
+    const prior = context.mocks.deferred<AbortSignal>();
+    const finish = context.mocks.deferred<void>();
+    const boundary = context.mocks.deferred<boolean>();
+    const saved = context.mocks.deferred<string>();
+    context.mocks.api(
+      composerDraftContract.patch,
+      async ({ body, request, respond }) => {
+        const content = draftPlainText(body.draftUserMessage);
+        if (content === "old" && !prior.settled()) {
+          prior.resolve(request.signal);
+          await finish.promise;
+          boundary.resolve(request.signal.aborted);
+        }
+        if (content === "new" && !saved.settled()) {
+          saved.resolve(content);
+        }
+        return respond(204);
+      },
+    );
+    await setupPage({ context, path: "/" });
+    const editor = await findComposerEditor();
+    await fill(editor, "old");
+    const signal = await prior.promise;
+    await fill(editor, "new");
+    await expect(saved.promise).resolves.toBe("new");
+    expect(signal.aborted).toBeTruthy();
+    if (delivery === "deliver") {
+      finish.resolve();
+      await boundary.promise;
+    }
+    expect(boundary.settled()).toBe(delivery === "deliver");
+    expect(editor).toHaveTextContent("new");
+    if (!finish.settled()) {
+      finish.resolve();
+    }
+  },
+);

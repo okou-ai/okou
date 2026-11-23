@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { screen, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -55,3 +56,42 @@ test("link-navigation-004 Back traverses directly to the missing page after rese
   ).resolves.toBeInTheDocument();
   expect(location.pathname).toBe(unknown);
 });
+
+test.each(["Meta", "plain"] as const)(
+  "The browser receives the Workflows link activation with a %s click",
+  async (modifier) => {
+    await open("/");
+    const link = await workflowsLink();
+    const activation = context.mocks.deferred<{
+      claimed: boolean;
+      meta: boolean;
+    }>();
+    // The document sees the bubbling event after the Router has handled it.
+    document.addEventListener(
+      "click",
+      (event) => {
+        return activation.resolve({
+          claimed: event.defaultPrevented,
+          meta: event.metaKey,
+        });
+      },
+      { once: true, signal: context.signal },
+    );
+    const user = userEvent.setup();
+    if (modifier === "Meta") {
+      await user.keyboard("{Meta>}");
+    }
+    await user.click(link);
+    if (modifier === "Meta") {
+      await user.keyboard("{/Meta}");
+    }
+    await expect(activation.promise).resolves.toStrictEqual({
+      claimed: modifier === "plain",
+      meta: modifier === "Meta",
+    });
+    expect(link).toHaveAttribute("href", "/workflows");
+    if (modifier === "plain") {
+      await screen.findByRole("heading", { name: "Workflows" });
+    }
+  },
+);

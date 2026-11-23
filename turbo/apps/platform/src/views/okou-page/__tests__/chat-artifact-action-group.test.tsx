@@ -325,6 +325,8 @@ test("The owned sidebar offers Delete on More and downloads the original PDF", a
   });
   const { panel, file, item } = await page();
   await ready(panel);
+  expect(item.title).not.toBe(file.filename);
+  expect(panel).toHaveTextContent(item.title);
   const more = await findAction("button", "More artifact actions", panel);
   click(more);
   const menu = await screen.findByRole("menu");

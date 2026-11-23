@@ -243,11 +243,22 @@ test("Changing one SSH host keeps both hosts in the dialog through confirmation"
   await session.refreshing;
   expect(fields(panel)[0]).toHaveTextContent("Default (Off)");
   expect(fields(panel)[1]).toHaveTextContent("Default (Off)");
+  const second = fields(panel)[1]!;
+  second.focus();
+  await userEvent.setup({ delay: null }).keyboard("{Enter}");
+  expect(second).toHaveAttribute("aria-readonly", "true");
+  expect(screen.queryByRole("listbox")).toBeNull();
   session.refresh.resolve();
   await waitFor(() => {
     expect(fields(panel)[0]).toHaveTextContent(/^On$/);
   });
-  expect(fields(panel)[1]).toBeEnabled();
+  const editable = fields(panel)[1]!;
+  await waitFor(() => {
+    return expect(editable).not.toHaveAttribute("aria-readonly", "true");
+  });
+  click(editable);
+  await screen.findByRole("option", { name: "On" });
+  await userEvent.keyboard("{Escape}");
   await close(panel);
   click(session.trigger);
   await screen.findByText("1 enabled");

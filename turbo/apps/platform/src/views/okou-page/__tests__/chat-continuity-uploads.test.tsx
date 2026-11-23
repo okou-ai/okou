@@ -313,6 +313,7 @@ test("A completed private upload remains removable in the chat composer", async 
     url: "https://app.okou.ai/artifacts/" + id.replaceAll("-", "") + ".txt",
   };
   const finalized = context.mocks.deferred<string>();
+  const complete = context.mocks.deferred<void>();
   context.mocks.api(uploadsContract.prepare, ({ respond }) => {
     return respond(200, {
       ...file,
@@ -323,22 +324,28 @@ test("A completed private upload remains removable in the chat composer", async 
   context.mocks.http.put(origin + "/private", () => {
     return new HttpResponse(null, { status: 200 });
   });
-  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+  context.mocks.api(uploadsContract.complete, async ({ body, respond }) => {
     if (!finalized.settled()) {
       finalized.resolve(body.id);
     }
+    await complete.promise;
     return respond(200, file);
   });
   await userEvent.upload(
     await uploader("app.okou.ai"),
     new File(["secret"], file.filename, { type: "text/plain" }),
   );
-  const remove = await findFastControl("button", "Remove private.txt");
   await expect(finalized.promise).resolves.toBe(id);
+  await fill(await findComposerEditor(), "Summarize the private note");
+  complete.resolve();
+  const remove = await findFastControl("button", "Remove private.txt");
   click(remove);
   await waitFor(() => {
     expect(remove).not.toBeInTheDocument();
   });
+  await expect(findComposerEditor()).resolves.toHaveTextContent(
+    "Summarize the private note",
+  );
 });
 
 test("The recording shows the storage finalization error after its parts have transferred", async () => {
@@ -347,7 +354,11 @@ test("The recording shows the storage finalization error after its parts have tr
     transfer.release.resolve();
   }
   await upload.finalizing.promise;
+  expect(screen.queryByText("Multipart upload not found")).toBeNull();
+  const message = await findComposerEditor();
+  await fill(message, "Keep this recording draft");
   upload.completed.resolve();
   await screen.findByText("Multipart upload not found");
   expect(screen.queryByText(/failed to upload/i)).toBeNull();
+  expect(message).toHaveTextContent("Keep this recording draft");
 });

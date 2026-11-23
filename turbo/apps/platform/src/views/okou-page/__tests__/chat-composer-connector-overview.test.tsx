@@ -90,8 +90,16 @@ test("chat-composer-connector-overview-008 opening account choices fetches detai
 
 test("The same twenty connector choices remain available after closing the panel", async () => {
   const entries = namedMenuAccounts(context, "Connected tool", 20);
+  let catalogAvailable = true;
   context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
-    return respond(200, entries);
+    return catalogAvailable
+      ? respond(200, entries)
+      : respond(503, {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Directory currently unavailable",
+          },
+        });
   });
   const launcher = await openChatMenu(context);
   async function allChoices() {
@@ -108,8 +116,10 @@ test("The same twenty connector choices remain available after closing the panel
   await waitFor(() => {
     expect(launcher).toHaveFocus();
   });
+  catalogAvailable = false;
   click(launcher);
   await allChoices();
+  expect(queryFastControl("button", "Try again")).toBeNull();
 });
 
 function twoProbeConnectors() {

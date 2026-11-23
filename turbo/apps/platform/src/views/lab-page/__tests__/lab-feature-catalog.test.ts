@@ -1,3 +1,4 @@
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { getButtonByName } from "../../artifacts-page/__tests__/artifact-catalog-test-helpers.ts";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
@@ -171,9 +172,11 @@ test("Lab reads the embedded Banking preference before showing the service's lat
   });
   document.head.append(bootstrap);
   let network = false;
-  const observed: boolean[] = [];
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    observed.push(network);
+  const confirmed = new Map<string | null, boolean>();
+  let token = "lab-reader";
+  mockedClerk.sessionGetToken.mockResolvedValue(token);
+  context.mocks.api(featureSwitchesContract.get, ({ request, respond }) => {
+    confirmed.set(request.headers.get("Authorization"), network);
     return respond(200, {
       switches: { [banking]: network },
       effectiveSwitches: { [banking]: network },
@@ -196,9 +199,10 @@ test("Lab reads the embedded Banking preference before showing the service's lat
       return screen.getByRole("switch", { name: /^banking\b/i });
     };
     expect(toggle()).toBeChecked();
+    token = "lab-editor";
     click(toggle());
     await waitFor(() => {
-      expect(observed).toContain(false);
+      expect(confirmed.get("Bearer lab-editor")).toBeFalsy();
       expect(toggle()).not.toBeChecked();
       expect(toggle()).toBeEnabled();
     });
@@ -206,9 +210,10 @@ test("Lab reads the embedded Banking preference before showing the service's lat
     await waitFor(() => {
       expect(reset).toBeEnabled();
     });
+    token = "lab-reset";
     click(reset);
     await waitFor(() => {
-      expect(observed).toContain(true);
+      expect(confirmed.get("Bearer lab-reset")).toBeTruthy();
       expect(toggle()).toBeChecked();
     });
   } finally {

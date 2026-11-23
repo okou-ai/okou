@@ -125,3 +125,21 @@ test("A repeated signed-in member notification keeps Workflows and its account m
   expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
   expect(location.pathname).toBe("/workflows");
 });
+
+test("A refreshed profile for the same member remains usable from the Workflows account menu", async () => {
+  const sdk = context.mocks.clerk();
+  const session = { id: "summit-session", token: "summit-token" };
+  await setupPage({
+    ...workflows,
+    auth: { user: { id: "user-a", fullName: "Sam West" }, session },
+  });
+  await expect(screen.findByLabelText("Sam West")).resolves.toBeInTheDocument();
+  act(() => {
+    sdk.user({ id: "user-a", fullName: "Sam Calder" }, session);
+    sdk.stateChanged();
+  });
+  const updated = await screen.findByLabelText("Sam Calder");
+  click(updated);
+  await expect(screen.findByRole("menu")).resolves.toBeVisible();
+  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
+});

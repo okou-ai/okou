@@ -1,5 +1,6 @@
+import { findFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
 import { expect, test } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { integrationsAgentPhoneContract } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -99,4 +100,43 @@ test("onboarding-agentphone-tile-007 replacing an expired invitation renders a Q
   await expect(
     screen.findByTestId("agentphone-link-qr"),
   ).resolves.toHaveAttribute("data-sms-href", "sms:+14155550186?body=52009345");
+});
+
+test("The inline phone invitation uses the issued code and copies its destination", async () => {
+  workspace();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const issued = context.mocks.deferred<void>();
+  const ready = context.mocks.deferred<void>();
+  const code = "96048371";
+  context.mocks.api(
+    integrationsAgentPhoneContract.createLinkCode,
+    async ({ respond }) => {
+      if (!ready.settled()) {
+        ready.resolve();
+      }
+      await issued.promise;
+      return respond(200, {
+        code,
+        expiresAt: new Date(now() + 120_000).toISOString(),
+      });
+    },
+  );
+  await setupPage({ context, path: channelPage });
+  await ready.promise;
+  await expect(findAction("button", "Continue")).resolves.toBeDisabled();
+  issued.resolve();
+  const qr = await screen.findByTestId("agentphone-link-qr"),
+    sms = "sms:" + phone + "?body=" + code;
+  expect(qr).toHaveAttribute("data-sms-href", sms);
+  const smsLink = await screen.findByTestId("agentphone-open-messages");
+  expect(smsLink).toHaveAttribute("href", sms);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  click(await findFastControl("button", /^Copy .*415/));
+  await waitFor(() => {
+    return expect(clipboard.writes).toContain(phone);
+  });
+  for (const channel of ["Add to Slack", "Telegram", "Teams"]) {
+    await expect(findAction("button", channel)).resolves.toBeEnabled();
+  }
+  await expect(findAction("button", "Continue")).resolves.toBeDisabled();
 });

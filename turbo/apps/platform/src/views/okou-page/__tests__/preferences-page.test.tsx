@@ -8,7 +8,7 @@ import {
   userPreferencesContract,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   getAction,
@@ -225,3 +225,49 @@ test.each([
     }
   },
 );
+
+test("The workspace appearance replaces the two inherited browser theme cookies", async () => {
+  const host = "app.vm0.ai";
+  context.mocks.browser.url("https://" + host + "/");
+  const name = "__Secure-okou-theme";
+  // oxlint-disable-next-line unicorn/no-document-cookie -- seed separate shared and host-only entries in the browser jar.
+  document.cookie = name + "=v1.dark; Domain=.vm0.ai; Path=/; Secure";
+  // oxlint-disable-next-line unicorn/no-document-cookie -- the host-only cookie must omit Domain.
+  document.cookie = name + "=v1.light; Path=/; Secure";
+  const values = () => {
+    return document.cookie
+      .split(";")
+      .map((part) => {
+        return part.trim();
+      })
+      .filter((part) => {
+        return part.startsWith(name + "=");
+      });
+  };
+  expect(values().sort()).toStrictEqual([
+    name + "=v1.dark",
+    name + "=v1.light",
+  ]);
+  const { prefs } = workspace("dark", null);
+  const release = context.mocks.deferred<void>();
+  const reading = context.mocks.deferred<void>();
+  context.mocks.api(userPreferencesContract.get, async ({ respond }) => {
+    if (!reading.settled()) {
+      reading.resolve();
+    }
+    await release.promise;
+    return respond(200, prefs);
+  });
+  const opening = await startPage({ context, host, path: "/preferences" });
+  await reading.promise;
+  release.resolve();
+  await opening.ready;
+  const dark = await findAction("button", "Dark");
+  await waitFor(() => {
+    return expect(dark).toHaveAttribute("aria-pressed", "true");
+  });
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(values()).toStrictEqual([name + "=v1.dark"]);
+  context.mocks.browser.url("https://workspace.vm0.ai/");
+  expect(values()).toStrictEqual([name + "=v1.dark"]);
+});

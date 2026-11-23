@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -438,5 +439,159 @@ test.each(["web search", "image model"] as const)(
     await waitFor(() => {
       return expect(writes).toContain("Bearer research-member");
     });
+  },
+);
+
+async function pendingImageWrite() {
+  const entered = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const issued = context.mocks.deferred<void>();
+  const rechecked = context.mocks.deferred<string>();
+  const organization = Object.getOwnPropertyDescriptor(
+    mockedClerk,
+    "organization",
+  )!.get!;
+  let watchOwner = false;
+  vi.spyOn(mockedClerk, "organization", "get").mockImplementation(() => {
+    const value = organization.call(
+      mockedClerk,
+    ) as typeof mockedClerk.organization;
+    if (watchOwner && value && !rechecked.settled()) {
+      rechecked.resolve(value.id);
+    }
+    return value;
+  });
+  const saved = context.mocks.deferred<ImageModel | null>();
+  const savedModels = new Map<string, ImageModel | null>([
+    ["Bearer teams-A", "fal-ai/flux-2-pro"],
+    ["Bearer teams-B", null],
+  ]);
+  let credential = "teams-A";
+  let selecting = false;
+  let holdWrite = false;
+  const identity = context.mocks.clerk();
+  mockedClerk.sessionGetToken.mockImplementation(async () => {
+    const current = credential;
+    if (holdWrite && current === "teams-A") {
+      holdWrite = false;
+      entered.resolve();
+      await release.promise;
+      issued.resolve();
+    }
+    return current;
+  });
+  const projection = (value: ImageModel | null) => {
+    return {
+      selectedModel: null,
+      serviceTier: null,
+      modelSettings: {},
+      selectedImageModel: value,
+      updatedAt: null,
+    };
+  };
+  context.mocks.api(userModelPreferenceContract.get, ({ request, respond }) => {
+    const auth = request.headers.get("Authorization") ?? "";
+    if (selecting && auth === "Bearer teams-A") {
+      holdWrite = true;
+      selecting = false;
+    }
+    return respond(200, projection(savedModels.get(auth) ?? null));
+  });
+  context.mocks.api(
+    userModelPreferenceContract.update,
+    ({ request, body, respond }) => {
+      const value = body.selectedImageModel ?? null;
+      savedModels.set(request.headers.get("Authorization") ?? "", value);
+      saved.resolve(value);
+      return respond(200, projection(value));
+    },
+  );
+  const panel = await openTools();
+  const controls = within(panel);
+  const picker = await controls.findByRole("combobox", { name: "Model" });
+  await waitFor(() => {
+    return expect(picker).toHaveTextContent("FLUX.2 Pro");
+  });
+  selecting = true;
+  await selectModel(panel, /Ideogram 4/);
+  await entered.promise;
+  await controls.findByText("Saving…");
+  async function switchWorkspace() {
+    credential = "teams-B";
+    identity.organization({
+      activeOrg: { id: "org_beta", name: "Second workspace" },
+      memberships: [{ id: "org_beta" }],
+    });
+    identity.stateChanged();
+    await controls.findByText(
+      "These settings apply only to you in Second workspace.",
+    );
+    const fresh = await controls.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {
+      return expect(fresh).toBeEnabled();
+    });
+    click(fresh);
+    await screen.findByRole("option", { name: /Ideogram 4/ });
+    watchOwner = true;
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(screen.queryByRole("listbox")).toBeNull();
+    });
+    expect(rechecked.settled()).toBeFalsy();
+  }
+  async function deliver() {
+    release.resolve();
+    await issued.promise;
+  }
+  return {
+    controls,
+    savedModels,
+    saved,
+    release,
+    deliver,
+    switchWorkspace,
+    rechecked,
+  };
+}
+
+test("Original workspace control sends the selected image model after the write credential arrives", async () => {
+  const save = await pendingImageWrite();
+  await save.deliver();
+  await expect(save.saved.promise).resolves.toBe("ideogram/v4");
+  expect(save.savedModels.get("Bearer teams-A")).toBe("ideogram/v4");
+  await waitFor(() => {
+    return expect(
+      save.controls.getByRole("combobox", { name: "Model" }),
+    ).toBeEnabled();
+  });
+});
+test.each([
+  ["paid-tools-settings-024", "deliver"],
+  ["Withheld workspace credential control", "withhold"],
+] as const)(
+  "%s a pending image write is scoped to its original workspace (%s)",
+  async (_id, delivery) => {
+    const pending = await pendingImageWrite();
+    try {
+      await pending.switchWorkspace();
+      let observed: string | null = null;
+      if (delivery === "deliver") {
+        await pending.deliver();
+        observed = await Promise.race([
+          pending.rechecked.promise,
+          pending.saved.promise,
+        ]);
+      }
+      expect(observed).toBe(delivery === "deliver" ? "org_beta" : null);
+      expect(pending.rechecked.settled()).toBe(delivery === "deliver");
+      expect(pending.savedModels.get("Bearer teams-A")).toBe(
+        "fal-ai/flux-2-pro",
+      );
+      expect(pending.savedModels.get("Bearer teams-B")).toBeNull();
+    } finally {
+      if (!pending.release.settled()) {
+        pending.release.resolve();
+      }
+    }
   },
 );

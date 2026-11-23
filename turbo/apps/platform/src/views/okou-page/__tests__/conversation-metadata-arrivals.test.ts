@@ -189,6 +189,11 @@ test.each(["deliver", "withhold"] as const)(
       screen.getByRole("region", { name: "Chat thread" }),
     ).toHaveTextContent("Chat thread not found");
     expect(document.title).not.toContain(stale);
+    click(await findFastControl("link", "Workflows"));
+    await expect(
+      screen.findByRole("heading", { name: "Workflows" }),
+    ).resolves.toBeVisible();
+    expect(document.title).toBe("Workflows | Okou");
   },
 );
 

@@ -98,7 +98,10 @@ test("A reopened workspace shows its downloaded conversation before a later rena
       latestEventId: crypto.randomUUID(),
     });
   });
-  context.mocks.http.get(archive.split("?")[0]!, async () => {
+  context.mocks.http.get(archive.split("?")[0]!, async ({ request }) => {
+    if (new URL(request.url).searchParams.get("signature") !== "fixture") {
+      return new Response("Invalid signature", { status: 403 });
+    }
     if (!started.settled()) {
       started.resolve();
     }
