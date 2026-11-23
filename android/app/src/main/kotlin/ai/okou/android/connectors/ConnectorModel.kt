@@ -113,6 +113,8 @@ class ConnectorModel(
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
     internal val uiState = mutableState.asStateFlow()
+    internal val chatOptions =
+        ChatConnectorOptions(service, viewModelScope, authorized, ::reportSessionFailure)
     private val recentMatches =
         LinkedHashMap<ConnectorBrowseFilter, ConnectorRead<ConnectorBrowse>>(
             RECENT_READ_LIMIT,

@@ -48,10 +48,12 @@ import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
+import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
+import ai.okou.android.state.ChatConnectorVisit
 import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
@@ -61,6 +63,7 @@ import ai.okou.android.state.WorkflowsMode
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
+import ai.okou.android.state.rememberChatConnectorVisit
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
@@ -186,11 +189,14 @@ internal fun OkouApp(
     var linkPosition by rememberConversationLinkPosition()
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     var connectorsOpen by rememberConnectorsOpen()
+    var chatConnectorVisit by rememberChatConnectorVisit()
     var workflowConnectorVisit by rememberWorkflowConnectorVisit()
     var workflowConnectionReturn by remember { mutableStateOf<WorkflowConnectorVisit?>(null) }
     val workflowPageState = rememberWorkflowPageState()
     val canOpenConnectors = connectors != null && workspaceReady
-    val showingConnectors = canOpenConnectors && (connectorsOpen || workflowConnectorVisit != null)
+    val showingConnectors =
+        canOpenConnectors &&
+            (connectorsOpen || workflowConnectorVisit != null || chatConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
     var workflowHistoryReturnRunId by
@@ -851,6 +857,21 @@ internal fun OkouApp(
             wideWelcome -> ComposerTarget()
             else -> null
         }
+    val activeComposerKey =
+        (target as? WorkspaceTarget.Chat)?.let { "thread:${it.id}" } ?: newTarget?.key
+    LaunchedEffect(chatConnectorVisit, activeComposerKey, workspaceReady) {
+        if (
+            workspaceReady &&
+                chatConnectorVisit?.composerKey?.let { it != activeComposerKey } == true
+        ) {
+            chatConnectorVisit = null
+        }
+    }
+
+    fun manageChatConnectors(origin: ComposerTarget, account: ConnectorAccountTarget?) {
+        if (wideWelcome) navigation = navigation.copy(target = WorkspaceTarget.NewChat(null))
+        chatConnectorVisit = ChatConnectorVisit(origin.key, account?.slug, account?.connectionId)
+    }
     val submission by
         remember(composerInput, newChat, newTarget) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -1011,9 +1032,15 @@ internal fun OkouApp(
     }
 
     if (showingConnectors) {
-        ConnectorsPage(connectors, listWidth, initialSlug = workflowConnectorVisit?.slug) {
+        ConnectorsPage(
+            connectors,
+            listWidth,
+            initialSlug = workflowConnectorVisit?.slug ?: chatConnectorVisit?.slug,
+            initialAccountId = chatConnectorVisit?.accountId,
+        ) {
             workflowConnectionReturn = workflowConnectorVisit
             workflowConnectorVisit = null
+            chatConnectorVisit = null
             connectorsOpen = false
         }
         return
@@ -1761,6 +1788,13 @@ internal fun OkouApp(
                                                     composer,
                                                     composerTarget,
                                                     offline = list.offline,
+                                                    connectorOptions =
+                                                        connectors?.chatOptions.takeIf {
+                                                            canOpenConnectors
+                                                        },
+                                                    manageConnectors = {
+                                                        manageChatConnectors(composerTarget, it)
+                                                    },
                                                 )
                                             }
                                         }
@@ -1815,6 +1849,13 @@ internal fun OkouApp(
                                                     composer,
                                                     newTarget,
                                                     offline = list.offline,
+                                                    connectorOptions =
+                                                        connectors?.chatOptions.takeIf {
+                                                            canOpenConnectors
+                                                        },
+                                                    manageConnectors = {
+                                                        manageChatConnectors(newTarget, it)
+                                                    },
                                                     beforeSend = {
                                                         if (wideWelcome) startNewChat(null)
                                                     },

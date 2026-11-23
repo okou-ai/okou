@@ -102,4 +102,13 @@
     <plurals name="connector_impact_count">
         <item quantity="other">%d chat secara eksplisit memilih akun ini.</item>
     </plurals>
+    <string name="chat_options_title">Opsi chat</string>
+    <string name="chat_options_settings">Setelan percakapan</string>
+    <string name="chat_connector_scope">Berlaku untuk chat ini. Pada awalnya akun mengikuti setelan default ruang kerja.</string>
+    <string name="chat_connector_empty">Tidak ada akun yang terhubung di ruang kerja ini.</string>
+    <string name="chat_connector_manage">Kelola konektor</string>
+    <string name="chat_connector_restore_defaults">Pulihkan setelan default ruang kerja</string>
+    <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
+    <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
+    <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>
 </resources>

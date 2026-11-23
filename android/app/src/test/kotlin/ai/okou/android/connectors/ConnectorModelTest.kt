@@ -532,11 +532,12 @@ class ConnectorModelTest {
     fun connectedAccountsRefreshWhileDiscoveryIsRetrying() =
         withModel(CONNECTOR_CALENDAR, configure = { it.failDiscovery = true }) { fixture, model ->
             model.await {
-                it.browse.failure != null &&
+                it.browse.data == null &&
                     it.accountsFor("slack").singleOrNull()?.status ==
                         ConnectorAccountStatus.Reauthorize
             }
 
+            assertNull(model.uiState.value.browse.failure)
             fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
             model.resume()
 
