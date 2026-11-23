@@ -52,6 +52,7 @@ describe("presentation format preflight and confirmation", () => {
   async function scenario(
     options: {
       readonly enabled?: boolean;
+      readonly userId?: string;
       readonly document?: UserMessageInputDocument;
       readonly documentFor?: (
         actor: ApiTestUser,
@@ -60,7 +61,7 @@ describe("presentation format preflight and confirmation", () => {
     } = {},
   ) {
     const { actor } = await fixture.entitledNativeChatActor({
-      userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+      userId: options.userId ?? "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
       orgId: `org_presentation_${randomUUID()}`,
       orgRole: "org:admin",
     });
@@ -71,12 +72,14 @@ describe("presentation format preflight and confirmation", () => {
       }),
       [200],
     );
-    if (options.enabled === false) {
+    if (options.enabled !== undefined) {
       await accept(
         switches().update({
           headers: auth(actor),
           body: {
-            switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+            switches: {
+              [FeatureSwitchKey.PresentationOutputFormat]: options.enabled,
+            },
           },
         }),
         [200],
@@ -136,7 +139,7 @@ describe("presentation format preflight and confirmation", () => {
     await flushWaitUntilForTest();
   });
 
-  it("requires a real Agent read capability and human confirmation, and hides another member's source", async () => {
+  it("requires a real Agent read capability and human confirmation, and hides unauthorized sources", async () => {
     const s = await scenario();
     await accept(api().resolve({ headers: auth(s.actor), body: {} }), [403]);
     await accept(
@@ -152,7 +155,7 @@ describe("presentation format preflight and confirmation", () => {
         headers: auth(stranger),
         body: { sourceRunId: s.runId, presentationFormat: "pptx" },
       }),
-      [404],
+      [403],
     );
     await accept(
       api().confirm({
@@ -179,7 +182,7 @@ describe("presentation format preflight and confirmation", () => {
         headers: auth(stranger),
         body: { sourceRunId: s.runId, presentationFormat: "pptx" },
       }),
-      [404],
+      [403],
     );
     await accept(
       api().confirm({
@@ -190,18 +193,86 @@ describe("presentation format preflight and confirmation", () => {
     );
   });
 
-  it("does not issue the narrow read capability when the existing feature is disabled", async () => {
-    const s = await scenario({ enabled: false });
-    await accept(api().resolve({ headers: s.token, body: {} }), [401, 403]);
-    const denied = await accept(
+  it("hides a member's owned source from an enabled peer in the same workspace", async () => {
+    const s = await scenario({ userId: `user_${randomUUID()}` });
+    const peer = {
+      ...s.actor,
+      userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+    };
+    const effective = await accept(
+      switches().get({ headers: auth(peer) }),
+      [200],
+    );
+    expect(effective.body.effectiveSwitches).toHaveProperty(
+      FeatureSwitchKey.PresentationOutputFormat,
+      true,
+    );
+    const before = await fixture.chat.listThreadEvents(s.actor, s.threadId);
+    await accept(
       api().confirm({
-        headers: auth(s.actor),
+        headers: auth(peer),
         body: { sourceRunId: s.runId, presentationFormat: "pptx" },
       }),
-      [403],
+      [404],
     );
-    expect(denied.body.error.code).toBe("FORBIDDEN");
+    await expect(
+      fixture.chat.listThreadEvents(s.actor, s.threadId),
+    ).resolves.toStrictEqual(before);
   });
+
+  it.each(["disabled", "outside-audience"] as const)(
+    "keeps %s users out of presentation preflight and confirmation",
+    async (state) => {
+      const s = await scenario({
+        enabled: state === "outside-audience",
+        ...(state === "outside-audience" && {
+          userId: `user_${randomUUID()}`,
+        }),
+      });
+      const effective = await accept(
+        switches().get({ headers: auth(s.actor) }),
+        [200],
+      );
+      expect(effective.body.effectiveSwitches).toHaveProperty(
+        FeatureSwitchKey.PresentationOutputFormat,
+        false,
+      );
+      const before = await fixture.chat.listThreadEvents(s.actor, s.threadId);
+      const saved = await accept(
+        preferences().get({ headers: auth(s.actor) }),
+        [200],
+      );
+      expect(saved.body).not.toHaveProperty("presentationFormat");
+      const agentDenied = await accept(
+        api().resolve({ headers: s.token, body: {} }),
+        [403],
+      );
+      expect(agentDenied.body.error.message).toBe(
+        "Missing required capability: presentation-format:read",
+      );
+      // Disabled entry points deny owned and unknown sources alike without
+      // exposing whether the source exists or publishing a continuation.
+      for (const sourceRunId of [s.runId, randomUUID()]) {
+        const denied = await accept(
+          api().confirm({
+            headers: auth(s.actor),
+            body: { sourceRunId, presentationFormat: "pptx" },
+          }),
+          [403],
+        );
+        expect(denied.body.error.message).toBe(
+          "Presentation format selection is disabled",
+        );
+      }
+      await expect(
+        fixture.chat.listThreadEvents(s.actor, s.threadId),
+      ).resolves.toStrictEqual(before);
+      expect(
+        (await accept(preferences().get({ headers: auth(s.actor) }), [200]))
+          .body,
+      ).toStrictEqual(saved.body);
+    },
+  );
 
   it("blocks an already issued Agent token and new confirmation after switch-off without changing the task", async () => {
     const s = await scenario();

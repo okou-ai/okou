@@ -98,8 +98,9 @@ export function userPreferences({
     userId,
   });
   return computed(async (get): Promise<UserPreferencesResponse> => {
+    const formatEnabled = await get(presentationFormatEnabled$);
     const db = get(db$);
-    const [[row], [memory], formatEnabled] = await Promise.all([
+    const [[row], [memory]] = await Promise.all([
       db
         .select({
           timezone: orgMembersMetadata.timezone,
@@ -109,7 +110,9 @@ export function userPreferences({
             orgMembersMetadata.cloudBrowserEnabledByDefault,
           theme: orgMembersMetadata.theme,
           colorTheme: orgMembersMetadata.colorTheme,
-          presentationFormat: orgMembersMetadata.presentationFormat,
+          ...(formatEnabled && {
+            presentationFormat: orgMembersMetadata.presentationFormat,
+          }),
           captureNetworkBodiesRemaining:
             orgMembersMetadata.captureNetworkBodiesRemaining,
         })
@@ -131,7 +134,6 @@ export function userPreferences({
           ),
         )
         .limit(1),
-      get(presentationFormatEnabled$),
     ]);
     const memoryInitialized = (memory?.headVersionId ?? null) !== null;
 

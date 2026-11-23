@@ -169,10 +169,6 @@ const preflightConfirmation$ = command(
     selection: ConfirmationSelection,
     signal: AbortSignal,
   ) => {
-    const source = await set(readPresentationFormatSource$, selection, signal);
-    if (!source) {
-      return { ok: false as const, response: sourceMissing() };
-    }
     const enabled = await get(presentationFormatEnabled(selection));
     signal.throwIfAborted();
     if (!enabled) {
@@ -182,6 +178,10 @@ const preflightConfirmation$ = command(
           "Presentation format selection is disabled",
         ),
       };
+    }
+    const source = await set(readPresentationFormatSource$, selection, signal);
+    if (!source) {
+      return { ok: false as const, response: sourceMissing() };
     }
     if (
       now() - source.createdAt.getTime() >=

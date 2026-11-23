@@ -28,11 +28,14 @@ const {
   cancelChatRun,
 } = createChatEventsFixture(context);
 
-test.each([true, false])(
-  "keeps ordinary inputs steerable without a selection when the switch is %s",
-  async (enabled) => {
+test.each(["enabled", "disabled", "outside-audience"] as const)(
+  "keeps ordinary inputs steerable without a selection for %s users",
+  async (state) => {
     const { actor } = await entitledNativeChatActor({
-      userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+      userId:
+        state === "outside-audience"
+          ? `user_${randomUUID()}`
+          : "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
       orgId: `org_${randomUUID()}`,
       orgRole: "org:admin",
     });
@@ -41,17 +44,24 @@ test.each([true, false])(
       actor.orgId,
       actor.orgRole,
     );
-    await accept(
+    const effective = await accept(
       setupApp({ context, routes: featureSwitchesRoutes })(
         featureSwitchesContract,
       ).update({
         headers: { authorization: "Bearer clerk-session" },
         body: {
-          switches: { [FeatureSwitchKey.PresentationOutputFormat]: enabled },
+          switches: {
+            [FeatureSwitchKey.PresentationOutputFormat]: state !== "disabled",
+          },
         },
       }),
       [200],
     );
+    expect(
+      effective.body.effectiveSwitches[
+        FeatureSwitchKey.PresentationOutputFormat
+      ],
+    ).toBe(state === "enabled");
     const active = await sendChatRun(actor, {
       prompt: "Review the release plan.",
     });
