@@ -408,8 +408,7 @@ function useGoogleDriveMenuAction(
   const actionSignal =
     surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
   const [connectionOperation, connectGoogleDrive] = useLoadableSet(
-    syncTarget?.connectOAuth$ ??
-      connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
 
   const readOwner = useSet(syncTarget?.readOwner$ ?? readNoSidebarOwner$);
