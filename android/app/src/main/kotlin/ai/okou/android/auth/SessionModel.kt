@@ -12,6 +12,7 @@ import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ComposerJournalStore
+import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
@@ -363,6 +364,37 @@ class SessionModel(
                         chats,
                     )
                 }
+                var clearWorkspaceArtifacts: () -> Unit = {}
+                val chatArtifacts =
+                    store.workspaceModel("chat-artifacts") {
+                        ArtifactCatalogModel(
+                            owner.artifacts,
+                            connectivity,
+                            cache = chats.cache,
+                            catalogChanges = chats.artifactCatalogChanges,
+                            unavailableChat =
+                                chats.history.uiState
+                                    .map { history ->
+                                        if (history.phase == HistoryPhase.Missing)
+                                            history.thread?.id
+                                        else null
+                                    }
+                                    .distinctUntilChanged(),
+                            onCatalogDenied = { clearWorkspaceArtifacts() },
+                        ) {
+                            workspaceFailure(ticket, snapshot, it)
+                        }
+                    }
+                val artifacts = store.workspaceModel {
+                    ArtifactCatalogModel(
+                        owner.artifacts,
+                        connectivity,
+                        onCatalogDenied = chatArtifacts::evictDeniedCatalogs,
+                    ) {
+                        workspaceFailure(ticket, snapshot, it)
+                    }
+                }
+                clearWorkspaceArtifacts = artifacts::evictDeniedCatalogs
                 val opened =
                     OpeningWorkspace.Authorized(
                         identity,
@@ -373,16 +405,8 @@ class SessionModel(
                         composer,
                         controls,
                         recovery,
-                        store.workspaceModel {
-                            ArtifactCatalogModel(owner.artifacts, connectivity) {
-                                workspaceFailure(ticket, snapshot, it)
-                            }
-                        },
-                        store.workspaceModel("chat-artifacts") {
-                            ArtifactCatalogModel(owner.artifacts, connectivity) {
-                                workspaceFailure(ticket, snapshot, it)
-                            }
-                        },
+                        artifacts,
+                        chatArtifacts,
                         store.workspaceModel {
                             WorkspaceSearchModel(
                                 owner,

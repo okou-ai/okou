@@ -301,7 +301,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val content = preview?.content
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
-    val waiting = content == null && problem == null && !offline
+    val waiting = content == null && problem == null
     val showLoading = rememberChatWaitIndicator(waiting)
     if (!hosted && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
@@ -351,7 +351,6 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                         problem != null -> PreviewStatus(problem.previewLabel())
                         content == ArtifactContent.Unsupported ->
                             PreviewStatus(R.string.artifact_preview_unsupported)
-                        offline -> PreviewStatus(R.string.artifact_preview_unavailable)
                         else ->
                             Box(
                                 Modifier.fillMaxWidth().heightIn(min = 96.dp),
@@ -379,7 +378,7 @@ private fun HostedPreviewContent(
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
             when {
                 problem != null -> PreviewStatusText(problem.previewLabel())
-                offline ->
+                offline && (content is ArtifactContent.Website || documentAttempt != null) ->
                     PreviewStatusText(
                         documentAttempt?.accessProblem?.previewLabel()
                             ?: R.string.artifact_preview_unavailable,

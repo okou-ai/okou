@@ -2,6 +2,7 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.rememberChatWaitIndicator
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
@@ -101,6 +102,8 @@ internal fun ArtifactCatalogList(
 ) {
     val query = ArtifactQuery(filter, input.text.toString().trim())
     val page = state.page.takeIf { state.query == query }
+    val failure = state.failedRead.takeIf { state.query == query }
+    val reading = state.reading.takeIf { state.query == query }
     val localDates = rememberArtifactDates()
     val groups =
         remember(page, query, localDates.today, localDates.yesterday) {
@@ -116,13 +119,8 @@ internal fun ArtifactCatalogList(
     val rowFocus = remember { FocusRequester() }
     val noticePadding = Modifier.padding(16.dp)
 
-    LaunchedEffect(model, page, state.problem, state.reading, state.offline) {
-        if (
-            page?.nextCursor != null &&
-                state.problem == null &&
-                state.reading == null &&
-                !state.offline
-        ) {
+    LaunchedEffect(model, page, failure, reading) {
+        if (page?.nextCursor != null && failure == null && reading == null) {
             snapshotFlow {
                 val layout = position.layoutInfo
                 val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -145,11 +143,14 @@ internal fun ArtifactCatalogList(
             ArtifactSearch(input, searchFocus)
             ArtifactFilters(filter, onFilter)
         }
-        if (state.offline && page?.items?.isNotEmpty() == true) {
-            ArtifactListNotice(R.string.artifact_offline_cached, noticePadding)
+        if (page == null && failure != null) {
+            ArtifactInitialReadFailure(
+                R.string.artifact_catalog_load_failed,
+                Modifier.widthIn(max = 730.dp),
+            )
+            return@Column
         }
-        val showSkeleton =
-            rememberChatWaitIndicator(page == null && !state.offline && state.problem == null)
+        val showSkeleton = rememberChatWaitIndicator(page == null, ChatListSkeletonDelayMillis)
         val restoreAfterLayout =
             if (restoreRow != null && page != null) {
                 Modifier.onGloballyPositioned {
@@ -169,21 +170,10 @@ internal fun ArtifactCatalogList(
             state = position,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
         ) {
-            if (page == null) {
-                when {
-                    state.offline ->
-                        item {
-                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
-                        }
-                    state.problem != null ->
-                        item { ArtifactListNotice(state.problem.label(), noticePadding) }
-                    showSkeleton -> items(4) { ArtifactRowSkeleton() }
-                }
-            } else if (page.items.isEmpty()) {
+            if (showSkeleton) items(4) { ArtifactRowSkeleton() }
+            if (page?.items?.isEmpty() == true) {
                 item {
                     when {
-                        state.offline ->
-                            ArtifactListNotice(R.string.artifact_offline_catalog, noticePadding)
                         query.keyword.isNotBlank() ->
                             ArtifactEmpty(
                                 R.string.artifact_no_matches,
@@ -235,12 +225,16 @@ internal fun ArtifactCatalogList(
                     }
                 }
             }
-            if (page?.items?.isNotEmpty() == true && !state.offline) {
-                state.problem?.let { problem ->
-                    item { ArtifactListNotice(problem.label(), noticePadding) }
+            if (failure != null) {
+                item(key = "catalog-read-failure") {
+                    val label =
+                        if (failure == ArtifactCatalogRead.More)
+                            R.string.artifact_catalog_page_failed
+                        else R.string.artifact_catalog_refresh_failed
+                    ArtifactReadNotice(label, noticePadding)
                 }
-                if (state.reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
             }
+            if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
         }
     }
 }
@@ -451,7 +445,8 @@ internal fun ArtifactRowSkeleton(height: Dp = 80.dp, horizontalPadding: Dp = 12.
     Row(
         Modifier.fillMaxWidth()
             .height(height)
-            .padding(horizontal = horizontalPadding, vertical = 8.dp),
+            .padding(horizontal = horizontalPadding, vertical = 8.dp)
+            .testTag("artifact_row_skeleton"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Spacer(Modifier.size(40.dp).background(fill, RoundedCornerShape(12.dp)))
@@ -472,6 +467,23 @@ private fun ArtifactEmpty(@StringRes label: Int, @StringRes action: Int, onClick
         ArtifactListNotice(label)
         ArtifactAction(action, onClick = onClick)
     }
+}
+
+@Composable
+internal fun ArtifactInitialReadFailure(@StringRes label: Int, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().testTag("artifact_read_error_area")) {
+        ArtifactReadNotice(label, Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp))
+    }
+}
+
+@Composable
+internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {
+    Text(
+        stringResource(label),
+        modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable
@@ -592,13 +604,4 @@ internal fun ArtifactKind.icon(): Int =
         ArtifactKind.Video,
         ArtifactKind.Avatar -> R.drawable.ic_videocam
         ArtifactKind.SharedConversation -> R.drawable.ic_chat
-    }
-
-internal fun ArtifactProblem.label(): Int =
-    when (this) {
-        ArtifactProblem.Denied -> R.string.artifact_access_denied
-        ArtifactProblem.Missing -> R.string.artifact_missing
-        ArtifactProblem.Temporary,
-        ArtifactProblem.Unavailable -> R.string.artifact_unavailable
-        ArtifactProblem.Unsupported -> R.string.artifact_preview_unsupported
     }

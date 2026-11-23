@@ -21,7 +21,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -359,7 +361,9 @@ class ChatListModel(
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
-    private val cache = cacheStore.open(identity) { current() }
+    internal val cache = cacheStore.open(identity) { current() }
+    private val artifactChanges = MutableSharedFlow<Set<String>>()
+    internal val artifactCatalogChanges = artifactChanges.asSharedFlow()
     private val readWrites = mutableMapOf<String, Job>()
     val history =
         ConversationHistoryModel(
@@ -519,6 +523,9 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
+                if (changes.artifactThreads.isNotEmpty()) {
+                    viewModelScope.launch { artifactChanges.emit(changes.artifactThreads) }
+                }
             }
         }
 
