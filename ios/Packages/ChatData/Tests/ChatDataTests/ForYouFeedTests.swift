@@ -42,6 +42,8 @@ final class ForYouFeedTests: XCTestCase {
       document: ChatDraftDocument(parts: note),
       attachments: [.init(attachment: extra, url: "https://example.com/notes.txt")])
     let draft = try card.directionDraft(note: edited)
+    XCTAssertEqual(
+      try card.directionDraft(note: edited), draft, "An unchanged note must be retryable")
     let parts = try XCTUnwrap(draft.draftUserMessage?.parts)
     XCTAssertEqual(
       parts.map { $0["type"]?.string }, ["additional_info", "feedback", "file", "file"])

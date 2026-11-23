@@ -91,9 +91,10 @@ public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {
       "contextVersion": .string(customContextVersion),
       "attachmentIds": .array(backgroundIDs.map(MessageJSON.string))
     ])
-    guard let serialized = String(data: try JSONEncoder().encode(context), encoding: .utf8) else {
-      throw APIClientError.incompatibleData
-    }
+    // Retries compare the complete message, including the JSON embedded in this text part.
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = .sortedKeys
+    let serialized = String(decoding: try encoder.encode(context), as: UTF8.self)
     feedback["note"] = .array(noteParts)
     var parts: [MessageJSON] = [
       .object([
