@@ -2234,6 +2234,7 @@ class ChatListModelTest {
             runCurrent()
             model.listVisibilityChanged(true)
             model.refreshList()
+            model.refreshSearchMetadata()
             advanceTimeBy(4_999)
             runCurrent()
             assertEquals(1, attempts)

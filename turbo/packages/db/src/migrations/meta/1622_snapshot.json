@@ -1,5 +1,5 @@
 {
-  "id": "07cd630e-280d-4cbe-8b43-5483ab378e72",
+  "id": "2b8bc54a-42b6-4a23-a42b-b83123b3da49",
   "prevId": "e35810f8-2c84-47df-a73b-d6352a3fb892",
   "version": "7",
   "dialect": "postgresql",
@@ -11345,6 +11345,18 @@
           "notNull": true,
           "default": true
         },
+        "chat_access_allowed": {
+          "name": "chat_access_allowed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chat_access_expires_at": {
+          "name": "chat_access_expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
         "auth_method": {
           "name": "auth_method",
           "type": "varchar(50)",
@@ -11662,6 +11674,10 @@
         "chk_connectors_default_enabled": {
           "name": "chk_connectors_default_enabled",
           "value": "NOT \"connectors\".\"is_default\" OR \"connectors\".\"default_enabled_for_chats\""
+        },
+        "chk_connectors_chat_access_expiry": {
+          "name": "chk_connectors_chat_access_expiry",
+          "value": "\"connectors\".\"chat_access_expires_at\" IS NULL OR \"connectors\".\"chat_access_allowed\" IS TRUE"
         },
         "chk_connectors_storage_version_positive": {
           "name": "chk_connectors_storage_version_positive",
@@ -24092,12 +24108,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "recent_workflow_ids": {
-          "name": "recent_workflow_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "onboarding_role": {
           "name": "onboarding_role",
           "type": "text",
@@ -24222,10 +24232,6 @@
         "org_members_metadata_explicit_model_settings_check": {
           "name": "org_members_metadata_explicit_model_settings_check",
           "value": "jsonb_typeof(\"org_members_metadata\".\"model_settings\") = 'object' AND NOT jsonb_path_exists(\"org_members_metadata\".\"model_settings\", '$.keyvalue() ? (@.key == \"auto\" || @.key == \"okou-1.0\" || @.key == \"okou-1.0-pro\" || @.key == \"okou-1.0-max\" || @.key starts with \"@preset/\")')"
-        },
-        "org_members_metadata_recent_workflow_ids_check": {
-          "name": "org_members_metadata_recent_workflow_ids_check",
-          "value": "\"org_members_metadata\".\"recent_workflow_ids\" IS NULL OR (\n          jsonb_typeof(\"org_members_metadata\".\"recent_workflow_ids\") = 'array'\n          AND NOT jsonb_path_exists(\"org_members_metadata\".\"recent_workflow_ids\", '$[*] ? (@.type() != \"string\" || !(@ like_regex \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\"))')\n        )"
         },
         "chk_org_members_metadata_service_tier": {
           "name": "chk_org_members_metadata_service_tier",

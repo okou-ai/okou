@@ -67,6 +67,26 @@ final class ForYouFeedTests: XCTestCase {
         note: ComposerDraft(document: blank, attachments: edited.draftAttachments)))
   }
 
+  func testPausedAutomationCarriesWhenItWasPaused() throws {
+    func event(_ fields: String) throws -> ForYouAutomation {
+      let json =
+        #"{"id":"10000000-0000-4000-8000-000000000002","type":"event","content":{"#
+        + #""eventType":"automation-disabled","automationId":"a1","#
+        + #""automationName":"Daily check","consecutiveFailures":3,"#
+        + #""recoveryScheduled":false"# + fields + "}}"
+      let card = try JSONDecoder().decode(ForYouCard.self, from: Data(json.utf8))
+      guard case .automation(let event) = card.content else {
+        XCTFail("Expected a paused automation")
+        throw APIClientError.incompatibleData
+      }
+      return event
+    }
+    let stamp = "2026-11-23T08:02:00.000Z"
+    XCTAssertEqual(try event(#","disabledAt":""# + stamp + #"""#).disabledAt, stamp)
+    // An event without the stamp still opens; the card only leaves the date out.
+    XCTAssertNil(try event("").disabledAt)
+  }
+
   func testNewFeedAndEventTypesCanBeSkipped() throws {
     for json in [
       #"{"id":"new","type":"news","content":{}}"#,

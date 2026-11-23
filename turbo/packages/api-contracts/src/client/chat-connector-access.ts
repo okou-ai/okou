@@ -7,6 +7,28 @@ import type { ClientDescriptor } from "./types";
 export const chatConnectorAccessContract: ClientDescriptor<
   typeof OriginalChatConnectorAccessContract
 > = {
+  accountPolicies: {
+    method: "GET",
+    path: "/api/connector-account-access/policies",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  updateAccountPolicy: {
+    method: "PUT",
+    path: "/api/connector-account-access/:connectionId/policy",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   overview: {
     method: "GET",
     path: "/api/chat-connector-overview",

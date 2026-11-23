@@ -86,21 +86,22 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
-      ForYouSidebarRow(
-        summary: forYouSummary, rowInset: rowInset, statusColumn: statusColumn, open: openForYou)
       if listRead.state == .loading && !store.list.hasLoadedThreads {
+        forYouRow
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
           .listRowInsets(.horizontal, 0)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && listError != nil {
+        forYouRow
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if case .hasError(let error) = presentation {
+        forYouRow
         Text(error.localizedDescription)
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
           .listRowInsets(.horizontal, rowInset)
@@ -122,6 +123,8 @@ struct ChatSidebarView: View {
         if !presentation.isInbox {
           showAllChatsRow
         }
+      } else {
+        forYouRow
       }
     }
     // The first snapshot establishes the list; subsequent membership changes animate.
@@ -235,11 +238,18 @@ struct ChatSidebarView: View {
       threadFilter: threadFilter, close: close, newProject: { showEditor(creationEditor) })
   }
 
-  /// Projects first, oldest first, then the chats outside them. Each list leads with its pins
-  /// in their manual order (a pin on the row marks them); the other chats follow by activity.
+  /// For you is always the list's first row, whatever the chats below it are doing.
+  private var forYouRow: some View {
+    ForYouSidebarRow(summary: forYouSummary, rowInset: rowInset, open: openForYou)
+  }
+
+  /// For you, then the projects, oldest first, then the chats outside them. Each list leads
+  /// with its pins in their manual order (a pin on the row marks them); the other chats follow
+  /// by activity.
   private func threadSection(_ contents: ChatSidebarPresentation) -> some View {
     let chats = contents.chats
     return Section {
+      forYouRow
       if case .hasError(let error) = projectRead {
         OkouBanner(Text(error.localizedDescription), icon: "folder", tone: .problem) {
           Button("Retry") { Task { await store.projects.refresh() } }
@@ -593,30 +603,32 @@ private struct ChatSidebarThreadLabel: View {
   }
 }
 
+/// The way into For you, drawn as a chat row is: its glyph in the status column at the chat
+/// glyph's size and grey, its title on the chats' edge, and the unread dot in the trailing
+/// column, with the medium title an unread chat has.
 private struct ForYouSidebarRow: View {
   let summary: Loadable<Bool>
   let rowInset: CGFloat
-  let statusColumn: CGFloat
   let open: () -> Void
+
+  private var states: OkouChatStates {
+    if case .hasData(true) = summary { return [.unread] }
+    return []
+  }
+
   var body: some View {
     Button(action: open) {
-      HStack(spacing: OkouSpace.ten) {
-        OkouIcon("hand-heart").frame(width: statusColumn)
-        Text("For you").font(.okou(.body))
-        Spacer()
-        if case .hasData(true) = summary {
-          Circle().fill(OkouStatusColor.running)
-            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
-            .accessibilityLabel("Unread")
-        }
+      OkouChatRowLabel(String(localized: "For you"), states: states) {
+        OkouIcon("hand-heart", size: OkouIconSize.standard)
+          .foregroundStyle(OkouColor.quietMark)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityHidden(true)
       }
-      .frame(minHeight: OkouControl.listRow).contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .listRowInsets(.horizontal, rowInset)
+    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
     .accessibilityIdentifier("for-you-sidebar")
   }
-
 }
