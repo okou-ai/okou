@@ -23,8 +23,8 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,7 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -131,14 +131,8 @@ internal fun ConversationRoute(
             !hasContent &&
             !firstReadFailed &&
             (thread == null || state.phase == HistoryPhase.Loading)
-    val showSkeleton = key(threadId) { rememberChatWaitIndicator(waitingForHistory) }
-    val showSync =
-        key(threadId) {
-            rememberChatWaitIndicator(
-                transcript != null && state.phase == HistoryPhase.Loading && !list.offline,
-                delayMillis = HistoryFeedbackDelayMillis,
-            )
-        }
+    val showSkeleton =
+        key(threadId) { rememberChatWaitIndicator(waitingForHistory, HistoryFeedbackDelayMillis) }
     val realtimePhase = realtime?.phase?.collectAsStateWithLifecycle()?.value
     val reconnect = realtime.takeIf { !list.offline && realtimePhase == RealtimePhase.Unavailable }
     val showRealtimeConnecting =
@@ -197,14 +191,18 @@ internal fun ConversationRoute(
                     )
                 }
         }
-    val showHistorySyncNotice =
-        showSync &&
-            (activity == null || content.isEmpty()) &&
-            queue.isEmpty() &&
-            content.none { it.preview?.pendingDelivery != null }
+    val showHistoryProgress =
+        transcript != null &&
+            state.phase == HistoryPhase.Loading &&
+            (state.consecutiveReadFailures >= 3 ||
+                state.syncingStaleCache &&
+                    !list.offline &&
+                    activity == null &&
+                    !showControlFeedback &&
+                    queue.isEmpty() &&
+                    content.none { it.preview?.pendingDelivery != null })
     val feedback: @Composable (() -> Unit)? =
         when {
-            showHistorySyncNotice -> ({ HistorySyncNotice() })
             reconnect != null && !firstReadFailed -> ({
                     RealtimeNotice(reconnect, RealtimePhase.Unavailable)
                 })
@@ -534,9 +532,7 @@ internal fun ConversationRoute(
                         ) {
                             if (feedback != null || showControlFeedback)
                                 Column(
-                                    Modifier.padding(
-                                        top = if (showHistorySyncNotice) 4.dp else 8.dp,
-                                    ),
+                                    Modifier.padding(top = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
                                     feedback?.invoke()
@@ -646,6 +642,19 @@ internal fun ConversationRoute(
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .semantics { liveRegion = LiveRegionMode.Polite },
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (showHistoryProgress) {
+                    val label = stringResource(R.string.history_syncing)
+                    val colors = MaterialTheme.colorScheme
+                    LinearProgressIndicator(
+                        Modifier.fillMaxWidth()
+                            .height(4.dp)
+                            .testTag("history_sync_progress")
+                            .semantics { contentDescription = label },
+                        color = colors.primary,
+                        trackColor =
+                            colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
                     )
                 }
             }
@@ -768,28 +777,6 @@ private fun ConversationJump(labelId: Int, modifier: Modifier, onClick: () -> Un
                         ),
                 )
         }
-    }
-}
-
-@Composable
-private fun HistorySyncNotice() {
-    val color = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircularProgressIndicator(
-            Modifier.size(14.dp),
-            color = color,
-            strokeWidth = 2.dp,
-            strokeCap = StrokeCap.Round,
-        )
-        Text(
-            stringResource(R.string.history_syncing),
-            color = color,
-            fontSize = 13.sp,
-            lineHeight = 20.sp,
-        )
     }
 }
 

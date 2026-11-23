@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
-private val listRefreshRetryDelays = listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L)
+internal val chatReadRetryDelays = listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L)
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -44,7 +44,7 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     } else 0
 }
 
-private fun listRetryAfterMillis(error: Exception): Long? {
+internal fun chatReadRetryAfterMillis(error: Exception): Long? {
     val seconds =
         when (error) {
             is ApiFailure.Network,
@@ -371,6 +371,7 @@ class ChatListModel(
             { invalidateIndicators() },
             dispatcher,
             precedingReadWrite = { readWrites[it] },
+            wallMillis = wallMillis,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -1617,7 +1618,7 @@ class ChatListModel(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            val retryAfter = listRetryAfterMillis(error)
+            val retryAfter = chatReadRetryAfterMillis(error)
             fail(error) { state ->
                 val failed = state.copy(listPhase = ChatReadPhase.Failed)
                 if (state.offline || generation != connectivityGeneration) failed
@@ -1656,8 +1657,8 @@ class ChatListModel(
 
     private fun recordListReadFailure(retryAfter: Long) {
         val now = monotonicMillis()
-        listFailures = (listFailures + 1).coerceAtMost(listRefreshRetryDelays.size)
-        val delay = maxOf(listRefreshRetryDelays[listFailures - 1], retryAfter)
+        listFailures = (listFailures + 1).coerceAtMost(chatReadRetryDelays.size)
+        val delay = maxOf(chatReadRetryDelays[listFailures - 1], retryAfter)
         val maxDelay = Long.MAX_VALUE - now.coerceAtLeast(0L)
         val nextRetry = now + minOf(delay, maxDelay)
         listRetryAt = maxOf(nextRetry, listRetryAt ?: nextRetry)
