@@ -115,6 +115,7 @@
     <string name="updates_download">Unduh pembaruan</string>
     <string name="updates_download_failed">Pengunduhan gagal</string>
     <string name="updates_check_compatible">Periksa versi yang kompatibel</string>
+    <string name="updates_required_incompatible">Perangkat ini tidak dapat memperbarui Okou</string>
     <string name="updates_required_short">Pembaruan diperlukan</string>
     <string name="updates_ready">Lanjutkan instalasi</string>
     <string name="updates_later">Nanti</string>
@@ -122,6 +123,7 @@
     <string name="updates_permission">Android memerlukan izin untuk menginstal pembaruan ini. Izinkan Okou sebagai sumber pemasangan di Setelan, lalu kembali untuk menginstal.</string>
     <string name="updates_required">Perbarui Okou untuk melanjutkan</string>
     <string name="updates_required_description">Versi ini sudah tidak didukung. Perbarui aplikasi untuk melanjutkan pekerjaan.</string>
+    <string name="updates_download_percent">Unduh %1$s</string>
     <string name="updates_downloading">Mengunduh · %1$s</string>
     <string name="updates_new_version">Versi baru tersedia</string>
     <string name="updates_package_size">Paket: %1$s</string>

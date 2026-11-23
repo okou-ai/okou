@@ -115,6 +115,7 @@
     <string name="updates_download">Update herunterladen</string>
     <string name="updates_download_failed">Download fehlgeschlagen</string>
     <string name="updates_check_compatible">Nach kompatiblen Versionen suchen</string>
+    <string name="updates_required_incompatible">Okou kann auf diesem Gerät nicht aktualisiert werden</string>
     <string name="updates_required_short">Update erforderlich</string>
     <string name="updates_ready">Installation fortsetzen</string>
     <string name="updates_later">Später</string>
@@ -122,6 +123,7 @@
     <string name="updates_permission">Android benötigt deine Erlaubnis zur Installation. Erlaube Okou in den Einstellungen als Installationsquelle und kehre dann zurück.</string>
     <string name="updates_required">Okou aktualisieren</string>
     <string name="updates_required_description">Diese Version wird nicht mehr unterstützt. Aktualisiere die App, um weiterzuarbeiten.</string>
+    <string name="updates_download_percent">Download %1$s</string>
     <string name="updates_downloading">Download läuft · %1$s</string>
     <string name="updates_new_version">Neue Version verfügbar</string>
     <string name="updates_package_size">Paket: %1$s</string>

@@ -115,6 +115,7 @@
     <string name="updates_download">Descargar actualización</string>
     <string name="updates_download_failed">Error de descarga</string>
     <string name="updates_check_compatible">Buscar versiones compatibles</string>
+    <string name="updates_required_incompatible">Este dispositivo no puede actualizar Okou</string>
     <string name="updates_required_short">Actualización necesaria</string>
     <string name="updates_ready">Continuar la instalación</string>
     <string name="updates_later">Más tarde</string>
@@ -122,6 +123,7 @@
     <string name="updates_permission">Android necesita tu permiso para instalar esta actualización. Permite que Okou instale aplicaciones en Ajustes y vuelve para instalar.</string>
     <string name="updates_required">Actualiza Okou para continuar</string>
     <string name="updates_required_description">Esta versión ya no es compatible. Actualiza para seguir trabajando.</string>
+    <string name="updates_download_percent">Descarga %1$s</string>
     <string name="updates_downloading">Descargando · %1$s</string>
     <string name="updates_new_version">Nueva versión disponible</string>
     <string name="updates_package_size">Paquete: %1$s</string>

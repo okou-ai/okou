@@ -115,6 +115,7 @@
     <string name="updates_download">下載更新</string>
     <string name="updates_download_failed">下載失敗</string>
     <string name="updates_check_compatible">檢查可用版本</string>
+    <string name="updates_required_incompatible">此裝置暫時無法更新 Okou</string>
     <string name="updates_required_short">需要更新</string>
     <string name="updates_ready">繼續安裝</string>
     <string name="updates_later">稍後</string>
@@ -122,6 +123,7 @@
     <string name="updates_permission">請在 Android 設定中允許 Okou 安裝應用程式。授權後回到這裡，繼續安裝已下載的更新。</string>
     <string name="updates_required">更新後繼續使用 Okou</string>
     <string name="updates_required_description">目前版本已不受支援。請更新至新版本以繼續工作。</string>
+    <string name="updates_download_percent">下載 %1$s</string>
     <string name="updates_downloading">下載中 %1$s</string>
     <string name="updates_new_version">有新版本</string>
     <string name="updates_package_size">安裝套件 %1$s</string>

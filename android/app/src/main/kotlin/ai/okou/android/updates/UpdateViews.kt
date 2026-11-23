@@ -273,7 +273,10 @@ internal fun AppUpdateSettings(
     val summary =
         when {
             state.preparing -> stringResource(R.string.updates_preparing)
-            transfer is UpdateTransfer.Downloading -> downloadLabel(transfer.fraction())
+            transfer is UpdateTransfer.Downloading ->
+                transfer.fraction()?.let {
+                    stringResource(R.string.updates_download_percent, updatePercent(it))
+                } ?: stringResource(R.string.updates_preparing)
             state.canInstall ->
                 stringResource(
                     installProgress
@@ -474,7 +477,11 @@ private fun RequiredUpdateScreen(
                 }
                 Text(
                     stringResource(
-                        if (compact) R.string.updates_required_short else R.string.updates_required,
+                        when {
+                            state.requiresNewerAndroid -> R.string.updates_required_incompatible
+                            compact -> R.string.updates_required_short
+                            else -> R.string.updates_required
+                        },
                     ),
                     style =
                         MaterialTheme.typography.headlineSmall.copy(
@@ -487,11 +494,13 @@ private fun RequiredUpdateScreen(
                 Spacer(Modifier.height(if (compact) 8.dp else 12.dp))
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
                     UpdateProblemText(state, Modifier.padding(bottom = 8.dp))
-                    Text(
-                        stringResource(R.string.updates_required_description),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    if (!state.requiresNewerAndroid) {
+                        Text(
+                            stringResource(R.string.updates_required_description),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                    }
                     Spacer(Modifier.height(16.dp))
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),

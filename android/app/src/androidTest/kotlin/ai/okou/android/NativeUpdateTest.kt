@@ -287,8 +287,9 @@ class NativeUpdateTest {
 
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(progressLabel)
-            assertNotNull(text(progressLabel))
+            val settingsProgress = app.getString(R.string.updates_download_percent, percent)
+            revealSettingsUpdate(settingsProgress)
+            assertNotNull(text(settingsProgress))
             val progressTitleBounds = button(settingsUpdate).visibleBounds
             assertEquals(settingsTitleBounds.width(), progressTitleBounds.width())
             assertEquals(settingsTitleBounds.height(), progressTitleBounds.height())
@@ -325,7 +326,7 @@ class NativeUpdateTest {
             download.set(CompletableDeferred())
             candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
-            exists(R.string.updates_required)
+            exists(R.string.updates_required_incompatible)
             exists(R.string.updates_android_unsupported)
             captureState("required-incompatible")
             candidate.set(release.copy(version = "99.1.0"))
