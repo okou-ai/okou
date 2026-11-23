@@ -17,6 +17,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
+  useDialogActionsRef,
 } from "@okouai/ui";
 import { AlertCircle, Check, Loader2, ShieldCheck, X } from "lucide-react";
 import type { PermissionBatchSignals } from "../../signals/chat-page/permission-batch-signals.ts";
@@ -434,7 +435,8 @@ function BatchFeedback({ batch }: BatchViewProps) {
 function BatchActions({
   batch,
   standalone,
-}: BatchViewProps & { standalone: boolean }) {
+  onAllowed,
+}: BatchViewProps & { standalone: boolean; onAllowed?: () => void }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const {
@@ -447,6 +449,11 @@ function BatchActions({
     descriptor,
     dismiss,
   } = batch;
+  async function allow() {
+    if (await confirm(pageSignal)) {
+      onAllowed?.();
+    }
+  }
   return (
     <>
       {!allowed && (
@@ -454,7 +461,7 @@ function BatchActions({
           type="button"
           disabled={busy || loadFailed || !complete || saveFailed}
           onClick={() => {
-            detach(confirm(pageSignal), Reason.DomCallback);
+            detach(allow(), Reason.DomCallback);
           }}
           className="h-9 w-full rounded-[10px]"
         >
@@ -681,8 +688,9 @@ function BatchCardSummary({ batch }: BatchViewProps) {
 
 function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
   const { t } = useTranslation();
+  const actionsRef = useDialogActionsRef();
   return (
-    <Dialog>
+    <Dialog actionsRef={actionsRef}>
       <BatchCardSummary batch={batch} />
       <DialogContent maxWidth={640} position="top" showCloseButton={false}>
         <DialogHeader className="flex-row items-center gap-3 text-left">
@@ -708,7 +716,13 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
         {batch.allowed && <BatchHeader batch={batch} standalone={false} />}
         <BatchPermissionDetails batch={batch} />
         <BatchFeedback batch={batch} />
-        <BatchActions batch={batch} standalone={false} />
+        <BatchActions
+          batch={batch}
+          standalone={false}
+          onAllowed={() => {
+            actionsRef.current?.close();
+          }}
+        />
         <a
           href={href}
           className="break-words text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground"
