@@ -291,30 +291,36 @@ internal fun AppUpdateSettings(
             focus.requestFocus()
         }
     }
-    SettingsRow(
-        stringResource(R.string.updates_title),
-        leading = { SettingsIcon(R.drawable.ic_update) },
-        modifier =
-            Modifier.focusRequester(focus)
-                .onFocusChanged { focused = it.isFocused }
-                .updateFocusOutline(RoundedCornerShape(12.dp), LocalActivityStatusColor.current),
-        value = stringResource(status),
-        valueMaxLines = 1,
-        reserveValueSpace = true,
-        onClick = {
-            restoreFocus = focused
-            open()
-        },
-        valueLeading =
-            if (status == R.string.updates_needed) {
-                {
-                    Box(
-                        Modifier.size(8.dp)
-                            .background(LocalActivityStatusColor.current, CircleShape),
-                    )
-                }
-            } else null,
-    )
+    BoxWithConstraints {
+        SettingsRow(
+            stringResource(R.string.updates_title),
+            leading = { SettingsIcon(R.drawable.ic_update) },
+            modifier =
+                Modifier.focusRequester(focus)
+                    .onFocusChanged { focused = it.isFocused }
+                    .updateFocusOutline(
+                        RoundedCornerShape(12.dp),
+                        LocalActivityStatusColor.current,
+                    ),
+            value = stringResource(status),
+            valueMaxLines = 1,
+            reserveValueSpace = true,
+            valueBelowTitle = maxWidth <= with(LocalDensity.current) { 16.sp.toDp() * 17 },
+            onClick = {
+                restoreFocus = focused
+                open()
+            },
+            valueLeading =
+                if (status == R.string.updates_needed) {
+                    {
+                        Box(
+                            Modifier.size(8.dp)
+                                .background(LocalActivityStatusColor.current, CircleShape),
+                        )
+                    }
+                } else null,
+        )
+    }
 }
 
 @Composable

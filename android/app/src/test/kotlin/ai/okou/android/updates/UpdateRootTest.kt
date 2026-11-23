@@ -100,6 +100,30 @@ class UpdateRootTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w340dp-h700dp")
+    fun settingsUpdateStatusStaysInlineAboveTheGroupWidthThreshold() {
+        app.fixture.heldCheck!!.complete(Unit)
+        compose.waitUntil(10_000) { app.updates.state.value.available }
+        openUpdateSettings()
+        updateSettingsRow().performScrollTo()
+        val title =
+            compose
+                .onNodeWithText(app.getString(R.string.updates_title), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+        val status =
+            compose
+                .onNodeWithText(app.getString(R.string.updates_needed), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+        assertEquals(
+            ((title.top + title.bottom) / 2).value,
+            ((status.top + status.bottom) / 2).value,
+            1f,
+        )
+    }
+
+    @Test
     fun closingDetailsKeepsTheTransferRunningAndRequiredGateUsesTheSameProgress() {
         app.fixture.heldCheck!!.complete(Unit)
         compose.waitUntil(10_000) { app.updates.state.value.available }
