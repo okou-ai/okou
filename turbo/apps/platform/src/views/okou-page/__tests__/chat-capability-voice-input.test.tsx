@@ -382,7 +382,7 @@ test("Send a recording from the composer as a voice-only message", async () => {
     });
   });
   context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
-    expect(body.requirePrivateArtifact).toBe(true);
+    expect(body.requirePrivateArtifact).toBeTruthy();
     expect(body.contentType).toBe("audio/wav");
     return respond(200, {
       id: fileId,
@@ -403,7 +403,7 @@ test("Send a recording from the composer as a voice-only message", async () => {
       filename,
       url,
       contentType: "audio/wav",
-      size: 32044,
+      size: 32_044,
     });
   });
   await setupPage({ context, path: RUN_PATH });
@@ -414,7 +414,7 @@ test("Send a recording from the composer as a voice-only message", async () => {
   });
   click(await findEnabledButton("Send"));
   await waitFor(() => {
-    expect(submitted).toEqual([
+    expect(submitted).toStrictEqual([
       { version: 1, parts: [{ type: "voice", clips: [{ fileId }] }] },
     ]);
   });

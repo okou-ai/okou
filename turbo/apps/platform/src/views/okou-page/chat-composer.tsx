@@ -4464,12 +4464,14 @@ function VoiceDraftFooter({
   signals,
   status: draftStatus,
   recordingAvailable,
+  asVoiceMessage,
   voiceMessage,
   children,
 }: {
   signals: ComposerSignals;
   status: ComposerVoiceInputStatus | undefined;
   recordingAvailable: boolean;
+  asVoiceMessage: boolean;
   voiceMessage: string | undefined;
   children: ReactNode;
 }) {
@@ -4477,8 +4479,6 @@ function VoiceDraftFooter({
   const capture = useGet(signals.voice.capture$);
   const recording = capture !== null;
   const [operation, runVoice] = useLoadableSet(signals.voice.run$);
-  const asVoiceMessage = useLastResolved(signals.voice.state$)?.recording
-    ?.asVoiceMessage;
   const status = operation.state === "loading" ? "transcribing" : draftStatus;
   const starting = false;
   const recordingStartedAt = capture?.startedAt ?? null;
@@ -5897,6 +5897,7 @@ function ComposerFooter({
         signals={signals}
         status={status}
         recordingAvailable={Boolean(voiceDraft?.recording)}
+        asVoiceMessage={Boolean(voiceDraft?.recording?.asVoiceMessage)}
         voiceMessage={
           voiceDraftLoadable.state === "hasError"
             ? t(($) => {

@@ -14,7 +14,7 @@ import {
   createImageLoadSignals,
   type ImageLoadSignals,
 } from "../image-load.ts";
-import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import type {
   GenerationTemplateRequest,
@@ -226,15 +226,14 @@ function throwStorageUploadFailure(
   throw error;
 }
 
-const prepareStorageUpload$ = command(
+const prepareUpload$ = command(
   async (
-    _visitor,
-    createClient: ApiClientFactory,
+    { get },
     file: File,
     privateArtifact: boolean,
     signal: AbortSignal,
   ) => {
-    const client = createClient(uploadsContract);
+    const client = get(apiClient$)(uploadsContract);
     const contentType = inferUploadContentType(file);
     return await accept(
       (privateArtifact ? client.preparePrivate : client.prepare)({
@@ -271,15 +270,8 @@ export const uploadFileToStorage$ = command(
     privateArtifact: boolean,
     signal: AbortSignal,
   ): Promise<FileInfo> => {
-    const createClient = get(apiClient$);
-    const client = createClient(uploadsContract);
-    const prepared = await set(
-      prepareStorageUpload$,
-      createClient,
-      file,
-      privateArtifact,
-      signal,
-    );
+    const client = get(apiClient$)(uploadsContract);
+    const prepared = await set(prepareUpload$, file, privateArtifact, signal);
     signal.throwIfAborted();
 
     if ("multipart" in prepared.body) {
