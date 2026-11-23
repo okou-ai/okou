@@ -11,7 +11,14 @@ import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-co
 import { secrets } from "@okouai/db/schema/secret";
 import { command, computed, type Computed } from "ccstate";
 import { performance } from "node:perf_hooks";
-import { array, object, record, string, unknown as zUnknown } from "zod";
+import {
+  array,
+  boolean,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 import { pgInt8ToBigIntSchema } from "../../lib/db-raw-rows";
 import {
   withPgPoolAcquisitionCapture,
@@ -663,7 +670,6 @@ const bootstrapVariablesDecoder = zodDriverValueDecoder(
       name: string(),
       value: string(),
       userId: string(),
-      connectorId: string().nullable(),
     }),
   ),
 );
@@ -706,7 +712,7 @@ const bootstrapAccountRowsDecoder = zodDriverValueDecoder(
       ),
       connectorVariables: record(string(), string()).nullable(),
       credentialNames: array(string()).nullable(),
-      automaticOAuthBindingId: string().nullable(),
+      hasAutomaticOAuthBinding: boolean(),
     }),
   ),
 );
@@ -727,7 +733,7 @@ function bootstrapConnectorAccountRows(
         ),
         'connectorVariables', ${connectorVariableSnapshot.values},
         'credentialNames', ${credentialSnapshot.values},
-        'automaticOAuthBindingId', ${customConnectorAccountOauthBindings.connectorAccountId}
+        'hasAutomaticOAuthBinding', ${customConnectorAccountOauthBindings.connectorAccountId} IS NOT NULL
       )`
         .mapWith(zodDriverValueDecoder(zUnknown()))
         .as("payload"),
@@ -816,7 +822,7 @@ function createAgentEnvironment(
           ...row.account,
           orgId,
           userId,
-          automaticOAuthBindingId: row.automaticOAuthBindingId,
+          hasAutomaticOAuthBinding: row.hasAutomaticOAuthBinding,
         };
       }),
       values: {
@@ -892,7 +898,7 @@ function bootstrapVariableSnapshot(
       .select({
         values: sql`jsonb_agg(jsonb_build_object(
         'name', ${rows.name}, 'value', ${rows.value},
-        'userId', ${rows.userId}, 'connectorId', ${rows.connectorId}
+        'userId', ${rows.userId}
       ))`
           .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
           .as("user_variable_values"),
@@ -958,7 +964,7 @@ function createConnectorContext(
     return buildAgentRunVariables({ variables: snapshot.variables });
   });
   const { connectorSelection$, permissionGrants$ } =
-    createExecutionConnectorContext(environmentSnapshot$);
+    createExecutionConnectorContext(environmentSnapshot$, member.orgId);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });

@@ -199,6 +199,8 @@ import {
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
+  readPrivateAttachmentRows,
+  type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
 import { webChatContextId } from "./web-chat-queue-context.service";
@@ -581,7 +583,7 @@ function isNormalSendBody(
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-type AttachmentRecord = typeof runUploadedFiles.$inferSelect;
+type AttachmentRecord = PrivateAttachmentRow;
 type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "metadata">;
 interface ResolvedChatAttachment {
   readonly file: ChatEventAttachFileMetadata;
@@ -672,24 +674,22 @@ const startIncomingAttachmentRecords$ = command(
       counts.sqlReads += 1;
       // One statement captures every referenced record together. Binding the
       // UUID array also keeps the parameter count independent of file count.
-      const loaded = await get(db$)
-        .select()
-        .from(runUploadedFiles)
-        .where(
-          or(
-            fileIds.length
-              ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
-              : undefined,
-            clipIds.length
-              ? and(
-                  sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
-                  eq(runUploadedFiles.orgId, owner.orgId),
-                  eq(runUploadedFiles.userId, owner.userId),
-                  isNull(runUploadedFiles.deletedAt),
-                )
-              : undefined,
-          ),
-        );
+      const loaded = await readPrivateAttachmentRows(
+        get(db$),
+        or(
+          fileIds.length
+            ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+            : undefined,
+          clipIds.length
+            ? and(
+                sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                eq(runUploadedFiles.orgId, owner.orgId),
+                eq(runUploadedFiles.userId, owner.userId),
+                isNull(runUploadedFiles.deletedAt),
+              )
+            : undefined,
+        ),
+      );
       signal.throwIfAborted();
       return new Map(
         loaded.map((row) => {
