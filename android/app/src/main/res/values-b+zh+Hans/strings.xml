@@ -93,6 +93,7 @@
     <string name="composer_local_failed">草稿更改未能保存到此设备。</string>
     <string name="composer_unconfirmed">消息是否送达尚未确认。</string>
     <string name="composer_sending">正在发送…</string>
+    <string name="composer_checking_delivery">正在核对发送结果…</string>
     <string name="composer_check">查询发送结果</string>
     <string name="composer_retry">重试发送同一条消息</string>
     <string name="composer_not_observed">暂时查不到此消息，发送结果仍未确认。</string>

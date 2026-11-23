@@ -196,6 +196,7 @@ class HistoryProjectionTest {
         )
         assertFalse(result.messages.first().queued)
         assertTrue(result.messages.last().queued)
+        assertEquals(setOf(waiting.id, automation.id, nextAutomation.id), result.pendingInputIds)
         assertEquals(HistoryExecution.Running, result.execution)
         assertEquals(HistoryExecution.Queued, transcript(waiting).execution)
     }
@@ -204,7 +205,7 @@ class HistoryProjectionTest {
     fun queuedAutomationWithoutAUserDocumentKeepsItsActionTarget() {
         val queued = event("automation", 1, "input.automation", run = null)
         val pending = transcript(queued)
-        assertEquals(listOf(queued.id), pending.queuedEventIds)
+        assertEquals(setOf(queued.id), pending.pendingInputIds)
         val message = pending.messages.single()
         assertEquals(queued.id, message.id)
         assertTrue(message.queued)
@@ -212,7 +213,7 @@ class HistoryProjectionTest {
 
         val delivered = event("delivered", 2, "input.automation", revoke = queued.id)
         val consumed = transcript(queued, delivered)
-        assertTrue(consumed.queuedEventIds.isEmpty())
+        assertTrue(consumed.pendingInputIds.isEmpty())
         assertTrue(consumed.messages.isEmpty())
     }
 

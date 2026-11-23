@@ -113,9 +113,18 @@ internal fun ConversationRoute(
     val content =
         remember(transcript, output, threadId, localMessages) {
             val confirmed = transcript?.withOutput(output, threadId).orEmpty()
-            val rendered = conversationMessages(confirmed)
+            val pending = transcript?.pendingInputIds.orEmpty()
+            // Android presents canonical pending inputs as cards, in the transcript's existing
+            // order.
+            val displayed =
+                if (pending.isEmpty()) confirmed
+                else confirmed.map { if (it.id in pending) it.copy(queued = true) else it }
+            val rendered = conversationMessages(displayed)
             val previews =
-                localMessages.filterNot { it.eventId in transcript?.persistedIds.orEmpty() }
+                localMessages.filterNot {
+                    it.eventId in transcript?.persistedIds.orEmpty() ||
+                        it.disposition == TextDisposition.Revoked
+                }
             rendered +
                 previews.map { preview ->
                     ConversationMessage(
@@ -124,11 +133,10 @@ internal fun ConversationRoute(
                             null,
                             HistoryRole.User,
                             listOf(HistoryBlock(HistoryBlockKind.Text, preview.text)),
+                            queued = preview.disposition == TextDisposition.Queued,
+                            rejected = preview.disposition == TextDisposition.Rejected,
                         ),
-                        deliveryStatus =
-                            preview.disposition?.label()
-                                ?: if (preview.sending) R.string.composer_sending
-                                else R.string.composer_unconfirmed,
+                        preview = preview,
                     )
                 }
         }
@@ -179,12 +187,7 @@ internal fun ConversationRoute(
         }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution?.takeUnless { list.offline || missing }
-    val activity =
-        when (execution) {
-            HistoryExecution.Running -> R.string.conversation_processing
-            HistoryExecution.Queued -> R.string.history_queued
-            else -> null
-        }
+    val activity = R.string.conversation_processing.takeIf { execution == HistoryExecution.Running }
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
@@ -276,7 +279,7 @@ internal fun ConversationRoute(
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
-        val previewId = content.lastOrNull()?.takeIf { it.deliveryStatus != null }?.message?.id
+        val previewId = content.lastOrNull()?.preview?.eventId
         var lastPreviewId by remember { mutableStateOf(previewId) }
         val newestReply =
             remember(content) {

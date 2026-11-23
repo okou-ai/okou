@@ -93,6 +93,7 @@
     <string name="composer_local_failed">इस डिवाइस पर ड्राफ़्ट के बदलाव सहेजे नहीं जा सके।</string>
     <string name="composer_unconfirmed">संदेश की डिलीवरी की पुष्टि नहीं हुई है।</string>
     <string name="composer_sending">भेजा जा रहा है…</string>
+    <string name="composer_checking_delivery">डिलीवरी की जाँच हो रही है…</string>
     <string name="composer_check">डिलीवरी जाँचें</string>
     <string name="composer_retry">यही संदेश फिर भेजें</string>
     <string name="composer_not_observed">संदेश अभी दिखाई नहीं दे रहा है। डिलीवरी की पुष्टि नहीं हुई है।</string>

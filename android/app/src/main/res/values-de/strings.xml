@@ -93,6 +93,7 @@
     <string name="composer_local_failed">Änderungen am Entwurf konnten auf diesem Gerät nicht gespeichert werden.</string>
     <string name="composer_unconfirmed">Die Zustellung der Nachricht ist unbestätigt.</string>
     <string name="composer_sending">Wird gesendet…</string>
+    <string name="composer_checking_delivery">Zustellung wird geprüft…</string>
     <string name="composer_check">Zustellung prüfen</string>
     <string name="composer_retry">Dieselbe Nachricht erneut senden</string>
     <string name="composer_not_observed">Die Nachricht ist noch nicht sichtbar. Ihre Zustellung bleibt unbestätigt.</string>

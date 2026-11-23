@@ -51,7 +51,7 @@ data class HistoryTranscript(
     val persistedIds: Set<String> = emptySet(),
     val liveRunIds: List<String> = listOfNotNull(activeRunId),
     val terminatedRunIds: Set<String> = emptySet(),
-    val queuedEventIds: List<String> = emptyList(),
+    val pendingInputIds: Set<String> = emptySet(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
@@ -60,7 +60,7 @@ internal data class HistoryControlFacts(
     val rows: List<HistoryEvent>,
     val liveRunIds: List<String>,
     val terminatedRunIds: Set<String>,
-    val queuedEventIds: List<String>,
+    val pendingInputIds: Set<String>,
 )
 
 /** Control readback uses event identities without re-decoding user documents on Main. */
@@ -81,7 +81,12 @@ internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlF
             .distinct()
             .toList(),
         ended,
-        rows.filter { it.type == "input.automation" && it.runId == null }.map { it.id },
+        rows
+            .asSequence()
+            .filter {
+                it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
+            }
+            .mapTo(mutableSetOf()) { it.id },
     )
 }
 
@@ -95,12 +100,9 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     val terminals = rows.filter { it.terminal }.mapNotNullTo(hashSetOf()) { it.runId }
     val interrupted =
         rows.filter { it.type == "control.interrupt" }.mapNotNullTo(hashSetOf()) { it.runId }
-    val pending =
-        rows
-            .filter { it.runId == null && it.type in setOf("input.prompt", "input.automation") }
-            .mapTo(hashSetOf()) { it.id }
+    val pending = controls.pendingInputIds
     // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
-    val queued = controls.queuedEventIds.toSet()
+    val queued = pending.intersect(automationInputs)
     // Match Web's transcript visibility without discarding the underlying confirmed rows.
     val visible =
         rows.filterNot {
@@ -231,7 +233,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         checkpoint.rows.flatMapTo(hashSetOf()) { listOfNotNull(it.id, it.revokesId) },
         liveRunIds,
         controls.terminatedRunIds,
-        controls.queuedEventIds,
+        pending,
     )
 }
 

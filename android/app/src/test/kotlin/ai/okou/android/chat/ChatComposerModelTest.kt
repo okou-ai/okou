@@ -521,7 +521,7 @@ class ChatComposerModelTest {
             assertEquals(frozen.clientEventId, restored.eventId)
             assertEquals("immutable submission", restored.text)
             assertNull(restored.disposition)
-            assertFalse(restored.sending)
+            assertEquals(PendingDelivery.Unconfirmed, restored.pendingDelivery)
             assertTrue(existing.key in model.uiState.value.unobserved)
             service.write = { request ->
                 assertEquals(frozen, request)

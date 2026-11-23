@@ -93,6 +93,7 @@
     <string name="composer_local_failed">Impossibile salvare le modifiche alla bozza su questo dispositivo.</string>
     <string name="composer_unconfirmed">La consegna del messaggio non è confermata.</string>
     <string name="composer_sending">Invio in corso…</string>
+    <string name="composer_checking_delivery">Verifica della consegna…</string>
     <string name="composer_check">Verifica consegna</string>
     <string name="composer_retry">Riprova lo stesso messaggio</string>
     <string name="composer_not_observed">Il messaggio non è ancora visibile. La consegna resta non confermata.</string>

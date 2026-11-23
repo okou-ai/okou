@@ -179,7 +179,39 @@ class NativeTextSendTest {
                     10_000,
                 )
             )
-            text(app.getString(R.string.composer_accepted))
+            val target =
+                ComposerTarget(
+                    fixture.created.single().getValue("clientThreadId").jsonPrimitive.content
+                )
+            val eventId =
+                fixture.inputs.entries
+                    .single {
+                        it.value.getValue("prompt").jsonPrimitive.content == "Native follow-up"
+                    }
+                    .key
+            assertTrue(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean {
+                            var accepted = false
+                            checkNotNull(scenario).onActivity {
+                                val state =
+                                    ViewModelProvider(it)[SessionModel::class.java]
+                                        .uiState
+                                        .value
+                                        .ready
+                                        ?.composer
+                                        ?.uiState
+                                        ?.value
+                                accepted = state?.entry(target)?.receipt?.eventId == eventId
+                            }
+                            return accepted
+                        }
+                    },
+                    10_000,
+                )
+            )
+            text("Native follow-up")
             assertEquals("", editor().text)
             assertEquals(1, fixture.created.size)
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))

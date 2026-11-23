@@ -93,6 +93,7 @@
     <string name="composer_local_failed">Perubahan draf tidak dapat disimpan di perangkat ini.</string>
     <string name="composer_unconfirmed">Pengiriman pesan belum terkonfirmasi.</string>
     <string name="composer_sending">Mengirim…</string>
+    <string name="composer_checking_delivery">Memeriksa pengiriman…</string>
     <string name="composer_check">Periksa pengiriman</string>
     <string name="composer_retry">Coba lagi pesan yang sama</string>
     <string name="composer_not_observed">Pesan belum terlihat. Pengirimannya masih belum terkonfirmasi.</string>

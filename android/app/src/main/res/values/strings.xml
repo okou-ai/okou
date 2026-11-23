@@ -94,6 +94,7 @@
     <string name="composer_local_failed">Draft changes could not be saved on this device.</string>
     <string name="composer_unconfirmed">Message delivery is unconfirmed.</string>
     <string name="composer_sending">Sending…</string>
+    <string name="composer_checking_delivery">Checking delivery…</string>
     <string name="composer_check">Check delivery</string>
     <string name="composer_retry">Retry this same message</string>
     <string name="composer_not_observed">The message is not yet observable. Its delivery remains unconfirmed.</string>

@@ -93,6 +93,7 @@
     <string name="composer_local_failed">Não foi possível salvar as alterações do rascunho neste dispositivo.</string>
     <string name="composer_unconfirmed">A entrega da mensagem não foi confirmada.</string>
     <string name="composer_sending">Enviando…</string>
+    <string name="composer_checking_delivery">Verificando a entrega…</string>
     <string name="composer_check">Verificar entrega</string>
     <string name="composer_retry">Reenviar a mesma mensagem</string>
     <string name="composer_not_observed">A mensagem ainda não está visível. A entrega continua sem confirmação.</string>

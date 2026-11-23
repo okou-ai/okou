@@ -93,6 +93,7 @@
     <string name="composer_local_failed">No se pudieron guardar los cambios del borrador en este dispositivo.</string>
     <string name="composer_unconfirmed">La entrega del mensaje no está confirmada.</string>
     <string name="composer_sending">Enviando…</string>
+    <string name="composer_checking_delivery">Comprobando la entrega…</string>
     <string name="composer_check">Comprobar entrega</string>
     <string name="composer_retry">Reintentar el mismo mensaje</string>
     <string name="composer_not_observed">El mensaje aún no es visible. La entrega sigue sin confirmar.</string>

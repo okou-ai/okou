@@ -64,7 +64,7 @@ internal class ConversationRunControls(
     fun revoke(eventId: String): (() -> Unit)? {
         if (
             !available ||
-                eventId !in confirmed?.transcript?.queuedEventIds.orEmpty() ||
+                eventId !in confirmed?.transcript?.pendingInputIds.orEmpty() ||
                 pending.any { it.kind == RunControlKind.Revoke && it.targetId == eventId }
         )
             return null

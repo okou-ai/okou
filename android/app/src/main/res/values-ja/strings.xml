@@ -93,6 +93,7 @@
     <string name="composer_local_failed">下書きの変更をこの端末に保存できませんでした。</string>
     <string name="composer_unconfirmed">メッセージの送信結果は未確認です。</string>
     <string name="composer_sending">送信中…</string>
+    <string name="composer_checking_delivery">送信結果を確認中…</string>
     <string name="composer_check">送信結果を確認</string>
     <string name="composer_retry">同じメッセージを再送</string>
     <string name="composer_not_observed">まだメッセージを確認できません。送信結果は未確定です。</string>

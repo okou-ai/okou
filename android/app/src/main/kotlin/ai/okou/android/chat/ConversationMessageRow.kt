@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -63,7 +65,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -81,7 +85,7 @@ internal sealed interface ConversationTimelineRow {
 internal data class ConversationMessage(
     val message: HistoryMessage,
     val earlier: List<HistoryMessage> = emptyList(),
-    @StringRes val deliveryStatus: Int? = null,
+    val preview: ComposerMessagePreview? = null,
 ) : ConversationTimelineRow {
     override val key: String
         get() = earlier.firstOrNull()?.id ?: message.id
@@ -144,16 +148,14 @@ internal fun ConversationMessageRow(
                 ) {
                     Column(Modifier.weight(1f)) {
                         ConversationMeta(stringResource(R.string.history_queued))
-                        MessageBody(message, compact = true)
+                        MessageBody(message, compact = true, findHighlight = findHighlight)
                     }
-                    if (revoke != null) {
-                        TextButton(
-                            onClick = revoke,
-                            colors =
-                                ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-                        ) {
-                            Text(stringResource(R.string.conversation_revoke))
-                        }
+                    TextButton(
+                        onClick = { revoke?.invoke() },
+                        enabled = revoke != null,
+                        colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                    ) {
+                        Text(stringResource(R.string.conversation_revoke))
                     }
                 }
             }
@@ -162,18 +164,30 @@ internal fun ConversationMessageRow(
                 Modifier.fillMaxWidth().testTag("message_${message.id}"),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(.85f).wrapContentWidth(Alignment.End),
-                    shape = RoundedCornerShape(16.dp),
-                    color = colors.surfaceVariant,
-                    contentColor = colors.onSurface,
-                ) {
-                    Column(
-                        Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                Box(modifier = Modifier.fillMaxWidth(.85f).wrapContentWidth(Alignment.End)) {
+                    val delivery = entry.preview?.pendingDelivery
+                    val status = delivery?.let { stringResource(it.label()) }
+                    Surface(
+                        modifier =
+                            if (status == null) Modifier
+                            else Modifier.semantics { stateDescription = status },
+                        shape = RoundedCornerShape(16.dp),
+                        color = colors.surfaceVariant,
+                        contentColor = colors.onSurface,
                     ) {
-                        MessageBody(message, findHighlight = findHighlight)
-                        MessageStatus(message, entry.deliveryStatus)
+                        Column(
+                            Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            MessageBody(message, findHighlight = findHighlight)
+                            MessageStatus(message)
+                        }
+                    }
+                    if (delivery != null) {
+                        DeliveryIndicator(
+                            delivery,
+                            Modifier.align(Alignment.CenterStart).offset(x = (-24).dp),
+                        )
                     }
                 }
             }
@@ -233,7 +247,7 @@ internal fun ConversationMessageRow(
             }
         else ->
             Column(Modifier.fillMaxWidth().testTag("message_${message.id}")) {
-                MessageStatus(message, entry.deliveryStatus)
+                MessageStatus(message)
                 MessageBody(message, compact = true)
             }
     }
@@ -459,8 +473,7 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
 }
 
 @Composable
-private fun MessageStatus(message: HistoryMessage, @StringRes deliveryStatus: Int?) {
-    if (deliveryStatus != null) ConversationMeta(stringResource(deliveryStatus))
+private fun MessageStatus(message: HistoryMessage) {
     if (message.rejected) ConversationMeta(stringResource(R.string.history_rejected))
     when (message.status) {
         "run.failed" -> {
@@ -470,5 +483,24 @@ private fun MessageStatus(message: HistoryMessage, @StringRes deliveryStatus: In
         }
         "run.cancelled" -> ConversationMeta(stringResource(R.string.history_cancelled))
         "output.error" -> ConversationMeta(stringResource(R.string.history_run_failed))
+    }
+}
+
+private fun PendingDelivery.label() =
+    when (this) {
+        PendingDelivery.Sending -> R.string.composer_sending
+        PendingDelivery.Checking -> R.string.composer_checking_delivery
+        PendingDelivery.Unconfirmed -> R.string.composer_unconfirmed
+    }
+
+@Composable
+private fun DeliveryIndicator(delivery: PendingDelivery, modifier: Modifier) {
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Box(modifier.size(16.dp).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+        if (delivery == PendingDelivery.Unconfirmed) {
+            Icon(painterResource(R.drawable.ic_schedule), contentDescription = null, tint = color)
+        } else {
+            CircularProgressIndicator(Modifier.size(14.dp), color = color, strokeWidth = 2.dp)
+        }
     }
 }

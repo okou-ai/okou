@@ -101,7 +101,7 @@ internal class RunControlObservation(private val checkpoint: HistoryCheckpoint) 
                 when {
                     intent.targetId in replaced -> RunControlEvidence.TargetSettled
                     byId[intent.targetId]?.runId != null -> RunControlEvidence.TargetSettled
-                    intent.targetId in facts.queuedEventIds -> RunControlEvidence.Eligible
+                    intent.targetId in facts.pendingInputIds -> RunControlEvidence.Eligible
                     else -> RunControlEvidence.Unknown
                 }
         }
