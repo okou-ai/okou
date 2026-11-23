@@ -277,10 +277,10 @@ internal fun ConnectorDetails(
                 } else if (!hasAccountContent) {
                     when {
                         state.accounts.failure == ConnectorReadFailure.Unavailable ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                            ConnectorReadError(R.string.connector_accounts_failed)
                         state.offline -> ConnectorLoadWhenOnline()
                         state.accounts.failure != null ->
-                            ConnectorStatusBanner(R.string.connector_accounts_failed)
+                            ConnectorReadError(R.string.connector_accounts_failed)
                         else ->
                             ConnectorSkeleton(
                                 stringResource(R.string.connector_loading_accounts),
@@ -619,10 +619,10 @@ private fun ConnectorPermissionSheet(
             permissions.data == null ->
                 when {
                     permissions.failure == ConnectorReadFailure.Unavailable ->
-                        ConnectorStatusBanner(R.string.connector_permissions_failed)
+                        ConnectorReadError(R.string.connector_permissions_failed)
                     offline -> ConnectorLoadWhenOnline()
                     permissions.failure != null ->
-                        ConnectorStatusBanner(R.string.connector_permissions_failed)
+                        ConnectorReadError(R.string.connector_permissions_failed)
                     else ->
                         ConnectorSkeleton(
                             stringResource(R.string.connector_loading_permissions),
