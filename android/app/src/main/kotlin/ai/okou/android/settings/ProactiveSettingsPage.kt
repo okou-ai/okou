@@ -151,7 +151,11 @@ internal fun ProactiveSettingsPage(
                 fallbackFocus = relatedFocus,
             )
             if (needsTimezone || current.timezoneScheduleUpdatePending) {
-                PreferenceFeedback(current, preferences::retry)
+                PreferenceFeedback(
+                    current,
+                    preferences::retry,
+                    Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),
+                )
             }
         }
         if (suggestions.readFailed && suggestions.confirmed == null) {

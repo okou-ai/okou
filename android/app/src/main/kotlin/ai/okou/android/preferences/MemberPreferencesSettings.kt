@@ -225,7 +225,11 @@ internal fun TimezoneSaveFeedback(model: MemberPreferencesModel, snackbar: Snack
 }
 
 @Composable
-internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
+internal fun PreferenceFeedback(
+    state: MemberPreferencesState,
+    retry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     if (state.recovering) return
     val message =
         when (state.status) {
@@ -242,10 +246,13 @@ internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit
             PreferenceStatus.RefreshFailed -> R.string.preference_refresh_failed
         }
     val colors = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
+    val textColor =
+        if (message == R.string.settings_proactive_save_unconfirmed) colors.onSurfaceVariant
+        else colors.error
+    Column(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
         Text(
             stringResource(message),
-            color = colors.error,
+            color = textColor,
             style = MaterialTheme.typography.bodyMedium,
         )
         TextButton(
