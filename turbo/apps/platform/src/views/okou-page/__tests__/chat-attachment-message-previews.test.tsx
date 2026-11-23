@@ -1,5 +1,5 @@
 import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { HttpResponse } from "msw";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
 import { click } from "../../../__tests__/page-helper.ts";
@@ -181,10 +181,12 @@ test("chat-attachment-message-previews-014 media precedes file chips and the mes
     attachment("plan.pdf", "application/pdf"),
     attachment("log.txt", "text/plain"),
   ];
-  serveUploaded(context, files);
+  const recording = attachment("trail-summary.wav", "audio/wav");
+  serveUploaded(context, [...files, recording]);
   await conversation(context, {
     chatEvents: [
       userRow([
+        { type: "voice", clips: [{ fileId: recording.id }] },
         ...fileParts([files[2], files[0], files[3], files[1]]),
         { type: "text", text: "Read after the attachments." },
       ]),
@@ -195,6 +197,7 @@ test("chat-attachment-message-previews-014 media precedes file chips and the mes
     await findAction("button", "Preview tour.mp4"),
     await findAction("button", "Open pdf preview for plan.pdf"),
     await findAction("button", "Open text preview for log.txt"),
+    await findAction("button", "Play voice message"),
     await screen.findByText("Read after the attachments."),
   ];
   for (const [index, node] of ordered.slice(1).entries()) {
@@ -220,34 +223,73 @@ test("chat-attachment-message-previews-015 typed image syntax remains an ordered
   expect(queryAction("link", "Preview slope.png", row!)).toBeNull();
 });
 
-test("Voice message clips open the selected recording in playback order", async () => {
-  const first = attachment("first.wav", "audio/wav");
-  const second = attachment("second.wav", "audio/wav");
-  serveUploaded(context, [first, second]);
+test("A voice note resumes the current recording and advances through its clips in one player", async () => {
+  const clips = [
+    attachment("trailhead.wav", "audio/wav"),
+    attachment("summit.wav", "audio/wav"),
+  ];
+  serveUploaded(context, clips);
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
   await conversation(context, {
     chatEvents: [
       userRow([
-        { type: "voice", clips: [{ fileId: first.id }, { fileId: second.id }] },
+        {
+          type: "voice",
+          clips: clips.map(({ id }) => {
+            return { fileId: id };
+          }),
+        },
       ]),
     ],
   });
-  const firstClip = await findAction(
-    "button",
-    "Open audio preview for Voice clip 1",
-  );
-  const secondClip = await findAction(
-    "button",
-    "Open audio preview for Voice clip 2",
-  );
+  const play = await findAction("button", "Play voice message");
   expect(
-    firstClip.compareDocumentPosition(secondClip) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  click(secondClip);
+    screen.getAllByRole("button", { name: "Play voice message" }),
+  ).toHaveLength(1);
+  const read = within(play);
+  const track = play.querySelector<HTMLAudioElement>(
+    "audio:not([preload=metadata])",
+  );
+  if (!track) {
+    throw new Error("Voice note has no playback element");
+  }
+  const lengths = [18, 9];
+  for (const [i, audio] of Array.from(
+    play.querySelectorAll("audio[preload=metadata]"),
+  ).entries()) {
+    Object.defineProperty(audio, "duration", {
+      configurable: true,
+      value: lengths[i],
+    });
+    fireEvent.durationChange(audio);
+  }
+  await read.findByText("0:27");
+  click(play);
+  const pause = await findAction("button", "Pause voice message");
   await waitFor(() => {
-    return expect(document.querySelector("audio")).toHaveAttribute(
-      "src",
-      second.url,
-    );
+    return expect(track.src).toBe(clips[0]!.url);
   });
+  track.currentTime = 7;
+  fireEvent.timeUpdate(track);
+  await read.findByText("0:07");
+  click(pause);
+  const resume = await findAction("button", "Play voice message");
+  expect(resume).toHaveTextContent("0:07");
+  click(resume);
+  await findAction("button", "Pause voice message");
+  expect(track.currentTime).toBe(7);
+  Object.defineProperty(track, "duration", { configurable: true, value: 18 });
+  fireEvent.ended(track);
+  await waitFor(() => {
+    return expect(track.src).toBe(clips[1]!.url);
+  });
+  track.currentTime = 4;
+  fireEvent.timeUpdate(track);
+  await read.findByText("0:22");
+  Object.defineProperty(track, "duration", { configurable: true, value: 9 });
+  fireEvent.ended(track);
+  await expect(
+    findAction("button", "Play voice message"),
+  ).resolves.toHaveTextContent("0:27");
 });

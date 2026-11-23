@@ -2277,9 +2277,11 @@
     "messageDocument": {
       "chatThread": "[Thread chat: {{title}}]",
       "file": "[File: {{filename}}]",
+      "pauseVoice": "Jeda pesan suara",
+      "playVoice": "Putar pesan suara",
+      "retryVoice": "Coba putar kembali",
       "template": "[Template: {{title}}]",
-      "voice": "Pesan suara",
-      "voiceClip": "Klip suara {{index}}"
+      "voice": "Pesan suara"
     },
     "newChat": "Chat baru",
     "origins": {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.102](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.101...runner-rs-v0.249.102) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+* **runner:** share idle connection detachment ([#50030](https://github.com/okou-ai/okou/issues/50030)) ([b4d957d](https://github.com/okou-ai/okou/commit/b4d957d31504e540817b6ca196626f2362e5cdcf))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.101](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.100...runner-rs-v0.249.101) (2026-11-22)
 
 ### Release Dependencies

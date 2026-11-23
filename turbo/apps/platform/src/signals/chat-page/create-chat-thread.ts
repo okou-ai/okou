@@ -38,6 +38,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
+import { createVoicePlayer } from "./voice-player.ts";
 import { i18n } from "../../i18n/index.ts";
 import { createChatResourceSignals } from "./chat-resources.ts";
 import { createThreadMailSignals } from "./thread-mail.ts";
@@ -1149,29 +1150,13 @@ const registerUserMessageRenderDocument$ = command(
       .find((preferences) => {
         return preferences !== undefined;
       });
+    const clips = readableDocument.parts.flatMap((part) => {
+      return part.type === "voice" ? part.clips : [];
+    });
     const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
       (part, index) => {
-        if (part.type === "additional_info") {
+        if (part.type === "additional_info" || part.type === "voice") {
           return [];
-        }
-        if (part.type === "voice") {
-          return part.clips.map(({ fileId }, clipIndex) => {
-            return set(
-              registerUserMessageRenderPart$,
-              {
-                type: "file",
-                fileId,
-                filenameSnapshot: i18n.t(
-                  ($) => {
-                    return $.chat.messageDocument.voiceClip;
-                  },
-                  { index: clipIndex + 1 },
-                ),
-                contentType: "audio/*",
-              },
-              registries,
-            );
-          });
         }
         const rendered = set(registerUserMessageRenderPart$, part, registries);
         const context = readSuggestionContext(
@@ -1192,6 +1177,7 @@ const registerUserMessageRenderDocument$ = command(
       });
     }
     return {
+      ...(clips.length ? { voicePlayer: createVoicePlayer(clips) } : {}),
       // Registration uses the raw document identity across window updates.
       document,
       parts,

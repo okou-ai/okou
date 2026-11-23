@@ -394,6 +394,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
+import { VoiceMessagePlayer } from "./voice-message-player.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
@@ -6702,18 +6703,23 @@ function UserMessageAttachmentRow({
   attachments,
   onImageClick,
   testId,
+  children,
 }: {
   threadId: string;
   attachments: ResolvedMessageAttachment[];
   onImageClick: OpenMessageImagePreview;
   testId: string;
+  children?: ReactNode;
 }) {
-  if (attachments.length === 0) {
+  if (attachments.length === 0 && !children) {
     return null;
   }
 
   return (
-    <div className="flex flex-wrap justify-end gap-2" data-testid={testId}>
+    <div
+      className="flex flex-wrap items-center justify-end gap-2"
+      data-testid={testId}
+    >
       {attachments.map((a) => {
         return (
           <MessageAttachment
@@ -6724,6 +6730,7 @@ function UserMessageAttachmentRow({
           />
         );
       })}
+      {children}
     </div>
   );
 }
@@ -6732,13 +6739,17 @@ function UserMessageAttachments({
   threadId,
   attachments,
   onImageClick,
+  voicePlayer,
+  hasBody,
 }: {
   threadId: string;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
+  voicePlayer: UserMessageRenderDocument["voicePlayer"];
+  hasBody: boolean;
 }) {
-  if (attachments.length === 0) {
-    return null;
+  if (attachments.length === 0 && (!voicePlayer || !hasBody)) {
+    return voicePlayer ? <VoiceMessagePlayer player={voicePlayer} /> : null;
   }
 
   // Keep the gap to the bubble or actions inside the attachment's hover surface.
@@ -6760,7 +6771,11 @@ function UserMessageAttachments({
         })}
         onImageClick={onImageClick}
         testId="message-file-attachments"
-      />
+      >
+        {voicePlayer ? (
+          <VoiceMessagePlayer player={voicePlayer} compact />
+        ) : null}
+      </UserMessageAttachmentRow>
     </div>
   );
 }
@@ -7516,6 +7531,8 @@ function UserMessageContent({
       <UserMessageAttachments
         threadId={threadId}
         attachments={elevatedAttachments}
+        voicePlayer={document.voicePlayer}
+        hasBody={hasBody}
         onImageClick={onImageClick}
       />
       {hasBody ? (
