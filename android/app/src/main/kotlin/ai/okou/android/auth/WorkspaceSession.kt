@@ -8,6 +8,8 @@ import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
+import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
 import ai.okou.android.api.generated.InputStatusVariant1
@@ -20,6 +22,7 @@ import ai.okou.android.api.generated.PersonalInstructions
 import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -96,6 +99,14 @@ interface WorkspaceSession :
     suspend fun organization(): Organization
 
     suspend fun preferences(): UserPreferences
+
+    suspend fun defaultModelPreference(): DefaultModelPreference
+
+    suspend fun updateDefaultModelPreference(
+        update: UpdateDefaultModelPreference
+    ): DefaultModelPreference
+
+    suspend fun featureSwitches(): FeatureSwitches
 
     suspend fun updatePreferences(update: UpdatePreferencesRequest): UserPreferences
 
@@ -211,6 +222,13 @@ class CanonicalWorkspaceSession(
     override suspend fun recoveryCatalog() = api.recoveryCatalog()
 
     override suspend fun recoveryModels() = api.recoveryModels()
+
+    override suspend fun defaultModelPreference() = api.defaultModelPreference()
+
+    override suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) =
+        api.updateDefaultModelPreference(update)
+
+    override suspend fun featureSwitches() = api.featureSwitches()
 
     override suspend fun recoverySubscriptions() = api.recoverySubscriptions()
 

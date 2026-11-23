@@ -48,6 +48,18 @@ class MemberPreferencesModelTest {
         override suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits =
             error("Credits are outside this fixture")
 
+        override suspend fun defaultModelPreference():
+            ai.okou.android.api.generated.DefaultModelPreference =
+            error("Default model is outside this fixture")
+
+        override suspend fun featureSwitches(): ai.okou.android.api.generated.FeatureSwitches =
+            error("Feature switches are outside this fixture")
+
+        override suspend fun updateDefaultModelPreference(
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+        ): ai.okou.android.api.generated.DefaultModelPreference =
+            error("Default model is outside this fixture")
+
         override suspend fun activateModelAccount(
             accountId: String
         ): ai.okou.android.api.generated.ActivatedModelAccount =

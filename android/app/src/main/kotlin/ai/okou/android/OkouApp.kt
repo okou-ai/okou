@@ -45,6 +45,7 @@ import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rowActions
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
+import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
@@ -97,6 +98,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -155,6 +157,9 @@ internal fun OkouApp(
     connectors: ConnectorModel? = null,
     workflows: WorkflowModel? = null,
     workflowTimezone: String = TimeZone.getDefault().id,
+    defaultModel: DefaultModelSettings? = null,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() },
+    feedbackInOverlay: Boolean = false,
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
     val listState =
@@ -215,6 +220,7 @@ internal fun OkouApp(
                 SettingsDestination.Overview
             else -> navigation.settings
         }
+    SideEffect { defaultModel?.showSettings(settings) }
     val requestedTarget = artifactSource?.let { WorkspaceTarget.Chat(it) } ?: navigation.target
     val restoringFirstSend =
         !workspaceReady &&
@@ -310,7 +316,6 @@ internal fun OkouApp(
             key(settings) { rememberScrollState() }
         else settingsPosition
     val conversations = rememberConversationUiState()
-    val snackbar = remember { SnackbarHostState() }
     val linkSnackbar = remember(chats) { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -1230,7 +1235,7 @@ internal fun OkouApp(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets.safeDrawing,
         snackbarHost = {
-            if (!showChatList && !showConversationFeedback) {
+            if (!feedbackInOverlay && !showChatList && !showConversationFeedback) {
                 WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 16.dp))
             }
         },
