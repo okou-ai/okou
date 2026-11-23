@@ -388,8 +388,12 @@ class ConversationRouteTest {
                 model.history.refresh()
             }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
-            val bar = compose.onNode(progress).assertIsDisplayed().getUnclippedBoundsInRoot()
-            assertEquals(conversation.getUnclippedBoundsInRoot().top, bar.top)
+            compose.onNode(progress).assertIsDisplayed()
+            val bar = compose.onNodeWithTag("history_sync_progress").getUnclippedBoundsInRoot()
+            val viewport = conversation.getUnclippedBoundsInRoot()
+            assertEquals(viewport.top, bar.top)
+            assertEquals(viewport.left, bar.left)
+            assertEquals(viewport.right, bar.right)
             assertEquals(4.dp, bar.bottom - bar.top)
             assertEquals(bounds, reply.getUnclippedBoundsInRoot())
         } finally {
@@ -400,8 +404,9 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun slowSyncKeepsTheRunningStatusInPlaceWithoutAddingANotice() {
-        val model = openScrollHistory(AtomicInteger(12))
+    fun staleSyncLetsTheRunningStatusProvideFeedbackWithoutMovingIt() {
+        var now = System.currentTimeMillis()
+        val model = openScrollHistory(AtomicInteger(12), wallMillis = { now })
         val status =
             compose.onNodeWithText(compose.activity.getString(R.string.conversation_processing))
         status.assertIsDisplayed()
@@ -416,16 +421,19 @@ class ConversationRouteTest {
             historyRows(request)
         }
         try {
-            compose.runOnIdle { model.history.refresh() }
+            compose.runOnIdle {
+                now += 600_001
+                model.history.refresh()
+            }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
-            compose.mainClock.advanceTimeBy(300)
-            compose.onNodeWithText(syncLabel).assertDoesNotExist()
+            assertTrue(model.history.uiState.value.syncingStaleCache)
+            compose.onNode(hasContentDescription(syncLabel)).assertDoesNotExist()
             assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
         } finally {
             allowRefreshResponse.countDown()
         }
         compose.waitUntil(5_000) {
-            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+            model.history.uiState.value.phase != HistoryPhase.Loading
         }
         assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
         assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
@@ -433,7 +441,7 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun slowSyncLetsTheQueuedInputCardProvideFeedback() {
+    fun staleSyncLetsTheQueuedInputCardProvideFeedback() {
         val eventId = scrollEventId(40)
         val prompt = "Please check the launch notes"
         val queuedInput =
@@ -453,7 +461,8 @@ class ConversationRouteTest {
                 """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":40},"hasMore":false}""",
             )
         }
-        val model = createListModel()
+        var now = System.currentTimeMillis()
+        val model = createListModel(wallMillis = { now })
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
@@ -480,11 +489,14 @@ class ConversationRouteTest {
             }
         }
         try {
-            compose.runOnIdle { model.history.refresh() }
+            compose.runOnIdle {
+                now += 600_001
+                model.history.refresh()
+            }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
-            compose.mainClock.advanceTimeBy(300)
+            assertTrue(model.history.uiState.value.syncingStaleCache)
             compose
-                .onNodeWithText(compose.activity.getString(R.string.history_syncing))
+                .onNode(hasContentDescription(compose.activity.getString(R.string.history_syncing)))
                 .assertDoesNotExist()
             assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
             compose.onNodeWithText(prompt).assertIsDisplayed()
@@ -774,6 +786,7 @@ class ConversationRouteTest {
     private fun openScrollHistory(
         received: AtomicInteger,
         showConversation: State<Boolean>? = null,
+        wallMillis: () -> Long = System::currentTimeMillis,
     ): ChatListModel {
         fixture.historyRows = { request ->
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
@@ -797,7 +810,7 @@ class ConversationRouteTest {
                 """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
             )
         }
-        val model = createListModel()
+        val model = createListModel(wallMillis = wallMillis)
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme {

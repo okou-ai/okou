@@ -125,7 +125,6 @@ internal fun ConversationRoute(
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
     val waitingForHistory =
         historyAvailable &&
-            !list.offline &&
             !hasContent &&
             !firstReadFailed &&
             (thread == null || state.phase == HistoryPhase.Loading)
@@ -194,7 +193,6 @@ internal fun ConversationRoute(
             state.phase == HistoryPhase.Loading &&
             (state.consecutiveReadFailures >= 3 ||
                 state.syncingStaleCache &&
-                    !list.offline &&
                     activity == null &&
                     !showControlFeedback &&
                     queue.isEmpty() &&
@@ -336,8 +334,14 @@ internal fun ConversationRoute(
         if (onLinkUnavailable != null) {
             val missingLinkTarget =
                 positioned && linkTarget != null && readingTarget === linkTarget && foundIndex < 0
-            LaunchedEffect(missing, firstReadFailed, missingLinkTarget, linkPosition) {
-                if (missing || firstReadFailed || missingLinkTarget) onLinkUnavailable()
+            // The first failed read follows local cache lookup. An offline link without local
+            // content returns to its source instead of keeping an unreachable destination open.
+            val offlineWithoutHistory =
+                list.offline && thread != null && !hasContent && state.consecutiveReadFailures > 0
+            val linkUnavailable =
+                missing || firstReadFailed || missingLinkTarget || offlineWithoutHistory
+            LaunchedEffect(linkUnavailable, linkPosition) {
+                if (linkUnavailable) onLinkUnavailable()
             }
         }
         val awaitingFindPosition = foundIndex >= 0 && pendingFind != null
@@ -547,6 +551,7 @@ internal fun ConversationRoute(
                         item(key = TimelineInitial) {
                             when {
                                 missing -> Text(stringResource(R.string.history_missing))
+                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
                                 list.offline && !hasContent ->
                                     Text(stringResource(R.string.conversation_history_offline))
                                 firstReadFailed ->
@@ -558,7 +563,6 @@ internal fun ConversationRoute(
                                             reconnect != null ||
                                                 state.phase != HistoryPhase.Loading,
                                     )
-                                waitingForHistory -> if (showSkeleton) ConversationSkeleton()
                                 transcript != null && queue.isEmpty() ->
                                     Text(stringResource(R.string.history_empty))
                             }
@@ -605,15 +609,16 @@ internal fun ConversationRoute(
                 if (showHistoryProgress) {
                     val label = stringResource(R.string.history_syncing)
                     val colors = MaterialTheme.colorScheme
-                    LinearProgressIndicator(
-                        Modifier.fillMaxWidth()
-                            .height(4.dp)
-                            .testTag("history_sync_progress")
-                            .semantics { contentDescription = label },
-                        color = colors.primary,
-                        trackColor =
-                            colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                    )
+                    Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
+                        LinearProgressIndicator(
+                            Modifier.fillMaxWidth().height(4.dp).semantics {
+                                contentDescription = label
+                            },
+                            color = colors.primary,
+                            trackColor =
+                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+                        )
+                    }
                 }
             }
             if (showComposerStatus) ConversationStatus(list.offline, controls, short = false)
