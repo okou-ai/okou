@@ -115,7 +115,12 @@ async function customize() {
   return screen.findByRole("textbox");
 }
 async function verifyCopy(writes: readonly string[], url: string) {
-  click(button("Copy link"));
+  const copy = await waitFor(() => {
+    const control = button("Copy link");
+    expect(control).toBeEnabled();
+    return control;
+  });
+  click(copy);
   await waitFor(() => {
     return expect(writes).toStrictEqual([url]);
   });
@@ -173,6 +178,7 @@ test("hosted-site-sharing-007 Cancelling a conflicting address change keeps the 
   );
   expect(input).toHaveValue("conflicting-title");
   click(button("Cancel"));
+  await currentAddressRow();
   await verifyCopy(clip.writes, link("planning-board"));
 });
 test("hosted-site-sharing-002 Saving the validated address updates the preview without copying until requested", async () => {
