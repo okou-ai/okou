@@ -7712,6 +7712,22 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
   );
 }
 
+function useLatestTurnScrollRoomClass(
+  thread: ChatPanelSignals,
+  eventId: string,
+) {
+  const enabled =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ChatLatestTurnScrollRoom
+    ];
+  const latestUserTurnId = useGet(thread.locator.latestUserTurnId$);
+  // Extend scrollable overflow from the prompt without changing the height
+  // of its row or virtual page. The inset matches the transcript's py-4.
+  return enabled && latestUserTurnId === eventId
+    ? "after:pointer-events-none after:absolute after:top-0 after:start-0 after:h-[calc(100cqb-1rem)] after:w-px"
+    : undefined;
+}
+
 function PagedUserMessage({
   event,
   thread,
@@ -7747,16 +7763,10 @@ function PagedUserMessage({
   };
   const copyEvent = useSet(thread.copyEvent$);
   const sharingPhase = useGet(thread.sharing.phase$);
-  const switches = useLastResolved(featureSwitches$);
-  const nameLine = switches?.[FeatureSwitchKey.ChatReplyNameLine] === true;
-  const latestUserTurnId = useGet(thread.locator.latestUserTurnId$);
-  // Extend scrollable overflow from the prompt without changing the height
-  // of its row or virtual page. The inset matches the transcript's py-4.
-  const scrollRoomClass =
-    switches?.[FeatureSwitchKey.ChatLatestTurnScrollRoom] &&
-    latestUserTurnId === event.id
-      ? "after:pointer-events-none after:absolute after:top-0 after:start-0 after:h-[calc(100cqb-1rem)] after:w-px"
-      : undefined;
+  const nameLine =
+    useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
+    true;
+  const scrollRoomClass = useLatestTurnScrollRoomClass(thread, event.id);
   // Under `chatReplyNameLine` a selected group is tinted, so sharing drops the
   // empty copy row together with the pull measured against it.
   const collapseForSharing = nameLine && sharingPhase !== "idle";
