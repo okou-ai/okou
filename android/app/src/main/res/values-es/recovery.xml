@@ -17,4 +17,5 @@
     <string name="recovery_credits">Créditos de restablecimiento: %1$d</string>
     <string name="recovery_account">Cuenta del modelo: %1$s</string>
     <string name="recovery_reset_time">Restablecimiento del uso: %1$s</string>
+    <string name="recovery_reset_title">Restablecer el uso</string>
 </resources>

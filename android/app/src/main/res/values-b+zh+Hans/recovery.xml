@@ -17,4 +17,5 @@
     <string name="recovery_credits">重置额度：%1$d</string>
     <string name="recovery_account">模型账号：%1$s</string>
     <string name="recovery_reset_time">用量恢复时间：%1$s</string>
+    <string name="recovery_reset_title">重置用量</string>
 </resources>

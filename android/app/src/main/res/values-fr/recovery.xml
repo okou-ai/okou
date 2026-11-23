@@ -17,4 +17,5 @@
     <string name="recovery_credits">Crédits de réinitialisation : %1$d</string>
     <string name="recovery_account">Compte du modèle : %1$s</string>
     <string name="recovery_reset_time">Réinitialisation de l’utilisation : %1$s</string>
+    <string name="recovery_reset_title">Réinitialiser l’utilisation</string>
 </resources>

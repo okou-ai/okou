@@ -17,4 +17,5 @@
     <string name="recovery_credits">Créditos de redefinição: %1$d</string>
     <string name="recovery_account">Conta do modelo: %1$s</string>
     <string name="recovery_reset_time">Redefinição de uso: %1$s</string>
+    <string name="recovery_reset_title">Redefinir o uso</string>
 </resources>

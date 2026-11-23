@@ -589,6 +589,7 @@ internal class ChatComposerOwner(
                     checking = checkingTargets(),
                     recovering =
                         recovery?.let { mutable.value.recovering + it } ?: mutable.value.recovering,
+                    recoveryFailures = mutable.value.recoveryFailures - key,
                     failed = mutable.value.failed - key,
                     unobserved = mutable.value.unobserved - key,
                 )
@@ -1244,7 +1245,12 @@ internal class ChatComposerOwner(
                     put(op.key, entry.copy(pending = null))
             }
             report(op.connection, error)
-            mutable.value = mutable.value.copy(failed = mutable.value.failed + op.key)
+            val state = mutable.value
+            val recovery = op.recovery?.first
+            mutable.value =
+                if (recovery != null && state.journal?.entries?.get(op.key)?.pending == null)
+                    state.copy(recoveryFailures = state.recoveryFailures + (op.key to recovery))
+                else state.copy(failed = state.failed + op.key)
         }
     }
 
