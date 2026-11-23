@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1165.0](https://github.com/okou-ai/okou/compare/app-v0.1164.1...app-v0.1165.0) (2026-11-23)
+
+
+### Features
+
+* use the first follow-up as the composer placeholder behind a switch ([#50040](https://github.com/okou-ai/okou/issues/50040)) ([0d24270](https://github.com/okou-ai/okou/commit/0d24270d99eb810341fd81597c7c3e74ef718b07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.860.0
+    * @okouai/ui bumped to 1.21.98
+
 ## [0.1164.1](https://github.com/okou-ai/okou/compare/app-v0.1164.0...app-v0.1164.1) (2026-11-23)
 
 

@@ -10,6 +10,27 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.104.3](https://github.com/okou-ai/okou/compare/api-v2.104.2...api-v2.104.3) (2026-11-23)
+
+
+### Bug Fixes
+
+* **billing:** retire canceled legacy plan conversions ([#49529](https://github.com/okou-ai/okou/issues/49529)) ([0a7f08d](https://github.com/okou-ai/okou/commit/0a7f08d090e9d8e407418f2f7da465288b0fb895)) [#49527](https://github.com/okou-ai/okou/issues/49527)
+
+
+### Refactoring
+
+* **api:** read custom connector skills from their owning rows ([#50060](https://github.com/okou-ai/okou/issues/50060)) ([6f0ea3d](https://github.com/okou-ai/okou/commit/6f0ea3d5f562bff447cfc7f0093fb44ea7acaaff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.860.0
+    * @okouai/db bumped to 2.58.12
+    * @okouai/pi-agent-runtime bumped to 1.52.41
+
 ## [2.104.2](https://github.com/okou-ai/okou/compare/api-v2.104.1...api-v2.104.2) (2026-11-23)
 
 
