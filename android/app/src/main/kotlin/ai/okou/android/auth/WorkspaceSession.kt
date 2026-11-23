@@ -252,6 +252,8 @@ class CanonicalWorkspaceSession(
 
     override suspend fun indicators() = api.indicators()
 
+    override suspend fun draftThreadIds() = api.draftThreadIds()
+
     override suspend fun newChatReady(): Boolean {
         val status = api.onboardingStatus()
         return status.hasOrg && !status.needsOnboarding

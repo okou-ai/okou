@@ -200,7 +200,13 @@ class ChatListApiFixture : Closeable {
     }
     val identity: WorkspaceIdentity
     val service: CanonicalWorkspaceSession
+    @Volatile var draftIndex: () -> MockResponse = { jsonResponse("""{"draftThreadIds":[]}""") }
+
     private val composerDrafts = ConcurrentHashMap<String, JsonObject>()
+
+    fun setThreadDraft(threadId: String, text: String) {
+        composerDrafts["chat-threads:$threadId"] = plainDraftDocument(text)
+    }
 
     init {
         server.dispatcher =
@@ -260,6 +266,11 @@ class ChatListApiFixture : Closeable {
                         "/api/chat/events/catch-up" -> historyCatchUp(request)
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
+                        "/api/chat-thread-drafts" -> draftIndex()
+                        "/api/onboarding/status" ->
+                            jsonResponse(
+                                """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
+                            )
                         "/api/indicators" -> indicators()
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)

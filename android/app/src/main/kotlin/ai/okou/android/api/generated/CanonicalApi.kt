@@ -469,6 +469,9 @@ internal interface CanonicalApi {
         @Query("includeActiveUnread") `queryIncludeActiveUnread`: String? = null,
     ): Response<Indicators>
 
+    @GET("/api/chat-thread-drafts")
+    suspend fun `chatDraftIndex`(@Header("Authorization") token: String): Response<ChatDraftIndex>
+
     @GET("/api/projects/snapshot")
     suspend fun `projectSnapshot`(@Header("Authorization") token: String): Response<ProjectSnapshot>
 

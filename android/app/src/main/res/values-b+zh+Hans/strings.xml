@@ -89,8 +89,8 @@
     <string name="instructions_reload">加载最新版本并放弃更改</string>
     <string name="instructions_discard">放弃更改</string>
     <string name="instructions_retry_save">重试同一次保存</string>
-    <string name="composer_new">新对话</string>
-    <string name="composer_new_project">在此项目中新建对话</string>
+    <string name="composer_new">新聊天</string>
+    <string name="composer_new_project">在项目中新建聊天</string>
     <string name="composer_message">发消息</string>
     <string name="composer_send">发送</string>
     <string name="composer_local_failed">草稿更改未能保存到此设备。</string>

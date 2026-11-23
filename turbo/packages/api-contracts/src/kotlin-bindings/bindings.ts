@@ -103,6 +103,11 @@ const chatReadBindings = [
     route: chatThreadsContract.indicators,
   },
   {
+    name: "chatDraftIndex",
+    response: "ChatDraftIndex",
+    route: chatThreadsContract.drafts,
+  },
+  {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
     route: projectsContract.snapshot,

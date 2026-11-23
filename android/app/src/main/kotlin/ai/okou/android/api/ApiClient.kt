@@ -241,6 +241,8 @@ class ApiClient(
         indicators(it, queryIncludeActiveUnread = "true")
     }
 
+    suspend fun draftThreadIds(): List<String> = read { chatDraftIndex(it) }.draftThreadIds
+
     suspend fun createThread(body: CreateThreadRequest) = write(201) { createThread(it, body) }
 
     suspend fun sendInput(body: SendRequest) = write(201) { sendInput(it, body) }

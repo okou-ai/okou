@@ -187,6 +187,7 @@ data class ChatListUiState(
     val projectList: ProjectListUiState = ProjectListUiState(),
     internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
+    internal val draftThreadIds: Set<String>? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
@@ -401,10 +402,20 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
+    private var draftIndexRead: DraftIndexRead? = null
+    internal var draftIndexRequestVersion = 0L
+        private set
+
+    private var confirmedDraftIndexVersion = 0L
     private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
+
+    private class DraftIndexRead {
+        val presenceOverrides = mutableMapOf<String, Boolean>()
+        var job: Job? = null
+    }
 
     private class ListReadBatch {
         var refresh = false
@@ -537,6 +548,11 @@ class ChatListModel(
                         listRetryProgressVisible =
                             state.listRetryProgressVisible || (!online && staleListRead(state)),
                     )
+                if (!online) {
+                    val staleRead = draftIndexRead
+                    draftIndexRead = null
+                    staleRead?.job?.cancel()
+                }
                 refreshOnReconnect = online
                 updateListRetryVisibility()
             }
@@ -1417,6 +1433,7 @@ class ChatListModel(
         requestListRead(resetCompletedActivity = true)
         refreshMetadata()
         refreshIndicators()
+        refreshDraftIndex()
     }
 
     internal fun listVisibilityChanged(visible: Boolean) {
@@ -1427,6 +1444,7 @@ class ChatListModel(
             val state = mutable.value
             if (state.projectsPhase == ChatReadPhase.Failed) refreshMetadata()
             if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
+            refreshDraftIndex()
         }
     }
 
@@ -1805,6 +1823,48 @@ class ChatListModel(
 
     fun refreshIndicators() {
         if (!mutable.value.offline) readIndicators()
+    }
+
+    private fun refreshDraftIndex() {
+        if (!current() || mutable.value.offline || draftIndexRead != null) return
+        val read = DraftIndexRead()
+        val version = ++draftIndexRequestVersion
+        draftIndexRead = read
+        read.job = viewModelScope.launch {
+            try {
+                val ids = service.draftThreadIds().toMutableSet()
+                requireCurrent()
+                for ((id, present) in read.presenceOverrides) {
+                    if (present) ids.add(id) else ids.remove(id)
+                }
+                confirmedDraftIndexVersion = version
+                mutable.value = mutable.value.copy(draftThreadIds = ids)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                onFailure(error)
+            } finally {
+                if (draftIndexRead === read) draftIndexRead = null
+            }
+        }
+    }
+
+    internal fun confirmDraftPresence(
+        threadId: String,
+        present: Boolean,
+        indexVersionAtStart: Long = draftIndexRequestVersion,
+    ) {
+        if (!current() || indexVersionAtStart < confirmedDraftIndexVersion) return
+        // Compare reads by request start. Acknowledged saves use the latest version on completion.
+        if (indexVersionAtStart == draftIndexRequestVersion)
+            draftIndexRead?.presenceOverrides?.set(threadId, present)
+        val state = mutable.value
+        val ids = state.draftThreadIds ?: return
+        if ((threadId in ids) != present) {
+            val updated = if (present) ids + threadId else ids - threadId
+            mutable.value = state.copy(draftThreadIds = updated)
+        }
     }
 
     private fun continueUnreadRead(): Boolean =

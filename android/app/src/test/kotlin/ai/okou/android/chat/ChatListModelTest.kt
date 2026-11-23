@@ -4247,6 +4247,101 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     @Test
+    fun savedLocalDraftsFillTheListUntilTheIndexBecomesAuthoritative() {
+        val drafts =
+            mapOf(
+                "thread:$CHAT_PERSONAL" to EditableComposerDraft("Cached draft"),
+                "thread:$CHAT_IN_PROJECT" to EditableComposerDraft("\u00a0", dirty = true),
+                "thread:edited" to EditableComposerDraft("New edits", dirty = true),
+                "new:" to EditableComposerDraft("New chat draft", dirty = true),
+            )
+        assertEquals(setOf(CHAT_PERSONAL, "edited"), draftThreadIdsForList(null, drafts))
+        assertEquals(
+            setOf("remote-draft", "edited"),
+            draftThreadIdsForList(setOf(CHAT_IN_PROJECT, "remote-draft"), drafts),
+        )
+        assertEquals(setOf("edited"), draftThreadIdsForList(emptySet(), drafts))
+    }
+
+    @Test
+    fun draftIndexDoesNotGateRowsAndKeepsSavesMadeDuringTheRead() = runTest {
+        val reply = CompletableDeferred<List<String>>()
+        var requests = 0
+        val service =
+            object : Service() {
+                override suspend fun draftThreadIds(): List<String> {
+                    if (++requests == 1) return reply.await()
+                    throw ApiFailure.Network(IOException("No response"))
+                }
+            }
+        withCatchUpModel(service) { model ->
+            val earlierDetailRead = model.draftIndexRequestVersion
+            model.refresh()
+            runCurrent()
+            assertTrue(model.uiState.value.threads.isNotEmpty())
+            assertNull(model.uiState.value.draftThreadIds)
+            model.refresh()
+            runCurrent()
+            assertEquals(1, requests)
+
+            model.confirmDraftPresence(CHAT_PERSONAL, true)
+            model.confirmDraftPresence(CHAT_IN_PROJECT, false)
+            model.confirmDraftPresence("opened-thread", true, model.draftIndexRequestVersion)
+            reply.complete(listOf(CHAT_IN_PROJECT, "unrelated-thread"))
+            runCurrent()
+            model.confirmDraftPresence("unrelated-thread", false, earlierDetailRead)
+            assertEquals(
+                setOf(CHAT_PERSONAL, "opened-thread", "unrelated-thread"),
+                model.uiState.value.draftThreadIds,
+            )
+
+            model.refresh()
+            runCurrent()
+            assertEquals(2, requests)
+            assertEquals(
+                setOf(CHAT_PERSONAL, "opened-thread", "unrelated-thread"),
+                model.uiState.value.draftThreadIds,
+            )
+        }
+    }
+
+    @Test
+    fun reconnectRefreshesDraftsWhileThePreviousConnectionIsStillFinishing() = runTest {
+        val connected = MutableStateFlow(true)
+        val previousConnection = CompletableDeferred<List<String>>()
+        var requests = 0
+        val service =
+            object : Service() {
+                override suspend fun draftThreadIds(): List<String> {
+                    if (++requests == 1)
+                        return withContext(NonCancellable) {
+                            previousConnection.await()
+                        }
+                    return listOf(CHAT_PERSONAL)
+                }
+            }
+        withCatchUpModel(service, connectivity = connected) { model ->
+            try {
+                model.refresh()
+                runCurrent()
+                assertEquals(1, requests)
+
+                connected.value = false
+                runCurrent()
+                connected.value = true
+                runCurrent()
+                assertEquals(setOf(CHAT_PERSONAL), model.uiState.value.draftThreadIds)
+
+                previousConnection.complete(listOf(CHAT_IN_PROJECT))
+                runCurrent()
+                assertEquals(setOf(CHAT_PERSONAL), model.uiState.value.draftThreadIds)
+            } finally {
+                previousConnection.complete(emptyList())
+            }
+        }
+    }
+
+    @Test
     fun listRetriesUseTheDesignScheduleAndResetAfterSuccess() = runTest {
         val service = Service()
         withCatchUpModel(service) { model ->
