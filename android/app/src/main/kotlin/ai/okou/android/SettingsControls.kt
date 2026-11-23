@@ -202,6 +202,7 @@ internal fun SettingsSwitchRow(
     leading: @Composable () -> Unit,
     checked: Boolean?,
     onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
     val action =
@@ -213,7 +214,8 @@ internal fun SettingsSwitchRow(
             }
         }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),

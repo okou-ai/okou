@@ -20,6 +20,7 @@ import ai.okou.android.preferences.PreferenceFeedback
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.EmailSubscriptionSetting
+import ai.okou.android.settings.ProactiveSettingsPage
 import ai.okou.android.settings.WorkspaceSettingsDataPage
 import ai.okou.android.settings.WorkspaceSettingsFeedback
 import ai.okou.android.settings.WorkspaceSettingsProgress
@@ -286,6 +287,17 @@ private fun WorkspaceSettingsContent(
             else WorkspaceSettingsDataPage(destination, ready.organization.name, ready.settings)
         }
         SettingsDestination.Account -> AccountSettings(account, signOut)
+        SettingsDestination.ProactiveServices -> {
+            val proactive = ready?.settings?.proactive
+            if (ready != null && proactive != null) {
+                ProactiveSettingsPage(
+                    ready.organization.name,
+                    proactive,
+                    ready.preferences,
+                    snackbar,
+                )
+            } else WorkspaceSettingsPreparation(state, retry)
+        }
         SettingsDestination.Overview,
         SettingsDestination.Instructions -> {
             val instructionsOpen = destination == SettingsDestination.Instructions
@@ -341,6 +353,15 @@ private fun WorkspaceSettingsContent(
                 myOkou = {
                     InstructionsSetting(instructionsOpen, ready != null) {
                         open(SettingsDestination.Instructions)
+                    }
+                    if (ready?.settings?.proactive != null) {
+                        HorizontalDivider()
+                        SettingsRow(
+                            stringResource(R.string.settings_proactive_services),
+                            leading = { SettingsIcon(R.drawable.ic_auto_awesome) },
+                            modifier = focusFor(SettingsDestination.ProactiveServices),
+                            onClick = { openPage(SettingsDestination.ProactiveServices) },
+                        )
                     }
                 },
                 account = {

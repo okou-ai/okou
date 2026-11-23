@@ -171,6 +171,20 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun missingServerTimezoneCanConfirmTheExistingLocalZone() = check { model, api, _ ->
+        val timezone = model.uiState.value.timezone
+        model.selectTimezone(timezone)
+        runCurrent()
+        assertTrue(api.requests.isEmpty())
+
+        model.selectTimezone(timezone, missingOnServer = true)
+        runCurrent()
+        assertEquals(listOf(timezone), api.requests.map { it.timezone })
+        assertEquals(timezone, model.uiState.value.confirmed.timezone)
+        assertEquals(1L, model.uiState.value.timezoneConfirmation)
+    }
+
+    @Test
     fun heldSaveKeepsTheLatestChoicesAndSerializesTheNextPatch() {
         val gate = CompletableDeferred<Unit>()
         val service =
