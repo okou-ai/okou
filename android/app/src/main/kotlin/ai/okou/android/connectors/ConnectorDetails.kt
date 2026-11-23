@@ -360,22 +360,14 @@ internal fun ConnectorDetails(
     }
 
     if (panel != null && entry != null) {
-        val unavailableMessage =
-            when {
-                panel == ConnectorPanel.Authorize && detailUnavailable ->
-                    R.string.connector_load_failed
-                panel != ConnectorPanel.Permissions && accountId != null && account == null ->
-                    R.string.connector_account_unavailable
-                else -> null
-            }
-        if (unavailableMessage != null) {
+        if (panel != ConnectorPanel.Permissions && accountId != null && account == null) {
             ConnectorSheet(
                 entry.name,
                 ::dismissPanel,
                 dismissible = !busy,
                 actions = { ConnectorCloseAction(::dismissPanel, enabled = !busy) },
             ) {
-                ConnectorStatusBanner(unavailableMessage)
+                ConnectorStatusBanner(R.string.connector_account_unavailable)
                 ConnectorActionFeedback(action)
             }
         } else {
@@ -429,17 +421,17 @@ internal fun ConnectorDetails(
                         )
                     }
                 ConnectorPanel.Authorize ->
-                    if (detail != null) {
-                        ConnectorAuthorizationSheet(
-                            model,
-                            detail,
-                            account,
-                            addingAccount = accounts.isNotEmpty(),
-                            canModify,
-                            action,
-                            ::dismissPanel,
-                        )
-                    }
+                    ConnectorAuthorizationSheet(
+                        model = model,
+                        service = entry.name,
+                        detail = state.detail,
+                        offline = state.offline,
+                        account = account,
+                        addingAccount = accounts.isNotEmpty(),
+                        canModify = canModify,
+                        action = action,
+                        cancel = ::dismissPanel,
+                    )
                 null -> Unit
             }
         }
