@@ -5,6 +5,7 @@
     <string name="conversation_queue_message">Messaggio</string>
     <plurals name="conversation_queue_attachments">
         <item quantity="one">Messaggio · %d allegato</item>
+        <item quantity="many">Messaggio · %d allegati</item>
         <item quantity="other">Messaggio · %d allegati</item>
     </plurals>
     <string name="conversation_run_queued">In attesa di avvio</string>
