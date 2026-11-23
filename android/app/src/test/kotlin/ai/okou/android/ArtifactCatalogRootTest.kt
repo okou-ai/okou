@@ -21,8 +21,10 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -33,7 +35,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -405,7 +406,7 @@ class ArtifactCatalogRootTest {
             } else respond(request)
         }
         compose.runOnIdle { app.connectivity.value = true }
-        awaitText("Temporarily unavailable")
+        awaitText("Temporarily unable to load preview")
 
         compose.onNodeWithText(body, substring = true).assertIsDisplayed()
         compose.onNodeWithText("View source conversation").assertIsEnabled()
@@ -428,6 +429,91 @@ class ArtifactCatalogRootTest {
         compose.onNodeWithText(body, substring = true).assertDoesNotExist()
         compose.onNodeWithText("View source conversation").assertIsEnabled()
         assertEquals(1, rejectedReferences.get())
+    }
+
+    @Test
+    fun missingWebsiteGrantKeepsTheFrameAndSourceWhenConnectivityDrops() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/host/sites/fixture/preview") {
+                MockResponse().setResponseCode(404)
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.site.title)
+        compose.onNodeWithText(fixture.site.title).performClick()
+        awaitText("Source unavailable")
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val frameBounds = frame.getUnclippedBoundsInRoot()
+        val source = compose.onNodeWithText("View source conversation")
+        source.assertIsEnabled()
+
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { artifactModel.state.value.offline }
+        compose.onNodeWithText("Source unavailable").assertIsDisplayed()
+        compose.onNodeWithText("Temporarily unable to load preview").assertDoesNotExist()
+        source.assertIsEnabled()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun missingWebsiteDocumentKeepsTheSourceStatusUntilReconnectReloads() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        openWebsite(fixture)
+        val view = checkNotNull(websiteView())
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val frameBounds = frame.getUnclippedBoundsInRoot()
+        failWebsiteDocument(view, 404)
+        awaitText("Source unavailable")
+        compose.mainClock.advanceTimeBy(6_000)
+        assertNull(websiteView())
+        assertEquals(1, fixture.requestedSiteGrants.size)
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+        val browser = compose.onNodeWithText("Open in browser")
+        browser.assertIsEnabled()
+
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { artifactModel.state.value.offline }
+        compose.onNodeWithText("Source unavailable").assertIsDisplayed()
+        browser.assertDoesNotExist()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
+        assertEquals(2, fixture.requestedSiteGrants.size)
+        compose.onNodeWithText("Source unavailable").assertDoesNotExist()
+        browser.assertIsEnabled()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun websiteDenialSurvivesDisconnectionBeforeTheNextFrame() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        openWebsite(fixture)
+        val view = checkNotNull(websiteView())
+        val model = artifactModel
+        val connectivity = app.connectivity
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val frameBounds = frame.getUnclippedBoundsInRoot()
+        compose.mainClock.autoAdvance = false
+        try {
+            failWebsiteDocument(view, 403)
+            compose.runOnIdle { connectivity.value = false }
+            compose.waitUntil(10_000) { model.state.value.offline }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+
+        compose.onNodeWithText("You don’t have access to this artifact").assertIsDisplayed()
+        compose.onNodeWithText("Open in browser").assertDoesNotExist()
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
     }
 
     @Test
@@ -455,7 +541,7 @@ class ArtifactCatalogRootTest {
         assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
 
         failWebsiteDocument(retry)
-        awaitText("Temporarily unavailable")
+        awaitText("Temporarily unable to load preview")
         compose.mainClock.advanceTimeBy(6_000)
         assertNull(websiteView())
         assertEquals(2, grantAttempts.get())
@@ -474,7 +560,7 @@ class ArtifactCatalogRootTest {
             view.webViewClient.onPageCommitVisible(view, checkNotNull(shadowOf(view).lastLoadedUrl))
         }
         failWebsiteDocument(view)
-        awaitText("Temporarily unavailable")
+        awaitText("Temporarily unable to load preview")
         compose.mainClock.advanceTimeBy(6_000)
         assertNull(websiteView())
         assertEquals(1, fixture.requestedSiteGrants.size)
@@ -511,7 +597,7 @@ class ArtifactCatalogRootTest {
             assertEquals(surfaceWidth.value * 9f / 16f, surfaceHeight.value, 1f)
 
             compose.runOnIdle { app.connectivity.value = false }
-            awaitText("Connect to load the preview")
+            awaitText("Temporarily unable to load preview")
             compose.onNodeWithText("Open in browser").assertDoesNotExist()
             assertEquals(surfaceBounds, surface.getUnclippedBoundsInRoot())
             assertEquals(sourceBounds, source.getUnclippedBoundsInRoot())
@@ -559,12 +645,13 @@ class ArtifactCatalogRootTest {
         val surface = compose.onNodeWithTag("artifact_preview_surface")
         awaitText("Open in browser")
         val initialBounds = surface.getUnclippedBoundsInRoot()
-        browser.performScrollTo().assertIsDisplayed()
+        assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
+        scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
         compose.runOnIdle { app.connectivity.value = false }
-        awaitText("Connect to load the preview")
+        awaitText("Temporarily unable to load preview")
         browser.assertDoesNotExist()
         assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
 
@@ -654,7 +741,7 @@ class ArtifactCatalogRootTest {
 
         val browser = compose.onNodeWithText("Open in browser")
         val surface = compose.onNodeWithTag("artifact_preview_surface")
-        awaitText("Connect to load the preview")
+        awaitText("Temporarily unable to load preview")
         val initialBounds = surface.getUnclippedBoundsInRoot()
         val width = initialBounds.right - initialBounds.left
         val height = initialBounds.bottom - initialBounds.top
@@ -666,12 +753,13 @@ class ArtifactCatalogRootTest {
         compose.runOnIdle { app.connectivity.value = true }
         awaitText("Open in browser")
         assertEquals(initialBounds, surface.getUnclippedBoundsInRoot())
-        browser.performScrollTo().assertIsDisplayed()
+        assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
+        scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
         compose.runOnIdle { app.connectivity.value = false }
-        awaitText("Connect to load the preview")
+        awaitText("Temporarily unable to load preview")
         assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
 
         val releaseGrant = CountDownLatch(1)
@@ -837,6 +925,12 @@ class ArtifactCatalogRootTest {
 
     private fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
 
+    private fun scrollWebsitePreview() {
+        compose
+            .onNode(hasScrollAction() and hasAnyDescendant(hasTestTag("artifact_preview_surface")))
+            .performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 180f) }
+    }
+
     private fun websiteView(): WebView? = compose.runOnIdle {
         compose.activity.window.decorView.website()
     }
@@ -850,7 +944,7 @@ class ArtifactCatalogRootTest {
         compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
     }
 
-    private fun failWebsiteDocument(view: WebView) {
+    private fun failWebsiteDocument(view: WebView, status: Int = 503) {
         compose.runOnIdle {
             val address = Uri.parse(checkNotNull(shadowOf(view).lastLoadedUrl))
             val request =
@@ -868,7 +962,7 @@ class ArtifactCatalogRootTest {
                     override fun getRequestHeaders() = emptyMap<String, String>()
                 }
             val response =
-                WebResourceResponse("text/plain", "UTF-8", 503, "Unavailable", emptyMap(), null)
+                WebResourceResponse("text/plain", "UTF-8", status, "Unavailable", emptyMap(), null)
             view.webViewClient.onReceivedHttpError(view, request, response)
         }
     }

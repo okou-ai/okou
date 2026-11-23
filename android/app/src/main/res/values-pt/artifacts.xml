@@ -35,7 +35,8 @@
     <string name="artifact_missing">Este artefato não está mais disponível</string>
     <string name="artifact_unavailable">Temporariamente indisponível</string>
     <string name="artifact_preview_unsupported">Não há prévia para este arquivo</string>
-    <string name="artifact_online_preview">Conecte-se para carregar a prévia</string>
+    <string name="artifact_preview_unavailable">Não foi possível carregar a prévia no momento</string>
+    <string name="artifact_preview_source_unavailable">Fonte indisponível</string>
     <string name="artifact_preview_only">Apenas prévia</string>
     <string name="artifact_source_name">Conversa de origem · %1$s</string>
     <string name="artifact_view_source">Ver conversa de origem</string>

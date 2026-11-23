@@ -34,8 +34,9 @@
     <string name="artifact_access_denied">你无权访问此成果</string>
     <string name="artifact_missing">此成果已不可用</string>
     <string name="artifact_unavailable">暂时无法加载</string>
-    <string name="artifact_preview_unsupported">此文件无法预览</string>
-    <string name="artifact_online_preview">联网后可预览</string>
+    <string name="artifact_preview_unsupported">此文件暂不支持预览</string>
+    <string name="artifact_preview_unavailable">暂时无法加载预览</string>
+    <string name="artifact_preview_source_unavailable">来源不可用</string>
     <string name="artifact_preview_only">仅供预览</string>
     <string name="artifact_source_name">来源对话 · %1$s</string>
     <string name="artifact_view_source">查看来源对话</string>

@@ -3,7 +3,13 @@ import {
   mockChatEventRows,
   normalizeMockChatEvents,
 } from "./chat-event-test-helpers.ts";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -237,6 +243,31 @@ test.each([19, 20])(
   },
 );
 
+function controlRevealFrames() {
+  let nextId = 0;
+  const callbacks = new Map<number, FrameRequestCallback>();
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+    const id = ++nextId;
+    callbacks.set(id, callback);
+    return id;
+  });
+  vi.spyOn(window, "cancelAnimationFrame").mockImplementation((id) => {
+    callbacks.delete(id);
+  });
+  return {
+    paint: async () => {
+      await act(() => {
+        const frame = [...callbacks];
+        for (const [id, callback] of frame) {
+          if (callbacks.delete(id)) {
+            callback(performance.now());
+          }
+        }
+      });
+    },
+  };
+}
+
 test("A tall transcript fills its visible history and remains pinned when a new reply arrives", async () => {
   const events = pagedTurns(26);
   let height = 600;
@@ -251,23 +282,22 @@ test("A tall transcript fills its visible history and remains pinned when a new 
   await waitFor(() => {
     expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
   });
+  const frames = controlRevealFrames();
   height = 7200;
   fireEvent.resize(window);
   events.push(...pagedTurn(27));
   publishRunUpdate();
+  await transcript.findByText("Locator answer 27");
+  for (const turn of [20, 13]) {
+    await frames.paint();
+    await frames.paint();
+    expect(transcript.getByText("Locator answer " + turn)).toBeVisible();
+  }
+  await frames.paint();
+  await frames.paint();
   const leading = requiredElement('[data-transcript-spacer="before"]', pane);
-  await waitFor(
-    () => {
-      for (const answer of [13, 20, 27]) {
-        expect(
-          transcript.queryByText("Locator answer " + answer),
-        ).toBeVisible();
-      }
-      expect(leading.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
-      expect(pane.scrollHeight - pane.clientHeight).toBe(pane.scrollTop);
-    },
-    { container: pane },
-  );
+  expect(leading.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+  expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
   expect(transcript.queryByText("Locator answer 1")).toBeNull();
 });
 

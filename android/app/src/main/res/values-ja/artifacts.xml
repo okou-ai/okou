@@ -35,7 +35,8 @@
     <string name="artifact_missing">この成果物は利用できなくなりました</string>
     <string name="artifact_unavailable">一時的に利用できません</string>
     <string name="artifact_preview_unsupported">このファイルはプレビューできません</string>
-    <string name="artifact_online_preview">接続するとプレビューを読み込めます</string>
+    <string name="artifact_preview_unavailable">現在プレビューを読み込めません</string>
+    <string name="artifact_preview_source_unavailable">ソースを利用できません</string>
     <string name="artifact_preview_only">プレビューのみ</string>
     <string name="artifact_source_name">元の会話 · %1$s</string>
     <string name="artifact_view_source">元の会話を表示</string>
