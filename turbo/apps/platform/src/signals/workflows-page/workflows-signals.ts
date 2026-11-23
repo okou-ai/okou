@@ -59,8 +59,12 @@ import {
   reloadWorkflowData$,
   workflowReloadVersion$,
 } from "./workflow-reload.ts";
-import { onRef, settle } from "../utils.ts";
-import { recordRecentWorkflowUse$ } from "../okou-page/recent-workflows.ts";
+import { detach, onRef, Reason } from "../utils.ts";
+import { rootSignal$ } from "../root-signal.ts";
+import {
+  prepareRecentWorkflowIds$,
+  recordRecentWorkflowUse$,
+} from "../okou-page/recent-workflows.ts";
 
 type WorkflowDetailActionDialog = "copy" | "delete" | null;
 export type WorkflowDetailTab = "automations" | "instructions" | "info";
@@ -1546,6 +1550,11 @@ export const runWorkflowAutomationNow$ = command(
     signal: AbortSignal,
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
     const workflowId = get(currentWorkflowId$);
+    const workflowUse = workflowId
+      ? await set(prepareRecentWorkflowIds$, [workflowId], signal)
+      : null;
+    signal.throwIfAborted();
+    const recencySignal = get(rootSignal$);
     const client = get(apiClient$)(workflowAutomationsContract);
     const result = await accept(
       client.run({
@@ -1555,11 +1564,12 @@ export const runWorkflowAutomationNow$ = command(
       [201],
     );
     signal.throwIfAborted();
-    if (workflowId) {
-      // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-      await settle(() => {
-        set(recordRecentWorkflowUse$, [workflowId], signal);
-      }, signal);
+    if (workflowUse) {
+      detach(
+        set(recordRecentWorkflowUse$, workflowUse, recencySignal),
+        Reason.Daemon,
+        "accepted automation workflow recency",
+      );
     }
     return result.body;
   },

@@ -161,6 +161,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.WorkflowRecencySync]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Workflow recency sync",
+    description:
+      "Sync recently used workflows across devices in each workspace.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",

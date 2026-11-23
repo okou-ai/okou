@@ -1,4 +1,5 @@
 import { visibleWorkflowCondition } from "../services/workflow-visibility";
+import { workflowRecencyRoutes } from "./workflow-recency";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
@@ -1750,6 +1751,7 @@ export const workflowsRoutes: readonly RouteEntry[] = [
     handler: authRoute(workflowReadAuth, listWorkflowsInner$),
   },
   // Registered before the `/:workflowId` routes so the static path wins.
+  ...workflowRecencyRoutes,
   {
     route: workflowsCollectionContract.composer,
     handler: authRoute(workflowReadAuth, listComposerWorkflowsInner$),

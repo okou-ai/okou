@@ -2,6 +2,7 @@ import {
   useGet,
   useLastLoadable,
   useLastResolved,
+  useLoadable,
   useSet,
 } from "ccstate-react";
 import type { ReactNode } from "react";
@@ -500,7 +501,8 @@ function useComposerWorkflowSuggestions(
   query: string | undefined,
 ) {
   const workflowsLoadable = useLastLoadable(composer.workflow.workflows$);
-  const recentIds = useGet(composer.suggestion.recentWorkflowIds$);
+  const recency = useLoadable(composer.suggestion.recentWorkflowIds$);
+  const recentIds = recency.state === "hasData" ? recency.data : [];
   // Empty drafts do not need the list; the last loadable can retain that
   // null while a request is in flight.
   const requested =
@@ -508,10 +510,13 @@ function useComposerWorkflowSuggestions(
   const workflows = buildComposerSlashWorkflows(requested ?? []);
   return {
     workflows:
-      query === undefined
+      query === undefined || recency.state === "loading"
         ? []
         : findWorkflowQueryMatches(workflows, query, recentIds),
-    loading: workflowsLoadable.state === "loading" || requested === null,
+    loading:
+      workflowsLoadable.state === "loading" ||
+      requested === null ||
+      recency.state === "loading",
   };
 }
 

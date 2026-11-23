@@ -4,6 +4,7 @@ import type { OfficialWorkflowParameterBinding as ApiOfficialWorkflowParameterBi
 
 export type WorkflowAttachments = ApiWorkflowAttachments;
 export type WorkflowAutomationEventConfig = JsonObject;
+export type RecentWorkflowIds = string[];
 export type OfficialWorkflowParameterBinding =
   ApiOfficialWorkflowParameterBinding;
 export type OfficialWorkflowParameterBindings =

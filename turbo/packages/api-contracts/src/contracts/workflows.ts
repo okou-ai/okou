@@ -1488,6 +1488,45 @@ export const workflowsCollectionContract = c.router({
     summary:
       "List the slash-command workflows the composer offers for the workspace member",
   },
+  recent: {
+    method: "GET",
+    path: "/api/workflows/recent",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ workflowIds: array(uuid()).nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "Read the workspace member's recently used workflows",
+  },
+  recordRecentUse: {
+    method: "POST",
+    path: "/api/workflows/recent/use",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()) }),
+    responses: {
+      200: object({ workflowIds: array(uuid()) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Move recently used workflows to the front of the member's history",
+  },
+  importRecent: {
+    method: "POST",
+    path: "/api/workflows/recent/import",
+    headers: authHeadersSchema,
+    body: object({ workflowIds: array(uuid()) }),
+    responses: {
+      200: object({ workflowIds: array(uuid()) }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary:
+      "Import legacy workflow history only before the member's first sync",
+  },
   create: {
     method: "POST",
     path: "/api/workflows",

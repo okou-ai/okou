@@ -1889,6 +1889,89 @@ test("Run a workflow automation now and promote it in the next composer overview
   });
 });
 
+test.each([false, true])(
+  "Run now navigates and keeps local recency while optional persistence fails=%s",
+  async (failPersistence) => {
+    mockWorkflowApis([salesResearch()]);
+    mockChatLifecycle(context, { threadId: AUTOMATION_RUN_THREAD_ID });
+    context.mocks.api(workflowAutomationsContract.run, ({ respond }) => {
+      return respond(201, {
+        runId: null,
+        chatThreadId: AUTOMATION_RUN_THREAD_ID,
+      });
+    });
+    context.mocks.api(workflowsCollectionContract.composer, ({ respond }) => {
+      return respond(200, [
+        {
+          id: OPS_WORKFLOW_ID,
+          name: "alpha",
+          displayName: null,
+          description: null,
+        },
+        {
+          id: SALES_WORKFLOW_ID,
+          name: "sales-research",
+          displayName: null,
+          description: null,
+        },
+      ]);
+    });
+    context.mocks.api(workflowsCollectionContract.recent, ({ respond }) => {
+      return respond(200, { workflowIds: [] });
+    });
+    const writing = context.mocks.deferred<void>();
+    const response = context.mocks.deferred<void>();
+    const bodies: string[][] = [];
+    context.mocks.api(
+      workflowsCollectionContract.recordRecentUse,
+      async ({ body, respond }) => {
+        bodies.push(body.workflowIds);
+        writing.resolve();
+        await response.promise;
+        return failPersistence
+          ? respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Recency unavailable",
+              },
+            })
+          : respond(200, { workflowIds: [SALES_WORKFLOW_ID] });
+      },
+    );
+
+    await setupWorkflowDetailPage(workflowDetailPath("automations"), {
+      [FeatureSwitchKey.WorkflowRecencySync]: true,
+    });
+    await waitFor(() => {
+      expect(buttonByText("Run now")).toBeInTheDocument();
+    });
+    click(buttonByText("Run now"));
+    await waitFor(() => {
+      expect(pathname()).toBe(`/chats/${AUTOMATION_RUN_THREAD_ID}`);
+    });
+    await writing.promise;
+    expect(bodies).toStrictEqual([[SALES_WORKFLOW_ID]]);
+    const editor = await findComposerEditor();
+    await fill(editor, "Draft /");
+    await waitFor(() => {
+      const menu = screen.getByTestId("slash-workflow-menu");
+      expect(
+        Array.from(
+          menu.querySelectorAll('[data-slot="slash-workflow-name"]'),
+          (element) => {
+            return element.textContent;
+          },
+        ),
+      ).toStrictEqual(["/sales-research", "/alpha"]);
+    });
+    response.resolve();
+    await fill(editor, "A new draft after running the workflow");
+    await waitFor(() => {
+      expect(buttonByText("Send")).toBeEnabled();
+    });
+  },
+);
+
 test("Create a Gmail new-message automation with match rules", async () => {
   const createBodies: WorkflowAutomationCreateRequest[] = [];
   mockWorkflowApis([salesResearch()]);

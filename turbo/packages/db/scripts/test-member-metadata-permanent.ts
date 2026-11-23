@@ -33,17 +33,32 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
     assert.deepEqual(created.modelSettings, {});
     assert.equal(created.cloudBrowserEnabledByDefault, true);
     assert.equal(created.onboardingDone, false);
+    assert.equal(created.recentWorkflowIds, null);
+
+    for (const invalidHistory of [{ workflowIds: [] }, [42], ["not-a-uuid"]]) {
+      await assert.rejects(
+        client.query(
+          "UPDATE org_members_metadata SET recent_workflow_ids = $1::jsonb WHERE org_id = $2 AND user_id = $3",
+          [JSON.stringify(invalidHistory), orgId, userId],
+        ),
+        /org_members_metadata_recent_workflow_ids_check/,
+      );
+    }
+    const recentWorkflowIds = [randomUUID(), randomUUID()];
 
     const [upserted] = await db
       .insert(orgMembersMetadata)
       .values(values)
       .onConflictDoUpdate({
         target: [orgMembersMetadata.orgId, orgMembersMetadata.userId],
-        set: { locale: "zh-Hans" },
+        set: { locale: "zh-Hans", recentWorkflowIds },
       })
       .returning();
     assert.ok(upserted);
     assert.equal(upserted.locale, "zh-Hans");
+    assert.deepEqual(upserted.recentWorkflowIds, recentWorkflowIds);
+    assert.equal(upserted.selectedModel, created.selectedModel);
+    assert.deepEqual(upserted.modelSettings, created.modelSettings);
     assert.equal(upserted.timezone, values.timezone);
     assert.equal(upserted.createdAt.getTime(), created.createdAt.getTime());
 
@@ -60,11 +75,13 @@ export async function validatePermanentMemberMetadata(databaseUrl: string) {
         theme: "dark",
         onboardingDone: true,
         cloudBrowserEnabledByDefault: false,
+        recentWorkflowIds: [],
       })
       .where(owner)
       .returning();
     assert.ok(updated);
     assert.equal(updated.theme, "dark");
+    assert.deepEqual(updated.recentWorkflowIds, []);
     assert.equal(updated.onboardingDone, true);
     assert.equal(updated.cloudBrowserEnabledByDefault, false);
     assert.equal(updated.locale, "zh-Hans");
