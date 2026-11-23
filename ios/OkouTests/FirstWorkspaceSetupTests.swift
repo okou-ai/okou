@@ -1,4 +1,3 @@
-import ClerkKit
 import XCTest
 
 @testable import Okou

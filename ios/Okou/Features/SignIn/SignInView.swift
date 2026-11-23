@@ -118,8 +118,8 @@ private struct WorkspaceSignInContent: View {
         .foregroundStyle(OkouColor.mutedForeground)
       if memberships.state == .loading && authentication.workspaces.isEmpty {
         OkouLoadingRow("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty && setup.invitations.isEmpty && memberships.error == nil
-        && authentication.errorMessage == nil
+      } else if authentication.workspaces.isEmpty && setup.invitations.isEmpty
+        && memberships.error == nil && authentication.errorMessage == nil
       {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
           Text("You need a workspace invitation to continue.")
