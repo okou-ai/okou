@@ -35,15 +35,14 @@ test("artifact-json-preview-001 reads the stored numeric literal in the catalog 
   });
   await setupPage({ context, path: "/artifacts?tab=file" });
   click(await findArtifactAction(summary.title));
-  const dialog = await screen.findByRole("dialog", {
-    name: "catalog.json preview",
-  });
-  const preview = within(dialog);
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  const preview = within(sidebar);
+  expect(preview.getByText(summary.title)).toBeVisible();
   click(await preview.findByLabelText('Expand "catalog"'));
   expect(preview.getByText("1.00")).toBeInTheDocument();
   click(preview.getByLabelText('Expand "items"'));
   expect(preview.getByText("[1]")).toBeInTheDocument();
-  click(getButtonByName("Source", dialog));
+  click(getButtonByName("Source", sidebar));
   expect(preview.getByText(source, { selector: "pre" }).textContent).toBe(
     source,
   );
