@@ -274,13 +274,23 @@ class ScreenshotScenario {
                     scenario.onActivity { check(it.resources.configuration.fontScale >= 1.99f) }
                     openRegionTimezone()
                     val note = "用于新建定时任务的默认时区。"
-                    val titleBounds = text("时区").visibleBounds
+                    val options = find(selector().scrollable(true).hasDescendant(By.textContains("加德满都")))
+                    text(note)
+                    device.waitForIdle()
                     val noteBounds = text(note).visibleBounds
-                    // Move the native lazy list and confirm that the header stays in place.
-                    find(selector().scrollable(true)).scroll(Direction.DOWN, 0.70f, 500)
-                    check(text("时区").visibleBounds == titleBounds)
-                    check(text(note).visibleBounds == noteBounds)
+                    fun titleAbove(noteTop: Int) =
+                        device.findObjects(selector().text("时区"))
+                            .map { it.visibleBounds }
+                            .filter { it.bottom <= noteTop }
+                            .maxByOrNull { it.bottom }
+                    val titleBounds = checkNotNull(titleAbove(noteBounds.top))
+                    check(options.scroll(Direction.DOWN, 0.70f, 500))
                     capture("region-timezone-short.png")
+                    val newNoteBounds = text(note).visibleBounds
+                    val newTitleBounds = titleAbove(newNoteBounds.top)
+                    check(newTitleBounds == titleBounds && newNoteBounds == noteBounds) {
+                        "Short-window header moved while the list scrolled. Title $titleBounds to $newTitleBounds. Note $noteBounds to $newNoteBounds."
+                    }
                 }
             } finally {
                 firstRead.countDown()
