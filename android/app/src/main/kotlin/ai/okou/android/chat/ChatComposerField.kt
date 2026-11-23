@@ -7,6 +7,7 @@ import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
+import ai.okou.android.workspaceListPaneWidth
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -91,7 +92,7 @@ internal fun ChatComposerField(
     val bottomInset =
         when {
             shortWindow -> 8.dp
-            window.width >= 840 -> 24.dp
+            workspaceListPaneWidth(window.width, window.height) != null -> ChatPaneBottomInset
             else -> 14.dp
         }
     val colors = MaterialTheme.colorScheme

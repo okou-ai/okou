@@ -33,6 +33,7 @@ import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
@@ -233,6 +234,22 @@ internal abstract class ChatListRootTestFixture {
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 internal class ChatListRootTest : ChatListRootTestFixture() {
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun floatingNewChatAlignsWithTheComposerInBothWideDestinations() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val newChat = compose.onNode(hasText("New chat") and hasClickAction())
+        val composer = compose.onNodeWithTag("chat_composer")
+        val actionBottom = newChat.assertIsDisplayed().getUnclippedBoundsInRoot().bottom
+        assertEquals(actionBottom, composer.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
+
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick().assertIsSelected()
+        assertEquals(actionBottom, newChat.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
+        assertEquals(actionBottom, composer.assertIsDisplayed().getUnclippedBoundsInRoot().bottom)
+    }
+
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
