@@ -136,13 +136,15 @@ internal constructor(
                 (state.confirmedThreads !== state.threads && !matchesMembership(state.threads))
         )
             return null
-        val name =
-            projectId?.let { id -> state.projects.firstOrNull { it.id == id }?.name ?: return null }
+        val name = projectId?.let { id ->
+            state.projects.firstOrNull { it.id == id }?.name ?: return null
+        }
         return if (projectName == name) this else copy(projectName = name)
     }
 
-    private fun matchesMembership(threads: List<ConfirmedChat>): Boolean =
-        threads.any { it.id == threadId && it.hidden != true && it.projectId == projectId }
+    private fun matchesMembership(threads: List<ConfirmedChat>): Boolean = threads.any {
+        it.id == threadId && it.hidden != true && it.projectId == projectId
+    }
 }
 
 class ChatRowActionFailure
@@ -249,7 +251,7 @@ internal val ChatListUiState.canDeleteProject: Boolean
         projectList.canRename && pendingRowActions.values.none { it == ChatRowAction.MoveProject }
 
 internal fun ChatListUiState.projectDestinations(
-    thread: ConfirmedChat
+    thread: ConfirmedChat,
 ): List<ChatProjectDestination> = buildList {
     if (thread.projectId != null) add(ChatProjectDestination(null, null))
     projects.forEach { project ->
@@ -465,7 +467,7 @@ class ChatListModel(
                             .filter { it.hidden != true }
                             .sortedWith(
                                 compareByDescending<ConfirmedChat> { it.sortAt }
-                                    .thenByDescending { it.id }
+                                    .thenByDescending { it.id },
                             )
                             .take(100)
                             .map { it.id } + checkNotNull(state.indicators).threads.keys)
@@ -607,8 +609,9 @@ class ChatListModel(
         val state = mutable.value
         val targets = state.markAllReadTargets()
         if (targets.isEmpty()) return
-        val intents =
-            targets.mapValues { (_, time) -> ChatReadIntent(ChatRowAction.MarkRead, time) }
+        val intents = targets.mapValues { (_, time) ->
+            ChatReadIntent(ChatRowAction.MarkRead, time)
+        }
 
         val write = CompletableDeferred<Unit>()
         intents.keys.forEach { readWrites[it] = write }
@@ -645,7 +648,7 @@ class ChatListModel(
                             val state = mutable.value
                             mutable.value =
                                 state.copy(
-                                    pendingRowActions = state.pendingRowActions - targets.keys
+                                    pendingRowActions = state.pendingRowActions - targets.keys,
                                 )
                         }
                     }
@@ -935,7 +938,7 @@ class ChatListModel(
                         requireCurrent()
                         mutable.value =
                             mutable.value.copy(
-                                failedRowAction = ChatRowActionFailure(action, rejected = true)
+                                failedRowAction = ChatRowActionFailure(action, rejected = true),
                             )
                         return@launch
                     }
@@ -1002,8 +1005,8 @@ class ChatListModel(
                                         connectionFailed =
                                             rollback ==
                                                 ChatRowMutationOwner.Rollback.ConnectionFailed,
-                                    )
-                            )
+                                    ),
+                            ),
                     )
                     if (rollback == ChatRowMutationOwner.Rollback.MissingTarget) {
                         refreshList()
@@ -1068,7 +1071,7 @@ class ChatListModel(
                 if ((intent == null || undoRequest != null) && current()) {
                     mutable.value =
                         mutable.value.copy(
-                            pendingRowActions = mutable.value.pendingRowActions - threadId
+                            pendingRowActions = mutable.value.pendingRowActions - threadId,
                         )
                 }
             }
@@ -1084,7 +1087,7 @@ class ChatListModel(
                 confirmedThreads = projection.confirmedRows.threads,
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
-            )
+            ),
         )
     }
 
@@ -1104,7 +1107,9 @@ class ChatListModel(
     }
 
     private fun unresolvedRowAction(failure: ChatRowActionFailure?): ChatRowActionFailure? =
-        failure?.takeUnless { it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits) }
+        failure?.takeUnless {
+            it.edits.isNotEmpty() && !projection.hasUnsettledEdits(it.edits)
+        }
 
     private fun recordConfirmedProjectMove(edit: ChatRowEdit) {
         val state = mutable.value
@@ -1289,13 +1294,12 @@ class ChatListModel(
             listRetryAt = null
             refreshList()
         } else {
-            listRetry =
-                viewModelScope.launch {
-                    delay(remaining)
-                    listRetry = null
-                    listRetryAt = null
-                    refreshList()
-                }
+            listRetry = viewModelScope.launch {
+                delay(remaining)
+                listRetry = null
+                listRetryAt = null
+                refreshList()
+            }
         }
     }
 
@@ -1307,28 +1311,26 @@ class ChatListModel(
         if (cacheRead) return
         cacheRead = true
         viewModelScope.launch { restoreUnread() }
-        val chatRestore =
-            viewModelScope.launch {
-                try {
-                    val startup = prepared?.await()?.takeIf { it.identity == identity }
-                    val saved = startup?.saved ?: cache.load() ?: return@launch
-                    val rows =
-                        startup?.rows
-                            ?: withContext(dispatcher) { replayChatList(saved.checkpoint) }
-                    requireCurrent()
-                    val state = mutable.value
-                    confirmed = saved
-                    projection.restore(saved.checkpoint, rows)
-                    publishRows(
-                        state.copy(confirmedAt = saved.confirmedAt, source = ChatListSource.Cache)
-                    )
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
-                }
+        val chatRestore = viewModelScope.launch {
+            try {
+                val startup = prepared?.await()?.takeIf { it.identity == identity }
+                val saved = startup?.saved ?: cache.load() ?: return@launch
+                val rows =
+                    startup?.rows ?: withContext(dispatcher) { replayChatList(saved.checkpoint) }
+                requireCurrent()
+                val state = mutable.value
+                confirmed = saved
+                projection.restore(saved.checkpoint, rows)
+                publishRows(
+                    state.copy(confirmedAt = saved.confirmedAt, source = ChatListSource.Cache),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (current()) mutable.value = mutable.value.copy(cacheUnavailable = true)
             }
+        }
         restoreJob = chatRestore
         projectOwner.restore(afterChatCache = chatRestore)
     }
@@ -1444,13 +1446,12 @@ class ChatListModel(
             return
         // Keep the exact IDs selected by an explicit refresh until a read succeeds.
         rowDiscardsAfterRead.addAll(batch.discardOnSuccess)
-        val reportingFilterGeneration =
-            filterGeneration.takeIf {
-                (!hasWriteReadback || batch.refresh) &&
-                    !batch.userRequested &&
-                    filterIsVisible &&
-                    listInForeground
-            }
+        val reportingFilterGeneration = filterGeneration.takeIf {
+            (!hasWriteReadback || batch.refresh) &&
+                !batch.userRequested &&
+                filterIsVisible &&
+                listInForeground
+        }
         mutable.value = mutable.value.copy(listPhase = ChatReadPhase.Loading)
         try {
             // A normal catch-up still needs the sort event. Resume or an explicit refresh can
@@ -1510,12 +1511,11 @@ class ChatListModel(
             filterListFailures++
             if (filterListFailures == 3) {
                 val remaining = (30_000 - (now - firstFailure)).coerceAtLeast(0)
-                listFailureNotice =
-                    viewModelScope.launch {
-                        delay(remaining)
-                        if (current())
-                            mutable.value = mutable.value.copy(sustainedRefreshFailure = true)
-                    }
+                listFailureNotice = viewModelScope.launch {
+                    delay(remaining)
+                    if (current())
+                        mutable.value = mutable.value.copy(sustainedRefreshFailure = true)
+                }
             }
         }
         if (retryAfter == null) return
@@ -1537,21 +1537,20 @@ class ChatListModel(
     }
 
     private fun startListRebase(checkpoint: ChatCheckpoint) {
-        listRebaseJob =
-            viewModelScope.launch {
-                try {
-                    val rebased = sync.rebase(checkpoint) ?: return@launch
-                    val projection = withContext(dispatcher) { replayChatList(rebased.checkpoint) }
-                    requireCurrent()
-                    readyListRebase = PreparedListRebase(checkpoint, rebased, projection)
-                    listReadRequests.trySend(Unit)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    requireCurrent()
-                    onFailure(error)
-                }
+        listRebaseJob = viewModelScope.launch {
+            try {
+                val rebased = sync.rebase(checkpoint) ?: return@launch
+                val projection = withContext(dispatcher) { replayChatList(rebased.checkpoint) }
+                requireCurrent()
+                readyListRebase = PreparedListRebase(checkpoint, rebased, projection)
+                listReadRequests.trySend(Unit)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent()
+                onFailure(error)
             }
+        }
     }
 
     private suspend fun publishList(
@@ -1663,63 +1662,62 @@ class ChatListModel(
         if (!current() || indicatorsJob?.isActive == true) return
         indicatorsStartedAt = monotonicMillis()
         mutable.value = mutable.value.copy(indicatorsPhase = ChatReadPhase.Loading)
-        indicatorsJob =
-            viewModelScope.launch {
-                try {
-                    // Responses can only settle writes that finished before this request.
-                    val eligible = readConfirmations.toMap()
-                    val result = service.indicators()
-                    requireCurrent()
-                    val unreadConfirmedAt = wallMillis()
-                    val reconciled =
-                        indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
-                            status.acknowledgeUnread(id, watermark)
-                        }
-                    val state = mutable.value
-                    val settledVisible = mutableSetOf<String>()
-                    var failed = state.failedRowAction
-                    for ((id, confirmation) in eligible) {
-                        if (readConfirmations[id] !== confirmation) continue
-                        // The unread list is bounded, so absence cannot prove a read write.
-                        confirmation.observedUnread =
-                            confirmation.intent.action == ChatRowAction.MarkUnread &&
-                                id in result.unreadAt
-                        val projectedIntent = confirmation.projectedIntent
-                        if (projectedIntent != null && state.readIntents[id] === projectedIntent) {
-                            settledVisible.add(id)
-                            if (
-                                confirmation.reportFailure &&
-                                    !confirmation.receiptCoversIntent &&
-                                    !confirmation.observedUnread
-                            ) {
-                                failed = ChatRowActionFailure(confirmation.intent.action)
-                            }
-                        }
-                        readConfirmations.remove(id)
+        indicatorsJob = viewModelScope.launch {
+            try {
+                // Responses can only settle writes that finished before this request.
+                val eligible = readConfirmations.toMap()
+                val result = service.indicators()
+                requireCurrent()
+                val unreadConfirmedAt = wallMillis()
+                val reconciled =
+                    indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
+                        status.acknowledgeUnread(id, watermark)
                     }
-                    mutable.value =
-                        state.copy(
-                            indicators = reconciled,
-                            indicatorsPhase = ChatReadPhase.Ready,
-                            cachedUnread = null,
-                            readIntents = state.readIntents - settledVisible,
-                            failedRowAction = failed,
-                            rowUndo =
-                                state.rowUndo?.takeUnless { undo ->
-                                    undo.phase == ChatUndoPhase.Unconfirmed &&
-                                        !undo.action.updatesChat &&
-                                        undo.threadId in reconciled.unreadAt
-                                },
-                        )
-                    unreadCacheWrites.trySend(CachedUnread(unreadConfirmedAt, reconciled.unreadAt))
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    fail(error) { it.copy(indicatorsPhase = ChatReadPhase.Failed) }
-                } finally {
-                    indicatorReadReceipts.clear()
+                val state = mutable.value
+                val settledVisible = mutableSetOf<String>()
+                var failed = state.failedRowAction
+                for ((id, confirmation) in eligible) {
+                    if (readConfirmations[id] !== confirmation) continue
+                    // The unread list is bounded, so absence cannot prove a read write.
+                    confirmation.observedUnread =
+                        confirmation.intent.action == ChatRowAction.MarkUnread &&
+                            id in result.unreadAt
+                    val projectedIntent = confirmation.projectedIntent
+                    if (projectedIntent != null && state.readIntents[id] === projectedIntent) {
+                        settledVisible.add(id)
+                        if (
+                            confirmation.reportFailure &&
+                                !confirmation.receiptCoversIntent &&
+                                !confirmation.observedUnread
+                        ) {
+                            failed = ChatRowActionFailure(confirmation.intent.action)
+                        }
+                    }
+                    readConfirmations.remove(id)
                 }
+                mutable.value =
+                    state.copy(
+                        indicators = reconciled,
+                        indicatorsPhase = ChatReadPhase.Ready,
+                        cachedUnread = null,
+                        readIntents = state.readIntents - settledVisible,
+                        failedRowAction = failed,
+                        rowUndo =
+                            state.rowUndo?.takeUnless { undo ->
+                                undo.phase == ChatUndoPhase.Unconfirmed &&
+                                    !undo.action.updatesChat &&
+                                    undo.threadId in reconciled.unreadAt
+                            },
+                    )
+                unreadCacheWrites.trySend(CachedUnread(unreadConfirmedAt, reconciled.unreadAt))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                fail(error) { it.copy(indicatorsPhase = ChatReadPhase.Failed) }
+            } finally {
+                indicatorReadReceipts.clear()
             }
+        }
     }
 
     private fun fail(error: Exception, update: (ChatListUiState) -> ChatListUiState) {

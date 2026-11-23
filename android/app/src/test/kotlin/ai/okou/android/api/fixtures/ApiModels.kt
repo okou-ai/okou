@@ -118,7 +118,7 @@ enum class ChatEventsEventsItemVariant1ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant1ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -180,7 +180,7 @@ data class ChatEventsEventsItemVariant1(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2Kind {
-    @SerialName("project_updated") PROJECT_UPDATED
+    @SerialName("project_updated") PROJECT_UPDATED,
 }
 
 @Serializable
@@ -197,7 +197,7 @@ enum class ChatEventsEventsItemVariant2ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant2ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -350,7 +350,7 @@ enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
 
 @Serializable
 data class ChatArchiveChatThreadsItemModelSettingsValue(
-    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null
+    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null,
 )
 
 @Serializable

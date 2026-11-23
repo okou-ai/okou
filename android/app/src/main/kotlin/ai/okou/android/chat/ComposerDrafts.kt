@@ -81,8 +81,8 @@ internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
                             buildJsonObject {
                                 put("type", JsonPrimitive("text"))
                                 put("text", JsonPrimitive(text))
-                            }
-                        )
+                            },
+                        ),
                     ),
                 )
             },
@@ -93,8 +93,9 @@ internal fun plainDraftDocument(text: String): JsonObject = buildJsonObject {
 /** Preserve every old editable candidate and all frozen requests before changing ownership. */
 internal fun ComposerJournal.withServerDrafts(): ComposerJournal {
     if (format == 3) {
-        val retiredDrafts =
-            drafts.filterKeys { it != ServerDraftTarget().key && !it.startsWith("thread:") }
+        val retiredDrafts = drafts.filterKeys {
+            it != ServerDraftTarget().key && !it.startsWith("thread:")
+        }
         if (retiredDrafts.isEmpty()) return this
         // Keep old device-local text available for explicit restore into an empty composer.
         val candidates =

@@ -16,7 +16,7 @@ open class TestChatService : ChatListService {
         ai.okou.android.chat.HistoryBatch(cursors.mapValues { emptyList() }, emptyList())
 
     override suspend fun historySnapshot(
-        threadId: String
+        threadId: String,
     ): ai.okou.android.api.generated.HistorySnapshot = error("Unexpected history request")
 
     override suspend fun historyArchive(url: String): List<ai.okou.android.chat.HistoryEvent> =
@@ -28,7 +28,7 @@ open class TestChatService : ChatListService {
     ): ai.okou.android.chat.HistoryPage = error("Unexpected history tail")
 
     override suspend fun threadDetail(
-        threadId: String
+        threadId: String,
     ): ai.okou.android.api.generated.ThreadDetail = error("Unexpected thread detail")
 
     override suspend fun markRead(threadId: String): ai.okou.android.api.generated.ReadState =
@@ -72,7 +72,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun chatSnapshot() =
         Json.decodeFromString<ChatSnapshot>(
-            """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"""
+            """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}""",
         )
 
     override suspend fun chatArchive(url: String): ChatArchive = error("Unexpected archive request")
@@ -83,7 +83,7 @@ open class TestChatService : ChatListService {
 
     override suspend fun projectSnapshot() =
         Json.decodeFromString<ProjectSnapshot>(
-            """{"projects":[],"latestEventId":null,"latestSeqId":0}"""
+            """{"projects":[],"latestEventId":null,"latestSeqId":0}""",
         )
 
     override suspend fun projectArchive(url: String): ProjectArchive =

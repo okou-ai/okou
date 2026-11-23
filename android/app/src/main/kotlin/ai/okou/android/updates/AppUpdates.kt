@@ -248,44 +248,43 @@ class AppUpdates(
 
     fun check(manual: Boolean = true) {
         if (checkJob?.isActive == true) return
-        checkJob =
-            scope.launch {
-                initialized.await()
-                connectivityReady.await()
-                val snapshot = mutable.value
-                if (snapshot.offline) return@launch
-                if (!manual) {
-                    val time = now()
-                    val lastAttempt = attemptedAt
-                    if (lastAttempt != null && time - lastAttempt in 0 until 60_000) return@launch
-                    if (
-                        !snapshot.needsRequiredRelease &&
-                            checkedAt > 0 &&
-                            time - checkedAt in 0 until 10.minutes.inWholeMilliseconds
-                    )
-                        return@launch
-                }
-                val info = readRelease() ?: return@launch
-                val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
-                val blocked =
-                    mutable.value.required ||
-                        floor?.let { checkNotNull(compareAndroidVersions(it, version)) > 0 } == true
-                checkedAt = now()
-                mutable.update {
-                    it.copy(
-                        info = info,
-                        minimum = floor,
-                        required = blocked,
-                        check = UpdateCheck.Checked,
-                    )
-                }
-                retireUnsuitableTransfer()
-                try {
-                    persist()
-                } catch (error: Exception) {
-                    reportStorageFailure(error)
-                }
+        checkJob = scope.launch {
+            initialized.await()
+            connectivityReady.await()
+            val snapshot = mutable.value
+            if (snapshot.offline) return@launch
+            if (!manual) {
+                val time = now()
+                val lastAttempt = attemptedAt
+                if (lastAttempt != null && time - lastAttempt in 0 until 60_000) return@launch
+                if (
+                    !snapshot.needsRequiredRelease &&
+                        checkedAt > 0 &&
+                        time - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+                )
+                    return@launch
             }
+            val info = readRelease() ?: return@launch
+            val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
+            val blocked =
+                mutable.value.required ||
+                    floor?.let { checkNotNull(compareAndroidVersions(it, version)) > 0 } == true
+            checkedAt = now()
+            mutable.update {
+                it.copy(
+                    info = info,
+                    minimum = floor,
+                    required = blocked,
+                    check = UpdateCheck.Checked,
+                )
+            }
+            retireUnsuitableTransfer()
+            try {
+                persist()
+            } catch (error: Exception) {
+                reportStorageFailure(error)
+            }
+        }
     }
 
     private suspend fun readRelease(): AndroidUpdates? {
@@ -331,17 +330,16 @@ class AppUpdates(
         val offered = mutable.value
         if (offered.offline || !offered.canDownload || offered.candidate != release) return false
         if (transferJob?.isActive == true) return false
-        transferJob =
-            scope.launch {
-                val snapshot = mutable.value
-                if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
-                    return@launch
-                val ticket = ++transferTicket
-                mutable.update {
-                    it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
-                }
-                downloadSelected(release, ticket)
+        transferJob = scope.launch {
+            val snapshot = mutable.value
+            if (snapshot.offline || !snapshot.canDownload || snapshot.candidate != release)
+                return@launch
+            val ticket = ++transferTicket
+            mutable.update {
+                it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)
             }
+            downloadSelected(release, ticket)
+        }
         return true
     }
 
@@ -448,20 +446,19 @@ class AppUpdates(
         if (!snapshot.isEligible(selected)) discardTransfer()
     }
 
-    private suspend fun persist() =
-        persistence.withLock {
-            val value = mutable.value
-            store.save(
-                UpdateRecord(
-                    installedVersion = version,
-                    info = value.info,
-                    blocked = value.required,
-                    minimum = value.minimum,
-                    checkedAt = checkedAt,
-                    target = value.selectedRelease,
-                )
-            )
-        }
+    private suspend fun persist() = persistence.withLock {
+        val value = mutable.value
+        store.save(
+            UpdateRecord(
+                installedVersion = version,
+                info = value.info,
+                blocked = value.required,
+                minimum = value.minimum,
+                checkedAt = checkedAt,
+                target = value.selectedRelease,
+            ),
+        )
+    }
 
     private fun reportStorageFailure(error: Exception) {
         val problem = classify(error, UpdateProblem.Storage)

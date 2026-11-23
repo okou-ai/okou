@@ -73,7 +73,7 @@ class ArtifactCatalogRootTest {
                     ViewModelProvider(compose.activity)[SessionModel::class.java]
                         .uiState
                         .value
-                        .ready
+                        .ready,
                 )
                 .artifacts
 
@@ -758,7 +758,7 @@ class ArtifactCatalogRootTest {
                         )
                     }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":20},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":20},"hasMore":false}""",
             )
         }
         app.responseGate.countDown()
@@ -837,8 +837,9 @@ class ArtifactCatalogRootTest {
 
     private fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
 
-    private fun websiteView(): WebView? =
-        compose.runOnIdle { compose.activity.window.decorView.website() }
+    private fun websiteView(): WebView? = compose.runOnIdle {
+        compose.activity.window.decorView.website()
+    }
 
     private fun openWebsite(fixture: ArtifactApiFixture) {
         app.responseGate.countDown()
@@ -905,7 +906,7 @@ class ArtifactCatalogRootTest {
                     launch.requestCode,
                     Activity.RESULT_CANCELED,
                     null,
-                )
+                ),
             )
         }
         compose.onNodeWithText(title).performClick()

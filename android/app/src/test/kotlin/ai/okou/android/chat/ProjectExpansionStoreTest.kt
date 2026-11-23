@@ -53,10 +53,10 @@ class ProjectExpansionStoreTest {
             val store =
                 ProjectExpansionStore(
                     PreferenceDataStoreFactory.create(
-                        scope = CoroutineScope(coroutineContext + job)
+                        scope = CoroutineScope(coroutineContext + job),
                     ) {
                         file
-                    }
+                    },
                 )
             try {
                 exercise(store)

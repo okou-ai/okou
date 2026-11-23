@@ -192,15 +192,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
                 val pending = updateInstall.automaticRelease
-                val automaticInstall =
-                    pending?.takeIf {
-                        insideUpdateFlow &&
-                            installProgress == null &&
-                            updateState.canInstall &&
-                            updateState.selectedRelease == it &&
-                            lifecycleState == Lifecycle.State.RESUMED &&
-                            !interactionActive
-                    }
+                val automaticInstall = pending?.takeIf {
+                    insideUpdateFlow &&
+                        installProgress == null &&
+                        updateState.canInstall &&
+                        updateState.selectedRelease == it &&
+                        lifecycleState == Lifecycle.State.RESUMED &&
+                        !interactionActive
+                }
                 LaunchedEffect(pending, updateState.selectedRelease) {
                     updateInstall.discardObsoleteDownload()
                 }
@@ -233,7 +232,7 @@ class MainActivity : AppCompatActivity() {
                         openWorkspaceSetup = {
                             try {
                                 startActivity(
-                                    Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri())
+                                    Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri()),
                                 )
                             } catch (_: ActivityNotFoundException) {
                                 Toast.makeText(
@@ -328,7 +327,7 @@ class MainActivity : AppCompatActivity() {
                                             ),
                                     colors =
                                         ButtonDefaults.textButtonColors(
-                                            contentColor = MaterialTheme.colorScheme.onSurface
+                                            contentColor = MaterialTheme.colorScheme.onSurface,
                                         ),
                                 ) {
                                     Text(stringResource(R.string.updates_later))
@@ -393,7 +392,7 @@ class MainActivity : AppCompatActivity() {
         if (!updateInstall.beginAuthorization(explanation, canInstallPackages())) return
         try {
             sourceSettings.launch(
-                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri())
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:$packageName".toUri()),
             )
         } catch (_: ActivityNotFoundException) {
             updateInstall.launchFailed(explanation.release)
@@ -420,7 +419,7 @@ class MainActivity : AppCompatActivity() {
                 Intent(Intent.ACTION_VIEW)
                     .setDataAndType(uri, "application/vnd.android.package-archive")
                     .putExtra(Intent.EXTRA_RETURN_RESULT, true)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
             )
         } catch (_: ActivityNotFoundException) {
             updateInstall.launchFailed(verified.release)

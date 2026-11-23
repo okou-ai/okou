@@ -67,21 +67,19 @@ class ChatListGroupingTest {
             assertSame(inbox, renderedGroups)
             state.value = state.value.copy(filter = ChatListFilter.Unread, readIntents = emptyMap())
         }
-        val unreadGroups =
-            compose.runOnIdle {
-                assertEquals(listOf(thread), renderedGroups.single().threads)
-                renderedGroups
-            }
+        val unreadGroups = compose.runOnIdle {
+            assertEquals(listOf(thread), renderedGroups.single().threads)
+            renderedGroups
+        }
         compose.runOnIdle { state.value = state.value.copy(indicators = unread) }
         compose.runOnIdle {
             assertSame(unreadGroups, renderedGroups)
             state.value = state.value.copy(readIntents = markRead)
         }
-        val optimisticGroups =
-            compose.runOnIdle {
-                assertTrue(renderedGroups.single().threads.isEmpty())
-                renderedGroups
-            }
+        val optimisticGroups = compose.runOnIdle {
+            assertTrue(renderedGroups.single().threads.isEmpty())
+            renderedGroups
+        }
         compose.runOnIdle {
             state.value =
                 state.value.copy(

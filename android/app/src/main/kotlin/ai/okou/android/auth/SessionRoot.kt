@@ -493,7 +493,7 @@ private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
                 ) {
                     Text(stringResource(R.string.settings_sign_out_body))
                 }
-            }
+            },
         ) { modifier, open ->
             SettingsRow(
                 stringResource(R.string.auth_sign_out),

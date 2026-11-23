@@ -64,7 +64,7 @@ class NativeTextSendTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
                 )
             fun click(id: Int) {
                 device
@@ -77,10 +77,10 @@ class NativeTextSendTest {
                 checkNotNull(
                     device.wait(
                         Until.findObject(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
+                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true),
                         ),
                         10_000,
-                    )
+                    ),
                 )
             fun ime(visible: Boolean) {
                 assertTrue(
@@ -97,7 +97,7 @@ class NativeTextSendTest {
                             }
                         },
                         10_000,
-                    )
+                    ),
                 )
             }
             device.awaitChatList(app)
@@ -105,7 +105,7 @@ class NativeTextSendTest {
             scenario.onActivity {
                 val ready =
                     checkNotNull(
-                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                     )
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 listJob = ready.chats.viewModelScope.coroutineContext[Job]
@@ -140,7 +140,7 @@ class NativeTextSendTest {
                             }
                         },
                         10_000,
-                    )
+                    ),
                 )
             }
             readyToSend(ComposerTarget())
@@ -163,8 +163,8 @@ class NativeTextSendTest {
             ime(false)
             readyToSend(
                 ComposerTarget(
-                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content
-                )
+                    checkNotNull(fixture.created.single()["clientThreadId"]).jsonPrimitive.content,
+                ),
             )
             fixture.beforeSendReturn = { followup.await() }
             checkNotNull(device.findObject(send)).click()
@@ -177,7 +177,7 @@ class NativeTextSendTest {
                         override fun apply(device: UiDevice) = fixture.inputs.size == 2
                     },
                     10_000,
-                )
+                ),
             )
             text(app.getString(R.string.composer_accepted))
             assertEquals("", editor().text)

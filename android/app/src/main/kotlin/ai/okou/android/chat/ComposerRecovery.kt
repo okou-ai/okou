@@ -48,7 +48,7 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
                 SendRequestVariant1UserMessagePartsItemVariant1(
                     SendRequestVariant1UserMessagePartsItemVariant1Type.TEXT,
                     "continue",
-                )
+                ),
             )
             selected.model?.let {
                 add(
@@ -58,7 +58,7 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
                         if (fast)
                             SendRequestVariant1UserMessagePartsItemVariant12ServiceTier.PRIORITY
                         else null,
-                    )
+                    ),
                 )
             }
         }
@@ -74,7 +74,7 @@ internal fun newRecovery(data: FailureRecoveryData, reset: Boolean): ComposerRec
             runOptions =
                 if (fast)
                     SendRequestVariant1RunOptions(
-                        codexServiceTier = SendRequestVariant1RunOptionsCodexServiceTier.FAST
+                        codexServiceTier = SendRequestVariant1RunOptionsCodexServiceTier.FAST,
                     )
                 else null,
         ),

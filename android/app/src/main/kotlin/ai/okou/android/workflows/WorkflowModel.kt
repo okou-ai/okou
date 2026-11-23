@@ -96,7 +96,8 @@ internal constructor(
                         current.connectionsFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     detailFailure =
                         current.detailFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    issue = current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
+                    issue =
+                        current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
                 )
             val now = monotonicMillis()
             refresh(
@@ -121,7 +122,7 @@ internal constructor(
                             current.detailFailure.canRecheckOnReconnect()
                     )
                         add(WorkflowReadScope.Detail)
-                }
+                },
             )
         }
     }
@@ -179,7 +180,7 @@ internal constructor(
     internal fun detailTabOpened(checkConnections: Boolean) {
         refresh(
             if (checkConnections) setOf(WorkflowReadScope.Detail, WorkflowReadScope.Connections)
-            else setOf(WorkflowReadScope.Detail)
+            else setOf(WorkflowReadScope.Detail),
         )
     }
 
@@ -189,8 +190,9 @@ internal constructor(
         val catalog = current.catalog.takeIf { catalogRead.readAt.isFresh(now) }
         val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
         val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
-        val detail =
-            selected?.let { details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail }
+        val detail = selected?.let {
+            details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail
+        }
         mutable.value =
             current.copy(
                 catalog = catalog,
@@ -270,34 +272,33 @@ internal constructor(
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
-        range.job =
-            viewModelScope.launch {
-                retryReads(failure) {
-                    val attempt = WorkflowRangeAttempt(++readSequence)
-                    range.pending = attempt
-                    val result =
-                        try {
-                            read(fetch)
-                        } finally {
-                            if (range.pending === attempt) range.pending = null
-                        }
-                    if (!authorized()) return@retryReads null
-                    val error = result.exceptionOrNull()
-                    when {
-                        error.denied() -> {
-                            range.receipt = null
-                            denied()
-                            null
-                        }
-                        error != null -> error
-                        else -> {
-                            range.receipt = WorkflowReadReceipt(attempt.sequence, monotonicMillis())
-                            receive(result.getOrThrow(), attempt.updates)
-                            null
-                        }
+        range.job = viewModelScope.launch {
+            retryReads(failure) {
+                val attempt = WorkflowRangeAttempt(++readSequence)
+                range.pending = attempt
+                val result =
+                    try {
+                        read(fetch)
+                    } finally {
+                        if (range.pending === attempt) range.pending = null
+                    }
+                if (!authorized()) return@retryReads null
+                val error = result.exceptionOrNull()
+                when {
+                    error.denied() -> {
+                        range.receipt = null
+                        denied()
+                        null
+                    }
+                    error != null -> error
+                    else -> {
+                        range.receipt = WorkflowReadReceipt(attempt.sequence, monotonicMillis())
+                        receive(result.getOrThrow(), attempt.updates)
+                        null
                     }
                 }
             }
+        }
     }
 
     private fun publishCatalog(
@@ -382,44 +383,43 @@ internal constructor(
 
     private fun loadDetail(id: String) {
         if (detailLoad?.isActive == true) return
-        detailLoad =
-            viewModelScope.launch {
-                retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
-                    val sequence = ++readSequence
-                    val response = read {
-                        service.workflow(id).also {
-                            if (it.id != id) throw ApiFailure.IncompatibleResponse()
-                        }
-                    }
-                    if (!authorized() || selected != id) return@retryReads null
-                    val detail = response.getOrNull()
-                    val error = response.exceptionOrNull()
-                    when {
-                        error.denied() ||
-                            (error as? ApiFailure.Http)?.status == 404 ||
-                            detail?.official != null -> {
-                            recordDetailUpdate(id, null, sequence)
-                            details.remove(id)
-                            val current = mutable.value
-                            mutable.value =
-                                current.copy(
-                                    catalog = current.catalog?.filterNot { it.id == id },
-                                    rules = current.rules?.minus(id),
-                                    detail = null,
-                                    detailFailure = WorkflowReadFailure.Unavailable,
-                                    editor = null,
-                                    issue = null,
-                                )
-                            null
-                        }
-                        detail != null -> {
-                            publishDetail(detail, sequence)
-                            null
-                        }
-                        else -> error
+        detailLoad = viewModelScope.launch {
+            retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
+                val sequence = ++readSequence
+                val response = read {
+                    service.workflow(id).also {
+                        if (it.id != id) throw ApiFailure.IncompatibleResponse()
                     }
                 }
+                if (!authorized() || selected != id) return@retryReads null
+                val detail = response.getOrNull()
+                val error = response.exceptionOrNull()
+                when {
+                    error.denied() ||
+                        (error as? ApiFailure.Http)?.status == 404 ||
+                        detail?.official != null -> {
+                        recordDetailUpdate(id, null, sequence)
+                        details.remove(id)
+                        val current = mutable.value
+                        mutable.value =
+                            current.copy(
+                                catalog = current.catalog?.filterNot { it.id == id },
+                                rules = current.rules?.minus(id),
+                                detail = null,
+                                detailFailure = WorkflowReadFailure.Unavailable,
+                                editor = null,
+                                issue = null,
+                            )
+                        null
+                    }
+                    detail != null -> {
+                        publishDetail(detail, sequence)
+                        null
+                    }
+                    else -> error
+                }
             }
+        }
     }
 
     private suspend fun retryReads(
@@ -750,7 +750,7 @@ private fun WorkflowDetail.withRules(rules: List<WorkflowAutomation>): WorkflowD
     if (automations == rules) this else copy(automations = rules)
 
 private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
-    updates: Map<String, WorkflowDirectoryUpdate?>
+    updates: Map<String, WorkflowDirectoryUpdate?>,
 ): Map<String, List<WorkflowAutomation>> {
     if (updates.all { (id, update) -> this[id].orEmpty() == update?.automations.orEmpty() })
         return this

@@ -158,12 +158,12 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
         Modifier.fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding()
-            .imePadding()
+            .imePadding(),
     ) {
         if (directoryVisible) {
             Column(
                 (if (listWidth == null) Modifier.weight(1f) else Modifier.width(listWidth.dp))
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             ) {
                 ConnectorTopBar(stringResource(R.string.connector_title), ::back)
                 ConnectorDirectory(
@@ -243,7 +243,9 @@ private fun ConnectorTopBar(title: String, back: () -> Unit) {
         expandedHeight = height,
         windowInsets = WindowInsets(0),
         colors =
-            TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+            ),
     )
     HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 }
@@ -438,7 +440,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 Modifier.tabIndicatorOffset(selected, matchContentSize = true)
                     .height(3.dp)
                     .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                    .background(accent)
+                    .background(accent),
             )
         },
         divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline) },
@@ -512,7 +514,7 @@ private fun ConnectorFilters(
                     onSearch = {
                         editQuery(route.query.copy(composition = null))
                         keyboard?.hide()
-                    }
+                    },
                 ),
             textStyle = connectorBodyType().copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.onSurface),
@@ -583,7 +585,7 @@ private fun ConnectorFilters(
                         .clip(categoryShape)
                         .background(
                             if (route.category == null) colors.background
-                            else colors.secondaryContainer
+                            else colors.secondaryContainer,
                         )
                         .semantics { stateDescription = categoryLabel },
             ) {
@@ -606,7 +608,7 @@ private fun ConnectorFilters(
                         ) {
                             setCategory(null)
                             close()
-                        }
+                        },
                     ) +
                         entries.map { (category, title) ->
                             WorkspaceMenuItem(title, selected = route.category == category) {
@@ -698,7 +700,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                     .background(
                         if (attention) colors.error else LocalActivityStatusColor.current,
                         CircleShape,
-                    )
+                    ),
             )
         }
         Text(
@@ -754,7 +756,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant,
                             RoundedCornerShape(12.dp),
-                        )
+                        ),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
@@ -764,7 +766,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant,
                                 RoundedCornerShape(4.dp),
-                            )
+                            ),
                     )
                     Box(
                         Modifier.widthIn(max = 220.dp)
@@ -773,7 +775,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant,
                                 RoundedCornerShape(4.dp),
-                            )
+                            ),
                     )
                 }
             }
@@ -863,7 +865,7 @@ internal fun connectorAccountStatus(account: ConnectorSavedAccount): String =
                 if (account.defaultEnabled == true) R.string.connector_default_status
                 else R.string.connector_account_connected
             ConnectorAccountStatus.Unknown -> R.string.connector_account_unknown
-        }
+        },
     )
 
 internal val ConnectorAccountStatus.needsAttention: Boolean

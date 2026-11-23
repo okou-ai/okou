@@ -63,7 +63,7 @@ class NativeInstructionsTest {
             scenario = ActivityScenario.launch(MainActivity::class.java)
             fun text(value: String) =
                 checkNotNull(
-                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000)
+                    device.wait(Until.findObject(By.pkg(app.packageName).text(value)), 10_000),
                 )
             fun reveal(value: String) {
                 val target = By.pkg(app.packageName).text(value)
@@ -97,7 +97,7 @@ class NativeInstructionsTest {
                         device.wait(
                             Until.findObject(By.pkg(app.packageName).text(label).enabled(true)),
                             10_000,
-                        )
+                        ),
                     )
                     .click()
             }
@@ -108,10 +108,10 @@ class NativeInstructionsTest {
                             By.pkg(app.packageName).clazz("android.widget.EditText").apply {
                                 if (requireFocus) focused(true)
                                 if (expectedText != null) text(expectedText)
-                            }
+                            },
                         ),
                         10_000,
-                    )
+                    ),
                 ) {
                     "Instructions editor did not match focus=$requireFocus and text=$expectedText"
                 }
@@ -126,7 +126,7 @@ class NativeInstructionsTest {
                             override fun apply(unused: UiDevice): Boolean = imeVisible() == visible
                         },
                         10_000,
-                    ) == true
+                    ) == true,
                 )
             }
             device.awaitChatList(app)
@@ -135,10 +135,10 @@ class NativeInstructionsTest {
                         Until.findObject(
                             By.pkg(app.packageName)
                                 .desc(app.getString(R.string.settings))
-                                .enabled(true)
+                                .enabled(true),
                         ),
                         10_000,
-                    )
+                    ),
                 )
                 .click()
             reveal(app.getString(R.string.appearance))
@@ -147,7 +147,7 @@ class NativeInstructionsTest {
             scenario.onActivity {
                 val editor =
                     checkNotNull(
-                            ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                            ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                         )
                         .instructions
                 editorJob = editor.viewModelScope.coroutineContext[Job]
@@ -185,7 +185,7 @@ class NativeInstructionsTest {
                             fixture.saved.content.contains("Native **instructions** 👋")
                     },
                     10_000,
-                ) == true
+                ) == true,
             )
             assertTrue(fixture.saved.content.contains("Native **instructions** 👋"))
             reveal(app.getString(R.string.appearance))

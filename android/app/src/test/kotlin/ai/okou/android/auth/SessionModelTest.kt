@@ -80,7 +80,7 @@ class SessionModelTest {
         override suspend fun featureSwitches() = canonical.featureSwitches()
 
         override suspend fun updateDefaultModelPreference(
-            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
         ) = canonical.updateDefaultModelPreference(update)
 
         override suspend fun activateModelAccount(accountId: String) =
@@ -154,7 +154,7 @@ class SessionModelTest {
         val expansionFile = temporary.newFolder().resolve("project-expansion.preferences_pb")
         val expansion =
             ProjectExpansionStore(
-                PreferenceDataStoreFactory.create(scope = backgroundScope) { expansionFile }
+                PreferenceDataStoreFactory.create(scope = backgroundScope) { expansionFile },
             )
         val defaultModelFile = temporary.newFolder().resolve("default-model.preferences_pb")
         val defaultModelStore =
@@ -383,8 +383,8 @@ class SessionModelTest {
                 testAuthenticationState()
                     .copy(
                         membershipAccess =
-                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
-                    )
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
             )
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
@@ -405,8 +405,8 @@ class SessionModelTest {
                 testAuthenticationState()
                     .copy(
                         membershipAccess =
-                            listOf(MembershipAccess("org-a", "org:member", listOf("old")))
-                    )
+                            listOf(MembershipAccess("org-a", "org:member", listOf("old"))),
+                    ),
             )
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
@@ -432,8 +432,8 @@ class SessionModelTest {
                 testAuthenticationState()
                     .copy(
                         membershipAccess =
-                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
-                    )
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
             )
         check(auth) { model, resources ->
             runCurrent()
@@ -500,8 +500,8 @@ class SessionModelTest {
                 testAuthenticationState()
                     .copy(
                         membershipAccess =
-                            listOf(MembershipAccess("org-a", "org:member", emptyList()))
-                    )
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
             )
         val connected = MutableStateFlow(true)
         var organizations = 0

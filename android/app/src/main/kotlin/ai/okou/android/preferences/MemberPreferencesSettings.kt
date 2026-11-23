@@ -270,7 +270,7 @@ private fun PaletteSwatch(palette: UserPreferencesColorTheme, dark: Boolean) {
             .background(
                 Brush.linearGradient(listOf(preview.scheme.primary, preview.swatchCompanion)),
                 CircleShape,
-            )
+            ),
     )
 }
 

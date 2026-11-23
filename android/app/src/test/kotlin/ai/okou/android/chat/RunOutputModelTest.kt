@@ -23,7 +23,7 @@ class RunOutputModelTest {
                 "2026-11-16T00:00:00Z",
                 index,
                 text,
-            )
+            ),
         )
 
     private class Owner {
@@ -31,7 +31,7 @@ class RunOutputModelTest {
             ConversationUiState(
                 thread =
                     Json.decodeFromString<ChatArchive>(
-                            """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"2026-11-16T00:00:00Z","createdAt":"2026-11-16T00:00:00Z","updatedAt":"2026-11-16T00:00:00Z","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                            """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"2026-11-16T00:00:00Z","createdAt":"2026-11-16T00:00:00Z","updatedAt":"2026-11-16T00:00:00Z","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
                         )
                         .chatThreads
                         .single(),
@@ -59,8 +59,8 @@ class RunOutputModelTest {
                                 CHAT_PERSONAL,
                                 events.toList(),
                                 HistoryCursor(events.last().id, events.last().seqId),
-                            )
-                        )
+                            ),
+                        ),
                 )
             model.reconcile()
         }
@@ -77,11 +77,11 @@ class RunOutputModelTest {
         // Rendering chooses persistence even before the projection's reconcile callback runs.
         val row =
             HistoryEvent.decode(
-                historyEventWire(eventId, 1, payload = """{"content":"Saved answer"}""")
+                historyEventWire(eventId, 1, payload = """{"content":"Saved answer"}"""),
             )
         val transcript =
             projectHistory(
-                HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId))
+                HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
             )
         assertEquals(
             "Saved answer",
@@ -134,7 +134,7 @@ class RunOutputModelTest {
         )
         val terminal =
             HistoryEvent.decode(
-                historyEventWire("terminal", 1, type = "run.completed", payload = "null")
+                historyEventWire("terminal", 1, type = "run.completed", payload = "null"),
             )
         owner.persisted(terminal)
         assertNull(owner.model.target.value)
@@ -161,7 +161,7 @@ class RunOutputModelTest {
         val queued = Owner()
         queued.current =
             queued.current.copy(
-                transcript = HistoryTranscript(emptyList(), HistoryExecution.Queued, 0)
+                transcript = HistoryTranscript(emptyList(), HistoryExecution.Queued, 0),
             )
         queued.model.reconcile()
         assertNull(queued.model.target.value)
@@ -196,7 +196,7 @@ class RunOutputModelTest {
                     type = "control.revoke",
                     revoke = eventId,
                     payload = "null",
-                )
+                ),
             )
         owner.persisted(revoked)
         assertFalse(owner.model.state.value.messages.any { it.id == eventId })
@@ -219,7 +219,7 @@ class RunOutputModelTest {
         owner.model.receive(owner.target, delta(0, "new message", "next-event"))
         owner.current =
             owner.current.copy(
-                transcript = owner.current.transcript!!.copy(persistedIds = setOf(eventId))
+                transcript = owner.current.transcript!!.copy(persistedIds = setOf(eventId)),
             )
         owner.model.reconcile()
         assertEquals("new message", owner.model.state.value.messages.single().blocks.single().text)
@@ -255,7 +255,7 @@ class RunOutputModelTest {
                     owner.current.transcript!!.copy(
                         activeRunId = otherRun,
                         liveRunIds = listOf(HISTORY_RUN, otherRun),
-                    )
+                    ),
             )
         owner.model.reconcile()
         owner.current =
@@ -264,7 +264,7 @@ class RunOutputModelTest {
                     owner.current.transcript!!.copy(
                         activeRunId = HISTORY_RUN,
                         liveRunIds = listOf(HISTORY_RUN),
-                    )
+                    ),
             )
         owner.model.reconcile()
         assertNotEquals(previous, owner.target)
@@ -296,8 +296,8 @@ class RunOutputModelTest {
         )
         owner.persisted(
             HistoryEvent.decode(
-                historyEventWire("terminal", 1, type = "run.completed", payload = "null")
-            )
+                historyEventWire("terminal", 1, type = "run.completed", payload = "null"),
+            ),
         )
         assertNull(owner.model.target.value)
         assertTrue(owner.current.controlRunIds(owner.model.state.value).isEmpty())

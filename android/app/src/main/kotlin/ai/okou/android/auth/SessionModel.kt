@@ -228,192 +228,182 @@ class SessionModel(
                 working = true,
                 opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
             )
-        operation =
-            viewModelScope.launch {
-                val observedIdentity =
-                    initialIdentity?.let { identity ->
-                        snapshot.membershipAccess
-                            ?.firstOrNull {
-                                it.workspaceId == identity.workspaceId && it.permissions != null
-                            }
-                            ?.let { identity.withAccess(it.role, it) }
+        operation = viewModelScope.launch {
+            val observedIdentity = initialIdentity?.let { identity ->
+                snapshot.membershipAccess
+                    ?.firstOrNull {
+                        it.workspaceId == identity.workspaceId && it.permissions != null
                     }
-                var preparation =
-                    observedIdentity?.let { identity -> async { prepareChatList(identity) } }
-                val appearanceRead =
-                    initialIdentity?.let { identity ->
-                        launch readCache@{
-                            val appearance = appearanceCache.load(identity) ?: return@readCache
-                            val state = mutable.value
-                            if (current(ticket, snapshot) && state.opening != null) {
-                                mutable.value = state.copy(cachedAppearance = appearance)
-                            }
-                        }
+                    ?.let { identity.withAccess(it.role, it) }
+            }
+            var preparation = observedIdentity?.let { identity ->
+                async { prepareChatList(identity) }
+            }
+            val appearanceRead = initialIdentity?.let { identity ->
+                launch readCache@{
+                    val appearance = appearanceCache.load(identity) ?: return@readCache
+                    val state = mutable.value
+                    if (current(ticket, snapshot) && state.opening != null) {
+                        mutable.value = state.copy(cachedAppearance = appearance)
                     }
-                val cacheWarm =
-                    initialIdentity
-                        ?.takeIf { observedIdentity == null }
-                        ?.let {
-                            launch {
-                                try {
-                                    chatCache.warmConnection()
-                                } catch (cancelled: CancellationException) {
-                                    throw cancelled
-                                } catch (_: Exception) {
-                                    // Scoped restore handles storage errors after authorization.
-                                }
-                            }
-                        }
-                try {
-                    val refreshedAccess = authentication.refresh(session)
-                    requireCurrent(ticket, snapshot)
-                    val fastAccess =
-                        refreshedAccess?.takeIf {
-                            it.workspaceId == initialIdentity?.workspaceId && it.permissions != null
-                        }
-                    val memberships =
-                        if (fastAccess == null) authentication.memberships(session) else emptyList()
-                    requireCurrent(ticket, snapshot)
-                    membershipsComplete = fastAccess == null
-                    val membership =
-                        initialIdentity?.let { identity ->
-                            memberships.firstOrNull { it.id == identity.workspaceId }
-                        }
-                    val role = fastAccess?.role ?: membership?.role
-                    if (initialIdentity == null || role == null) {
-                        mutable.value =
-                            SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
-                        return@launch
-                    }
-                    val identity = initialIdentity.withAccess(role, refreshedAccess)
-                    if (identity != observedIdentity) {
-                        preparation?.cancel()
-                        preparation = async { prepareChatList(identity) }
-                    }
-                    val owner =
-                        factory.create(
-                            identity,
-                            WorkspaceTokenProvider {
-                                requireCurrent(ticket, snapshot)
-                                val token = authentication.token(session)
-                                currentCoroutineContext().ensureActive()
-                                requireCurrent(ticket, snapshot)
-                                token
-                            },
-                        )
-                    workspace = owner
-                    // Fresh selected permissions authorize the scoped list while metadata loads.
-                    val organization = if (fastAccess == null) owner.organization() else null
-                    currentCoroutineContext().ensureActive()
-                    requireCurrent(ticket, snapshot)
-                    val store = ViewModelStore()
-                    presentation = store
-                    val projectExpansion =
-                        store.workspaceModel {
-                            ProjectExpansionModel(projectExpansionStore, identity)
-                        }
-                    val chats =
-                        store.workspaceModel {
-                            ChatListModel(
-                                owner,
-                                chatCache,
-                                identity,
-                                authorized = { current(ticket, snapshot) },
-                                onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
-                                dispatcher = dispatcher,
-                                realtime = owner,
-                                connectivity = connectivity,
-                                initialFilter =
-                                    workspaceFilters[identity.userId to identity.workspaceId]
-                                        ?: ChatListFilter.Inbox,
-                            )
-                        }
-                    val controls =
-                        store.workspaceModel {
-                            RunControlsModel(
-                                owner,
-                                runControlJournal,
-                                identity,
-                                chats.history,
-                                { current(ticket, snapshot) },
-                                { workspaceFailure(ticket, snapshot, it) },
-                                dispatcher,
-                            )
-                        }
-                    val recovery =
-                        store.workspaceModel {
-                            AssistantRecoveryModel(
-                                owner,
-                                chats.history,
-                                controls,
-                                { current(ticket, snapshot) },
-                                { workspaceFailure(ticket, snapshot, it) },
-                                dispatcher,
-                            )
-                        }
-                    val composer =
-                        store.workspaceModel {
-                            ChatComposerModel(
-                                owner,
-                                composerJournal,
-                                identity,
-                                { current(ticket, snapshot) },
-                                { workspaceFailure(ticket, snapshot, it) },
-                                chats::refreshAfterSend,
-                                recovery,
-                                chats.history,
-                                chats,
-                            )
-                        }
-                    val opened =
-                        OpeningWorkspace.Authorized(
-                            identity,
-                            role,
-                            organization,
-                            chats,
-                            projectExpansion,
-                            composer,
-                            controls,
-                            recovery,
-                            store.workspaceModel {
-                                ArtifactCatalogModel(owner.artifacts, connectivity) {
-                                    workspaceFailure(ticket, snapshot, it)
-                                }
-                            },
-                            store.workspaceModel("chat-artifacts") {
-                                ArtifactCatalogModel(owner.artifacts, connectivity) {
-                                    workspaceFailure(ticket, snapshot, it)
-                                }
-                            },
-                        )
-                    mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
-                    preparation?.let(chats::restoreStartupCache)
-                    // The list owns restoration after handoff, including during bootstrap retries.
-                    preparation = null
-                    chats.refresh()
-                    loadRemainingMemberships(ticket, snapshot)
-                    finishPreparation(ticket, snapshot, opened)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
-                        val state = mutable.value
-                        retire()
-                        mutable.value =
-                            SessionUiState(
-                                generation,
-                                SessionStage.Unavailable,
-                                cachedAppearance = state.cachedAppearance,
-                                opening =
-                                    initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
-                            )
-                    }
-                } finally {
-                    appearanceRead?.cancel()
-                    cacheWarm?.cancel()
-                    preparation?.cancel()
                 }
             }
+            val cacheWarm =
+                initialIdentity
+                    ?.takeIf { observedIdentity == null }
+                    ?.let {
+                        launch {
+                            try {
+                                chatCache.warmConnection()
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                // Scoped restore handles storage errors after authorization.
+                            }
+                        }
+                    }
+            try {
+                val refreshedAccess = authentication.refresh(session)
+                requireCurrent(ticket, snapshot)
+                val fastAccess = refreshedAccess?.takeIf {
+                    it.workspaceId == initialIdentity?.workspaceId && it.permissions != null
+                }
+                val memberships =
+                    if (fastAccess == null) authentication.memberships(session) else emptyList()
+                requireCurrent(ticket, snapshot)
+                membershipsComplete = fastAccess == null
+                val membership = initialIdentity?.let { identity ->
+                    memberships.firstOrNull { it.id == identity.workspaceId }
+                }
+                val role = fastAccess?.role ?: membership?.role
+                if (initialIdentity == null || role == null) {
+                    mutable.value =
+                        SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
+                    return@launch
+                }
+                val identity = initialIdentity.withAccess(role, refreshedAccess)
+                if (identity != observedIdentity) {
+                    preparation?.cancel()
+                    preparation = async { prepareChatList(identity) }
+                }
+                val owner =
+                    factory.create(
+                        identity,
+                        WorkspaceTokenProvider {
+                            requireCurrent(ticket, snapshot)
+                            val token = authentication.token(session)
+                            currentCoroutineContext().ensureActive()
+                            requireCurrent(ticket, snapshot)
+                            token
+                        },
+                    )
+                workspace = owner
+                // Fresh selected permissions authorize the scoped list while metadata loads.
+                val organization = if (fastAccess == null) owner.organization() else null
+                currentCoroutineContext().ensureActive()
+                requireCurrent(ticket, snapshot)
+                val store = ViewModelStore()
+                presentation = store
+                val projectExpansion = store.workspaceModel {
+                    ProjectExpansionModel(projectExpansionStore, identity)
+                }
+                val chats = store.workspaceModel {
+                    ChatListModel(
+                        owner,
+                        chatCache,
+                        identity,
+                        authorized = { current(ticket, snapshot) },
+                        onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                        dispatcher = dispatcher,
+                        realtime = owner,
+                        connectivity = connectivity,
+                        initialFilter =
+                            workspaceFilters[identity.userId to identity.workspaceId]
+                                ?: ChatListFilter.Inbox,
+                    )
+                }
+                val controls = store.workspaceModel {
+                    RunControlsModel(
+                        owner,
+                        runControlJournal,
+                        identity,
+                        chats.history,
+                        { current(ticket, snapshot) },
+                        { workspaceFailure(ticket, snapshot, it) },
+                        dispatcher,
+                    )
+                }
+                val recovery = store.workspaceModel {
+                    AssistantRecoveryModel(
+                        owner,
+                        chats.history,
+                        controls,
+                        { current(ticket, snapshot) },
+                        { workspaceFailure(ticket, snapshot, it) },
+                        dispatcher,
+                    )
+                }
+                val composer = store.workspaceModel {
+                    ChatComposerModel(
+                        owner,
+                        composerJournal,
+                        identity,
+                        { current(ticket, snapshot) },
+                        { workspaceFailure(ticket, snapshot, it) },
+                        chats::refreshAfterSend,
+                        recovery,
+                        chats.history,
+                        chats,
+                    )
+                }
+                val opened =
+                    OpeningWorkspace.Authorized(
+                        identity,
+                        role,
+                        organization,
+                        chats,
+                        projectExpansion,
+                        composer,
+                        controls,
+                        recovery,
+                        store.workspaceModel {
+                            ArtifactCatalogModel(owner.artifacts, connectivity) {
+                                workspaceFailure(ticket, snapshot, it)
+                            }
+                        },
+                        store.workspaceModel("chat-artifacts") {
+                            ArtifactCatalogModel(owner.artifacts, connectivity) {
+                                workspaceFailure(ticket, snapshot, it)
+                            }
+                        },
+                    )
+                mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
+                preparation?.let(chats::restoreStartupCache)
+                // The list owns restoration after handoff, including during bootstrap retries.
+                preparation = null
+                chats.refresh()
+                loadRemainingMemberships(ticket, snapshot)
+                finishPreparation(ticket, snapshot, opened)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
+                    val state = mutable.value
+                    retire()
+                    mutable.value =
+                        SessionUiState(
+                            generation,
+                            SessionStage.Unavailable,
+                            cachedAppearance = state.cachedAppearance,
+                            opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                        )
+                }
+            } finally {
+                appearanceRead?.cancel()
+                cacheWarm?.cancel()
+                preparation?.cancel()
+            }
+        }
     }
 
     private suspend fun prepareChatList(identity: WorkspaceIdentity) =
@@ -438,34 +428,33 @@ class SessionModel(
                                     if (it.permissions == null) "unknown" else "known",
                                 ) + it.permissions.orEmpty().sorted()
                             }
-                            .orEmpty()
-                )
+                            .orEmpty(),
+                ),
         )
 
     private fun loadRemainingMemberships(ticket: Long, snapshot: AuthenticationState) {
         if (membershipsComplete || membershipLoad?.isActive == true) return
         val session = checkNotNull(snapshot.session)
-        membershipLoad =
-            viewModelScope.launch {
-                val memberships =
-                    try {
-                        authentication.memberships(session)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        workspaceFailure(ticket, snapshot, error)
-                        return@launch
-                    }
-                requireCurrent(ticket, snapshot)
-                membershipsComplete = true
-                if (memberships.none { it.id == session.workspaceId }) {
-                    retire()
-                    mutable.value =
-                        SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
-                } else {
-                    mutable.value = mutable.value.copy(memberships = memberships)
+        membershipLoad = viewModelScope.launch {
+            val memberships =
+                try {
+                    authentication.memberships(session)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    workspaceFailure(ticket, snapshot, error)
+                    return@launch
                 }
+            requireCurrent(ticket, snapshot)
+            membershipsComplete = true
+            if (memberships.none { it.id == session.workspaceId }) {
+                retire()
+                mutable.value =
+                    SessionUiState(generation, SessionStage.ChooseWorkspace, memberships)
+            } else {
+                mutable.value = mutable.value.copy(memberships = memberships)
             }
+        }
     }
 
     private suspend fun finishPreparation(
@@ -499,41 +488,38 @@ class SessionModel(
         currentCoroutineContext().ensureActive()
         requireCurrent(ticket, snapshot)
         val resolvedOrganization = checkNotNull(organization)
-        val preferences =
-            store.workspaceModel {
-                MemberPreferencesModel(
-                    initial,
+        val preferences = store.workspaceModel {
+            MemberPreferencesModel(
+                initial,
+                owner,
+                authorized = { current(ticket, snapshot) },
+                onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+                connectivity = connectivity,
+                initialPending =
+                    pendingPreferences[opened.identity.userId to opened.identity.workspaceId],
+            )
+        }
+        val instructions = store.workspaceModel {
+            PersonalInstructionsModel(
+                owner,
+                instructionsDrafts,
+                opened.identity,
+                { current(ticket, snapshot) },
+                { workspaceFailure(ticket, snapshot, it) },
+            )
+        }
+        val settings = store.workspaceModel {
+            WorkspaceSettingsModel(
                     owner,
-                    authorized = { current(ticket, snapshot) },
-                    onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
-                    connectivity = connectivity,
-                    initialPending =
-                        pendingPreferences[opened.identity.userId to opened.identity.workspaceId],
-                )
-            }
-        val instructions =
-            store.workspaceModel {
-                PersonalInstructionsModel(
-                    owner,
-                    instructionsDrafts,
                     opened.identity,
+                    defaultModelStore,
+                    resolvedOrganization.role == OrganizationRole.ADMIN,
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
+                    connectivity,
                 )
-            }
-        val settings =
-            store.workspaceModel {
-                WorkspaceSettingsModel(
-                        owner,
-                        opened.identity,
-                        defaultModelStore,
-                        resolvedOrganization.role == OrganizationRole.ADMIN,
-                        { current(ticket, snapshot) },
-                        { workspaceFailure(ticket, snapshot, it) },
-                        connectivity,
-                    )
-                    .also { it.defaultModel.foreground(foreground.value) }
-            }
+                .also { it.defaultModel.foreground(foreground.value) }
+        }
         val workflows =
             owner.workflowService?.let { service ->
                 store.workspaceModel {
@@ -677,8 +663,9 @@ class SessionModel(
             if (state.working) return
             val snapshot = checkNotNull(observed)
             mutable.value = state.copy(stage = SessionStage.LoadingWorkspace, working = true)
-            operation =
-                viewModelScope.launch { finishPreparation(expectedGeneration, snapshot, opened) }
+            operation = viewModelScope.launch {
+                finishPreparation(expectedGeneration, snapshot, opened)
+            }
             return
         }
         authentication.initialize()
@@ -694,19 +681,18 @@ class SessionModel(
         retire()
         val ticket = generation
         mutable.value = SessionUiState(generation, SessionStage.LoadingWorkspace, working = true)
-        operation =
-            viewModelScope.launch {
-                try {
-                    authentication.selectWorkspace(session, id)
-                    currentCoroutineContext().ensureActive()
-                    if (generation == ticket) reconcile(authentication.state.value, force = true)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    if (generation == ticket)
-                        mutable.value = SessionUiState(generation, SessionStage.Unavailable)
-                }
+        operation = viewModelScope.launch {
+            try {
+                authentication.selectWorkspace(session, id)
+                currentCoroutineContext().ensureActive()
+                if (generation == ticket) reconcile(authentication.state.value, force = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (generation == ticket)
+                    mutable.value = SessionUiState(generation, SessionStage.Unavailable)
             }
+        }
     }
 
     fun signOut(expectedGeneration: Long) {
@@ -715,19 +701,18 @@ class SessionModel(
         retire()
         val ticket = generation
         mutable.value = SessionUiState(generation, SessionStage.SigningOut, working = true)
-        operation =
-            viewModelScope.launch {
-                try {
-                    authentication.signOut()
-                    currentCoroutineContext().ensureActive()
-                    if (generation == ticket) reconcile(authentication.state.value, force = true)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    if (generation == ticket)
-                        mutable.value = SessionUiState(generation, SessionStage.Unavailable)
-                }
+        operation = viewModelScope.launch {
+            try {
+                authentication.signOut()
+                currentCoroutineContext().ensureActive()
+                if (generation == ticket) reconcile(authentication.state.value, force = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                if (generation == ticket)
+                    mutable.value = SessionUiState(generation, SessionStage.Unavailable)
             }
+        }
     }
 
     override fun onCleared() {

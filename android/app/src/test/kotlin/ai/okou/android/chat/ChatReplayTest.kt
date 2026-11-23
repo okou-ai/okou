@@ -18,7 +18,7 @@ class ChatReplayTest {
     private fun replay(vararg events: String): List<ConfirmedChat> {
         val page =
             json.decodeFromString<ChatEvents>(
-                """{"events":[${events.joinToString(",")}],"hasMore":false}"""
+                """{"events":[${events.joinToString(",")}],"hasMore":false}""",
             )
         return replayChats(
             ChatCheckpoint(
@@ -26,7 +26,7 @@ class ChatReplayTest {
                 ChatCursor(),
                 page.events,
                 page.events.last().cursor(),
-            )
+            ),
         )
     }
 
@@ -119,8 +119,8 @@ class ChatReplayTest {
                                     "Research",
                                     "2026-11-13T00:00:00Z",
                                     "2026-11-13T00:00:00Z",
-                                )
-                            )
+                                ),
+                            ),
                     ),
                 indicators =
                     Indicators(
@@ -134,7 +134,7 @@ class ChatReplayTest {
         assertTrue(
             chatListGroups(state.copy(threads = listOf(projectRow.copy(muted = true)))).all {
                 it.threads.isEmpty()
-            }
+            },
         )
         val active =
             checkNotNull(state.indicators)
@@ -165,7 +165,12 @@ class ChatReplayTest {
                         event(1, "created", thread = CHAT_IN_PROJECT, extra = projectMember),
                         event(2, "created", thread = ordinary, extra = projectMember),
                         event(3, "created"),
-                        event(4, "pinned", thread = CHAT_IN_PROJECT, extra = ",\"pinOrder\":\"a1\""),
+                        event(
+                            4,
+                            "pinned",
+                            thread = CHAT_IN_PROJECT,
+                            extra = ",\"pinOrder\":\"a1\"",
+                        ),
                     ),
                 projectList = ProjectListUiState(rows = listOf(project)),
                 indicators =
@@ -263,7 +268,7 @@ class ChatReplayTest {
         assertTrue(ChatRowAction.MovePinDown in state.rowActions(member, visible, 0))
         assertFalse(
             ChatRowAction.MovePinDown in
-                state.copy(filter = ChatListFilter.Muted).rowActions(member, visible, 0)
+                state.copy(filter = ChatListFilter.Muted).rowActions(member, visible, 0),
         )
     }
 
@@ -320,7 +325,12 @@ class ChatReplayTest {
             replay(
                 event(1, "created"),
                 event(2, "created", extra = member, thread = CHAT_IN_PROJECT),
-                event(3, "created", extra = member, thread = "99999999-9999-4999-8999-999999999999"),
+                event(
+                    3,
+                    "created",
+                    extra = member,
+                    thread = "99999999-9999-4999-8999-999999999999",
+                ),
             )
         val project =
             ConfirmedProject(
@@ -334,11 +344,11 @@ class ChatReplayTest {
                 ChatListUiState(
                     threads = threads,
                     projectList = ProjectListUiState(rows = listOf(project)),
-                )
+                ),
             )
         val provisional =
             mapOf<String?, List<ProvisionalChat>>(
-                project.id to listOf(ProvisionalChat("pending", project.id))
+                project.id to listOf(ProvisionalChat("pending", project.id)),
             )
 
         val (open, afterOpen) = chatListSections(groups, setOf(project.id), provisional)
