@@ -1,5 +1,6 @@
 use super::phase_diagnostics::GatedResponse;
 use super::*;
+use sandbox_mock::MockSandboxOverrides;
 use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
@@ -106,7 +107,15 @@ async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() 
         );
 
         let runtime = temp.path().join("runtime");
-        let sandbox = Arc::new(MockSandbox::new("saturated-archive-delivery"));
+        let marker_gate = MockLifecycleGate::new();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        if cache_state == "warm" && guest_eligible {
+            overrides.set_private_write_file_lifecycle_gate(marker_gate.clone());
+        }
+        let sandbox = Arc::new(MockSandbox::with_overrides(
+            "saturated-archive-delivery",
+            overrides.clone(),
+        ));
         if !guest_eligible {
             sandbox.push_exec_result(Ok(sandbox::ExecResult::new(
                 0,
@@ -196,6 +205,12 @@ async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() 
                     admission.permits.available_permits(),
                     FRESH_DELIVERY_RUNNER_LIMIT - FRESH_DELIVERY_PER_RUN_LIMIT + 1
                 );
+                marker_gate
+                    .wait_entered(1, Duration::from_secs(5))
+                    .await
+                    .unwrap();
+                marker_gate.release_one();
+                overrides.clear_private_write_file_lifecycle_gate();
             } else {
                 assert!(sandbox.write_files_calls().len() <= 1);
             }
@@ -214,6 +229,24 @@ async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() 
             .await
             .unwrap()
             .unwrap();
+        if cache_state == "warm"
+            && let Some(readiness) = &readiness
+        {
+            let staged_url = format!("file://{}", guest_archive_path("fresh-0", "v1"));
+            let index = readiness
+                .sources
+                .iter()
+                .position(|url| *url == staged_url)
+                .unwrap();
+            let batches = sandbox.private_write_files_calls();
+            let [notice] = batches.first().unwrap().files.as_slice() else {
+                panic!("the first notice must publish the pre-staged body only");
+            };
+            assert_eq!(
+                Path::new(&notice.path),
+                readiness.ready_path(&runtime, index)
+            );
+        }
         if abort {
             assert!(matches!(result, Err(RunnerError::Cancelled)));
             let abort = sandbox.private_write_file_calls();
