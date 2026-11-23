@@ -639,6 +639,44 @@ class ChatComposerModelTest {
         }
 
     @Test
+    fun previouslyPersistedSendRestoresAsDraftTextWithoutDispatch() =
+        check { service, store, create ->
+            var model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "legacy pending text")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            model.send(existing)
+            runCurrent()
+            val pending = checkNotNull(model.uiState.value.entry(existing).pending)
+            store.persist(
+                identity,
+                ComposerJournal(
+                    format = 3,
+                    entries =
+                        mapOf(
+                            existing.key to ComposerEntry(pending = pending.copy(started = null)),
+                        ),
+                ),
+            )
+            runCurrent()
+            model = create(true, identity)
+            model.open(existing)
+            runCurrent()
+            assertNull(model.uiState.value.entry(existing).pending)
+            assertEquals(
+                pending.send.prompt,
+                model.uiState.value.journal?.retainedDrafts?.get(pending.eventId),
+            )
+            model.restoreDraft(existing, pending.eventId)
+            runCurrent()
+            assertEquals(pending.send.prompt, model.uiState.value.entry(existing).text)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(1, service.requests.size)
+        }
+
+    @Test
     fun lostCreateResponseReusesTheOriginalThreadAndEventIds() = check { service, _, create ->
         val target = ComposerTarget(projectId = CHAT_PROJECT)
         val model = create(false, identity)
