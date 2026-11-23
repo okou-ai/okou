@@ -195,14 +195,20 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
                         state.matches,
                         state.connected.data,
                         route.connected,
+                        filter,
                         selected,
                     ) {
                         val catalog =
-                            state.matches?.entries?.data?.entries?.find { it.slug == selected }
+                            state.matches
+                                ?.takeIf { it.filter == filter }
+                                ?.entries
+                                ?.data
+                                ?.entries
+                                ?.find { it.slug == selected }
                                 ?: state.browse.data?.entries?.find { it.slug == selected }
                         val connected = state.connected.data?.get(selected)?.entry
                         if (route.connected && connected != null) {
-                            catalog?.let { it.copy(icon = connected.icon ?: it.icon) } ?: connected
+                            catalog?.copy(icon = connected.icon) ?: connected
                         } else catalog ?: connected
                     }
                 key(selected) {
@@ -313,7 +319,7 @@ private fun ConnectorDirectory(
                     connected
                         ?.mapNotNull { (slug, service) ->
                             val entry =
-                                bySlug[slug]?.let { it.copy(icon = service.entry.icon ?: it.icon) }
+                                bySlug[slug]?.copy(icon = service.entry.icon)
                                     ?: if (filtered != null) return@mapNotNull null
                                     else service.entry
                             if (

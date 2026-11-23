@@ -851,9 +851,10 @@ class ConnectorModel(
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
             val knownServices = state.connected.data
+            // The account read has no catalog data. Keep the overview's current entry.
             val entry =
-                state.detail.data?.entry?.takeIf { it.slug == slug }
-                    ?: knownServices?.get(slug)?.entry
+                knownServices?.get(slug)?.entry
+                    ?: state.detail.data?.entry?.takeIf { it.slug == slug }
                     ?: cached?.detail?.data?.entry
             val services =
                 when {

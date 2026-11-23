@@ -45,6 +45,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var icons: Map<String, FixtureConnectorIcon> = emptyMap()
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
+    @Volatile var detailReplyGate: CountDownLatch? = null
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
@@ -180,6 +181,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         )
                     }
                     val response = synchronized(accounts) { respond(request) }
+                    if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
+                        detailReplyGate?.await()
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -481,6 +484,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
 
     override fun close() {
         discoveryGate?.countDown()
+        detailReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         https.use { api.close() }
