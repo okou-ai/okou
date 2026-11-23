@@ -198,7 +198,7 @@ class MainActivity : AppCompatActivity() {
                         { authentication.signOut(presentedGeneration) },
                         account = account,
                         openWorkspaceSetup = {
-                            val opened =
+                            authentication.openWorkspaceSetup(presentedGeneration) {
                                 try {
                                     startActivity(
                                         Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri()),
@@ -207,7 +207,7 @@ class MainActivity : AppCompatActivity() {
                                 } catch (_: ActivityNotFoundException) {
                                     false
                                 }
-                            authentication.workspaceSetupResult(presentedGeneration, opened)
+                            }
                         },
                         appUpdates = {
                             AppUpdateSettings(
