@@ -48,6 +48,8 @@ internal data class SettingsRead<T>(
 )
 
 private const val staleAfterMillis = 10 * 60_000L
+private const val maxReadAttempts = 3
+private const val readRetryDelayMillis = 3_000L
 private const val accountsResource = "accounts"
 private const val usagePackResource = "usage-pack"
 private const val workspaceCreditsResource = "workspace-credits"
@@ -341,8 +343,9 @@ internal constructor(
                     error is ApiFailure.Network ||
                         error is ApiFailure.Http &&
                             (error.status in 500..599 || error.status in setOf(408, 429))
+                val willRetry = retryable && failures < maxReadAttempts
                 val current = state()
-                if (current.value == null || failures >= 2 || !retryable) {
+                if (current.value == null || !willRetry) {
                     val value =
                         current.value.takeUnless { error is ApiFailure.Http && error.status == 403 }
                     publish(
@@ -356,9 +359,9 @@ internal constructor(
                         cache?.save(identity, resource, serializer, null)
                     }
                 }
-                if (!retryable) return
+                if (!willRetry) return
                 if (refreshTokens[resource] === token) showProgress(resource, false)
-                delay(if (failures == 1) 5_000 else 30_000)
+                delay(readRetryDelayMillis)
             } finally {
                 if (refreshTokens[resource] === token) {
                     refreshTokens.remove(resource)

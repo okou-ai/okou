@@ -2,6 +2,7 @@ package ai.okou.android.settings
 
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.SettingsApiFixture
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.UsagePackCredits
 import ai.okou.android.auth.WorkspaceSession
@@ -12,12 +13,15 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -147,17 +151,37 @@ class WorkspaceSettingsModelTest {
         try {
             ChatListApiFixture().use { api ->
                 val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                val creditsSerializer = UsagePackCredits.serializer()
+                val saved = UsagePackCredits(100, 90, 10)
+                val writerScope = CoroutineScope(StandardTestDispatcher(testScheduler))
+                try {
+                    val writer =
+                        WorkspaceSettingsCache(
+                            PreferenceDataStoreFactory.create(scope = writerScope) { file },
+                        )
+                    writer.save(
+                        api.identity,
+                        "usage-pack",
+                        creditsSerializer,
+                        ConfirmedSetting(saved, 0),
+                    )
+                } finally {
+                    writerScope.cancel()
+                }
+                runCurrent()
                 val cache =
                     WorkspaceSettingsCache(
                         PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
                     )
-                val saved = UsagePackCredits(100, 90, 10)
-                cache.save(
-                    api.identity,
-                    "usage-pack",
-                    UsagePackCredits.serializer(),
-                    ConfirmedSetting(saved, 0),
-                )
+                val otherScopes =
+                    listOf(
+                        api.identity.copy(userId = "other-user"),
+                        api.identity.copy(workspaceId = "other-workspace"),
+                        api.identity.copy(authorizationScope = "other-access"),
+                    )
+                for (identity in otherScopes) {
+                    assertNull(cache.load(identity, "usage-pack", creditsSerializer))
+                }
                 val online = MutableStateFlow(false)
                 var time = 600_000L
                 val reply = CompletableDeferred<UsagePackCredits>()
@@ -185,6 +209,61 @@ class WorkspaceSettingsModelTest {
                 val fresh = model.uiState.first { it.usagePack.value?.totalCredits == 200L }
                 assertFalse(fresh.usagePack.refreshing)
                 assertNull(fresh.workspaceCredits.value)
+            }
+        } finally {
+            store.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun staleCreditRetriesTwiceBeforeShowingFailureAndKeepsTheConfirmedBalance() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val confirmed = UsagePackCredits(860, 800, 60)
+                val failedAttempts = mutableListOf<Long>()
+                var available = true
+                var time = 0L
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun usagePackCredits(): UsagePackCredits {
+                            if (available) return confirmed
+                            failedAttempts += testScheduler.currentTime
+                            throw ApiFailure.Http(503, null, null, null)
+                        }
+                    }
+                val model = settings(store, api, service = service) { time }
+                model.visible(SettingsDestination.CreditBalance)
+                runCurrent()
+                assertEquals(confirmed, model.uiState.value.usagePack.value)
+
+                model.visible(null)
+                available = false
+                time = 600_001L
+                model.visible(SettingsDestination.CreditBalance)
+                runCurrent()
+                assertEquals(listOf(0L), failedAttempts)
+                assertFalse(model.uiState.value.usagePack.refreshing)
+                assertFalse(model.uiState.value.usagePack.unavailable)
+
+                advanceTimeBy(3_000L)
+                runCurrent()
+                assertEquals(listOf(0L, 3_000L), failedAttempts)
+                assertFalse(model.uiState.value.usagePack.refreshing)
+                assertFalse(model.uiState.value.usagePack.unavailable)
+
+                advanceTimeBy(3_000L)
+                runCurrent()
+                val failed = model.uiState.value.usagePack
+                assertEquals(confirmed, failed.value)
+                assertFalse(failed.refreshing)
+                assertTrue(failed.unavailable)
+
+                advanceTimeBy(60_000L)
+                runCurrent()
+                assertEquals(listOf(0L, 3_000L, 6_000L), failedAttempts)
             }
         } finally {
             store.clear()
