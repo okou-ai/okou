@@ -30,7 +30,13 @@ public enum APIClientError: LocalizedError, Sendable {
     switch self {
     case .http(401, _, _, _): "Your session expired. Sign in again."
     case .http(426, _, _, _): "Update Okou to continue."
-    case .http(402, let message, _, _): "\(message) Manage your plan on the Okou website."
+    case .http(402, _, "INSUFFICIENT_CREDITS", _):
+      String(localized: "Out of credits", table: "RunFailures")
+    case .http(402, _, "AUDIO_INPUT_QUOTA_EXCEEDED", _):
+      String(localized: "Your voice input limit has been reached.")
+    case .http(402, _, "PRO_REQUIRED", _), .http(402, _, "TEAM_REQUIRED", _):
+      String(localized: "This action is unavailable on your current plan.")
+    case .http(402, _, _, _): String(localized: "Limit reached")
     case .http(403, let message, _, _):
       "\(message) Check your workspace access on the Okou website."
     case .http(429, let message, _, _): "\(message) Wait a moment, then refresh."

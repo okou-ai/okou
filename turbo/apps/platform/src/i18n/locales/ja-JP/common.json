@@ -1953,7 +1953,7 @@
       },
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "hint": "ワークフローを検索するか、テンプレートを選択…",
+        "hint": "アクションを選択",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",

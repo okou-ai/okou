@@ -5,6 +5,7 @@ import {
 } from "@okouai/db/schema/google-forms-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, sql } from "drizzle-orm";
+import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
 
 export interface GoogleFormsQueueSource {
   readonly orgId: string;
@@ -28,7 +29,7 @@ export class GoogleFormsSourceTransitionChangedError extends Error {
 }
 
 function googleFormsQueueAdmissionSql(source: GoogleFormsQueueSource) {
-  return sql`SELECT 1 WHERE EXISTS (
+  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(source, source.connectorId)} AND EXISTS (
       SELECT 1 FROM ${workflowAutomations}
       WHERE ${and(
         eq(workflowAutomations.id, source.automationId),

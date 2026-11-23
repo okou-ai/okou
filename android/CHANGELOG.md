@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.46.1](https://github.com/okou-ai/okou/compare/android-v0.46.0...android-v0.46.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **android:** align app update surfaces with design ([#50122](https://github.com/okou-ai/okou/issues/50122)) ([99f3aa6](https://github.com/okou-ai/okou/commit/99f3aa67b5ba71a324b309efeb18d4313d5dd481))
+* **android:** restore cached model accounts and credit balances ([#50120](https://github.com/okou-ai/okou/issues/50120)) ([b17e345](https://github.com/okou-ai/okou/commit/b17e34584e42a8908be4b202287f7fe3a28953be))
+
 ## [0.46.0](https://github.com/okou-ai/okou/compare/android-v0.45.2...android-v0.46.0) (2026-11-23)
 
 

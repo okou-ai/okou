@@ -5,6 +5,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { ne, sql, type SQL } from "drizzle-orm";
 import { workflowAutomationConnectorSelectionSql } from "./workflow-automation-account.service";
+import { memberConnectorAccountAccessEnabledSql } from "./member-connector-account-access";
 
 /**
  * Publish the selected business source and discard an incompatible cursor.
@@ -29,6 +30,8 @@ export function googleFormsAccountProjectionUpdate(args: {
   readonly orgId: string;
   readonly userId: string;
   readonly defaultConnectorId?: SQL;
+  /** The proposed default is already visible in the statement's connector snapshot. */
+  readonly nextDefault?: SQL;
   readonly excludedChatThreadId?: string;
   readonly selectedThread?: {
     readonly chatThreadId: string;
@@ -36,7 +39,8 @@ export function googleFormsAccountProjectionUpdate(args: {
   };
   readonly publicationCondition?: SQL;
 }) {
-  const defaultConnectorId = args.defaultConnectorId ?? sql`${connectors.id}`;
+  const defaultConnectorId =
+    args.nextDefault ?? args.defaultConnectorId ?? sql`${connectors.id}`;
   const selectionCondition =
     args.excludedChatThreadId === undefined
       ? sql.empty()
@@ -45,16 +49,22 @@ export function googleFormsAccountProjectionUpdate(args: {
     THEN ${chatThreadConnectorSelections.connectorId}
     ELSE ${defaultConnectorId} END`;
   const reconcile =
+    args.nextDefault === undefined &&
     args.defaultConnectorId === undefined &&
     args.excludedChatThreadId === undefined &&
     args.selectedThread === undefined &&
     args.publicationCondition === undefined;
-  const selectedConnectorId = reconcile
-    ? sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "google-forms" })})`
-    : args.selectedThread === undefined
+  const selection = sql`(${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "google-forms" })})`;
+  const savedSelection =
+    args.selectedThread === undefined
       ? snapshotConnectorId
       : sql`CASE WHEN ${workflowUserAutomationThreads.chatThreadId} = ${args.selectedThread.chatThreadId}
         THEN ${args.selectedThread.connectorId}::uuid ELSE ${snapshotConnectorId} END`;
+  const selectedConnectorId = reconcile
+    ? selection
+    : args.nextDefault !== undefined
+      ? sql`CASE WHEN ${memberConnectorAccountAccessEnabledSql(args)} THEN ${selection} ELSE ${savedSelection} END`
+      : savedSelection;
   const publicationCondition =
     args.publicationCondition === undefined
       ? sql.empty()

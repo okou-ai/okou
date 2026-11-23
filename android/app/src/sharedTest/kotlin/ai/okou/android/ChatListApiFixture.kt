@@ -90,6 +90,13 @@ class ChatListApiFixture : Closeable {
     @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     @Volatile var historyThreadIds = setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+    @Volatile
+    var searchMessages: (RecordedRequest) -> MockResponse = { jsonResponse("""{"results":[]}""") }
+    @Volatile
+    var searchArtifacts: (RecordedRequest) -> MockResponse = {
+        jsonResponse("""{"artifacts":[],"nextCursor":null}""")
+    }
+    @Volatile var searchWorkflows: () -> MockResponse = { jsonResponse("[]") }
 
     @Volatile var historyReply = "**Native history** reply"
 
@@ -247,6 +254,9 @@ class ChatListApiFixture : Closeable {
                         }
                     }
                     return when (request.requestUrl?.encodedPath) {
+                        "/api/chat/search" -> searchMessages(request)
+                        "/api/workflows" -> searchWorkflows()
+                        "/api/artifacts/catalog" -> searchArtifacts(request)
                         "/api/chat/events/catch-up" -> historyCatchUp(request)
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)

@@ -18,6 +18,7 @@ readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561d
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
+readonly DIRECT_DISPATCH_GZIP_READER_COMMIT=dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290
 # Project lifecycle events require the CLI reader installed by #44617.
 readonly PROJECT_READER_PREPARATION_COMMIT=428f46154beb1a11cdf09f150650c388826e539c
 readonly PROJECT_WIRE_CONTRACTS_PATH=.github/rollback-floors/project-wire-contracts
@@ -1340,6 +1341,10 @@ runner_tag=$(runner_image_release_tag "$runner_version")
 runner_tag_commit=$(git rev-list -n 1 "$runner_tag" || true)
 if [ -z "$runner_tag_commit" ] || ! git merge-base --is-ancestor "$runner_tag_commit" "$TARGET_COMMIT"; then
   fail "Runner release ${runner_tag} is not reachable from ${TARGET_COMMIT}."
+fi
+# The production API can keep sending gzip while Runner rollback runs.
+if ! git merge-base --is-ancestor "$DIRECT_DISPATCH_GZIP_READER_COMMIT" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates gzip direct dispatch: ${DIRECT_DISPATCH_GZIP_READER_COMMIT}."
 fi
 teams_upload_v2_cli_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
   origin/main -- "$TEAMS_UPLOAD_V2_CLI_PATH" | sed -n '1p')

@@ -121,7 +121,7 @@ class NativeUpdateTest {
             fun click(label: Int) =
                 button(By.pkg(app.packageName).text(app.getString(label))).click()
             fun exists(label: Int) = assertNotNull(text(app.getString(label)))
-            fun revealSettingsUpdate(label: String = app.getString(R.string.updates_title)) {
+            fun revealSettingsUpdate(label: String) {
                 val target = By.pkg(app.packageName).text(label)
                 if (device.hasObject(target)) return
                 val settings = checkNotNull(find(By.pkg(app.packageName).scrollable(true)))
@@ -156,8 +156,12 @@ class NativeUpdateTest {
             assertGap(8, button(filterAction).visibleBounds.left - searchBounds.right)
             captureState("toolbar-current")
             val updateTarget = app.getString(R.string.updates_version, "99.0.0")
+            val installedVersion =
+                app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME)
+            val close = By.pkg(app.packageName).text(app.getString(R.string.updates_close))
+            fun detailsBounds() =
+                checkNotNull(text(installedVersion)).visibleBounds to button(close).visibleBounds
             fun closeDetails() {
-                val close = By.pkg(app.packageName).text(app.getString(R.string.updates_close))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 assertTrue(
                     "Back did not dismiss the update details",
@@ -170,25 +174,53 @@ class NativeUpdateTest {
                 device.awaitChatList(app)
             }
             button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
-            revealSettingsUpdate()
+            val noUpdateNeeded = app.getString(R.string.updates_not_needed)
+            val updateNeeded = app.getString(R.string.updates_needed)
+            val checking = app.getString(R.string.updates_check_in_progress)
+            val checkFailed = app.getString(R.string.updates_status_check_failed)
+            val settingsUpdate = By.pkg(app.packageName).text(app.getString(R.string.updates_title))
+            revealSettingsUpdate(checking)
+            captureState("settings-checking")
+            val settingsUpdateBounds = button(settingsUpdate).visibleBounds
+            fun assertSettingsRowSize() {
+                val bounds = button(settingsUpdate).visibleBounds
+                assertEquals(settingsUpdateBounds.width(), bounds.width())
+                assertEquals(settingsUpdateBounds.height(), bounds.height())
+            }
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
+            val initialDetailsBounds = detailsBounds()
             gate.complete(Unit)
             exists(R.string.updates_error_check)
             captureState("details-check-failed")
-            click(R.string.updates_retry_check)
+            assertEquals(initialDetailsBounds, detailsBounds())
+            closeDetails()
+            assertNotNull(text(checkFailed))
+            assertSettingsRowSize()
+            captureState("settings-check-failed")
+            click(R.string.updates_title)
             exists(R.string.updates_current)
             captureState("details-up-to-date")
+            assertEquals(initialDetailsBounds, detailsBounds())
+            closeDetails()
+            assertNotNull(text(noUpdateNeeded))
+            assertSettingsRowSize()
+            captureState("settings-current")
             candidate.set(release)
+            click(R.string.updates_title)
             click(R.string.updates_check)
             assertNotNull(text(updateTarget))
+            device.waitForIdle()
+            assertEquals(initialDetailsBounds, detailsBounds())
             closeDetails()
             backToChatList()
 
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
             assertEquals(searchBounds, button(search).visibleBounds)
+            assertGap(48, updateBounds.width())
+            assertGap(48, updateBounds.height())
             assertGap(8, updateBounds.left - searchBounds.right)
             captureState("toolbar-available")
             assertTrue(
@@ -250,8 +282,8 @@ class NativeUpdateTest {
                 requireNotNull(device.wait(Until.findObject(By.desc(moreLabel)), 10_000)).click()
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(app.getString(R.string.updates_new_version))
-            exists(R.string.updates_new_version)
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-available")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
@@ -285,10 +317,29 @@ class NativeUpdateTest {
 
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(progressLabel)
-            assertNotNull(text(progressLabel))
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-progress")
             backToChatList()
+
+            download.get().completeExceptionally(IOException("fixture download failed"))
+            val failed =
+                button(
+                    By.pkg(app.packageName).desc(app.getString(R.string.updates_download_failed)),
+                )
+            assertEquals(updateBounds, failed.visibleBounds)
+            captureState("toolbar-failed")
+            failed.click()
+            val targetBounds = checkNotNull(text(updateTarget)).visibleBounds
+            val errorBounds =
+                checkNotNull(text(app.getString(R.string.updates_error_download))).visibleBounds
+            assertTrue(errorBounds.top >= targetBounds.bottom)
+            captureState("details-download-failed")
+            assertEquals(initialDetailsBounds, detailsBounds())
+            download.set(CompletableDeferred())
+            click(R.string.updates_download)
+            assertNotNull(text(progressLabel))
+            click(R.string.updates_close)
 
             button(search).click()
             val searchQuery = "fixture query"
@@ -308,8 +359,8 @@ class NativeUpdateTest {
             captureState("toolbar-ready")
             openOverflow()
             click(R.string.settings)
-            revealSettingsUpdate(app.getString(R.string.updates_ready))
-            exists(R.string.updates_ready)
+            revealSettingsUpdate(updateNeeded)
+            assertSettingsRowSize()
             captureState("settings-ready")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
@@ -318,9 +369,13 @@ class NativeUpdateTest {
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
             download.set(CompletableDeferred())
-            candidate.set(release.copy(version = "99.1.0"))
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
-            exists(R.string.updates_required)
+            exists(R.string.updates_required_incompatible)
+            exists(R.string.updates_android_unsupported)
+            captureState("required-incompatible")
+            candidate.set(release.copy(version = "99.1.0"))
+            click(R.string.updates_check_compatible)
             exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()

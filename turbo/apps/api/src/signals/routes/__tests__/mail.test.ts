@@ -3,7 +3,9 @@ import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
 
@@ -25,6 +27,7 @@ import { createRouteMocks } from "./helpers/route-test";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { mailRoutes } from "../mail";
 import { chatThreadRoutes } from "../chat-threads";
+import { chatConnectorAccessRoutes } from "../chat-connector-access";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1337,6 +1340,48 @@ describe("POST /api/mail/drafts/link", () => {
     );
     await linkDraft(fixture);
     expect(gmail.draftReadCount).toBe(1);
+  });
+
+  it("follows member account eligibility when the Chat owner links a Gmail draft", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    await connectors.updateFeatureSwitches(fixture.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const request = {
+      headers: authHeaders(),
+      params: { connectionId: fixture.gmail.id },
+      body: { target: { kind: "builtin", connectorSlug: "gmail" } as const },
+    };
+    await accept(
+      access.updateAccountPolicy({
+        ...request,
+        body: { ...request.body, policy: "deny" },
+      }),
+      [200],
+    );
+    mockGmailDraftApi();
+    const rejected = await accept(
+      client().linkDraft({
+        headers: request.headers,
+        body: { threadId: fixture.thread.id, gmailDraftId: GMAIL_DRAFT_ID },
+      }),
+      [409],
+    );
+    expect(rejected.body.error.message).toBe(
+      "Connect and allow Gmail in this Chat first",
+    );
+
+    await accept(
+      access.updateAccountPolicy({
+        ...request,
+        body: { ...request.body, policy: "allow-always" },
+      }),
+      [200],
+    );
+    await linkDraft(fixture);
   });
 
   it("uses a healthy Gmail connection with its provider-granted scope", async () => {

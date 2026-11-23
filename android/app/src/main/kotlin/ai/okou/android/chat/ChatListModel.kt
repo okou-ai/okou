@@ -1505,6 +1505,12 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
+    internal fun refreshSearchMetadata() {
+        if (listRetryAt != null) return
+        // A remote search response can arrive while connectivity still reports offline.
+        requestListRead(userRequested = true, resetCompletedActivity = false)
+    }
+
     internal fun retryList() = requestListRead(userRequested = true)
 
     private fun canRefreshList() = !mutable.value.offline && listRetryAt == null
