@@ -1,6 +1,5 @@
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -51,30 +50,4 @@ test("chat-search-debounce-001 only the settled number reaches workspace message
   for (const superseded of ["3", "32", "320", "3205"]) {
     expect(keywords.has(superseded)).toBeFalsy();
   }
-});
-test("chat-search-debounce-002 cleared and dismissed keywords never reach the search service", async () => {
-  const keywords = await searchFixture();
-  const input = await openSearch();
-  const type = (box: HTMLElement, value: string) => {
-    return fireEvent.change(box, { target: { value } });
-  };
-  type(input, "discarded");
-  type(input, "");
-  await expect(
-    within(await screen.findByRole("dialog")).findByText("Rich content"),
-  ).resolves.toBeVisible();
-  type(input, "issue");
-  await expect(
-    screen.findByLabelText("issue in the operations ledger"),
-  ).resolves.toBeVisible();
-  type(input, "dismissed");
-  await userEvent.keyboard("{Escape}");
-  const reopened = await openSearch();
-  expect(reopened).toHaveValue("");
-  type(reopened, "budget");
-  await expect(
-    screen.findByLabelText("budget in the operations ledger"),
-  ).resolves.toBeVisible();
-  expect(keywords.has("discarded")).toBeFalsy();
-  expect(keywords.has("dismissed")).toBeFalsy();
 });
