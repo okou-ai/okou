@@ -165,3 +165,36 @@ test.each([
     expect(editor).toHaveFocus();
   },
 );
+
+test("Filtering an existing chat mention resets the active thread through IME and dismissal", async () => {
+  const { editor, user } = await draft(false, [
+    "Private Ops",
+    "Saved Zeta mention",
+    "Zeta launch notes",
+  ]);
+  await fill(editor, "@");
+  expect(activeChoice(await menu())).toStrictEqual(["Private Ops"]);
+  await fill(editor, "@zeta");
+  const panel = await menu();
+  await waitFor(() => {
+    return expect(activeChoice(panel)).toStrictEqual(["Saved Zeta mention"]);
+  });
+  fireEvent.compositionStart(editor);
+  fireEvent.keyDown(editor, {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 229,
+    isComposing: true,
+  });
+  expect(panel).toBeVisible();
+  expect(editor.textContent).toBe("@zeta");
+  expect(editor.querySelector("[data-chat-thread-mention]")).toBeNull();
+  fireEvent.compositionEnd(editor);
+  await user.keyboard("{ArrowDown}");
+  expect(activeChoice(panel)).toStrictEqual(["Zeta launch notes"]);
+  await user.keyboard("{Escape}");
+  expect(panel).not.toBeInTheDocument();
+  expect(editor.textContent).toBe("@zeta");
+  await user.click(editor);
+  expect(activeChoice(await menu())).toStrictEqual(["Saved Zeta mention"]);
+});

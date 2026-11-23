@@ -1,4 +1,5 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+import entryCss from "../../css/index.css?inline";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { morningBriefPreferenceContract } from "@okouai/api-contracts/contracts/morning-brief-preference";
 import { test, expect } from "vitest";
@@ -99,3 +100,65 @@ test("preferences-page-007 saving Eastern Time restores Morning Brief while leav
     screen.queryByText("Set a valid time zone before enabling Morning Brief."),
   ).not.toBeInTheDocument();
 });
+
+// APCA 0.0.98G-4g uses gamma 2.4 and different exponents for each polarity.
+function paletteLuminance(hsl: string) {
+  const parts = hsl.trim().split(/\s+/u).map(Number.parseFloat);
+  const [hue, saturation, lightness] = parts;
+  const light = lightness / 100;
+  const amplitude = (saturation / 100) * Math.min(light, 1 - light);
+  function channel(offset: number) {
+    const k = (offset + hue / 30) % 12;
+    return (light - amplitude * Math.max(-1, Math.min(k - 3, 9 - k, 1))) ** 2.4;
+  }
+  const y =
+    0.2126729 * channel(0) + 0.7151522 * channel(8) + 0.072175 * channel(4);
+  return y < 0.022 ? y + (0.022 - y) ** 1.414 : y;
+}
+
+function apcaMagnitude(ink: number, fill: number) {
+  const difference =
+    ink < fill ? fill ** 0.56 - ink ** 0.57 : ink ** 0.62 - fill ** 0.65;
+  const contrast = 1.14 * difference;
+  return contrast < 0.1 ? 0 : 100 * (contrast - 0.027);
+}
+
+test.each([
+  ["color-themes-001", "Golden hour", "golden-hour"],
+  ["color-themes-002", "Citrus spark", "citrus-spark"],
+])(
+  "%s renders the stronger accessible label on both selected palette fills",
+  async (_id, name, theme) => {
+    workspace(null, null);
+    const sheet = document.createElement("style");
+    sheet.textContent = entryCss;
+    document.head.append(sheet);
+    try {
+      await setupPage({ context, path: "/preferences" });
+      click(await findAction("button", name));
+      const root = document.documentElement;
+      await waitFor(() => {
+        return expect(root).toHaveAttribute("data-color-theme", theme);
+      });
+      const computed = getComputedStyle(root);
+      const white = "0 0% 100%";
+      const ink = "40 4.3% 13.5%";
+      for (const tone of ["primary", "primary-dark"]) {
+        const prefix = "--okou-color-theme-" + tone;
+        const background = paletteLuminance(computed.getPropertyValue(prefix));
+        const label = computed.getPropertyValue(prefix + "-foreground").trim();
+        expect([white, ink]).toContain(label);
+        const score = apcaMagnitude(paletteLuminance(label), background);
+        expect(score).toBeGreaterThanOrEqual(60);
+        expect(score).toBeGreaterThan(
+          apcaMagnitude(
+            paletteLuminance(label === ink ? white : ink),
+            background,
+          ),
+        );
+      }
+    } finally {
+      sheet.remove();
+    }
+  },
+);

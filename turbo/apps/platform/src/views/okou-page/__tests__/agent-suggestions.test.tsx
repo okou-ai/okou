@@ -692,41 +692,47 @@ test("The For you banner reads the saved artwork again when the member reopens t
     return screen.findByRole("dialog", { name: "Change cover" });
   }
   const picker = within(await show(first));
-  expect(await picker.findByRole("radio", { name: "Cover 5" })).toBeChecked();
+  await expect(
+    picker.findByRole("radio", { name: "Cover 5" }),
+  ).resolves.toBeChecked();
   const next = picker.getByRole("radio", { name: "Cover 2" });
   click(next);
-  const banner = () => document.querySelector('[data-slot="for-you-cover"]');
-  await waitFor(() =>
-    expect(banner()).toHaveAttribute(
+  const banner = () => {
+    return document.querySelector('[data-slot="for-you-cover"]');
+  };
+  await waitFor(() => {
+    return expect(banner()).toHaveAttribute(
       "src",
       expect.stringContaining("/cover-02-"),
-    ),
-  );
+    );
+  });
   const artwork = banner()?.getAttribute("src");
   first.dispose();
   cleanup();
   const reopened = within(await show(createTestRuntime(context)));
-  expect(await reopened.findByRole("radio", { name: "Cover 2" })).toBeChecked();
+  await expect(
+    reopened.findByRole("radio", { name: "Cover 2" }),
+  ).resolves.toBeChecked();
   expect(banner()).toHaveAttribute("src", artwork!);
   const original = reopened.getByRole("radio", { name: "Default Cover 1" });
   click(original);
-  await waitFor(() =>
-    expect(banner()).toHaveAttribute(
+  await waitFor(() => {
+    return expect(banner()).toHaveAttribute(
       "src",
       expect.stringContaining("/cover-01-"),
-    ),
-  );
+    );
+  });
 });
 test("A failed cover change leaves the saved artwork and selection available for retry", async () => {
   context.mocks.data.userPreferences({ forYouCoverId: "cover-08" });
-  context.mocks.api(userPreferencesContract.update, ({ respond }) =>
-    respond(500, {
+  context.mocks.api(userPreferencesContract.update, ({ respond }) => {
+    return respond(500, {
       error: {
         code: "INTERNAL_SERVER_ERROR",
         message: "Artwork selection was declined",
       },
-    }),
-  );
+    });
+  });
   feed([proposal("Plan the service visit")]);
   await openDeck();
   click(await findFastControl("button", "Change cover"));

@@ -1,11 +1,13 @@
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
 import { screen, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
+  findEnabledButton,
   promptEvent,
   assistantEvent,
   completedEvent,
@@ -148,3 +150,115 @@ test("chat-session-output-stream-010 closing the streamed PDF embed reveals its 
   await screen.findByText("Survey delivered.");
   expect(screen.getByLabelText(preview)).toBeInTheDocument();
 });
+
+test.each([
+  ["session-output-stream-002", "delivered"],
+  ["Withheld control", "withheld"],
+] as const)(
+  "%s The replacement run keeps streaming in the same conversation with the old attach %s",
+  async (_case, schedule) => {
+    const first = crypto.randomUUID();
+    const member = "expense-reader",
+      org = "expense-group";
+    const channel = (id: string) => {
+      return sessionOutputChannelName(member, org, id);
+    };
+    const obsolete = context.mocks.ably.deferSubscribeOnChannel(
+      channel(first),
+      first,
+    );
+    let attached = false;
+    function finishAttachment() {
+      if (!attached) {
+        attached = true;
+        obsolete.attach();
+      }
+    }
+    const next = context.mocks.deferred<string>();
+    const lifecycle = mockChatLifecycle(context, {
+      onRunCreate(_body, runId) {
+        next.resolve(runId);
+      },
+      threadId: RUN_THREAD_ID,
+      activeRunIds: [first],
+      chatEvents: [
+        promptEvent({
+          id: crypto.randomUUID(),
+          seqId: 1,
+          text: "Review invoice batch",
+          runId: first,
+        }),
+      ],
+    });
+    try {
+      await setupPage({
+        context,
+        path: RUN_PATH,
+        sharedWorkerTestTransport: "message-port",
+        auth: {
+          user: { id: member, fullName: "Member" },
+          organization: {
+            activeOrg: { id: org, name: "Billing" },
+            memberships: [{ id: org }],
+          },
+        },
+      });
+      await screen.findByText("Review invoice batch");
+      await obsolete.started;
+      lifecycle.completeRun("Invoice list complete");
+      await screen.findByText("Invoice list complete");
+      await fill(await findComposerEditor(), "Review the outstanding receipts");
+      click(await findEnabledButton("Send"));
+      const second = await next.promise;
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+        ).toBeTruthy();
+      });
+      const emit = (id: string, index: number, text: string) => {
+        context.mocks.ably.triggerOnChannel(channel(id), id, {
+          threadId: RUN_THREAD_ID,
+          runId: id,
+          eventId: id,
+          runEventId: "receipt",
+          createdAt: "2026-11-03T11:00:00Z",
+          chunkIndex: index,
+          delta: text,
+        });
+      };
+      if (schedule === "delivered") {
+        finishAttachment();
+      }
+      await waitFor(() => {
+        return expect(obsolete.completed()).toBe(schedule === "delivered");
+      });
+      emit(second, 0, "The invoice will ");
+      await screen.findByText("The invoice will");
+      expect(obsolete.completed()).toBe(schedule === "delivered");
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(first), first),
+        ).toBeFalsy();
+      });
+      emit(first, 0, "Superseded old content");
+      emit(second, 1, "settle tomorrow.");
+      await screen.findByText("The invoice will settle tomorrow.");
+      expect(screen.queryByText("Superseded old content")).toBeNull();
+      expect(obsolete.completed()).toBe(schedule === "delivered");
+      expect(
+        context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+      ).toBeTruthy();
+      click(await findFastControl("link", /^New chat/));
+      await waitFor(() => {
+        return expect(window.location.pathname).toBe("/");
+      });
+      await waitFor(() => {
+        return expect(
+          context.mocks.ably.hasSubscriptionOnChannel(channel(second), second),
+        ).toBeFalsy();
+      });
+    } finally {
+      finishAttachment();
+    }
+  },
+);

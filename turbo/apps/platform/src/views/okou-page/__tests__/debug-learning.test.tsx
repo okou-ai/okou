@@ -119,3 +119,26 @@ test("debug-learning-004 closing Debug aborts the pending Learning run", async (
     expect(dialog).not.toBeInTheDocument();
   });
 });
+
+test("Debug queues the member's installed Learning schedule and opens its returned conversation", async () => {
+  const installed = entry(true);
+  const threadId = crypto.randomUUID();
+  context.mocks.api(workflowAutomationsContract.run, ({ params, respond }) => {
+    if (params.id !== installed.automation.id) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Unknown schedule" },
+      });
+    }
+    return respond(201, { runId: null, chatThreadId: threadId });
+  });
+  const run = await visit([entry(false), installed]);
+  await userEvent.click(run);
+  await screen.findByText("Learning queued.");
+  expect(run).toBeDisabled();
+  const chat = await findFastControl("link", "Open chat");
+  expect(chat).toHaveAttribute("href", "/chats/" + threadId);
+  await userEvent.click(chat);
+  await waitFor(() => {
+    return expect(window.location.pathname).toBe("/chats/" + threadId);
+  });
+});

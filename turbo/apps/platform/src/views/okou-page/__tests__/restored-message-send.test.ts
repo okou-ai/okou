@@ -230,3 +230,54 @@ test("user-message-document-016 A restored suggestion keeps its feedback while t
   expect(display).toContain("Renew the lease");
   expect(display).not.toContain(source);
 });
+
+test("The restored briefing retains both files and preserves both conversation references in the submitted deck instructions", async () => {
+  const files = [
+    continuityAttachment(946, 1, "quarterly.pdf", "application/pdf"),
+    continuityAttachment(946, 2, "figures.csv", "text/csv"),
+  ];
+  const fileParts = files.map((file) => {
+    return {
+      type: "file" as const,
+      fileId: file.id,
+      filenameSnapshot: file.filename,
+      contentType: file.contentType,
+    };
+  });
+  const parts: UserMessageDocument["parts"] = [
+    ...fileParts,
+    {
+      type: "template",
+      titleSnapshot: "Quarterly slides",
+      template: {
+        type: "presentation",
+        selection: { templateId: "quarterly-update" },
+      },
+    },
+    { type: "text", text: "First review\nthen quote " },
+    {
+      type: "chat_thread",
+      threadId: crypto.randomUUID(),
+      titleSnapshot: "North notes",
+    },
+    { type: "text", text: " and " },
+    {
+      type: "chat_thread",
+      threadId: crypto.randomUUID(),
+      titleSnapshot: "South notes",
+    },
+    { type: "text", text: " before sign-off." },
+  ];
+  const draft = await openDraft(946, parts, files);
+  for (const file of files) {
+    await expect(
+      findEnabledButton("Remove " + file.filename),
+    ).resolves.toBeVisible();
+  }
+  await draft.saveAgain();
+  const result = await draft.send();
+  expect(result.userMessage?.parts.slice(0, parts.length)).toStrictEqual(parts);
+  expect(result.prompt).toMatch(
+    /Quarterly slides.*First review\s+then quote.*North notes.*South notes.*before sign-off\./su,
+  );
+});

@@ -361,20 +361,23 @@ export function mockChatLifecycle(
     beforeEventRowsResponse?: (
       rows: ReturnType<typeof mockChatEventRows>,
     ) => Promise<void>;
-    onRunCreate?: (body: {
-      prompt?: string;
-      clientEventId?: string;
-      clientThreadId?: string;
-      hasTextContent?: boolean;
-      userMessage?: UserMessageDocument;
-      model?: string | null;
-      modelSelection?: ModelSelectionRequest | null;
-      runOptions?: ChatRunOptionsRequest;
-      computerUseHostId?: string | null;
-      cloudBrowserEnabled?: boolean;
-      revokesEventId?: string;
-      sourceRunId?: string;
-    }) => void;
+    onRunCreate?: (
+      body: {
+        prompt?: string;
+        clientEventId?: string;
+        clientThreadId?: string;
+        hasTextContent?: boolean;
+        userMessage?: UserMessageDocument;
+        model?: string | null;
+        modelSelection?: ModelSelectionRequest | null;
+        runOptions?: ChatRunOptionsRequest;
+        computerUseHostId?: string | null;
+        cloudBrowserEnabled?: boolean;
+        revokesEventId?: string;
+        sourceRunId?: string;
+      },
+      runId: string,
+    ) => void;
     onSendRequest?: (body: {
       prompt: string;
       clientEventId?: string;
@@ -722,7 +725,7 @@ export function mockChatLifecycle(
       cloudBrowserEnabled = false;
     }
     const modelSelection = modelSelectionFromBody(body);
-    options?.onRunCreate?.({ ...body, modelSelection });
+    options?.onRunCreate?.({ ...body, modelSelection }, currentRunId);
     runStatus = "running";
     runError = null;
     runFailureReason = undefined;
