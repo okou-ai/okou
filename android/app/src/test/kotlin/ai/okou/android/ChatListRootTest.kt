@@ -810,6 +810,82 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w960dp-h800dp")
+    fun findIncludesTheQueuedPromptOnlyAfterHistoryConfirmsDelivery() {
+        val app = compose.activity.application as ChatListApplication
+        val prompt = "Add the launch checklist"
+        val payload = """{"userMessage":{"version":1,"parts":[{"type":"text","text":"$prompt"}]}}"""
+        val queuedId = HISTORY_LAST_EVENT
+        val deliveredId = "88888888-8888-4888-8888-888888888889"
+        val queued =
+            historyEventWire(queuedId, 37, CHAT_PERSONAL, "input.prompt", payload, run = null)
+        val delivered =
+            historyEventWire(
+                deliveredId,
+                38,
+                CHAT_PERSONAL,
+                "input.prompt",
+                payload,
+                revoke = queuedId,
+            )
+        val deliveryAvailable = AtomicBoolean(false)
+        app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
+        app.fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0
+            val hasDelivery = deliveryAvailable.get()
+            val rows =
+                listOfNotNull(
+                    queued.takeIf { after < 37 },
+                    delivered.takeIf { hasDelivery && after < 38 },
+                )
+            val cursor = if (hasDelivery) deliveredId else queuedId
+            val seq = if (hasDelivery) 38 else 37
+            jsonResponse(
+                """{"rows":[${rows.joinToString(",")}],"cursor":{"lastEventId":"$cursor","lastSeqId":$seq},"hasMore":false}""",
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Queued"), 10_000)
+        compose.onNodeWithText(prompt).assertIsDisplayed()
+
+        fun findChecklist() {
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Find messages").performClick()
+            compose.onNodeWithTag("conversation_find_query").performTextInput("launch checklist")
+        }
+        val noMatch = hasText("No matching messages")
+        val oneMatch = hasText("1 matching message")
+        findChecklist()
+        compose.waitUntilExactlyOneExists(noMatch or oneMatch, 10_000)
+        compose.onNode(noMatch).assertIsDisplayed()
+        compose
+            .onNode(
+                hasContentDescription("Back") and hasAnyAncestor(hasTestTag("conversation_find")),
+            )
+            .performClick()
+
+        deliveryAvailable.set(true)
+        compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+                .history
+                .invalidate(CHAT_PERSONAL)
+        }
+        compose.waitUntilExactlyOneExists(hasTestTag("message_$deliveredId"), 10_000)
+        compose.onNodeWithText("Queued").assertDoesNotExist()
+        findChecklist()
+        compose.waitUntilExactlyOneExists(oneMatch, 10_000)
+        compose.onNodeWithText(prompt).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w960dp-h800dp")
     fun openingFindFromTheHitRestoresTheResultsAndClosingItReturnsToTheKeyboardTrigger() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()

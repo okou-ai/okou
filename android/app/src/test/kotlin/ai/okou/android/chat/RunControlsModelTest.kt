@@ -809,8 +809,9 @@ class RunControlsModelTest {
     }
 
     @Test
-    fun skipUsesOnlyCanonicalAutomationIdentityIncludingEmptyMessageData() = runTest {
+    fun revokeTargetsUnassignedManualAndAutomationInputsByCanonicalIdentity() = runTest {
         val manual = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        val active = eventId("input")
         withControls(
             initial =
                 listOf(
@@ -825,16 +826,24 @@ class RunControlsModelTest {
                     ),
                 ),
         ) { f ->
-            assertEquals(listOf(automation), f.history.uiState.value.transcript?.queuedEventIds)
-            f.controls.skip(CHAT_PERSONAL, manual)
-            assertTrue(f.remote.posts.isEmpty())
-            f.controls.skip(CHAT_PERSONAL, automation)
-            f.controls.uiState.first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
             assertEquals(
-                automation,
-                f.remote.posts.single().getValue("revokesEventId").jsonPrimitive.content,
+                setOf(manual, automation),
+                f.history.uiState.value.transcript?.pendingInputIds,
             )
-            assertFalse("interruptsRunId" in f.remote.posts.single())
+            f.controls.skip(CHAT_PERSONAL, active)
+            assertTrue(f.remote.posts.isEmpty())
+            f.controls.skip(CHAT_PERSONAL, manual)
+            f.controls.skip(CHAT_PERSONAL, automation)
+            val accepted =
+                f.controls.uiState.first { state ->
+                    state.phases.values.count { it == RunControlPhase.Accepted } == 2
+                }
+            val manualIntent = accepted.journal!!.pending.single { it.targetId == manual }
+            assertEquals(
+                setOf(manual, automation),
+                f.remote.posts.map { it.getValue("revokesEventId").jsonPrimitive.content }.toSet(),
+            )
+            assertTrue(f.remote.posts.none { "interruptsRunId" in it })
             f.remote.set(
                 input("input", 1),
                 input(manual, 2, null),
@@ -853,10 +862,57 @@ class RunControlsModelTest {
                     run = secondRun,
                     revoke = automation,
                 ),
+                historyEventWire(
+                    manualIntent.id,
+                    5,
+                    type = "control.revoke",
+                    payload = "null",
+                    run = null,
+                    revoke = manual,
+                ),
             )
             f.controls.check(CHAT_PERSONAL)
             f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
-            assertEquals(1, f.remote.posts.size)
+            assertEquals(2, f.remote.posts.size)
+        }
+    }
+
+    @Test
+    fun queuedFollowupRemainsPendingWithoutSubmittingARevoke() = runTest {
+        val followup = eventId("recommended-followup")
+        val queued = eventId("queued-followup")
+        withControls(
+            initial =
+                listOf(
+                    input("input", 1),
+                    historyEventWire(
+                        id = followup,
+                        seq = 2,
+                        type = "output.followups",
+                        payload =
+                            """{"content":"{\"version\":1,\"followups\":[{\"prompt\":\"Check the checklist\",\"kind\":\"talk\"}]}"}""",
+                    ),
+                    historyEventWire(
+                        id = eventId("completed"),
+                        seq = 3,
+                        type = "run.completed",
+                        payload = "null",
+                    ),
+                    historyEventWire(
+                        id = queued,
+                        seq = 4,
+                        type = "input.prompt",
+                        payload =
+                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Check the checklist"}]}}""",
+                        run = null,
+                        revoke = followup,
+                    ),
+                ),
+        ) { f ->
+            assertEquals(setOf(queued), f.history.uiState.value.transcript?.pendingInputIds)
+            f.controls.skip(CHAT_PERSONAL, queued)
+            assertTrue(f.controls.uiState.value.journal!!.pending.isEmpty())
+            assertTrue(f.remote.posts.isEmpty())
         }
     }
 

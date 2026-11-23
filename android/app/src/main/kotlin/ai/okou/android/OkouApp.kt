@@ -1035,18 +1035,16 @@ internal fun OkouApp(
                                 find.returnToResults()
                             } else {
                                 val history = chats?.history
-                                val messages =
+                                val transcript =
                                     history
                                         ?.uiState
                                         ?.value
                                         ?.takeIf { it.thread?.id == selected.id }
                                         ?.transcript
-                                        ?.messages
-                                        .orEmpty()
                                 val rows = history?.checkpoint(selected.id)?.rows.orEmpty()
                                 findVisit =
                                     ConversationFindVisit(
-                                        messages,
+                                        transcript,
                                         rows,
                                         chatArtifacts != null,
                                         restoreFocus,
