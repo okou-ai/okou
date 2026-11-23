@@ -64,6 +64,7 @@ internal fun ConnectorIcon(
                         ImageRequest.Builder(context)
                             .data(icon.url.toString())
                             .size(edge)
+                            .decoderFactory(connectorSvgDecoder)
                             .diskCachePolicy(CachePolicy.DISABLED)
                             .build()
                     }
