@@ -9396,6 +9396,8 @@ data class ReorderPinnedThreadRequest(
 
 typealias ComposerDraft = Map<String, JsonElement>
 
+typealias ThreadDraft = Map<String, JsonElement>
+
 @Serializable(with = CanonicalInteger1Serializer::class) data object CanonicalInteger1
 
 object CanonicalInteger1Serializer : KSerializer<CanonicalInteger1> {
@@ -11095,6 +11097,14 @@ data class SaveWorkspaceDraft(
         CanonicalOptional.Absent,
 )
 
+@Serializable
+data class SaveThreadDraftSuggestionPreset(
+    val `suggestion_id`: String,
+    val `impression_id`: String,
+    val `option_id`: String,
+    val `option_position`: Long,
+)
+
 @Serializable(with = SaveThreadDraftDraftUserMessagePartsItemSerializer::class)
 sealed interface SaveThreadDraftDraftUserMessagePartsItem
 
@@ -12738,6 +12748,7 @@ data class SaveThreadDraftDraftAttachmentsItem(
 
 @Serializable
 data class SaveThreadDraft(
+    val `suggestionPreset`: SaveThreadDraftSuggestionPreset? = null,
     val `draftUserMessage`: SaveThreadDraftDraftUserMessage?,
     val `draftAttachments`: CanonicalOptional<List<SaveThreadDraftDraftAttachmentsItem>?> =
         CanonicalOptional.Absent,

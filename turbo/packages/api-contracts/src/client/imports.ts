@@ -300,7 +300,7 @@ export const clientContractImportManifest = [
       {
         name: "chatThreadDraftSchema",
         source: "validators/chat-threads",
-        imported: "composerDraftSchema",
+        imported: "chatThreadDraftSchema",
       },
       {
         name: "chatThreadEventSchema",

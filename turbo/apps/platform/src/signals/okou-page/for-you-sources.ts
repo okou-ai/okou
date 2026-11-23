@@ -1,4 +1,6 @@
-import { command, computed, state } from "ccstate";
+import { pageVersion$ } from "../page-signal.ts";
+import type { SuggestionImpression } from "../../lib/posthog.ts";
+import { command, computed, state, type Command } from "ccstate";
 import { feedContract } from "@okouai/api-contracts/client/feed";
 import type { FeedSources } from "@okouai/api-contracts/contracts/feed";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -72,50 +74,64 @@ export const updateForYouSource$ = command(
   },
 );
 
-export function createForYouReadRef(id: string) {
+// The page can replace its feed entry while the same logical card stays active.
+export const activeSuggestionImpression$ = computed((get) => {
+  get(pageVersion$);
+  return state<SuggestionImpression | null>(null);
+});
+
+export function createForYouReadRef(
+  id: string,
+  observe$?: Command<void, [HTMLElement, AbortSignal]>,
+) {
   return onRef(
-    command(
-      async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
-        const enabled = (await get(featureSwitches$))[
-          FeatureSwitchKey.AgentSuggestion
-        ];
-        signal.throwIfAborted();
-        if (!enabled) {
-          return;
-        }
-        if (document.hidden) {
-          const visible = createDeferredPromise<void>(signal);
-          const onVisibilityChange = () => {
-            if (!document.hidden) {
-              document.removeEventListener(
-                "visibilitychange",
-                onVisibilityChange,
-              );
-              visible.resolve();
-            }
-          };
-          document.addEventListener("visibilitychange", onVisibilityChange, {
-            signal,
-          });
-          await visible.promise;
-          signal.throwIfAborted();
-        }
-        // Only the active, mounted card receives this ref. Reading never chooses
-        // an option, dismisses a card or marks the rest of the stack as read.
-        await accept(
-          get(apiClient$)(feedContract).markRead({
-            params: { id },
-            fetchOptions: { signal },
-          }),
-          [200, 404],
+    command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      const impression$ = get(activeSuggestionImpression$);
+      if (get(impression$)?.suggestion_id !== id) {
+        set(impression$, null);
+      }
+      if (observe$) {
+        set(observe$, element, signal);
+      }
+      const enabled = (await get(featureSwitches$))[
+        FeatureSwitchKey.AgentSuggestion
+      ];
+      signal.throwIfAborted();
+      if (!enabled) {
+        return;
+      }
+      if (document.hidden) {
+        const visible = createDeferredPromise<void>(signal);
+        const onVisibilityChange = () => {
+          if (!document.hidden) {
+            document.removeEventListener(
+              "visibilitychange",
+              onVisibilityChange,
+            );
+            visible.resolve();
+          }
+        };
+        document.addEventListener("visibilitychange", onVisibilityChange, {
           signal,
-          { showErrorToast: false },
-        );
-        signal.throwIfAborted();
-        set(get(sourceState$).summaryVersion$, (version) => {
-          return version + 1;
         });
-      },
-    ),
+        await visible.promise;
+        signal.throwIfAborted();
+      }
+      // Only the active, mounted card receives this ref. Reading never chooses
+      // an option, dismisses a card or marks the rest of the stack as read.
+      await accept(
+        get(apiClient$)(feedContract).markRead({
+          params: { id },
+          fetchOptions: { signal },
+        }),
+        [200, 404],
+        signal,
+        { showErrorToast: false },
+      );
+      signal.throwIfAborted();
+      set(get(sourceState$).summaryVersion$, (version) => {
+        return version + 1;
+      });
+    }),
   );
 }
