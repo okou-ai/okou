@@ -69,10 +69,9 @@ internal data class HistoryControlFacts(
 internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlFacts {
     val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
     val rows = checkpoint.rows.filter { it.id !in revoked }
-    val pending =
-        rows.filter {
-            it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
-        }
+    val pending = rows.filter {
+        it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
+    }
     // The recall endpoint requires an original queue entry.
     val revocable = pending.filter { it.revokesId == null }
     val ended =
@@ -108,20 +107,19 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     // Manual prompts remain in the transcript; only automation occupies Web's queued groups.
     val queued = pending.intersect(automationInputs)
     // Match Web's transcript visibility without discarding the underlying confirmed rows.
-    val visible =
-        rows.filterNot {
-            it.type == "control.revoke" ||
-                it.type == "input.budget" ||
-                it.type == "usage.recorded" ||
-                (it.type == "run.cancelled" && it.runId in interrupted) ||
-                (it.type == "input.rejected" && it.revokesId in automationInputs)
-        }
+    val visible = rows.filterNot {
+        it.type == "control.revoke" ||
+            it.type == "input.budget" ||
+            it.type == "usage.recorded" ||
+            (it.type == "run.cancelled" && it.runId in interrupted) ||
+            (it.type == "input.rejected" && it.revokesId in automationInputs)
+    }
     // Like Web, place an older run's late event with its run; queued inputs come last.
     val turns = linkedMapOf<String, MutableList<HistoryEvent>>()
     for (row in visible) turns
         .getOrPut(
             if (row.id in queued) "queued:${row.id}"
-            else row.runId?.let { "run:$it" } ?: "event:${row.id}"
+            else row.runId?.let { "run:$it" } ?: "event:${row.id}",
         ) {
             mutableListOf()
         }
@@ -129,69 +127,67 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
     val ordered =
         turns.values.filter { it.none { row -> row.id in queued } }.flatten() +
             visible.filter { it.id in queued }
-    val messages =
-        ordered.mapNotNull { row ->
-            val blocks = mutableListOf<HistoryBlock>()
-            val role =
-                when (row.type) {
-                    "input.prompt",
-                    "input.rejected",
-                    "input.automation" -> {
-                        val document = row.userMessage
-                        if (
-                            row.type == "input.automation" &&
-                                (document == null || document === JsonNull)
-                        ) {
-                            if (row.id !in queued) return@mapNotNull null
-                        } else {
-                            blocks.addAll(userBlocks(document))
-                        }
-                        row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
-                        HistoryRole.User
+    val messages = ordered.mapNotNull { row ->
+        val blocks = mutableListOf<HistoryBlock>()
+        val role =
+            when (row.type) {
+                "input.prompt",
+                "input.rejected",
+                "input.automation" -> {
+                    val document = row.userMessage
+                    if (
+                        row.type == "input.automation" &&
+                            (document == null || document === JsonNull)
+                    ) {
+                        if (row.id !in queued) return@mapNotNull null
+                    } else {
+                        blocks.addAll(userBlocks(document))
                     }
-                    "output.message" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                            ?: blocks.add(
-                                HistoryBlock(HistoryBlockKind.Unsupported, row.archiveJson())
-                            )
-                        HistoryRole.Assistant
-                    }
-                    "run.failed" -> HistoryRole.System
-                    "output.error" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                        row.outputError?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
-                        }
-                        HistoryRole.System
-                    }
-                    "run.cancelled",
-                    "control.interrupt" -> {
-                        if (row.type == "control.interrupt" && row.runId == null)
-                            return@mapNotNull null
-                        HistoryRole.Assistant
-                    }
-                    "run.completed" -> {
-                        row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
-                        HistoryRole.Assistant
-                    }
-                    "output.followups" -> {
-                        if (row.content == null) return@mapNotNull null
-                        HistoryRole.System
-                    }
-                    else -> return@mapNotNull null
+                    row.inputError?.let { blocks.add(HistoryBlock(HistoryBlockKind.Error, it)) }
+                    HistoryRole.User
                 }
-            HistoryMessage(
-                row.id,
-                row.runId,
-                role,
-                blocks,
-                row.id in queued,
-                row.type == "input.rejected",
-                if (row.type == "control.interrupt") "run.cancelled"
-                else row.type.takeIf { row.terminal || it == "output.error" },
-                if (row.type == "run.failed") row.failureReason else null,
-            )
-        }
+                "output.message" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                        ?: blocks.add(
+                            HistoryBlock(HistoryBlockKind.Unsupported, row.archiveJson()),
+                        )
+                    HistoryRole.Assistant
+                }
+                "run.failed" -> HistoryRole.System
+                "output.error" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                    row.outputError?.let {
+                        blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
+                    }
+                    HistoryRole.System
+                }
+                "run.cancelled",
+                "control.interrupt" -> {
+                    if (row.type == "control.interrupt" && row.runId == null) return@mapNotNull null
+                    HistoryRole.Assistant
+                }
+                "run.completed" -> {
+                    row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
+                    HistoryRole.Assistant
+                }
+                "output.followups" -> {
+                    if (row.content == null) return@mapNotNull null
+                    HistoryRole.System
+                }
+                else -> return@mapNotNull null
+            }
+        HistoryMessage(
+            row.id,
+            row.runId,
+            role,
+            blocks,
+            row.id in queued,
+            row.type == "input.rejected",
+            if (row.type == "control.interrupt") "run.cancelled"
+            else row.type.takeIf { row.terminal || it == "output.error" },
+            if (row.type == "run.failed") row.failureReason else null,
+        )
+    }
     val endedRuns = terminals + interrupted
     val running = historyIsRunning(rows, endedRuns)
     // Web selects the last distinct live run, independently of the overall run indicator.

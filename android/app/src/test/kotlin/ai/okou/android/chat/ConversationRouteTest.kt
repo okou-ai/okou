@@ -89,7 +89,7 @@ class ConversationRouteTest {
         fun message(reason: String): HistoryMessage {
             val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
             return projectHistory(
-                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId))
+                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
                 )
                 .messages
                 .single()
@@ -182,7 +182,7 @@ class ConversationRouteTest {
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0L
             val tail = JsonArray(rows.filter { it.getValue("seqId").jsonPrimitive.long > after })
             jsonResponse(
-                """{"rows":$tail,"cursor":{"lastEventId":"${scrollEventId(37)}","lastSeqId":37},"hasMore":false}"""
+                """{"rows":$tail,"cursor":{"lastEventId":"${scrollEventId(37)}","lastSeqId":37},"hasMore":false}""",
             )
         }
         val model = createListModel()
@@ -213,7 +213,7 @@ class ConversationRouteTest {
         compose
             .onNode(
                 hasText(clientName) or
-                    hasText(compose.activity.getString(R.string.history_reference))
+                    hasText(compose.activity.getString(R.string.history_reference)),
             )
             .assertDoesNotExist()
         for (internal in
@@ -453,7 +453,7 @@ class ConversationRouteTest {
             val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
             val rows = if (after < 40) queuedInput else ""
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":40},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":40},"hasMore":false}""",
             )
         }
         val model = createListModel()
@@ -632,7 +632,7 @@ class ConversationRouteTest {
         fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
                 )
             else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
@@ -748,7 +748,7 @@ class ConversationRouteTest {
                     )
                 }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
             )
         }
         val model = createListModel()
@@ -866,7 +866,7 @@ class ConversationRouteTest {
             )
         val thread =
             Json.decodeFromString<ChatArchive>(
-                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
                 )
                 .chatThreads
                 .single()

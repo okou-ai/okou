@@ -17,7 +17,7 @@ internal class DefaultModelApiFixture(
     @Volatile
     var preference =
         Json.parseToJsonElement(
-                """{"selectedModel":"gpt-test","serviceTier":null,"modelSettings":{"claude-test":{"effort":"high"}},"selectedImageModel":null,"updatedAt":null}"""
+                """{"selectedModel":"gpt-test","serviceTier":null,"modelSettings":{"claude-test":{"effort":"high"}},"selectedImageModel":null,"updatedAt":null}""",
             )
             .jsonObject
 
@@ -29,7 +29,7 @@ internal class DefaultModelApiFixture(
                 "/api/run-models" -> jsonResponse(models)
                 "/api/feature-switches" ->
                     jsonResponse(
-                        """{"switches":{},"effectiveSwitches":{"_codexExecution":$codexExecution}}"""
+                        """{"switches":{},"effectiveSwitches":{"_codexExecution":$codexExecution}}""",
                     )
                 "/api/user-model-preference" -> {
                     if (request.method == "PUT") {
@@ -57,11 +57,11 @@ internal class DefaultModelApiFixture(
                                                             JsonObject(
                                                                 mapOf(
                                                                     "effort" to
-                                                                        patch.getValue("effort")
-                                                                )
-                                                            ))
+                                                                        patch.getValue("effort"),
+                                                                ),
+                                                            )),
                                                 ),
-                                    )
+                                    ),
                             )
                     }
                     jsonResponse(preference.toString())
@@ -75,7 +75,7 @@ internal class DefaultModelApiFixture(
         preference =
             JsonObject(
                 preference +
-                    mapOf("selectedModel" to JsonPrimitive("auto"), "serviceTier" to JsonNull)
+                    mapOf("selectedModel" to JsonPrimitive("auto"), "serviceTier" to JsonNull),
             )
     }
 

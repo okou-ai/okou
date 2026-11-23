@@ -61,11 +61,13 @@ class SignedTransferClientTest {
             server.start()
             SignedTransferClient().use { transfers ->
                 server.enqueue(
-                    MockResponse().setBody("file").setHeader("Set-Cookie", "session=private")
+                    MockResponse().setBody("file").setHeader("Set-Cookie", "session=private"),
                 )
                 assertEquals(
                     "file",
-                    transfers.download(server.url("/signed?signature=fixture"), 16).decodeToString(),
+                    transfers
+                        .download(server.url("/signed?signature=fixture"), 16)
+                        .decodeToString(),
                 )
                 server.enqueue(MockResponse().setResponseCode(204))
                 transfers.upload(
@@ -113,7 +115,9 @@ class SignedTransferClientTest {
                 server.enqueue(MockResponse().setChunkedBody("too large", 2))
                 failure<ResponseLimitExceeded> { transfers.download(server.url("/signed"), 3) }
                 server.enqueue(
-                    MockResponse().setResponseCode(307).setHeader("Location", server.url("/replay"))
+                    MockResponse()
+                        .setResponseCode(307)
+                        .setHeader("Location", server.url("/replay")),
                 )
                 assertEquals(
                     307,

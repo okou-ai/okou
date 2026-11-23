@@ -47,13 +47,13 @@ internal class AblyProtocolFixture : Closeable {
                         check(
                             attachments
                                 .trySend(frame.getValue("channel").jsonPrimitive.content)
-                                .isSuccess
+                                .isSuccess,
                         )
                     12 -> {
                         check(
                             detachments
                                 .trySend(frame.getValue("channel").jsonPrimitive.content)
-                                .isSuccess
+                                .isSuccess,
                         )
                         webSocket.send("""{"action":13,"channel":${frame.getValue("channel")}}""")
                     }
@@ -66,9 +66,9 @@ internal class AblyProtocolFixture : Closeable {
                                         .jsonObject
                                         .getValue("accessToken")
                                         .jsonPrimitive
-                                        .content
+                                        .content,
                                 )
-                                .isSuccess
+                                .isSuccess,
                         )
                         connected(webSocket)
                     }
@@ -114,7 +114,7 @@ internal class AblyProtocolFixture : Closeable {
                             MockResponse()
                                 .setHeader("Content-Type", "application/json")
                                 .setBody(
-                                    """{"token":"sdk-token-${nonces.size}","issued":$now,"expires":${now + 3600000},"clientId":"user-a","capability":"{}"}"""
+                                    """{"token":"sdk-token-${nonces.size}","issued":$now,"expires":${now + 3600000},"clientId":"user-a","capability":"{}"}""",
                                 )
                         }
                         else -> MockResponse().setResponseCode(404)
@@ -142,8 +142,8 @@ internal class AblyProtocolFixture : Closeable {
     private fun connected(webSocket: WebSocket) {
         check(
             webSocket.send(
-                """{"action":4,"connectionId":"local-connection","connectionDetails":{"clientId":"user-a","connectionKey":"local-key","connectionStateTtl":120000,"maxIdleInterval":120000}}"""
-            )
+                """{"action":4,"connectionId":"local-connection","connectionDetails":{"clientId":"user-a","connectionKey":"local-key","connectionStateTtl":120000,"maxIdleInterval":120000}}""",
+            ),
         )
     }
 
@@ -152,26 +152,26 @@ internal class AblyProtocolFixture : Closeable {
 
     suspend fun message(channel: String, name: String) =
         send(
-            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[{"name":${JsonPrimitive(name)},"data":"{\"content\":\"not-confirmed-history\"}","encoding":"json"}]}"""
+            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[{"name":${JsonPrimitive(name)},"data":"{\"content\":\"not-confirmed-history\"}","encoding":"json"}]}""",
         )
 
     suspend fun renew() = send("""{"action":17}""")
 
     suspend fun output(channel: String, name: String, data: String, encoded: Boolean = true) =
         send(
-            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[{"name":${JsonPrimitive(name)},"data":${JsonPrimitive(data)}${if (encoded) ",\"encoding\":\"json\"" else ""}}]}"""
+            """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[{"name":${JsonPrimitive(name)},"data":${JsonPrimitive(data)}${if (encoded) ",\"encoding\":\"json\"" else ""}}]}""",
         )
 
     suspend fun outputBurst(channel: String, name: String, data: List<String>) =
         send(
             """{"action":15,"channel":${JsonPrimitive(channel)},"messages":[${data.joinToString(",") {
             """{"name":${JsonPrimitive(name)},"data":${JsonPrimitive(it)},"encoding":"json"}"""
-        }}]}"""
+        }}]}""",
         )
 
     suspend fun fail(channel: String) =
         send(
-            """{"action":9,"channel":${JsonPrimitive(channel)},"error":{"code":40160,"statusCode":401,"message":"Channel unavailable"}}"""
+            """{"action":9,"channel":${JsonPrimitive(channel)},"error":{"code":40160,"statusCode":401,"message":"Channel unavailable"}}""",
         )
 
     private suspend fun send(frame: String) {

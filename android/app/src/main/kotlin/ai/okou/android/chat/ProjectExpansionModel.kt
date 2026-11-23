@@ -38,18 +38,17 @@ internal constructor(
     private fun observe(restart: Boolean = false) {
         if (!restart && observation?.isActive == true) return
         observation?.cancel()
-        observation =
-            viewModelScope.launch {
-                try {
-                    store.observe(identity).collect { ids ->
-                        awaitingReadbackIds.clear()
-                        mutable.update { it.copy(expandedIds = ids, readFailed = false) }
-                    }
-                } catch (_: IOException) {
-                    ensureActive()
-                    mutable.update { it.copy(readFailed = true) }
+        observation = viewModelScope.launch {
+            try {
+                store.observe(identity).collect { ids ->
+                    awaitingReadbackIds.clear()
+                    mutable.update { it.copy(expandedIds = ids, readFailed = false) }
                 }
+            } catch (_: IOException) {
+                ensureActive()
+                mutable.update { it.copy(readFailed = true) }
             }
+        }
     }
 
     internal fun setExpanded(projectId: String, expanded: Boolean) {

@@ -114,7 +114,7 @@ class NativeUpdateTest {
                                 }
                         },
                         10_000,
-                    )
+                    ),
                 ) {
                     "Expected enabled update control $label"
                 }
@@ -192,14 +192,14 @@ class NativeUpdateTest {
             assertGap(8, updateBounds.left - searchBounds.right)
             captureState("toolbar-available")
             assertTrue(
-                device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000)
+                device.wait(Until.gone(By.desc(app.getString(R.string.chat_filter))), 10_000),
             )
             val more =
                 button(By.pkg(app.packageName).desc(app.getString(R.string.chat_more_actions)))
             assertGap(4, more.visibleBounds.left - updateBounds.right)
             assertEquals(1, device.findObjects(By.pkg(app.packageName).desc(updateAction)).size)
             assertFalse(
-                device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings)))
+                device.hasObject(By.pkg(app.packageName).desc(app.getString(R.string.settings))),
             )
             more.click()
             val filter = app.getString(R.string.chat_filter)
@@ -301,13 +301,13 @@ class NativeUpdateTest {
                         override fun apply(device: UiDevice) = owner.state.value.canInstall
                     },
                     10_000,
-                )
+                ),
             )
             assertNotNull(text(filter))
             assertFalse(
                 device.hasObject(
-                    By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install))
-                )
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
+                ),
             )
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
@@ -315,8 +315,8 @@ class NativeUpdateTest {
                 button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
             assertFalse(
                 device.hasObject(
-                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings))
-                )
+                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings)),
+                ),
             )
             continueInstall.click()
             exists(R.string.updates_open_settings)

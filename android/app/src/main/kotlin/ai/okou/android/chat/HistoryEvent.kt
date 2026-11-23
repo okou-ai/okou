@@ -171,7 +171,8 @@ data class HistoryCheckpoint(
             previous = row.seqId
         }
         requireChatWire(
-            cursor == (rows.lastOrNull()?.let { HistoryCursor(it.id, it.seqId) } ?: HistoryCursor())
+            cursor ==
+                (rows.lastOrNull()?.let { HistoryCursor(it.id, it.seqId) } ?: HistoryCursor()),
         )
     }
 }

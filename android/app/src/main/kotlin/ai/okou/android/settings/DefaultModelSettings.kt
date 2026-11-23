@@ -257,16 +257,15 @@ internal class DefaultModelSettings(
     ) {
         val current = mutable.value
         if (current.record == null || !authorized()) return
-        val patch =
-            choice?.let { model ->
-                if (effort != null) {
-                    UpdateDefaultModelPreferenceModelSettingsPatch(model.id, effort)
-                } else {
-                    current.pending?.modelSettingsPatch?.takeIf {
-                        it.model == model.id && it.effort in model.efforts
-                    }
+        val patch = choice?.let { model ->
+            if (effort != null) {
+                UpdateDefaultModelPreferenceModelSettingsPatch(model.id, effort)
+            } else {
+                current.pending?.modelSettingsPatch?.takeIf {
+                    it.model == model.id && it.effort in model.efforts
                 }
             }
+        }
         val request =
             UpdateDefaultModelPreference(
                 id,
@@ -411,42 +410,41 @@ internal class DefaultModelSettings(
 
     private suspend fun savePreferences() {
         while (canSave()) {
-            val retryMillis =
-                preferenceRequests.withLock {
-                    if (!canSave()) return
-                    val save = checkNotNull(mutable.value.save)
-                    val elapsed = save.lastFailureMillis?.let { nowMillis() - it }
-                    val delay = preferenceSaveRetryDelays.getOrNull(save.failedAttempts - 1)
-                    if (elapsed != null && delay != null && elapsed in 0 until delay) {
-                        return@withLock delay - elapsed
-                    }
-                    val unresolved = unconfirmedWrite
-                    val request = unresolved ?: save.request
-                    try {
-                        val remote =
-                            if (unresolved != null) service.defaultModelPreference()
-                            else {
-                                unconfirmedWrite = request
-                                service.updateDefaultModelPreference(request)
-                            }
-                        currentCoroutineContext().ensureActive()
-                        if (!authorized()) return
-                        if (unresolved == null) {
-                            unconfirmedWrite = null
-                            applySaveResponse(request, remote)
-                        } else if (!reconcileReadback(unresolved, remote)) {
-                            deferReadback(checkNotNull(mutable.value.save), retryable = true)
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        currentCoroutineContext().ensureActive()
-                        onFailure(error)
-                        if (!authorized()) return
-                        handleSaveFailure(save, readback = unresolved != null, error = error)
-                    }
-                    0L
+            val retryMillis = preferenceRequests.withLock {
+                if (!canSave()) return
+                val save = checkNotNull(mutable.value.save)
+                val elapsed = save.lastFailureMillis?.let { nowMillis() - it }
+                val delay = preferenceSaveRetryDelays.getOrNull(save.failedAttempts - 1)
+                if (elapsed != null && delay != null && elapsed in 0 until delay) {
+                    return@withLock delay - elapsed
                 }
+                val unresolved = unconfirmedWrite
+                val request = unresolved ?: save.request
+                try {
+                    val remote =
+                        if (unresolved != null) service.defaultModelPreference()
+                        else {
+                            unconfirmedWrite = request
+                            service.updateDefaultModelPreference(request)
+                        }
+                    currentCoroutineContext().ensureActive()
+                    if (!authorized()) return
+                    if (unresolved == null) {
+                        unconfirmedWrite = null
+                        applySaveResponse(request, remote)
+                    } else if (!reconcileReadback(unresolved, remote)) {
+                        deferReadback(checkNotNull(mutable.value.save), retryable = true)
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    onFailure(error)
+                    if (!authorized()) return
+                    handleSaveFailure(save, readback = unresolved != null, error = error)
+                }
+                0L
+            }
             if (retryMillis > 0 && canSave()) waitToSave(retryMillis)
         }
     }
@@ -521,7 +519,7 @@ internal class DefaultModelSettings(
             readbackBlocked = true
             mutable.value =
                 mutable.value.copy(
-                    save = save.copy(failedAttempts = preferenceSaveRetryDelays.size + 1)
+                    save = save.copy(failedAttempts = preferenceSaveRetryDelays.size + 1),
                 )
             reportSaveFailure(DefaultModelNotice.SaveUnconfirmed)
         }
@@ -534,7 +532,7 @@ internal class DefaultModelSettings(
                     save.copy(
                         failedAttempts = save.failedAttempts + 1,
                         lastFailureMillis = nowMillis(),
-                    )
+                    ),
             )
     }
 

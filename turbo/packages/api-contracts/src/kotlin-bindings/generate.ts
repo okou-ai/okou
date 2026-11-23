@@ -317,7 +317,7 @@ export async function checkGeneratedKotlin(
           .filter((token, index) => {
             return (
               token.text !== "," ||
-              ![")", "]", "}"].includes(parts[index + 1]?.text ?? "")
+              ![")", "]", "}", ">"].includes(parts[index + 1]?.text ?? "")
             );
           })
           .map((token) => {

@@ -10,8 +10,6 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
-import ai.okou.android.api.generated.UserPreferencesSendMode
-import ai.okou.android.api.generated.UserPreferencesSupportedLocalesItem
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.auth.Authentication
 import ai.okou.android.auth.AuthenticationState
@@ -38,6 +36,7 @@ import ai.okou.android.updates.UpdateStore
 import ai.okou.android.workflows.WorkflowService
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.serialization.json.Json
 
 /** Compiled only into host/device tests. Production has no authentication bypass switch. */
 open class TestOkouApplication : OkouApplication() {
@@ -156,7 +155,7 @@ open class TestOkouApplication : OkouApplication() {
                     ?: ai.okou.android.api.generated.DefaultModelPreference(null, null, emptyMap())
 
             override suspend fun updateDefaultModelPreference(
-                update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+                update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
             ) = (fixture ?: canonical.value).updateDefaultModelPreference(update)
 
             override suspend fun featureSwitches() =
@@ -182,7 +181,7 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun preferences() = stored()
 
             override suspend fun updatePreferences(
-                update: UpdatePreferencesRequest
+                update: UpdatePreferencesRequest,
             ): UserPreferences {
                 val updated =
                     stored()
@@ -278,17 +277,7 @@ fun testOrganization(workspace: String = "org-a") =
         role = OrganizationRole.MEMBER,
     )
 
-fun testPreferences() =
-    UserPreferences(
-        timezone = "UTC",
-        locale = UserPreferencesLocale.EN_US,
-        supportedLocales = UserPreferencesSupportedLocalesItem.entries,
-        sendMode = UserPreferencesSendMode.ENTER,
-        cloudBrowserEnabledByDefault = false,
-        chatResourcesEnabledByDefault = false,
-        theme = UserPreferencesTheme.SYSTEM,
-        colorTheme = UserPreferencesColorTheme.DEFAULT,
-        forYouCoverId = null,
-        captureNetworkBodiesRemaining = 0,
-        memoryInitialized = true,
-    )
+fun testPreferences() = Json.decodeFromString<UserPreferences>(TEST_PREFERENCES)
+
+const val TEST_PREFERENCES =
+    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","forYouCoverId":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""

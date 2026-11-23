@@ -343,6 +343,8 @@ describe("Independent finalizing resource dispatch", () => {
                           : JSON.stringify({
                               runnerVersion: "1.2.3",
                               bodyReadMs: 2,
+                              bodyFirstFrameMs: 0.5,
+                              bodyFirstToLastFrameMs: 1,
                               envelopeParseMs: 0.4,
                               contextDecodeMs: 1,
                               acceptanceMs: 5,

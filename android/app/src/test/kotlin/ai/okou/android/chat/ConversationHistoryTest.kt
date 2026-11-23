@@ -67,12 +67,12 @@ class ConversationHistoryTest {
         assertNull(
             reopened
                 .open(identity.copy(userId = "other-user")) { true }
-                .loadReadingAnchor(CHAT_PERSONAL)
+                .loadReadingAnchor(CHAT_PERSONAL),
         )
         assertNull(
             reopened
                 .open(identity.copy(workspaceId = "other-workspace")) { true }
-                .loadReadingAnchor(CHAT_PERSONAL)
+                .loadReadingAnchor(CHAT_PERSONAL),
         )
         val lease = reopened.open(identity.copy(sessionId = "renewed")) { true }
         assertNull(lease.loadReadingAnchor(CHAT_IN_PROJECT))
@@ -99,7 +99,7 @@ class ConversationHistoryTest {
 
     private fun thread(id: String = CHAT_PERSONAL): ConfirmedChat =
         Json.decodeFromString<ChatArchive>(
-                """{"chatThreads":[{"id":"$id","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                """{"chatThreads":[{"id":"$id","projectId":"project-original","title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
             )
             .chatThreads
             .single()
@@ -148,7 +148,7 @@ class ConversationHistoryTest {
             val wire = historyEventWire()
             fixture.historySnapshot = {
                 jsonResponse(
-                    """{"url":"${fixture.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37}"""
+                    """{"url":"${fixture.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37}""",
                 )
             }
             fixture.historyArchive = {
@@ -163,14 +163,15 @@ class ConversationHistoryTest {
             val signed = requests.single { it.path == "/history-archive" }
             assertNull(signed.getHeader("Authorization"))
             assertNull(signed.getHeader("X-Client-Type"))
-            val tails =
-                requests.filter { it.requestUrl?.encodedPath?.endsWith("/event-rows") == true }
+            val tails = requests.filter {
+                it.requestUrl?.encodedPath?.endsWith("/event-rows") == true
+            }
             assertEquals(2, tails.size)
             assertTrue(
                 tails.all {
                     it.requestUrl!!.queryParameter("sinceEventId") == HISTORY_LAST_EVENT &&
                         it.requestUrl!!.queryParameter("sinceSeqId") == "37"
-                }
+                },
             )
             assertEquals(0, fixture.readRequests.get())
             fixture.historyArchive = { MockResponse().setBody(wire) }
@@ -189,7 +190,7 @@ class ConversationHistoryTest {
             val wire = historyEventWire(payload = """{"content":"$content"}""")
             fixture.historySnapshot = {
                 jsonResponse(
-                    """{"url":"${fixture.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37}"""
+                    """{"url":"${fixture.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37}""",
                 )
             }
             fixture.historyArchive = { MockResponse().setBody("$wire\n") }
@@ -248,7 +249,7 @@ class ConversationHistoryTest {
                 else HistoryPage(emptyList(), cursor, false)
             }
             assertTrue(
-                ConversationHistorySync(service).synchronize(CHAT_PERSONAL, checkpoint()).replaced
+                ConversationHistorySync(service).synchronize(CHAT_PERSONAL, checkpoint()).replaced,
             )
             service.rowsRead = { _, _ -> throw ApiFailure.Http(410, null, null, null) }
             try {
@@ -1128,7 +1129,7 @@ class ConversationHistoryTest {
                     CHAT_PERSONAL,
                     listOf(input, rejected, stopped),
                     HistoryCursor(HISTORY_LAST_EVENT, 17),
-                )
+                ),
             )
         assertEquals(listOf("rejected", HISTORY_LAST_EVENT), result.messages.map { it.id })
         assertTrue(result.messages.first().rejected)
@@ -1136,7 +1137,7 @@ class ConversationHistoryTest {
         assertEquals("run.cancelled", result.messages.last().status)
         val raw =
             projectHistory(
-                HistoryCheckpoint(CHAT_PERSONAL, listOf(input), HistoryCursor("input", 2))
+                HistoryCheckpoint(CHAT_PERSONAL, listOf(input), HistoryCursor("input", 2)),
             )
         assertEquals(HistoryBlockKind.Unsupported, raw.messages.single().blocks.last().kind)
         assertTrue(raw.messages.single().blocks.last().text.contains("future"))
@@ -1156,7 +1157,7 @@ class ConversationHistoryTest {
                     CHAT_PERSONAL,
                     listOf(budget, terminal),
                     HistoryCursor(HISTORY_LAST_EVENT, 17),
-                )
+                ),
             )
         assertEquals(listOf("Final answer"), content.messages.flatMap { it.blocks }.map { it.text })
         val usage = row(type = "usage.recorded", payload = """{"usage":{"futureMetric":5}}""")
@@ -1166,14 +1167,14 @@ class ConversationHistoryTest {
                     CHAT_PERSONAL,
                     listOf(usage),
                     HistoryCursor(HISTORY_LAST_EVENT, 37),
-                )
+                ),
             )
         assertTrue(usageOnly.messages.isEmpty())
         assertEquals(setOf(usage.id), usageOnly.persistedIds)
         assertTrue(usage.archiveJson().contains("\"futureMetric\":5"))
         val rendered =
             renderHistoryMarkdown(
-                "# Heading\n\n**bold** and `code`\n\n```kotlin\nval x = 1\n```\n<script>literal</script>"
+                "# Heading\n\n**bold** and `code`\n\n```kotlin\nval x = 1\n```\n<script>literal</script>",
             )
         assertTrue(rendered.text.contains("Heading"))
         assertTrue(rendered.text.contains("val x = 1"))
@@ -1197,7 +1198,7 @@ class ConversationHistoryTest {
         )
         assertTrue(renderHistoryMarkdown(source).text.contains("First\n\n2. Second"))
         assertTrue(
-            renderHistoryMarkdown("# Checklist", compactLists = true).spanStyles.isNotEmpty()
+            renderHistoryMarkdown("# Checklist", compactLists = true).spanStyles.isNotEmpty(),
         )
     }
 }

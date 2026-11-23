@@ -379,7 +379,7 @@ private fun Node.historyMarkdownBlock(
                                 .toList(),
                         )
                     }
-                    .toList()
+                    .toList(),
             )
         }
         else -> {
@@ -447,13 +447,13 @@ private fun HistoryMarkdownTable(
                     if (index != 0) HorizontalDivider(color = colors.outline)
                     Row(
                         if (index == 0 && !highlighted) Modifier.background(colors.surfaceVariant)
-                        else Modifier
+                        else Modifier,
                     ) {
                         for ((column, cell) in row.withIndex()) {
                             ConversationLinkText(
                                 cell.text,
                                 MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = if (index == 0) FontWeight.SemiBold else null
+                                    fontWeight = if (index == 0) FontWeight.SemiBold else null,
                                 ),
                                 "$focusPrefix/$index/$column",
                                 links,
@@ -562,7 +562,7 @@ private fun renderHistoryMarkdownNode(
             override fun visit(node: Heading) {
                 if (styleHeadings)
                     pushStyle(
-                        SpanStyle(fontWeight = FontWeight.Bold, fontSize = (26 - node.level).sp)
+                        SpanStyle(fontWeight = FontWeight.Bold, fontSize = (26 - node.level).sp),
                     )
                 visitChildren(node)
                 if (styleHeadings) pop()
@@ -625,6 +625,6 @@ private fun renderHistoryMarkdownNode(
                 } else append("• ")
                 visitChildren(node)
             }
-        }
+        },
     )
 }

@@ -13,7 +13,7 @@ class WorkflowRulesTest {
         val body = Json.encodeToJsonElement(rule.createRequest())
         assertEquals(
             Json.parseToJsonElement(
-                """{"schedule":{"type":"cron","cronExpression":"35 9 * * 1-5","timezone":"Asia/Shanghai"},"enabled":false}"""
+                """{"schedule":{"type":"cron","cronExpression":"35 9 * * 1-5","timezone":"Asia/Shanghai"},"enabled":false}""",
             ),
             body,
         )
@@ -25,7 +25,7 @@ class WorkflowRulesTest {
             RuleFields(trigger = EditableTrigger.Gmail, subject = " Release ", timezone = "UTC")
         assertEquals(
             Json.parseToJsonElement(
-                """{"eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":" Release "}}}}"""
+                """{"eventConfig":{"provider":"gmail","event":"new_message","match":{"subject":{"contains":" Release "}}}}""",
             ),
             Json.encodeToJsonElement(gmail.updateRequest()),
         )
@@ -34,7 +34,7 @@ class WorkflowRulesTest {
             RuleFields(trigger = EditableTrigger.Calendar, calendarId = "primary", timezone = "UTC")
         assertEquals(
             Json.parseToJsonElement(
-                """{"eventConfig":{"provider":"google-calendar","event":"event_created","calendarId":"primary"}}"""
+                """{"eventConfig":{"provider":"google-calendar","event":"event_created","calendarId":"primary"}}""",
             ),
             Json.encodeToJsonElement(calendar.updateRequest()),
         )
@@ -44,7 +44,7 @@ class WorkflowRulesTest {
     fun workflowMetadataCanBeEditedWithoutAnInstruction() {
         assertTrue(
             InstructionsFields(title = "Release review", purpose = "Check copy", instruction = "")
-                .valid
+                .valid,
         )
     }
 }

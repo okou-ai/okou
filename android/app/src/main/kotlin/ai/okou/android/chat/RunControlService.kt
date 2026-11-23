@@ -54,7 +54,7 @@ data class RunControlJournal(
         require(
             pending.all {
                 it.id.isNotEmpty() && it.threadId.isNotEmpty() && it.targetId.isNotEmpty()
-            }
+            },
         )
     }
 }

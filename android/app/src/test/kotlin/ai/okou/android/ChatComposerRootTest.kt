@@ -182,16 +182,15 @@ class ChatComposerRootTest {
         assertStorageFailure()
         compose.onNodeWithText("Try again").performClick()
         assertStorageFailure()
-        val chats =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(checkNotNull(activity))[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .chats
-            }
+        val chats = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(checkNotNull(activity))[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+        }
         // Finish the real HTTP warm and cache write before opening the unselected conversation.
         compose.waitUntil(10_000) {
             compose.runOnIdle { chats.warming.state.value.phase == ChatReadPhase.Ready }
@@ -413,7 +412,7 @@ class ChatComposerRootTest {
             compose.onNodeWithContentDescription("Settings").assertIsEnabled()
             compose.runOnIdle {
                 app.preferencesResponse.completeExceptionally(
-                    ApiFailure.Http(503, null, null, null)
+                    ApiFailure.Http(503, null, null, null),
                 )
             }
             val unavailable = "Could not load your session or workspace. Please try again."
@@ -509,7 +508,7 @@ class ChatComposerRootTest {
                     detailRequested.set(true)
                     detail.await()
                     jsonResponse(
-                            """{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}"""
+                            """{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}""",
                         )
                         .setResponseCode(404)
                 } else reply(request)
@@ -523,7 +522,7 @@ class ChatComposerRootTest {
             }
             list.snapshot = {
                 jsonResponse(
-                    """{"url":"${list.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$HISTORY_LAST_EVENT","latestSeqId":40}"""
+                    """{"url":"${list.server.url("/archive")}","expiresInSeconds":60,"latestEventId":"$HISTORY_LAST_EVENT","latestSeqId":40}""",
                 )
             }
             list.archive = { jsonResponse("""{"chatThreads":[]}""") }
@@ -560,16 +559,15 @@ class ChatComposerRootTest {
         app.fixture.rejectSend = true
         compose.onNodeWithText("New chat").performClick()
         captureOwners()
-        val chats =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .chats
-            }
+        val chats = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+        }
         awaitConversation { editor?.uiState?.value?.journal != null }
         val prompt = "Keep my rejected first input"
         compose.onNodeWithTag("message_input").performTextInput(prompt)
@@ -616,16 +614,15 @@ class ChatComposerRootTest {
         try {
             compose.onNodeWithText("New chat").performClick()
             captureOwners()
-            val chats =
-                compose.runOnIdle {
-                    checkNotNull(
-                            ViewModelProvider(compose.activity)[SessionModel::class.java]
-                                .uiState
-                                .value
-                                .ready
-                        )
-                        .chats
-                }
+            val chats = compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready,
+                    )
+                    .chats
+            }
             awaitConversation { editor?.uiState?.value?.journal != null }
             val prompt = "Input with a delayed receipt"
             compose.onNodeWithTag("message_input").performTextInput(prompt)
@@ -699,7 +696,7 @@ class ChatComposerRootTest {
         compose.waitUntil(10_000) {
             compose
                 .onAllNodesWithText(
-                    "The request failed. Your draft and pending message are retained."
+                    "The request failed. Your draft and pending message are retained.",
                 )
                 .fetchSemanticsNodes()
                 .isNotEmpty()

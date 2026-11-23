@@ -231,16 +231,15 @@ internal fun findMessages(
         }
         val references = message.blocks.filter { it.kind == HistoryBlockKind.Reference }
         if (references.isEmpty() || message.role != HistoryRole.User) return@mapNotNull null
-        val attachments =
-            references.all { reference ->
-                val part = Json.parseToJsonElement(reference.text)
-                when ((part as? JsonObject)?.text("type")) {
-                    "attachment",
-                    "file",
-                    "image" -> true
-                    else -> false
-                }
+        val attachments = references.all { reference ->
+            val part = Json.parseToJsonElement(reference.text)
+            when ((part as? JsonObject)?.text("type")) {
+                "attachment",
+                "file",
+                "image" -> true
+                else -> false
             }
+        }
         FindMessage(message.id, message.role, "", emptyList(), attachments)
     }
 }
@@ -248,20 +247,19 @@ internal fun findMessages(
 internal fun conversationFindResults(
     messages: List<FindMessage>,
     keyword: String,
-): List<FindResult> =
-    messages.mapNotNull { message ->
-        if (keyword.isEmpty()) {
-            FindResult(message).takeIf { message.role == HistoryRole.User }
-        } else {
-            val match = message.text.indexOf(keyword, ignoreCase = true)
-            if (match < 0) return@mapNotNull null
-            val passage =
-                message.passages.firstOrNull {
-                    match >= it.start && match + keyword.length <= it.end
-                }
-            FindResult(message, match, passage)
-        }
+): List<FindResult> = messages.mapNotNull { message ->
+    if (keyword.isEmpty()) {
+        FindResult(message).takeIf { message.role == HistoryRole.User }
+    } else {
+        val match = message.text.indexOf(keyword, ignoreCase = true)
+        if (match < 0) return@mapNotNull null
+        val passage =
+            message.passages.firstOrNull {
+                match >= it.start && match + keyword.length <= it.end
+            }
+        FindResult(message, match, passage)
     }
+}
 
 @Composable
 internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit) {
@@ -285,12 +283,11 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val keyword = visit.keyword
     val filtered by
         produceState<Pair<String, List<FindResult>>?>(null, index, keyword) {
-            value =
-                index?.let { loaded ->
-                    withContext(Dispatchers.Default) {
-                        keyword to conversationFindResults(loaded, keyword)
-                    }
+            value = index?.let { loaded ->
+                withContext(Dispatchers.Default) {
+                    keyword to conversationFindResults(loaded, keyword)
                 }
+            }
         }
     val results = filtered?.takeIf { it.first == keyword }?.second
     LaunchedEffect(visit) {
@@ -355,7 +352,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                             visit.input.clearText()
                                             inputFocus.requestFocus()
                                             keyboard?.show()
-                                        }
+                                        },
                                     ) {
                                         Icon(
                                             painterResource(R.drawable.ic_close),
@@ -411,21 +408,22 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                             .then(
                                 if (rowFocused && keyboardMode)
                                     Modifier.border(2.dp, focusColor, rowShape)
-                                else Modifier
+                                else Modifier,
                             )
                             .onFocusChanged { rowFocused = it.isFocused }
                             .then(
                                 if (restoreFocus)
                                     Modifier.focusProperties { canFocus = true }
                                         .focusRequester(resultFocus)
-                                else Modifier
+                                else Modifier,
                             )
                             .clickable(role = Role.Button) {
                                 keyboard?.hide()
                                 visit.open(result)
                             }
                             .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
+                        verticalArrangement =
+                            Arrangement.spacedBy(4.dp, Alignment.CenterVertically),
                     ) {
                         if (keyword.isEmpty()) {
                             Text(
@@ -433,7 +431,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                     stringResource(
                                         if (message.attachmentOnly)
                                             R.string.conversation_find_attachment
-                                        else R.string.history_reference
+                                        else R.string.history_reference,
                                     )
                                 },
                                 maxLines = 2,
@@ -445,7 +443,7 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
                                 stringResource(
                                     if (message.role == HistoryRole.User)
                                         R.string.conversation_find_you
-                                    else R.string.app_name
+                                    else R.string.app_name,
                                 ),
                                 style = titleStyle,
                             )
