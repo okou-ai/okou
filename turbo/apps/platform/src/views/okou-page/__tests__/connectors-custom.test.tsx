@@ -1,5 +1,6 @@
 import {
   customConnectorByIdContract,
+  customConnectorsContract,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -151,10 +152,10 @@ test("connectors-custom-017 connected filters retain a service whose nondefault 
     connectionStatus: "reconnect-required",
     reconnectReason: "authorization_expired_or_revoked",
   });
-  mockCustomConnectorStory(context, [
-    { connector: configured },
-    { connector: empty },
-  ]);
+  context.mocks.data.org({ id: "org_1", name: "Test Org", role: "admin" });
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [configured, empty] });
+  });
   const accounts = [
     primary,
     ...["Work", "Personal"].map((displayName) => {
