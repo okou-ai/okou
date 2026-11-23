@@ -254,24 +254,71 @@ class SessionModelTest {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         var attempts = 0
         auth.membershipsAction = {
-            if (++attempts <= 2) throw ApiFailure.Network(java.io.IOException("fixture"))
+            if (++attempts <= 3) throw ApiFailure.Network(java.io.IOException("fixture"))
             auth.available
         }
         check(auth) { model, _ ->
             model.foregroundChanged(true)
             runCurrent()
-            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
-            assertTrue(model.uiState.value.entryReadFailed)
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(2, attempts)
-            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(3, attempts)
+            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
+            assertTrue(model.uiState.value.entryReadFailed)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(4, attempts)
             assertEquals(SessionStage.ChooseWorkspace, model.uiState.value.stage)
             assertEquals(auth.available, model.uiState.value.memberships)
             assertFalse(model.uiState.value.entryReadFailed)
+        }
+    }
+
+    @Test
+    fun failedPreparationAfterClerkConfirmsSelectionRestoresThePicker() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val allowFirstRead = CompletableDeferred<Unit>()
+        var failRead = true
+        var selections = 0
+        auth.selectAction = { _, _ -> selections++ }
+        check(
+            auth,
+            configure = { resource ->
+                resource.verifyOrganization = {
+                    allowFirstRead.await()
+                    if (failRead) throw ApiFailure.Http(503, null, null, null)
+                    testOrganization(resource.identity.workspaceId)
+                }
+            },
+        ) { model, resources ->
+            runCurrent()
+            val picker = model.uiState.value
+            model.chooseWorkspace("org-a", picker.generation)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            auth.state.value = testAuthenticationState(workspace = "org-a")
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertNull(model.uiState.value.opening)
+
+            allowFirstRead.complete(Unit)
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertEquals(picker.memberships, recovered.memberships)
+            assertEquals(SessionEntryFailure.Selection, recovered.entryFailure)
+            assertTrue(resources.single().closed)
+
+            failRead = false
+            model.chooseWorkspace("org-a", recovered.generation)
+            runCurrent()
+            assertEquals("org-a", model.uiState.value.ready?.identity?.workspaceId)
+            assertEquals(1, selections)
         }
     }
 
