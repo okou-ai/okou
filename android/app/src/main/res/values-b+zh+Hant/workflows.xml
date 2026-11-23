@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">聊天執行結束</string>
     <string name="workflow_clear_search">清除關鍵字</string>
     <string name="workflow_connect_provider">連線 %1$s 後才能啟用。</string>
-    <string name="workflow_connection_unavailable">無法開啟連線。</string>
     <string name="workflow_create_uncertain">無法確認是否已新增。請離開編輯並查看現有規則。</string>
     <string name="workflow_creation_prompt">幫我建立私人工作流。請使用 workflow-setup 技能，先問我想重複執行什麼任務，並在儲存前讓我確認說明。只有我明確要求時才建立自動化。</string>
     <string name="workflow_daily">每天</string>

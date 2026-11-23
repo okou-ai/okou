@@ -157,6 +157,9 @@ internal fun rememberConnectorDirectory(initialSlug: String?): ConnectorDirector
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable
+internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256

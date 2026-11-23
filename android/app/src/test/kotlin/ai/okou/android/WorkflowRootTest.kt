@@ -102,6 +102,7 @@ class WorkflowRootTest {
                                 it.chats.viewModelScope.coroutineContext[Job],
                                 it.composer.viewModelScope.coroutineContext[Job],
                                 it.workflows?.viewModelScope?.coroutineContext?.get(Job),
+                                it.connectors?.viewModelScope?.coroutineContext?.get(Job),
                             )
                         }
                         .orEmpty()

@@ -62,6 +62,7 @@ import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationUiState
 import ai.okou.android.state.rememberWorkflowConnectorVisit
+import ai.okou.android.state.rememberWorkflowPageState
 import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -109,7 +110,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -177,7 +177,7 @@ internal fun OkouApp(
     var connectorsOpen by rememberConnectorsOpen()
     var workflowConnectorVisit by rememberWorkflowConnectorVisit()
     var workflowConnectionReturn by remember { mutableStateOf<WorkflowConnectorVisit?>(null) }
-    val workflowPageState = rememberSaveableStateHolder()
+    val workflowPageState = rememberWorkflowPageState()
     val canOpenConnectors = connectors != null && workspaceReady
     val showingConnectors = canOpenConnectors && (connectorsOpen || workflowConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
