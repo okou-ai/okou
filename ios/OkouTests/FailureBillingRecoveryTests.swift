@@ -59,6 +59,10 @@ final class FailureBillingRecoveryTests: XCTestCase {
       ("pro_required", "Plan restricted"),
       ("Ask a workspace admin to add credits or upgrade the workspace plan.", "Out of credits"),
       (
+        "Insufficient credits. Add credits to continue.\n\nBilling: https://example.invalid/?settings=billing",
+        "Out of credits"
+      ),
+      (
         "API Error: 402 Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
         "Out of credits"
       )

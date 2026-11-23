@@ -31,15 +31,20 @@ public struct ChatFailure: Equatable, Sendable {
     case planRestricted = "pro_required"
 
     public init?(diagnostic: String) {
-      let message = diagnostic.trimmingCharacters(in: .whitespacesAndNewlines)
-      // Older chat errors stored these Okou messages in place of the billing code.
-      switch message {
+      // Older errors used an Okou headline followed by an optional web action on a new line.
+      let headline = diagnostic.trimmingCharacters(in: .whitespacesAndNewlines).prefix {
+        !$0.isNewline
+      }
+      switch headline {
       case "Ask a workspace admin to add credits or upgrade the workspace plan.",
+        "Insufficient credits. This workspace has no spendable credits right now.",
+        "Insufficient credits. Add credits to continue.",
+        "Insufficient credits. Upgrade to Pro to continue.",
         "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
         "API Error: 402 Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.":
         self = .insufficientCredits
       default:
-        self.init(rawValue: message.lowercased())
+        self.init(rawValue: headline.lowercased())
       }
     }
   }
