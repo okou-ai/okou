@@ -8,6 +8,8 @@ import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
+internal const val CONNECTOR_DRAFT_JOURNAL_FORMAT = 4
+
 /** A pending operation is a frozen request, independent of the next editable draft. */
 @Serializable
 data class PendingText(
@@ -72,7 +74,6 @@ data class ComposerEntry(
     val receipt: TextReceipt? = null,
     val createdThreadId: String? = null,
     val recovery: ComposerRecovery? = null,
-    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
 )
 
 @Serializable
@@ -81,6 +82,8 @@ data class ComposerJournal(
     val entries: Map<String, ComposerEntry> = emptyMap(),
     val drafts: Map<String, EditableComposerDraft> = emptyMap(),
     val retainedDrafts: Map<String, String> = emptyMap(),
+    val newChatConnectorOverrides: List<ChatConnectorOverride> = emptyList(),
+    val retainedDraftConnectorOverrides: Map<String, List<ChatConnectorOverride>> = emptyMap(),
 )
 
 internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
@@ -163,8 +166,10 @@ data class ComposerState(
     }
 
     internal fun connectorOverrides(target: ComposerTarget): List<ChatConnectorOverride> {
-        val entry = entry(target)
-        return entry.pending?.connectorOverrides ?: entry.connectorOverrides
+        if (target.threadId != null) return emptyList()
+        val journal = journal ?: return emptyList()
+        return journal.entries[target.key]?.pending?.connectorOverrides
+            ?: journal.newChatConnectorOverrides
     }
 
     internal fun canEditDraftConnectors(target: ComposerTarget): Boolean {
