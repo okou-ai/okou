@@ -66,10 +66,13 @@ struct ForYouView: View {
         NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)
       ) { _ in
         // The keyboard reveals the caret. Keep the card's send controls visible with it.
-        if let id = store.direction?.cardID { scroll.scrollTo("direction-" + id, anchor: .center) }
+        if let id = store.direction?.cardID { scroll.scrollTo("direction-" + id, anchor: .bottom) }
       }
     }
     .background(OkouColor.background)
+    .safeAreaInset(edge: .top, spacing: 0) {
+      Color.clear.frame(height: 0).background(OkouColor.background, ignoresSafeAreaEdges: .top)
+    }
     .safeAreaInset(edge: .bottom, spacing: 0) { status }
     .composerSuggestionOverlay()
     .task { await store.load() }
