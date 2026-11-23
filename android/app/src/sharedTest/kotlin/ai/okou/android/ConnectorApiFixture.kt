@@ -41,6 +41,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
+    @Volatile var denyDefaultDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
@@ -141,6 +142,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (failDiscovery) return rejected(503)
                         val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
+                        if (denyDefaultDiscovery && keyword == null && category == null)
+                            return rejected(403)
                         val unavailable = unavailableCatalogSlugs
                         val available = entries.filterNot { it.slug in unavailable }
                         val matched =

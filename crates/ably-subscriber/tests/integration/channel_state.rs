@@ -1,7 +1,5 @@
 use crate::support::*;
-use ably_subscriber::protocol::{
-    ConnectionDetails, ErrorInfo, ProtocolMessage, action, encode_msg,
-};
+use ably_subscriber::protocol::{ErrorInfo, ProtocolMessage, action, encode_msg};
 use ably_subscriber::{Event, TimingConfig, subscribe};
 use futures_util::{SinkExt, StreamExt};
 use httpmock::prelude::*;
@@ -717,23 +715,7 @@ async fn reconnect_attached_without_serial_preserves_resume_serial_for_next_reat
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-1".into()),
-            connection_key: Some("conn-1!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-1!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn.send(tungstenite::Message::Binary(
-            encode_msg(&connected).unwrap().into(),
-        ))
-        .await
-        .unwrap();
+        send_connected(&mut conn, "conn-1").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn, "reconnect ATTACH")
             .await
@@ -856,24 +838,7 @@ async fn detached_during_reconnect_attach_retries_channel_on_same_transport() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -982,24 +947,7 @@ async fn superseded_error_during_reconnect_attach_retries_on_same_transport() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1107,24 +1055,7 @@ async fn other_channel_error_during_reconnect_attach_is_ignored() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1233,24 +1164,7 @@ async fn other_channel_attach_outcomes_during_reconnect_attach_are_ignored() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1417,24 +1331,7 @@ async fn disconnected_during_reconnect_attach_retries_with_new_connection() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1529,24 +1426,7 @@ async fn closed_during_reconnect_attach_stops_subscription() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1605,24 +1485,7 @@ async fn superseded_reconnect_attach_timeout_retries_channel_on_same_transport()
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -1740,24 +1603,7 @@ async fn reconnect_attach_timeout_retries_channel_on_same_transport() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await

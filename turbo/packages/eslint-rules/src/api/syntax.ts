@@ -20,7 +20,6 @@ const QUERY_BUILDER_RUNTIME_MODULES = new Set([
   "@okouai/db/runtime/chat-thread",
   "@okouai/db/runtime/connector-catalog",
   "@okouai/db/runtime/email-outbox",
-  "@okouai/db/runtime/org-custom-connector",
   "@okouai/db/runtime/org-members-metadata",
   "@okouai/db/runtime/system-storage-presigned-url-cache",
   "@okouai/db/runtime/usage-event",

@@ -341,9 +341,9 @@ class NativeChatListTest {
                 device.findObject(selector.packageName(app.packageName)).click()
             }
             fun clickText(value: String) = click(UiSelector().text(value))
-            fun revealText(value: String) {
-                val target = By.pkg(app.packageName).text(value).hasAncestor(chatListRegion(app))
-                val scrollable = chatListRegion(app).scrollable(true)
+            fun revealText(value: String, region: BySelector = chatListRegion(app)) {
+                val target = By.pkg(app.packageName).text(value).hasAncestor(region)
+                val scrollable = By.copy(region).scrollable(true)
                 var direction = Direction.UP
                 var reachedEnd = false
                 assertTrue(
@@ -388,7 +388,8 @@ class NativeChatListTest {
             )
             takeScreenshot().writeToTestStorage("android-list-loading")
             click(UiSelector().description(app.getString(R.string.settings)))
-            text(app.getString(R.string.appearance))
+            text(app.getString(R.string.settings))
+            revealText(app.getString(R.string.appearance), By.pkg(app.packageName))
             gate.countDown()
             assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
             device.awaitChatList(app)
@@ -536,7 +537,14 @@ class NativeChatListTest {
                 )
                 text("Native history reply")
                 assertTrue(device.pressDPadCenter())
-                clickText(app.getString(R.string.chat_inbox))
+                text(app.getString(R.string.chat_inbox))
+                assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_MOVE_END))
+                device.awaitKeyboardFocus(
+                    By.pkg(app.packageName).text(app.getString(R.string.chat_muted))
+                )
+                repeat(3) { assertTrue(device.pressDPadUp()) }
+                device.awaitKeyboardFocus(inbox)
+                assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
                 click(UiSelector().description(app.getString(R.string.settings)))
                 text(app.getString(R.string.appearance))

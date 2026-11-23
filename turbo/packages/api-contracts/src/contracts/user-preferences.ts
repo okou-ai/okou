@@ -47,6 +47,7 @@ export const userPreferencesResponseSchema = object({
   chatResourcesEnabledByDefault: boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
+  forYouCoverId: string().min(1).max(64).nullable(),
   captureNetworkBodiesRemaining: number().int().min(0),
   // False until this member's memory storage has a HEAD. The Web App then
   // calls the idempotent initialize route before starting runs; run creation
@@ -73,6 +74,7 @@ export const updateUserPreferencesRequestSchema = object({
   cloudBrowserEnabledByDefault: boolean().optional(),
   theme: themePreferenceSchema.optional(),
   colorTheme: colorThemeSchema.optional(),
+  forYouCoverId: string().min(1).max(64).nullable().optional(),
   captureNetworkBodiesRemaining: number().int().min(0).optional(),
 }).refine(
   (data) => {
@@ -83,6 +85,7 @@ export const updateUserPreferencesRequestSchema = object({
       data.cloudBrowserEnabledByDefault !== undefined ||
       data.theme !== undefined ||
       data.colorTheme !== undefined ||
+      data.forYouCoverId !== undefined ||
       data.captureNetworkBodiesRemaining !== undefined
     );
   },

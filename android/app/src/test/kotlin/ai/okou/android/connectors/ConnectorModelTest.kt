@@ -17,7 +17,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TestTimeSource
+import kotlin.time.TimeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
@@ -41,9 +44,75 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorModelTest {
     @Test
+    fun catalogDenialClearsTheVisibleCategoryAndReportsUnavailable() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val email = ConnectorBrowseFilter(null, "email")
+            model.setFilter(email)
+            model.await { it.browse.data != null && it.matches?.entries?.data != null }
+
+            fixture.denyDefaultDiscovery = true
+            model.resume()
+            val unavailable = model.await { it.browse.failure == ConnectorReadFailure.Unavailable }
+            assertEquals(email, unavailable.matches?.filter)
+            assertNull(unavailable.matches?.entries?.data)
+            assertEquals(ConnectorReadFailure.Unavailable, unavailable.matches?.entries?.failure)
+        }
+
+    @Test
+    fun openContentSurvivesExpiryButReentryWithholdsExpiredScopes() {
+        val clock = TestTimeSource()
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online, readClock = clock) { _, model ->
+            model.showPermissions()
+            model.await {
+                it.browse.data != null && it.permissions.data != null && it.connected.data != null
+            }
+
+            online.value = false
+            model.await { it.offline }
+            clock += 9.minutes
+            model.setOpen(false)
+            model.setOpen(true)
+            model.showPermissions()
+            val restored = model.uiState.value
+            assertEquals(CONNECTOR_CALENDAR, restored.detail.data?.entry?.slug)
+            assertTrue(restored.accountsFor(CONNECTOR_CALENDAR).isNotEmpty())
+            assertFalse(restored.canChangeAccounts)
+            assertTrue(restored.permissions.data?.isNotEmpty() == true)
+
+            clock += 1.minutes
+            model.pause()
+            model.resume()
+            assertEquals(restored, model.uiState.value)
+
+            model.enterDirectoryTab(connected = false)
+            assertNull(model.uiState.value.browse.data)
+            assertEquals(restored.connected, model.uiState.value.connected)
+            assertEquals(restored.detail, model.uiState.value.detail)
+
+            model.hidePermissions()
+            model.showPermissions()
+            assertNull(model.uiState.value.permissions.data)
+            model.setOpen(false)
+            model.setOpen(true)
+            val expired = model.uiState.value
+            assertNull(expired.browse.data)
+            assertNull(expired.connected.data)
+            assertNull(expired.detail.data)
+            assertTrue(expired.accountsFor(CONNECTOR_CALENDAR).isEmpty())
+
+            online.value = true
+            model.await {
+                it.detail.data?.entry?.slug == CONNECTOR_CALENDAR && it.canChangeAccounts
+            }
+        }
+    }
+
+    @Test
     fun returningToDirectoryScopesOfflineRestoresResultsIncludingConfirmedEmpty() {
         val online = MutableStateFlow(true)
-        withModel(CONNECTOR_CALENDAR, connectivity = online) { _, model ->
+        val clock = TestTimeSource()
+        withModel(CONNECTOR_CALENDAR, connectivity = online, readClock = clock) { _, model ->
             val email = ConnectorBrowseFilter(null, "email")
             val missing = ConnectorBrowseFilter("no matching service", null)
             model.setFilter(email)
@@ -60,6 +129,16 @@ class ConnectorModelTest {
                 emptyList<ConnectorEntry>(),
                 model.uiState.value.matches?.entries?.data?.entries,
             )
+
+            clock += 10.minutes
+            assertEquals(
+                emptyList<ConnectorEntry>(),
+                model.uiState.value.matches?.entries?.data?.entries,
+            )
+            model.setFilter(email)
+            assertNull(model.uiState.value.matches?.entries?.data)
+            model.setFilter(missing)
+            assertNull(model.uiState.value.matches?.entries?.data)
         }
     }
 
@@ -499,6 +578,7 @@ class ConnectorModelTest {
         configure: (ConnectorApiFixture) -> Unit = {},
         connectivity: Flow<Boolean> = emptyFlow(),
         includeGrantExamples: Boolean = false,
+        readClock: TimeSource = TimeSource.Monotonic,
         exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) = runBlocking {
         ConnectorApiFixture(includeGrantExamples).use { fixture ->
@@ -517,6 +597,7 @@ class ConnectorModelTest {
                                                 fixture.service,
                                                 connectivity,
                                                 { true },
+                                                readClock,
                                             ) {
                                                 throw AssertionError(
                                                     "Unexpected session failure",

@@ -5,7 +5,7 @@ import type {
   CustomConnectorAuthMode,
   CustomConnectorMcpTransport,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { variables } from "@okouai/db/schema/variable";
 import {

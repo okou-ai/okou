@@ -1,6 +1,6 @@
 import { connectors } from "@okouai/db/schema/connector";
 import { connectorPermissionGrants } from "@okouai/db/schema/connector-permission-grant";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import {
   and,
@@ -25,8 +25,6 @@ import {
   customConnectorExecutionDefinitionSelection,
   customConnectorExecutionOAuthSelection,
 } from "./custom-connector-definition-selection";
-import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
-import { customConnectorSkillPublicationJoin } from "./custom-connector-skill-bundle-columns";
 
 export interface ConnectorMember {
   readonly orgId: string;
@@ -90,7 +88,7 @@ export function memberConnectorSelectionQueries(
     customConnectorExecutionDefinitionSelection();
   const connectorColumns = {
     ...definitionColumns,
-    skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
+    skillContentBundle: orgCustomConnectors.skillContentBundle,
   };
   const oauthColumns = customConnectorExecutionOAuthSelection();
   const custom = builder
@@ -103,10 +101,6 @@ export function memberConnectorSelectionQueries(
         .as("payload"),
     })
     .from(orgCustomConnectors)
-    .leftJoin(
-      orgCustomConnectorSkillPublications,
-      customConnectorSkillPublicationJoin(),
-    )
     .leftJoin(
       orgCustomConnectorOauthConfigs,
       and(

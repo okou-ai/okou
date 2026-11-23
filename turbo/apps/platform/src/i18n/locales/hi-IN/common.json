@@ -1901,6 +1901,8 @@
         "slideCountAuto": "स्वचालित",
         "slideCountRange": "{{range}} स्लाइड"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "चैट या प्रोजेक्ट खोजें…",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
@@ -1942,6 +1944,7 @@
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
       "threadSuggestions": "चैट थ्रेड",
       "useForFutureChats": "भविष्य की चैट के लिए इस मॉडल का इस्तेमाल करें",
+      "useSuggestion": "इस सुझाव का उपयोग करें",
       "workflows": {
         "loading": "वर्कफ़्लो लोड हो रहा है...",
         "manage": "वर्कफ़्लो प्रबंधित करें",

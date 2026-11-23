@@ -26,6 +26,7 @@ function initialPreferences(): UserPreferencesResponse {
     sendMode: "cmd-enter",
     cloudBrowserEnabledByDefault: false,
     chatResourcesEnabledByDefault: true,
+    forYouCoverId: null,
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,

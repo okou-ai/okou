@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   cleanup,
@@ -2199,6 +2200,26 @@ test("Project deep links open the Project page with its composer", async () => {
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
 });
+test("An empty Project composer stays blank in creation mode with the follow-up switch on", async () => {
+  metadata();
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  const create = within(cards).getByRole("region", { name: "Create" });
+  click(button("Presentation", create));
+  await expect(
+    screen.findByRole("radiogroup", { name: "Create" }),
+  ).resolves.toBeInTheDocument();
+  expect(editor).toHaveAttribute("placeholder", "");
+  expect(screen.queryByText("What is your presentation about?")).toBeNull();
+});
+
 test("A Project page shares the capability home and its compliance block under the cards", async () => {
   const member = {
     ...continuityThread(95, 1, "Launch planning"),
