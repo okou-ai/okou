@@ -5,8 +5,12 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
-import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.chat.SearchMessageHit
+import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchWorkflowHit
+import ai.okou.android.chat.WorkspaceSearchResults
+import ai.okou.android.chat.WorkspaceSearchScreen
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -57,24 +61,38 @@ class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun searchKeepsTheLastResultsUntilTheImeCommits() {
-        val search = ChatSearchState()
-        var rows by
-            mutableStateOf(
-                listOf(
-                    searchResult("checklist", "Release checklist"),
-                    searchResult("feedback", "Customer feedback"),
-                )
+    fun searchWaitsForTheImeToCommitTheNewKeyword() {
+        val search = ChatSearchState(TextFieldValue("发"))
+        val composing = TextFieldValue("发bu", composition = TextRange(1, 3))
+        search.edit(composing)
+        assertEquals("发bu", search.query.text)
+        assertEquals("发", search.keyword)
+        assertEquals("发", search.savedQuery().text)
+        search.edit(TextFieldValue("发布"))
+        assertEquals("发布", search.keyword)
+    }
+
+    @Test
+    fun searchKeepsPresentedResultsAndSelectionUntilCompositionEnds() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                agentId = "agent",
+                title = "Release before refresh",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
             )
+        var row by mutableStateOf(chat)
         compose.setContent {
             OkouTheme(false) {
-                ChatTitleSearch(
-                    state =
-                        ChatListUiState(
-                            listPhase = ChatReadPhase.Ready,
-                            confirmedAt = 1,
-                            threadsByRecency = rows,
-                        ),
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(row)),
                     search = search,
                     widthDp = 400,
                     listWidth = null,
@@ -87,28 +105,41 @@ class SavedUiStateTest {
                 )
             }
         }
-        val field = compose.onNodeWithTag("chat_search_query").performClick().assertIsFocused()
-        val checklist = compose.onNodeWithText("Release checklist").assertIsDisplayed()
-        val feedback = compose.onNodeWithText("Customer feedback").assertIsDisplayed()
-
+        compose.onNodeWithText(chat.title!!).assertIsDisplayed()
+        val composing =
+            TextFieldValue("Releasebu", selection = TextRange(8), composition = TextRange(7, 9))
+        compose.runOnIdle { search.edit(composing) }
+        compose.runOnIdle { row = chat.copy(title = "Release after refresh") }
+        compose.onNodeWithText("Release before refresh").assertIsDisplayed()
+        compose.onNodeWithText("Release after refresh").assertDoesNotExist()
         compose.runOnIdle {
-            search.edit(TextFieldValue("fabu", TextRange(4), TextRange(0, 4)))
-            rows = rows + searchResult("summary", "Release summary")
+            assertEquals(composing, search.query)
+            search.edit(TextFieldValue("Release", selection = TextRange(7)))
         }
-        field.assertTextContains("fabu").assertIsFocused()
-        checklist.assertIsDisplayed()
-        feedback.assertIsDisplayed()
-        val summary = compose.onNodeWithText("Release summary")
-        summary.assertDoesNotExist()
+        compose.onNodeWithText("Release after refresh").assertIsDisplayed()
+    }
 
-        compose.runOnIdle { rows = rows.filterNot { it.id == "feedback" } }
-        feedback.assertIsDisplayed()
-
-        compose.runOnIdle { search.edit(TextFieldValue("Release", TextRange(7))) }
-        field.assertTextContains("Release").assertIsFocused()
-        checklist.assertIsDisplayed()
-        summary.assertIsDisplayed()
-        feedback.assertDoesNotExist()
+    @Test
+    fun offlineSearchWithoutCachedChatsShowsOneNotice() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(offline = true),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        compose.onNodeWithText("Chats will load when you’re back online.").assertIsDisplayed()
+        compose.onNodeWithText("Offline. Searching saved chat titles only.").assertDoesNotExist()
     }
 
     @Test
@@ -140,6 +171,76 @@ class SavedUiStateTest {
     }
 
     @Test
+    fun searchRestoresResultFocusBeforeAnUnrelatedScrollAnchorReloads() {
+        val restoration = StateRestorationTester(compose)
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                agentId = "agent",
+                title = "Planning conversation",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        val message = SearchMessageHit(chat.id, 1, "Release reply", listOf(0..6))
+        val workflow = SearchWorkflowHit("workflow", "release", "Release workflow", null, true)
+        val loaded =
+            WorkspaceSearchResults(
+                keyword = "Release",
+                messages = SearchRead.Ready(listOf(message)),
+                workflows = SearchRead.Ready(listOf(workflow)),
+            )
+        var remote by mutableStateOf(loaded)
+        var detailsOpen by mutableStateOf(false)
+        restoration.setContent {
+            val search = rememberChatSearchState()
+            OkouTheme(false) {
+                if (detailsOpen) {
+                    Text("Workflow detail")
+                } else {
+                    WorkspaceSearchScreen(
+                        state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(chat)),
+                        search = search,
+                        widthDp = 400,
+                        listWidth = null,
+                        workspaceName = null,
+                        focusOnEntry = false,
+                        onFocused = {},
+                        onClose = {},
+                        onOpen = {},
+                        retry = {},
+                        remote = remote,
+                        onOpenWorkflow = { detailsOpen = true },
+                    )
+                }
+            }
+        }
+
+        val query = compose.onNodeWithTag("chat_search_query")
+        val result = compose.onNodeWithText(workflow.title)
+        query.performTextInput("Release")
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.performClick()
+        compose.onNodeWithText("Workflow detail").assertIsDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle {
+            remote = loaded.copy(messages = SearchRead.Retrying)
+            detailsOpen = false
+        }
+        query.assertTextContains("Release")
+        result.assertIsDisplayed().assertIsFocused()
+
+        compose.runOnIdle { remote = loaded }
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.assertIsFocused()
+    }
+
+    @Test
     fun searchDropsTheOldResultPositionWhenTheQueryIsTooLongToRestore() {
         val longQuery = "Result " + "x".repeat(256)
         checkSearchRestoration(longQuery, "$longQuery 5", queryIsSaved = false)
@@ -163,7 +264,7 @@ class SavedUiStateTest {
             }
             val search = rememberChatSearchState()
             OkouTheme(false) {
-                ChatTitleSearch(
+                WorkspaceSearchScreen(
                     state =
                         ChatListUiState(
                             listPhase = ChatReadPhase.Ready,
@@ -185,6 +286,7 @@ class SavedUiStateTest {
         }
         val results = compose.onNodeWithTag("chat_search_results")
         val field = compose.onNodeWithTag("chat_search_query")
+        compose.onNodeWithText("Chats").performClick()
         field.performTextInput(query)
         val target = compose.onNodeWithText(targetTitle)
         results.performScrollToIndex(6)

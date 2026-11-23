@@ -221,7 +221,7 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
-            fetch = { service.workflows().filter { it.official == null } },
+            fetch = { service.workspaceCatalog() },
             receive = ::publishCatalog,
             denied = ::clearAccess,
             failure = { mutable.value = mutable.value.copy(catalogFailure = it) },

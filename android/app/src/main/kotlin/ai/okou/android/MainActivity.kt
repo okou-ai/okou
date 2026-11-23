@@ -103,6 +103,7 @@ class MainActivity : AppCompatActivity() {
                     app.runControlJournal,
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
+                    searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )

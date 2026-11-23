@@ -67,6 +67,7 @@ class SessionModelTest {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ChatComposerService by TestChatComposerService() {
         var closed = false
         private val canonical = CanonicalWorkspaceSession(identity, tokens)

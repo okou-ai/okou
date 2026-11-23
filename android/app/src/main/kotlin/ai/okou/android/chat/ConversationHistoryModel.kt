@@ -12,6 +12,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -376,6 +377,35 @@ class ConversationHistoryModel(
             job?.join()
         }
     }
+
+    internal suspend fun searchMessageIsMissing(threadId: String, sequence: Long): Boolean {
+        val selected = mutable.value
+        if (selected.thread?.id != threadId || selected.hasSearchMessage(sequence)) return false
+        val ticket = generation
+        job?.join()
+        requireCurrent(ticket)
+        val latest = mutable.value
+        if (latest.hasSearchMessage(sequence)) return false
+        // The search index can be ahead of this visit's last synchronized history.
+        if (
+            latest.phase != HistoryPhase.Missing &&
+                (latest.confirmation?.cursor?.seqId ?: 0L) < sequence
+        ) {
+            refreshHistory()
+        }
+        val resolved =
+            mutable.first {
+                it.generation != ticket ||
+                    it.phase == HistoryPhase.Ready ||
+                    it.phase == HistoryPhase.Missing
+            }
+        requireCurrent(ticket)
+        return !resolved.hasSearchMessage(sequence)
+    }
+
+    private fun ConversationUiState.hasSearchMessage(sequence: Long) =
+        transcript?.messages?.any { it.sourceSeqId == sequence && it.visibleInConversation() } ==
+            true
 
     private fun reportAuthorization(error: Exception) {
         if (

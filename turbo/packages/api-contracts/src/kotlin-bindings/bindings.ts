@@ -7,6 +7,7 @@ import { androidUpgradeRequiredSchema } from "../contracts/android-client-compat
 import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
+  chatSearchContract,
   chatThreadSnapshotArchiveSchema,
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -338,6 +339,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowAutomationsContract.disable,
   },
   {
+    name: "searchChatMessages",
+    response: "ChatMessageSearchResponse",
+    route: chatSearchContract.search,
+  },
+  {
     name: "workspaceDraft",
     response: "ComposerDraft",
     route: composerDraftContract.get,
@@ -660,6 +666,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "UpdateWorkflowAutomationRequest",
     schema: workflowAutomationsContract.update.body,
     direction: "input",
+  },
+  {
+    name: "ChatMessageSearchResponse",
+    schema: chatSearchContract.search.responses[200],
+    direction: "output",
   },
   {
     name: "RenameProjectRequest",

@@ -4,4 +4,26 @@
     <string name="chat_search_clear">清除搜尋</string>
     <string name="chat_search_recent">最近聊天</string>
     <string name="chat_search_empty">沒有相符的聊天</string>
+    <string name="chat_search_all">全部</string>
+    <string name="chat_search_messages">訊息</string>
+    <string name="chat_search_workflows">工作流程</string>
+    <string name="chat_search_artifacts">成果</string>
+    <string name="chat_search_recently_opened">最近開啟</string>
+    <string name="chat_search_enter_keyword">輸入關鍵字開始搜尋</string>
+    <string name="chat_search_view_all">查看全部</string>
+    <string name="chat_search_view_type">查看全部%1$s</string>
+    <string name="chat_search_all_types">搜尋所有類型</string>
+    <string name="chat_search_no_results">沒有符合的結果</string>
+    <string name="chat_search_no_messages">沒有符合的訊息</string>
+    <string name="chat_search_no_workflows">沒有符合的工作流程</string>
+    <string name="chat_search_no_artifacts">沒有符合的成果</string>
+    <string name="chat_search_online_only">連線後可搜尋此類型</string>
+    <string name="chat_search_offline_titles">離線時只搜尋已儲存的對話標題</string>
+    <string name="chat_search_unavailable">部分結果暫時無法載入</string>
+    <string name="chat_search_message_unavailable">此訊息已無法查看</string>
+    <string name="chat_search_workflow_add_draft">加入新聊天草稿</string>
+    <string name="chat_search_workflow_details">查看工作流程詳情</string>
+    <string name="chat_search_workflow_shadowed">此指令目前用於同名的私人工作流程</string>
+    <string name="chat_search_artifact_preview">成果預覽</string>
+    <string name="chat_search_close_artifact_preview">關閉成果預覽</string>
 </resources>

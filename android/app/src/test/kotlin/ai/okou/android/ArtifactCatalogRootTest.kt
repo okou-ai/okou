@@ -15,6 +15,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -638,6 +639,35 @@ class ArtifactCatalogRootTest {
 
         cancelSaveAfterLeavingPreview(fixture.checklist.title, "Back to chat resources")
         assertTrue(fixture.requestedDownloads.isEmpty())
+    }
+
+    @Test
+    fun workspaceSearchKeepsArtifactScopeThroughPreviewAndSourceBack() {
+        val fixture =
+            ArtifactApiFixture(app.fixture).apply {
+                pageSize = 1
+                install()
+            }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Artifacts")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextReplacement("Product launch")
+        awaitText(fixture.site.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        awaitText("Artifact preview")
+        awaitText("View source conversation")
+        compose.onNodeWithText("View source conversation").performClick()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back to artifact preview").performClick()
+        awaitText("View source conversation")
+        compose.onNodeWithContentDescription("Close artifact preview").performClick()
+        query.assertTextContains("Product launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(fixture.summary.title).assertIsDisplayed()
+        assertTrue(fixture.catalogQueries.all { it.second == "Product launch" })
     }
 
     @After
