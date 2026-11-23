@@ -58,6 +58,8 @@ pub(super) struct DispatchTiming {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) body_first_to_last_frame_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) body_gzip_decode_ms: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     envelope_parse_ms: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     context_decode_ms: Option<f64>,
@@ -73,6 +75,7 @@ impl DispatchTiming {
             body_read_ms: None,
             body_first_frame_ms: None,
             body_first_to_last_frame_ms: None,
+            body_gzip_decode_ms: None,
             envelope_parse_ms: None,
             context_decode_ms: None,
             acceptance_ms: None,
