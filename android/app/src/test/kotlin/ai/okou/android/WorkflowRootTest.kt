@@ -6,10 +6,12 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -650,6 +652,36 @@ class WorkflowRootTest {
 
         waitFor("View connections")
         calendar.assertTextContains("test-calendar")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
+    }
+
+    @Test
+    fun unavailableConnectorAnnouncesTheReadFailureAndReturnsToTheDraft() {
+        app.connectorFixture.unavailableCatalogSlugs = setOf("gmail")
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").performClick()
+        compose.onNodeWithText("Schedule").performClick()
+        compose.onNodeWithText("Gmail message received").performClick()
+        val subject = compose.onNodeWithContentDescription("Subject contains")
+        subject.performTextReplacement("Release summary")
+        waitFor("View connections")
+        compose.onNodeWithText("View connections").performClick()
+
+        waitFor("Could not load connectors.")
+        val error = compose.onNodeWithText("Could not load connectors.")
+        error.assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+        )
+        val paneBounds = compose.onNodeWithTag("connector-detail").getUnclippedBoundsInRoot()
+        val errorBounds = error.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, errorBounds.top - paneBounds.top)
+        assertEquals(12.dp, errorBounds.left - paneBounds.left)
+        assertEquals(12.dp, paneBounds.right - errorBounds.right)
+        compose.onNodeWithContentDescription("Back").performClick()
+
+        waitFor("View connections")
+        subject.assertTextContains("Release summary")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
     }
 
