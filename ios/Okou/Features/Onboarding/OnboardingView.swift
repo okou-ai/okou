@@ -147,7 +147,8 @@ struct OnboardingView: View {
         onDismiss: { Task { await store.connectors.refresh() } },
         content: { destination in
           ConnectorSafariView(url: destination.url) { store.connectors.webDestination = nil }
-        })
+        }
+      )
       .sheet(item: $channelPage) { page in
         ConnectorSafariView(url: page.url) { channelPage = nil }
       }
