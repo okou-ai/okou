@@ -6,6 +6,8 @@ import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ChatConnectorOverride
 import ai.okou.android.connectors.ConnectorAccountStatus
 import ai.okou.android.connectors.ConnectorAccountTarget
+import ai.okou.android.connectors.ConnectorButton
+import ai.okou.android.connectors.ConnectorButtonTreatment
 import ai.okou.android.connectors.ConnectorLoadWhenOnline
 import ai.okou.android.connectors.ConnectorMark
 import ai.okou.android.connectors.ConnectorReadError
@@ -41,7 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -294,16 +295,16 @@ internal fun ChatConnectorOptionsButton(
             if (
                 if (newChat) draftChoices.values.any { it.enabled != null } else resets.isNotEmpty()
             ) {
-                TextButton(
+                ConnectorButton(
+                    stringResource(R.string.chat_connector_restore_defaults),
                     onClick = {
                         if (newChat) composer.editConnectorOverride(target, null)
                         else options.save(target, resets)
                     },
                     enabled = canEdit,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("chat-connector-reset"),
-                ) {
-                    Text(stringResource(R.string.chat_connector_restore_defaults))
-                }
+                    modifier = Modifier.testTag("chat-connector-reset"),
+                    treatment = ConnectorButtonTreatment.Text,
+                )
             }
             val manageFocus =
                 if (accountToFocus != null && focusAccount == null)
