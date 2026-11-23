@@ -57,8 +57,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-private class SessionModelTestFixture(private val temporary: TemporaryFolder) {
-    class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
+abstract class SessionModelTestFixture {
+    @get:Rule val temporary = TemporaryFolder()
+
+    protected class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
         WorkspaceSession,
         ai.okou.android.chat.AssistantRecoveryService by ai.okou.android
             .TestAssistantRecoveryService(),
@@ -116,7 +118,7 @@ private class SessionModelTestFixture(private val temporary: TemporaryFolder) {
         }
     }
 
-    fun check(
+    protected fun check(
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
         prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
@@ -209,14 +211,11 @@ private class SessionModelTestFixture(private val temporary: TemporaryFolder) {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
-class SessionEntryModelTest {
-    @get:Rule val temporary = TemporaryFolder()
-    private val fixture = SessionModelTestFixture(temporary)
-
+class SessionEntryModelTest : SessionModelTestFixture() {
     @Test
     fun pendingAuthenticationAndSignedOutNeverOpenWorkspaceResources() {
         val auth = TestAuthentication(AuthenticationState())
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             assertEquals(SessionStage.Restoring, model.uiState.value.stage)
             assertTrue(resources.isEmpty())
@@ -231,7 +230,7 @@ class SessionEntryModelTest {
     fun webSetupReturnChecksOnceInPlaceAndKeepsConfirmedEmptyStateOnFailure() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         auth.available = emptyList()
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             val empty = model.uiState.value
             assertEquals(SessionStage.ChooseWorkspace, empty.stage)
@@ -264,7 +263,7 @@ class SessionEntryModelTest {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         val available = auth.available
         auth.available = emptyList()
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             model.foregroundChanged(true)
             runCurrent()
             val empty = model.uiState.value
@@ -308,7 +307,7 @@ class SessionEntryModelTest {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         val available = auth.available
         auth.available = emptyList()
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             val empty = model.uiState.value
             model.openWorkspaceSetup(empty.generation) { false }
@@ -333,7 +332,7 @@ class SessionEntryModelTest {
     fun failedBrowserLaunchKeepsItsFeedbackWhenThePendingCheckConfirmsNoWorkspace() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         auth.available = emptyList()
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             val empty = model.uiState.value
             val response = CompletableDeferred<List<WorkspaceMembership>>()
@@ -367,7 +366,7 @@ class SessionEntryModelTest {
             if (++attempts <= 3) throw ApiFailure.Network(java.io.IOException("fixture"))
             auth.available
         }
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             model.foregroundChanged(true)
             runCurrent()
             assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
@@ -396,7 +395,7 @@ class SessionEntryModelTest {
         var failRead = true
         var selections = 0
         auth.selectAction = { _, _ -> selections++ }
-        fixture.check(
+        check(
             auth,
             configure = { resource ->
                 resource.verifyOrganization = {
@@ -435,7 +434,7 @@ class SessionEntryModelTest {
     @Test
     fun failedFirstSelectionAndSignOutRestoreTheSameWorkspacePicker() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             val picker = model.uiState.value
             auth.selectAction = { _, _ -> error("selection rejected") }
@@ -460,7 +459,7 @@ class SessionEntryModelTest {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         val activation = CompletableDeferred<Unit>()
         auth.selectAction = { _, _ -> activation.await() }
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             val picker = model.uiState.value
             model.chooseWorkspace(picker.memberships.first().id, picker.generation)
@@ -489,15 +488,12 @@ class SessionEntryModelTest {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
-class SessionModelTest {
-    @get:Rule val temporary = TemporaryFolder()
-    private val fixture = SessionModelTestFixture(temporary)
-
+class SessionModelTest : SessionModelTestFixture() {
     @Test
     fun organizationGatesAccessAndTokenRenewalKeepsThePresentationOwner() {
         val auth = TestAuthentication()
         val gate = CompletableDeferred<Unit>()
-        fixture.check(
+        check(
             auth,
             configure = { resource ->
                 resource.verifyOrganization = {
@@ -532,7 +528,7 @@ class SessionModelTest {
         val previousSession = WorkspaceIdentity("https://api.okou.ai", "user-a", "old", "org-a")
         var preferences = CompletableDeferred<Unit>()
         lateinit var disk: MemberAppearanceCache
-        fixture.check(
+        check(
             auth,
             configure = { resource ->
                 resource.loadPreferences = {
@@ -577,7 +573,7 @@ class SessionModelTest {
     fun accountReplacementRejectsEvenNonCooperativeLatePreferences() {
         val old = CompletableDeferred<Unit>()
         val auth = TestAuthentication()
-        fixture.check(
+        check(
             auth,
             configure = { resource ->
                 if (resource.identity.userId == "user-a")
@@ -603,7 +599,7 @@ class SessionModelTest {
     fun lateTokenCannotEscapeAReplacedWorkspaceAndItsFilterRestoresOnlyOnReturn() {
         val auth = TestAuthentication()
         val token = CompletableDeferred<String>()
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             val original = requireNotNull(model.uiState.value.ready)
             original.chats.selectFilter(ai.okou.android.chat.ChatListFilter.Muted)
@@ -636,7 +632,7 @@ class SessionModelTest {
     @Test
     fun additionalAuthenticationOrRevokedMembershipRetiresAccess() {
         val auth = TestAuthentication()
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             auth.state.value = auth.state.value.copy(complete = false)
             runCurrent()
@@ -664,7 +660,7 @@ class SessionModelTest {
             )
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
-        fixture.check(auth) { model, _ ->
+        check(auth) { model, _ ->
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
@@ -687,7 +683,7 @@ class SessionModelTest {
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             assertEquals(
@@ -711,7 +707,7 @@ class SessionModelTest {
                             listOf(MembershipAccess("org-a", "org:member", emptyList())),
                     ),
             )
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
             auth.available = emptyList()
@@ -726,7 +722,7 @@ class SessionModelTest {
     @Test
     fun oldRenderedActionsCannotSwitchOrSignOutAReplacementAccount() {
         val auth = TestAuthentication()
-        fixture.check(auth) { model, resources ->
+        check(auth) { model, resources ->
             runCurrent()
             val original = model.uiState.value
             auth.state.value = testAuthenticationState("user-b", "session-b", "org-b")
@@ -755,7 +751,7 @@ class SessionModelTest {
                 ApiFailure.Unauthenticated() to SessionStage.AccessRemoved,
                 ApiFailure.UpdateRequired(RequiredUpdate("0.3.0")) to SessionStage.UpdateRequired,
             )) {
-            fixture.check(configure = { resource -> resource.update = { throw failure } }) {
+            check(configure = { resource -> resource.update = { throw failure } }) {
                 model,
                 resources ->
                 runCurrent()
@@ -782,7 +778,7 @@ class SessionModelTest {
         val connected = MutableStateFlow(true)
         var organizations = 0
         var preferences = 0
-        fixture.check(
+        check(
             auth,
             connectivity = connected,
             configure = { resource ->
@@ -836,7 +832,7 @@ class SessionModelTest {
         val auth = TestAuthentication()
         val signOut = CompletableDeferred<Unit>()
         var fail = true
-        fixture.check(
+        check(
             auth,
             configure = { resource ->
                 resource.verifyOrganization = {
