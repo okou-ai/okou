@@ -1,3 +1,4 @@
+import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import {
   userTemplatesContract,
@@ -27,7 +28,7 @@ function servePresentationSlides(slides: number) {
   return item;
 }
 
-async function openPresentationShelfWithDraft() {
+async function openShelfWithDraft(task: "Presentation" | "Document") {
   const submitted = context.mocks.deferred<UserMessageDocument | undefined>();
   createChatRunFixtures(context).installRunChat({
     onSendRequest: (body) => {
@@ -36,8 +37,12 @@ async function openPresentationShelfWithDraft() {
   });
   await setupPage({ context, host: "app.okou.ai", path: "/" });
   const editor = await screen.findByLabelText("Message");
-  await userEvent.click(await findAction("button", "Presentation"));
-  await screen.findByRole("group", { name: "Presentation templates" });
+  const explore = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  const create = within(explore).getByRole("region", { name: "Create" });
+  await userEvent.click(await findAction("button", task, create));
+  await screen.findByRole("group", { name: `${task} templates` });
   await fill(editor, "Quarterly review");
   return { editor, submitted };
 }
@@ -81,7 +86,7 @@ function serveCustomPresentation() {
 
 test("composer-template-recommendation-previews-001 the themed second slide attaches to the existing draft and is sent", async () => {
   const item = servePresentationSlides(3);
-  const { editor, submitted } = await openPresentationShelfWithDraft();
+  const { editor, submitted } = await openShelfWithDraft("Presentation");
   await userEvent.click(await previewControl(title));
   const dialog = await screen.findByRole("dialog");
   await userEvent.click(
@@ -118,7 +123,7 @@ test("composer-template-recommendation-previews-001 the themed second slide atta
 
 test("composer-template-recommendation-previews-002 direct and gallery previews restore focus on dismissal", async () => {
   servePresentationSlides(2);
-  const { editor } = await openPresentationShelfWithDraft();
+  const { editor } = await openShelfWithDraft("Presentation");
   const open = await previewControl(title);
   for (const close of ["Close", "Escape"]) {
     await userEvent.click(open);
@@ -159,7 +164,7 @@ test("composer-template-recommendation-previews-002 direct and gallery previews 
 
 test("composer-template-recommendation-previews-003 the shelf preview is reachable and operable with both keyboard activation keys", async () => {
   servePresentationSlides(2);
-  await openPresentationShelfWithDraft();
+  await openShelfWithDraft("Presentation");
   const select = await findAction("button", title);
   const open = await previewControl(title);
   select.focus();
@@ -178,7 +183,7 @@ test("composer-template-recommendation-previews-003 the shelf preview is reachab
 
 test("composer-template-recommendation-previews-008 browsing the second custom page keeps the draft until Use and Send", async () => {
   const item = serveCustomPresentation();
-  const { editor, submitted } = await openPresentationShelfWithDraft();
+  const { editor, submitted } = await openShelfWithDraft("Presentation");
   const open = await previewControl(item.title);
   await userEvent.click(open);
   let dialog = await screen.findByRole("dialog");
@@ -225,7 +230,7 @@ test("composer-template-recommendation-previews-007 a pending custom deletion ho
       error: { code: "INTERNAL_SERVER_ERROR", message: "Deck deletion failed" },
     });
   });
-  const { editor, submitted } = await openPresentationShelfWithDraft();
+  const { editor, submitted } = await openShelfWithDraft("Presentation");
   const open = await previewControl(item.title);
   await userEvent.click(open);
   const detail = await screen.findByRole("dialog");
@@ -265,4 +270,49 @@ test("composer-template-recommendation-previews-007 a pending custom deletion ho
       gate.resolve();
     }
   }
+});
+
+test("The Document card opens a report preview that can be dismissed, reopened and sent with the draft", async () => {
+  const report = DOCUMENT_TEMPLATE_ITEMS.find((item) => {
+    return item.id === "document-template:sidebar-report";
+  })!;
+  const { editor, submitted } = await openShelfWithDraft("Document");
+  const opener = await previewControl(report.title);
+  await userEvent.click(opener);
+  const preview = await screen.findByRole("dialog");
+  await userEvent.click(
+    await findAction("button", "Next sample page", preview),
+  );
+  expect(
+    within(preview).getByRole("link", { name: "Open larger preview" }),
+  ).toHaveAttribute("href", report.previewPages[1]);
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(opener).toHaveFocus();
+  });
+  expect(editor).toHaveTextContent(/^Quarterly review$/);
+  await userEvent.click(opener);
+  const reopened = await screen.findByRole("dialog");
+  expect(within(reopened).getByAltText("Page 1")).toHaveAttribute(
+    "src",
+    report.previewPages[0],
+  );
+  await userEvent.click(
+    await findAction("button", "Use this template", reopened),
+  );
+  await waitFor(() => {
+    expect(editor).toHaveTextContent(report.title);
+  });
+  expect(editor).toHaveTextContent("Quarterly review");
+  expect(document.querySelector('[data-role="user"]')).toBeNull();
+  await userEvent.click(await findAction("button", "Send"));
+  expect((await submitted.promise)?.parts).toContainEqual(
+    expect.objectContaining({
+      type: "template",
+      template: {
+        type: "document",
+        selection: { documentTemplateId: report.id },
+      },
+    }),
+  );
 });
