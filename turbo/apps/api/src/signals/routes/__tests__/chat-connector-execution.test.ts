@@ -3,7 +3,10 @@ import { describe, expect, it, onTestFinished } from "vitest";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/connector-permissions";
-import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
+import {
+  MCP_RUNNER_BINDING_REQUIRED,
+  mcpConnectorsContract,
+} from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -502,6 +505,188 @@ describe("Chat connector execution", () => {
     });
   });
 
+  it("keeps a published account until an eligible explicit switch or physical deletion", async () => {
+    const value = await owner();
+    const a = await addAccount(value.actor, "Published");
+    const b = await addAccount(value.actor, "Replacement");
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const setPolicy = async (
+      connectionId: string,
+      policy: "allow-1h" | "allow-always" | "deny",
+    ) => {
+      session(value.actor);
+      await accept(
+        access().updateAccountPolicy({
+          headers: sessionHeaders,
+          params: { connectionId },
+          body: { target: builtin, policy },
+        }),
+        [200],
+      );
+    };
+    const admittedAt = now();
+    mockNow(admittedAt);
+    await setPolicy(a.id, "allow-1h");
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...builtin, sourceId: a.id }),
+    );
+    const otherChat = await chat.createThread(value.actor, {});
+    session(value.actor);
+    await accept(
+      access().setThreadCurrent({
+        headers: sessionHeaders,
+        params: { threadId: otherChat.id },
+        body: { target: builtin, connectionId: b.id },
+      }),
+      [200],
+    );
+    const otherRun = await start({ ...value, threadId: otherChat.id });
+    expect(otherRun.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...builtin, sourceId: b.id }),
+    );
+    const targets = [{ ...builtin, sourceId: a.id }];
+    const ordinaryRefresh = () => {
+      return runs.syncConnectorRuntime(run.runId, { targets });
+    };
+    const explicitSwitch = (connectionId: string) => {
+      return runs.syncConnectorRuntime(run.runId, {
+        targets,
+        accountSwitches: [{ target: builtin, connectionId }],
+      });
+    };
+    const available = (connectionId: string) => {
+      return expect.objectContaining({
+        target: builtin,
+        state: "available",
+        accountBinding: { connectionId, baseUrlVars: {} },
+      });
+    };
+    const unavailable = {
+      target: builtin,
+      state: "absent",
+      reason: "connector-unavailable",
+    };
+
+    mockNow(admittedAt + 3_600_000);
+    expect((await current(value, builtin)).currentConnectionId).toBe(b.id);
+    await expect(ordinaryRefresh()).resolves.toContainEqual(available(a.id));
+    await setPolicy(a.id, "deny");
+    await accept(
+      client().select({
+        headers: run.headers,
+        body: { target: builtin, connectionId: b.id },
+      }),
+      [200],
+    );
+    await expect(ordinaryRefresh()).resolves.toContainEqual(available(a.id));
+
+    const mcpList = await accept(mcp().list({ headers: run.headers }), [409]);
+    expect(mcpList.body.error.code).toBe(MCP_RUNNER_BINDING_REQUIRED);
+    const mcpReauthorize = await accept(
+      mcp().reauthorizeOAuth({
+        headers: run.headers,
+        body: { target: builtin, scopes: ["read"] },
+      }),
+      [409],
+    );
+    expect(mcpReauthorize.body.error.code).toBe(MCP_RUNNER_BINDING_REQUIRED);
+    const bindings = [{ ...builtin, connectionId: a.id }];
+    const listRequest = { bindings, request: { kind: "list" as const } };
+    const { body: listed } = await runs.resolveRunnerMcp(
+      run.runId,
+      run.headers.authorization,
+      listRequest,
+      [200],
+    );
+    expect(listed).toMatchObject({
+      kind: "list",
+      connectors: [
+        expect.objectContaining({ target: builtin, connectionId: a.id }),
+      ],
+    });
+    expect(JSON.stringify(listed)).not.toContain("key-Published");
+    await runs.resolveRunnerMcp(
+      run.runId,
+      otherRun.headers.authorization,
+      listRequest,
+      [403],
+    );
+    const { body: otherList } = await runs.resolveRunnerMcp(
+      otherRun.runId,
+      otherRun.headers.authorization,
+      { ...listRequest, bindings: [{ ...builtin, connectionId: b.id }] },
+      [200],
+    );
+    expect(otherList).toMatchObject({
+      kind: "list",
+      connectors: [
+        expect.objectContaining({ target: builtin, connectionId: b.id }),
+      ],
+    });
+    const { body: reauthorized } = await runs.resolveRunnerMcp(
+      run.runId,
+      run.headers.authorization,
+      {
+        bindings,
+        request: {
+          kind: "reauthorize",
+          target: builtin,
+          expectedConnectionId: a.id,
+          scopes: ["read"],
+        },
+      },
+      [200],
+    );
+    expect(reauthorized).toMatchObject({
+      kind: "reauthorize",
+      result: {
+        kind: "reconnect",
+        connectionId: a.id,
+        authorizationUrl: expect.stringContaining(`/reconnect/${a.id}`),
+      },
+    });
+    await runs.resolveRunnerMcp(
+      run.runId,
+      run.headers.authorization,
+      {
+        bindings,
+        request: {
+          kind: "reauthorize",
+          target: builtin,
+          expectedConnectionId: b.id,
+          scopes: ["read"],
+        },
+      },
+      [409],
+    );
+
+    await setPolicy(a.id, "allow-always");
+    // A is again allowed but the saved choice is B, so A's stale intent fails.
+    await expect(explicitSwitch(a.id)).resolves.toContainEqual(unavailable);
+    await setPolicy(b.id, "deny");
+    await expect(explicitSwitch(b.id)).resolves.toContainEqual(unavailable);
+    await setPolicy(b.id, "allow-always");
+    await expect(explicitSwitch(b.id)).resolves.toContainEqual(available(b.id));
+    await connectors.deleteBuiltinConnectorAccount(
+      value.actor,
+      builtin.connectorSlug,
+      a.id,
+    );
+    await expect(ordinaryRefresh()).resolves.toContainEqual(available(b.id));
+    const { body: afterDeletion } = await runs.resolveRunnerMcp(
+      run.runId,
+      run.headers.authorization,
+      listRequest,
+      [200],
+    );
+    expect(afterDeletion).toStrictEqual({ kind: "list", connectors: [] });
+    await setPolicy(b.id, "deny");
+    await expect(ordinaryRefresh()).resolves.toContainEqual(unavailable);
+  });
+
   it("shows denied accounts, rejects self-grants and foreign ownership, and accepts exact owner confirmation only in that Chat", async () => {
     const value = await owner();
     const a = await addAccount(value.actor, "A");
@@ -686,15 +871,43 @@ describe("Chat connector execution", () => {
         }),
         [200],
       );
-      const synced = await runs.syncConnectorRuntime(run.runId, {
-        targets: [
+      const targets = [
+        { ...target, sourceId: a.connectionId, baseUrlVars: {} },
+      ];
+      if (kind === "mcp") {
+        await connectors.updateFeatureSwitches(value.actor, {
+          [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+        });
+        await expect(
+          runs.syncConnectorRuntime(run.runId, { targets }),
+        ).resolves.toContainEqual(
+          expect.objectContaining({
+            target,
+            state: "available",
+            accountBinding: { connectionId: a.connectionId, baseUrlVars: {} },
+          }),
+        );
+        const { body: active } = await runs.resolveRunnerMcp(
+          run.runId,
+          run.headers.authorization,
           {
-            kind: "custom",
-            customConnectorId: definition.id,
-            sourceId: a.connectionId,
-            baseUrlVars: {},
+            bindings: [{ ...target, connectionId: a.connectionId }],
+            request: { kind: "list" },
           },
-        ],
+          [200],
+        );
+        expect(active).toMatchObject({
+          kind: "list",
+          connectors: [
+            expect.objectContaining({ target, connectionId: a.connectionId }),
+          ],
+        });
+      }
+      const synced = await runs.syncConnectorRuntime(run.runId, {
+        targets,
+        ...(kind === "mcp"
+          ? { accountSwitches: [{ target, connectionId: b.connectionId }] }
+          : {}),
       });
       expect(synced).toContainEqual(
         expect.objectContaining({
@@ -745,12 +958,21 @@ describe("Chat connector execution", () => {
           }),
         );
       } else {
-        expect(
-          (await accept(mcp().list({ headers: run.headers }), [200])).body
-            .connectors,
-        ).toContainEqual(
-          expect.objectContaining({ target, connectionId: b.connectionId }),
+        const { body: active } = await runs.resolveRunnerMcp(
+          run.runId,
+          run.headers.authorization,
+          {
+            bindings: [{ ...target, connectionId: b.connectionId }],
+            request: { kind: "list" },
+          },
+          [200],
         );
+        expect(active).toMatchObject({
+          kind: "list",
+          connectors: [
+            expect.objectContaining({ target, connectionId: b.connectionId }),
+          ],
+        });
       }
     },
   );
@@ -778,6 +1000,30 @@ describe("Chat connector execution", () => {
       [{ key: "secret", kind: "secret", value: "secret-B" }],
       { intent: "add", displayName: "B" },
     );
+    const target = {
+      kind: "custom",
+      customConnectorId: definition.id,
+    } as const;
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const activeThread = await chat.createThread(value.actor, {});
+    const setCurrent = async (threadId: string, connectionId: string) => {
+      session(value.actor);
+      await accept(
+        access().setThreadCurrent({
+          headers: sessionHeaders,
+          params: { threadId },
+          body: { target, connectionId },
+        }),
+        [200],
+      );
+    };
+    await setCurrent(activeThread.id, b.connectionId);
+    const active = await start({ ...value, threadId: activeThread.id });
+    expect(active.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...target, sourceId: b.connectionId }),
+    );
     await connectors.updateCustomConnector(value.actor, definition.id, {
       ...body,
       storageVersion: 2,
@@ -788,19 +1034,18 @@ describe("Chat connector execution", () => {
       [{ key: "secret", kind: "secret", value: "reconnected-A" }],
       { intent: "reconnect", connectionId: a.connectionId },
     );
-    const target = {
-      kind: "custom",
-      customConnectorId: definition.id,
-    } as const;
-    session(value.actor);
-    await accept(
-      access().setThreadCurrent({
-        headers: sessionHeaders,
-        params: { threadId: value.threadId },
-        body: { target, connectionId: b.connectionId },
-      }),
-      [200],
-    );
+    await setCurrent(activeThread.id, a.connectionId);
+    const refresh = () => {
+      return runs.syncConnectorRuntime(active.runId, {
+        targets: [{ ...target, sourceId: b.connectionId, baseUrlVars: {} }],
+      });
+    };
+    await expect(refresh()).resolves.toContainEqual({
+      target,
+      state: "absent",
+      reason: "connector-unavailable",
+    });
+    await setCurrent(value.threadId, b.connectionId);
     const run = await start(value);
     expect(run.execution.connectorRuntimeTargets).not.toContainEqual(
       expect.objectContaining(target),
@@ -813,6 +1058,18 @@ describe("Chat connector execution", () => {
         target,
         connectionId: b.connectionId,
         isCurrent: true,
+      }),
+    );
+    await connectors.deleteCustomConnectorAccount(
+      value.actor,
+      definition.id,
+      b.connectionId,
+    );
+    await expect(refresh()).resolves.toContainEqual(
+      expect.objectContaining({
+        target,
+        state: "available",
+        accountBinding: { connectionId: a.connectionId, baseUrlVars: {} },
       }),
     );
   });

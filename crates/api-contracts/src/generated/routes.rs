@@ -117,6 +117,39 @@ pub mod runners {
                 }
             }
 
+            /// Generated route bindings under `runners::runs::by_run_id::mcp_connectors`.
+            pub mod mcp_connectors {
+                /// Resolve MCP connectors from the trusted Runner's published bindings.
+                /// Route contract: `POST /api/runners/runs/:runId/mcp-connectors`.
+                pub const RESOLVE: crate::RouteTemplate = crate::RouteTemplate {
+                    method: crate::Method::Post,
+                    path: "/api/runners/runs/:runId/mcp-connectors",
+                };
+
+                /// Path parameters for `POST /api/runners/runs/:runId/mcp-connectors`.
+                #[derive(Debug, Clone, Copy)]
+                pub struct Params<'a> {
+                    /// Value for the `:runId` path parameter.
+                    pub run_id: &'a str,
+                }
+
+                /// Build the concrete path for `POST /api/runners/runs/:runId/mcp-connectors`.
+                /// Percent-encodes each path parameter as a URL path segment.
+                #[must_use]
+                pub fn path(params: Params<'_>) -> String {
+                    format!(
+                        "/api/runners/runs/{}/mcp-connectors",
+                        crate::route::encode_path_segment(params.run_id),
+                    )
+                }
+
+                /// Build a resolved route for `POST /api/runners/runs/:runId/mcp-connectors`.
+                #[must_use]
+                pub fn route(params: Params<'_>) -> crate::ResolvedRoute {
+                    crate::ResolvedRoute::new(RESOLVE.method, path(params))
+                }
+            }
+
             /// Generated route bindings under `runners::runs::by_run_id::ssh`.
             pub mod ssh {
                 /// Generated route bindings under `runners::runs::by_run_id::ssh::observations`.

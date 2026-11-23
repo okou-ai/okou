@@ -2,6 +2,7 @@ use super::*;
 
 const ACCOUNT_A: &str = "550e8400-e29b-41d4-a716-446655440001";
 const ACCOUNT_B: &str = "550e8400-e29b-41d4-a716-446655440002";
+const ACCOUNT_C: &str = "550e8400-e29b-41d4-a716-446655440003";
 const CUSTOM_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 #[tokio::test]
@@ -316,8 +317,10 @@ async fn assert_account_replacement(custom: bool) {
         if !custom {
             expected.as_object_mut().unwrap().remove("baseUrlVars");
         }
-        when.method(POST)
-            .json_body(json!({ "targets": [expected] }));
+        when.method(POST).json_body(json!({
+            "targets": [expected],
+            "accountSwitches": [{"target": target, "connectionId": ACCOUNT_B}],
+        }));
         then.status(200)
             .json_body(response(&firewall_b, &vars_b, true));
     });
@@ -374,12 +377,116 @@ async fn assert_account_replacement(custom: bool) {
     handle
         .notify_connector_runtime_sync(run_id, target.clone())
         .await;
-    observe_current_successful_sync(&handle, run_id, target)
+    observe_current_successful_sync(&handle, run_id, target.clone())
         .await
         .wait()
         .await;
     refresh.assert_calls(1);
     assert_eq!(*context.borrow(), current);
     assert!(!context.has_changed().unwrap());
+    refresh.delete_async().await;
+
+    // An already-published ID cannot acknowledge a new, rejected request.
+    let rejected = server.mock(|when, then| {
+        let mut expected = json!(expected_registration);
+        if !custom {
+            expected.as_object_mut().unwrap().remove("baseUrlVars");
+        }
+        when.method(POST).json_body(json!({
+            "targets": [expected],
+            "accountSwitches": [{"target": target, "connectionId": ACCOUNT_B}],
+        }));
+        then.status(200).json_body(json!({"results": [{
+            "target": target, "state": "absent", "reason": "connector-unavailable"
+        }]}));
+    });
+    assert!(!handle.sync_account_binding(run_id, target, ACCOUNT_B).await);
+    rejected.assert_calls(1);
+    assert_eq!(*context.borrow(), current);
+    handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn superseded_switch_cannot_publish_and_other_run_keeps_its_binding() {
+    let server = MockServer::start();
+    let run_id = RunId::new_v4();
+    let other_run_id = RunId::new_v4();
+    let handle = ConnectorRuntimeSyncHandle::new(api_client_for_server(&server));
+    let (attempt_tx, mut attempt_rx) = mpsc::unbounded_channel();
+    let (_dir, _path, lock, targets) =
+        register_builtin_runtime(&handle.core, run_id, &["slack"], Some(attempt_tx)).await;
+    let (_other_dir, _other_path, _lock, _) =
+        register_builtin_runtime(&handle.core, other_run_id, &["slack"], None).await;
+    let target = targets[0].clone();
+    let mock_switch = |run: RunId, connection_id: &str| {
+        server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{run}/connector-runtime/sync"))
+                .json_body(json!({
+                    "targets": [target],
+                    "accountSwitches": [{"target": target, "connectionId": connection_id}],
+                }));
+            then.status(200).json_body(json!({"results": [{
+                "target": target,
+                "state": "available",
+                "networkPolicy": {"allow": [], "deny": [], "ask": [], "unknownPolicy": "ask"},
+                "accountBinding": {"connectionId": connection_id, "baseUrlVars": {}}
+            }]}));
+        })
+    };
+    let other = mock_switch(other_run_id, ACCOUNT_A);
+    assert!(
+        handle
+            .sync_account_binding(other_run_id, target.clone(), ACCOUNT_A)
+            .await
+    );
+    let mut other_context = handle
+        .subscribe_account_context(other_run_id)
+        .await
+        .unwrap();
+    let other_binding = other_context.borrow_and_update().clone();
+
+    let older = mock_switch(run_id, ACCOUNT_B);
+    let newer = mock_switch(run_id, ACCOUNT_C);
+    let guard = runner_host::lock::acquire(lock).await.unwrap();
+    let old_switch = tokio::spawn({
+        let handle = handle.clone();
+        let target = target.clone();
+        async move { handle.sync_account_binding(run_id, target, ACCOUNT_B).await }
+    });
+    tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, attempt_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let new_switch = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.sync_account_binding(run_id, target, ACCOUNT_C).await }
+    });
+    assert!(
+        !tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, old_switch)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+    drop(guard);
+    assert!(
+        tokio::time::timeout(SYNC_PUBLICATION_TEST_TIMEOUT, new_switch)
+            .await
+            .unwrap()
+            .unwrap()
+    );
+
+    let context = handle.subscribe_account_context(run_id).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(&context.borrow().targets).unwrap(),
+        json!([{
+            "kind": "builtin", "connectorSlug": "slack", "connectionId": ACCOUNT_C
+        }])
+    );
+    assert_eq!(*other_context.borrow(), other_binding);
+    assert!(!other_context.has_changed().unwrap());
+    other.assert_calls(1);
+    older.assert_calls(1);
+    newer.assert_calls(1);
     handle.shutdown().await;
 }

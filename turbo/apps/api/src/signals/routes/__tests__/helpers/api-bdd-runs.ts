@@ -25,6 +25,10 @@ import {
 import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
+import {
+  MCP_RUN_AUTHORIZATION_HEADER,
+  runnerMcpConnectorsContract,
+} from "@okouai/api-contracts/contracts/mcp-connectors";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
   runContextContract,
@@ -59,6 +63,7 @@ import { cliAuthRoutes } from "../../cli-auth";
 import { cronProcessUsageEventsRoutes } from "../../cron-process-usage-events";
 import { cronTelegramCleanupRoutes } from "../../cron-telegram-cleanup";
 import { meModelProvidersUpsertRoutes } from "../../me-model-providers-upsert";
+import { mcpConnectorsRoutes } from "../../mcp-connectors";
 import { runDetailRoutes } from "../../run-detail";
 import { runModelsRoutes } from "../../run-models";
 import { runnerCancellationRoutes } from "../../runner-cancellation";
@@ -990,6 +995,29 @@ export function createRunsApi(context: TestContext) {
         [200],
       );
       return response.body.results;
+    },
+
+    async resolveRunnerMcp<
+      TStatus extends 200 | 400 | 401 | 403 | 404 | 409 | 500 | 502,
+    >(
+      runId: string,
+      runAuthorization: string,
+      body: input<(typeof runnerMcpConnectorsContract.resolve)["body"]>,
+      statuses: readonly TStatus[],
+    ) {
+      return await accept(
+        setupAppWithRoutes({ context, routes: mcpConnectorsRoutes })(
+          runnerMcpConnectorsContract,
+        ).resolve({
+          headers: {
+            ...runnerHeaders(true),
+            [MCP_RUN_AUTHORIZATION_HEADER]: runAuthorization,
+          },
+          params: { runId },
+          body,
+        }),
+        statuses,
+      );
     },
 
     async createCliToken(actor: ApiTestUser): Promise<{

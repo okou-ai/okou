@@ -32,7 +32,7 @@ type McpRuntimeConnector = Omit<
   | "configuredFieldKeys"
 >;
 
-interface RunMcpConnectorScope {
+export interface RunMcpConnectorScope {
   readonly orgId: string;
   readonly userId: string;
   readonly runId: string;

@@ -134,7 +134,7 @@ async fn heartbeat_and_connector_sync_allow_api_cold_starts() {
     let calls = async {
         tokio::join!(
             api.heartbeat(&state),
-            api.sync_connector_runtime(run_id, &targets)
+            api.sync_connector_runtime(run_id, &targets, &[])
         )
     };
     tokio::pin!(calls);
@@ -188,7 +188,7 @@ async fn api_client_sync_requires_complete_terminal_diagnostics() {
             base_url_vars: None,
             source_id: None,
         }];
-        let result = api.sync_connector_runtime(run_id, &targets).await;
+        let result = api.sync_connector_runtime(run_id, &targets, &[]).await;
         if terminal {
             assert!(matches!(
                 result,

@@ -342,6 +342,7 @@ const connectorRuntimeSyncInner$ = command(
         runId: run.runId,
       },
       targets: body.data.targets,
+      accountSwitches: body.data.accountSwitches,
     });
     signal.throwIfAborted();
     return {

@@ -222,6 +222,7 @@ async function insufficientScopeError(
   try {
     const authorization = await reauthorizeRunMcpConnectorOAuth(
       connector.target,
+      connector.connectionId,
       scopes,
       deadlineSignal,
     );

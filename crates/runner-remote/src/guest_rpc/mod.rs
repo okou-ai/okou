@@ -407,7 +407,10 @@ async fn dispatch(
         } else {
             scope.error(input, ErrorCode::Unavailable).await;
         }
-    } else if request.method == "connector.account.sync" {
+    } else if matches!(
+        request.method.as_str(),
+        "connector.account.sync" | "connector.mcp.resolve"
+    ) {
         if let Some(sync) = connectors {
             crate::connector_accounts::dispatch(
                 sync,

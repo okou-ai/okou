@@ -1,4 +1,5 @@
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
+import { runnerMcpConnectorsContract } from "../contracts/mcp-connectors";
 import { runnerSshContract } from "../contracts/runner-ssh";
 import { runnerVncContract } from "../contracts/runner-vnc";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
@@ -97,6 +98,11 @@ export const rustRouteBindings = [
       "sync",
     ],
     rustConstName: "SYNC",
+  },
+  {
+    route: runnerMcpConnectorsContract.resolve,
+    rustModulePath: ["runners", "runs", "by_run_id", "mcp_connectors"],
+    rustConstName: "RESOLVE",
   },
   {
     route: runnersBuiltinFirewallsResolveContract.resolve,

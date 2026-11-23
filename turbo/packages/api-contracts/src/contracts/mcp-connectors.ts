@@ -24,6 +24,9 @@ import {
 
 const c = initContract();
 
+export const MCP_RUNNER_BINDING_REQUIRED = "MCP_RUNNER_BINDING_REQUIRED";
+export const MCP_RUN_AUTHORIZATION_HEADER = "x-okou-run-authorization";
+
 export const mcpConnectorSchema = object({
   ...connectorAccountFieldMetadataSchema.shape,
   target: connectorAccountTargetSchema,
@@ -88,6 +91,7 @@ export const mcpConnectorsContract = c.router({
       200: mcpConnectorListResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
+      409: apiErrorSchema,
       500: apiErrorSchema,
     },
     summary: "List MCP connectors authorized for the current Agent Run",
@@ -108,6 +112,60 @@ export const mcpConnectorsContract = c.router({
       502: apiErrorSchema,
     },
     summary: "Reauthorize MCP OAuth scopes for the current Agent Run",
+  },
+});
+
+const publishedMcpBindingSchema = discriminatedUnion("kind", [
+  object({
+    kind: literal("builtin"),
+    connectorSlug: string().min(1),
+    connectionId: uuid().nullable(),
+  }),
+  object({
+    kind: literal("custom"),
+    customConnectorId: uuid(),
+    connectionId: uuid().nullable(),
+  }),
+]);
+
+export const runnerMcpConnectorsContract = c.router({
+  resolve: {
+    method: "POST",
+    path: "/api/runners/runs/:runId/mcp-connectors",
+    headers: authHeadersSchema.extend({
+      [MCP_RUN_AUTHORIZATION_HEADER]: string(),
+    }),
+    pathParams: object({ runId: uuid() }),
+    body: object({
+      bindings: array(publishedMcpBindingSchema),
+      request: discriminatedUnion("kind", [
+        object({ kind: literal("list") }).strict(),
+        mcpConnectorOAuthReauthorizationRequestSchema
+          .extend({
+            kind: literal("reauthorize"),
+            expectedConnectionId: uuid(),
+          })
+          .strict(),
+      ]),
+    }),
+    responses: {
+      200: discriminatedUnion("kind", [
+        mcpConnectorListResponseSchema.extend({ kind: literal("list") }),
+        object({
+          kind: literal("reauthorize"),
+          result: mcpConnectorOAuthReauthorizationResponseSchema,
+        }),
+      ]),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+      500: apiErrorSchema,
+      502: apiErrorSchema,
+    },
+    summary:
+      "Resolve MCP connectors from the trusted Runner's published bindings",
   },
 });
 

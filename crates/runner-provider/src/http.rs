@@ -202,6 +202,16 @@ impl ApiRequestBuilder {
         self
     }
 
+    pub(crate) fn sensitive_header(
+        mut self,
+        name: &'static str,
+        mut value: reqwest::header::HeaderValue,
+    ) -> Self {
+        value.set_sensitive(true);
+        self.builder = self.builder.header(name, value);
+        self
+    }
+
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.builder = self.builder.timeout(timeout);
         self

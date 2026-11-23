@@ -1140,6 +1140,27 @@ export const runnersConnectorRuntimeSyncContract = c.router({
     }),
     body: object({
       targets: connectorRuntimeSyncTargetsSchema,
+      accountSwitches: array(
+        object({
+          target: connectorRuntimeTargetSchema,
+          connectionId: uuid(),
+        }).strict(),
+      )
+        .max(CONNECTOR_RUNTIME_SYNC_TARGETS_MAX)
+        .optional(),
+    }).superRefine(({ targets, accountSwitches }, context) => {
+      if (!accountSwitches?.length) return;
+      const requested = new Set(targets.map(connectorRuntimeTargetKey));
+      for (const [index, intent] of accountSwitches.entries()) {
+        if (!requested.delete(connectorRuntimeTargetKey(intent.target))) {
+          context.addIssue({
+            code: "custom",
+            path: ["accountSwitches", index, "target"],
+            message:
+              "Each account switch must name a unique requested connector target",
+          });
+        }
+      }
     }),
     responses: {
       200: object({
