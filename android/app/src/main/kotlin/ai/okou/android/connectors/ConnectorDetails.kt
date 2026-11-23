@@ -78,6 +78,23 @@ internal fun ConnectorDetails(
     val detail = state.detail.data
     val detailUnavailable = state.detail.failure == ConnectorReadFailure.Unavailable
     val entry = detail?.entry ?: preview
+    if (entry == null && (detailUnavailable || !state.offline && state.detail.failure != null)) {
+        Box(
+            Modifier.fillMaxSize().testTag("connector-detail"),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Text(
+                stringResource(R.string.connector_load_failed),
+                Modifier.widthIn(max = 666.dp)
+                    .fillMaxWidth()
+                    .padding(start = 12.dp, top = 24.dp, end = 12.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite },
+                style = connectorFeedbackType(),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        return
+    }
     val accounts = entry?.slug?.let(state::accountsFor).orEmpty()
     val hasAccountContent =
         state.accounts.data != null || state.cachedAccounts != null || accounts.isNotEmpty()
@@ -306,12 +323,8 @@ internal fun ConnectorDetails(
                     }
                 }
                 if (panel == null) ConnectorActionFeedback(action)
-            } else if (detailUnavailable) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
             } else if (state.offline) {
                 ConnectorLoadWhenOnline()
-            } else if (state.detail.failure != null) {
-                ConnectorStatusBanner(R.string.connector_load_failed)
             } else if (rememberChatWaitIndicator(waiting = true)) {
                 val label = stringResource(R.string.connector_loading)
                 Column(
