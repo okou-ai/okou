@@ -264,9 +264,10 @@ test("Archived opens the full contents of an archived Project and the archived c
   ]);
   await setupPage({ context, path: "/", ...workspace.pageOptions });
   const user = userEvent.setup({ delay: null });
-  await user.click(
-    await screen.findByRole("button", { name: "Open chat list menu" }),
-  );
+  await waitFor(() => {
+    expect(button("Open chat list menu")).toBeInTheDocument();
+  });
+  await user.click(button("Open chat list menu"));
   await user.click(menuItemByText("Archived"));
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
