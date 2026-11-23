@@ -1582,6 +1582,7 @@ internal fun OkouApp(
                                 val list = listState.value
                                 ChatListScreen(
                                     list,
+                                    composerInput,
                                     {
                                         if (target != WorkspaceTarget.Chat(it.id))
                                             leaveWorkflowChat()

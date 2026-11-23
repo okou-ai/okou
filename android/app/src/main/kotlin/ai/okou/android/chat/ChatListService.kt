@@ -45,6 +45,8 @@ interface ChatListService : ConversationHistoryService {
 
     suspend fun indicators(): Indicators
 
+    suspend fun draftThreadIds(): List<String>
+
     suspend fun projectSnapshot(): ProjectSnapshot
 
     suspend fun projectArchive(url: String): ProjectArchive
