@@ -113,11 +113,13 @@ final class StructuredMessageTests: XCTestCase {
     XCTAssertEqual(history.messages[4].copyText, "Saved style")
     XCTAssertEqual(history.messages[5].attachments.first?.id, "original-image")
     XCTAssertEqual(history.messages[5].attachments.first?.downloadID, "marked-image")
-    XCTAssertEqual(history.messages[6].userMessage?.bodyParts.map(\.source), [
-      .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
-      .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
-      .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
-    ])
+    XCTAssertEqual(
+      history.messages[6].userMessage?.bodyParts.map(\.source),
+      [
+        .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
+      ])
 
     online.withLock { $0 = false }
     let reopened = ChatSync(
