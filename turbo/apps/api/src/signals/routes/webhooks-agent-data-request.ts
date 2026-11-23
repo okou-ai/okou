@@ -1,7 +1,4 @@
-import {
-  runDataRouterRequestContract,
-  dataRouterRequestContract,
-} from "@okouai/api-contracts/contracts/data-router";
+import { runDataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { dataRouterRequests } from "@okouai/db/schema/data-router-request";
 import { and, eq } from "drizzle-orm";
@@ -16,7 +13,7 @@ import {
   unauthorizedRunMismatch,
 } from "./agent-webhook-auth";
 
-const body$ = bodyResultOf(dataRouterRequestContract.register);
+const body$ = bodyResultOf(runDataRouterRequestContract.register);
 const register$ = command(async ({ get, set }, signal: AbortSignal) => {
   const body = await get(body$);
   signal.throwIfAborted();
@@ -57,5 +54,4 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 export const webhooksAgentDataRequestRoutes: readonly RouteEntry[] = [
   { route: runDataRouterRequestContract.register, handler: register$ },
-  { route: dataRouterRequestContract.register, handler: register$ },
 ];

@@ -1,7 +1,4 @@
-import {
-  dataRouterRequestContract,
-  runDataRouterRequestContract,
-} from "../contracts/data-router";
+import { runDataRouterRequestContract } from "../contracts/data-router";
 import { runnerRealtimeTokenContract } from "../contracts/realtime";
 import { runnersRunStartupContract } from "../contracts/runner-startup";
 import {
@@ -11,9 +8,7 @@ import {
 } from "../contracts/runners";
 import {
   runWebhookContract,
-  webhookFirewallAuthContract,
   webhookMemoryArchiveContract,
-  webhookUsageEventContract,
 } from "../contracts/webhooks";
 import { iosRouteBindings } from "./ios-routes";
 import { androidRouteBindings } from "./android-routes";
@@ -128,21 +123,6 @@ const runtimeServiceRouteBindings = [
     id: "webhooks.run.dataRequest",
     owner: "mitm-addon",
     route: runDataRouterRequestContract.register,
-  },
-  {
-    id: "webhooks.agent.dataRequest",
-    owner: "mitm-addon",
-    route: dataRouterRequestContract.register,
-  },
-  {
-    id: "webhooks.agent.firewall.auth",
-    owner: "mitm-addon",
-    route: webhookFirewallAuthContract.resolve,
-  },
-  {
-    id: "webhooks.agent.usageEvent",
-    owner: "mitm-addon",
-    route: webhookUsageEventContract.send,
   },
 ] as const satisfies readonly RuntimeApiRouteBinding[];
 

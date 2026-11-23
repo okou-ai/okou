@@ -98,12 +98,4 @@ export const runDetailRoutes: readonly RouteEntry[] = [
     route: runTelemetryEventsContract.getTelemetryEvents,
     handler: telemetryEventsHandler,
   },
-  {
-    // Older Activity tabs still request the original URL.
-    route: {
-      ...runTelemetryEventsContract.getTelemetryEvents,
-      path: "/api/runs/:id/telemetry/agent",
-    },
-    handler: telemetryEventsHandler,
-  },
 ];
