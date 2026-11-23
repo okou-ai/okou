@@ -1,4 +1,5 @@
 use super::*;
+use std::future::Future;
 
 pub(super) struct EarlyApplication<'a> {
     pub(super) application: &'a mut GuestApplication,
@@ -38,44 +39,34 @@ pub(super) async fn prepare_mixed(
         let mut complete = false;
         let mut early = early;
         async {
-            let ordinary = {
-                let ordinary = async {
-                    if concurrency > 0 {
-                        return prepare_ordinary(
-                            groups,
-                            home,
-                            concurrency,
-                            Some(&cancel_ordinary),
-                            stage,
-                        )
-                        .await
-                        .map(OrdinaryPreparation::Staged);
-                    }
-
-                    // All body slots are claimed. Only inspect metadata until
-                    // the existing owners have staged their archive bodies.
-                    let absent = ordinary_cache_absent(&groups, home, &cancel_ordinary).await;
-                    Ok(OrdinaryPreparation::Unread { groups, absent })
-                };
-                tokio::pin!(ordinary);
-                loop {
-                    tokio::select! {
-                        prepared = &mut ordinary => break prepared?,
-                        resolved = delivery.next_resolved(home, &mut metrics), if !complete => {
-                            match resolved {
-                                Ok(Some(archive)) => ready.push(archive),
-                                Ok(None) => complete = true,
-                                Err(error) => {
-                                    cancel_fresh.cancel();
-                                    cancel_ordinary.cancel();
-                                    let _ = ordinary.await;
-                                    return Err(error);
-                                }
-                            }
-                        }
-                    }
+            let ordinary = async {
+                if concurrency > 0 {
+                    return prepare_ordinary(
+                        groups,
+                        home,
+                        concurrency,
+                        Some(&cancel_ordinary),
+                        stage,
+                    )
+                    .await
+                    .map(OrdinaryPreparation::Staged);
                 }
+
+                // All body slots are claimed. Only inspect metadata until
+                // the existing owners have staged their archive bodies.
+                let absent = ordinary_cache_absent(&groups, home, &cancel_ordinary).await;
+                Ok(OrdinaryPreparation::Unread { groups, absent })
             };
+            let ordinary = collect_during(
+                delivery,
+                home,
+                &mut metrics,
+                &mut ready,
+                &mut complete,
+                &cancel_ordinary,
+                ordinary,
+            )
+            .await?;
             collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
             if matches!(&ordinary, OrdinaryPreparation::Unread { .. })
                 && !complete
@@ -104,9 +95,16 @@ pub(super) async fn prepare_mixed(
                     let concurrency = ready.len();
                     check_cancel(Some(&cancel_fresh))?;
                     fresh = stage_fresh_archives(std::mem::take(&mut ready), stage).await?;
-                    let outcomes =
-                        prepare_ordinary(groups, home, concurrency, Some(&cancel_fresh), stage)
-                            .await?;
+                    let outcomes = collect_during(
+                        delivery,
+                        home,
+                        &mut metrics,
+                        &mut ready,
+                        &mut complete,
+                        &cancel_fresh,
+                        prepare_ordinary(groups, home, concurrency, Some(&cancel_fresh), stage),
+                    )
+                    .await?;
                     collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
                     OrdinaryPreparation::Staged(outcomes)
                 }
@@ -254,6 +252,37 @@ async fn path_missing(path: &Path) -> bool {
         fs::symlink_metadata(path).await,
         Err(error) if error.kind() == io::ErrorKind::NotFound
     )
+}
+
+/// Poll fresh results while the ordinary owner works. On a fresh error, stop
+/// both owners and settle any accepted ordinary write before returning.
+async fn collect_during<T>(
+    delivery: &mut FreshArchiveDelivery,
+    home: &HomePaths,
+    metrics: &mut CacheProcessMetrics,
+    ready: &mut Vec<FreshArchiveResolved>,
+    complete: &mut bool,
+    cancel_ordinary: &CancellationToken,
+    ordinary: impl Future<Output = RunnerResult<T>>,
+) -> RunnerResult<T> {
+    tokio::pin!(ordinary);
+    loop {
+        tokio::select! {
+            prepared = &mut ordinary => return prepared,
+            resolved = delivery.next_resolved(home, metrics), if !*complete => {
+                match resolved {
+                    Ok(Some(archive)) => ready.push(archive),
+                    Ok(None) => *complete = true,
+                    Err(error) => {
+                        delivery.cancel.cancel();
+                        cancel_ordinary.cancel();
+                        let _ = ordinary.await;
+                        return Err(error);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Poll only immediately available progress. Bodies/publications remain in the

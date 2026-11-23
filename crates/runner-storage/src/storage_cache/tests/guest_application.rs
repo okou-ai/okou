@@ -300,6 +300,157 @@ async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() 
 }
 
 #[tokio::test]
+async fn saturated_cold_failure_cancels_delivery_during_a_cached_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let archive = tarball_bytes();
+    write_cached_archive(&home, "decoded", "v1", &archive);
+    write_storage_lock(&home, "decoded", "v1");
+    cache.warm_from_archive("decoded", "v1").await.unwrap();
+    write_cached_archive(&home, "warm", "v1", &archive);
+
+    let (reject, release) = oneshot::channel();
+    let mut rejecting_peer = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+        release,
+        response: http_response("404 Not Found", b""),
+    }])
+    .await;
+    let mut storages = vec![storage_entry_with_archive_size(
+        "/mnt/rejected".into(),
+        format!("{}/archive", rejecting_peer.url()),
+        "rejected",
+        "v1",
+        Some(archive.len() as u64),
+    )];
+    let mut cold_peers = Vec::new();
+    for index in 1..FRESH_DELIVERY_PER_RUN_LIMIT {
+        let peer = GatedResponse::start(archive.clone()).await;
+        let name = format!("cold-{index}");
+        storages.push(storage_entry_with_archive_size(
+            format!("/mnt/{name}"),
+            peer.url.clone(),
+            &name,
+            "v1",
+            Some(archive.len() as u64),
+        ));
+        cold_peers.push(peer);
+    }
+    for name in ["warm", "decoded"] {
+        storages.push(storage_entry(
+            format!("/mnt/{name}"),
+            format!("https://example.test/{name}"),
+            name,
+            "v1",
+        ));
+    }
+    let mut plan = plan_from_entries(storages, Vec::new(), None);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+    assert_eq!(plan.decoded_mount_count(), 1);
+    let mut phase = FreshArchivePhaseGuard::new(
+        &delivery.phase_records,
+        STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+    );
+    phase.started_at -= FRESH_DELIVERY_SLOW_HEADERS;
+    phase.finish(Ok(()));
+    let cancel = delivery.cancellation_token();
+
+    assert!(
+        rejecting_peer
+            .next_request("cold archive GET")
+            .await
+            .starts_with("GET /archive HTTP/1.1\r\n")
+    );
+    let mut pending_bodies = Vec::new();
+    let mut servers = Vec::new();
+    for peer in cold_peers {
+        tokio::time::timeout(Duration::from_secs(5), peer.requested)
+            .await
+            .unwrap()
+            .unwrap();
+        peer.headers.send(()).unwrap();
+        pending_bodies.push(peer.body);
+        servers.push(peer.task);
+    }
+    let sandbox = Arc::new(MockSandbox::new("saturated-cold-failure"));
+    let gate = MockLifecycleGate::new();
+    sandbox.set_write_file_lifecycle_gate(gate.clone());
+    let (send, receive) = oneshot::channel();
+    let application = GuestApplication::new(
+        send,
+        temp.path().join("runtime"),
+        "saturated-cold-failure".into(),
+        Duration::from_secs(300),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
+    let task = tokio::spawn({
+        let sandbox = Arc::clone(&sandbox);
+        async move {
+            let mut prepared = PreparedStorage { plan, delivery };
+            let result = populate_cache_for_guest(
+                &mut prepared,
+                sandbox.as_ref(),
+                &home,
+                &mut telemetry,
+                &cache,
+                application,
+            )
+            .await;
+            cache.shutdown().await;
+            result
+        }
+    });
+
+    pending_bodies.remove(0).send(()).unwrap();
+    gate.wait_entered(1, Duration::from_secs(5)).await.unwrap();
+    gate.release_one();
+    gate.wait_entered(2, Duration::from_secs(5)).await.unwrap();
+    let writes = sandbox.write_files_calls();
+    assert_eq!(writes[1].files[0].path, guest_archive_path("warm", "v1"));
+    reject.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), cancel.cancelled())
+        .await
+        .expect("cold failure must cancel delivery before the cached write settles");
+    assert!(!task.is_finished());
+    gate.release_one();
+
+    let error = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .err()
+        .expect("cold failure must fail population");
+    assert!(
+        error.to_string().contains("http-status (status=404)"),
+        "got: {error}"
+    );
+    assert!(receive.await.is_err());
+    assert_eq!(sandbox.write_files_calls().len(), 2);
+    assert!(sandbox.storage_manifest_calls().is_empty());
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+    rejecting_peer.assert_finished().await;
+    for server in servers {
+        server.finish().await;
+    }
+    admission.shutdown().await;
+}
+
+#[tokio::test]
 async fn complete_ready_inputs_are_handed_off_before_cold_delivery_with_joined_failures() {
     assert_ready_input_lifecycle(false).await;
 }
