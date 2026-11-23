@@ -136,30 +136,31 @@ struct ForYouView: View {
         suggestion: suggestion, artwork: store.illustration(for: card),
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in run { if await store.choose(card, option: option) { showChat() } } },
-        respond: { reason in run { await store.respond(card, reason: reason) } }, browse: browse
-      ) {
-        if let direction = store.direction, direction.cardID == card.id {
-          ForYouDirectionComposer(
-            direction: direction, card: card, suggestion: suggestion, workspace: workspace
-          )
-          .id("direction-" + card.id)
-        } else {
-          Button {
-            run { await store.openDirection(card) }
-          } label: {
-            HStack(spacing: OkouSpace.md) {
-              Text("What do you have in mind?").frame(maxWidth: .infinity, alignment: .leading)
-              OkouIcon("square-pen", size: OkouIconSize.standard)
-            }.font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
-              .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.md)
-              .frame(minHeight: OkouControl.minimumTarget)
-              .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.card))
-          }.buttonStyle(.plain).accessibilityHint(
-            "Ask a question or describe what you’d like to do."
-          )
-          .accessibilityIdentifier("for-you-direction")
+        respond: { reason in run { await store.respond(card, reason: reason) } }, browse: browse,
+        direction: {
+          if let direction = store.direction, direction.cardID == card.id {
+            ForYouDirectionComposer(
+              direction: direction, card: card, suggestion: suggestion, workspace: workspace
+            )
+            .id("direction-" + card.id)
+          } else {
+            Button {
+              run { await store.openDirection(card) }
+            } label: {
+              HStack(spacing: OkouSpace.md) {
+                Text("What do you have in mind?").frame(maxWidth: .infinity, alignment: .leading)
+                OkouIcon("square-pen", size: OkouIconSize.standard)
+              }.font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+                .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.md)
+                .frame(minHeight: OkouControl.minimumTarget)
+                .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.card))
+            }.buttonStyle(.plain).accessibilityHint(
+              "Ask a question or describe what you’d like to do."
+            )
+            .accessibilityIdentifier("for-you-direction")
+          }
         }
-      }.disabled(store.busy)
+      ).disabled(store.busy)
     case .automation(let event):
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
         Label("Automation paused", okouSymbol: "workflow").font(.okou(.subheadline))
