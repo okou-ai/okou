@@ -1,3 +1,4 @@
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 /** Canonical ChatEvent route adapter. */
 import { command } from "ccstate";
 import {
@@ -75,11 +76,15 @@ export const sendValidatedChatEvent$ = command(
       data.userMessage &&
       suggestionFeedbacks(data.userMessage).length > 0;
     const access = candidate
-      ? await measureChatEnqueue(timing, "suggestion_access", () => {
-          return set(suggestionAccess$, signal);
+      ? await measureChatEnqueue(timing, "suggestion_access", async () => {
+          const flags = bootstrap
+            ? await get(bootstrap.context.featureSwitches$)
+            : undefined;
+          return set(suggestionAccess$, signal, flags?.overrides);
         })
       : null;
     const custom = access !== null && !("status" in access);
+    let acceptedDocument: UserMessageDocument | undefined;
     if (custom && data.userMessage) {
       if (
         !data.threadId ||
@@ -106,13 +111,24 @@ export const sendValidatedChatEvent$ = command(
         },
       );
       signal.throwIfAborted();
-      if (invalid) {
+      if (invalid && "status" in invalid) {
         return invalid;
       }
+      acceptedDocument = invalid?.acceptedDocument;
     }
     const result = await set(
       handleSendChatEvent$,
-      { body: data, projectId, projectReferences, bootstrap },
+      {
+        body: data,
+        projectId,
+        projectReferences,
+        bootstrap,
+        onAcceptedDocument: custom
+          ? (document) => {
+              acceptedDocument = document;
+            }
+          : undefined,
+      },
       signal,
     );
     if (custom && result.status === 201 && data.clientEventId) {
@@ -122,6 +138,7 @@ export const sendValidatedChatEvent$ = command(
         result.body.threadId,
         data.clientEventId,
         signal,
+        acceptedDocument,
       );
     }
     return result;

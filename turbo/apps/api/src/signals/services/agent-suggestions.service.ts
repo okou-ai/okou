@@ -99,11 +99,15 @@ function storedFeedback(feedback: NewFeedback, optionId?: string | null) {
   return sql`(${sql.param(JSON.stringify(feedback))}::jsonb || jsonb_build_object('context', ${context}))`;
 }
 export const suggestionAccess$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+  async (
+    { get, set },
+    signal: AbortSignal,
+    capturedOverrides?: Readonly<Record<string, boolean>>,
+  ) => {
     const auth = get(organizationAuthContext$);
-    const overrides = await get(
-      userFeatureSwitchOverrides(auth.orgId, auth.userId),
-    );
+    const overrides =
+      capturedOverrides ??
+      (await get(userFeatureSwitchOverrides(auth.orgId, auth.userId)));
     signal.throwIfAborted();
     if (
       !isFeatureEnabled(FeatureSwitchKey.AgentSuggestion, {
@@ -778,10 +782,15 @@ export const validateSuggestionFollowup$ = command(
   ) => {
     const { threadId, eventId, document } = input;
     // An accepted replay must repair its receipt even if curation has since changed.
-    if (
-      await set(acceptedSuggestionMessage$, owner, threadId, eventId, signal)
-    ) {
-      return null;
+    const acceptedDocument = await set(
+      acceptedSuggestionMessage$,
+      owner,
+      threadId,
+      eventId,
+      signal,
+    );
+    if (acceptedDocument) {
+      return { acceptedDocument };
     }
     const feedbacks = suggestionFeedbacks(document);
     // One read serves every quoted card; parts are still checked in order.
@@ -846,14 +855,11 @@ export const recordAcceptedSuggestionFollowup$ = command(
     threadId: string,
     eventId: string,
     signal: AbortSignal,
+    acceptedDocument?: UserMessageDocument,
   ) => {
-    const document = await set(
-      acceptedSuggestionMessage$,
-      owner,
-      threadId,
-      eventId,
-      signal,
-    );
+    const document =
+      acceptedDocument ??
+      (await set(acceptedSuggestionMessage$, owner, threadId, eventId, signal));
     if (!document) {
       throw new Error("Accepted suggestion input is unavailable");
     }
