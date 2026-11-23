@@ -151,7 +151,6 @@ internal fun OkouApp(
     workspaceAvatar: @Composable (() -> Unit)? = null,
     workspaceName: String? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
-    onUpdateEditingChanged: (Boolean) -> Unit = {},
     startupRecovery: @Composable (() -> Unit)? = null,
     workspaceReady: Boolean = composer != null,
     connectors: ConnectorModel? = null,
@@ -275,23 +274,6 @@ internal fun OkouApp(
                 resourcesId == null &&
                 (listWidth != null || !searchActive)
         }
-    var composerFocused by
-        remember(target, settings, searchActive, showArtifacts, resourcesId) {
-            mutableStateOf(false)
-        }
-    val editing =
-        showArtifacts ||
-            inlineArtifactLink != null ||
-            resourcesId != null ||
-            showingConnectors ||
-            searchActive ||
-            settings == SettingsDestination.Instructions ||
-            (showWorkflows && workflowState?.editor != null) ||
-            (settings == null && (target is WorkspaceTarget.NewChat || composerFocused))
-    DisposableEffect(editing) {
-        onUpdateEditingChanged(editing)
-        onDispose { onUpdateEditingChanged(false) }
-    }
     val showList = listWidth != null || searchActive || target == WorkspaceTarget.List
     val showChatList =
         settings == null &&
@@ -1492,7 +1474,6 @@ internal fun OkouApp(
                                                 ChatComposerField(
                                                     composer,
                                                     composerTarget,
-                                                    onInputFocusChanged = { composerFocused = it },
                                                     offline = list.offline,
                                                 )
                                             }
@@ -1541,7 +1522,6 @@ internal fun OkouApp(
                                                 ChatComposerField(
                                                     composer,
                                                     newTarget,
-                                                    onInputFocusChanged = { composerFocused = it },
                                                     offline = list.offline,
                                                     beforeSend = {
                                                         if (wideWelcome) startNewChat(null)

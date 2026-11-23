@@ -68,7 +68,6 @@ fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
-    onInputFocusChanged: (Boolean) -> Unit = {},
     offline: Boolean = false,
     beforeSend: () -> Unit = {},
 ) {
@@ -161,10 +160,7 @@ fun ChatComposerField(
                     modifier =
                         Modifier.weight(1f)
                             .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                            .onFocusChanged {
-                                inputFocused = it.isFocused
-                                onInputFocusChanged(it.isFocused)
-                            }
+                            .onFocusChanged { inputFocused = it.isFocused }
                             .testTag("message_input")
                             .semantics { contentDescription = label },
                     enabled = state.journal != null,

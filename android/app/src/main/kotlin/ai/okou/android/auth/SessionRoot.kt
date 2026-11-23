@@ -85,7 +85,6 @@ internal fun SessionRoot(
     account: NativeAccount? = null,
     appUpdates: @Composable (() -> Unit)? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
-    onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
     var switchTarget by rememberWorkspaceSwitchTarget()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -158,7 +157,6 @@ internal fun SessionRoot(
                         )
                     },
                     updateToolbarAction = updateToolbarAction,
-                    onUpdateEditingChanged = onUpdateEditingChanged,
                     workspaceReady = ready != null,
                     startupRecovery = startupRecovery,
                     defaultModel = ready?.settings?.defaultModel,
