@@ -145,7 +145,7 @@ test("Start a fresh overview when reopening before the previous popup finishes c
       within(reopened).getByRole("list", { name: "Connectors" }).scrollTop,
     ).toBe(0);
     await waitFor(() => {
-      expect(reopened).toContainElement(document.activeElement);
+      expect(reopened.contains(document.activeElement)).toBeTruthy();
     });
   } finally {
     finish();

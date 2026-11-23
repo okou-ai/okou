@@ -106,10 +106,9 @@ describe("connector search, Chat accounts=%s", () => {
     click(trigger);
     const reopenedSearch =
       await screen.findByPlaceholderText("Find connectors...");
+    const reopened = screen.getByRole("dialog", { name: "Connectors" });
     await waitFor(() => {
-      expect(
-        screen.getByRole("dialog", { name: "Connectors" }),
-      ).toContainElement(document.activeElement);
+      expect(reopened.contains(document.activeElement)).toBeTruthy();
     });
     expect(reopenedSearch).toHaveValue("");
   });
