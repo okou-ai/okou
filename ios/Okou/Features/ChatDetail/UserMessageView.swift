@@ -85,7 +85,7 @@ private struct UserMessageBody: View {
       ForEach(groups) { group in
         if group.isFeedback {
           VStack(alignment: .leading, spacing: OkouSpace.ten) {
-            feedbackHeading(group.parts).font(.okou(.caption)).foregroundStyle(
+            Text(feedbackHeading(group.parts)).font(.okou(.caption)).foregroundStyle(
               OkouColor.mutedForeground)
             ForEach(Array(group.parts.enumerated()), id: \.offset) { index, part in
               if index > 0 { Divider() }
@@ -105,15 +105,12 @@ private struct UserMessageBody: View {
     }
   }
 
-  private func feedbackHeading(_ parts: [ChatUserMessage.Part]) -> Text {
-    if case .artifact(_, let filenameSnapshot, _)? = parts.first?.source {
-      return Text("Quoted from \(filenameSnapshot)")
-    }
-    if let sourceTitle { return Text("Quoted from \(sourceTitle)") }
+  private func feedbackHeading(_ parts: [ChatUserMessage.Part]) -> String {
+    if let sourceTitle { return "Quoted from \(sourceTitle)" }
     if case .mail(_, let status, _)? = parts.first?.source {
-      return status == .draft ? Text("Feedback on email draft") : Text("Feedback on sent email")
+      return status == .draft ? "Feedback on email draft" : "Feedback on sent email"
     }
-    return parts.count == 1 ? Text("Quoted passage") : Text("Quoted passages")
+    return parts.count == 1 ? "Quoted passage" : "Quoted passages"
   }
 }
 
