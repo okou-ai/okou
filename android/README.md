@@ -396,9 +396,16 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 ```
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
-`:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
-in the `android-instrumentation-api35-<revision>` artifact.
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI runs
+three `instrumentation` shards on separate runners and verifies the combined
+JUnit results at `ci-gate-android`. JUnit, Test Storage, and logcat diagnostics
+are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with an
+attempt suffix on reruns.
+
+CI also runs three `build-test` shards on separate runners with two test JVMs
+each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
+Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The local commands above run the full suites by default.
 
 ### Release Smoke Tests
 
