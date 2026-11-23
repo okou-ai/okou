@@ -17,7 +17,11 @@ RUN apt-get update && apt-get install -y \
 
 # Pin the patched runtime so cached package layers cannot retain an older Node.
 ARG NODE_VERSION=22.23.4
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+# Verify the pinned installer digest before executing it.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource-setup.sh \
+    && test "$(sha256sum /tmp/nodesource-setup.sh | cut -d ' ' -f 1)" = "575583bbac2fccc0b5edd0dbc03e222d9f9dc8d724da996d22754d6411104fd1" \
+    && bash /tmp/nodesource-setup.sh \
+    && rm -f /tmp/nodesource-setup.sh \
     && apt-get install -y "nodejs=${NODE_VERSION}-1nodesource1" \
     && test "$(node --version)" = "v${NODE_VERSION}" \
     && rm -rf /var/lib/apt/lists/*
@@ -73,7 +77,11 @@ ARG RUST_VERSION=1.100.0
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain "${RUST_VERSION}" --profile minimal \
+# Verify the pinned installer digest before executing it.
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh \
+    && test "$(sha256sum /tmp/rustup-init.sh | cut -d ' ' -f 1)" = "d890e2fef6fa991b19cde2e608199bc1dca4e37f41f884edf8849ff693048de6" \
+    && sh /tmp/rustup-init.sh -y --default-toolchain "${RUST_VERSION}" --profile minimal \
+    && rm -f /tmp/rustup-init.sh \
     && rustup target add aarch64-unknown-linux-musl x86_64-unknown-linux-musl \
     && rustup component add rustfmt clippy \
     && rm -rf /usr/local/rustup/toolchains/*/share/doc \

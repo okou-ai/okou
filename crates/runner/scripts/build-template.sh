@@ -503,7 +503,11 @@ install_runtimes() {
 
   # PHP Composer
   sudo chroot "$ROOTFS_DIR" bash -c '
-    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    # Verify the pinned installer digest before executing it.
+    curl -fsSL https://getcomposer.org/installer -o /tmp/composer-setup.php
+    test "$(sha256sum /tmp/composer-setup.php | cut -d " " -f 1)" = "aad0c40a36d9938664f5a34eb2ed39dbc1021792f9706dbcb9cd6d8001227c99"
+    php /tmp/composer-setup.php -- --install-dir=/usr/local/bin --filename=composer
+    rm -f /tmp/composer-setup.php
   '
 
   # Claude Code CLI (standalone Bun-compiled binary)
