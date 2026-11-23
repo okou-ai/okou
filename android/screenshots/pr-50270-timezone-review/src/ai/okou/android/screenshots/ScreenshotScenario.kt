@@ -13,6 +13,7 @@ import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.takeScreenshot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -278,13 +279,29 @@ class ScreenshotScenario {
                     tabTo("加德满都（UTC+5:45）")
                     device.waitForIdle()
                     val noteBounds = text(note).visibleBounds
-                    fun titleAbove(noteTop: Int) =
+                    val titleBounds = checkNotNull(
                         device.findObjects(selector().text("时区"))
                             .map { it.visibleBounds }
-                            .filter { it.bottom <= noteTop }
-                            .maxByOrNull { it.bottom }
-                    val titleBounds = checkNotNull(titleAbove(noteBounds.top))
+                            .filter { it.bottom <= noteBounds.top }
+                            .maxByOrNull { it.bottom },
+                    )
+                    val headerWidth = maxOf(titleBounds.right, noteBounds.right) - titleBounds.left
+                    val headerHeight = noteBounds.bottom - titleBounds.top
+                    fun headerPixels(): IntArray {
+                        val bitmap = takeScreenshot()
+                        try {
+                            return IntArray(headerWidth * headerHeight).also {
+                                bitmap.getPixels(
+                                    it, 0, headerWidth, titleBounds.left, titleBounds.top,
+                                    headerWidth, headerHeight,
+                                )
+                            }
+                        } finally {
+                            bitmap.recycle()
+                        }
+                    }
                     capture("region-timezone-short-open.png")
+                    val openHeader = headerPixels()
                     val offscreen = "廷布（UTC+6）"
                     check(!device.hasObject(selector().text(offscreen)))
                     for (label in listOf("比什凯克（UTC+6）", "查戈斯（UTC+6）", "达卡（UTC+6）", "鄂木斯克（UTC+6）", offscreen)) {
@@ -292,10 +309,9 @@ class ScreenshotScenario {
                         awaitFocus(label)
                     }
                     capture("region-timezone-short.png")
-                    val newNoteBounds = text(note).visibleBounds
-                    val newTitleBounds = titleAbove(newNoteBounds.top)
-                    check(newTitleBounds == titleBounds && newNoteBounds == noteBounds) {
-                        "Short-window header moved while the list scrolled. Title $titleBounds to $newTitleBounds. Note $noteBounds to $newNoteBounds."
+                    text(note)
+                    check(openHeader.contentEquals(headerPixels())) {
+                        "Short-window header pixels changed while the options scrolled"
                     }
                 }
             } finally {
