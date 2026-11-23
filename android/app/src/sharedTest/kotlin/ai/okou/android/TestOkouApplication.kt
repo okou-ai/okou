@@ -231,6 +231,7 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     }
     var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
+    var renewTokenAction: suspend (NativeSession) -> String? = { tokenAction(it) }
     var selectAction: suspend (NativeSession, String) -> Unit = { session, id ->
         state.value =
             state.value.copy(
@@ -252,6 +253,8 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     override suspend fun memberships(expected: NativeSession) = membershipsAction()
 
     override suspend fun token(expected: NativeSession) = tokenAction(expected)
+
+    override suspend fun renewToken(expected: NativeSession) = renewTokenAction(expected)
 
     override suspend fun selectWorkspace(expected: NativeSession, workspaceId: String) =
         selectAction(expected, workspaceId)

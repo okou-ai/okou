@@ -79,6 +79,9 @@ fun interface WorkspaceTokenProvider {
      * reused.
      */
     suspend fun token(): String?
+
+    /** Resolve a replacement after the API rejected a credential for this workspace. */
+    suspend fun renew(rejectedToken: String): String? = null
 }
 
 data class RequiredUpdate(val minimumSupportedVersion: String?)
@@ -178,19 +181,21 @@ class ApiClient(
                 .create(CanonicalApi::class.java)
     }
 
-    suspend fun organization(): Organization = execute { reads.organization(it) }
+    suspend fun organization(): Organization = executeRead { reads.organization(it) }
 
-    suspend fun workflows() = execute { reads.workflows(it, WorkflowsQuery()) }
+    suspend fun workflows() = executeRead { reads.workflows(it, WorkflowsQuery()) }
 
-    suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
+    suspend fun workflow(id: String) = executeRead { reads.workflow(it, id) }
 
-    internal suspend fun workflowRunHistory(id: String, cursor: String?) = execute {
+    internal suspend fun workflowRunHistory(id: String, cursor: String?) = executeRead {
         reads.workflowRunHistory(it, id, cursor)
     }
 
-    suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
+    suspend fun workspaceWorkflowAutomations() = executeRead {
+        reads.workspaceWorkflowAutomations(it)
+    }
 
-    suspend fun workflowConnections() = execute {
+    suspend fun workflowConnections() = executeRead {
         reads.connectedConnectors(it)
     }
         .builtinConnectors
@@ -214,7 +219,7 @@ class ApiClient(
 
     suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
 
-    suspend fun personalInstructions(): PersonalInstructions = execute {
+    suspend fun personalInstructions(): PersonalInstructions = executeRead {
         reads.personalInstructions(it)
     }
 
@@ -223,11 +228,11 @@ class ApiClient(
             api.updatePersonalInstructions(it, body)
         }
 
-    suspend fun chatSnapshot(): ChatSnapshot = execute { reads.chatSnapshot(it) }
+    suspend fun chatSnapshot(): ChatSnapshot = executeRead { reads.chatSnapshot(it) }
 
-    suspend fun chatEvents(since: Long?): ChatEvents = execute { reads.chatEvents(it, since) }
+    suspend fun chatEvents(since: Long?): ChatEvents = executeRead { reads.chatEvents(it, since) }
 
-    suspend fun indicators(): Indicators = execute {
+    suspend fun indicators(): Indicators = executeRead {
         reads.indicators(it, queryIncludeActiveUnread = "true")
     }
 
@@ -236,13 +241,13 @@ class ApiClient(
 
     suspend fun sendInput(body: SendRequest) = execute(201) { api.sendInput(it, body) }
 
-    suspend fun inputStatus(threadId: String, eventId: String) = execute {
+    suspend fun inputStatus(threadId: String, eventId: String) = executeRead {
         reads.inputStatus(it, threadId, eventId)
     }
 
-    suspend fun onboardingStatus() = execute { reads.onboardingStatus(it) }
+    suspend fun onboardingStatus() = executeRead { reads.onboardingStatus(it) }
 
-    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = execute {
+    suspend fun composerDraft(target: ServerDraftTarget): ComposerDraft = executeRead {
         if (target.threadId != null) reads.threadDraft(it, target.threadId)
         else reads.workspaceDraft(it)
     }
@@ -260,22 +265,22 @@ class ApiClient(
         }
     }
 
-    suspend fun recoveryCatalog() = execute { reads.recoveryCatalog(it) }
+    suspend fun recoveryCatalog() = executeRead { reads.recoveryCatalog(it) }
 
-    suspend fun recoveryModels() = execute { reads.recoveryModels(it) }
+    suspend fun recoveryModels() = executeRead { reads.recoveryModels(it) }
 
-    suspend fun recoverySubscriptions() = execute { reads.recoverySubscriptions(it) }
+    suspend fun recoverySubscriptions() = executeRead { reads.recoverySubscriptions(it) }
 
-    suspend fun recoveryBilling() = execute { reads.recoveryBilling(it) }
+    suspend fun recoveryBilling() = executeRead { reads.recoveryBilling(it) }
 
-    suspend fun usagePackCredits() = execute { reads.usagePackCredits(it) }
+    suspend fun usagePackCredits() = executeRead { reads.usagePackCredits(it) }
 
     suspend fun activateModelAccount(accountId: String) = execute {
         api.activateModelAccount(it, accountId, ActivateModelAccountRequest)
     }
 
     internal suspend fun <T> read(request: suspend CanonicalApi.(String) -> Response<T>): T =
-        execute {
+        executeRead {
             reads.request(it)
         }
 
@@ -292,15 +297,17 @@ class ApiClient(
         )
     }
 
-    suspend fun projectSnapshot(): ProjectSnapshot = execute { reads.projectSnapshot(it) }
+    suspend fun projectSnapshot(): ProjectSnapshot = executeRead { reads.projectSnapshot(it) }
 
-    suspend fun projectEvents(since: Long): ProjectEvents = execute {
+    suspend fun projectEvents(since: Long): ProjectEvents = executeRead {
         reads.projectEvents(it, since)
     }
 
-    suspend fun historySnapshot(threadId: String) = execute { reads.historySnapshot(it, threadId) }
+    suspend fun historySnapshot(threadId: String) = executeRead {
+        reads.historySnapshot(it, threadId)
+    }
 
-    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = execute { token ->
+    suspend fun historyCatchUp(cursors: Map<String, HistoryCursor>) = executeRead { token ->
         reads.historyCatchUp(
             token,
             cursors.map { (threadId, cursor) ->
@@ -310,7 +317,7 @@ class ApiClient(
         )
     }
 
-    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = execute {
+    suspend fun historyRows(threadId: String, cursor: HistoryCursor) = executeRead {
         cursor.validate()
         val query =
             if (cursor.eventId == null) HistoryRowsQueryVariant1(CanonicalZero, 50.0)
@@ -318,25 +325,25 @@ class ApiClient(
         reads.historyRows(it, threadId, query)
     }
 
-    suspend fun threadDetail(threadId: String) = execute { reads.threadDetail(it, threadId) }
+    suspend fun threadDetail(threadId: String) = executeRead { reads.threadDetail(it, threadId) }
 
-    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = execute {
+    internal suspend fun artifactCatalog(query: ArtifactCatalogQuery) = executeRead {
         reads.artifactCatalog(it, query)
     }
 
-    internal suspend fun artifactDetail(id: String) = execute {
+    internal suspend fun artifactDetail(id: String) = executeRead {
         reads.artifactDetail(it, id, ArtifactDetailQuery())
     }
 
-    internal suspend fun resolveArtifactReference(reference: String) = execute {
+    internal suspend fun resolveArtifactReference(reference: String) = executeRead {
         reads.resolveArtifactReference(it, reference, ResolveArtifactReferenceQuery())
     }
 
-    internal suspend fun artifactDownload(reference: String) = execute {
+    internal suspend fun artifactDownload(reference: String) = executeRead {
         reads.artifactDownload(it, reference)
     }
 
-    internal suspend fun artifactSitePreview(slug: String, host: String) = execute {
+    internal suspend fun artifactSitePreview(slug: String, host: String) = executeRead {
         reads.artifactSitePreview(it, slug, host)
     }
 
@@ -397,15 +404,15 @@ class ApiClient(
         }
     }
 
-    suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
+    suspend fun preferences(): UserPreferences = executeRead { reads.preferences(it) }
 
-    suspend fun defaultModelPreference() = execute { reads.defaultModelPreference(it) }
+    suspend fun defaultModelPreference() = executeRead { reads.defaultModelPreference(it) }
 
     suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
         api.updateDefaultModelPreference(it, update)
     }
 
-    suspend fun featureSwitches() = execute { reads.featureSwitches(it) }
+    suspend fun featureSwitches() = executeRead { reads.featureSwitches(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {
@@ -424,10 +431,17 @@ class ApiClient(
     private suspend fun <T> execute(
         success: Int = 200,
         request: suspend (String) -> Response<T>,
-    ): T = executeResponse(success, request).body() ?: throw ApiFailure.IncompatibleResponse()
+    ): T =
+        executeResponse(success, request = request).body()
+            ?: throw ApiFailure.IncompatibleResponse()
+
+    private suspend fun <T> executeRead(request: suspend (String) -> Response<T>): T =
+        executeResponse(200, renewOnUnauthorized = true, request = request).body()
+            ?: throw ApiFailure.IncompatibleResponse()
 
     private suspend fun <T> executeResponse(
         success: Int,
+        renewOnUnauthorized: Boolean = false,
         request: suspend (String) -> Response<T>,
     ): Response<T> =
         withContext(dispatcher) {
@@ -436,20 +450,43 @@ class ApiClient(
                 tokens.token()?.takeIf { it.isNotBlank() } ?: throw ApiFailure.Unauthenticated()
             currentCoroutineContext().ensureActive()
             checkAccess()
-            try {
-                val response = request("Bearer $token")
-                currentCoroutineContext().ensureActive()
-                checkAccess()
-                if (response.code() != success) throw ApiFailure.IncompatibleResponse()
-                response
-            } catch (_: SerializationException) {
-                // Serializer diagnostics can contain response values or input snippets.
-                throw ApiFailure.IncompatibleResponse()
-            } catch (error: IOException) {
-                currentCoroutineContext().ensureActive()
-                error.httpRejection()?.let { reject(it) }
-                throw ApiFailure.Network(error)
-            }
+            val response =
+                try {
+                    requestWithToken(token, request)
+                } catch (error: ApiFailure.Http) {
+                    if (!renewOnUnauthorized || error.status != 401) throw error
+                    checkAccess()
+                    val replacement =
+                        try {
+                            tokens.renew(token)
+                        } catch (_: ApiFailure.Unauthenticated) {
+                            // A rejected credential alone does not establish membership loss.
+                            throw error
+                        }
+                    if (replacement.isNullOrBlank() || replacement == token) throw error
+                    currentCoroutineContext().ensureActive()
+                    checkAccess()
+                    requestWithToken(replacement, request)
+                }
+            currentCoroutineContext().ensureActive()
+            checkAccess()
+            if (response.code() != success) throw ApiFailure.IncompatibleResponse()
+            response
+        }
+
+    private suspend fun <T> requestWithToken(
+        token: String,
+        request: suspend (String) -> Response<T>,
+    ): Response<T> =
+        try {
+            request("Bearer $token")
+        } catch (_: SerializationException) {
+            // Serializer diagnostics can contain response values or input snippets.
+            throw ApiFailure.IncompatibleResponse()
+        } catch (error: IOException) {
+            currentCoroutineContext().ensureActive()
+            error.httpRejection()?.let { reject(it) }
+            throw ApiFailure.Network(error)
         }
 
     private fun reject(error: HttpRejection): Nothing {

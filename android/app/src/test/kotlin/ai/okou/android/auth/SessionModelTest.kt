@@ -473,10 +473,41 @@ class SessionModelTest {
     }
 
     @Test
+    fun concurrentRejectionsUseTheSameRenewedWorkspaceCredential() {
+        val release = CompletableDeferred<Unit>()
+        val auth = TestAuthentication()
+        var credential = "rejected"
+        var renewals = 0
+        auth.tokenAction = { credential }
+        auth.renewTokenAction = {
+            renewals++
+            release.await()
+            credential = "renewed"
+            credential
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val ready = model.uiState.value.ready
+            val provider = resources.single().tokens
+            val first = async { provider.renew("rejected") }
+            val second = async { provider.renew("rejected") }
+            runCurrent()
+            assertEquals(1, renewals)
+            assertSame(ready, model.uiState.value.ready)
+            release.complete(Unit)
+            assertEquals("renewed", first.await())
+            assertEquals("renewed", second.await())
+            assertEquals(1, renewals)
+            assertFalse(resources.single().closed)
+        }
+    }
+
+    @Test
     fun postBootstrapAuthorizationAndUpgradeErrorsRetireTheWorkspace() {
         for ((failure, stage) in
             listOf(
                 ApiFailure.Unauthenticated() to SessionStage.AccessRemoved,
+                ApiFailure.Http(401, null, null, null) to SessionStage.Unavailable,
                 ApiFailure.UpdateRequired(RequiredUpdate("0.3.0")) to SessionStage.UpdateRequired,
             )) {
             check(configure = { resource -> resource.update = { throw failure } }) {

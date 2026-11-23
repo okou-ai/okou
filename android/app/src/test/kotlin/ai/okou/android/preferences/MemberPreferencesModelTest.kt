@@ -25,6 +25,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -135,6 +137,36 @@ class MemberPreferencesModelTest {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun preferenceRefreshKeepsConfirmedDataThroughTwoRetries() {
+        check { model, service, _ ->
+            val confirmed = model.uiState.value.confirmed
+            val attempts = mutableListOf<Long>()
+            service.load = {
+                attempts += currentTime
+                throw ApiFailure.Http(503, null, null, null)
+            }
+            val started = currentTime
+            model.refresh()
+            advanceTimeBy(6_000)
+            assertEquals(listOf(started, started + 3_000), attempts)
+            assertEquals(PreferenceStatus.Refreshing, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+
+            runCurrent()
+            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
+            assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+            advanceTimeBy(60_000)
+            assertEquals(3, attempts.size)
+
+            service.load = { confirmed.copy(locale = UserPreferencesLocale.JA_JP) }
+            model.refresh()
+            runCurrent()
+            assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.confirmed.locale)
         }
     }
 
