@@ -162,9 +162,7 @@ test("The browser settings radio reflects the 128-by-48 FPS overlay and regains 
   const initial = await openRates();
   expect(initial).toBeChecked();
   expect(initial.closest("[data-side]")).toHaveAttribute("data-side", "left");
-  await userEvent.click(
-    screen.getByText("On").closest('[role="menuitemradio"]'),
-  );
+  await userEvent.click(screen.getByText("On"));
   const chart = (await screen.findByLabelText("— FPS")).querySelector(
     "foreignObject",
   );
