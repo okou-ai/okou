@@ -155,10 +155,10 @@ class UpdateRootTest {
             assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
 
             compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
-            compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
             finishDownload()
+            compose.onNodeWithText("Allow update installation").assertIsDisplayed()
+            compose.onNodeWithText("Later").performClick()
             assertNoPlatformLaunch()
-            compose.onNodeWithText("Allow update installation").assertDoesNotExist()
             openDetails.performScrollTo().performClick()
             val ready = updateDetailText("Continue installation")
             assertEquals(actionBounds, ready.assertIsDisplayed().getUnclippedBoundsInRoot())
@@ -314,13 +314,10 @@ class UpdateRootTest {
             preparing.assertIsDisplayed().assertHasNoClickAction()
             assertNoPlatformLaunch()
 
-            // Multi-window can leave an Activity resumed without window focus.
-            compose.activityRule.scenario.onActivity {
-                it.onWindowFocusChanged(false)
-                verification.complete(Unit)
-            }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            verification.complete(Unit)
             assertNoPlatformLaunch()
-            compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
             val launched = nextLaunch()
             assertEquals(Intent.ACTION_VIEW, launched.intent.action)
             returnFrom(launched.requestCode)
@@ -340,14 +337,7 @@ class UpdateRootTest {
         val install = updateDetailText("Continue installation")
         openDetails.performScrollTo().performClick()
         compose.onNodeWithText("Download update").performSemanticsAction(SemanticsActions.OnClick)
-        compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
-        compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
         finishDownload()
-        assertNoPlatformLaunch()
-
-        openDetails.performScrollTo().performClick()
-        title.assertIsDisplayed()
-        install.performSemanticsAction(SemanticsActions.OnClick)
         val pending = nextLaunch()
         compose.activityRule.scenario.recreate()
         returnFrom(pending.requestCode)
@@ -358,7 +348,7 @@ class UpdateRootTest {
     }
 
     @Test
-    fun backgroundCompletionOutsideUpdatesAwaitsExplicitContinuationWhenResumed() {
+    fun backgroundCompletionOutsideUpdatesInstallsOnResume() {
         allowInstallAndDiscoverUpdate()
         openUpdateSettings()
         updateSettingsRow().performScrollTo().performClick()
@@ -366,14 +356,14 @@ class UpdateRootTest {
         compose.onNodeWithText("Close").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
-        compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(false) }
         finishDownload()
         compose.activityRule.scenario.onActivity {
             assertNull(shadowOf(it).peekNextStartedActivityForResult())
         }
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-        // ActivityScenario changes the lifecycle separately from window focus.
-        compose.activityRule.scenario.onActivity { it.onWindowFocusChanged(true) }
+        val pending = nextLaunch()
+        assertEquals(Intent.ACTION_VIEW, pending.intent.action)
+        returnFrom(pending.requestCode)
         assertNoPlatformLaunch()
         updateSettingsRow().performScrollTo().performClick()
         updateDetailText("Continue installation").assertIsEnabled()

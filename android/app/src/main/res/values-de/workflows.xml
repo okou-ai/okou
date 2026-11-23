@@ -110,4 +110,17 @@
     <string name="workflow_rule_change_failed">Diese Regel konnte nicht geändert werden.</string>
     <string name="workflow_rule_network_failed">Diese Regel konnte nicht geändert werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="workflow_write_conflict">Dieser Workflow wurde während des Speicherns geändert. Deine Änderungen bleiben erhalten.</string>
+    <string name="workflow_history_earlier">Frühere Ausführungen anzeigen</string>
+    <string name="workflow_history_event">Ereignis</string>
+    <string name="workflow_history_failed">Verlauf konnte nicht geladen werden</string>
+    <string name="workflow_history_loading">Verlauf wird geladen…</string>
+    <string name="workflow_history_offline">Zum Laden des Verlaufs verbinden</string>
+    <string name="workflow_history_open_chat">Zugehörigen Chat öffnen</string>
+    <string name="workflow_history_unavailable">Verlauf nicht verfügbar</string>
+    <string name="workflow_run_pending">Ausstehend</string>
+    <string name="workflow_run_running">Läuft</string>
+    <string name="workflow_run_timeout">Zeitlimit erreicht</string>
+    <string name="workflow_history_trigger_unavailable">Auslöser nicht verfügbar</string>
+    <string name="workflow_history_scheduled">Zeitgesteuerter Auslöser</string>
+    <string name="workflow_history_manual">Manuelle Ausführung</string>
 </resources>

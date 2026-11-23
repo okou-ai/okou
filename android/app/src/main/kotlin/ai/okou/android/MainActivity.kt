@@ -21,7 +21,6 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.ActionMode
 import android.widget.Toast
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -31,9 +30,7 @@ import androidx.activity.viewModels
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,7 +45,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
@@ -58,8 +54,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,9 +68,6 @@ class MainActivity : AppCompatActivity() {
     private val updates
         get() = (application as OkouApplication).updates
 
-    private var editing by mutableStateOf(false)
-    private var windowFocused by mutableStateOf(false)
-    private var contextualAction by mutableStateOf<ActionMode?>(null)
     private val updateInstall by
         viewModels<UpdateInstallModel> {
             viewModelFactory { initializer { UpdateInstallModel(updates) } }
@@ -169,43 +160,26 @@ class MainActivity : AppCompatActivity() {
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
                 val updateDetails = rememberUpdateDetailsOpen()
-                var updateDetailsFocused by remember { mutableStateOf(false) }
-                val insideUpdateFlow = updateDetails.value || updateRequired
                 val installProgress = updateInstall.progressLabel
-                val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-                val interactionActive = editing || contextualAction != null || keyboardVisible
-                val verified = updateInstall.attempt as? UpdateInstallAttempt.Verified
+                val attempt = updateInstall.attempt
+                val pending = updateInstall.automaticRelease
                 LaunchedEffect(
-                    verified,
+                    attempt,
+                    pending,
                     updateState.selectedRelease,
                     updateState.canInstall,
                     lifecycleState,
-                    windowFocused,
-                    updateDetailsFocused,
-                    insideUpdateFlow,
-                    interactionActive,
                 ) {
-                    if (verified != null) {
-                        if (verified.automatic && !insideUpdateFlow)
-                            updateInstall.deferAutomaticInstall(verified)
-                        else launchInstaller(verified, updateDetailsFocused)
-                    }
-                }
-                val pending = updateInstall.automaticRelease
-                val automaticInstall = pending?.takeIf {
-                    insideUpdateFlow &&
-                        installProgress == null &&
-                        updateState.canInstall &&
-                        updateState.selectedRelease == it &&
-                        lifecycleState == Lifecycle.State.RESUMED &&
-                        !interactionActive
-                }
-                LaunchedEffect(pending, updateState.selectedRelease) {
                     updateInstall.discardObsoleteDownload()
-                }
-                LaunchedEffect(insideUpdateFlow, updateState.canInstall, pending) {
-                    if (!insideUpdateFlow && updateState.canInstall)
-                        updateInstall.skipAutomaticInstall()
+                    if (lifecycle.currentState != Lifecycle.State.RESUMED) return@LaunchedEffect
+                    when (attempt) {
+                        UpdateInstallAttempt.Idle -> {
+                            if (updateState.canInstall)
+                                updateInstall.automaticRelease?.let(::installUpdate)
+                        }
+                        is UpdateInstallAttempt.Verified -> launchInstaller(attempt)
+                        else -> Unit
+                    }
                 }
                 UpdateHost(
                     updateState.copy(required = updateRequired),
@@ -213,15 +187,7 @@ class MainActivity : AppCompatActivity() {
                     updateInstall::download,
                     ::installUpdate,
                     installProgress,
-                    automaticInstall,
-                    windowFocused,
-                    startAutomaticInstall = { release, fromDetails ->
-                        if ((fromDetails || windowFocused) && canAutomaticallyPrepare()) {
-                            updateInstall.install(release, automatic = true, canInstallPackages())
-                        }
-                    },
                     detailsOpen = updateDetails,
-                    onDetailsFocusChanged = { updateDetailsFocused = it },
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
@@ -259,7 +225,6 @@ class MainActivity : AppCompatActivity() {
                                 installProgress,
                                 openUpdates,
                             ),
-                        onUpdateEditingChanged = { editing = it },
                     )
                 }
                 val explanation = updateInstall.attempt as? UpdateInstallAttempt.Explain
@@ -362,30 +327,8 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    override fun onWindowFocusChanged(hasFocus: Boolean) {
-        super.onWindowFocusChanged(hasFocus)
-        windowFocused = hasFocus
-    }
-
-    override fun onActionModeStarted(mode: ActionMode) {
-        super.onActionModeStarted(mode)
-        contextualAction = mode
-    }
-
-    override fun onActionModeFinished(mode: ActionMode) {
-        super.onActionModeFinished(mode)
-        if (contextualAction === mode) contextualAction = null
-    }
-
     private fun canInstallPackages() =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()
-
-    private fun canAutomaticallyPrepare() =
-        lifecycle.currentState == Lifecycle.State.RESUMED &&
-            !editing &&
-            contextualAction == null &&
-            ViewCompat.getRootWindowInsets(window.decorView)
-                ?.isVisible(WindowInsetsCompat.Type.ime()) != true
 
     private fun authorizeUpdate(explanation: UpdateInstallAttempt.Explain) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -402,17 +345,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun installUpdate(release: AndroidUpdatesRelease) {
-        updateInstall.install(release, automatic = false, canInstallPackages())
+        updateInstall.install(release, canInstallPackages())
     }
 
-    private fun launchInstaller(verified: UpdateInstallAttempt.Verified, detailsFocused: Boolean) {
-        val foregroundReady =
-            lifecycle.currentState == Lifecycle.State.RESUMED &&
-                (windowFocused || detailsFocused) &&
-                (!verified.automatic || canAutomaticallyPrepare())
-        val file =
-            updateInstall.takeVerifiedFile(verified, foregroundReady, canInstallPackages())
-                ?: return
+    private fun launchInstaller(verified: UpdateInstallAttempt.Verified) {
+        val file = updateInstall.takeVerifiedFile(verified, canInstallPackages()) ?: return
         try {
             val uri = FileProvider.getUriForFile(this, "$packageName.updates", file)
             packageInstaller.launch(
@@ -453,25 +390,11 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
         if (automaticRelease != updates.state.value.selectedRelease) automaticRelease = null
     }
 
-    fun skipAutomaticInstall() {
-        automaticRelease = null
-    }
-
-    fun deferAutomaticInstall(verified: UpdateInstallAttempt.Verified) {
-        if (attempt != verified) return
-        skipAutomaticInstall()
-        attempt = UpdateInstallAttempt.Idle
-    }
-
-    fun install(release: AndroidUpdatesRelease, automatic: Boolean, authorized: Boolean) {
+    fun install(release: AndroidUpdatesRelease, authorized: Boolean) {
         if (attempt != UpdateInstallAttempt.Idle || !canInstall(release)) return
-        if (automatic && automaticRelease != release) return
+        automaticRelease = null
         updates.clearInstallFailure(release)
-        if (authorized) verify(release, automatic)
-        else {
-            automaticRelease = null
-            attempt = UpdateInstallAttempt.Explain(release)
-        }
+        if (authorized) verify(release) else attempt = UpdateInstallAttempt.Explain(release)
     }
 
     fun dismissExplanation(explanation: UpdateInstallAttempt.Explain) {
@@ -489,7 +412,7 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
             return false
         }
         if (authorized) {
-            verify(release, automatic = false)
+            verify(release)
             return false
         }
         attempt = UpdateInstallAttempt.Authorizing(release)
@@ -499,34 +422,28 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
     fun authorizationReturned(authorized: Boolean) {
         val pending = attempt as? UpdateInstallAttempt.Authorizing ?: return
         attempt = UpdateInstallAttempt.Idle
-        if (authorized) install(pending.release, automatic = false, authorized = true)
+        if (authorized) install(pending.release, authorized = true)
     }
 
-    private fun verify(release: AndroidUpdatesRelease, automatic: Boolean) {
+    private fun verify(release: AndroidUpdatesRelease) {
         attempt = UpdateInstallAttempt.Verifying
         viewModelScope.launch {
             try {
                 val file = updates.installationFile(release) ?: return@launch
-                attempt = UpdateInstallAttempt.Verified(release, file, automatic)
+                attempt = UpdateInstallAttempt.Verified(release, file)
             } finally {
                 if (attempt == UpdateInstallAttempt.Verifying) attempt = UpdateInstallAttempt.Idle
             }
         }
     }
 
-    fun takeVerifiedFile(
-        verified: UpdateInstallAttempt.Verified,
-        foregroundReady: Boolean,
-        authorized: Boolean,
-    ): File? {
+    fun takeVerifiedFile(verified: UpdateInstallAttempt.Verified, authorized: Boolean): File? {
         if (attempt != verified) return null
         val release = verified.release
         if (!canInstall(release)) {
             attempt = UpdateInstallAttempt.Idle
             return null
         }
-        if (!foregroundReady) return null
-        automaticRelease = null
         if (!authorized) {
             attempt = UpdateInstallAttempt.Explain(release)
             return null
@@ -561,11 +478,7 @@ private sealed interface UpdateInstallAttempt {
 
     data object Verifying : UpdateInstallAttempt
 
-    data class Verified(
-        val release: AndroidUpdatesRelease,
-        val file: File,
-        val automatic: Boolean,
-    ) : UpdateInstallAttempt
+    data class Verified(val release: AndroidUpdatesRelease, val file: File) : UpdateInstallAttempt
 
     data class Installer(val release: AndroidUpdatesRelease) : UpdateInstallAttempt
 }
