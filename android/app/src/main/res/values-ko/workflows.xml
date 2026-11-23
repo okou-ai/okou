@@ -109,4 +109,17 @@
     <string name="workflow_rule_change_failed">이 규칙을 변경할 수 없습니다.</string>
     <string name="workflow_rule_network_failed">이 규칙을 변경할 수 없습니다. 연결을 확인한 후 다시 시도하세요.</string>
     <string name="workflow_write_conflict">저장하는 동안 이 워크플로가 변경되었습니다. 수정 내용은 유지됩니다.</string>
+    <string name="workflow_history_earlier">이전 실행 보기</string>
+    <string name="workflow_history_event">이벤트</string>
+    <string name="workflow_history_failed">실행 기록을 불러오지 못했습니다</string>
+    <string name="workflow_history_loading">실행 기록을 불러오는 중…</string>
+    <string name="workflow_history_offline">연결하여 실행 기록 불러오기</string>
+    <string name="workflow_history_open_chat">관련 채팅 열기</string>
+    <string name="workflow_history_unavailable">실행 기록을 사용할 수 없습니다</string>
+    <string name="workflow_run_pending">대기 중</string>
+    <string name="workflow_run_running">실행 중</string>
+    <string name="workflow_run_timeout">시간 초과</string>
+    <string name="workflow_history_trigger_unavailable">트리거를 확인할 수 없습니다</string>
+    <string name="workflow_history_scheduled">예약 실행</string>
+    <string name="workflow_history_manual">수동 실행</string>
 </resources>

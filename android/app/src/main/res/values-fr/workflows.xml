@@ -111,4 +111,17 @@
     <string name="workflow_rule_change_failed">Impossible de modifier cette règle.</string>
     <string name="workflow_rule_network_failed">Impossible de modifier cette règle. Vérifiez votre connexion et réessayez.</string>
     <string name="workflow_write_conflict">Ce workflow a changé pendant l’enregistrement. Vos modifications sont conservées.</string>
+    <string name="workflow_history_earlier">Afficher les exécutions précédentes</string>
+    <string name="workflow_history_event">Événement</string>
+    <string name="workflow_history_failed">Impossible de charger l’historique des exécutions</string>
+    <string name="workflow_history_loading">Chargement de l’historique des exécutions…</string>
+    <string name="workflow_history_offline">Connectez-vous pour charger l’historique des exécutions</string>
+    <string name="workflow_history_open_chat">Ouvrir la conversation d’origine</string>
+    <string name="workflow_history_unavailable">Historique des exécutions indisponible</string>
+    <string name="workflow_run_pending">En attente</string>
+    <string name="workflow_run_running">En cours</string>
+    <string name="workflow_run_timeout">Délai dépassé</string>
+    <string name="workflow_history_trigger_unavailable">Déclencheur indisponible</string>
+    <string name="workflow_history_scheduled">Déclenchement planifié</string>
+    <string name="workflow_history_manual">Exécution manuelle</string>
 </resources>
