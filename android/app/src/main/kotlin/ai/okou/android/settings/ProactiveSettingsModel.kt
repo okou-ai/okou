@@ -164,8 +164,10 @@ internal class ProactiveSettingOwner(
     }
 
     private fun cancelRead() {
-        reading?.cancel()
+        val retiring = reading
+        // A cancellation can run the reader's cleanup on this dispatcher immediately.
         reading = null
+        retiring?.cancel()
     }
 
     private fun refreshIfRequested() {
