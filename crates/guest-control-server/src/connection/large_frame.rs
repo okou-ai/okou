@@ -17,10 +17,15 @@ use crate::sealed_input;
 // copy for medium archive staging requests.
 pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 1024 * 1024;
 
-// Keep small inputs in the decoder's reusable buffer. The sealed file holds
-// both the RPC context and the helper input and must fit the helper's map limit.
+// Medium decoded inputs already use sealed stdin. Receiving into the same
+// file avoids copying a complete decoder buffer into worker-owned bytes and
+// then into sealed stdin. The whole RPC payload must fit the helper's map limit.
 pub(super) const STREAMED_STORAGE_PAYLOAD_BYTES: RangeInclusive<usize> =
-    4 * 1024 * 1024..=MAX_INPUT_BYTES;
+    1024 * 1024..=MAX_INPUT_BYTES;
+
+// Preserve an already allocated decoder buffer across the medium frames
+// newly handled by the streaming receiver.
+pub(super) const STREAMED_STORAGE_BUFFER_REUSE_LIMIT: usize = 4 * 1024 * 1024;
 
 pub(super) fn receive_write(
     reader: &mut impl Read,

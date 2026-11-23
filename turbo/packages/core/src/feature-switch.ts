@@ -89,6 +89,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.MemberConnectorAccountAccess]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "Member-wide connector account access",
+    description: "Apply connector account eligibility across a member's chats.",
+    enabled: false,
+  },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
     displayName: "Email integration",

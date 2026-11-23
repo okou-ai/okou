@@ -34,6 +34,8 @@ export const connectors = pgTable(
     defaultEnabledForChats: boolean("default_enabled_for_chats")
       .default(true)
       .notNull(),
+    chatAccessAllowed: boolean("chat_access_allowed"),
+    chatAccessExpiresAt: timestamp("chat_access_expires_at"),
     authMethod: varchar("auth_method", { length: 50 }).notNull(), // "oauth"
     // Builtin Automatic keeps the catalog method ID and records its resolution separately.
     automaticAuthType: varchar("automatic_auth_type", { length: 8 }).$type<
@@ -101,6 +103,10 @@ export const connectors = pgTable(
       check(
         "chk_connectors_default_enabled",
         sql`NOT ${table.isDefault} OR ${table.defaultEnabledForChats}`,
+      ),
+      check(
+        "chk_connectors_chat_access_expiry",
+        sql`${table.chatAccessExpiresAt} IS NULL OR ${table.chatAccessAllowed} IS TRUE`,
       ),
       index("idx_connectors_org_user_slug")
         .on(

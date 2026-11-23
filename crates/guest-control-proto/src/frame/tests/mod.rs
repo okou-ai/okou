@@ -74,6 +74,24 @@ fn incomplete_frame_handoff_checks_type_and_encoded_size() {
 }
 
 #[test]
+fn completed_streamed_frame_retains_the_warmed_decoder_buffer() {
+    let mut decoder = Decoder {
+        buf: Vec::with_capacity(2 * INITIAL_BUFFER_CAPACITY),
+    };
+    let capacity = decoder.buf.capacity();
+    let encoded = encode(MSG_PONG, 7, b"payload").unwrap();
+    let prefix = &encoded[..encoded.len() - 1];
+    assert!(decoder.decode(prefix).unwrap().is_empty());
+    let pending = decoder.take_incomplete_frame(MSG_PONG, ..).unwrap();
+
+    decoder.reuse_incomplete_frame_buffer(pending);
+
+    let ping = encode(MSG_PING, 8, &[]).unwrap();
+    assert_eq!(decoder.decode(&ping).unwrap()[0].seq, 8);
+    assert_eq!(decoder.buf.capacity(), capacity);
+}
+
+#[test]
 fn decoder_handles_multiple_messages() {
     let mut data = encode(MSG_PING, 1, &[]).unwrap();
     data.extend_from_slice(&encode(MSG_PONG, 1, &[]).unwrap());

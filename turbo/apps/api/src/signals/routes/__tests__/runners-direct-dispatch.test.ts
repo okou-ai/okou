@@ -78,6 +78,34 @@ test("delivers complete input after binding its process", async () => {
   });
 });
 
+test.each([
+  { copies: 1, encoding: null },
+  { copies: 40_000, encoding: "gzip" },
+])(
+  "sends a complete dispatch with content encoding $encoding",
+  async ({ copies, encoding }) => {
+    const f = await launchFixture();
+    const prompt = "Café review. ".repeat(copies).trim();
+    await f.api.registerDirectRunner(f.group, {
+      reply: (envelope, _body, actualEncoding) => {
+        expect(actualEncoding).toBe(encoding);
+        expect(envelope.executionContext.prompt).toContain(prompt);
+        return HttpResponse.json({
+          runnerId: envelope.runnerId,
+          heartbeatGeneration: envelope.heartbeatGeneration,
+          runId: envelope.executionContext.runId,
+          disposition: "accepted",
+        });
+      },
+    });
+    const run = await f.api.createThreadRun(f.actor, { prompt });
+    expect(run.status).toBe("running");
+    await expect(f.api.executionInput(run.runId)).resolves.toMatchObject({
+      runId: run.runId,
+    });
+  },
+);
+
 test("fails a Run with no serving process and releases its concurrency slot", async () => {
   const f = await launchFixture();
   const run = await f.api.createThreadRun(f.actor, {

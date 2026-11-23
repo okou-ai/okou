@@ -41,7 +41,7 @@ interface UserScopedQuery {
   readonly userId: string;
 }
 
-export function presentationFormatEnabled({ orgId, userId }: UserScopedQuery) {
+function presentationFormatEnabled({ orgId, userId }: UserScopedQuery) {
   const context$ = userFeatureSwitchContext(orgId, userId);
   return computed(async (get) => {
     return isFeatureEnabled(
@@ -106,10 +106,9 @@ export function userPreferences({
   orgId,
   userId,
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
+  const formatEnabled$ = presentationFormatEnabled({ orgId, userId });
   return computed(async (get): Promise<UserPreferencesResponse> => {
-    const formatEnabled = await get(
-      presentationFormatEnabled({ orgId, userId }),
-    );
+    const formatEnabled = await get(formatEnabled$);
     const db = get(db$);
     const [[row], [memory]] = await Promise.all([
       db
@@ -324,19 +323,9 @@ export const updateUserPreferences$ = command(
     args: UpdateUserPreferencesArgs,
     signal: AbortSignal,
   ): Promise<UpdateUserPreferencesResult> => {
-    const formatEnabled = await get(presentationFormatEnabled(args));
-    signal.throwIfAborted();
-    const parsed = updateUserPreferencesRequestSchema.safeParse({
-      ...args.preferences,
-      ...(!formatEnabled && { presentationFormat: undefined }),
-    });
-    if (!parsed.success) {
-      return { ok: false, message: "At least one preference must be provided" };
-    }
-    const preferences = parsed.data;
     if (
-      preferences.timezone !== undefined &&
-      !isValidTimeZone(preferences.timezone)
+      args.preferences.timezone !== undefined &&
+      !isValidTimeZone(args.preferences.timezone)
     ) {
       return {
         ok: false,
@@ -349,6 +338,16 @@ export const updateUserPreferences$ = command(
     );
     signal.throwIfAborted();
 
+    const parsed = updateUserPreferencesRequestSchema.safeParse({
+      ...args.preferences,
+      ...(existing.presentationFormat === undefined && {
+        presentationFormat: undefined,
+      }),
+    });
+    if (!parsed.success) {
+      return { ok: false, message: "At least one preference must be provided" };
+    }
+    const preferences = parsed.data;
     const merged = mergeUserPreferences(existing, preferences);
 
     const updatedAt = nowDate();

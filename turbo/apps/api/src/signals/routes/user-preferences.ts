@@ -5,6 +5,8 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { command, computed } from "ccstate";
@@ -21,16 +23,25 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import {
-  presentationFormatEnabled,
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
+import { createUserFeatureSwitchContext } from "../services/feature-switches.service";
 
 function isValidUserLocale(locale: string | null): locale is UserLocale {
   return locale !== null && userLocaleSchema.safeParse(locale).success;
 }
 
 const updateUserPreferencesBody$ = bodyResultOf(userPreferencesContract.update);
+const presentationFormatContext$ = createUserFeatureSwitchContext(
+  organizationAuthContext$,
+);
+const presentationFormatEnabled$ = computed(async (get) => {
+  return isFeatureEnabled(
+    FeatureSwitchKey.PresentationOutputFormat,
+    await get(presentationFormatContext$),
+  );
+});
 
 const getUserPreferencesInner$ = computed(async (get): Promise<unknown> => {
   const auth = get(organizationAuthContext$);
@@ -69,7 +80,7 @@ const updateUserPreferencesInner$ = command(
 
     const formatEnabled =
       body.data.presentationFormat !== undefined &&
-      (await get(presentationFormatEnabled(auth)));
+      (await get(presentationFormatEnabled$));
     if (formatEnabled && auth.tokenType !== "session") {
       return badRequestMessage(
         "Presentation format preferences require a human session",

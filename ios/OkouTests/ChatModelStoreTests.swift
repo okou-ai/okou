@@ -601,14 +601,22 @@ final class ChatModelPreferenceTests: XCTestCase {
     let resource = ChatModelStore(
       client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
     let selection = ChatModelSelectionStore(models: resource)
+    let existing = ChatModelSelectionStore(models: resource, thread: thread())
     defer {
+      existing.close()
       resource.close()
       selection.close()
     }
-    await selection.open()
-    XCTAssertEqual(selection.selection.model, "codex-model")
-    XCTAssertFalse(selection.canSend)
-    XCTAssertTrue(resource.configuration?.efforts(for: selection.selection).isEmpty == true)
+    for picker in [selection, existing] {
+      await picker.open()
+      let configuration = try XCTUnwrap(resource.configuration)
+      let row = try XCTUnwrap(configuration.row(for: picker.selection))
+      XCTAssertEqual(row.selectedModel, "codex-model")
+      XCTAssertEqual(row.memberEffective.availability, "plan_restricted")
+      XCTAssertFalse(row.isConfigurable)
+      XCTAssertFalse(picker.canSend)
+      XCTAssertTrue(configuration.efforts(for: picker.selection).isEmpty)
+    }
     await selection.choose(model: nil)
     XCTAssertNil(selection.selection.model)
     XCTAssertTrue(selection.canSend)

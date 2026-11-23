@@ -4392,9 +4392,11 @@ describe("okou workflow automations", () => {
           { authorization: `Bearer ${sandboxToken}` },
           [200],
         );
-        await flushWaitUntilForTest();
         runIds.push(runId);
       }
+      // The completion response waits for the terminal chat callback.
+      // Observing the next dispatch already drains tracked background work.
+      await flushWaitUntilForTest();
 
       const tiedRunIds = runIds.slice(0, 2).sort().reverse();
       const expected = [...runIds.slice(2).reverse(), ...tiedRunIds];

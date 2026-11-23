@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.862.0](https://github.com/okou-ai/okou/compare/core-v8.861.1...core-v8.862.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+
 ## [8.861.1](https://github.com/okou-ai/okou/compare/core-v8.861.0...core-v8.861.1) (2026-11-23)
 
 

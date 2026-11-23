@@ -15,6 +15,8 @@ import {
   type ConnectorRuntimeBindingEntry,
 } from "@okouai/connectors/connector-auth-method";
 import { computed, type Computed } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { badRequestMessage } from "../../lib/error";
 import { logger } from "../../lib/log";
@@ -70,6 +72,7 @@ import {
 import { countBucket } from "./dispatch-count-bucket";
 import type { RunConnectorScope } from "./execution-connector-selection";
 import type { ConnectorSourceSnapshot } from "./execution-connector-sources.service";
+import { memberConnectorAccountAllowed } from "./member-connector-account-access";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 
 const log = logger("api:thread-connected-accounts");
@@ -219,25 +222,34 @@ type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 function createChatAccountInputSignals(
   execution: Pick<
     AgentRunContextSignals,
-    "connectors$" | "threadConnectorSources$"
+    "connectors$" | "threadConnectorSources$" | "featureSwitches$"
   >,
 ) {
   const effectiveAccounts$ = computed(async (get) => {
-    const [snapshot, threadSources] = await joinAll([
+    const [snapshot, threadSources, features] = await joinAll([
       get(execution.connectors$),
       get(execution.threadConnectorSources$),
+      get(execution.featureSwitches$),
     ]);
     const accounts = snapshot.connectorAccounts;
-    const enabledById = new Map(
-      (threadSources?.accessOverrides ?? []).map((row) => {
-        return [row.connectorId, row.enabled];
-      }),
+    const memberAccess = isFeatureEnabled(
+      FeatureSwitchKey.MemberConnectorAccountAccess,
+      features,
     );
+    const enabledById = memberAccess
+      ? undefined
+      : new Map(
+          (threadSources?.accessOverrides ?? []).map((row) => {
+            return [row.connectorId, row.enabled];
+          }),
+        );
+    const at = nowDate();
     return accounts
       .filter((account) => {
-        return (
-          enabledById.get(account.connectorId) ?? account.defaultEnabledForChats
-        );
+        return memberAccess
+          ? memberConnectorAccountAllowed(account, at)
+          : (enabledById?.get(account.connectorId) ??
+              account.defaultEnabledForChats);
       })
       .sort((a, b) => {
         return (
@@ -558,9 +570,7 @@ function createStoredConnectorRowSignals(
               {
                 ...row,
                 connectorSlug: row.connectorSlug,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
+                secretNames: source.credentialNames,
                 variableValues: source.variables,
               },
             ]
@@ -949,13 +959,6 @@ function customConnectorSourceSelectionRows(
   if (source.kind !== "custom" || !binding) {
     return [];
   }
-  const credentialId = (name: string) => {
-    return (
-      snapshot.credentials.find((credential) => {
-        return credential.name === name;
-      })?.id ?? null
-    );
-  };
   const base = {
     id: source.sourceId,
     updatedAt: connection.updatedAt,
@@ -967,10 +970,10 @@ function customConnectorSourceSelectionRows(
     definitionAuthMethod: binding.definitionAuthMode,
     definitionMcpTransport: binding.definitionMcpTransport,
     definitionStorageVersion: binding.definitionStorageVersion,
-    oauthAccessTokenId: credentialId(
+    hasAccessToken: snapshot.credentialNames.includes(
       CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
     ),
-    oauthRefreshTokenId: credentialId(
+    hasRefreshToken: snapshot.credentialNames.includes(
       CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
     ),
     automaticOAuthBindingId: binding.automaticOAuthBindingId,
@@ -986,11 +989,11 @@ function customConnectorSourceSelectionRows(
     ? [
         ...(connection.authMethod === "none"
           ? []
-          : snapshot.credentials.map((credential) => {
+          : snapshot.credentialNames.map((name) => {
               return {
                 connectorId: source.customConnectorId,
                 kind: "secret" as const,
-                key: credential.name,
+                key: name,
               };
             })),
         ...Object.entries(snapshot.variables).map(([key, value]) => {

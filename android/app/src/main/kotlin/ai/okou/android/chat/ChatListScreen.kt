@@ -1332,20 +1332,25 @@ internal fun ChatContentLoadNotice(
             Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
             contentAlignment = Alignment.CenterStart,
         ) {
-            Text(
-                stringResource(message),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
-                        letterSpacing = 0.sp,
-                    ),
-            )
+            ContentReadFeedback(message)
         }
         if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
     }
+}
+
+@Composable
+internal fun ContentReadFeedback(@StringRes message: Int, modifier: Modifier = Modifier) {
+    Text(
+        stringResource(message),
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style =
+            MaterialTheme.typography.bodyMedium.copy(
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.sp,
+            ),
+    )
 }
 
 @Composable

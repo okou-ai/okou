@@ -43,9 +43,17 @@ data class HistoryMessage(
     val failureReason: String? = null,
     val queueSequence: Long? = null,
     val queuedWorkflow: QueuedWorkflow? = null,
+    val sourceSeqId: Long? = null,
 )
 
 data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
+
+internal fun HistoryMessage.visibleInConversation() =
+    when (status) {
+        null,
+        "run.completed" -> blocks.isNotEmpty() || queued || rejected
+        else -> true
+    }
 
 data class HistoryTranscript(
     val messages: List<HistoryMessage>,
@@ -57,7 +65,11 @@ data class HistoryTranscript(
     val terminatedRunIds: Set<String> = emptySet(),
     val pendingInputIds: Set<String> = emptySet(),
     val revocableInputIds: Set<String> = emptySet(),
-)
+) {
+    internal fun searchMessage(sequence: Long): HistoryMessage? = messages.firstOrNull {
+        it.sourceSeqId == sequence && it.visibleInConversation() && it.id !in pendingInputIds
+    }
+}
 
 internal fun HistoryTranscript.hasSettledInput(eventId: String) =
     eventId in persistedIds && eventId !in pendingInputIds
@@ -204,6 +216,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                             ?.firstOrNull { it.text("type") == "automation" }
                     QueuedWorkflow(part?.text("workflowName"), part?.text("automationBrief"))
                 } else null,
+            sourceSeqId = row.seqId,
         )
     }
     val endedRuns = terminals + interrupted
