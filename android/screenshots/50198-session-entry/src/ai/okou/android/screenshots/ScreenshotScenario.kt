@@ -8,6 +8,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.ClerkAuthentication
+import ai.okou.android.auth.SessionEntryFailure
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
@@ -126,9 +127,9 @@ class ScreenshotScenario {
                 find(R.string.auth_workspace_setup)
                 find(R.string.auth_check_workspace)
                 capture(R.string.auth_no_workspace, "no-workspace.png")
-                val check = CompletableDeferred<Unit>()
+                val pendingCheck = CompletableDeferred<Unit>()
                 auth.membershipsAction = {
-                    check.await()
+                    pendingCheck.await()
                     error("Fixture membership read failed")
                 }
                 find(R.string.auth_check_workspace).click()
@@ -138,7 +139,33 @@ class ScreenshotScenario {
                     model.openWorkspaceSetup(model.uiState.value.generation) { false }
                 }
                 capture(R.string.auth_browser_unavailable, "browser-unavailable.png")
-                check.complete(Unit)
+                val confirmation = By.text(app.getString(R.string.settings_sign_out_title))
+                find(R.string.auth_sign_out).click()
+                find(confirmation)
+                pendingCheck.complete(Unit)
+                check(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice): Boolean {
+                                var failed = false
+                                scenario.onActivity { activity ->
+                                    val model =
+                                        ViewModelProvider(activity)[SessionModel::class.java]
+                                    failed =
+                                        model.uiState.value.entryFailure == SessionEntryFailure.Check
+                                }
+                                return failed
+                            }
+                        },
+                        5_000,
+                    ) == true,
+                ) {
+                    "The held workspace check did not publish its failure"
+                }
+                device.waitForIdle(5_000)
+                capture(R.string.settings_sign_out_title, "sign-out-after-check-failure.png")
+                device.pressBack()
+                check(device.wait(Until.gone(confirmation), 5_000) == true)
                 capture(R.string.auth_check_failed, "check-failed.png")
                 auth.state.value =
                     testAuthenticationState(session = "initial-error", workspace = null)
