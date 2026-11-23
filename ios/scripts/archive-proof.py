@@ -58,6 +58,34 @@ def resource_bundle_plists(app, version):
     ]
 
 
+def archive_privacy_manifests(app):
+    manifests = {
+        path.relative_to(app).as_posix(): read_plist(path)
+        for path in app.rglob("PrivacyInfo.xcprivacy")
+    }
+    # All three executables statically link ChatData's preference migration and
+    # file timestamp cache. An SDK's nested manifest cannot declare those uses.
+    defaults = ("NSPrivacyAccessedAPICategoryUserDefaults", "CA92.1")
+    chat_data = {defaults, ("NSPrivacyAccessedAPICategoryFileTimestamp", "C617.1")}
+    for bundle, required in (
+        (Path(), chat_data),
+        (EXTENSION_PATH, chat_data),
+        (WIDGETS_PATH, chat_data),
+        (Path("textual_Textual.bundle"), {defaults}),
+    ):
+        name = (bundle / "PrivacyInfo.xcprivacy").as_posix()
+        if name not in manifests:
+            raise ValueError(f"Missing privacy manifest: {name}")
+        declared = {
+            (api["NSPrivacyAccessedAPIType"], reason)
+            for api in manifests[name].get("NSPrivacyAccessedAPITypes", [])
+            for reason in api["NSPrivacyAccessedAPITypeReasons"]
+        }
+        if missing := required - declared:
+            raise ValueError(f"{name} is missing required API reasons: {sorted(missing)}")
+    return manifests
+
+
 def validate_archive(archive, version):
     if not archive.is_dir() or archive.is_symlink():
         raise ValueError("Expected a real xcarchive directory")
@@ -132,7 +160,7 @@ def validate_archive(archive, version):
             raise ValueError("Archive and application metadata disagree")
     if not (archive / "dSYMs/Okou.app.dSYM").is_dir():
         raise ValueError("Release archive is missing application symbols")
-    return app, info, archive_info
+    return app, archive_privacy_manifests(app)
 
 
 def validate_widgets(archive, widgets, info, version):
@@ -274,13 +302,22 @@ def macho_sections(data):
 
 
 def verify_export(source, ipa, version, build_number):
-    app, _, _ = validate_archive(source, archive_version(source))
+    app, privacy_manifests = validate_archive(source, archive_version(source))
     if macho_sections((app / "Okou").read_bytes()) is None:
         raise ValueError("Application executable is not a supported Mach-O binary")
     with ZipFile(ipa) as package:
         names = package.namelist()
         if len(names) != len(set(names)):
             raise ValueError("IPA contains duplicate paths")
+        app_prefix = "Payload/Okou.app/"
+        exported_manifests = {
+            name.removeprefix(app_prefix): plistlib.loads(package.read(name))
+            for name in names
+            if name.startswith(app_prefix) and name.endswith("/PrivacyInfo.xcprivacy")
+        }
+        # Canonical plist encoding preserves types (unlike Python's False == 0).
+        if plistlib.dumps(exported_manifests) != plistlib.dumps(privacy_manifests):
+            raise ValueError("Export changed the bundled privacy manifests")
         info = plistlib.loads(package.read("Payload/Okou.app/Info.plist"))
         if (
             info["CFBundleIdentifier"] != APP_ID

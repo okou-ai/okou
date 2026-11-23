@@ -117,6 +117,23 @@ class ArchiveProofTests(unittest.TestCase):
         )
         symbols.parent.mkdir(parents=True)
         symbols.write_bytes(b"widgets symbols")
+        privacy = {
+            "NSPrivacyAccessedAPITypes": [
+                {
+                    "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategory" + category,
+                    "NSPrivacyAccessedAPITypeReasons": [reason],
+                }
+                for category, reason in (("UserDefaults", "CA92.1"), ("FileTimestamp", "C617.1"))
+            ]
+        }
+        for bundle in (self.app, self.extension, self.widgets):
+            write_plist(bundle / "PrivacyInfo.xcprivacy", privacy)
+        write_plist(
+            self.app / "textual_Textual.bundle/PrivacyInfo.xcprivacy",
+            {"NSPrivacyAccessedAPITypes": privacy["NSPrivacyAccessedAPITypes"][:1]},
+        )
+        self.sdk_privacy = self.app / "ExampleSDK.bundle/PrivacyInfo.xcprivacy"
+        write_plist(self.sdk_privacy, {"NSPrivacyTracking": False})
 
     def invoke(
         self, command, output=None, build_number="42", success=True, version=VERSION
@@ -161,6 +178,7 @@ class ArchiveProofTests(unittest.TestCase):
         widgets_info=None,
         widgets_signed=True,
         version=VERSION,
+        omit_privacy=None,
     ):
         ipa = self.work / "Okou.ipa"
         release = {"CFBundleShortVersionString": version, "CFBundleVersion": build_number}
@@ -210,7 +228,35 @@ class ArchiveProofTests(unittest.TestCase):
                 package.writestr(
                     prefix + "_CodeSignature/CodeResources", b"widgets signature"
                 )
+            for path in self.app.rglob("PrivacyInfo.xcprivacy"):
+                if path != omit_privacy:
+                    value = plistlib.loads(path.read_bytes())
+                    package.writestr(
+                        "Payload/Okou.app/" + str(path.relative_to(self.app)),
+                        plistlib.dumps(value, fmt=plistlib.FMT_BINARY),
+                    )
         return ipa
+
+    def test_sdk_manifest_cannot_replace_a_missing_first_party_manifest(self):
+        (self.extension / "PrivacyInfo.xcprivacy").unlink()
+        self.assertIn(
+            "Missing privacy manifest: PlugIns/OkouNotificationService.appex/PrivacyInfo.xcprivacy",
+            self.invoke("prepare", success=False),
+        )
+
+    def test_archive_requires_reasons_for_code_linked_into_widget(self):
+        write_plist(self.widgets / "PrivacyInfo.xcprivacy", {"NSPrivacyAccessedAPITypes": []})
+        self.assertIn("missing required API reasons", self.invoke("prepare", success=False))
+
+    def test_export_preserves_sdk_privacy_declarations(self):
+        ipa = self.package(omit_privacy=self.sdk_privacy)
+        self.assertIn("privacy manifests", self.invoke("verify-export", ipa, success=False))
+        with ZipFile(ipa, "a") as package:
+            package.writestr(
+                "Payload/Okou.app/ExampleSDK.bundle/PrivacyInfo.xcprivacy",
+                plistlib.dumps({"NSPrivacyTracking": True}),
+            )
+        self.assertIn("privacy manifests", self.invoke("verify-export", ipa, success=False))
 
     def test_prepare_changes_only_bundle_build_numbers_and_preserves_source(self):
         original = self.digests(self.source)
