@@ -1291,6 +1291,22 @@ if ! git merge-base --is-ancestor "$agent_api_profile_floor" "$TARGET_COMMIT"; t
   fail "Rollback target predates the Agent API profile retirement: ${agent_api_profile_floor}."
 fi
 
+# #50060 reads Custom Connector Skill publications directly from the connector
+# table. Earlier artifacts still need the view removed by migration 1620.
+connector_skill_view_floor_path=.github/rollback-floors/custom-connector-skill-publication-view-independent-api
+if ! connector_skill_view_floor=$(git show "origin/main:${connector_skill_view_floor_path}"); then
+  fail "Cannot read the Custom Connector Skill view rollback floor from main."
+fi
+if [[ ! "$connector_skill_view_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Custom Connector Skill view rollback floor."
+fi
+if ! git merge-base --is-ancestor "$connector_skill_view_floor" origin/main; then
+  fail "Custom Connector Skill view rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$connector_skill_view_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates direct Custom Connector Skill publication reads: ${connector_skill_view_floor}."
+fi
+
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \
   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
   --data-urlencode "teamId=${VERCEL_ORG_ID}" \
