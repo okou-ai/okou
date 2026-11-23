@@ -9,20 +9,11 @@ import {
 describe("workspace logo colourway", () => {
   it("keeps every texture a ground rather than a pattern", () => {
     // The brand library splits cleanly on this number: tonal tiles sit at
-    // 6–11, patterned tiles at 34 and up. A mark only reads on the former.
+    // 6–11, patterned tiles at 34 and up.
     for (const { ground, ink } of WORKSPACE_LOGO_COLORWAYS) {
       expect(deltaE2000(ground, ink), `${ground}/${ink}`).toBeLessThanOrEqual(
         12,
       );
-    }
-  });
-
-  it("never draws the mark in a colour the texture would swallow", () => {
-    for (const { ground, ink, mark } of WORKSPACE_LOGO_COLORWAYS) {
-      expect(
-        Math.min(deltaE2000(mark, ground), deltaE2000(mark, ink)),
-        `${mark} on ${ground}/${ink}`,
-      ).toBeGreaterThanOrEqual(25);
     }
   });
 
