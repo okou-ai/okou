@@ -441,6 +441,8 @@ class SessionModel(
                         { current(ticket, snapshot) },
                         { workspaceFailure(ticket, snapshot, it) },
                         dispatcher,
+                        retryWhenActive = canRetryPreparation,
+                        online = { connected.value },
                     )
                 }
                 val composer = store.workspaceModel {

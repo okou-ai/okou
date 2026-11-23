@@ -114,7 +114,7 @@ internal fun ConversationRoute(
     onLinkUnavailable: (() -> Unit)? = null,
     messageSequence: Long? = null,
     onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
-    recovery: @Composable (failureId: String) -> Unit = {},
+    recovery: @Composable (HistoryMessage) -> Unit = { AssistantFailureText(it.failureReason) },
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
@@ -661,9 +661,8 @@ internal fun ConversationRoute(
                                         artifactActions = artifactActions,
                                         findHighlight = highlight,
                                         links = links,
+                                        failureContent = recovery,
                                     )
-                                    if (entry.message.status == "run.failed")
-                                        recovery(entry.message.id)
                                 }
                             }
                         }
