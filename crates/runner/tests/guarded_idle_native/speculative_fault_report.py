@@ -112,11 +112,10 @@ def validate(directory):
         )
         started = batch.clock(waiting.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         rpc = batch.clock(waiting.get("rpc_completed_ns"), started, events[1]["monotonic_ns"])
-        raw = history.encode()
-        digest = hashlib.sha256((raw * (65536//len(raw)+1))[:65536]).hexdigest()
+        digest = hashlib.sha256(report.history_payload(history)).hexdigest()
         exact(waiting, {"mode": mode, "history_run_id": history, "operation_run_id": operation,
             "reuse_key": reuse, "prepare_started_ns": started, "rpc_completed_ns": rpc,
-            "payload_sha256": digest, "payload_bytes": 65536, "production_restore_completed": True,
+            "payload_sha256": digest, "payload_bytes": report.HISTORY_PAYLOAD_BYTES, "production_restore_completed": True,
             "private_marker_verified": True, "ordinary_home_verified": True, "callback_polled_pending": True,
             "callback_release_withheld": True, "pool_empty": True, "original_full_lease_active": True,
             "original_exit_polled_pending": True, "allocated": [2,4096,1]},
