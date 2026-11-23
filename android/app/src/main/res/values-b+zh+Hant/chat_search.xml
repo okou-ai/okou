@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">暫時無法更新工作流程目錄，僅搜尋已載入的目錄</string>
     <string name="chat_search_artifacts_failed">暫時無法搜尋成果</string>
     <string name="chat_search_loading">正在搜尋</string>
+    <string name="chat_search_failed">暫時無法載入搜尋結果</string>
 </resources>
