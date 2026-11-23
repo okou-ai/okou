@@ -9,6 +9,8 @@ import { generateMessagePdfBlob } from "../../lib/message-pdf/index.ts";
 import { fetchResource } from "../../lib/resource-fetch.ts";
 import { triggerBlobDownload } from "../../views/okou-page/attachment-url.ts";
 import { attachmentDownloadSource$ } from "../attachment-download-source.ts";
+import { passArtifactPaywall$ } from "../okou-page/artifact-paywall.ts";
+import { openSettingsBillingPlansDialog$ } from "../okou-page/settings/settings-dialog.ts";
 
 const MAX_MARKDOWN_EXPORT_BYTES = 5 * 1024 * 1024;
 
@@ -71,13 +73,10 @@ async function readResponseText(
 
 async function readMarkdownSource(
   url: string,
-  resolveResource: ResourceResolver,
   signal: AbortSignal,
 ): Promise<{ source: string; baseUrl: string }> {
-  const resource = await resolveResource(url, signal);
-  signal.throwIfAborted();
   const response = await fetchResource(
-    resource.resourceUrl,
+    url,
     {
       cache: "no-store",
       mode: "cors",
@@ -91,7 +90,7 @@ async function readMarkdownSource(
   }
   return {
     source: await readResponseText(response, signal),
-    baseUrl: resource.resourceUrl,
+    baseUrl: url,
   };
 }
 
@@ -149,14 +148,26 @@ export const downloadMarkdownArtifact$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
+    if (!(await set(passArtifactPaywall$, signal))) {
+      return;
+    }
+    const resource = await set(
+      attachmentDownloadSource$,
+      input.url,
+      "app",
+      signal,
+    );
+    if (resource.kind === "paywalled") {
+      await set(openSettingsBillingPlansDialog$, signal);
+      return;
+    }
+    const { source, baseUrl } = await readMarkdownSource(
+      resource.resourceUrl,
+      signal,
+    );
     const resolveResource: ResourceResolver = (url, resourceSignal) => {
       return set(attachmentDownloadSource$, url, "app", resourceSignal);
     };
-    const { source, baseUrl } = await readMarkdownSource(
-      input.url,
-      resolveResource,
-      signal,
-    );
     const tree = parseMessagePdfTree(source);
     const imageUrls = await resolveImageUrls(
       imageSources(tree),
