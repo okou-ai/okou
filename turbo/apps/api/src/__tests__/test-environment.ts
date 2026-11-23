@@ -8,6 +8,8 @@ export const apiTestEnvironment = {
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   OFFICIAL_RUNNER_SECRET:
     "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  CODEX_OAUTH_CLIENT_ID: "test-codex-client-id",
+  CLAUDE_CODE_OAUTH_CLIENT_ID: "test-claude-code-client-id",
   OPENAI_API_KEY: "test-openai-key",
   OKOU_BROWSER_USE_EXTENSION_ID: "11111111-1111-4111-8111-111111111111",
   FAL_KEY: "test-fal-key",

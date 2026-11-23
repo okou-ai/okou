@@ -152,6 +152,7 @@ names.update('OKOU_' + name for name in list(names))
 synthetic_secrets = {name: 'fixture-secret-' + name for name in names}
 doppler = {name + suffix: 'fixture-oauth-' + name + suffix
            for name in names for suffix in ['_OAUTH_CLIENT_ID', '_OAUTH_CLIENT_SECRET']}
+doppler.update(CODEX_OAUTH_CLIENT_ID='fixture-codex-client', CLAUDE_CODE_OAUTH_CLIENT_ID='fixture-claude-client')
 with tempfile.TemporaryDirectory() as temporary:
     environment = dict(os.environ, RUNNER_TEMP=temporary,
                        GITHUB_OUTPUT=str(Path(temporary) / 'outputs'),
