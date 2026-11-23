@@ -23,7 +23,6 @@ export const iosBuildIdentitySchema = strictObject({
 export const iosCompatibilityPolicySchema = strictObject({
   appStoreMinimumSupportedVersion: version.nullable(),
   testFlightMinimumSupportedVersion: version.nullable(),
-  reviewCandidate: iosBuildIdentitySchema.nullable(),
 });
 
 export type IosCompatibilityPolicy = Infer<typeof iosCompatibilityPolicySchema>;

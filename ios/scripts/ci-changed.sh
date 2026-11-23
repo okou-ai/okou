@@ -42,7 +42,7 @@ while IFS= read -r -d '' changed_file; do
   case "$changed_file" in
     ios/scripts/* | ios/*.entitlements | .github/workflows/ios.yml | .github/workflows/ios-build-cache.yml | \
       .github/actions/setup-ios-build-cache/* | .github/workflows/ios-archive-proof.yml | \
-      .github/workflows/ios-app-review*.yml | .github/scripts/release/ios-app-review*.mjs | \
+      .github/workflows/ios-app-review.yml | .github/scripts/release/ios-app-review*.mjs | \
       .github/workflows/ios-distribution-availability.yml | .github/scripts/checks/read-ios-availability.mjs | \
       .github/workflows/release-please.yml | .github/scripts/checks/changed-base-ref.sh | release-please-config.json)
       needed=true

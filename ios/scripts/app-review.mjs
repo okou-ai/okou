@@ -52,7 +52,7 @@ function versionState(version) {
 export async function submitForReview(
   client,
   request,
-  { knownSubmissionId, saveSubmission, assertCurrent },
+  { knownSubmissionId, saveSubmission },
 ) {
   const appId = id(request.appId);
   const build = id(request.appleBuildId);
@@ -191,12 +191,11 @@ export async function submitForReview(
       `Version is ${versionState(version)}; inspect its existing submission`,
     );
 
-  async function write(path, method, data) {
-    await assertCurrent();
-    return client.request(path, { method, body: { data } });
+  function create(path, data) {
+    return client.request(path, { method: "POST", body: { data } });
   }
   if (!version) {
-    ({ data: version } = await write("/v1/appStoreVersions", "POST", {
+    ({ data: version } = await create("/v1/appStoreVersions", {
       type: "appStoreVersions",
       attributes: {
         platform,
@@ -212,7 +211,6 @@ export async function submitForReview(
     buildOf(version) !== build ||
     version.attributes.releaseType !== "MANUAL"
   ) {
-    await assertCurrent();
     const fresh = await readVersion();
     const selected = buildOf(fresh);
     if (
@@ -233,7 +231,7 @@ export async function submitForReview(
   }
   version = await verifySelection();
   if (!draft) {
-    ({ data: draft } = await write(submissions, "POST", {
+    ({ data: draft } = await create(submissions, {
       type: "reviewSubmissions",
       attributes: { platform },
       relationships: { app: relationship("apps", appId) },
@@ -243,7 +241,7 @@ export async function submitForReview(
   // create response leaves an unowned empty draft, which must be reconciled by a person.
   await saveSubmission(id(draft.id));
   if (!entries.length)
-    await write("/v1/reviewSubmissionItems", "POST", {
+    await create("/v1/reviewSubmissionItems", {
       type: "reviewSubmissionItems",
       relationships: {
         reviewSubmission: relationship("reviewSubmissions", draft.id),
@@ -251,7 +249,6 @@ export async function submitForReview(
       },
     });
 
-  await assertCurrent();
   const [before, finalItems] = await Promise.all([
     readSubmission(draft.id),
     items(draft.id),

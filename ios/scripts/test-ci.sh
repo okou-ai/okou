@@ -125,7 +125,7 @@ for path in .github/workflows/ios-build-cache.yml .github/actions/setup-ios-buil
   commit cache-configuration
   expect true EVENT_NAME=push PUSH_BEFORE_SHA="$before_cache"
 done
-for path in .github/workflows/ios-app-review{,-submit}.yml .github/scripts/release/ios-app-review-github.mjs; do
+for path in .github/workflows/ios-app-review.yml .github/scripts/release/ios-app-review.mjs; do
   before_review=$(git rev-parse HEAD)
   mkdir -p "$(dirname "$path")"
   echo review > "$path"

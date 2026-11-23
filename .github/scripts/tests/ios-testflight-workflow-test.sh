@@ -8,6 +8,16 @@ root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 python3 - "$root/.github/workflows/release-please.yml" "$root/.github/workflows/ios-archive-proof.yml" <<'PY'
 import json, subprocess, sys
 workflow = json.loads(subprocess.check_output(['yq', '-o=json', '.', sys.argv[1]], text=True))
+# Official App Review is a direct manual operation on main. Publishing a
+# TestFlight release or deploying the API must never submit a build for review.
+review_path = sys.argv[1].replace('release-please.yml', 'ios-app-review.yml')
+review = json.loads(subprocess.check_output(['yq', '-o=json', '.', review_path], text=True))
+assert set(review['on']) == {'workflow_dispatch'}
+assert set(review['on']['workflow_dispatch']['inputs']) == {'version', 'build'}
+submit = review['jobs']['submit']
+assert submit['if'] == "github.ref == 'refs/heads/main'" and submit['environment'] == 'production'
+assert review['permissions'] == {'contents': 'read', 'actions': 'read', 'statuses': 'write'}
+assert 'ios-app-review.mjs' not in json.dumps(workflow)
 job = workflow['jobs']['publish-ios-testflight']
 condition = job['if'].removeprefix('${{').removesuffix('}}').strip()
 for value, expected in [('true', True), ('false', False), ('', False)]:

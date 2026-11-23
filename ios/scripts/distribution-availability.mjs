@@ -53,6 +53,20 @@ export function releaseCommit(read, version, build) {
   );
 }
 
+export function publishedReleaseCommit(version, build) {
+  const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
+  const read = (path, paginate) => {
+    const raw = execFileSync(
+      "gh",
+      ["api", ...(paginate ? ["--paginate", "--slurp"] : []), prefix + path],
+      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
+    );
+    const data = JSON.parse(raw);
+    return paginate ? data.flatMap((page) => page.jobs) : data;
+  };
+  return releaseCommit(read, version, build);
+}
+
 export function storefronts(value) {
   const countries = value
     .split(",")
@@ -223,7 +237,7 @@ export async function verifyDistribution(
     throw new Error("A TestFlight check requires an internal group");
   const uploaded = one(
     await client.list(
-      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS" })}`,
+      `/v1/builds?${new URLSearchParams({ "filter[app]": appId, "filter[version]": build, "filter[preReleaseVersion.version]": version, "filter[preReleaseVersion.platform]": "IOS", "fields[builds]": "version,expired,expirationDate,processingState,buildAudienceType" })}`,
     ),
     "iOS TestFlight build",
   );
@@ -297,17 +311,7 @@ if (
     const build = required("IOS_BUILD_NUMBER");
     const channel = required("IOS_CHANNEL");
     checkBuild(version, build);
-    const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
-    const read = (path, paginate) => {
-      const raw = execFileSync(
-        "gh",
-        ["api", ...(paginate ? ["--paginate", "--slurp"] : []), prefix + path],
-        { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-      );
-      const data = JSON.parse(raw);
-      return paginate ? data.flatMap((page) => page.jobs) : data;
-    };
-    const commit = releaseCommit(read, version, build);
+    const commit = publishedReleaseCommit(version, build);
     const availability = await verifyDistribution(
       appleClientFromEnvironment(),
       {

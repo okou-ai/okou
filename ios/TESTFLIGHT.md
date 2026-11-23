@@ -207,51 +207,24 @@ receipt. Verification does not submit a build or change a minimum version.
 
 ## Submit an existing build for App Review
 
-1. In Actions, run **Submit iOS for App Review** on `main` with the exact
-   marketing version and TestFlight build number. Use a release for which the
-   publisher recorded a source commit. The run links the protected TestFlight
-   receipt and a candidate policy PR. Repeating the request for the same
-   build reuses its open or merged registration. A conflicting request for
-   another build leaves the registered candidate in place.
-2. Install that build from TestFlight, point it at production, sign in, send
-   a message and view the result. Check the QA item in the candidate PR body
-   and merge the PR through the normal queue. If the compatibility check's
-   24-hour receipt expires, dispatch the same version and build again.
-   For a pre-existing registration, add and check this exact item in its PR
-   body after exercising the build:
+1. Install the intended TestFlight build. Verify production sign-in, sending a
+   message and viewing its result. Prepare the store listing, screenshots,
+   privacy information, review contact details and any required demo account
+   in App Store Connect.
+2. In Actions, run **Submit iOS for App Review** on `main` with the exact
+   marketing version and build number. The production workflow verifies the
+   release publisher's upload record, checks that the same build is available
+   in TestFlight and eligible for the App Store, then submits it directly to
+   Apple with **manual release**. The existing iOS App Store Connect key needs
+   App Manager access. The Actions summary links to the app and records the
+   Apple build ID, submission ID and state.
+3. After approval, release the app manually in App Store Connect. To raise
+   the App Store minimum later, verify public availability in the configured
+   storefronts and use the normal minimum-version policy PR.
 
-   ```markdown
-   - [x] I verified production sign-in, sending a message and viewing the result on this exact iOS build.
-   ```
-
-3. Release the API through the normal release process. **Continue iOS App
-   Review** resumes after API promotion, or immediately after a manual request
-   for an already deployed candidate. It reads the serving API commit from
-   `/api/build-info` and checks that it contains the registration and that the
-   candidate still matches on production and `main`. API commits may advance
-   independently of the iOS release commit.
-4. The continuation verifies the same Apple build ID, selects it on the iOS
-   App Store version and submits that version alone for **manual release**.
-   See the candidate PR and Actions summary for the Apple submission ID and
-   state. Once Apple approves, the release owner publishes from App Store
-   Connect. On public availability, follow the separate App Store minimum
-   verification and policy PR process.
-
-Before the first request, the CI GitHub App configured by `OKOU_CI_APP_ID`
-and `OKOU_CI_APP_PRIVATE_KEY` needs installation access to this repository
-with Contents and Pull requests write permissions. The existing production iOS
-App Store Connect key needs App Manager access. Prepare the store listing,
-localizations, screenshots, app privacy, age rating, review contact details and
-any required demo account in App Store Connect. Ensure any existing iOS version
-draft has the requested marketing version and can use the selected build.
-
-**Recovery.** Follow the exact error in the continuation run. Resolve missing
-metadata or conflicting builds/review items in App Store Connect, then dispatch
-the version and build again. Ordinary deployments cannot retry an attempted
-submission. An explicit retry checks the recorded Apple submission ID and
-resumes an owned draft or returns the existing review state. If Apple created
-an empty draft but the runner lost its ID, reconcile that draft in App Store
-Connect first. To change candidates, resolve or withdraw the existing review,
-clear the policy through a normal PR, and request the new build. A cleared and
-later re-registered candidate needs a fresh request. Manual requests are
-retained for 30 days; repeat the request if its artifact has expired.
+To recover from a failure, resolve the reported metadata or draft conflict in
+App Store Connect and run the same version and build again. The workflow checks
+the current Apple state and uses a GitHub commit status to remember the Apple
+draft ID for that exact build. An already submitted build returns its receipt.
+If Apple created an empty draft but the ID could not be recorded, reconcile the
+draft in App Store Connect before retrying.

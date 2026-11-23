@@ -353,7 +353,6 @@ describe("iOS runtime API contract gate", () => {
         JSON.stringify({
           appStoreMinimumSupportedVersion: "0.22.6",
           testFlightMinimumSupportedVersion: "0.22.7",
-          reviewCandidate: null,
         }),
       );
       await writeFile(
@@ -361,7 +360,6 @@ describe("iOS runtime API contract gate", () => {
         JSON.stringify({
           appStoreMinimumSupportedVersion: "0.22.5",
           testFlightMinimumSupportedVersion: "0.22.7",
-          reviewCandidate: null,
         }),
       );
       await writeFile(
@@ -408,7 +406,6 @@ describe("iOS runtime API contract gate", () => {
       const bootstrap = {
         appStoreMinimumSupportedVersion: null,
         testFlightMinimumSupportedVersion: "0.22.5",
-        reviewCandidate: null,
       };
       await writeFile(paths.base!, JSON.stringify(bootstrap));
       await writeFile(
@@ -459,7 +456,6 @@ describe("iOS distribution policy", () => {
   const policy = {
     appStoreMinimumSupportedVersion: "1.0.0",
     testFlightMinimumSupportedVersion: "1.0.0",
-    reviewCandidate: null,
   };
   const launch = { ...policy, appStoreMinimumSupportedVersion: null };
   const legacy = { minimumSupportedVersion: "1.0.0" };
@@ -597,40 +593,26 @@ describe("iOS distribution policy", () => {
     ).toBe(true);
   });
 
-  it("pins version, build and commit for review and protects both the old and new locks", () => {
-    const reviewing = { ...policy, reviewCandidate: upload };
-    expect(
-      iosGatePolicy(reviewing, policy, { testflight: upload }).iosPolicyErrors,
-    ).toEqual([]);
-    for (const receipt of [
-      { ...upload, build: "43" },
-      { ...upload, commit: "b".repeat(40) },
-      { ...upload, version: "1.2.1" },
-    ]) {
+  it("reads older base policies without carrying their review lock into either floor", () => {
+    const next = { ...policy, testFlightMinimumSupportedVersion: "1.3.0" };
+    for (const previous of [null, upload]) {
+      const base = { ...policy, reviewCandidate: previous };
+      const change = iosGatePolicy(next, base, {
+        "app-store": publicBuild,
+        testflight: { ...upload, version: "1.3.0" },
+      });
+      expect(change.iosAppStoreFloor).toEqual({
+        floor: "1.0.0",
+        baseFloor: "1.0.0",
+      });
       expect(
-        iosGatePolicy(reviewing, policy, { testflight: receipt })
-          .iosPolicyErrors,
-      ).not.toEqual([]);
+        gate({
+          ...change,
+          iosTransforms: [{ ...transform, maxVersion: "1.0.0" }],
+        }).passed,
+      ).toBe(true);
+      expect(gate(change).passed).toBe(false);
+      expect(() => iosGatePolicy(base, policy, {})).toThrow();
     }
-    expect(iosGatePolicy(reviewing, reviewing, {}).iosPolicyErrors).toEqual([]);
-    const newer = { ...upload, version: "1.3.0" };
-    for (const reviewCandidate of [null, newer]) {
-      const now = {
-        ...reviewing,
-        reviewCandidate,
-        testFlightMinimumSupportedVersion: newer.version,
-      };
-      expect(
-        iosGatePolicy(now, reviewing, {
-          testflight: newer,
-        }).iosPolicyErrors.join(" "),
-      ).toContain("1.2.0");
-    }
-    expect(
-      gate({
-        ...iosGatePolicy(reviewing, reviewing, { "app-store": publicBuild }),
-        iosTransforms: [{ ...transform, maxVersion: publicBuild.version }],
-      }).passed,
-    ).toBe(false);
   });
 });

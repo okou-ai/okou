@@ -15,6 +15,7 @@ function fixture({
   entries = [],
   previous,
   previousItems = [],
+  onReadVersion,
   onSubmit,
 } = {}) {
   const writes = [],
@@ -46,8 +47,10 @@ function fixture({
       const { pathname } = new URL(path, "https://apple.invalid");
       const data = body?.data;
       if (method === "GET") {
-        if (pathname === `/v1/appStoreVersions/${version?.id}`)
+        if (pathname === `/v1/appStoreVersions/${version?.id}`) {
+          onReadVersion?.(version);
           return { data: version };
+        }
         if (pathname === `/v1/reviewSubmissions/${submission?.id}`)
           return { data: submission };
         if (previous && pathname === `/v1/reviewSubmissions/${previous.id}`)
@@ -117,7 +120,6 @@ function fixture({
   };
   const hooks = {
     saveSubmission: async (id) => saved.push(id),
-    assertCurrent: async () => {},
   };
   return {
     run: (extra = {}) =>
@@ -153,8 +155,7 @@ const versionItem = { relationships: { appStoreVersion: ref("version") } };
 
 test("creates the store version with the existing binary, then submits only that version for manual release", async () => {
   const f = fixture();
-  let checks = 0;
-  assert.deepEqual(await f.run({ assertCurrent: async () => checks++ }), {
+  assert.deepEqual(await f.run(), {
     id: "review",
     state: "WAITING_FOR_REVIEW",
   });
@@ -164,7 +165,6 @@ test("creates the store version with the existing binary, then submits only that
     ["POST", "/v1/reviewSubmissionItems"],
     ["PATCH", "/v1/reviewSubmissions/review"],
   ]);
-  assert.equal(checks, f.writes.length);
   assert.deepEqual(f.saved, ["review"]);
 });
 test("reuses the store draft, selects the exact build and changes release mode to manual", async () => {
@@ -254,18 +254,20 @@ test("resumes its own empty Apple draft after a lost runner", async () => {
     ["PATCH", "/v1/reviewSubmissions/review"],
   ]);
 });
-test("a cleared candidate stops the final write even after preparing the draft", async () => {
+test("a failed draft receipt stops before attaching or submitting the store version", async () => {
   const f = fixture();
-  let writesAllowed = 3;
   await assert.rejects(
     f.run({
-      assertCurrent: async () => {
-        if (writesAllowed-- === 0) throw new Error("candidate cleared");
+      saveSubmission: async () => {
+        throw new Error("receipt unavailable");
       },
     }),
-    /candidate cleared/,
+    /receipt unavailable/,
   );
-  assert.equal(f.writes.length, 3);
+  assert.deepEqual(f.writes, [
+    ["POST", "/v1/appStoreVersions"],
+    ["POST", "/v1/reviewSubmissions"],
+  ]);
 });
 test("reconciles a lost accepted response by reading the same Apple submission", async () => {
   const f = fixture({
@@ -314,16 +316,13 @@ test("returns a completed, approved submission from the saved receipt", async ()
 });
 
 test("does not overwrite a different build selected while the workflow is running", async () => {
-  const version = storeVersion(null, "AFTER_APPROVAL");
-  const f = fixture({ version });
-  await assert.rejects(
-    f.run({
-      assertCurrent: async () => {
-        version.relationships.build = ref("someone-elses-build");
-      },
-    }),
-    /changed before selection/,
-  );
+  const f = fixture({
+    version: storeVersion(null, "AFTER_APPROVAL"),
+    onReadVersion(version) {
+      version.relationships.build = ref("someone-elses-build");
+    },
+  });
+  await assert.rejects(f.run(), /changed before selection/);
   assert.deepEqual(f.writes, []);
 });
 test("release mode can be corrected without overwriting an existing build relationship", async () => {
