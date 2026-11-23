@@ -205,6 +205,12 @@ struct OnboardingView: View {
         Text(error).font(.okou(.footnote)).foregroundStyle(OkouColor.destructive)
           .accessibilityAddTraits(.updatesFrequently)
       }
+      if store.hasDraftConflict {
+        Button("Reload saved setup") { Task { await store.retryPreparation() } }
+          .buttonStyle(OkouButtonStyle(isPrimary: false))
+          .disabled(store.isWorking)
+          .accessibilityIdentifier("onboarding-reload")
+      }
       Button {
         Task { await store.next() }
       } label: {
@@ -212,13 +218,13 @@ struct OnboardingView: View {
           title: store.step == .ready ? "Open in chat" : "Continue", isBusy: store.isWorking)
       }
       .buttonStyle(OkouButtonStyle(isPrimary: true))
-      .disabled(!store.canContinue || store.isWorking)
+      .disabled(!store.canContinue || store.isWorking || store.hasDraftConflict)
       .accessibilityIdentifier("onboarding-continue")
       Button(store.step == .ready ? "Explore on my own" : "Not now") {
         Task { await store.next(skip: true) }
       }
       .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-      .disabled(store.isWorking)
+      .disabled(store.isWorking || store.hasDraftConflict)
       .accessibilityIdentifier("onboarding-skip")
     }
     .padding(.horizontal, OkouControl.pageInset)

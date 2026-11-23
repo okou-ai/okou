@@ -244,6 +244,7 @@ final class OnboardingStore {
   }
 
   func retryPreparation() async {
+    guard !isWorking, !closed else { return }
     retry(.draft)
     isPrepared = false
     hasDraftConflict = false

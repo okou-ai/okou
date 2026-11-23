@@ -91,6 +91,19 @@ final class OnboardingTests: XCTestCase {
     XCTAssertEqual(store.step, .industry)
     XCTAssertEqual(store.draft.answers.industry, "design")
     XCTAssertNotNil(store.error)
+
+    remote.state.value.withLock {
+      $0.conflict = false
+      var newerDraft = OnboardingDraft()
+      newerDraft.step = .sources
+      newerDraft.answers.industry = "software"
+      newerDraft.revision = "2026-01-01T00:00:02.000Z"
+      $0.draft = newerDraft
+    }
+    await store.retryPreparation()
+    XCTAssertNil(store.error)
+    XCTAssertEqual(store.step, .sources)
+    XCTAssertEqual(store.draft.answers.industry, "software")
   }
 
   func testOlderServerWithoutTheOptionalRolloutFieldKeepsTheExistingEntry() async throws {
