@@ -112,6 +112,6 @@ test("A failed Mermaid layout leaves its source readable and other diagrams usab
   expect(screen.getAllByRole("img", { name: "Diagram" })).toHaveLength(1);
   click(getButtonByName("Expand diagram"));
   await expect(
-    screen.findByRole("dialog", { name: "diagram.svg preview" }),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toBeInTheDocument();
 });

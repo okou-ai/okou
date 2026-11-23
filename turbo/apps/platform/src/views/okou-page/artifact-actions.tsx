@@ -107,7 +107,7 @@ function artifactDownloadFilename(
 }
 
 export type ArtifactDownloadSyncTarget = {
-  readonly authorizationSignal?: AbortSignal;
+  readonly connectOAuth$?: typeof connectBuiltinConnectorOAuthAuthCodeAndContinue$;
   readonly accountReady: boolean;
   readonly threadId: string;
   readonly disconnected: boolean;
@@ -403,7 +403,8 @@ function useGoogleDriveMenuAction(
   const actionSignal =
     surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
   const [connectionOperation, connectGoogleDrive] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+    syncTarget?.connectOAuth$ ??
+      connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
 
   const syncOrConnect = (
@@ -466,7 +467,7 @@ function useGoogleDriveMenuAction(
             connectorLabel: availability.googleDriveConnector.label,
           },
         },
-        syncTarget.authorizationSignal ?? actionSignal,
+        actionSignal,
       ),
       Reason.DomCallback,
       "artifact google drive connect sync",

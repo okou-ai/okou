@@ -385,7 +385,7 @@ type ContinuedArgs<Target> = Omit<CommandArgs<Target>[0], "onSuccess"> & {
 
 type ManualGrantArgs = ContinuedArgs<typeof submitBuiltinManualGrantAndSettle$>;
 type NoAuthArgs = ContinuedArgs<typeof connectBuiltinConnectorNoAuthAndSettle$>;
-type OAuthAuthCodeArgs = ContinuedArgs<
+export type OAuthAuthCodeArgs = ContinuedArgs<
   typeof connectBuiltinConnectorOAuthAuthCodeAndSettle$
 >;
 type OAuthDeviceAuthArgs = ContinuedArgs<

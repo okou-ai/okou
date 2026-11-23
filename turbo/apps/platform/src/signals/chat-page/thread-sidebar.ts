@@ -1,3 +1,7 @@
+import {
+  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+  type OAuthAuthCodeArgs,
+} from "../okou-page/settings/connector-connect-continuation.ts";
 import type { ChatThreadWorkflowAutomation } from "@okouai/api-contracts/contracts/workflows";
 import {
   attachmentPreviewSignalsFor,
@@ -245,6 +249,7 @@ interface ThreadAutomationEditor {
 }
 
 export interface ThreadSidebarSignals {
+  readonly connectArtifactOAuth$: typeof connectBuiltinConnectorOAuthAuthCodeAndContinue$;
   readonly crossChatArtifact: CrossChatArtifactPreviewSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
@@ -486,6 +491,20 @@ export function createThreadSidebarSignals(
       threadId,
       mailRegistry,
       internalTarget$,
+    ),
+    connectArtifactOAuth$: command(
+      ({ get, set }, args: OAuthAuthCodeArgs, signal: AbortSignal) => {
+        signal.throwIfAborted();
+        const target = get(internalTarget$);
+        if (target?.type !== "artifact") {
+          return Promise.resolve();
+        }
+        return set(
+          connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+          args,
+          target.source.ownerSignal,
+        );
+      },
     ),
     open$,
     openCatalogArtifact$,
