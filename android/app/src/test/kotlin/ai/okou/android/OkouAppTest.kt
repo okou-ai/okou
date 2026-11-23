@@ -321,7 +321,7 @@ class OkouAppTest {
         val retry =
             compose
                 .onNodeWithContentDescription(
-                    compose.activity.getString(R.string.updates_retry_download),
+                    compose.activity.getString(R.string.updates_download_failed),
                 )
                 .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
