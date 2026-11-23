@@ -3105,10 +3105,12 @@ Acme OAuth confirms the named custom account in its actual provider window. The 
 
 ## Batch 86 concentrated revisit
 
-The opening head was `c7ad91eb16592c51f31ebe7389a2405166ba1464`. The batch incorporates `main@840a3d059255b76a6025415edaf17cf343006f0d`. The first pass has 485 passed and 0 failed. Five of the 30 frozen files closed, taking the open queue from 145 to 140. Of 44 selected IDs, 9 gained their first complete evidence, 30 have partial regression evidence, 4 still lack the required observation, and 1 dialog variant was retired in #50074.
+The opening head was `c7ad91eb16592c51f31ebe7389a2405166ba1464`. The batch incorporates `main@7947f57a017eea8e30ac51810f42ffb48b70c16b`. The first pass has 485 passed and 0 failed. Five of the 30 frozen files closed, taking the open queue from 145 to 140. Of 44 selected IDs, 9 gained their first complete evidence, 30 have partial regression evidence, 4 still lack the required observation, and 1 dialog variant was retired in #50074.
 
 The completed-run summary keeps its historical title and ID. The browser response fixture distinguishes an outstanding read from a delivered field that its consumer accessed. A live run shows the same summary that the completed run discards. Paid image creation reaches a run and renders its message after the confirmed preference change. The exact submission count stays open. Search 001, retired search 002, the abortable zero-delay Vitest branch and the ordered media playback cases carry forward.
 
 [Fixed selection](https://app.okou.ai/artifacts/zkupjxmf6z.md) · [44 frozen IDs with original conditions and evidence](https://app.okou.ai/artifacts/8iovmtfjyw.tsv) · [30 file dispositions and remaining IDs](https://app.okou.ai/artifacts/q9prpinihb.tsv)
 
 The #50136 sync preserves the stable check-in IDs and covers immediate award confirmation, delayed and unavailable status, retry and reopening the menu after dismissal. [Original check-in conditions and synchronized behavior](./test-rebuild-batch-86-main-sync.tsv)
+
+The subsequent sync keeps transcript assertions within the visible history and verifies the refreshed tail and leading spacer. The retired signal-level document test stays withdrawn. The new real-page artifact feedback readers cover file identity, saved filename snapshots, editing and sending in #50080. These are synchronization regressions outside the fixed selection.

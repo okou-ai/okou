@@ -107,8 +107,8 @@ private struct UserMessageBody: View {
 
   private func feedbackHeading(_ parts: [ChatUserMessage.Part]) -> String {
     if let sourceTitle { return "Quoted from \(sourceTitle)" }
-    if let source = parts.first?.source, source.type == "mail" {
-      return source.status == "draft" ? "Feedback on email draft" : "Feedback on sent email"
+    if case .mail(_, let status, _)? = parts.first?.source {
+      return status == .draft ? "Feedback on email draft" : "Feedback on sent email"
     }
     return parts.count == 1 ? "Quoted passage" : "Quoted passages"
   }

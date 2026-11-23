@@ -89,6 +89,28 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
           eventId: "draft-feedback-event",
           range: { start: 0, end: 10 },
         },
+        {
+          type: "feedback",
+          quote: "Artifact passage",
+          note: [],
+          source: {
+            type: "artifact",
+            fileId: randomUUID(),
+            filenameSnapshot: "brief.md",
+            artifactId: randomUUID(),
+          },
+        },
+        {
+          type: "feedback",
+          quote: "Email passage",
+          note: [],
+          source: {
+            type: "mail",
+            id: randomUUID(),
+            status: "sent",
+            sentId: `gmail-${randomUUID()}`,
+          },
+        },
       ],
     };
 

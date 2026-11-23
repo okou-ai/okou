@@ -83,12 +83,21 @@ function isSameFeedbackSource(
   current: FeedbackSource | undefined,
   next: FeedbackSource | undefined,
 ): boolean {
-  return (
-    current?.type === next?.type &&
-    current?.id === next?.id &&
-    current?.status === next?.status &&
-    current?.sentId === next?.sentId
-  );
+  if (current?.type === "artifact" && next?.type === "artifact") {
+    return (
+      current.fileId === next.fileId &&
+      current.filenameSnapshot === next.filenameSnapshot &&
+      current.artifactId === next.artifactId
+    );
+  }
+  if (current?.type === "mail" && next?.type === "mail") {
+    return (
+      current.id === next.id &&
+      current.status === next.status &&
+      current.sentId === next.sentId
+    );
+  }
+  return current === next;
 }
 
 function isSameFeedbackSelection(

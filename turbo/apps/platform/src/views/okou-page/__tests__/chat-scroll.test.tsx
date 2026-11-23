@@ -243,7 +243,10 @@ test("A tall transcript fills its visible history and remains pinned when a new 
   const pane = await openPagedHistory(events, () => {
     return height;
   });
-  await within(pane).findByText("Locator answer 26");
+  const transcript = within(pane);
+  await transcript.findByText("Locator answer 26");
+  expect(transcript.queryByText("Locator answer 20")).toBeNull();
+  expect(transcript.queryByText("Locator answer 13")).toBeNull();
   await expectTail(pane);
   await waitFor(() => {
     expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
@@ -252,18 +255,20 @@ test("A tall transcript fills its visible history and remains pinned when a new 
   fireEvent.resize(window);
   events.push(...pagedTurn(27));
   publishRunUpdate();
-  await within(pane).findByText("Locator answer 27");
-  await within(pane).findByText("Locator answer 20");
-  await within(pane).findByText("Locator answer 13");
-  await waitFor(() => {
-    expect(
-      requiredElement(
-        '[data-transcript-spacer="before"]',
-        pane,
-      ).getBoundingClientRect().bottom,
-    ).toBeLessThanOrEqual(0);
-  });
-  await expectTail(pane);
+  const leading = requiredElement('[data-transcript-spacer="before"]', pane);
+  await waitFor(
+    () => {
+      for (const answer of [13, 20, 27]) {
+        expect(
+          transcript.queryByText("Locator answer " + answer),
+        ).toBeVisible();
+      }
+      expect(leading.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+      expect(pane.scrollHeight - pane.clientHeight).toBe(pane.scrollTop);
+    },
+    { container: pane },
+  );
+  expect(transcript.queryByText("Locator answer 1")).toBeNull();
 });
 
 test("Scrolling back to the beginning keeps that turn mounted until the reader returns to the new reply", async () => {

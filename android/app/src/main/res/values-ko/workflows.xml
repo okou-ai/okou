@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">채팅 실행 종료</string>
     <string name="workflow_clear_search">검색어 지우기</string>
     <string name="workflow_connect_provider">이 규칙을 활성화하려면 %1$s에 연결하세요.</string>
-    <string name="workflow_connection_unavailable">연결을 열 수 없습니다.</string>
     <string name="workflow_create_uncertain">생성을 확인할 수 없습니다. 편집기를 닫고 규칙을 확인한 후 다시 시도하세요.</string>
     <string name="workflow_creation_prompt">비공개 워크플로를 만들고 싶습니다. workflow-setup 스킬을 사용하세요. 반복할 작업이 무엇인지 물어보고, 저장하기 전에 지침을 보여 주고 확인을 받으세요. 자동화는 제가 요청할 때만 생성하세요.</string>
     <string name="workflow_daily">매일</string>

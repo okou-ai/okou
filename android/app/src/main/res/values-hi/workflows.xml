@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">चैट रन पूरा हुआ</string>
     <string name="workflow_clear_search">खोज साफ़ करें</string>
     <string name="workflow_connect_provider">इस नियम को चालू करने के लिए %1$s कनेक्ट करें।</string>
-    <string name="workflow_connection_unavailable">कनेक्शन नहीं खोल सके।</string>
     <string name="workflow_create_uncertain">बनाने की पुष्टि नहीं हो सकी। दोबारा कोशिश करने से पहले संपादक बंद करके नियम देखें।</string>
     <string name="workflow_creation_prompt">एक निजी वर्कफ़्लो बनाने में मेरी मदद करें। workflow-setup स्किल का उपयोग करें। पूछें कि मैं कौन-सा काम दोहराना चाहता हूँ और सहेजने से पहले पुष्टि के लिए निर्देश दिखाएँ। मेरे कहने पर ही ऑटोमेशन बनाएँ।</string>
     <string name="workflow_daily">हर दिन</string>

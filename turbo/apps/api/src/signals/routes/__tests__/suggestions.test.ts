@@ -1507,6 +1507,26 @@ describe("Suggestion custom follow-ups", () => {
       userMessage: document,
     };
     await accept(events.send({ headers: humanHeaders, body }), [400]);
+    await accept(
+      events.send({
+        headers: humanHeaders,
+        body: {
+          ...body,
+          userMessage: {
+            ...document,
+            parts: [
+              ...document.parts,
+              {
+                type: "project" as const,
+                projectId: randomUUID(),
+                nameSnapshot: "Missing project",
+              },
+            ],
+          },
+        },
+      }),
+      [404],
+    );
     expect(
       (await accept(client().list({ headers: humanHeaders }), [200])).body
         .items,
