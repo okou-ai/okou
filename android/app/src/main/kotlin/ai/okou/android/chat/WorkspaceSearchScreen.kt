@@ -216,7 +216,7 @@ internal fun WorkspaceSearchScreen(
                                         search.clearQuery()
                                         inputFocus.requestFocus()
                                         keyboard?.show()
-                                    }
+                                    },
                                 ) {
                                     Icon(
                                         painterResource(R.drawable.ic_close),
@@ -319,7 +319,7 @@ private fun SearchTypes(
                     .then(
                         if (type == WorkspaceSearchType.All)
                             Modifier.focusRequester(allTabFocus).focusProperties { canFocus = true }
-                        else Modifier
+                        else Modifier,
                     )
                     .background(if (selected) colors.secondaryContainer else colors.background)
                     .bringIntoViewRequester(reveal)
