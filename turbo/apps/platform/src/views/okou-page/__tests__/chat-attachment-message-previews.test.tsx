@@ -2,7 +2,7 @@ import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 import { test, expect, vi } from "vitest";
 import { HttpResponse } from "msw";
 import { screen, waitFor, within, fireEvent } from "@testing-library/react";
-import { click } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   findAction,
@@ -245,7 +245,9 @@ test("A voice note resumes the current recording and advances through its clips 
   });
   const play = await findAction("button", "Play voice message");
   expect(
-    screen.getAllByRole("button", { name: "Play voice message" }),
+    queryAllByRoleFast("button").filter((control) => {
+      return control.getAttribute("aria-label") === "Play voice message";
+    }),
   ).toHaveLength(1);
   const read = within(play);
   const track = play.querySelector<HTMLAudioElement>(

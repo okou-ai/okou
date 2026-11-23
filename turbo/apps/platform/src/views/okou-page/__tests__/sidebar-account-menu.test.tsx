@@ -62,23 +62,21 @@ test("sidebar-account-menu-004 adding another account uses a dark-theme hosted s
   await openAccountMenu();
   click(await screen.findByText("Add account"));
   await waitFor(() => {
-    return expect(mockedClerk.openSignIn).toHaveBeenCalledWith();
-  });
-  const [options] = mockedClerk.openSignIn.mock.lastCall ?? [];
-  expect(options).toMatchObject({
-    fallbackRedirectUrl: "/",
-    forceRedirectUrl: "/",
-    appearance: {
-      theme: "simple",
-      options: {
-        logoImageUrl: expect.stringMatching(/okou-logo-wordmark-light.*svg$/),
-        logoLinkUrl: "/",
+    return expect(mockedClerk.openSignIn.mock.lastCall?.[0]).toMatchObject({
+      fallbackRedirectUrl: "/",
+      forceRedirectUrl: "/",
+      appearance: {
+        theme: "simple",
+        options: {
+          logoImageUrl: expect.stringMatching(/okou-logo-wordmark-light.*svg$/),
+          logoLinkUrl: "/",
+        },
+        elements: {
+          formButtonPrimary: expect.stringContaining("bg-primary"),
+          formFieldInput: expect.stringContaining("bg-input"),
+        },
       },
-      elements: {
-        formButtonPrimary: expect.stringContaining("bg-primary"),
-        formFieldInput: expect.stringContaining("bg-input"),
-      },
-    },
+    });
   });
   expect(sdk.uiRequests).toContain(
     "https://app.example.test/assets/clerk-ui-test.js",

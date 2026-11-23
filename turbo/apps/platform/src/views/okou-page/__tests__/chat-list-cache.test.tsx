@@ -95,12 +95,16 @@ async function openCachedSearch(count: number, standalone = false) {
     });
   }
   const gate = context.mocks.deferred<void>();
-  const requested = Promise.withResolvers<void>();
+  const requested = context.mocks.deferred<void>();
   installChatListStream(context, {
     caseId: 821,
     snapshot: [],
     remoteGate: gate.promise,
-    onRemoteRead: requested.resolve,
+    onRemoteRead: () => {
+      if (!requested.settled()) {
+        requested.resolve();
+      }
+    },
   });
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36",

@@ -556,7 +556,7 @@ test("get-started-entry-022 selecting Gmail starts its authorization on the loca
   auth.popup.close();
 });
 
-test("get-started-entry-001 copying the invitation keeps the reward terms and returns keyboard focus on dismissal", async () => {
+test("Copying a pending invitation preserves its referral code and restores focus to the gift entry", async () => {
   const release = context.mocks.deferred<void>();
   serve(rewards([]));
   referral(() => {
@@ -589,7 +589,7 @@ test("get-started-entry-001 copying the invitation keeps the reward terms and re
   expect(dialog).not.toBeInTheDocument();
   expect(entry).toHaveFocus();
 });
-test("get-started-entry-006 the fully claimed connector reward explains completion without an action", async () => {
+test("The tenth claim makes the named connector quest non-actionable", async () => {
   const data = rewards(["connector", "workflow"]);
   Object.assign(record(data, "connector"), {
     claimedCount: 10,

@@ -155,15 +155,12 @@ async function resizeWithPendingFrame() {
   await openPage();
   await expectStreamingAt(home);
   await fitted(cdp);
-  const ack = cdp.holdNext("Page.screencastFrameAck");
-  cdp.frame("AAAA", cdp.pageSession("reading"));
-  await ack.received;
-  await ack.release();
   const picture = screen.getByRole("img", { name: "Live browser view" });
   await waitFor(() => {
     return expect(sample()).toStrictEqual([172, 49, 15, 255]);
   });
-  expect(picture).toHaveAttribute("width", "900");
+  cdp.frame("AAEC", cdp.pageSession("reading"), 900, 47);
+  await waitFor(() => expect(picture).toHaveAttribute("width", "900"));
   const frame = cdp.holdTargetFrames("reading");
   vi.spyOn(
     HTMLCanvasElement.prototype,

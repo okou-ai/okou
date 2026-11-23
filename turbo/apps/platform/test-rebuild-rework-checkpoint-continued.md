@@ -3056,3 +3056,13 @@ The 30 affected suites passed 195 rows in each of two runs, in normal order and 
 [All 70 frozen GWT, expanded titles, evidence and re-entry points](https://app.okou.ai/artifacts/j4zztdxbj7.tsv). [Disposition of each of the 30 owners](https://app.okou.ai/artifacts/sds69l9cr4.tsv). [Probe sources, controls, copy review and raw runs](https://app.okou.ai/artifacts/fdjjgr7xgd.zip). [Next 30 candidates with 65 IDs](https://app.okou.ai/artifacts/on0a5n24rr.md). Final-head App shards and required gate results are recorded in the [PR description](https://github.com/okou-ai/okou/pull/48906).
 
 Main advanced during verification to `24f420eec6`. Integration retained the independently rebuilt suites while updating the telemetry fixtures for #50027 and their paginated event reads for #50032. Four upstream pagination rows cover the 19/20-group boundary, a tall viewport, and returning from unmounted history. A separate 30-turn locator regression keeps `chat-conversation-locator-002` with its original owner. These five synchronization rows are outside the 70 assigned IDs and the three file closures. The PR records verification and CI for the synchronized head.
+
+## Batch 82 concentrated revisit
+
+The fixed intake contains 65 distinct frozen IDs across 30 owners. Thirteen IDs now have complete first evidence in 14 expanded Vitest rows. Fifteen are partial regressions, 17 still lack evidence and 20 have source-backed upstream dispositions. The original first pass remains 485/485 with zero untouched files. The revisit queue goes from 175 to 171. Credit usage, cached search number shortcuts, marketing handoff recovery and project ordering closed after reconciling all their retained IDs. The other 26 owners retain their entire BDD.
+
+The closed file for cached search has two registrations in the existing chat-list-cache suite. The invitation reward and fully claimed connector entries explicitly retain their missing value and description. Prior resource-thumbnail 002 keeps its own 64px evidence. A paid-tools switch and an ordered sharing regression do not establish exact request counts.
+
+The concurrent change at `090b0c51ba` retires chat-search-debounce-002 outside this intake. Its original ledger entry is preserved. The synchronized main includes inline voice playback, covered by conversation-level order, pause, resume and consecutive clip playback. The signed-in onboarding reentry exercises a second real Router and independently owned context.
+
+[65 ID dispositions](https://app.okou.ai/artifacts/lbm2o5r594.tsv) · [30 owner dispositions](https://app.okou.ai/artifacts/uig9c367jx.tsv) · [Next 30 owners](https://app.okou.ai/artifacts/a8507odmqw.md)
