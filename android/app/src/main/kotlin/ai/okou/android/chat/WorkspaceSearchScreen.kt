@@ -102,7 +102,6 @@ internal fun WorkspaceSearchScreen(
     onFocused: () -> Unit,
     onClose: () -> Unit,
     onOpen: (ConfirmedChat) -> Unit,
-    retry: () -> Unit,
     refreshChats: () -> Unit = {},
     remote: WorkspaceSearchResults? = null,
     workflowResults: SearchRead<SearchWorkflowHit>? = null,
@@ -113,7 +112,6 @@ internal fun WorkspaceSearchScreen(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)? = null,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)? = null,
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
-    onRetrySearch: () -> Unit = {},
 ) {
     val query = search.query
     val incomingResults = SearchSources(state, remote, workflowResults, recentlyOpened)
@@ -260,8 +258,6 @@ internal fun WorkspaceSearchScreen(
             onOpenWorkflow,
             onOpenArtifact,
             onMoreArtifacts,
-            onRetrySearch,
-            retry,
             refreshChats,
             restoreResultFocus,
             onSelectType = ::selectType,
@@ -430,8 +426,6 @@ private fun SearchResults(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)?,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)?,
     onMoreArtifacts: (String, String) -> Unit,
-    onRetrySearch: () -> Unit,
-    retry: () -> Unit,
     refreshChats: () -> Unit,
     restoreResultFocus: Boolean,
     onSelectType: (WorkspaceSearchType) -> Unit,
@@ -561,10 +555,12 @@ private fun SearchResults(
         }
     val listFailure = list.listReadFailure
     val needsChatList = showChats || needsMessageChats
-    val canRetryList = needsChatList && listFailure == ChatListReadFailure.NeedsRetry
+    val listFailed = listFailure == ChatListReadFailure.NeedsRetry
     val waitingForList =
-        needsChatList && list.confirmedAt == null && listFailure == null ||
-            needsMessageChats && list.listPhase == ChatReadPhase.Loading
+        needsChatList && list.confirmedAt == null && !listFailed ||
+            needsMessageChats &&
+                (list.listPhase == ChatReadPhase.Loading ||
+                    listFailure == ChatListReadFailure.Retrying)
     val remotePending = reads.any { it.isPending }
     val pending = waitingForList || remotePending
     fun waitingForResult(key: String): Boolean =
@@ -577,8 +573,8 @@ private fun SearchResults(
             WorkspaceSearchType.All -> pending
         }
     val confirmedChats = list.confirmedAt != null
-    val chatRefreshFailed = list.sustainedRefreshFailure || canRetryList
-    val missingMessageChats = needsMessageChats && (listFailure != null || !waitingForList)
+    val chatRefreshFailed = list.sustainedRefreshFailure || needsChatList && listFailed
+    val missingMessageChats = needsMessageChats && !waitingForList
     val messageFailure = messageRead.hasFailure || missingMessageChats
     val workflowFailure =
         workflowRead.hasFailure ||
@@ -597,15 +593,10 @@ private fun SearchResults(
         when {
             remotePending -> null
             grouped &&
-                (messageFailure ||
-                    workflowFailure ||
-                    artifactFailure ||
-                    listFailure != null ||
-                    chatRefreshFailed) ->
+                (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
                 if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
                 else R.string.chat_search_unavailable
-            needsChatList && !confirmedChats && listFailure != null ->
-                R.string.chat_list_first_load_failed
+            needsChatList && !confirmedChats && listFailed -> R.string.chat_list_first_load_failed
             showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
             grouped -> null
             keyword.isEmpty() -> null
@@ -629,16 +620,13 @@ private fun SearchResults(
         }
     val showSkeleton = showPending && items.isEmpty() && status == null
     val showProgress = showPending && items.isNotEmpty() && remotePending
-    val retryError = status.takeIf {
-        keyword.isNotEmpty() &&
-            items.isEmpty() &&
-            (messageRead.canRetrySearch ||
-                workspaceToolsRead == null &&
-                    (workflowRead.canRetrySearch ||
-                        artifactRead.canRetrySearch ||
-                        moreArtifactsFailed))
-    }
-    val inlineStatus = status.takeIf { retryError == null }
+    val errorTitle =
+        status
+            ?.takeIf { keyword.isNotEmpty() && items.isEmpty() }
+            ?.let {
+                if (grouped) R.string.chat_search_failed else it
+            }
+    val inlineStatus = status.takeIf { errorTitle == null }
     val visibleItems =
         remember(inlineStatus, items) {
             if (inlineStatus == null) items else listOf(SearchItem.Notice(inlineStatus)) + items
@@ -709,12 +697,7 @@ private fun SearchResults(
         ) {
             items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
-                    is SearchItem.Notice ->
-                        ChatContentLoadNotice(
-                            row.message,
-                            retry = retry.takeIf { canRetryList },
-                            retryEnabled = list.listPhase != ChatReadPhase.Loading,
-                        )
+                    is SearchItem.Notice -> ChatContentLoadNotice(row.message)
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -801,17 +784,16 @@ private fun SearchResults(
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(12.dp))
                 }
             }
-            if (showSkeleton) item(key = "search_loading") { ChatListSkeleton() }
-            if (retryError != null) {
-                item(key = "search_status") {
-                    SearchEmpty(
-                        if (grouped) R.string.chat_search_failed else retryError,
-                        {
-                            if (canRetryList) retry()
-                            onRetrySearch()
-                        },
-                        R.string.retry,
+            if (showSkeleton) {
+                item(key = "search_loading") {
+                    ChatListSkeleton(
+                        if (remotePending) R.string.chat_search_loading else R.string.chat_loading,
                     )
+                }
+            }
+            if (errorTitle != null) {
+                item(key = "search_status") {
+                    SearchEmpty(errorTitle, onAction = null)
                 }
             } else if (visibleItems.isEmpty() && !pending) {
                 item(key = "search_empty") {
@@ -937,7 +919,6 @@ private fun SearchResult(
 private fun SearchEmpty(
     @StringRes title: Int,
     onAction: (() -> Unit)?,
-    @StringRes action: Int = R.string.chat_search_all_types,
 ) {
     Column(
         Modifier.padding(top = 24.dp, bottom = 24.dp),
@@ -957,7 +938,7 @@ private fun SearchEmpty(
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    stringResource(action),
+                    stringResource(R.string.chat_search_all_types),
                     style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
                 )
             }

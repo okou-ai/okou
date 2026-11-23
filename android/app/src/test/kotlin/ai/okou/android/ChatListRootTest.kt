@@ -797,7 +797,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterRetry() {
+    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterReconnect() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
         val chatEvents = fixture.events
@@ -825,8 +825,7 @@ class ChatListRootTest {
         compose.onNodeWithText("No matching messages").assertDoesNotExist()
 
         val retry = hasText(app.getString(R.string.retry)) and results
-        val enabledRetry = retry and isEnabled()
-        compose.waitUntilExactlyOneExists(enabledRetry, 5_000)
+        compose.onNode(retry).assertDoesNotExist()
         val readStarted = CountDownLatch(1)
         val finishRead = CountDownLatch(1)
         fixture.events = { request ->
@@ -835,14 +834,9 @@ class ChatListRootTest {
             chatEvents(request)
         }
         try {
-            compose.onNode(enabledRetry).performClick()
+            compose.runOnIdle { app.connectivity.value = true }
             compose.waitUntil(5_000) { readStarted.count == 0L }
-            compose.onNode(retry).assertIsNotEnabled()
-            compose.mainClock.advanceTimeBy(160)
-            compose.onNode(unavailable).assertIsDisplayed()
-            compose
-                .onNode(hasContentDescription(app.getString(R.string.chat_loading)) and results)
-                .assertDoesNotExist()
+            compose.onNode(retry).assertDoesNotExist()
         } finally {
             finishRead.countDown()
         }
