@@ -21,8 +21,10 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -33,7 +35,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -605,7 +606,8 @@ class ArtifactCatalogRootTest {
         val surface = compose.onNodeWithTag("artifact_preview_surface")
         awaitText("Open in browser")
         val initialBounds = surface.getUnclippedBoundsInRoot()
-        browser.performScrollTo().assertIsDisplayed()
+        assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
+        scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
@@ -712,7 +714,8 @@ class ArtifactCatalogRootTest {
         compose.runOnIdle { app.connectivity.value = true }
         awaitText("Open in browser")
         assertEquals(initialBounds, surface.getUnclippedBoundsInRoot())
-        browser.performScrollTo().assertIsDisplayed()
+        assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
+        scrollWebsitePreview()
         val readingBounds = surface.getUnclippedBoundsInRoot()
         assertTrue(readingBounds.top < initialBounds.top)
 
@@ -882,6 +885,12 @@ class ArtifactCatalogRootTest {
     }
 
     private fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
+
+    private fun scrollWebsitePreview() {
+        compose
+            .onNode(hasScrollAction() and hasAnyDescendant(hasTestTag("artifact_preview_surface")))
+            .performSemanticsAction(SemanticsActions.ScrollBy) { it(0f, 180f) }
+    }
 
     private fun websiteView(): WebView? = compose.runOnIdle {
         compose.activity.window.decorView.website()

@@ -171,7 +171,11 @@ internal fun ArtifactPreview(
                 }
             }
             val save = preview?.access?.save
-            if (source != null || save != null) {
+            val browserUrl = preview?.info?.browserUrl
+            val open = browserUrl?.takeUnless { offline }
+            val reserveBrowserAction =
+                browserUrl != null || preview?.info?.resource is ArtifactResource.Site
+            if (source != null || save != null || reserveBrowserAction) {
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -194,10 +198,27 @@ internal fun ArtifactPreview(
                             onSave(save)
                         }
                     }
+                    if (reserveBrowserAction) {
+                        // Keep the preview in place before authorization and while disconnected.
+                        KeepSpaceWhenHidden(visible = open != null) {
+                            ArtifactAction(
+                                R.string.artifact_open_website,
+                                icon = R.drawable.ic_open_in_new,
+                                enabled = open != null,
+                            ) {
+                                val destination = open ?: return@ArtifactAction
+                                browserUnavailable =
+                                    try {
+                                        browser.openUri(destination.toString())
+                                        false
+                                    } catch (_: IllegalArgumentException) {
+                                        true
+                                    }
+                            }
+                        }
+                    }
                 }
             }
-            val browserUrl = preview?.info?.browserUrl
-            val open = browserUrl?.takeUnless { offline }
             val feedback =
                 when (saveResult) {
                     ArtifactSaveResult.Saving -> R.string.artifact_saving
@@ -214,25 +235,6 @@ internal fun ArtifactPreview(
                 if (feedback != null) {
                     KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
                         PreviewFeedback(feedback)
-                    }
-                }
-            }
-            // Keep the action's space while inline sites wait for preview authorization.
-            if (browserUrl != null || preview?.info?.resource is ArtifactResource.Site) {
-                KeepSpaceWhenHidden(visible = open != null) {
-                    ArtifactAction(
-                        R.string.artifact_open_website,
-                        icon = R.drawable.ic_open_in_new,
-                        enabled = open != null,
-                    ) {
-                        val destination = open ?: return@ArtifactAction
-                        browserUnavailable =
-                            try {
-                                browser.openUri(destination.toString())
-                                false
-                            } catch (_: IllegalArgumentException) {
-                                true
-                            }
                     }
                 }
             }
