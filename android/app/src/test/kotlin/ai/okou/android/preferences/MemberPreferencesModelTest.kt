@@ -41,6 +41,7 @@ class MemberPreferencesModelTest {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override val artifacts: ArtifactService
             get() = error("Artifacts are outside this fixture")

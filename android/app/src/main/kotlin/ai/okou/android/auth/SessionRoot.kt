@@ -146,6 +146,7 @@ internal fun SessionRoot(
                     chatArtifacts = ready?.chatArtifacts,
                     connectors = ready?.connectors,
                     workspaceName = workspaceName,
+                    workspaceSearch = ready?.search ?: opened?.search,
                     workspaceAvatar = {
                         WorkspaceAvatar(
                             identity.workspaceId,
