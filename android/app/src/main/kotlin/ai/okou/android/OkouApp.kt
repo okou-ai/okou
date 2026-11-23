@@ -759,6 +759,8 @@ internal fun OkouApp(
         val useOriginTab =
             workflowRoute.tab.takeIf { draftReturn?.action == WorkflowDraftAction.Use }
         handoffPending = true
+        if (draftReturn?.restoreFocus == true)
+            workflowRoute = workflowRoute.copy(draftReturn = draftReturn)
         workflowDraftError = null
         handoff = scope.launch {
             try {

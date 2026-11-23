@@ -429,7 +429,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun offlineDetailAttemptsTheDraftReadAndExplainsItsFailureBesideUse() {
+    fun offlineDetailAttemptsTheDraftReadAndExplainsItsFailureBesideUse() = withHardwareKeyboard {
         openWorkflowDetail()
         app.connectivity.value = false
         app.fixture.disconnectDraftRead = true
@@ -438,10 +438,10 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         compose.onNodeWithText("Workflow instructions").assertIsDisplayed()
         compose.onNodeWithText(error).assertDoesNotExist()
         val use = compose.onNodeWithTag("workflow_use").assertIsEnabled()
-        use.performClick()
+        use.pressEnter()
         waitFor(error)
         val notice = compose.onNodeWithText(error).assertIsDisplayed().getUnclippedBoundsInRoot()
-        val action = use.assertIsEnabled().getUnclippedBoundsInRoot()
+        val action = use.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot()
         assertTrue(notice.bottom <= action.top)
         assertTrue(
             app.fixture.requests.any {
@@ -456,7 +456,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             compose.onAllNodesWithText(error).fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithTag("message_input").assertDoesNotExist()
-        use.performClick()
+        use.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
         waitForTag("message_input")
         compose
             .onNodeWithTag("message_input")
