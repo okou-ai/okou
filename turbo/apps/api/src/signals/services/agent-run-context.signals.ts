@@ -49,7 +49,6 @@ import {
   createManagedModelKeys,
   createModelPricing,
 } from "./model-source-context.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
 import { variables } from "@okouai/db/schema/variable";
 import { and, eq, isNull, isNotNull, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
@@ -83,6 +82,7 @@ import { createExecutionPackageSources } from "./execution-package-sources";
 import { createExecutionOrgMemberContext } from "./execution-org-member-context.signals";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
+  type ExecutionOrgPlan,
   type ExecutionOrgRows,
   executionExpiredCredits,
   executionOrgMetadata,
@@ -125,7 +125,7 @@ export interface AgentRunContextSignals {
   >;
   readonly orgRows$: Computed<Promise<ExecutionOrgRows>>;
   readonly orgMetadata$: Computed<Promise<RunOrgMetadata | null>>;
-  readonly plan$: Computed<Promise<OrgPlanCapabilities | null>>;
+  readonly plan$: Computed<Promise<ExecutionOrgPlan | null>>;
   readonly concurrencyCapacity$: Computed<Promise<number>>;
   readonly credits$: Computed<Promise<ExecutionCreditBalance | null>>;
   readonly modelFacts$: Computed<Promise<OrgModelBootstrap>>;
