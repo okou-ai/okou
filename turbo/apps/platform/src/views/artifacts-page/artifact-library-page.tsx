@@ -576,11 +576,12 @@ function ArtifactLibraryCompactSort() {
 }
 
 function ArtifactLibraryToolbar({ loading }: { readonly loading: boolean }) {
+  const previewOpen = useGet(artifactCatalogSidebar.open$);
   return (
     <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 bg-background pb-4 pt-1">
       <ArtifactLibrarySearch loading={loading} />
       <ArtifactLibraryTypeFilter />
-      <ArtifactLibraryCompactSort />
+      {!previewOpen && <ArtifactLibraryCompactSort />}
     </div>
   );
 }

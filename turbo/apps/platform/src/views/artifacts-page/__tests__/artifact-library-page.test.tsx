@@ -637,6 +637,10 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
     within(preview).findByText("First launch preview"),
   ).resolves.toBeInTheDocument();
   expect(firstRow).toHaveAttribute("aria-current", "true");
+  expect(
+    screen.queryByRole("combobox", { name: "Sort artifacts" }),
+  ).not.toBeInTheDocument();
+  expect(queryButtonByName("Sort descending", viewport)).toBeUndefined();
   await waitFor(() => {
     expect(getButtonByName("Delete", preview)).toBeInTheDocument();
   });
@@ -674,6 +678,9 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
     expect(secondRow).toHaveFocus();
   });
   expect(viewport.scrollTop).toBe(320);
+  expect(
+    screen.getByRole("combobox", { name: "Sort artifacts" }),
+  ).toHaveTextContent("Name");
   expect(
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("launch");
@@ -716,6 +723,12 @@ test("A routed preview closes back to its original Library query", async () => {
   await expect(
     within(preview).findByText("Release preview"),
   ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("combobox", { name: "Sort artifacts" }),
+  ).not.toBeInTheDocument();
+  expect(
+    queryButtonByName("Sort descending", getCatalogViewport()),
+  ).toBeUndefined();
   expect(queryParams().get("artifact")).toBe(FIRST_ID);
   click(getButtonByName("Close artifact", preview));
 
@@ -730,6 +743,9 @@ test("A routed preview closes back to its original Library query", async () => {
   expect(
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("release");
+  expect(
+    screen.getByRole("combobox", { name: "Sort artifacts" }),
+  ).toHaveTextContent("Created");
   expect(screen.getByRole("combobox", { name: "Type" })).toHaveTextContent(
     "File",
   );
