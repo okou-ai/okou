@@ -37,7 +37,7 @@ import {
   catalogModelForSelectedId,
   isCatalogCodexServiceTierSupported,
 } from "./model-route-capabilities.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { ExecutionOrgPlan } from "./execution-org-context.service";
 
 export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
@@ -106,7 +106,7 @@ function unavailablePersonalPin(
 interface SelectionParams {
   readonly orgId: string;
   readonly userId: string;
-  readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+  readonly orgPlanCapabilities?: ExecutionOrgPlan | null;
   readonly catalog?: ModelCatalog;
   readonly modelBootstrap?: ModelSelectionBootstrap;
 }
