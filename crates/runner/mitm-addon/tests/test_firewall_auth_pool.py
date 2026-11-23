@@ -106,9 +106,7 @@ async def test_auth_and_registration_reuse_connection_without_sharing_request_au
         with mitm_ctx(api_url=origin):
             result = await auth_client.fetch_firewall_headers(firewall_auth_request())
             assert result.payload.headers == {}
-            await _send(
-                origin, "/api/webhooks/run/data-request", credential="different-synthetic"
-            )
+            await _send(origin, "/api/webhooks/run/data-request", credential="different-synthetic")
             await _send(origin, "/third")
         assert [identity for identity, _ in peer.requests] == [0, 0, 0]
         assert len(peer.closed) == 1
