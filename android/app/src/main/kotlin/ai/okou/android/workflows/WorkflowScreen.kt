@@ -118,7 +118,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.compose.LifecycleResumeEffect
 
 internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
 
@@ -148,10 +147,6 @@ internal fun WorkflowScreen(
     onOpenChat: (runId: String, threadId: String) -> Unit,
     fromSearch: Boolean = false,
 ) {
-    LifecycleResumeEffect(model) {
-        model.foregroundChanged(true)
-        onPauseOrDispose { model.foregroundChanged(false) }
-    }
     val wide = listWidth != null
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
