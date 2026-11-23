@@ -65,6 +65,35 @@ def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=
     (root / "stdout.log").write_text("\n".join(lines) + stdout_suffix)
 
 
+def assert_scalar_refusals(test, witnesses, validate):
+    """Corrupt one witness leaf per subtest and restore it after validation."""
+
+    def leaves(value, path=()):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield from leaves(item, path + (key,))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                yield from leaves(item, path + (index,))
+        else:
+            yield path, value
+
+    for index, event in enumerate(witnesses):
+        for path, value in leaves(event):
+            node = event
+            for key in path[:-1]:
+                node = node[key]
+            try:
+                node[path[-1]] = (
+                    not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
+                )
+                with test.subTest(index=index, path=path):
+                    with test.assertRaises((ValueError, KeyError, TypeError)):
+                        validate()
+            finally:
+                node[path[-1]] = value
+
+
 def prepare_snapshot_record(root, artifacts):
     """Write synthetic real-file evidence for ordinary consumer tests, never a native run."""
     inputs = {key: artifacts[key] for key in (
