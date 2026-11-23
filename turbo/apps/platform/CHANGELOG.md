@@ -13,6 +13,29 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1170.0](https://github.com/okou-ai/okou/compare/app-v0.1169.0...app-v0.1170.0) (2026-11-23)
+
+
+### Features
+
+* **app:** group workspace search results by chats and messages ([#50305](https://github.com/okou-ai/okou/issues/50305)) ([7c905cd](https://github.com/okou-ai/okou/commit/7c905cdbc1f90c0b0cf533378c18d2bf4326bb15))
+* **platform:** give the latest chat prompt room to scroll to the top ([#50151](https://github.com/okou-ai/okou/issues/50151)) ([a738388](https://github.com/okou-ai/okou/commit/a738388b05000a471c4b11d52081cc492abe2704))
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Bug Fixes
+
+* **app:** keep connector account panels fixed while scrolling ([#50239](https://github.com/okou-ai/okou/issues/50239)) ([b3b8f64](https://github.com/okou-ai/okou/commit/b3b8f64c0cac2d694f737238052a2edd97c2248f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+    * @okouai/core bumped to 8.864.0
+    * @okouai/ui bumped to 1.21.108
+
 ## [0.1169.0](https://github.com/okou-ai/okou/compare/app-v0.1168.0...app-v0.1169.0) (2026-11-23)
 
 

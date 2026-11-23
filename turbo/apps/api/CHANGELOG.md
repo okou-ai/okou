@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.111.0](https://github.com/okou-ai/okou/compare/api-v2.110.0...api-v2.111.0) (2026-11-23)
+
+
+### Features
+
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Refactoring
+
+* **api:** remove obsolete agent webhook and telemetry routes ([#50195](https://github.com/okou-ai/okou/issues/50195)) ([2e9ac02](https://github.com/okou-ai/okou/commit/2e9ac02642d6365caa2e1c3da02fe3b15dfa58c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+    * @okouai/core bumped to 8.864.0
+    * @okouai/db bumped to 2.62.0
+    * @okouai/pi-agent-runtime bumped to 1.52.51
+
 ## [2.110.0](https://github.com/okou-ai/okou/compare/api-v2.109.0...api-v2.110.0) (2026-11-23)
 
 

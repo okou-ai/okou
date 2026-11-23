@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.49.0](https://github.com/okou-ai/okou/compare/android-v0.48.0...android-v0.49.0) (2026-11-23)
+
+
+### Features
+
+* **android:** align chat list drafts and wide bottom controls ([#50256](https://github.com/okou-ai/okou/issues/50256)) ([18ad5d8](https://github.com/okou-ai/okou/commit/18ad5d8f9ba476b1a0400caef510d680929169f0))
+* **android:** show related chats in chat resources ([#50295](https://github.com/okou-ai/okou/issues/50295)) ([e9c83d6](https://github.com/okou-ai/okou/commit/e9c83d638bb2e6a56f2c915ba0128017971f0f1f))
+
+
+### Bug Fixes
+
+* **android:** align workspace entry focus and checking feedback ([#50284](https://github.com/okou-ai/okou/issues/50284)) ([d3ced66](https://github.com/okou-ai/okou/commit/d3ced66b762fc4fad17b1cf8acec6fa75c1d722d))
+* **android:** keep connector authorization visible while reading methods ([#50294](https://github.com/okou-ai/okou/issues/50294)) ([9012db7](https://github.com/okou-ai/okou/commit/9012db748061a8b1b78ad761d162f4da18fd3ee7))
+* **android:** keep workspace search feedback and position stable ([#50275](https://github.com/okou-ai/okou/issues/50275)) ([34f4b5a](https://github.com/okou-ai/okou/commit/34f4b5a25731e43c17fcccfde5acde63d87561ac))
+* **android:** recover workflow results in workspace search ([#50297](https://github.com/okou-ai/okou/issues/50297)) ([705de92](https://github.com/okou-ai/okou/commit/705de92bea2ba697f3fe396bd4fa757d8b6e56f0))
+
 ## [0.48.0](https://github.com/okou-ai/okou/compare/android-v0.47.0...android-v0.48.0) (2026-11-23)
 
 
