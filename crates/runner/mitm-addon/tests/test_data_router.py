@@ -121,7 +121,7 @@ async def test_each_router_response_registers_its_own_id_after_upstream(
     assert auth_fetch.await_count == 1
     assert registration.await_count == 2
     for request_id, call in zip(ids, registration.await_args_list, strict=True):
-        assert call.args[0] == "https://api.okou.ai/api/webhooks/agent/data-request"
+        assert call.args[0] == "https://api.okou.ai/api/webhooks/run/data-request"
         assert json.loads(call.args[1]) == {
             "runId": json.loads(path.read_text())["sandboxes"]["10.200.0.5"]["runId"],
             "requestId": request_id,
@@ -267,7 +267,7 @@ async def test_rejected_terminal_registration_releases_tracking_without_retrying
     assert endpoint.request_count == 1
     [registration] = endpoint.requests
     assert registration.method == "POST"
-    assert registration.path == "/api/webhooks/agent/data-request"
+    assert registration.path == "/api/webhooks/run/data-request"
     assert registration.json_body() == {"runId": sandbox["runId"], "requestId": request_id}
     assert registration.headers["authorization"] == f"Bearer {sandbox['sandboxToken']}"
 
@@ -323,7 +323,7 @@ async def test_connection_error_after_response_headers_registers_router_identity
         registration.assert_awaited_once()
         [registered] = registration.await_args_list
         sandbox = json.loads(path.read_text())["sandboxes"]["10.200.0.5"]
-        assert registered.args[0] == "https://api.okou.ai/api/webhooks/agent/data-request"
+        assert registered.args[0] == "https://api.okou.ai/api/webhooks/run/data-request"
         assert json.loads(registered.args[1]) == {
             "runId": sandbox["runId"],
             "requestId": request_id,
