@@ -4,7 +4,7 @@ use sandbox::SandboxId;
 
 use crate::host_memory_operations::MemoryOperationError;
 
-use super::{IdlePool, IdleRetirementCandidate, IdleSandboxIdentity};
+use super::{IdleEntry, IdlePool, IdleRetirementCandidate, IdleSandboxIdentity};
 
 /// The caller chooses which original inventory belongs to this batch.
 #[derive(Clone, Copy, Debug)]
@@ -39,11 +39,7 @@ impl IdlePool {
     pub fn logical_retirement_candidates(&self) -> Vec<IdleRetirementSelection> {
         self.ordered_pressure_entries()
             .into_iter()
-            .map(|entry| IdleRetirementSelection {
-                identity: entry.metadata.identity.clone(),
-                sandbox_id: entry.metadata.sandbox_id,
-                candidate: self.retirement_candidate(&entry.metadata.identity),
-            })
+            .map(|entry| self.capture_retirement_selection(entry))
             .collect()
     }
 
@@ -62,11 +58,15 @@ impl IdlePool {
         entries.sort_by(|a, b| a.metadata.identity.cmp(&b.metadata.identity));
         entries
             .into_iter()
-            .map(|entry| IdleRetirementSelection {
-                identity: entry.metadata.identity.clone(),
-                sandbox_id: entry.metadata.sandbox_id,
-                candidate: self.retirement_candidate(&entry.metadata.identity),
-            })
+            .map(|entry| self.capture_retirement_selection(entry))
             .collect()
+    }
+
+    fn capture_retirement_selection(&self, entry: &IdleEntry) -> IdleRetirementSelection {
+        IdleRetirementSelection {
+            identity: entry.metadata.identity.clone(),
+            sandbox_id: entry.metadata.sandbox_id,
+            candidate: self.retirement_candidate(&entry.metadata.identity),
+        }
     }
 }
