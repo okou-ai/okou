@@ -264,12 +264,11 @@ internal fun ConversationRoute(
     val waitingForSearch =
         messageSequence != null &&
             searchTarget == null &&
-            !list.offline &&
             !missing &&
             state.phase != HistoryPhase.Failed
-    LaunchedEffect(model, thread?.id, messageSequence, list.offline) {
+    LaunchedEffect(model, thread?.id, messageSequence) {
         val sequence = messageSequence ?: return@LaunchedEffect
-        if (thread != null && !list.offline && model.searchMessageIsMissing(threadId, sequence)) {
+        if (thread != null && model.searchMessageIsMissing(threadId, sequence)) {
             revealedSearchTarget = null
             onSearchMessageResolved(sequence, false)
         }

@@ -815,6 +815,8 @@ class ChatListRootTest {
         app.responseGate.countDown()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(5_000) { currentList()?.offline == true }
         compose.onNodeWithTag("chat_search_query").performTextInput("history")
 
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))

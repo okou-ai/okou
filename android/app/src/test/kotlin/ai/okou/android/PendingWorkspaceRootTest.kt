@@ -488,14 +488,14 @@ class PendingWorkspaceRootTest {
             (opening?.search?.results?.value?.messages as? SearchRead.Ready)?.rows?.isEmpty() ==
                 true
         }
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(280)
         compose.onNodeWithText("No matching results").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+        compose.onNodeWithContentDescription("Searching…").assertExists()
 
         compose.onNodeWithTag("search_type_Workflows").performClick()
-        compose.mainClock.advanceTimeBy(120)
-        compose.onNodeWithText("Could not load workflows").assertDoesNotExist()
-        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithText("Couldn’t search workflows").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Searching…").assertExists()
 
         compose.onNodeWithTag("search_type_All").performClick()
         compose.runOnIdle { app.preferencesResponse.complete(Unit) }
