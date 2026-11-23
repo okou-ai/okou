@@ -3212,3 +3212,13 @@ The desktop More menu owns email management and restores its focus when closed. 
 The first synchronization checkpoint exposed a residual file-search expectation in the migrated private artwork suite and a widened literal in the search fixture. The follow-up synchronization includes the Android geometry and release changes through main `44760130ad`. All eight App shards and the App type check passed on `57adf2e2af`. The protected debounce and attachment sources match the handoff.
 
 [Fixed selection](https://app.okou.ai/artifacts/fvl53af658.md) · [42 ID dispositions](./test-rebuild-batch-93.tsv) · [Synchronization evidence](./test-rebuild-batch-93-main-sync.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv)
+
+## Batch 94 concentrated revisit
+
+The 30 assigned files contain 40 frozen IDs. One reaches first complete acceptance, 33 have partial regression coverage, two lack direct evidence, and four have sourced upstream dispositions. All 485 files passed first review. The keyboard shortcut hints and browser input card files close after accounting for every selected ID in each file. The other 28 selected files retain their full BDD. The queue moves from 114 to 112.
+
+Returning from Workflows with a narrow browser panel shows two tabs while either width animation is active. Finishing both expands the list to twelve in either order. The restored selection is Example. Page 12 stays selected when the remote browser independently announces it as active. The original automatic-selection clause stays open. The suggestion conflict case now reads the external 409 receipt before checking the sent action, the For you route and the absence of an alert. A 503 control shows an alert.
+
+The four earlier shortcut and sidebar failures and their original descriptions remain in the batch 93 synchronization evidence. The workspace-switcher test exercises the current, available and invited workspaces after upstream changed the default avatar to texture only. The search and attachment regressions retain their handoff sources.
+
+[Fixed selection](https://app.okou.ai/artifacts/ucxnpf7lxf.md) · [40 ID dispositions](./test-rebuild-batch-94.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv) · [Four original failures](./test-rebuild-batch-93-main-sync.tsv) · [Workspace avatar change](https://github.com/okou-ai/okou/pull/50313)

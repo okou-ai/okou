@@ -230,7 +230,40 @@ function expectDenied() {
   expect(panel.queryByText("Browser not live")).toBeNull();
   expect(panel.queryByText("Start browser")).toBeNull();
   expect(panel.queryByText("Browser not found")).toBeNull();
+  expect(
+    panel.queryByText(
+      "This browser does not belong to this chat or has been removed.",
+    ),
+  ).toBeNull();
 }
+
+test.each(["denied", "allowed"] as const)(
+  "An initial %s browser session settles before its renewal could supply the panel",
+  async (access) => {
+    const session = arrangeNativePage(context);
+    const pending = leaseSequence(session)();
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return access === "denied"
+        ? respond(403, permissionError())
+        : respond(200, {
+            browser: session.viewer.browser,
+            viewer: session.viewer,
+          });
+    });
+    try {
+      await session.openPage();
+      if (access === "denied") {
+        await screen.findByText(denied);
+        expectDenied();
+      } else {
+        await pending.arrival.promise;
+        await expectStreamingAt(address);
+      }
+    } finally {
+      pending.reply.resolve(session.viewer.browser);
+    }
+  },
+);
 
 test("browser-session-page-028 Lease denial removes the still-connected native view", async () => {
   const session = arrangeNativePage(context);

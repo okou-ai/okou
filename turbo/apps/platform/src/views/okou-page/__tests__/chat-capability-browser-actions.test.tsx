@@ -199,6 +199,39 @@ test("chat-capability-browser-actions-010 the reopened billing form keeps its em
   expect(reopened.getByLabelText("Invoice code")).toHaveValue("");
   expect(window.location.pathname).toBe(chatPath);
 });
+test("Two cards for the same input request expose one modal editor at a time", async () => {
+  await openConversation(loginFields(), [path, "https://app.okou.ai" + path]);
+  const triggers = await waitFor(() => {
+    const buttons = queryAllByRoleFast("button").filter((button) => {
+      return button.textContent?.trim() === "Enter information";
+    });
+    expect(buttons).toHaveLength(2);
+    return buttons;
+  });
+  click(triggers[0]!);
+  const first = await screen.findByRole("dialog");
+  const fields = within(first);
+  await fill(fields.getByLabelText("Billing email"), "review@example.test");
+  await fill(
+    fields.getByLabelText("Billing password"),
+    "draft for this review",
+  );
+  await fill(fields.getByLabelText("Invoice code"), "431902");
+  expect(queryButton("Enter information")).toBeNull();
+  expect(fields.getByLabelText("Invoice code")).toHaveValue("431902");
+  click(await findEnabledButton("Close", first));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(triggers[1]!);
+  const second = within(await screen.findByRole("dialog"));
+  expect(second.getByLabelText("Billing email")).toHaveValue(
+    "review@example.test",
+  );
+  expect(second.getByLabelText("Billing password")).toHaveValue("");
+  expect(second.getByLabelText("Invoice code")).toHaveValue("");
+});
+
 test("chat-capability-browser-actions-013 confirming already checked consent continues the conversation", async () => {
   const consent: Field = {
     key: "consent",

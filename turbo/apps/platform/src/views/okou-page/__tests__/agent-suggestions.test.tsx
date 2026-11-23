@@ -5,8 +5,8 @@ import {
   type Suggestion,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
-import { screen, within, waitFor, cleanup } from "@testing-library/react";
-import { expect, test } from "vitest";
+import { act, screen, within, waitFor, cleanup } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
@@ -790,9 +790,12 @@ test("A previously visited suggestion becomes available again after its fresh fe
   await expect(activeCard(saved)).resolves.toBeInTheDocument();
 });
 
-test.each([409, 503] as const)(
-  "A loaded option sends its draft when the unavailable suggestion returns %i",
-  async (status) => {
+test.each([
+  ["agent-suggestions-011", 409],
+  ["Rejected consume control", 503],
+] as const)(
+  "%s A loaded option sends its draft when the unavailable suggestion returns %i",
+  async (_label, status) => {
     const item = proposal("Harbor permits");
     const pool = [item];
     feed(pool);
@@ -802,17 +805,35 @@ test.each([409, 503] as const)(
         return sent.resolve(prompt);
       },
     });
+    const release = context.mocks.deferred<void>();
+    const decoded = context.mocks.deferred<void>();
+    const marker = "Another reviewer handled " + item.id;
+    const read = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const body: unknown = await read.call(this);
+      if (
+        this.status === status &&
+        JSON.stringify(body).includes(marker) &&
+        !decoded.settled()
+      ) {
+        decoded.resolve();
+      }
+      return body;
+    });
     const receipt = context.mocks.deferred<void>();
-    context.mocks.api(feedContract.consume, ({ respond }) => {
+    context.mocks.api(feedContract.consume, async ({ respond }) => {
       receipt.resolve();
+      await release.promise;
       return status === 409
         ? respond(409, {
-            error: { code: "CONFLICT", message: "Suggestion already consumed" },
+            error: { code: "CONFLICT", message: marker },
           })
         : respond(503, {
             error: {
               code: "SERVICE_UNAVAILABLE",
-              message: "Suggestion service unavailable",
+              message: marker,
             },
           });
     });
@@ -828,9 +849,70 @@ test.each([409, 503] as const)(
     await receipt.promise;
     await screen.findByText("All caught up");
     expect(location.pathname).toBe("/for-you");
+    expect(screen.queryByRole("alert")).toBeNull();
+    await act(async () => {
+      release.resolve();
+      await decoded.promise;
+    });
     if (status === 503) {
       await screen.findByRole("alert");
     }
+    expect(location.pathname).toBe("/for-you");
     expect(screen.queryAllByRole("alert")).toHaveLength(status === 503 ? 1 : 0);
   },
 );
+
+test("Opening the unread For you row during a refresh separates a preloaded card from its replacement", async () => {
+  const earlier = proposal("Survey the north quay");
+  const later = proposal("Inspect the south pier");
+  const received = context.mocks.deferred<void>();
+  const started = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const decode = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const data: unknown = await decode.call(this);
+    if (!received.settled() && JSON.stringify(data).includes(earlier.id)) {
+      received.resolve();
+    }
+    return data;
+  });
+  context.mocks.api(feedContract.summary, ({ respond }) => {
+    return respond(200, { hasUnread: true });
+  });
+  let refresh = false;
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    if (!refresh) {
+      return respond(200, { items: [earlier] });
+    }
+    if (!started.settled()) {
+      started.resolve();
+    }
+    await release.promise;
+    return respond(200, { items: [later] });
+  });
+  try {
+    await openDeck("/");
+    const row = await findFastControl("link", /For you/);
+    await within(row).findByText("Unread");
+    await received.promise;
+    refresh = true;
+    context.mocks.ably.trigger("agentSuggestionsChanged");
+    await started.promise;
+    click(row);
+    await screen.findByRole("heading", { name: "For you" });
+    expect(
+      screen.queryByRole("article", { name: earlier.content.title }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("article", { name: later.content.title }),
+    ).toBeNull();
+  } finally {
+    release.resolve();
+  }
+  await expect(activeCard(later)).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByRole("article", { name: earlier.content.title }),
+  ).toBeNull();
+});

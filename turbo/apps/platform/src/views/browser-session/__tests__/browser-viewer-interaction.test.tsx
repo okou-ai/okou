@@ -1826,34 +1826,42 @@ test("An address first typed after creation fails can navigate the existing Exam
   await navigateFromEditor(remote, "main", "after-failure.example/path");
 });
 
-test("Choosing the blank address before a failed creation keeps the draft scoped to that tab", async () => {
-  const remote = await openWindow();
-  const creating = await startCreation(remote);
-  await userEvent.click(field());
-  await failMovedCreation(remote, creating);
-  await replaceDraft("retained.example/path");
-  await userEvent.keyboard("{Enter}");
-  expect(field()).toHaveValue("retained.example/path");
-  expect(field()).toHaveFocus();
-  selected("Example");
-  await userEvent.click(input());
-  await replaceDraft("after-failure.example/path");
-  await userEvent.keyboard("{Enter}");
-  expect(field()).toHaveValue("after-failure.example/path");
-  selected("Example");
-  expect(
-    remote.targets.find((target) => {
-      return target.targetId === "main";
-    })?.url,
-  ).toBe(home);
-  await userEvent.keyboard("{Escape}");
-  await navigateFromEditor(remote, "main", "after-failure.example/path");
-  expect(
-    remote.targets.find((target) => {
-      return target.targetId === "main";
-    })?.url,
-  ).toBe("http://after-failure.example/path");
-});
+test.each(["blur", "viewer"] as const)(
+  "Leaving the failed creation draft via %s keeps its destination fenced",
+  async (exit) => {
+    const remote = await openWindow();
+    const creating = await startCreation(remote);
+    await userEvent.click(field());
+    await failMovedCreation(remote, creating);
+    await replaceDraft("retained.example/path");
+    await userEvent.keyboard("{Enter}");
+    expect(field()).toHaveValue("retained.example/path");
+    expect(field()).toHaveFocus();
+    selected("Example");
+    if (exit === "blur") {
+      field().blur();
+    } else {
+      await userEvent.click(input());
+    }
+    expect(field()).not.toHaveFocus();
+    await replaceDraft("after-failure.example/path");
+    await userEvent.keyboard("{Enter}");
+    expect(field()).toHaveValue("after-failure.example/path");
+    selected("Example");
+    expect(
+      remote.targets.find((target) => {
+        return target.targetId === "main";
+      })?.url,
+    ).toBe(home);
+    await userEvent.keyboard("{Escape}");
+    await navigateFromEditor(remote, "main", "after-failure.example/path");
+    expect(
+      remote.targets.find((target) => {
+        return target.targetId === "main";
+      })?.url,
+    ).toBe("http://after-failure.example/path");
+  },
+);
 
 test("A stale capture reply after returning to a navigating page cannot authorize typing", async () => {
   const documentState = context.mocks.browser.visibilityState("visible");

@@ -1,4 +1,8 @@
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
+import { personalAccount } from "./personal-account-settings-fixtures.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { mockNow } from "../../../lib/time.ts";
 import { screen, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -55,6 +59,76 @@ test("settings-model-loading-003 a billing notification updates the reopened bal
   await expect(
     within(after).findByText("25,000 credits"),
   ).resolves.toBeVisible();
+});
+
+test("Reopening Models while both reads are pending shows the account loading state until the subscription arrives", async () => {
+  const resume = context.mocks.deferred<void>();
+  const refreshing = context.mocks.deferred<void>();
+  const accountRead = context.mocks.deferred<void>();
+  const confirmAccount = context.mocks.deferred<void>();
+  const member = personalAccount("ChatGPT", 4);
+  let clock = new Date("2026-06-18T10:00:00Z").getTime();
+  mockNow(() => {
+    return clock;
+  }, context.signal);
+  let suspend = false;
+  context.mocks.api(
+    thirdPartySubscriptionsMainContract.list,
+    async ({ respond }) => {
+      if (!suspend) {
+        return respond(200, { subscriptions: [] });
+      }
+      accountRead.resolve();
+      await confirmAccount.promise;
+      return respond(200, { subscriptions: [member] });
+    },
+  );
+  context.mocks.api(billingStatusContract.get, async ({ respond }) => {
+    if (suspend) {
+      refreshing.resolve();
+      await resume.promise;
+    }
+    return respond(200, defaultBillingStatus());
+  });
+  try {
+    await setupPage({
+      context,
+      path: "/?settings=model",
+      featureSwitches: { [FeatureSwitchKey.SubscriptionLinkingEntry]: true },
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await expect(
+      findAction("button", "Connect account", dialog),
+    ).resolves.toBeEnabled();
+    click(getAction("button", "Close", dialog));
+    clock += 120_000;
+    suspend = true;
+    const menu = await accountMenu();
+    await accountRead.promise;
+    click(within(menu).getByText("Settings"));
+    const reopened = await screen.findByRole("dialog", { name: "Settings" });
+    click(getAction("button", "Preference", reopened));
+    await within(reopened).findByRole("heading", { name: "Preference" });
+    context.mocks.ably.trigger("billing:changed");
+    click(getAction("button", "Models", reopened));
+    await refreshing.promise;
+    expect(
+      within(reopened).queryByRole("heading", { name: "Models" }),
+    ).toBeNull();
+    await expect(
+      within(reopened).findByRole("heading", { name: "Use more models" }),
+    ).resolves.toBeInTheDocument();
+    await within(reopened).findByRole("status", { name: "Loading accounts…" });
+    expect(within(reopened).queryByText("No accounts connected.")).toBeNull();
+    expect(within(reopened).queryAllByText("Connect account")).toHaveLength(0);
+    confirmAccount.resolve();
+    await within(reopened).findByText("member4@example.test");
+  } finally {
+    if (!confirmAccount.settled()) {
+      confirmAccount.resolve();
+    }
+    resume.resolve();
+  }
 });
 
 test("Returning to model settings presents account setup while the updated balance is held", async () => {

@@ -188,77 +188,92 @@ test.each([
   },
 );
 
-test("Returning to Link activity keeps the old purchase until its own refresh completes", async () => {
-  serveWallet(context, () => {
-    return linkStatus("connected");
-  });
-  const cardRead = context.mocks.deferred<void>(),
-    cardDelivery = context.mocks.deferred<void>();
-  const activityRead = context.mocks.deferred<void>(),
-    activityDelivery = context.mocks.deferred<void>();
-  let changed = false;
-  context.mocks.api(walletUserContract.paymentMethods, async ({ respond }) => {
-    if (changed) {
-      if (!cardRead.settled()) {
-        cardRead.resolve();
-      }
-      await cardDelivery.promise;
-    }
-    return respond(200, {
-      data: [
-        changed
-          ? card("business", "Business", "VISA", "4491", true)
-          : card("everyday", "Everyday", "VISA", "3871"),
-      ],
+test.each(["activity", "cards"] as const)(
+  "Returning to Link activity preserves each unchanged section while %s refreshes first",
+  async (first) => {
+    serveWallet(context, () => {
+      return linkStatus("connected");
     });
-  });
-  context.mocks.api(walletUserContract.activity, async ({ respond }) => {
-    if (changed) {
-      if (!activityRead.settled()) {
-        activityRead.resolve();
+    const cardRead = context.mocks.deferred<void>(),
+      cardDelivery = context.mocks.deferred<void>();
+    const activityRead = context.mocks.deferred<void>(),
+      activityDelivery = context.mocks.deferred<void>();
+    let changed = false;
+    context.mocks.api(
+      walletUserContract.paymentMethods,
+      async ({ respond }) => {
+        if (changed) {
+          if (!cardRead.settled()) {
+            cardRead.resolve();
+          }
+          await cardDelivery.promise;
+        }
+        return respond(200, {
+          data: [
+            changed
+              ? card("business", "Business", "VISA", "4491", true)
+              : card("everyday", "Everyday", "VISA", "3871"),
+          ],
+        });
+      },
+    );
+    context.mocks.api(walletUserContract.activity, async ({ respond }) => {
+      if (changed) {
+        if (!activityRead.settled()) {
+          activityRead.resolve();
+        }
+        await activityDelivery.promise;
       }
-      await activityDelivery.promise;
-    }
-    return respond(200, {
-      data: [
-        {
-          id: changed ? "supplies" : "market",
-          sourceId: null,
-          amount: 2150,
-          currency: "usd",
-          date: "2026-09-18",
-          description: changed ? "Updated purchase" : "Recent purchase",
-          origin: "link",
-          category: null,
-          status: "succeeded",
-        },
-      ],
-      hasMore: false,
-      nextCursor: null,
+      return respond(200, {
+        data: [
+          {
+            id: changed ? "supplies" : "market",
+            sourceId: null,
+            amount: 2150,
+            currency: "usd",
+            date: "2026-09-18",
+            description: changed ? "Updated purchase" : "Recent purchase",
+            origin: "link",
+            category: null,
+            status: "succeeded",
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      });
     });
-  });
-  const visibility = context.mocks.browser.visibilityState("visible");
-  await setupPage({ context, path: "/?settings=wallet" });
-  await screen.findByText("Everyday");
-  await screen.findByText("Recent purchase");
-  visibility.changeTo("hidden");
-  fireEvent.blur(window);
-  visibility.changeTo("visible");
-  fireEvent.focus(window);
-  expect(screen.getByText("Everyday")).toBeVisible();
-  expect(screen.getByText("Recent purchase")).toBeVisible();
-  changed = true;
-  context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
-  await Promise.all([cardRead.promise, activityRead.promise]);
-  expect(screen.getByText("Everyday")).toBeVisible();
-  expect(screen.getByText("Recent purchase")).toBeVisible();
-  cardDelivery.resolve();
-  await screen.findByText("Business");
-  const cards = screen.getByRole("list", { name: "Your cards in Link" });
-  expect(within(cards).getByRole("listitem")).toHaveTextContent("Default");
-  expect(screen.queryByText("Everyday")).toBeNull();
-  expect(screen.getByText("Recent purchase")).toBeVisible();
-  activityDelivery.resolve();
-  await screen.findByText("Updated purchase");
-  expect(screen.queryByText("Recent purchase")).toBeNull();
-});
+    const visibility = context.mocks.browser.visibilityState("visible");
+    await setupPage({ context, path: "/?settings=wallet" });
+    await screen.findByText("Everyday");
+    await screen.findByText("Recent purchase");
+    visibility.changeTo("hidden");
+    fireEvent.blur(window);
+    visibility.changeTo("visible");
+    fireEvent.focus(window);
+    expect(screen.getByText("Everyday")).toBeVisible();
+    expect(screen.getByText("Recent purchase")).toBeVisible();
+    changed = true;
+    context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
+    await Promise.all([cardRead.promise, activityRead.promise]);
+    expect(screen.getByText("Everyday")).toBeVisible();
+    expect(screen.getByText("Recent purchase")).toBeVisible();
+    const activityFirst = first === "activity";
+    const firstReply = activityFirst ? activityDelivery : cardDelivery;
+    const lastReply = activityFirst ? cardDelivery : activityDelivery;
+    firstReply.resolve();
+    await screen.findByText(activityFirst ? "Updated purchase" : "Business");
+    expect(
+      screen.getByText(activityFirst ? "Everyday" : "Recent purchase"),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(activityFirst ? "Business" : "Updated purchase"),
+    ).toBeNull();
+    lastReply.resolve();
+    await screen.findByText("Updated purchase");
+    await screen.findByText("Business");
+    const cards = screen.getByRole("list", { name: "Your cards in Link" });
+    expect(within(cards).getByRole("listitem")).toHaveTextContent("Default");
+    expect(screen.queryByText("Everyday")).toBeNull();
+    expect(screen.queryByText("Recent purchase")).toBeNull();
+  },
+);

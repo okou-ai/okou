@@ -581,3 +581,66 @@ test.each([
     expect(live.errors.reports).toStrictEqual(before);
   },
 );
+
+test("Manual reconnect creates the next tab in the reassigned window after its descriptor arrives", async () => {
+  const live = await online();
+  let mayReconnect = false;
+  const waiting = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const assigned = {
+    ...live.viewer.browser,
+    window: {
+      instanceId: crypto.randomUUID(),
+      primaryWindowId: foreign.windowId,
+    },
+  };
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    if (!mayReconnect) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Window was closed" },
+      });
+    }
+    if (!waiting.settled()) {
+      waiting.resolve();
+    }
+    await release.promise;
+    return respond(200, {
+      browser: assigned,
+      viewer: { ...live.viewer, browser: assigned, cdpUrl: endpoint },
+    });
+  });
+  live.cdp.disconnect({ code: 1006 });
+  live.time(0, 32);
+  const reconnect = await screen.findByText("Reconnect", {
+    selector: "button",
+  });
+  mayReconnect = true;
+  try {
+    await userEvent.click(reconnect);
+    await waiting.promise;
+    expect(proxy()).toBeDisabled();
+    expect(newTab()).toBeDisabled();
+    expect(
+      screen.queryByLabelText(foreign.title, { selector: '[role="tab"]' }),
+    ).toBeNull();
+  } finally {
+    release.resolve();
+  }
+  await expectStreamingAt(foreign.url);
+  expect(pageTab(foreign.title)).toHaveAttribute("aria-selected", "true");
+  for (const former of [primary, sibling]) {
+    expect(
+      screen.queryByLabelText(former.title, { selector: '[role="tab"]' }),
+    ).toBeNull();
+  }
+  await userEvent.click(newTab());
+  await waitFor(() => {
+    expect(pageTab("New tab")).toHaveAttribute("aria-selected", "true");
+    expect(live.cdp.targets).toContainEqual(
+      expect.objectContaining({
+        url: "about:blank",
+        windowId: foreign.windowId,
+      }),
+    );
+  });
+});

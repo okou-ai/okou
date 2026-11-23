@@ -164,47 +164,67 @@ test("chat-navigation-browser-012 Narrow Page 12 admission releases after both n
   expect(tabs()).toContain("Page 12");
 });
 
-test("Leaving the selected browser page removes its panel while preserving the chat list", async () => {
-  const resize = nativeGeometry(180);
-  const motion = nativeTransitions();
-  const { open } = await openBrowserChat(context, "live", false, {
-    many: true,
-  });
-  click(open);
-  await remoteBrowserInput();
-  await selectLast();
-  await admission(2, "Page 12");
-  click(await findFastControl("button", "Hide chat list"));
-  const show = await findFastControl("button", "Show chat list");
-  const old = owner("panel");
-  old.style.flexGrow = "0";
-  motion(old, true);
-  click(show);
-  const list = await waitFor(() => {
-    return owner("chat-list");
-  });
-  motion(list, true);
-  click(await findFastControl("link", "Workflows"));
-  await waitFor(() => {
-    expect(location.pathname).toBe("/workflows");
+test.each([
+  ["panel", false],
+  ["chat-list", false],
+  ["panel", true],
+  ["chat-list", true],
+] as const)(
+  "Returning from Workflows waits for both widths when %s finishes first (remote active notification: %s)",
+  async (firstOwner, reportsActivePage) => {
+    const resize = nativeGeometry(180);
+    const motion = nativeTransitions();
+    const { open, cdp } = await openBrowserChat(context, "live", false, {
+      many: true,
+    });
+    click(open);
+    await remoteBrowserInput();
+    await selectLast();
+    await admission(2, "Page 12");
+    click(await findFastControl("button", "Hide chat list"));
+    const show = await findFastControl("button", "Show chat list");
+    const old = owner("panel");
+    old.style.flexGrow = "0";
+    motion(old, true);
+    click(show);
+    const list = await waitFor(() => {
+      return owner("chat-list");
+    });
+    motion(list, true);
+    click(await findFastControl("link", "Workflows"));
+    await waitFor(() => {
+      expect(location.pathname).toBe("/workflows");
+      expect(old).not.toBeInTheDocument();
+    });
+    expect(list).toBeInTheDocument();
+    act(() => {
+      history.back();
+    });
+    click(await findFastControl("button", /Open .*browser/i));
+    await remoteBrowserInput();
     expect(old).not.toBeInTheDocument();
-  });
-  expect(list).toBeInTheDocument();
-  act(() => {
-    history.back();
-  });
-  click(await findFastControl("button", /Open .*browser/i));
-  await remoteBrowserInput();
-  expect(owner("panel")).not.toBe(old);
-  expect(owner("chat-list")).toBe(list);
-  const restored = owner("panel");
-  await admission(2, "Example");
-  motion(restored, true);
-  resize(800);
-  await admission(2, "Example");
-  motion(list, false);
-  await admission(2, "Example");
-  motion(restored, false);
-  await admission(12, "Example");
-  expect(tabs()).toContain("Page 12");
-});
+    expect(list).toBeInTheDocument();
+    const restored = owner("panel");
+    await admission(2, "Example");
+    const expected = reportsActivePage ? "Page 12" : "Example";
+    if (reportsActivePage) {
+      cdp.event("BrowserUse.activeTargetChanged", { targetId: "page-12" });
+      await admission(2, expected);
+    }
+    motion(restored, true);
+    resize(800);
+    await admission(2, expected);
+    const first = firstOwner === "panel" ? restored : list;
+    const last = firstOwner === "panel" ? list : restored;
+    motion(first, false);
+    await admission(2, expected);
+    motion(last, false);
+    await admission(12, expected);
+    await expect(findFastControl("tab", "Page 12")).resolves.toHaveAttribute(
+      "aria-selected",
+      String(reportsActivePage),
+    );
+    click(await findFastControl("tab", "Page 12"));
+    await admission(12, "Page 12");
+  },
+);

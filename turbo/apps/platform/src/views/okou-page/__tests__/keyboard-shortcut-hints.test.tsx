@@ -69,3 +69,24 @@ test("The Mac toggle advertises its shortcut on the currently available list con
   await keyboard.keyboard("{Meta>}b{/Meta}");
   await screen.findByLabelText("Show chat list");
 });
+
+test("Starting with the chat list open exposes Show and its Mac shortcut only after collapsing", async () => {
+  const editor = await focusConversation();
+  const user = userEvent.setup();
+  const expand = screen.queryByLabelText("Show chat list");
+  if (expand) {
+    await user.click(expand);
+  }
+  await screen.findByTestId("chat-list-column");
+  await user.click(editor);
+  await user.keyboard("{Meta>}b{/Meta}");
+  const show = await screen.findByLabelText("Show chat list");
+  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  await user.hover(show);
+  await expect(
+    screen.findByRole("tooltip", { name: /Show chat list.*⌘B/ }),
+  ).resolves.toBeVisible();
+  await user.keyboard("{Meta>}b{/Meta}");
+  await screen.findByTestId("chat-list-column");
+  expect(screen.queryByLabelText("Show chat list")).toBeNull();
+});
