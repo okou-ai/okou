@@ -173,8 +173,7 @@ test("Lab reads the embedded Banking preference before showing the service's lat
   document.head.append(bootstrap);
   let network = false;
   const confirmed = new Map<string | null, boolean>();
-  let token = "lab-reader";
-  mockedClerk.sessionGetToken.mockResolvedValue(token);
+  mockedClerk.sessionGetToken.mockResolvedValue("lab-reader");
   context.mocks.api(featureSwitchesContract.get, ({ request, respond }) => {
     confirmed.set(request.headers.get("Authorization"), network);
     return respond(200, {
@@ -199,10 +198,10 @@ test("Lab reads the embedded Banking preference before showing the service's lat
       return screen.getByRole("switch", { name: /^banking\b/i });
     };
     expect(toggle()).toBeChecked();
-    token = "lab-editor";
+    mockedClerk.sessionGetToken.mockResolvedValue("lab-editor");
     click(toggle());
     await waitFor(() => {
-      expect(confirmed.get("Bearer lab-editor")).toBeFalsy();
+      expect([...confirmed]).toContainEqual(["Bearer lab-editor", false]);
       expect(toggle()).not.toBeChecked();
       expect(toggle()).toBeEnabled();
     });
@@ -210,10 +209,10 @@ test("Lab reads the embedded Banking preference before showing the service's lat
     await waitFor(() => {
       expect(reset).toBeEnabled();
     });
-    token = "lab-reset";
+    mockedClerk.sessionGetToken.mockResolvedValue("lab-reset");
     click(reset);
     await waitFor(() => {
-      expect(confirmed.get("Bearer lab-reset")).toBeTruthy();
+      expect([...confirmed]).toContainEqual(["Bearer lab-reset", true]);
       expect(toggle()).toBeChecked();
     });
   } finally {
