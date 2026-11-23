@@ -66,9 +66,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     val defaultReplyStarted = CountDownLatch(1)
     @Volatile var defaultReplyGate: CountDownLatch? = null
     @Volatile var chatOverrideReplyGate: CountDownLatch? = null
+    @Volatile var chatOverrideReadReplyGate: CountDownLatch? = null
     @Volatile var rejectChatOverride: Int? = null
     @Volatile var loseChatOverrideReply = false
+    @Volatile var failChatOverrideReads = false
     val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
+    val chatOverrideReads = CopyOnWriteArrayList<Pair<String, String>>()
     private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
@@ -210,11 +213,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         defaultReplyStarted.countDown()
                         defaultReplyGate?.await()
                     }
-                    if (
-                        request.method == "PUT" &&
-                            url.pathSegments.getOrNull(3) == "connector-access"
-                    )
-                        chatOverrideReplyGate?.await()
+                    if (url.pathSegments.getOrNull(3) == "connector-access") {
+                        if (request.method == "PUT") chatOverrideReplyGate?.await()
+                        if (request.method == "GET") chatOverrideReadReplyGate?.await()
+                    }
                     return response
                 }
             }
@@ -516,7 +518,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         val slug =
             if (id == null) {
                 if (request.method != "GET") return rejected(400)
-                querySlug ?: return rejected(400)
+                val slug = querySlug ?: return rejected(400)
+                chatOverrideReads += threadId to slug
+                if (failChatOverrideReads) return rejected(503)
+                slug
             } else {
                 if (request.method != "PUT") return rejected(400)
                 val body = body(request)
@@ -565,6 +570,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         chatOverrideReplyGate?.countDown()
+        chatOverrideReadReplyGate?.countDown()
         https.use { api.close() }
     }
 

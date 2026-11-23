@@ -251,7 +251,7 @@ class ConnectorService(private val api: ApiClient) {
         }
     }
 
-    internal suspend fun chatAccess(
+    private suspend fun chatAccess(
         threadId: String,
         slug: String,
     ): List<ChatConnectorAccessAccountsItem> =
@@ -270,36 +270,43 @@ class ConnectorService(private val api: ApiClient) {
     internal suspend fun setChatOverride(
         threadId: String,
         choice: ChatConnectorOverride,
-    ): List<ChatConnectorAccessAccountsItem> {
-        val accounts =
-            try {
-                api.write {
-                        chatConnectorOverride(
-                            it,
-                            threadId,
-                            choice.connectionId,
-                            ChatConnectorOverrideRequest(
-                                ChatConnectorOverrideRequestTargetVariant1(
-                                    ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
-                                    choice.slug,
-                                ),
-                                choice.enabled,
+        canReadBack: () -> Boolean,
+        onChecking: () -> Unit = {},
+    ): List<ChatConnectorAccessAccountsItem> =
+        try {
+            api.write {
+                    chatConnectorOverride(
+                        it,
+                        threadId,
+                        choice.connectionId,
+                        ChatConnectorOverrideRequest(
+                            ChatConnectorOverrideRequestTargetVariant1(
+                                ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
+                                choice.slug,
                             ),
-                        )
-                    }
-                    .accountsFor(choice.slug)
-            } catch (error: ApiFailure.Http) {
-                if (choice.enabled != null || error.status != 404) throw error
-                // A removed account no longer needs its override cleared. Confirm absence in this
-                // chat.
-                chatAccess(threadId, choice.slug).also { read ->
-                    if (read.any { it.connectionId == choice.connectionId }) throw error
+                            choice.enabled,
+                        ),
+                    )
                 }
+                .accountsFor(choice.slug)
+                .also { if (!it.confirms(choice)) throw ApiFailure.IncompatibleResponse() }
+        } catch (error: ApiFailure) {
+            val missingReset =
+                choice.enabled == null && error is ApiFailure.Http && error.status == 404
+            if (!missingReset && (error.connectionFailed() || !error.hasUncertainResponse()))
+                throw error
+            if (!canReadBack()) throw error
+
+            if (!missingReset) onChecking()
+            chatAccess(threadId, choice.slug).also { accounts ->
+                // A reset of a removed account is complete when the account is absent from the
+                // chat.
+                val confirmed =
+                    if (missingReset) accounts.none { it.connectionId == choice.connectionId }
+                    else accounts.confirms(choice)
+                if (!confirmed) throw error
             }
-        val exact = accounts.singleOrNull { it.connectionId == choice.connectionId }
-        if (exact?.overrideEnabled != choice.enabled) throw ApiFailure.IncompatibleResponse()
-        return accounts
-    }
+        }
 
     internal suspend fun inspect(
         connected: Map<String, ConnectedService>,
@@ -768,6 +775,9 @@ private fun ChatConnectorAccess.accountsFor(slug: String): List<ChatConnectorAcc
         throw ApiFailure.IncompatibleResponse()
     return accounts
 }
+
+private fun List<ChatConnectorAccessAccountsItem>.confirms(choice: ChatConnectorOverride) =
+    firstOrNull { it.connectionId == choice.connectionId }?.overrideEnabled == choice.enabled
 
 private fun ConnectorOverviewItem.directoryEntry(slug: String) =
     ConnectorEntry(

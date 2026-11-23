@@ -1,7 +1,5 @@
 package ai.okou.android.connectors
 
-import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
 import ai.okou.android.chat.ComposerTarget
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -24,7 +22,20 @@ internal data class ChatConnectorGroup(
     val accounts: List<ChatConnectorAccount>,
 )
 
-internal data class ChatConnectorSave(val choice: ChatConnectorOverride, val saving: Boolean)
+internal enum class ChatConnectorSavePhase {
+    Saving,
+    Checking,
+    Unconfirmed,
+    Failed,
+}
+
+internal data class ChatConnectorSave(
+    val choice: ChatConnectorOverride,
+    val phase: ChatConnectorSavePhase,
+) {
+    val saving: Boolean
+        get() = phase == ChatConnectorSavePhase.Saving || phase == ChatConnectorSavePhase.Checking
+}
 
 internal data class ChatConnectorOptionsState(
     val target: String? = null,
@@ -71,18 +82,44 @@ internal class ChatConnectorOptions(
         val threadId = target.threadId ?: return
         if (!current(target) || changes.isEmpty() || mutable.value.save?.saving == true) return
         readRevision++
-        mutable.value = mutable.value.copy(save = ChatConnectorSave(changes.first(), saving = true))
+        mutable.value =
+            mutable.value.copy(
+                save = ChatConnectorSave(changes.first(), ChatConnectorSavePhase.Saving),
+            )
         scope.launch {
             for (choice in changes) {
                 if (!current(target)) return@launch
-                mutable.value = mutable.value.copy(save = ChatConnectorSave(choice, saving = true))
-                val accounts = confirmChange(threadId, choice)
+                val saving = ChatConnectorSave(choice, ChatConnectorSavePhase.Saving)
+                mutable.value = mutable.value.copy(save = saving)
+                val accounts =
+                    try {
+                        service.setChatOverride(
+                            threadId,
+                            choice,
+                            canReadBack = { current(target) },
+                            onChecking = {
+                                mutable.value =
+                                    mutable.value.copy(
+                                        save = saving.copy(phase = ChatConnectorSavePhase.Checking),
+                                    )
+                            },
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        onError(error)
+                        if (current(target)) {
+                            val snapshot = mutable.value
+                            val phase =
+                                if (snapshot.save?.phase == ChatConnectorSavePhase.Checking)
+                                    ChatConnectorSavePhase.Unconfirmed
+                                else ChatConnectorSavePhase.Failed
+                            mutable.value = snapshot.copy(save = saving.copy(phase = phase))
+                        }
+                        return@launch
+                    }
                 if (!current(target)) return@launch
                 val snapshot = mutable.value
-                if (accounts == null) {
-                    mutable.value = snapshot.copy(save = ChatConnectorSave(choice, saving = false))
-                    return@launch
-                }
                 val byId = accounts.associateBy { it.connectionId }
                 val groups =
                     snapshot.read.data.orEmpty().mapNotNull { group ->
@@ -107,39 +144,4 @@ internal class ChatConnectorOptions(
     }
 
     private fun current(target: ComposerTarget) = authorized() && mutable.value.target == target.key
-
-    private suspend fun confirmChange(
-        threadId: String,
-        choice: ChatConnectorOverride,
-    ): List<ChatConnectorAccessAccountsItem>? =
-        try {
-            service.setChatOverride(threadId, choice)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            onError(error)
-            // A lost response can follow a committed write. Check this account without replaying
-            // it.
-            if (
-                authorized() &&
-                    (error is ApiFailure.Network && !error.connectionFailed() ||
-                        error is ApiFailure.IncompatibleResponse ||
-                        error is ApiFailure.Http && (error.status >= 500 || error.status == 408))
-            )
-                readBack(threadId, choice)
-            else null
-        }
-
-    private suspend fun readBack(threadId: String, choice: ChatConnectorOverride) =
-        try {
-            service.chatAccess(threadId, choice.slug).takeIf { accounts ->
-                accounts.find { it.connectionId == choice.connectionId }?.overrideEnabled ==
-                    choice.enabled
-            }
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: Exception) {
-            onError(error)
-            null
-        }
 }
