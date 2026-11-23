@@ -28,6 +28,9 @@ import androidx.test.uiautomator.Direction
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
+import com.clerk.api.Clerk
+import com.clerk.api.sso.OAuthProvider
+import com.clerk.api.sso.providerName
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.FixMethodOrder
@@ -162,22 +165,43 @@ class ScreenshotScenario {
         val identifier = By.res("clerk.auth.start.identifier")
         try {
             auth.state.value = AuthenticationState()
+            instrumentation.runOnMainSync { ClerkAuthentication(app).initialize() }
             ActivityScenario.launch(MainActivity::class.java).use {
                 find(R.string.app_name)
                 check(!device.hasObject(identifier))
                 ScreenshotCapture.capture("restoring-brand.png")
 
-                instrumentation.runOnMainSync {
-                    ClerkAuthentication(app).initialize()
-                    auth.state.value = AuthenticationState(initialized = true)
-                }
+                auth.state.value = AuthenticationState(initialized = true)
                 find(identifier)
                 find(By.res("clerk.auth.start.continue"))
                 find(R.string.app_name)
+                awaitSocialProviderLabels()
                 ScreenshotCapture.capture("sign-in.png")
             }
         } finally {
             auth.state.value = previous
+        }
+    }
+
+    private fun awaitSocialProviderLabels() {
+        val providers = Clerk.socialProviders.values.filter { it.enabled && it.authenticatable }
+        for (config in providers) {
+            val provider = OAuthProvider.fromStrategy(config.strategy)
+            val name = provider.providerName
+            val label = app.getString(com.clerk.ui.R.string.continue_with, name)
+            check(
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean =
+                            device.hasObject(By.desc(label)) ||
+                                device.hasObject(By.text(label)) ||
+                                device.hasObject(By.text(name))
+                    },
+                    20_000,
+                ) == true,
+            ) {
+                "The Clerk button for $name never displayed its icon or label"
+            }
         }
     }
 
