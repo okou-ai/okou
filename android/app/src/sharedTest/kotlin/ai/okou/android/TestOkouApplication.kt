@@ -167,6 +167,14 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun activateModelAccount(accountId: String) =
                 (fixture ?: canonical.value).activateModelAccount(accountId)
 
+            override suspend fun emailSubscription() =
+                checkNotNull(fixture) { "No email subscription backend in this fixture" }
+                    .emailSubscription()
+
+            override suspend fun updateEmailSubscription(subscribed: Boolean) =
+                checkNotNull(fixture) { "No email subscription backend in this fixture" }
+                    .updateEmailSubscription(subscribed)
+
             override suspend fun sendControl(request: SendRequest) =
                 checkNotNull(controlService) { "No control backend in this external fixture" }
                     .sendControl(request)

@@ -34,6 +34,7 @@ import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
+import ai.okou.android.api.generated.UpdateEmailSubscriptionRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -403,6 +404,12 @@ class ApiClient(
 
     suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = write {
         updateDefaultModelPreference(it, update)
+    }
+
+    suspend fun emailSubscription() = read { emailSubscription(it) }
+
+    suspend fun updateEmailSubscription(subscribed: Boolean) = write {
+        updateEmailSubscription(it, UpdateEmailSubscriptionRequest(subscribed))
     }
 
     suspend fun featureSwitches() = read { featureSwitches(it) }

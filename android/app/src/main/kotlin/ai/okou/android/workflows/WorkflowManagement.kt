@@ -294,7 +294,7 @@ internal fun WorkflowEditor(
 ) {
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
-    val available = !state.writing && detail.canChange(activeRule?.id)
+    val available = !state.writing && detail.canEdit(editor)
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
     val connector = connectionRequired?.connector
     val showConnectionAction = connector != null && state.connections != null

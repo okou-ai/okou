@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -122,7 +123,6 @@ class WorkspaceSettingsModelTest {
                             AccountSwitchPhase.Unconfirmed
                     }
                 assertTrue(unconfirmed.accounts.value!!.first().isActive == true)
-                assertTrue(unconfirmed.switchFailures.isEmpty())
                 model.activate(SettingsApiFixture.alternateAccount)
                 model.visible(null)
                 accountReadsAvailable = true
@@ -130,7 +130,6 @@ class WorkspaceSettingsModelTest {
                 val confirmed = model.uiState.first { it.switching.isEmpty() }
                 assertEquals(accounts.map { it.id }, confirmed.accounts.value!!.map { it.id })
                 assertTrue(confirmed.accounts.value[1].isActive == true)
-                assertTrue(confirmed.switchFailures.isEmpty())
                 assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
 
                 store.clear()
@@ -142,6 +141,32 @@ class WorkspaceSettingsModelTest {
             }
         } finally {
             closeOwners(store, reopenedStore)
+        }
+    }
+
+    @Test
+    fun rejectedAccountSwitchReportsOnceAndKeepsTheConfirmedAccount() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                val model = settings(store, api)
+                model.visible(SettingsDestination.ModelAccounts)
+                model.uiState.first { it.accounts.value != null }
+                fixture.activationStatus = 400
+                val notice = async { model.notices.first() }
+                model.activate(SettingsApiFixture.alternateAccount)
+                assertEquals(SettingsNotice.ModelAccountSwitchFailed, notice.await())
+                assertTrue(model.uiState.value.switching.isEmpty())
+                assertEquals(
+                    SettingsApiFixture.primaryAccount,
+                    model.uiState.value.accounts.value!!.first { it.isActive == true }.id,
+                )
+                assertEquals(listOf(SettingsApiFixture.alternateAccount), fixture.activations)
+            }
+        } finally {
+            closeOwners(store)
         }
     }
 

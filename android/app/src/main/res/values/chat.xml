@@ -18,9 +18,9 @@
     <string name="chat_list_title">Chats</string>
     <string name="chat_refresh">Refresh chats</string>
     <string name="chat_loading">Loading chats…</string>
-    <string name="chat_refresh_failed">Could not refresh. Showing the last loaded chats.</string>
+    <string name="chat_refresh_failed">Could not refresh unread status.</string>
     <string name="chat_cache_unavailable">Offline storage is unavailable. These chats may not be available after restarting.</string>
-    <string name="chat_metadata_unavailable">Some Okou or Project information is unavailable.</string>
+    <string name="chat_metadata_unavailable">Project information is temporarily unavailable.</string>
     <string name="chat_inbox">Inbox</string>
     <string name="chat_mark_all_read">Mark all as read</string>
     <string name="chat_mark_all_read_unconfirmed">Some chats may still be unread.</string>
