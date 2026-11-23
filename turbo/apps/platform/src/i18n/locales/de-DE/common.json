@@ -1959,7 +1959,7 @@
       },
       "slashPanel": {
         "browseAll": "Alle Vorlagen durchsuchen",
-        "hint": "Workflows suchen oder eine Vorlage auswählen…",
+        "hint": "Aktion auswählen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
       "temporarilySwitchTo": "Vorübergehend wechseln zu",

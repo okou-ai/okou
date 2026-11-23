@@ -1953,7 +1953,7 @@
       },
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
-        "hint": "搜尋工作流程或選擇範本…",
+        "hint": "選擇一項操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",

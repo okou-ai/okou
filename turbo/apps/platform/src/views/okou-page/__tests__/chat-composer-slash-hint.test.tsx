@@ -37,7 +37,7 @@ test("chat-composer-slash-hint-002 the workflow hint follows a bare slash in the
   const hint = () => {
     return editor.querySelector("[data-placeholder]");
   };
-  expect(hint()).toBeInTheDocument();
+  expect(hint()).toHaveAttribute("data-placeholder", " choose an action");
   expect(editor).toHaveTextContent(/^\/$/);
   await userEvent.keyboard("week");
   const menu = await screen.findByTestId("slash-workflow-menu");
@@ -47,7 +47,7 @@ test("chat-composer-slash-hint-002 the workflow hint follows a bare slash in the
   await userEvent.keyboard(" /");
   await screen.findByTestId("slash-workflow-menu");
   const before = editor.textContent;
-  expect(hint()).toBeInTheDocument();
+  expect(hint()).toHaveAttribute("data-placeholder", " choose an action");
   await userEvent.keyboard("{Escape}");
   expect(hint()).toBeNull();
   expect(editor.textContent).toBe(before);
@@ -59,7 +59,10 @@ test("The home composer dismisses a second bare slash hint while preserving the 
   await userEvent.keyboard("/");
   const firstMenu = await screen.findByTestId("slash-workflow-menu");
   expect(editor.textContent).toBe("/");
-  expect(editor.querySelector("[data-placeholder]")).toBeInTheDocument();
+  expect(editor.querySelector("[data-placeholder]")).toHaveAttribute(
+    "data-placeholder",
+    " choose an action",
+  );
   await userEvent.keyboard("pr");
   const choice = await findFastControl("button", /pr-123-review/, firstMenu);
   expect(editor.querySelector("[data-placeholder]")).toBeNull();
@@ -69,7 +72,10 @@ test("The home composer dismisses a second bare slash hint while preserving the 
   await userEvent.keyboard(" /");
   await screen.findByTestId("slash-workflow-menu");
   const accepted = editor.textContent;
-  expect(editor.querySelector("[data-placeholder]")).toBeInTheDocument();
+  expect(editor.querySelector("[data-placeholder]")).toHaveAttribute(
+    "data-placeholder",
+    " choose an action",
+  );
   await userEvent.keyboard("{Escape}");
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   expect(editor.querySelector("[data-placeholder]")).toBeNull();
@@ -86,6 +92,7 @@ test("A home workflow inserted at the beginning keeps the numbered suffix after 
   await userEvent.keyboard("/");
   const panel = await screen.findByTestId("slash-workflow-menu");
   const hint = editor.querySelector("[data-placeholder]");
+  expect(hint).toHaveAttribute("data-placeholder", " choose an action");
   expect(hint?.textContent).toBe("/");
   expect(hint?.nextSibling?.textContent).toBe(" 131");
   expect(editor.textContent).toBe("/ 131");

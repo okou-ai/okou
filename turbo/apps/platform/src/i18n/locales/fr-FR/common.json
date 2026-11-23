@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "hint": "Rechercher un workflow ou choisir un modèle…",
+        "hint": "Choisir une action",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",

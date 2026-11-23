@@ -96,6 +96,9 @@ async function shortcut(key: "ArrowUp" | "ArrowDown") {
 test("chat-navigation-position-restoration-001 The chat shortcuts restore the current message 64 pixels below the viewport", async () => {
   const { current, peer } = await library("Current", "conversation");
   await read("Current message 2", 64);
+  await expect(
+    findFastControl("link", "Planning notes"),
+  ).resolves.toBeVisible();
   await shortcut("ArrowUp");
   const next = await surface("Planning message 2");
   expect(location.pathname).toBe("/chats/" + peer.id);

@@ -13,7 +13,10 @@ import {
 import { expect, test, vi } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import {
   publishRunUpdate,
@@ -376,3 +379,36 @@ test("Closing Automations preserves a history reader's visible answer and distan
     expect(pane.scrollHeight - pane.scrollTop - pane.clientHeight).toBe(tail);
   });
 });
+
+test.each(["layout change", "tap"])(
+  "The transcript shows the incoming reply at the bottom after a %s without a reading gesture",
+  async (cause) => {
+    const history = pagedTurns(10);
+    const pane = await openPagedHistory(history);
+    const messages = within(pane);
+    await messages.findByText("Locator answer 10");
+    await expectTail(pane);
+    await waitFor(() => {
+      expect(context.mocks.ably.hasSharedDatabaseSubscription()).toBeTruthy();
+    });
+    if (cause === "tap") {
+      fireEvent.pointerDown(pane);
+      fireEvent.pointerUp(pane);
+    }
+    const before = pane.scrollTop;
+    pane.scrollTop = before - 80;
+    fireEvent.scroll(pane);
+    expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
+    const incoming = messages.findByText("The dispatch ledger is ready");
+    history.push(...pagedTurn(11, "The dispatch ledger is ready"));
+    publishRunUpdate();
+    await expect(incoming).resolves.toBeVisible();
+    await waitFor(
+      () => {
+        expect(pane.scrollTop).toBe(pane.scrollHeight - pane.clientHeight);
+        expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
+      },
+      { container: pane },
+    );
+  },
+);
