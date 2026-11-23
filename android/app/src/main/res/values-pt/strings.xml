@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Verificando espaços de trabalho…</string>
+    <string name="auth_check_failed">Não foi possível verificar o acesso.</string>
+    <string name="auth_selection_failed">Não foi possível abrir este espaço de trabalho.</string>
+    <string name="auth_sign_out_failed">Não foi possível sair.</string>
     <string name="composer_sync_loading">Carregando rascunho salvo…</string>
     <string name="composer_sync_saving">Sincronizando rascunho…</string>
     <string name="composer_sync_failed">Falha ao sincronizar o rascunho. Seu texto permanece neste dispositivo.</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">Escuro</string>
     <string name="on_this_device">Neste dispositivo</string>
     <string name="retry">Tentar novamente</string>
-    <string name="auth_restoring">Restaurando sua sessão…</string>
     <string name="auth_preparing_workspace">Preparando seu espaço de trabalho…</string>
     <string name="auth_choose_workspace">Escolha seu espaço de trabalho</string>
     <string name="auth_no_workspace">Ainda não há espaços de trabalho acessíveis</string>

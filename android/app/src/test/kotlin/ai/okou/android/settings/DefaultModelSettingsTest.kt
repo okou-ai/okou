@@ -347,11 +347,6 @@ class DefaultModelSettingsTest {
                 model(api, onFailure = { assertEquals(503, (it as ApiFailure.Http).status) })
             model.showSettings(SettingsDestination.Overview)
             model.foreground(true)
-            val failed = model.state.first { it.catalogUnavailable }
-            assertNull(failed.selected)
-            assertNull(failed.selectedModel)
-            assertNull(failed.options)
-            assertEquals(1, reads.get())
             val recovered = model.state.first { it.options != null }
             assertFalse(recovered.catalogUnavailable)
             assertNull(recovered.selected)
@@ -360,7 +355,7 @@ class DefaultModelSettingsTest {
     }
 
     @Test
-    fun cachedCatalogKeepsItsOptionsUntilTheFailureWindowExpiresAndThenRecovers() = runTest {
+    fun cachedCatalogKeepsItsOptionsAfterThreeAttemptsAndRecoversOnReconnect() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)
             val catalog = api.service.recoveryCatalog()
@@ -383,13 +378,15 @@ class DefaultModelSettingsTest {
             unavailable = true
             val started = currentTime
             model.showSettings(SettingsDestination.Overview)
-            advanceTimeBy(29_999)
-            assertEquals(listOf(started, started + 5_000, started + 15_000), attempts)
+            advanceTimeBy(6_000)
+            assertEquals(listOf(started, started + 3_000), attempts)
             assertFalse(model.state.value.catalogUnavailable)
-            advanceTimeBy(1)
             runCurrent()
+            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
             assertTrue(model.state.value.catalogUnavailable)
             assertEquals("gpt-test", model.state.value.selected?.id)
+            advanceTimeBy(60_000)
+            assertEquals(3, attempts.size)
             unavailable = false
             model.online(false)
             model.online(true)

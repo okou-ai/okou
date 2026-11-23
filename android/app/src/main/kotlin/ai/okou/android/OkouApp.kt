@@ -21,6 +21,7 @@ import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.ConfirmedProject
+import ai.okou.android.chat.ConversationContentMaxWidth
 import ai.okou.android.chat.ConversationFind
 import ai.okou.android.chat.ConversationFindTarget
 import ai.okou.android.chat.ConversationFindVisit
@@ -48,10 +49,12 @@ import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rowActions
 import ai.okou.android.chat.searchCatalog
+import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.settings.DefaultModelSettings
 import ai.okou.android.state.ArtifactsDestination
+import ai.okou.android.state.ChatConnectorVisit
 import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
@@ -61,6 +64,7 @@ import ai.okou.android.state.WorkflowsMode
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.WorkspaceTarget
 import ai.okou.android.state.rememberArtifactPageHolder
+import ai.okou.android.state.rememberChatConnectorVisit
 import ai.okou.android.state.rememberChatSearchState
 import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
@@ -186,11 +190,14 @@ internal fun OkouApp(
     var linkPosition by rememberConversationLinkPosition()
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     var connectorsOpen by rememberConnectorsOpen()
+    var chatConnectorVisit by rememberChatConnectorVisit()
     var workflowConnectorVisit by rememberWorkflowConnectorVisit()
     var workflowConnectionReturn by remember { mutableStateOf<WorkflowConnectorVisit?>(null) }
     val workflowPageState = rememberWorkflowPageState()
     val canOpenConnectors = connectors != null && workspaceReady
-    val showingConnectors = canOpenConnectors && (connectorsOpen || workflowConnectorVisit != null)
+    val showingConnectors =
+        canOpenConnectors &&
+            (connectorsOpen || workflowConnectorVisit != null || chatConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
     var workflowHistoryReturnRunId by
@@ -851,6 +858,21 @@ internal fun OkouApp(
             wideWelcome -> ComposerTarget()
             else -> null
         }
+    val activeComposerKey =
+        (target as? WorkspaceTarget.Chat)?.let { "thread:${it.id}" } ?: newTarget?.key
+    LaunchedEffect(chatConnectorVisit, activeComposerKey, workspaceReady) {
+        if (
+            workspaceReady &&
+                chatConnectorVisit?.composerKey?.let { it != activeComposerKey } == true
+        ) {
+            chatConnectorVisit = null
+        }
+    }
+
+    fun manageChatConnectors(origin: ComposerTarget, account: ConnectorAccountTarget?) {
+        if (wideWelcome) navigation = navigation.copy(target = WorkspaceTarget.NewChat(null))
+        chatConnectorVisit = ChatConnectorVisit(origin.key, account?.slug, account?.connectionId)
+    }
     val submission by
         remember(composerInput, newChat, newTarget) {
             derivedStateOf(structuralEqualityPolicy()) {
@@ -921,6 +943,7 @@ internal fun OkouApp(
             SettingsDestination.Instructions,
             SettingsDestination.ModelAccounts,
             SettingsDestination.CreditBalance,
+            SettingsDestination.ProactiveServices,
             SettingsDestination.Account ->
                 navigation = navigation.copy(settings = SettingsDestination.Overview)
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
@@ -1011,9 +1034,15 @@ internal fun OkouApp(
     }
 
     if (showingConnectors) {
-        ConnectorsPage(connectors, listWidth, initialSlug = workflowConnectorVisit?.slug) {
+        ConnectorsPage(
+            connectors,
+            listWidth,
+            initialSlug = workflowConnectorVisit?.slug ?: chatConnectorVisit?.slug,
+            initialAccountId = chatConnectorVisit?.accountId,
+        ) {
             workflowConnectionReturn = workflowConnectorVisit
             workflowConnectorVisit = null
+            chatConnectorVisit = null
             connectorsOpen = false
         }
         return
@@ -1048,6 +1077,8 @@ internal fun OkouApp(
             SettingsDestination.Instructions -> stringResource(R.string.settings)
             SettingsDestination.ModelAccounts -> stringResource(R.string.settings_model_accounts)
             SettingsDestination.CreditBalance -> stringResource(R.string.settings_credit_balance)
+            SettingsDestination.ProactiveServices ->
+                stringResource(R.string.settings_proactive_services)
             SettingsDestination.Account -> stringResource(R.string.settings_account_security)
             null ->
                 when (target) {
@@ -1344,6 +1375,7 @@ internal fun OkouApp(
                         if (settings != null) {
                             Text(
                                 title,
+                                modifier = Modifier.padding(start = 8.dp),
                                 style = settingsTitleStyle,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -1374,6 +1406,8 @@ internal fun OkouApp(
                     navigationIcon = {
                         if (settings != null || showWorkspaceBack || findVisit?.target != null)
                             IconButton(
+                                modifier =
+                                    Modifier.padding(start = if (settings != null) 8.dp else 0.dp),
                                 onClick = {
                                     focus.clearFocus()
                                     keyboard?.hide()
@@ -1640,11 +1674,10 @@ internal fun OkouApp(
                             ) {
                                 detailBar()
                             }
+                            val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
                             Column(
-                                Modifier.widthIn(max = 768.dp)
-                                    .fillMaxWidth()
-                                    .weight(1f)
-                                    .imePadding(),
+                                Modifier.fillMaxWidth().weight(1f).imePadding(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                                 when (target) {
                                     is WorkspaceTarget.Chat ->
@@ -1737,28 +1770,40 @@ internal fun OkouApp(
                                                         offline = list.offline,
                                                     )
                                             }
-                                            if (showConversationFeedback)
-                                                WorkspaceFeedbackHost(
-                                                    snackbar,
-                                                    Modifier.padding(horizontal = 16.dp)
-                                                        .testTag("conversation_feedback"),
-                                                )
-                                            if (linkSnackbar.currentSnackbarData != null)
-                                                WorkspaceFeedbackHost(
-                                                    linkSnackbar,
-                                                    Modifier.padding(horizontal = 16.dp),
-                                                )
-                                            if (
-                                                composerTarget != null &&
-                                                    pendingNewChat == null &&
-                                                    composer != null &&
-                                                    controls != null
-                                            ) {
-                                                ChatComposerField(
-                                                    composer,
-                                                    composerTarget,
-                                                    offline = list.offline,
-                                                )
+                                            Column(contentWidth.fillMaxWidth()) {
+                                                if (showConversationFeedback)
+                                                    WorkspaceFeedbackHost(
+                                                        snackbar,
+                                                        Modifier.padding(horizontal = 16.dp)
+                                                            .testTag("conversation_feedback"),
+                                                    )
+                                                if (linkSnackbar.currentSnackbarData != null)
+                                                    WorkspaceFeedbackHost(
+                                                        linkSnackbar,
+                                                        Modifier.padding(horizontal = 16.dp),
+                                                    )
+                                                if (
+                                                    composerTarget != null &&
+                                                        pendingNewChat == null &&
+                                                        composer != null &&
+                                                        controls != null
+                                                ) {
+                                                    ChatComposerField(
+                                                        composer,
+                                                        composerTarget,
+                                                        offline = list.offline,
+                                                        connectorOptions =
+                                                            connectors?.chatOptions.takeIf {
+                                                                canOpenConnectors
+                                                            },
+                                                        manageConnectors = {
+                                                            manageChatConnectors(
+                                                                composerTarget,
+                                                                it,
+                                                            )
+                                                        },
+                                                    )
+                                                }
                                             }
                                         }
                                     is WorkspaceTarget.NewChat,
@@ -1783,7 +1828,7 @@ internal fun OkouApp(
                                                 )
                                             }
                                         } else {
-                                            Box(Modifier.weight(1f)) {
+                                            Box(contentWidth.weight(1f)) {
                                                 if (workspaceReady) {
                                                     val welcome =
                                                         if (wideWelcome)
@@ -1801,35 +1846,46 @@ internal fun OkouApp(
                                                 newTarget != null &&
                                                 composer != null
                                         ) {
-                                            if (!shortConversation && provisionalId == null)
-                                                ConversationStatus(
-                                                    list.offline,
-                                                    null,
-                                                    short = false,
-                                                )
-                                            conversations.Content(newTarget.key) {
-                                                ChatComposerField(
-                                                    composer,
-                                                    newTarget,
-                                                    offline = list.offline,
-                                                    beforeSend = {
-                                                        if (wideWelcome) startNewChat(null)
-                                                    },
-                                                )
+                                            Column(contentWidth.fillMaxWidth()) {
+                                                if (!shortConversation && provisionalId == null)
+                                                    ConversationStatus(
+                                                        list.offline,
+                                                        null,
+                                                        short = false,
+                                                    )
+                                                conversations.Content(newTarget.key) {
+                                                    ChatComposerField(
+                                                        composer,
+                                                        newTarget,
+                                                        offline = list.offline,
+                                                        connectorOptions =
+                                                            connectors?.chatOptions.takeIf {
+                                                                canOpenConnectors
+                                                            },
+                                                        manageConnectors = {
+                                                            manageChatConnectors(newTarget, it)
+                                                        },
+                                                        beforeSend = {
+                                                            if (wideWelcome) startNewChat(null)
+                                                        },
+                                                    )
+                                                }
                                             }
                                         }
                                     }
                                 }
                                 if (awaitingCreatedChat || createdId != null) {
-                                    TextButton(
-                                        onClick = chats::retryList,
-                                        enabled =
-                                            !list.offline &&
-                                                listState.value.listReadFailure !=
-                                                    ChatListReadFailure.Retrying &&
-                                                list.listPhase != ChatReadPhase.Loading,
-                                    ) {
-                                        Text(stringResource(R.string.chat_refresh))
+                                    Box(contentWidth.fillMaxWidth()) {
+                                        TextButton(
+                                            onClick = chats::retryList,
+                                            enabled =
+                                                !list.offline &&
+                                                    listState.value.listReadFailure !=
+                                                        ChatListReadFailure.Retrying &&
+                                                    list.listPhase != ChatReadPhase.Loading,
+                                        ) {
+                                            Text(stringResource(R.string.chat_refresh))
+                                        }
                                     }
                                 }
                             }

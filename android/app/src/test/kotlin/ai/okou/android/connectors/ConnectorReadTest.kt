@@ -3,7 +3,6 @@ package ai.okou.android.connectors
 import ai.okou.android.api.ApiFailure
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -15,16 +14,14 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorReadTest {
     @Test
-    fun cachedEmptyResultsGetARefreshNoticeAfterThreeFailuresAndThirtySeconds() = runTest {
-        var failing = true
+    fun theThirdFailureEndsTheReadAndKeepsConfirmedEmptyContent() = runTest {
         var attempts = 0
         var state = ConnectorRead(emptyList<String>())
         val read = launch {
-            retryConnectorRead(
+            retryConnectorRead<List<String>>(
                 read = {
                     attempts++
-                    if (failing) throw unavailable()
-                    listOf("Google Calendar")
+                    throw unavailable()
                 },
                 canRead = { true },
                 onError = {},
@@ -34,28 +31,21 @@ class ConnectorReadTest {
 
         runCurrent()
         assertEquals(1, attempts)
-        advanceTimeBy(5_000)
+        advanceTimeBy(2_999)
         runCurrent()
-        assertEquals(2, attempts)
-        advanceTimeBy(10_000)
-        runCurrent()
-        assertEquals(3, attempts)
-        assertEquals(ConnectorRead(emptyList<String>(), ConnectorReadFailure.Recent), state)
-
-        advanceTimeBy(14_999)
-        runCurrent()
-        assertEquals(ConnectorReadFailure.Recent, state.failure)
+        assertEquals(1, attempts)
+        assertNull(state.failure)
         advanceTimeBy(1)
         runCurrent()
+        assertEquals(2, attempts)
+        assertNull(state.failure)
+        advanceTimeBy(3_000)
+        runCurrent()
+        read.join()
         assertEquals(3, attempts)
         assertEquals(ConnectorRead(emptyList<String>(), ConnectorReadFailure.Sustained), state)
-
-        failing = false
-        advanceTimeBy(5_000)
-        read.join()
-        assertEquals(4, attempts)
-        assertEquals(listOf("Google Calendar"), state.data)
-        assertNull(state.failure)
+        advanceTimeBy(60_000)
+        assertEquals(3, attempts)
     }
 
     @Test
@@ -77,12 +67,12 @@ class ConnectorReadTest {
         advanceTimeBy(30_000)
         runCurrent()
         assertEquals(3, attempts)
-        assertEquals(ConnectorReadFailure.Recent, failure)
+        assertNull(failure)
 
         thirdRead.complete(Unit)
         runCurrent()
         assertEquals(ConnectorReadFailure.Sustained, failure)
-        read.cancelAndJoin()
+        read.join()
         advanceTimeBy(60_000)
         assertEquals(3, attempts)
     }

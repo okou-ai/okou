@@ -23,6 +23,7 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
+    FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,
   ])("defaults %s to staff and honors Lab overrides", (key) => {

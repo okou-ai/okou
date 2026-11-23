@@ -1,6 +1,7 @@
 package ai.okou.android.artifacts
 
 import ai.okou.android.R
+import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.rememberArtifactPageState
 import androidx.activity.compose.BackHandler
@@ -11,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -19,13 +21,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,16 +101,15 @@ internal fun ChatArtifactResources(
         return
     }
     val result = state.page.takeIf { state.query == query }
-    val problem = state.problem.takeIf { state.query == query }
+    val failure = state.failedRead.takeIf { state.query == query }
+    val reading = state.reading.takeIf { state.query == query }
     val showSkeleton =
-        rememberChatWaitIndicator(result == null && problem == null && !state.offline)
+        rememberChatWaitIndicator(result == null && failure == null, ChatListSkeletonDelayMillis)
     val dates = rememberArtifactDates()
     val rowFocus = remember { FocusRequester() }
     val restoreRow = page.restoreRow
-    LaunchedEffect(result, state.reading, problem, state.offline) {
-        if (
-            result?.nextCursor != null && state.reading == null && problem == null && !state.offline
-        ) {
+    LaunchedEffect(result, reading, failure) {
+        if (result?.nextCursor != null && reading == null && failure == null) {
             snapshotFlow {
                 val layout = position.layoutInfo
                 val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
@@ -122,67 +123,83 @@ internal fun ChatArtifactResources(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
-        LazyColumn(
-            state = position,
-            modifier = Modifier.widthIn(max = 768.dp).fillMaxWidth().padding(horizontal = 16.dp),
-            contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
-        ) {
-            item {
-                Text(
-                    stringResource(R.string.artifact_title),
-                    Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
-                    style =
-                        MaterialTheme.typography.labelMedium.copy(
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                        ),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (state.offline)
-                item {
-                    ResourceNotice(
-                        if (result == null) R.string.artifact_offline_catalog
-                        else R.string.artifact_offline_cached,
+        if (result == null && failure != null) {
+            ArtifactInitialReadFailure(
+                failure.label(chatResources = true),
+                Modifier.widthIn(max = 768.dp),
+            )
+            return@Column
+        }
+        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.TopCenter) {
+            LazyColumn(
+                state = position,
+                modifier = Modifier.widthIn(max = 768.dp).fillMaxSize().padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp),
+            ) {
+                item(key = "resource-heading") {
+                    Text(
+                        stringResource(R.string.artifact_title),
+                        Modifier.padding(start = 12.dp, bottom = 4.dp).semantics { heading() },
+                        style =
+                            MaterialTheme.typography.labelMedium.copy(
+                                fontSize = 13.sp,
+                                lineHeight = 20.sp,
+                            ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            if (showSkeleton) {
-                items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
-            }
-            if (result?.items?.isEmpty() == true) item { ResourceNotice(R.string.artifact_empty) }
-            items(result?.items.orEmpty(), key = { it.id }) { item ->
-                ChatArtifactResourceRow(
-                    item,
-                    dates.timestamp(checkNotNull(item.createdAt), showDay = true),
-                    if (item.id == restoreRow) {
-                        Modifier.focusRequester(rowFocus).onGloballyPositioned {
-                            if (page.restoreRow == item.id) {
-                                page.restoreRow = null
-                                rowFocus.requestFocus()
+                if (showSkeleton) {
+                    items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+                }
+                if (result?.items?.isEmpty() == true) {
+                    item {
+                        ArtifactReadNotice(
+                            R.string.artifact_empty,
+                            Modifier.padding(vertical = 12.dp),
+                        )
+                    }
+                }
+                items(result?.items.orEmpty(), key = { it.id }) { item ->
+                    ChatArtifactResourceRow(
+                        item,
+                        dates.timestamp(checkNotNull(item.createdAt), showDay = true),
+                        if (item.id == restoreRow) {
+                            Modifier.focusRequester(rowFocus).onGloballyPositioned {
+                                if (page.restoreRow == item.id) {
+                                    page.restoreRow = null
+                                    rowFocus.requestFocus()
+                                }
                             }
-                        }
-                    } else Modifier,
-                ) {
-                    page.selectedId = item.id
-                    model.select(item.id, item)
+                        } else Modifier,
+                    ) {
+                        page.selectedId = item.id
+                        model.select(item.id, item)
+                    }
+                }
+                if (failure != null) {
+                    item(key = "resource-read-failure") {
+                        ArtifactReadNotice(
+                            failure.label(chatResources = true),
+                            Modifier.padding(vertical = 8.dp),
+                        )
+                    }
+                }
+                if (reading == ArtifactCatalogRead.More) {
+                    item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
             }
-            problem?.let { error -> item { ResourceNotice(error.label()) } }
-            if (result != null && state.reading == ArtifactCatalogRead.More) {
-                item { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
+            if (reading == ArtifactCatalogRead.SyncingStale) {
+                val label = stringResource(R.string.chat_resources_syncing)
+                val colors = MaterialTheme.colorScheme
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth().semantics { contentDescription = label },
+                    color = colors.primary,
+                    trackColor =
+                        colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+                )
             }
         }
     }
-}
-
-@Composable
-private fun ResourceNotice(label: Int) {
-    Text(
-        stringResource(label),
-        Modifier.padding(vertical = 12.dp).semantics { liveRegion = LiveRegionMode.Polite },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
 }
 
 @Composable

@@ -31,7 +31,7 @@ import {
   type ModelCatalog,
 } from "./model-catalog.service";
 import { isCatalogCodexServiceTierSupported } from "./model-route-capabilities.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { ExecutionOrgPlan } from "./execution-org-context.service";
 
 function isUnavailablePersonalCapture(
   catalog: ModelCatalog,
@@ -139,7 +139,7 @@ export const resolveChatInputModelSelection$ = command(
       readonly modelSettings: ModelSettings;
       readonly reasoningEffort?: ReasoningEffort;
       /** The organization's plan, when the caller already read it in this request. */
-      readonly orgPlanCapabilities?: OrgPlanCapabilities | null;
+      readonly orgPlanCapabilities?: ExecutionOrgPlan | null;
       /** The request's catalog snapshot, when the caller already loaded it. */
       readonly catalog?: ModelCatalog;
       readonly modelBootstrap?: ModelSelectionBootstrap;

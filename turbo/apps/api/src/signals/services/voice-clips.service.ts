@@ -15,7 +15,11 @@ import {
 } from "../../lib/error";
 import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { privateArtifactFromRow } from "./private-artifact-storage.service";
+import {
+  privateArtifactFromRow,
+  readPrivateAttachmentRows,
+  type PrivateAttachmentRow,
+} from "./private-artifact-storage.service";
 
 export const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
 const audioTypes = zEnum([
@@ -51,7 +55,7 @@ export function voiceClipRequestError(
 
 export function resolveVoiceClipRecords(
   args: VoiceClipRequest,
-  records: ReadonlyMap<string, typeof runUploadedFiles.$inferSelect>,
+  records: ReadonlyMap<string, PrivateAttachmentRow>,
 ) {
   const clips = [];
   let total = 0;
@@ -100,17 +104,15 @@ export const resolveVoiceClips$ = command(
     const ids = args.fileIds.map((id) => {
       return id.toLowerCase();
     });
-    const rows = await get(db$)
-      .select()
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          inArray(runUploadedFiles.id, ids),
-        ),
-      );
+    const rows = await readPrivateAttachmentRows(
+      get(db$),
+      and(
+        eq(runUploadedFiles.orgId, args.orgId),
+        eq(runUploadedFiles.userId, args.userId),
+        isNull(runUploadedFiles.deletedAt),
+        inArray(runUploadedFiles.id, ids),
+      ),
+    );
     signal.throwIfAborted();
     const records = new Map(
       rows.map((row) => {

@@ -40,6 +40,7 @@ internal enum class SettingsDestination {
     ModelAccounts,
     CreditBalance,
     Account,
+    ProactiveServices,
 }
 
 internal enum class SearchRoute {
@@ -76,6 +77,75 @@ internal fun rememberWorkspaceSwitchTarget(): MutableState<String?> = rememberSa
 internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable {
     mutableStateOf(false)
 }
+
+internal data class ChatConnectorVisit(
+    val composerKey: String,
+    val slug: String?,
+    val accountId: String?,
+)
+
+@Composable
+internal fun rememberChatConnectorVisit(): MutableState<ChatConnectorVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<ChatConnectorVisit?, String>(
+                save = { visit ->
+                    if (visit == null) emptyList()
+                    else listOf(visit.composerKey, visit.slug.orEmpty(), visit.accountId.orEmpty())
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        ChatConnectorVisit(
+                            it,
+                            values[1].ifEmpty { null },
+                            values[2].ifEmpty { null },
+                        )
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
+internal enum class ComposerOptionsPage {
+    Closed,
+    Options,
+    Connectors,
+}
+
+internal data class ComposerOptionsPresentation(
+    val page: ComposerOptionsPage = ComposerOptionsPage.Closed,
+    val restoreEditor: Boolean = false,
+    val restoreKeyboard: Boolean = false,
+    val returnAccount: String? = null,
+)
+
+@Composable
+internal fun rememberComposerOptions(targetKey: String): MutableState<ComposerOptionsPresentation> =
+    rememberSaveable(
+        targetKey,
+        stateSaver =
+            listSaver<ComposerOptionsPresentation, Any>(
+                save = { value ->
+                    listOf(
+                        value.page.name,
+                        value.restoreEditor,
+                        value.restoreKeyboard,
+                        value.returnAccount ?: "-",
+                    )
+                },
+                restore = { values ->
+                    ComposerOptionsPresentation(
+                        ComposerOptionsPage.valueOf(values[0] as String),
+                        values[1] as Boolean,
+                        values[2] as Boolean,
+                        (values[3] as String).takeIf { it != "-" },
+                    )
+                },
+            ),
+    ) {
+        mutableStateOf(ComposerOptionsPresentation())
+    }
 
 internal data class WorkflowConnectorVisit(val slug: String, val ruleId: String?)
 
@@ -159,6 +229,12 @@ internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSavea
 
 @Composable
 internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberWorkflowEditorReturnFocus(
+    workflowId: String?,
+    tab: WorkflowTab,
+): MutableState<String?> = rememberSaveable(workflowId, tab) { mutableStateOf(null) }
 
 @Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }

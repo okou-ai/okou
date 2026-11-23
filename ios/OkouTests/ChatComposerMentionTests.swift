@@ -276,9 +276,11 @@ final class ChatComposerMentionTests: XCTestCase {
     let retiredRow = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     let started = expectation(description: "Structured clipboard provider started")
     let delivery = DelayedProviderTasks(owner: self)
-    let data = Data(
-      #"{"version":1,"parts":[{"type":"chat_thread","threadId":"74000000-0000-4000-8000-000000000003","titleSnapshot":"Notes"}]}"#
-        .utf8)
+    let reference: MessageJSON = .object([
+      "type": .string("chat_thread"), "threadId": .string(MentionNavigationFixture.thread(3)),
+      "titleSnapshot": .string("Notes")
+    ])
+    let data = try JSONEncoder().encode(ChatDraftDocument(parts: [reference]))
     let provider = NSItemProvider()
     provider.registerDataRepresentation(
       forTypeIdentifier: ComposerAttributedDocument.pasteboardType, visibility: .all
@@ -292,13 +294,22 @@ final class ChatComposerMentionTests: XCTestCase {
     // Exercise the old callbacks after selecting another composer, independently
     // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
-    delivery.release()
-    try await waitForBusinessResult {
-      originalComposer.document.parts.contains {
-        $0["type"]?.string == "chat_thread"
-          && $0["threadId"]?.string == MentionNavigationFixture.thread(3)
+    // The candidate and the paste are separate edits on the old input. Match the pasted reference.
+    let pasted = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
+      MainActor.assumeIsolated {
+        ComposerAttributedDocument.inlineDocument(input.attributedText).parts.contains(reference)
       }
     }
+    delivery.release()
+    let result = await XCTWaiter.fulfillment(of: [pasted], timeout: executionTimeAllowance)
+    guard result == .completed else {
+      return XCTFail("Missing pasted reference notification. " + mentionState(input, in: host.view))
+    }
+    XCTAssertTrue(
+      originalComposer.document.parts.contains(reference),
+      "The original draft lost the pasted reference")
     try await eventually { mentionTable(in: host.view) == nil }
     XCTAssertFalse(workspace.selectedConversation?.composer.hasContent ?? true)
     XCTAssertNil(mentionTable(in: host.view))

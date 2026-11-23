@@ -49,7 +49,6 @@ export function createGlobalModelContext() {
   const models = {
     model: runModelCatalog.model,
     displayName: runModelCatalog.displayName,
-    sortOrder: runModelCatalog.sortOrder,
     replacedBy: runModelCatalog.replacedBy,
     builtInOnRestrictedPlans: runModelCatalog.builtInOnRestrictedPlans,
     piRouteClass: runModelCatalog.piRouteClass,

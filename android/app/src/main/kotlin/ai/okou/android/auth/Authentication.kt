@@ -46,5 +46,7 @@ interface Authentication {
 
     suspend fun token(expected: NativeSession): String?
 
+    suspend fun renewToken(expected: NativeSession): String? = token(expected)
+
     suspend fun signOut()
 }

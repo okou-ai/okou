@@ -43,6 +43,8 @@ import {
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
+import { runOwnedChatEventCondition } from "./chat-event-type.service";
+import { visibleChatEventCondition } from "./chat-event-visibility.service";
 import { contextJsonRows } from "./context-rowset";
 import {
   pickedThreadColumns,
@@ -154,6 +156,10 @@ function pickedPromptColumns(
         THEN ${requestInput.captureNetworkBodies} ELSE ${storedCapture} END`
     : storedCapture;
   return {
+    hasCompletedPredecessorHistory: completedPredecessorHistory(
+      head,
+      hasCapacity,
+    ),
     isOfficialWorkflowThread:
       sql`CASE WHEN ${hasPromptCapacity} THEN ${officialWorkflowThreadCondition(owner)}
         ELSE false END`.mapWith(pgBooleanDecoder),
@@ -162,6 +168,43 @@ function pickedPromptColumns(
         pgBooleanDecoder,
       ),
   };
+}
+
+function completedPredecessorHistory(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+) {
+  const query = new QueryBuilder();
+  const predecessor = exists(
+    query
+      .select({ id: agentRuns.id })
+      .from(agentRuns)
+      .where(
+        and(
+          eq(agentRuns.id, chatThreads.frameworkSessionRunId),
+          eq(agentRuns.chatThreadId, chatThreads.id),
+          eq(agentRuns.userId, chatThreads.userId),
+          eq(agentRuns.status, "completed"),
+          exists(
+            query
+              .select({ id: chatEvents.id })
+              .from(chatEvents)
+              .where(
+                and(
+                  eq(chatEvents.chatThreadId, agentRuns.chatThreadId),
+                  eq(chatEvents.runId, agentRuns.id),
+                  runOwnedChatEventCondition(),
+                  visibleChatEventCondition(),
+                ),
+              ),
+          ),
+        ),
+      ),
+  );
+  return sql`CASE WHEN ${hasCapacity}
+    AND ${inArray(head.contextType, ["web", "agent_run"])}
+    AND ${isNotNull(chatThreads.frameworkSessionRunId)}
+    THEN ${predecessor} ELSE false END`.mapWith(pgBooleanDecoder);
 }
 
 function pickedPhoneUseGrant(hasCapacity: SQL) {
@@ -281,7 +324,6 @@ export function createChatRunPreparationSnapshot(
   requestInput?: EnqueuedChatInputFacts,
 ) {
   return computed(async (get) => {
-    const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
     const capacity = await get(bootstrap.concurrencyCapacity$);
     const { occupancy, head } = buildPreparationTables(
@@ -292,7 +334,7 @@ export function createChatRunPreparationSnapshot(
     const hasCapacity =
       capacity === 0 ? sql`true` : lt(occupancy.activeCount, capacity);
     const phoneGrant = pickedPhoneUseGrant(hasCapacity);
-    const [row] = await database
+    const [row] = await get(db$)
       .with(occupancy, head)
       .select({
         hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
@@ -372,7 +414,7 @@ export function createChatRunPreparationSnapshot(
         archiveCache: row.archiveCache,
       },
     };
-    const { thread, head: picked } = row;
+    const { thread, head: picked, hasCompletedPredecessorHistory } = row;
     if (!thread || !picked) {
       return { ...snapshot, pickedEvent: null };
     }
@@ -390,6 +432,7 @@ export function createChatRunPreparationSnapshot(
       userId: thread.userId,
       thread,
       preparation: {
+        hasCompletedPredecessorHistory,
         isOfficialWorkflowThread: row.isOfficialWorkflowThread,
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,

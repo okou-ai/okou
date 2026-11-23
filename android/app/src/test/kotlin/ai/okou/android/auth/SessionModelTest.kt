@@ -57,12 +57,10 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = TestOkouApplication::class)
-class SessionModelTest {
+abstract class SessionModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
 
-    private class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
+    protected class Resource(val identity: WorkspaceIdentity, val tokens: WorkspaceTokenProvider) :
         WorkspaceSession,
         ai.okou.android.chat.AssistantRecoveryService by ai.okou.android
             .TestAssistantRecoveryService(),
@@ -120,7 +118,7 @@ class SessionModelTest {
         }
     }
 
-    private fun check(
+    protected fun check(
         auth: TestAuthentication = TestAuthentication(),
         configure: (Resource) -> Unit = {},
         prepareAppearance: suspend MemberAppearanceCache.() -> Unit = {},
@@ -208,7 +206,12 @@ class SessionModelTest {
             Dispatchers.resetMain()
         }
     }
+}
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+class SessionEntryModelTest : SessionModelTestFixture() {
     @Test
     fun pendingAuthenticationAndSignedOutNeverOpenWorkspaceResources() {
         val auth = TestAuthentication(AuthenticationState())
@@ -223,6 +226,269 @@ class SessionModelTest {
         }
     }
 
+    @Test
+    fun webSetupReturnChecksOnceInPlaceAndKeepsConfirmedEmptyStateOnFailure() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            runCurrent()
+            val empty = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, empty.stage)
+            val response = CompletableDeferred<List<WorkspaceMembership>>()
+            var checks = 0
+            auth.membershipsAction = {
+                checks++
+                response.await()
+            }
+            model.openWorkspaceSetup(empty.generation) { true }
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(empty.copy(checkingWorkspace = true), model.uiState.value)
+            model.retry(empty.generation)
+            model.foregroundChanged(true)
+            response.completeExceptionally(IllegalStateException("read failed"))
+            runCurrent()
+            assertEquals(1, checks)
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertTrue(recovered.memberships.isEmpty())
+            assertFalse(recovered.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Check, recovered.entryFailure)
+        }
+    }
+
+    @Test
+    fun webSetupWaitsForReturnAcrossMembershipUpdatesForTheSameSession() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val available = auth.available
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            model.foregroundChanged(true)
+            runCurrent()
+            val empty = model.uiState.value
+            val response = CompletableDeferred<List<WorkspaceMembership>>()
+            var checks = 0
+            auth.membershipsAction = {
+                checks++
+                response.await()
+            }
+            model.openWorkspaceSetup(empty.generation) { true }
+            model.foregroundChanged(false)
+
+            val access = MembershipAccess("org-a", "org:member", null)
+            auth.state.value = auth.state.value.copy(membershipAccess = listOf(access))
+            runCurrent()
+            assertEquals(empty, model.uiState.value)
+            assertEquals(0, checks)
+
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(access.copy(permissions = emptyList())),
+                )
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(empty.copy(checkingWorkspace = true), model.uiState.value)
+            assertEquals(1, checks)
+
+            response.complete(available)
+            runCurrent()
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(available, model.uiState.value.memberships)
+            assertFalse(model.uiState.value.checkingWorkspace)
+            assertEquals(1, checks)
+        }
+    }
+
+    @Test
+    fun workspaceSetupOnlyLaunchesFromTheCurrentEmptyPicker() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val available = auth.available
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            runCurrent()
+            val empty = model.uiState.value
+            model.openWorkspaceSetup(empty.generation) { false }
+            assertEquals(
+                empty.copy(entryFailure = SessionEntryFailure.Browser),
+                model.uiState.value,
+            )
+
+            auth.available = available
+            model.retry(empty.generation)
+            runCurrent()
+            val picker = model.uiState.value
+            assertEquals(available, picker.memberships)
+            model.openWorkspaceSetup(empty.generation) {
+                error("The stale action opened a browser")
+            }
+            assertEquals(picker, model.uiState.value)
+        }
+    }
+
+    @Test
+    fun failedBrowserLaunchKeepsItsFeedbackWhenThePendingCheckConfirmsNoWorkspace() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            runCurrent()
+            val empty = model.uiState.value
+            val response = CompletableDeferred<List<WorkspaceMembership>>()
+            auth.membershipsAction = { response.await() }
+            model.retry(empty.generation)
+            runCurrent()
+            model.openWorkspaceSetup(empty.generation) { false }
+            assertTrue(model.uiState.value.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, model.uiState.value.entryFailure)
+
+            auth.state.value = auth.state.value.copy(membershipAccess = emptyList())
+            runCurrent()
+            assertTrue(model.uiState.value.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, model.uiState.value.entryFailure)
+
+            response.complete(emptyList())
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertTrue(recovered.memberships.isEmpty())
+            assertFalse(recovered.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, recovered.entryFailure)
+        }
+    }
+
+    @Test
+    fun transientInitialMembershipFailureRetriesAndPublishesOnlyAConfirmedResult() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        var attempts = 0
+        auth.membershipsAction = {
+            if (++attempts <= 3) throw ApiFailure.Network(java.io.IOException("fixture"))
+            auth.available
+        }
+        check(auth) { model, _ ->
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertEquals(SessionStage.Unavailable, model.uiState.value.stage)
+            assertTrue(model.uiState.value.entryReadFailed)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(4, attempts)
+            assertEquals(SessionStage.ChooseWorkspace, model.uiState.value.stage)
+            assertEquals(auth.available, model.uiState.value.memberships)
+            assertFalse(model.uiState.value.entryReadFailed)
+        }
+    }
+
+    @Test
+    fun failedPreparationAfterClerkConfirmsSelectionRestoresThePicker() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val allowFirstRead = CompletableDeferred<Unit>()
+        var failRead = true
+        var selections = 0
+        auth.selectAction = { _, _ -> selections++ }
+        check(
+            auth,
+            configure = { resource ->
+                resource.verifyOrganization = {
+                    allowFirstRead.await()
+                    if (failRead) throw ApiFailure.Http(503, null, null, null)
+                    testOrganization(resource.identity.workspaceId)
+                }
+            },
+        ) { model, resources ->
+            runCurrent()
+            val picker = model.uiState.value
+            model.chooseWorkspace("org-a", picker.generation)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            auth.state.value = testAuthenticationState(workspace = "org-a")
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+            assertNull(model.uiState.value.opening)
+
+            allowFirstRead.complete(Unit)
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertEquals(picker.memberships, recovered.memberships)
+            assertEquals(SessionEntryFailure.Selection, recovered.entryFailure)
+            assertTrue(resources.single().closed)
+
+            failRead = false
+            model.chooseWorkspace("org-a", recovered.generation)
+            runCurrent()
+            assertEquals("org-a", model.uiState.value.ready?.identity?.workspaceId)
+            assertEquals(1, selections)
+        }
+    }
+
+    @Test
+    fun failedFirstSelectionAndSignOutRestoreTheSameWorkspacePicker() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        check(auth) { model, _ ->
+            runCurrent()
+            val picker = model.uiState.value
+            auth.selectAction = { _, _ -> error("selection rejected") }
+            model.chooseWorkspace(picker.memberships.first().id, picker.generation)
+            runCurrent()
+            val afterSelection = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, afterSelection.stage)
+            assertEquals(picker.memberships, afterSelection.memberships)
+            assertEquals(SessionEntryFailure.Selection, afterSelection.entryFailure)
+            auth.signOutAction = { error("sign-out rejected") }
+            model.signOut(afterSelection.generation)
+            runCurrent()
+            val afterSignOut = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, afterSignOut.stage)
+            assertEquals(picker.memberships, afterSignOut.memberships)
+            assertEquals(SessionEntryFailure.SignOut, afterSignOut.entryFailure)
+        }
+    }
+
+    @Test
+    fun firstSelectionRecoversItsPickerAfterMembershipUpdatesForTheSameSession() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val activation = CompletableDeferred<Unit>()
+        auth.selectAction = { _, _ -> activation.await() }
+        check(auth) { model, _ ->
+            runCurrent()
+            val picker = model.uiState.value
+            model.chooseWorkspace(picker.memberships.first().id, picker.generation)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+
+            val access = MembershipAccess("org-a", "org:member", null)
+            auth.state.value = auth.state.value.copy(membershipAccess = listOf(access))
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+
+            activation.completeExceptionally(IllegalStateException("selection rejected"))
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(access.copy(permissions = emptyList())),
+                )
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertEquals(picker.memberships, recovered.memberships)
+            assertEquals(SessionEntryFailure.Selection, recovered.entryFailure)
+        }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+class SessionModelTest : SessionModelTestFixture() {
     @Test
     fun organizationGatesAccessAndTokenRenewalKeepsThePresentationOwner() {
         val auth = TestAuthentication()
@@ -479,10 +745,41 @@ class SessionModelTest {
     }
 
     @Test
+    fun concurrentRejectionsUseTheSameRenewedWorkspaceCredential() {
+        val release = CompletableDeferred<Unit>()
+        val auth = TestAuthentication()
+        var credential = "rejected"
+        var renewals = 0
+        auth.tokenAction = { credential }
+        auth.renewTokenAction = {
+            renewals++
+            release.await()
+            credential = "renewed"
+            credential
+        }
+        check(auth) { model, resources ->
+            runCurrent()
+            val ready = model.uiState.value.ready
+            val provider = resources.single().tokens
+            val first = async { provider.renew("rejected") }
+            val second = async { provider.renew("rejected") }
+            runCurrent()
+            assertEquals(1, renewals)
+            assertSame(ready, model.uiState.value.ready)
+            release.complete(Unit)
+            assertEquals("renewed", first.await())
+            assertEquals("renewed", second.await())
+            assertEquals(1, renewals)
+            assertFalse(resources.single().closed)
+        }
+    }
+
+    @Test
     fun postBootstrapAuthorizationAndUpgradeErrorsRetireTheWorkspace() {
         for ((failure, stage) in
             listOf(
                 ApiFailure.Unauthenticated() to SessionStage.AccessRemoved,
+                ApiFailure.Http(401, null, null, null) to SessionStage.Unavailable,
                 ApiFailure.UpdateRequired(RequiredUpdate("0.3.0")) to SessionStage.UpdateRequired,
             )) {
             check(configure = { resource -> resource.update = { throw failure } }) {

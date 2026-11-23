@@ -202,6 +202,7 @@ internal fun SettingsSwitchRow(
     leading: @Composable () -> Unit,
     checked: Boolean?,
     onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
     val action =
@@ -213,7 +214,8 @@ internal fun SettingsSwitchRow(
             }
         }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -398,6 +400,16 @@ internal fun SettingsSheet(
             if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
         }
     }
+}
+
+@Composable
+internal fun SettingsSheetDescription(text: String) {
+    Text(
+        text,
+        Modifier.padding(horizontal = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    )
 }
 
 @Composable

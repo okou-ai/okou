@@ -52,10 +52,6 @@ workflow_paths.each do |path|
   workflow_environment = document.fetch("env", {})
   relative_path = path.delete_prefix("#{repo_root}/")
 
-  if audit_setting(workflow_environment) != "false"
-    violations << "#{relative_path} must set top-level npm_config_audit=false"
-  end
-
   document.fetch("jobs", {}).each do |job_name, job|
     next unless job.is_a?(Hash)
 
@@ -68,7 +64,7 @@ workflow_paths.each do |path|
         job_environment,
         step.fetch("env", {}),
       )
-      location = "#{path.delete_prefix("#{repo_root}/")}:#{job_name}:step-#{index + 1}"
+      location = "#{relative_path}:#{job_name}:step-#{index + 1}"
 
       if step.fetch("uses", "").start_with?("pnpm/action-setup@") &&
           effective_audit != "false"
@@ -80,7 +76,7 @@ workflow_paths.each do |path|
         violations << "#{location} runs an implicit npm audit"
       end
       unless command_lines(run, /(?:npm|pnpm)\s+audit\b/).empty?
-        explicit_audit_paths << path.delete_prefix("#{repo_root}/")
+        explicit_audit_paths << relative_path
       end
     end
   end

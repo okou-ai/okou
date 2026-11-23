@@ -76,7 +76,6 @@ export function customConnectorExecutionDefinitionSelection() {
       "connector_network_binding",
     ),
     id: orgCustomConnectors.id,
-    orgId: orgCustomConnectors.orgId,
     slug: orgCustomConnectors.slug,
     displayName: orgCustomConnectors.displayName,
     prefixTemplates: orgCustomConnectors.prefixTemplates,

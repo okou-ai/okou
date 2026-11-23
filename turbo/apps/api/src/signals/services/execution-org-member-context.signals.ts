@@ -32,7 +32,6 @@ const orgRowSchema = object({
   plan: zUnknown(),
   slots: zUnknown(),
   expired: zUnknown(),
-  attached: zUnknown(),
 });
 const memberRowsDecoder = zodDriverValueDecoder(
   array(object({ kind: zUnknown(), payload: zUnknown() })),

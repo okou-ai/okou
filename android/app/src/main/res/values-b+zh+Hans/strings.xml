@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">正在检查工作区…</string>
+    <string name="auth_check_failed">暂时无法检查工作区。</string>
+    <string name="auth_selection_failed">暂时无法进入这个工作区。</string>
+    <string name="auth_sign_out_failed">暂时无法退出登录。</string>
     <string name="composer_sync_loading">正在加载已保存的草稿…</string>
     <string name="composer_sync_saving">正在同步草稿…</string>
     <string name="composer_sync_failed">草稿同步失败，输入仍保存在此设备上。</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">深色</string>
     <string name="on_this_device">此设备</string>
     <string name="retry">重试</string>
-    <string name="auth_restoring">正在恢复登录状态…</string>
     <string name="auth_preparing_workspace">正在准备工作区…</string>
     <string name="auth_choose_workspace">选择工作区</string>
     <string name="auth_no_workspace">还没有可访问的工作区</string>

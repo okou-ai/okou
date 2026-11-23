@@ -21,7 +21,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -31,7 +33,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
+private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -41,6 +43,11 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     return if (confirmedAt > 0 && age in 0 until unreadSnapshotLifetimeMillis) {
         unreadSnapshotLifetimeMillis - age
     } else 0
+}
+
+internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
+    val age = (now - confirmedAt).coerceAtLeast(0)
+    return (chatSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
 }
 
 enum class ChatReadPhase {
@@ -347,7 +354,9 @@ class ChatListModel(
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
-    private val cache = cacheStore.open(identity) { current() }
+    internal val cache = cacheStore.open(identity) { current() }
+    private val artifactChanges = MutableSharedFlow<ChatChanges>()
+    internal val artifactCatalogChanges = artifactChanges.asSharedFlow()
     private val readWrites = mutableMapOf<String, Job>()
     val history =
         ConversationHistoryModel(
@@ -359,6 +368,7 @@ class ChatListModel(
             { invalidateIndicators() },
             dispatcher,
             precedingReadWrite = { readWrites[it] },
+            wallMillis = wallMillis,
         )
     private val sync = ChatListSync(service, dispatcher)
     private var confirmed: CachedChats? = null
@@ -509,6 +519,9 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
+                if (changes.resync || changes.artifactThreads.isNotEmpty()) {
+                    viewModelScope.launch { artifactChanges.emit(changes) }
+                }
             }
         }
 
@@ -606,7 +619,7 @@ class ChatListModel(
                 (state.indicators == null ||
                     state.indicatorsPhase == ChatReadPhase.Failed ||
                     state.indicatorsConfirmedAt?.let {
-                        wallMillis() - it > ChatListSyncNoticeAgeMillis
+                        chatSyncNoticeDelayMillis(it, wallMillis()) == 0L
                     } == true)
         ) {
             refreshIndicators()
@@ -1643,7 +1656,7 @@ class ChatListModel(
 
     private fun staleListRead(state: ChatListUiState): Boolean =
         state.listPhase == ChatReadPhase.Loading &&
-            state.confirmedAt?.let { wallMillis() - it > ChatListSyncNoticeAgeMillis } == true
+            state.confirmedAt?.let { chatSyncNoticeDelayMillis(it, wallMillis()) == 0L } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()

@@ -113,6 +113,9 @@ open class TestOkouApplication : OkouApplication() {
         get() = journalStore ?: super.composerJournal
 
     var instructionsService: PersonalInstructionsService? = null
+    internal var proactivePreferencesService:
+        ai.okou.android.settings.ProactivePreferencesService? =
+        null
     var instructionsStore: PersonalInstructionsDraftStore? = null
     override val instructionsDrafts
         get() = instructionsStore ?: super.instructionsDrafts
@@ -148,6 +151,7 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
             override val connectors = connectorService
+            override val proactivePreferences = proactivePreferencesService
 
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()
@@ -241,6 +245,7 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     }
     var membershipsAction: suspend () -> List<WorkspaceMembership> = { available }
     var tokenAction: suspend (NativeSession) -> String? = { "test-token" }
+    var renewTokenAction: suspend (NativeSession) -> String? = { tokenAction(it) }
     var selectAction: suspend (NativeSession, String) -> Unit = { session, id ->
         state.value =
             state.value.copy(
@@ -262,6 +267,8 @@ class TestAuthentication(initial: AuthenticationState = testAuthenticationState(
     override suspend fun memberships(expected: NativeSession) = membershipsAction()
 
     override suspend fun token(expected: NativeSession) = tokenAction(expected)
+
+    override suspend fun renewToken(expected: NativeSession) = renewTokenAction(expected)
 
     override suspend fun selectWorkspace(expected: NativeSession, workspaceId: String) =
         selectAction(expected, workspaceId)

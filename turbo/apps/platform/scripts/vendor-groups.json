@@ -48,6 +48,7 @@
     "@tiptap/pm": 3,
     "@tiptap/react": 3,
     "@ungap/structured-clone": 1,
+    "@zip.js/zip.js": 5,
     "ably": 1,
     "anchorme": 1,
     "bail": 1,

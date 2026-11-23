@@ -110,4 +110,13 @@
         <item quantity="many">%d de chats ont explicitement sélectionné ce compte.</item>
         <item quantity="other">%d chats ont explicitement sélectionné ce compte.</item>
     </plurals>
+    <string name="chat_options_title">Options du chat</string>
+    <string name="chat_options_settings">Paramètres de la conversation</string>
+    <string name="chat_connector_scope">Concerne ce chat. Les comptes par défaut de l’espace de travail sont utilisés au départ.</string>
+    <string name="chat_connector_empty">Aucun compte n’est connecté dans cet espace de travail.</string>
+    <string name="chat_connector_manage">Gérer les connecteurs</string>
+    <string name="chat_connector_restore_defaults">Rétablir les réglages par défaut de l’espace de travail</string>
+    <string name="chat_connector_saving">Enregistrement du choix de connecteur…</string>
+    <string name="chat_connector_save_failed">Impossible d’enregistrer le choix de connecteur.</string>
+    <string name="chat_connector_first_send_failed">Impossible d’appliquer les choix de connecteurs. Vérifiez-les dans les options du chat, puis réessayez d’envoyer ce message.</string>
 </resources>
