@@ -582,12 +582,16 @@ fn handle_connection_with_outcome(
             else {
                 break;
             };
+            let seq = frame.seq;
+            if frame.payload_len < large_frame::STREAMED_STORAGE_BUFFER_REUSE_LIMIT {
+                decoder.reuse_incomplete_frame_buffer(frame);
+            }
             match payload {
                 large_frame::ReceivedStorage::Buffered(bytes) => {
-                    dispatcher.dispatch_owned_storage(frame.seq, bytes)
+                    dispatcher.dispatch_owned_storage(seq, bytes)
                 }
                 large_frame::ReceivedStorage::Sealed { file, mapping } => {
-                    dispatcher.dispatch_streamed_storage(frame.seq, file, mapping)
+                    dispatcher.dispatch_streamed_storage(seq, file, mapping)
                 }
             }
             .map_err(|error| session.failure(error))?;

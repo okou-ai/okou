@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">Instructions du workflow</string>
     <string name="workflow_keep_editing">Continuer la modification</string>
     <string name="workflow_load_failed">Impossible de charger les workflows</string>
+    <string name="workflow_rules_load_failed">Impossible de charger les règles de déclenchement.</string>
     <string name="workflow_mail_from_contains">L’expéditeur contient %1$s</string>
     <string name="workflow_mail_labeled">Libellé Gmail appliqué</string>
     <string name="workflow_mail_received">Message Gmail reçu</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Sous-page Notion créée</string>
     <string name="workflow_notion_item">Élément de base de données Notion créé</string>
     <string name="workflow_notion_updated">Page Notion mise à jour</string>
-    <string name="workflow_offline">Connectez-vous pour charger les workflows</string>
-    <string name="workflow_offline_cache">Hors ligne · Dernières données chargées</string>
     <string name="workflow_offline_changes">Connectez-vous pour enregistrer. Vos modifications sont conservées.</string>
     <string name="workflow_pause">Mettre en pause</string>
     <string name="workflow_paused">Automatisations en pause</string>
@@ -114,7 +113,6 @@
     <string name="workflow_history_event">Événement</string>
     <string name="workflow_history_failed">Impossible de charger l’historique des exécutions</string>
     <string name="workflow_history_loading">Chargement de l’historique des exécutions…</string>
-    <string name="workflow_history_offline">Connectez-vous pour charger l’historique des exécutions</string>
     <string name="workflow_history_open_chat">Ouvrir la conversation d’origine</string>
     <string name="workflow_history_unavailable">Historique des exécutions indisponible</string>
     <string name="workflow_run_pending">En attente</string>

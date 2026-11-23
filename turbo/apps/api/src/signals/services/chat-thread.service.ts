@@ -1,4 +1,7 @@
-import { readStoredDraftMessage } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  readStoredDraftMessage,
+  type SuggestionPreset,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { normalChatInputInsertSql } from "./normal-chat-input-publication-sql";
 import { db$, writeDb$ } from "../external/db";
 import {
@@ -252,7 +255,11 @@ export function chatThreadDraft(args: {
         ),
       )
       .limit(1);
+    const marker = draft?.draftUserMessage.parts.find((part) => {
+      return part.type === "suggestion_preset";
+    });
     return {
+      ...(marker ? { suggestionPreset: marker.preset } : {}),
       draftUserMessage: readStoredDraftMessage(draft?.draftUserMessage),
       draftAttachments: persistedAttachmentSchema
         .array()
@@ -1148,6 +1155,7 @@ export const updateChatThreadDraft$ = command(
       readonly threadId: string;
       readonly userId: string;
       readonly orgId: string;
+      readonly suggestionPreset?: SuggestionPreset;
       readonly draftUserMessage: UserMessageInputDocument | null;
       readonly draftAttachments: readonly PersistedAttachment[] | null;
     },
@@ -1159,6 +1167,7 @@ export const updateChatThreadDraft$ = command(
         chatThreadId: args.threadId,
         orgId: args.orgId,
         userId: args.userId,
+        suggestionPreset: args.suggestionPreset,
         draftUserMessage: args.draftUserMessage,
         draftAttachments: args.draftAttachments
           ? [...args.draftAttachments]

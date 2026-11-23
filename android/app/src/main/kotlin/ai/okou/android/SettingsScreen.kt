@@ -18,7 +18,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 
 @Composable
-internal fun SettingsPage(scroll: ScrollState, content: @Composable () -> Unit) {
+internal fun SettingsPage(
+    scroll: ScrollState,
+    progress: @Composable () -> Unit = {},
+    content: @Composable () -> Unit,
+) {
     val window = currentWindowSizeDp()
     val wide = workspaceListPaneWidth(window.width, window.height) != null
     Column(Modifier.fillMaxSize().imePadding()) {
@@ -38,6 +42,7 @@ internal fun SettingsPage(scroll: ScrollState, content: @Composable () -> Unit) 
             ) {
                 content()
             }
+            progress()
         }
     }
 }

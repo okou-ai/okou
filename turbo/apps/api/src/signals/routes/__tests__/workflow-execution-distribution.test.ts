@@ -314,7 +314,7 @@ test.each(["sharing withdrawal", "rename", "deletion"] as const)(
         throw new Error("Expected the workflow user's prompt to be accepted");
       }
       const revocation = await settleIncludingAbort(async () => {
-        await signing.entered;
+        await signing.waitForPending();
         const request = {
           headers: headers(author),
           params: { workflowId: workflow.id },

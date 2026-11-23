@@ -1102,7 +1102,7 @@ describe("workflow queue", () => {
     const signing = holdDownloadSigning(context);
     const preparation = await settleIncludingAbort(async () => {
       const admitted = await requestAutomationNow(automation.automationId);
-      await signing.entered;
+      await signing.waitForPending();
       const admittedRunId = await latestThreadRunId(admitted.body.chatThreadId);
       const requested = await requestAutomationNow(automation.automationId);
       const threadId = requested.body.chatThreadId;

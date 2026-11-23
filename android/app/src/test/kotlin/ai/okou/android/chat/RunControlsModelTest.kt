@@ -830,7 +830,17 @@ class RunControlsModelTest {
                 setOf(manual, automation),
                 f.history.uiState.value.transcript?.pendingInputIds,
             )
-            f.controls.skip(CHAT_PERSONAL, active)
+            f.controls.skip(
+                CHAT_PERSONAL,
+                active,
+                ComposerMessagePreview(
+                    eventId = active,
+                    threadId = CHAT_PERSONAL,
+                    text = "Already delivered",
+                    disposition = TextDisposition.Queued,
+                ),
+            )
+            assertTrue(checkNotNull(f.controls.uiState.value.journal).pending.isEmpty())
             assertTrue(f.remote.posts.isEmpty())
             f.controls.skip(CHAT_PERSONAL, manual)
             f.controls.skip(CHAT_PERSONAL, automation)
@@ -873,6 +883,34 @@ class RunControlsModelTest {
             )
             f.controls.check(CHAT_PERSONAL)
             f.controls.uiState.first { it.journal?.pending?.isEmpty() == true }
+            assertEquals(2, f.remote.posts.size)
+        }
+    }
+
+    @Test
+    fun checkingOneWithdrawalLeavesTheOtherQueueEntryAtItsOwnPhase() = runTest {
+        val manual = eventId("queued manual message")
+        withControls(
+            initial =
+                listOf(
+                    input(manual, 1, run = null),
+                    input(automation, 2, run = null, type = "input.automation"),
+                ),
+        ) { f ->
+            f.remote.write = { MockResponse().setResponseCode(503) }
+            f.controls.skip(CHAT_PERSONAL, manual)
+            f.controls.skip(CHAT_PERSONAL, automation)
+            val unknown =
+                f.controls.uiState.first { state ->
+                    state.phases.values.count { it == RunControlPhase.Unknown } == 2
+                }
+            val intents = checkNotNull(unknown.journal).pending.associateBy { it.targetId }
+            val manualAttempt = intents.getValue(manual).id
+            val automationAttempt = intents.getValue(automation).id
+            f.controls.checkWithdrawal(CHAT_PERSONAL, manual)
+            val checked =
+                f.controls.uiState.first { it.phases[manualAttempt] == RunControlPhase.Retryable }
+            assertEquals(RunControlPhase.Unknown, checked.phases[automationAttempt])
             assertEquals(2, f.remote.posts.size)
         }
     }

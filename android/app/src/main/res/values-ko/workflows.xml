@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">워크플로 지침</string>
     <string name="workflow_keep_editing">계속 편집</string>
     <string name="workflow_load_failed">워크플로를 불러올 수 없습니다</string>
+    <string name="workflow_rules_load_failed">트리거 규칙을 불러올 수 없습니다.</string>
     <string name="workflow_mail_from_contains">보낸 사람이 %1$s 포함</string>
     <string name="workflow_mail_labeled">Gmail 라벨 적용됨</string>
     <string name="workflow_mail_received">Gmail 메일 수신</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Notion 하위 페이지 생성됨</string>
     <string name="workflow_notion_item">Notion 데이터베이스 항목 생성됨</string>
     <string name="workflow_notion_updated">Notion 페이지 업데이트됨</string>
-    <string name="workflow_offline">워크플로를 불러오려면 연결하세요</string>
-    <string name="workflow_offline_cache">오프라인 · 마지막으로 불러온 데이터 표시</string>
     <string name="workflow_offline_changes">저장하려면 연결하세요. 변경사항은 유지됩니다.</string>
     <string name="workflow_pause">일시 중지</string>
     <string name="workflow_paused">자동화 일시 중지됨</string>
@@ -112,7 +111,6 @@
     <string name="workflow_history_event">이벤트</string>
     <string name="workflow_history_failed">실행 기록을 불러오지 못했습니다</string>
     <string name="workflow_history_loading">실행 기록을 불러오는 중…</string>
-    <string name="workflow_history_offline">연결하여 실행 기록 불러오기</string>
     <string name="workflow_history_open_chat">관련 채팅 열기</string>
     <string name="workflow_history_unavailable">실행 기록을 사용할 수 없습니다</string>
     <string name="workflow_run_pending">대기 중</string>

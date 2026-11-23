@@ -29,6 +29,7 @@
     <string name="settings_account_select">Selecionar</string>
     <string name="settings_account_reconnect">Reconexão necessária</string>
     <string name="settings_account_switching">Trocando…</string>
+    <string name="settings_account_switch_unconfirmed">Mudança não confirmada</string>
     <string name="settings_account_switch_failed">Não foi possível trocar de conta.</string>
     <string name="settings_quota">Cota</string>
     <string name="settings_hour_quota">Cota de %1$d h</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">Muito alto</string>
     <string name="settings_model_effort_max">Máximo</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Atualizando contas de modelos</string>
+    <string name="settings_refreshing_credit_balance">Atualizando saldo de créditos</string>
 </resources>

@@ -1,4 +1,4 @@
-import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import { chatThreadDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { randomUUID } from "node:crypto";
 import {
   chatEventsContract,
@@ -820,11 +820,13 @@ export function createChatFilesBddApi(context: TestContext) {
       actor: ApiTestUser,
       threadId: string,
       body: {
+        readonly suggestionPreset?: ChatThreadDraft["suggestionPreset"];
         readonly draftUserMessage: UserMessageInputDocument | null;
         readonly draftAttachments?: readonly PersistedAttachment[] | null;
       },
     ): Promise<void> {
       const requestBody = {
+        suggestionPreset: body.suggestionPreset,
         draftUserMessage: body.draftUserMessage,
         ...(body.draftAttachments === undefined
           ? {}
@@ -839,7 +841,7 @@ export function createChatFilesBddApi(context: TestContext) {
         threadByIdClient().patch({
           headers: authenticate(context, actor),
           params: { id: threadId },
-          body: composerDraftSchema.parse(requestBody),
+          body: chatThreadDraftSchema.parse(requestBody),
         }),
         [204],
       );

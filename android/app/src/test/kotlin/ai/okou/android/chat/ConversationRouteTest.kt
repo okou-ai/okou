@@ -97,7 +97,7 @@ class ConversationRouteTest {
         val displayed = mutableStateOf(message("provider_request_timeout"))
         compose.setContent {
             OkouTheme {
-                ConversationMessageRow(ConversationMessage(displayed.value), revoke = null)
+                ConversationMessageRow(ConversationMessage(displayed.value))
             }
         }
         compose.onNodeWithText("The model response timed out").assertExists()
@@ -243,7 +243,7 @@ class ConversationRouteTest {
         val displayed = mutableStateOf(reply("First chunk"))
         compose.setContent {
             OkouTheme {
-                ConversationMessageRow(ConversationMessage(displayed.value), revoke = null)
+                ConversationMessageRow(ConversationMessage(displayed.value))
             }
         }
         val header = compose.onNodeWithText(compose.activity.getString(R.string.app_name))
@@ -494,6 +494,78 @@ class ConversationRouteTest {
         } finally {
             allowRefreshResponse.countDown()
         }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun mixedQueueScrollsInServerOrderWithoutMovingTheTranscript() {
+        val events =
+            listOf(
+                historyEventWire(
+                    scrollEventId(39),
+                    39,
+                    CHAT_IN_PROJECT,
+                    "output.message",
+                    """{"content":"Keep reading this reply"}""",
+                ),
+                historyEventWire(
+                    scrollEventId(40),
+                    40,
+                    CHAT_IN_PROJECT,
+                    "input.prompt",
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"First waiting message"}]}}""",
+                    run = null,
+                ),
+                historyEventWire(
+                    scrollEventId(41),
+                    41,
+                    CHAT_IN_PROJECT,
+                    "input.automation",
+                    """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowName":"Morning brief","automationBrief":"Every day at 9:00 AM"}]}}""",
+                    run = null,
+                ),
+            ) +
+                (42..45).map { seq ->
+                    historyEventWire(
+                        scrollEventId(seq),
+                        seq.toLong(),
+                        CHAT_IN_PROJECT,
+                        "input.prompt",
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Waiting message $seq"}]}}""",
+                        run = null,
+                    )
+                }
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toInt() ?: 0
+            val rows = events.drop((after - 38).coerceIn(0, events.size)).joinToString(",")
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(45)}","lastSeqId":45},"hasMore":false}""",
+            )
+        }
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        compose.waitUntilExactlyOneExists(hasText("First waiting message"), 10_000)
+        val queue = compose.onNodeWithTag("conversation_queue").assertIsDisplayed()
+        val queueBounds = queue.getUnclippedBoundsInRoot()
+        assertTrue(queueBounds.bottom - queueBounds.top <= 76.dp)
+        val reply = compose.onNodeWithText("Keep reading this reply").assertIsDisplayed()
+        val beforeScroll = reply.getUnclippedBoundsInRoot()
+        queue.performScrollToIndex(1)
+        compose.onNodeWithText("Morning brief").assertIsDisplayed()
+        compose.onNodeWithText("Every day at 9:00 AM · Queued").assertIsDisplayed()
+        compose.onNode(hasContentDescription("Skip this automation")).assertIsDisplayed()
+        assertEquals(beforeScroll, reply.assertIsDisplayed().getUnclippedBoundsInRoot())
+        queue.performScrollToIndex(4)
+        compose.onNodeWithText("Waiting message 44").assertIsDisplayed()
     }
 
     @Test

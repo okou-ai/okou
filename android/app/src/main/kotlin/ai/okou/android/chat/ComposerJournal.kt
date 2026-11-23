@@ -2,8 +2,10 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import kotlin.time.TimeMark
 import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 /** A pending operation is a frozen request, independent of the next editable draft. */
 @Serializable
@@ -13,6 +15,7 @@ data class PendingText(
     val create: CreateThreadRequest?,
     val send: SendRequestVariant1,
     val stage: TextStage,
+    @Transient val started: TimeMark? = null,
 )
 
 @Serializable
@@ -35,6 +38,9 @@ enum class TextDisposition {
     Revoked,
 }
 
+internal val TextDisposition.hasLeftQueue: Boolean
+    get() = this != TextDisposition.Accepted && this != TextDisposition.Queued
+
 @Serializable
 data class TextReceipt(val threadId: String, val eventId: String, val disposition: TextDisposition)
 
@@ -51,6 +57,7 @@ data class ComposerMessagePreview(
     val text: String,
     val disposition: TextDisposition? = null,
     val pendingDelivery: PendingDelivery? = null,
+    val sequence: Long? = null,
 )
 
 @Serializable
@@ -69,6 +76,33 @@ data class ComposerJournal(
     val drafts: Map<String, EditableComposerDraft> = emptyMap(),
     val retainedDrafts: Map<String, String> = emptyMap(),
 )
+
+internal fun ComposerJournal.withoutOrdinaryPending(): ComposerJournal =
+    copy(
+        entries =
+            entries
+                .mapValues { (_, entry) ->
+                    if (
+                        entry.pending != null &&
+                            entry.pending.eventId != entry.recovery?.send?.clientEventId
+                    )
+                        entry.copy(pending = null)
+                    else entry
+                }
+                .filterValues { it != ComposerEntry() },
+    )
+
+internal fun ComposerJournal.restoreDraftsWithoutReplaying(): ComposerJournal {
+    val recovered =
+        entries
+            .mapNotNull { (_, entry) ->
+                val pending = entry.pending ?: return@mapNotNull null
+                if (pending.eventId == entry.recovery?.send?.clientEventId) return@mapNotNull null
+                pending.eventId to pending.send.prompt
+            }
+            .toMap()
+    return withoutOrdinaryPending().copy(retainedDrafts = retainedDrafts + recovered)
+}
 
 internal fun ComposerJournal.acceptedNewChats(): List<ProvisionalChat> =
     entries.entries.toList().asReversed().mapNotNull { (key, entry) ->
@@ -129,6 +163,7 @@ data class ComposerState(
             val pending = entry.pending?.takeIf { it.threadId == threadId } ?: return@forEach
             val delivery =
                 when {
+                    pending.started != null -> PendingDelivery.Sending
                     key in checking -> PendingDelivery.Checking
                     key in busy -> PendingDelivery.Sending
                     else -> PendingDelivery.Unconfirmed
@@ -165,4 +200,5 @@ data class ComposerState(
 internal fun PendingText.preview(
     disposition: TextDisposition? = null,
     pendingDelivery: PendingDelivery? = null,
-) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery)
+    sequence: Long? = null,
+) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery, sequence)

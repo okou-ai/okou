@@ -110,11 +110,19 @@ describe("thread drafts", () => {
       fixture.threadId,
     );
 
+    const preset = {
+      suggestion_id: randomUUID(),
+      impression_id: randomUUID(),
+      option_id: "review",
+      option_position: 2,
+    };
     await chat.patchThread(fixture.actor, fixture.threadId, {
+      suggestionPreset: preset,
       draftUserMessage: draftDocument("first draft"),
       draftAttachments: [draftAttachment()],
     });
     const saved = await chat.readThreadDraft(fixture.actor, fixture.threadId);
+    expect(saved.suggestionPreset).toStrictEqual(preset);
     expect(saved.draftUserMessage).toStrictEqual(draftDocument("first draft"));
     expect(saved.draftAttachments).toStrictEqual([draftAttachment()]);
     await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
@@ -131,6 +139,7 @@ describe("thread drafts", () => {
     expect(replaced.draftUserMessage).toStrictEqual(
       draftDocument("second draft"),
     );
+    expect(replaced.suggestionPreset).toBeUndefined();
     expect(replaced.draftAttachments).toBeNull();
 
     await chat.patchThread(fixture.actor, fixture.threadId, {

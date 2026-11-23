@@ -1,4 +1,11 @@
-import { command, computed, state, type Command, type Computed } from "ccstate";
+import {
+  command,
+  computed,
+  state,
+  type Command,
+  type Computed,
+  type State,
+} from "ccstate";
 import { r2ImageTransformUrl } from "@okouai/core/r2-image-transform";
 import {
   resolveArtifactImageTransformOrigin,
@@ -68,8 +75,10 @@ function withFragment(url: string, fragment: string): string {
 
 function createArtifactReferencePresignedToken$(
   reference: ArtifactReference,
+  refreshVersion$: State<number>,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
   return computed(async (get) => {
+    get(refreshVersion$);
     const response = await accept(
       get(apiClient$)(artifactReferencesContract).resolve({
         params: { reference: `${reference.hash}${reference.extension}` },
@@ -95,8 +104,10 @@ function createArtifactReferencePresignedToken$(
 
 function createWebFilePresignedToken$(
   url: string,
+  refreshVersion$: State<number>,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
   return computed(async (get) => {
+    get(refreshVersion$);
     const sourceUrl = new URL(url);
     const fileId = sourceUrl.searchParams.get("file_id");
     if (!fileId) {
@@ -129,13 +140,14 @@ function isEditableHostedSiteUrl(source: URL): boolean {
 
 function createAttachmentPresignedToken$(
   url: string,
+  refreshVersion$: State<number>,
 ): Computed<Promise<AttachmentPresignedToken | null>> {
   const reference = parseArtifactReference(url, location.origin);
   if (reference) {
-    return createArtifactReferencePresignedToken$(reference);
+    return createArtifactReferencePresignedToken$(reference, refreshVersion$);
   }
   if (isAuthenticatedAttachmentUrl(url)) {
-    return createWebFilePresignedToken$(url);
+    return createWebFilePresignedToken$(url, refreshVersion$);
   }
   if (URL.canParse(url)) {
     const source = new URL(url);
@@ -147,6 +159,7 @@ function createAttachmentPresignedToken$(
         return get(hostedSiteVisibilityChanges$)[source.origin] ?? null;
       });
       return computed(async (get) => {
+        get(refreshVersion$);
         get(revision$);
         const currentSourceUrl = get(currentSource$);
         const currentSource = new URL(currentSourceUrl);
@@ -191,7 +204,7 @@ interface AttachmentPreviewOptions {
   };
 }
 
-/** Resolve the authenticated resource once for its owning preview. */
+/** Share resource resolution until its owning preview is refreshed. */
 export function createAttachmentPreviewSignals(
   inputUrl: string,
   options: AttachmentPreviewOptions = {},
@@ -202,11 +215,17 @@ export function createAttachmentPreviewSignals(
     thumbnailSize = { width: 800, height: 720 },
   } = options;
   const url = publicAttachmentUrl(inputUrl);
+  const refreshVersion$ = state(0);
+  const refresh$ = command(({ set }) => {
+    set(refreshVersion$, (version) => {
+      return version + 1;
+    });
+  });
   const presignedToken$ = resolvedToken
     ? computed(() => {
         return Promise.resolve(resolvedToken);
       })
-    : createAttachmentPresignedToken$(url);
+    : createAttachmentPresignedToken$(url, refreshVersion$);
   const resourceUrl$ = computed(async (get) => {
     return currentHostedSiteUrl(
       (await get(presignedToken$))?.token ?? url,
@@ -265,6 +284,7 @@ export function createAttachmentPreviewSignals(
       : source;
   });
   return {
+    refresh$,
     linkUrl$: resourceUrl$,
     presignedToken$,
     resourceUrl$,
@@ -302,6 +322,8 @@ export function attachmentPreviewSignalsFor(
 }
 
 interface AttachmentPreviewRegistry {
+  /** Invalidate retained graphs so existing consumers resolve fresh resources. */
+  readonly refresh$: Command<void, []>;
   /** Get or create the one preview graph owned for a canonical resource URL. */
   readonly register$: Command<
     AttachmentPreviewSignals,
@@ -336,7 +358,12 @@ export function createAttachmentPreviewRegistry(): AttachmentPreviewRegistry {
       return preview;
     },
   );
-  return { register$ };
+  const refresh$ = command(({ get, set }) => {
+    for (const preview of get(internalPreviewsByUrl$).values()) {
+      set(preview.refresh$);
+    }
+  });
+  return { register$, refresh$ };
 }
 
 export function createAttachmentResourceUrl$(url: string) {

@@ -78,7 +78,6 @@ export interface RuntimeApiGateInput {
   readonly desktopTransforms: readonly ClientResponseTransform[];
   readonly iosAppStoreFloor?: NativeFloorChange;
   readonly iosAppStorePublishedVersion?: string | undefined;
-  readonly iosReviewVersion?: string | undefined;
   readonly iosPolicyErrors?: readonly string[];
   readonly iosTransforms?: readonly ClientResponseTransform[];
   readonly androidFloor?: NativeFloorChange;
@@ -127,7 +126,6 @@ interface ClassifyContext {
   readonly inherited: ReadonlySet<string>;
   readonly floor: NativeFloorEvaluation;
   readonly publishedVersion: string | undefined;
-  readonly reviewVersion: string | undefined;
   readonly transforms: readonly ClientResponseTransform[];
 }
 
@@ -198,7 +196,6 @@ function nativeContext(
     client,
     floor,
     publishedVersion,
-    reviewVersion: client.owner === "ios" ? input.iosReviewVersion : undefined,
     transforms,
     blockingOwners: input.blockingOwners,
     inherited: new Set((input.baseFindings ?? []).map(findingKey)),
@@ -457,7 +454,6 @@ function classifyOutcome(
     context.transforms,
     context.publishedVersion,
     client,
-    context.reviewVersion,
   );
   if (transform.proof) {
     return {
@@ -480,7 +476,6 @@ function transformProof(
   transforms: readonly ClientResponseTransform[],
   published: string | undefined,
   client: NativeClientPolicy,
-  reviewVersion: string | undefined,
 ): {
   readonly proof?: ClientResponseTransform;
   readonly rejection?: string;
@@ -501,7 +496,6 @@ function transformProof(
   const publishedVersion =
     published === undefined ? undefined : parseStableVersion(published);
   const rejections: string[] = [];
-  const review = reviewVersion && parseStableVersion(reviewVersion);
 
   for (const transform of matches) {
     if (transform.maxVersion === null) {
@@ -511,12 +505,6 @@ function transformProof(
     if (!publishedVersion) {
       rejections.push(
         `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, but the published ${client.label} version is unavailable, so it cannot be verified. Oracle: ${client.oracle}.`,
-      );
-      continue;
-    }
-    if (review && maxVersion && compareVersions(maxVersion, review) < 0) {
-      rejections.push(
-        `The matching transform must also cover iOS review candidate ${reviewVersion}.`,
       );
       continue;
     }

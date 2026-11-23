@@ -1,5 +1,5 @@
 {
-  "id": "77809e5e-3e6f-4be5-b3eb-6873cbc4519e",
+  "id": "e35810f8-2c84-47df-a73b-d6352a3fb892",
   "prevId": "08e4c900-a7cb-47fc-86bb-f0a876283fd5",
   "version": "7",
   "dialect": "postgresql",
@@ -18450,6 +18450,105 @@
       },
       "isRLSEnabled": false
     },
+    "public.hosted_site_share_rate_limits": {
+      "name": "hosted_site_share_rate_limits",
+      "schema": "",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "window_started_at": {
+          "name": "window_started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requests": {
+          "name": "requests",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.hosted_site_shares": {
+      "name": "hosted_site_shares",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "site_id": {
+          "name": "site_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "hosted_site_shares_site_id_hosted_sites_id_fk": {
+          "name": "hosted_site_shares_site_id_hosted_sites_id_fk",
+          "tableFrom": "hosted_site_shares",
+          "tableTo": "hosted_sites",
+          "columnsFrom": [
+            "site_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "hosted_site_shares_site_email": {
+          "name": "hosted_site_shares_site_email",
+          "nullsNotDistinct": false,
+          "columns": [
+            "site_id",
+            "email"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.hosted_site_visibility": {
       "name": "hosted_site_visibility",
       "schema": "",
@@ -23993,12 +24092,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "recent_workflow_ids": {
-          "name": "recent_workflow_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "onboarding_role": {
           "name": "onboarding_role",
           "type": "text",
@@ -24123,10 +24216,6 @@
         "org_members_metadata_explicit_model_settings_check": {
           "name": "org_members_metadata_explicit_model_settings_check",
           "value": "jsonb_typeof(\"org_members_metadata\".\"model_settings\") = 'object' AND NOT jsonb_path_exists(\"org_members_metadata\".\"model_settings\", '$.keyvalue() ? (@.key == \"auto\" || @.key == \"okou-1.0\" || @.key == \"okou-1.0-pro\" || @.key == \"okou-1.0-max\" || @.key starts with \"@preset/\")')"
-        },
-        "org_members_metadata_recent_workflow_ids_check": {
-          "name": "org_members_metadata_recent_workflow_ids_check",
-          "value": "\"org_members_metadata\".\"recent_workflow_ids\" IS NULL OR (\n          jsonb_typeof(\"org_members_metadata\".\"recent_workflow_ids\") = 'array'\n          AND NOT jsonb_path_exists(\"org_members_metadata\".\"recent_workflow_ids\", '$[*] ? (@.type() != \"string\" || !(@ like_regex \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\"))')\n        )"
         },
         "chk_org_members_metadata_service_tier": {
           "name": "chk_org_members_metadata_service_tier",

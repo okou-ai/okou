@@ -354,10 +354,7 @@ private struct ChatModelPickerContent: View {
           }
         }
       } else if row.memberEffective.availability != "available" {
-        Section {
-          Text("This model is restricted by your plan.")
-          Link("Manage plan", destination: selection.modelsWebURL)
-        }
+        Section { Text("This model is restricted by your plan.") }
       }
     } else {
       Section { Text("This model is unavailable. Choose an available model before sending.") }
@@ -394,9 +391,6 @@ private struct ChatModelPickerContent: View {
         if !rows.isEmpty {
           Section {
             ForEach(rows) { row in modelRow(row, configuration: configuration) }
-            if rows.contains(where: { $0.memberEffective.availability == "plan_restricted" }) {
-              Link("Manage plan", destination: selection.modelsWebURL)
-            }
           } header: {
             // Allowance lives on the Subscriptions page; the header only names the provider.
             if let provider = PersonalSubscriptionType(rawValue: type) {

@@ -39,7 +39,7 @@ model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
 Eligible new accounts get a workspace on iOS and can start chatting. Web onboarding remains available to the workspace creator. Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
-Account deletion is available only on the web.
+The Account footer links to the web security page where users can confirm account deletion.
 
 Conversation history renders durable user messages and assistant results using
 the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,

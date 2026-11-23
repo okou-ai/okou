@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
 import { channel } from "node:diagnostics_channel";
 import { on, once } from "node:events";
@@ -7,6 +8,7 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createSecureContext,
   getCACertificates,
@@ -89,12 +91,16 @@ async function withPeer(signal, run) {
     },
     (request, response) => {
       requestPaths.push(request.url);
-      let body = "";
-      request.setEncoding("utf8");
+      const chunks = [];
       request.on("data", (chunk) => {
-        body += chunk;
+        chunks.push(chunk);
       });
       request.once("end", () => {
+        const bytes = Buffer.concat(chunks);
+        const body =
+          request.headers["content-encoding"] === "gzip"
+            ? gunzipSync(bytes).toString("utf8")
+            : bytes.toString("utf8");
         bodyPorts.push(request.socket.remotePort ?? 0);
         bodies.push(body);
         response.end(JSON.stringify({ disposition: "accepted" }));
@@ -163,7 +169,7 @@ async function waitForFetchClientDrain(origin, signal) {
   throw new Error("Expected native fetch to connect to the HTTPS peer");
 }
 
-function reserve(transport, runId, url, signal) {
+function reserve(transport, runId, url, signal, encoding = "identity") {
   transport.reserve(
     runId,
     url,
@@ -171,7 +177,10 @@ function reserve(transport, runId, url, signal) {
       return {
         response: globalThis.fetch(url, {
           method: "POST",
-          headers: { "content-type": "application/json" },
+          headers: {
+            "content-type": "application/json",
+            ...(encoding === "gzip" ? { "content-encoding": "gzip" } : {}),
+          },
           body,
           duplex: "half",
           signal: connectionSignal,
@@ -180,6 +189,7 @@ function reserve(transport, runId, url, signal) {
       };
     },
     signal,
+    encoding,
   );
 }
 
@@ -199,6 +209,55 @@ async function send(transport, url) {
     reserved?.clearDeadline();
   }
 }
+test(
+  "releases gzip bytes on its reserved HTTPS request",
+  { timeout: 5000 },
+  async (t) => {
+    await withPeer(t.signal, async (peer) => {
+      reserve(peer.transport, "gzip", peer.origin, t.signal, "gzip");
+      await peer.firstHandshake;
+      assert.deepEqual(peer.requestPaths, []);
+      const reserved = peer.transport.take(
+        peer.origin,
+        gzipSync(dispatchBody),
+        1,
+        t.signal,
+        "gzip",
+      );
+      assert.ok(reserved);
+      try {
+        peer.releaseHandshake();
+        const response = await reserved.response;
+        assert.deepEqual(await response.json(), { disposition: "accepted" });
+        assert.deepEqual(peer.bodies, [dispatchBody]);
+        assert.deepEqual(peer.bodyPorts, peer.ports);
+      } finally {
+        reserved.clearDeadline();
+      }
+    });
+  },
+);
+
+test(
+  "discards a reserved gzip POST when the offer uses plain JSON",
+  { timeout: 5000 },
+  async (t) => {
+    await withPeer(t.signal, async (peer) => {
+      reserve(peer.transport, "gzip", peer.origin, t.signal, "gzip");
+      await peer.firstHandshake;
+      assert.equal(
+        peer.transport.take(peer.origin, dispatchBody, 1, t.signal),
+        undefined,
+      );
+      peer.releaseHandshake();
+      await peer.firstClosed;
+      assert.deepEqual(peer.requestPaths, []);
+      await send(peer.transport, peer.origin);
+      assert.deepEqual(peer.bodies, [dispatchBody]);
+    });
+  },
+);
+
 test(
   "starts TLS before sending a POST and reuses the resulting socket",
   { timeout: 5000 },

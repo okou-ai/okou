@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.1](https://github.com/okou-ai/okou/compare/ios-v0.56.0...ios-v0.56.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** link to web account deletion from settings ([#50177](https://github.com/okou-ai/okou/issues/50177)) ([bb798bd](https://github.com/okou-ai/okou/commit/bb798bdb47506ec28dfd5f8386179e3be7a2de0d))
+
 ## [0.56.0](https://github.com/okou-ai/okou/compare/ios-v0.55.0...ios-v0.56.0) (2026-11-23)
 
 

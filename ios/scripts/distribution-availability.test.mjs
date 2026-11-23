@@ -297,3 +297,23 @@ test("a beta receipt stops authorizing a raise when the Apple build expires", as
   );
   assert.deepEqual(await readAvailability(read(now), repository, "", now), {});
 });
+
+test("internal-only builds are valid for beta policy but cannot be submitted for App Review", async () => {
+  const internal = apple({
+    buildAttrs: { buildAudienceType: "INTERNAL_ONLY" },
+  });
+  assert.equal((await verifyDistribution(internal, beta)).appleBuildId, "b");
+  await assert.rejects(
+    verifyDistribution(internal, { ...beta, requireAppStoreEligible: true }),
+    /App Store eligible/,
+  );
+  assert.equal(
+    (
+      await verifyDistribution(
+        apple({ buildAttrs: { buildAudienceType: "APP_STORE_ELIGIBLE" } }),
+        { ...beta, requireAppStoreEligible: true },
+      )
+    ).appleBuildId,
+    "b",
+  );
+});

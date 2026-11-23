@@ -1,0 +1,21 @@
+{
+  "name": "Okou | Website share invitation",
+  "alias": "okou-hosted-site-invitation-v1",
+  "subject": "You’re invited to view a website on Okou",
+  "html": "<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n    <meta name=\"color-scheme\" content=\"light\">\n    <meta name=\"supported-color-schemes\" content=\"light\">\n    <title>A website has been shared with you</title>\n  </head>\n  <body style=\"margin:0;padding:0;background-color:#ffffff;color:#171717;font-family:Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%\">\n    <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" bgcolor=\"#ffffff\" style=\"width:100%;border-collapse:collapse;background-color:#ffffff\">\n      <tr>\n        <td align=\"center\" style=\"padding:24px 20px 48px\">\n          <!--[if mso]><table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td><![endif]-->\n          <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:100%;max-width:600px;border-collapse:collapse;text-align:left\">\n            <tr>\n              <td style=\"padding:0 0 36px\">\n                <h1 style=\"margin:0;font-size:24px;line-height:1.3\">A website has been shared with you</h1>\n              </td>\n            </tr>\n            <tr>\n              <td style=\"padding:0\">\n                <div style=\"margin:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word\"><p style=\"margin:0 0 20px\"><strong>{{{INVITER_NAME}}}</strong> invited you to view a website on Okou.</p>\n<p style=\"margin:0 0 20px\">Sign in to Okou with <strong>{{{RECIPIENT_EMAIL}}}</strong> to open the shared website. If you do not have an account yet, create one with this email address and verify it.</p>\n<p style=\"margin:0\">This invitation only grants access to this website. It does not add you to a workspace.</p></div>\n                <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"border-collapse:separate;margin:24px 0 36px\">\n                  <tr>\n                    <td align=\"center\" bgcolor=\"#3462da\" style=\"background-color:#3462da;border-radius:999px;mso-padding-alt:12px 32px\">\n                      <a href=\"{{{SITE_URL}}}\" style=\"display:inline-block;padding:12px 32px;border-radius:999px;color:#ffffff;font-size:13px;font-weight:700;line-height:16px;text-decoration:none\">Open shared website &rarr;</a>\n                    </td>\n                  </tr>\n                </table>\n              </td>\n            </tr>\n            <tr>\n              <td style=\"padding:24px 0 0;border-top:1px solid #dbcdc6;color:#8c9094;font-size:12px;line-height:1.6\">If you were not expecting this invitation, you can ignore this email. &middot; <a href=\"mailto:support@okou.ai\" style=\"color:#171717;text-decoration:underline\">Contact support</a></td>\n            </tr>\n          </table>\n          <!--[if mso]></td></tr></table><![endif]-->\n        </td>\n      </tr>\n    </table>\n  </body>\n</html>",
+  "text": "A website has been shared with you\n\n{{{INVITER_NAME}}} invited you to view a website on Okou.\n\nSign in to Okou with {{{RECIPIENT_EMAIL}}} to open the shared website. If you do not have an account yet, create one with this email address and verify it.\n\nThis invitation only grants access to this website. It does not add you to a workspace.\n\nOpen shared website → [{{{SITE_URL}}}]\n\nIf you were not expecting this invitation, you can ignore this email. · Contact support [support@okou.ai]",
+  "variables": [
+    {
+      "key": "INVITER_NAME",
+      "type": "string"
+    },
+    {
+      "key": "RECIPIENT_EMAIL",
+      "type": "string"
+    },
+    {
+      "key": "SITE_URL",
+      "type": "string"
+    }
+  ]
+}
