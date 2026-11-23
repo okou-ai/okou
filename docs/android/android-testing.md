@@ -70,11 +70,13 @@ measured duration and the reason in the PR. Keep waits bounded and preserve
 fixture cleanup on failure.
 
 JVM CI assigns each top-level test class and its nested classes to one shard.
-Group tests by the behavior they cover and the fixture they need. Put independent
-expensive journeys in separate top-level classes, and keep cheap state and error
-matrices at the state-owner boundary. Add the JUnit `testsuite` durations for a
-top-level class and its nested classes. Review groups over **30 seconds** for a
-split along those behavior or fixture boundaries.
+When creating a class or adding cases, keep that group at **20 JUnit cases** or
+fewer, counting each parameterized invocation. Split an oversized group along
+behavior or fixture boundaries before adding more cases. Put independent expensive
+journeys in separate top-level classes, and keep cheap state and error matrices
+at the state-owner boundary. Add the JUnit `testsuite` durations for the top-level
+class and its nested classes. Review groups over **30 seconds** for a split even
+when they meet the case limit.
 
 Debug device CI assigns individual cases to shards. Give each case its own setup and
 cleanup, and keep all steps needed to prove one end-to-end outcome together.
