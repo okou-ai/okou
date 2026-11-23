@@ -17,8 +17,6 @@
     <string name="chat_search_no_messages">Tidak ada pesan yang cocok</string>
     <string name="chat_search_no_workflows">Tidak ada workflow yang cocok</string>
     <string name="chat_search_no_artifacts">Tidak ada artefak yang cocok</string>
-    <string name="chat_search_online_only">Sambungkan ke internet untuk mencari jenis ini</string>
-    <string name="chat_search_offline_titles">Saat offline, pencarian hanya mencakup judul chat yang tersimpan.</string>
     <string name="chat_search_unavailable">Sebagian hasil tidak dapat dimuat</string>
     <string name="chat_search_message_unavailable">Pesan ini sudah tidak tersedia</string>
     <string name="chat_search_workflow_add_draft">Tambahkan ke draf chat baru</string>
@@ -31,5 +29,8 @@
     <string name="chat_search_saved_chats">Tidak dapat memuat ulang. Menampilkan chat tersimpan.</string>
     <string name="chat_search_saved_results">Tidak dapat memuat ulang. Menampilkan hasil sebelumnya.</string>
     <string name="chat_search_messages_failed">Tidak dapat mencari pesan</string>
+    <string name="chat_search_workflows_failed">Tidak dapat mencari workflow</string>
+    <string name="chat_search_workflows_saved">Direktori workflow tidak dapat diperbarui. Pencarian menggunakan direktori terakhir yang dimuat.</string>
     <string name="chat_search_artifacts_failed">Tidak dapat mencari artefak</string>
+    <string name="chat_search_loading">Sedang mencari…</string>
 </resources>

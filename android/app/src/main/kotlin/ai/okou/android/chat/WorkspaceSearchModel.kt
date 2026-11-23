@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
@@ -26,9 +27,8 @@ import kotlinx.coroutines.launch
 internal const val RecentSearchChatLimit = 8
 internal const val GroupedSearchResultLimit = 3
 private const val SearchDebounceMillis = 300L
-private val workspaceReadRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
 
-private fun workspaceReadRetryAfterMillis(error: Exception): Long? =
+private fun searchRetryAfterMillis(error: Exception): Long? =
     when (error) {
         is ApiFailure.Network -> 0L
         is ApiFailure.Http ->
@@ -112,13 +112,13 @@ internal sealed interface SearchRead<out T> {
         val rows: List<T>,
         val nextCursor: String? = null,
         val refreshFailed: Boolean = false,
+        val refreshing: Boolean = false,
     ) : SearchRead<T>
 }
 
 internal val SearchRead<*>?.hasFailure: Boolean
     get() =
         when (this) {
-            SearchRead.Retrying,
             SearchRead.Failed,
             SearchRead.AccessLost -> true
             is SearchRead.Ready -> refreshFailed
@@ -126,9 +126,13 @@ internal val SearchRead<*>?.hasFailure: Boolean
         }
 
 private fun <T> SearchRead<T>.updated(read: SearchRead<T>): SearchRead<T> =
-    if (this is SearchRead.Ready && read.hasFailure && read != SearchRead.AccessLost)
-        copy(refreshFailed = true)
-    else read
+    when {
+        this !is SearchRead.Ready -> read
+        read == SearchRead.Loading -> copy(refreshFailed = false, refreshing = true)
+        read == SearchRead.Retrying -> this
+        read == SearchRead.Failed -> copy(refreshFailed = true, refreshing = false)
+        else -> read
+    }
 
 internal data class WorkspaceSearchResults(
     val keyword: String = "",
@@ -154,7 +158,6 @@ internal constructor(
     private val searches = mutableMapOf<WorkspaceSearchType, Job>()
     private val visibleType = MutableStateFlow<WorkspaceSearchType?>(null)
     private var artifactPageJob: Job? = null
-    private var online = false
 
     internal fun opened(chat: ConfirmedChat) {
         val store = recents ?: return
@@ -171,26 +174,17 @@ internal constructor(
     internal fun update(
         keyword: String,
         type: WorkspaceSearchType,
-        connected: Boolean,
         artifactsAvailable: Boolean = false,
         visible: Boolean = true,
     ) {
         if (!authorized()) return
-        val previous = mutable.value
-        if (previous.keyword != keyword || online != connected) {
-            online = connected
+        val previousType = visibleType.value
+        if (mutable.value.keyword != keyword) {
             artifactPageJob?.cancel()
             artifactPageJob = null
             searches.values.forEach { it.cancel() }
             searches.clear()
-            mutable.value =
-                if (previous.keyword != keyword) WorkspaceSearchResults(keyword)
-                else
-                    previous.copy(
-                        messages = previous.messages as? SearchRead.Ready ?: SearchRead.Loading,
-                        artifacts = previous.artifacts as? SearchRead.Ready ?: SearchRead.Loading,
-                        moreArtifactsFailed = false,
-                    )
+            mutable.value = WorkspaceSearchResults(keyword)
         }
         if (!artifactsAvailable) {
             searches.remove(WorkspaceSearchType.Artifacts)?.cancel()
@@ -199,19 +193,36 @@ internal constructor(
             mutable.value =
                 mutable.value.copy(artifacts = SearchRead.Loading, moreArtifactsFailed = false)
         }
-        visibleType.value = type.takeIf { visible && connected && keyword.isNotEmpty() }
+        visibleType.value = type.takeIf { visible && keyword.isNotEmpty() }
         if (visibleType.value == null) return
         if (type.includes(WorkspaceSearchType.Messages)) {
             request(
                 WorkspaceSearchType.Messages,
-                { SearchRead.Ready(service.searchMessages(keyword)) },
+                refresh = previousType?.includes(WorkspaceSearchType.Messages) != true,
+                read = { SearchRead.Ready(service.searchMessages(keyword)) },
             ) { state, read ->
                 state.copy(messages = state.messages.updated(read))
             }
         }
-        if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
-            request(WorkspaceSearchType.Artifacts, { artifactPage(keyword, null) }) { state, read ->
-                state.copy(artifacts = state.artifacts.updated(read))
+        if (
+            artifactsAvailable &&
+                type.includes(WorkspaceSearchType.Artifacts) &&
+                artifactPageJob?.isActive != true
+        ) {
+            // A preview return must retain any pages needed to restore the selected result.
+            val refresh =
+                previousType?.includes(WorkspaceSearchType.Artifacts) != true &&
+                    (previousType != null || mutable.value.artifacts.hasFailure)
+            request(WorkspaceSearchType.Artifacts, refresh, { artifactPage(keyword, null) }) {
+                state,
+                read ->
+                state.copy(
+                    artifacts = state.artifacts.updated(read),
+                    moreArtifactsFailed =
+                        state.moreArtifactsFailed &&
+                            read !is SearchRead.Ready &&
+                            read != SearchRead.AccessLost,
+                )
             }
         }
     }
@@ -225,7 +236,6 @@ internal constructor(
         val loaded = current.artifacts as? SearchRead.Ready ?: return
         if (
             !authorized() ||
-                !online ||
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
                 loaded.refreshFailed ||
@@ -241,6 +251,7 @@ internal constructor(
                 { it == WorkspaceSearchType.Artifacts },
                 { artifactPage(keyword, cursor) },
             ) { next ->
+                if (next == SearchRead.Retrying) return@readSearch
                 val latest = mutable.value
                 val merged =
                     (next as? SearchRead.Ready)?.let { page ->
@@ -267,10 +278,12 @@ internal constructor(
 
     private fun <T> request(
         type: WorkspaceSearchType,
+        refresh: Boolean,
         read: suspend () -> SearchRead.Ready<T>,
         publish: (WorkspaceSearchResults, SearchRead<T>) -> WorkspaceSearchResults,
     ) {
-        if (searches.containsKey(type)) return
+        if (searches[type]?.let { it.isActive || !refresh } == true) return
+        mutable.value = publish(mutable.value, SearchRead.Loading)
         searches[type] = viewModelScope.launch {
             delay(SearchDebounceMillis)
             readSearch({ it.includes(type) }, read) { result ->
@@ -305,7 +318,8 @@ internal constructor(
                     ) {
                         onFailure(error)
                     }
-                    val retryAfter = workspaceReadRetryAfterMillis(error)
+                    val retryAfter = searchRetryAfterMillis(error)
+                    val retryDelay = finiteReadRetryDelays.getOrNull(failures)
                     if (authorized()) {
                         publish(
                             when {
@@ -313,14 +327,14 @@ internal constructor(
                                     error is ApiFailure.UpdateRequired ||
                                     error is ApiFailure.Http && error.status in setOf(401, 403) ->
                                     SearchRead.AccessLost
-                                retryAfter == null -> SearchRead.Failed
+                                retryAfter == null || retryDelay == null -> SearchRead.Failed
                                 else -> SearchRead.Retrying
                             },
                         )
                     }
-                    if (retryAfter == null) return
-                    delay(maxOf(retryAfter, workspaceReadRetryDelays[failures]))
-                    failures = (failures + 1).coerceAtMost(workspaceReadRetryDelays.lastIndex)
+                    if (retryAfter == null || retryDelay == null) return
+                    delay(maxOf(retryAfter, retryDelay))
+                    failures++
                     continue
                 }
             context.ensureActive()

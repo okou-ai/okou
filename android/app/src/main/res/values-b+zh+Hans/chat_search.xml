@@ -17,8 +17,6 @@
     <string name="chat_search_no_messages">没有匹配的消息</string>
     <string name="chat_search_no_workflows">没有匹配的工作流</string>
     <string name="chat_search_no_artifacts">没有匹配的成果</string>
-    <string name="chat_search_online_only">联网后可搜索此类型</string>
-    <string name="chat_search_offline_titles">离线时仅搜索已保存的聊天标题</string>
     <string name="chat_search_unavailable">部分结果暂时无法加载</string>
     <string name="chat_search_message_unavailable">此消息已不可用</string>
     <string name="chat_search_workflow_add_draft">加入新聊天草稿</string>
@@ -31,5 +29,8 @@
     <string name="chat_search_saved_chats">暂时无法更新，显示本机聊天。</string>
     <string name="chat_search_saved_results">暂时无法更新，显示已取得的结果。</string>
     <string name="chat_search_messages_failed">暂时无法搜索消息</string>
+    <string name="chat_search_workflows_failed">暂时无法搜索工作流</string>
+    <string name="chat_search_workflows_saved">暂时无法更新工作流目录，仅搜索已加载的目录</string>
     <string name="chat_search_artifacts_failed">暂时无法搜索成果</string>
+    <string name="chat_search_loading">正在搜索</string>
 </resources>

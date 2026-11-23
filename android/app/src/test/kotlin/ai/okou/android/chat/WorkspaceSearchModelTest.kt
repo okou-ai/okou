@@ -29,7 +29,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -41,7 +40,7 @@ class WorkspaceSearchModelTest {
     private val identity = WorkspaceIdentity("https://api.okou.ai/", "user", "session", "org")
 
     @Test
-    fun obsoleteMessagesCannotPublishAndReconnectRepeatsOnlyTheCurrentKeyword() = runTest {
+    fun obsoleteMessagesCannotPublishAndReturningToScopeRechecksOnlyTheCurrentKeyword() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         val requests = mutableListOf<String>()
@@ -72,21 +71,20 @@ class WorkspaceSearchModelTest {
             )[WorkspaceSearchModel::class.java]
         val hit = SearchMessageHit("thread", 23, "current", listOf(0..6))
         try {
-            model.update("older", WorkspaceSearchType.All, connected = true)
+            model.update("older", WorkspaceSearchType.All)
             advanceTimeBy(300)
             runCurrent()
-            model.update("current", WorkspaceSearchType.Messages, connected = true)
+            model.update("current", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
             pending.remove("current")!!.resume(listOf(hit))
             pending.remove("older")!!.resume(listOf(hit.copy(content = "obsolete")))
             runCurrent()
             assertEquals(SearchRead.Ready(listOf(hit)), model.results.value.messages)
-            model.update("current", WorkspaceSearchType.Chats, connected = false)
-            model.update("current", WorkspaceSearchType.Chats, connected = true)
+            model.update("current", WorkspaceSearchType.Chats)
             advanceTimeBy(300)
             assertEquals(listOf("older", "current"), requests)
-            model.update("current", WorkspaceSearchType.Messages, connected = true)
+            model.update("current", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
             pending.remove("current")!!.resume(listOf(hit))
@@ -127,12 +125,12 @@ class WorkspaceSearchModelTest {
                 },
             )[WorkspaceSearchModel::class.java]
         try {
-            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            model.update("launch", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
             assertEquals(listOf("launch"), requests)
             assertEquals(SearchRead.Retrying, model.results.value.messages)
-            advanceTimeBy(4_999)
+            advanceTimeBy(2_999)
             runCurrent()
             assertEquals(1, requests.size)
             advanceTimeBy(1)
@@ -143,13 +141,13 @@ class WorkspaceSearchModelTest {
             runCurrent()
             assertEquals(2, requests.size)
 
-            model.update("launch", WorkspaceSearchType.Messages, connected = true, visible = false)
+            model.update("launch", WorkspaceSearchType.Messages, visible = false)
             advanceTimeBy(1)
             runCurrent()
             assertEquals(2, requests.size)
             assertEquals(SearchRead.Retrying, model.results.value.messages)
 
-            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            model.update("launch", WorkspaceSearchType.Messages)
             runCurrent()
             assertEquals(listOf("launch", "launch", "launch"), requests)
             assertEquals(SearchRead.Ready(listOf(hit)), model.results.value.messages)
@@ -160,7 +158,7 @@ class WorkspaceSearchModelTest {
     }
 
     @Test
-    fun reconnectKeepsConfirmedMessagesThroughReadFailureAndDropsThemWhenAccessIsLost() = runTest {
+    fun refreshKeepsConfirmedMessagesThroughTwoRetriesAndDropsThemWhenAccessIsLost() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         val hit = SearchMessageHit("thread", 23, "launch", listOf(0..5))
@@ -170,7 +168,7 @@ class WorkspaceSearchModelTest {
                 override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
                     when (++requests) {
                         1 -> listOf(hit)
-                        2 -> throw ApiFailure.Http(503, null, null, null)
+                        in 2..4 -> throw ApiFailure.Http(503, null, null, null)
                         else -> throw ApiFailure.Http(403, null, null, null)
                     }
             }
@@ -184,21 +182,38 @@ class WorkspaceSearchModelTest {
                 },
             )[WorkspaceSearchModel::class.java]
         try {
-            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            model.update("launch", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
             val confirmed = SearchRead.Ready(listOf(hit))
             assertEquals(confirmed, model.results.value.messages)
 
-            model.update("launch", WorkspaceSearchType.Messages, connected = false)
+            model.update("launch", WorkspaceSearchType.Messages, visible = false)
             assertEquals(confirmed, model.results.value.messages)
-            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            model.update("launch", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
+            assertEquals(2, requests)
+            assertEquals(confirmed.copy(refreshing = true), model.results.value.messages)
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(3, requests)
+            assertEquals(confirmed.copy(refreshing = true), model.results.value.messages)
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(4, requests)
             assertEquals(confirmed.copy(refreshFailed = true), model.results.value.messages)
 
-            advanceTimeBy(5_000)
+            advanceTimeBy(60_000)
+            assertEquals(4, requests)
+
+            model.update("launch", WorkspaceSearchType.Messages, visible = false)
+            model.update("launch", WorkspaceSearchType.Messages)
+            advanceTimeBy(300)
             runCurrent()
+            assertEquals(5, requests)
             assertEquals(SearchRead.AccessLost, model.results.value.messages)
         } finally {
             store.clear()
@@ -246,7 +261,6 @@ class WorkspaceSearchModelTest {
             model.update(
                 "release",
                 WorkspaceSearchType.All,
-                connected = true,
                 artifactsAvailable = true,
             )
             advanceTimeBy(300)
@@ -255,29 +269,26 @@ class WorkspaceSearchModelTest {
             model.update(
                 "release",
                 WorkspaceSearchType.Artifacts,
-                connected = true,
                 artifactsAvailable = true,
             )
             model.nextArtifacts("release", "page-two")
             model.nextArtifacts("release", "page-two")
             runCurrent()
             assertEquals(SearchRead.Ready(listOf(first), "page-two"), model.results.value.artifacts)
-            assertTrue(model.results.value.moreArtifactsFailed)
+            assertFalse(model.results.value.moreArtifactsFailed)
 
             model.update(
                 "release",
                 WorkspaceSearchType.All,
-                connected = true,
                 artifactsAvailable = true,
             )
-            advanceTimeBy(5_000)
+            advanceTimeBy(3_000)
             runCurrent()
             assertEquals(1, continuationAttempts)
 
             model.update(
                 "release",
                 WorkspaceSearchType.Artifacts,
-                connected = true,
                 artifactsAvailable = true,
             )
             runCurrent()
@@ -287,7 +298,6 @@ class WorkspaceSearchModelTest {
             model.update(
                 "history",
                 WorkspaceSearchType.Artifacts,
-                connected = true,
                 artifactsAvailable = true,
             )
             model.nextArtifacts("release", "page-two")

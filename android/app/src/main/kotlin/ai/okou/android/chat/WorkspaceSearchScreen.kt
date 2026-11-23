@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -60,6 +61,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -115,7 +117,6 @@ internal fun WorkspaceSearchScreen(
     var presentedResults by
         remember(
             search,
-            state.offline,
             onOpenWorkflow != null,
             onOpenArtifact != null,
             remote?.messages == SearchRead.AccessLost,
@@ -357,7 +358,10 @@ private fun searchResultType(key: String): WorkspaceSearchType =
     }
 
 private val SearchRead<*>?.isPending: Boolean
-    get() = this == SearchRead.Loading || this == SearchRead.Retrying
+    get() =
+        this == SearchRead.Loading ||
+            this == SearchRead.Retrying ||
+            this is SearchRead.Ready && refreshing
 
 private sealed interface SearchItem {
     val key: String
@@ -487,8 +491,8 @@ private fun SearchResults(
         }
     val needsMessageChats =
         remember(messageHits, chatsById) { messageHits.any { it.threadId !in chatsById } }
-    LaunchedEffect(keyword, messageRead, list.offline) {
-        if (needsMessageChats && !list.offline) refreshChats()
+    LaunchedEffect(keyword, messageHits) {
+        if (needsMessageChats) refreshChats()
     }
     val workflows = (workflowRead as? SearchRead.Ready)?.rows.orEmpty()
     val artifactPage = artifactRead as? SearchRead.Ready
@@ -546,19 +550,19 @@ private fun SearchResults(
         }
     val listFailure = list.listReadFailure
     val needsChatList = showChats || needsMessageChats
-    val canRetryList =
-        needsChatList && !list.offline && listFailure == ChatListReadFailure.NeedsRetry
+    val canRetryList = needsChatList && listFailure == ChatListReadFailure.NeedsRetry
     val waitingForList =
-        needsChatList && list.confirmedAt == null && !list.offline && listFailure == null ||
+        needsChatList && list.confirmedAt == null && listFailure == null ||
             needsMessageChats && list.listPhase == ChatReadPhase.Loading
-    val pending = waitingForList || !list.offline && reads.any { it.isPending }
+    val remotePending = reads.any { it.isPending }
+    val pending = waitingForList || remotePending
     fun waitingForResult(key: String): Boolean =
         when (searchResultType(key)) {
             WorkspaceSearchType.Chats -> showChats && waitingForList
             WorkspaceSearchType.Messages ->
-                !list.offline && messageRead.isPending || needsMessageChats && waitingForList
-            WorkspaceSearchType.Workflows -> !list.offline && workflowRead.isPending
-            WorkspaceSearchType.Artifacts -> !list.offline && artifactRead.isPending
+                messageRead.isPending || needsMessageChats && waitingForList
+            WorkspaceSearchType.Workflows -> workflowRead.isPending
+            WorkspaceSearchType.Artifacts -> artifactRead.isPending
             WorkspaceSearchType.All -> pending
         }
     val confirmedChats = list.confirmedAt != null
@@ -576,45 +580,41 @@ private fun SearchResults(
             workspaceToolsRead == null &&
                 onOpenArtifact == null &&
                 type == WorkspaceSearchType.Artifacts
-    val hasRemoteData = reads.any { it is SearchRead.Ready }
+    val hasRemoteResults =
+        messages.isNotEmpty() || workflowRead is SearchRead.Ready || artifacts.isNotEmpty()
     val status =
         when {
-            list.offline && !showChats && !hasRemoteData -> R.string.chat_search_online_only
-            showChats && !confirmedChats && list.offline && !hasRemoteData ->
-                R.string.chat_list_load_when_online
+            remotePending -> null
             grouped &&
                 (messageFailure ||
                     workflowFailure ||
                     artifactFailure ||
                     listFailure != null ||
-                    chatRefreshFailed ||
-                    list.offline) ->
-                when {
-                    confirmedChats && !hasRemoteData && list.offline ->
-                        R.string.chat_search_offline_titles
-                    confirmedChats && !hasRemoteData -> R.string.chat_search_partial_local
-                    else -> R.string.chat_search_unavailable
-                }
+                    chatRefreshFailed) ->
+                if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
+                else R.string.chat_search_unavailable
             needsChatList && !confirmedChats && listFailure != null ->
                 R.string.chat_list_first_load_failed
             showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
             grouped -> null
             keyword.isEmpty() -> null
-            type == WorkspaceSearchType.Messages && (messageFailure || list.offline) ->
+            type == WorkspaceSearchType.Messages && messageFailure ->
                 if (messages.isNotEmpty()) R.string.chat_search_saved_results
                 else R.string.chat_search_messages_failed
-            type == WorkspaceSearchType.Workflows && (workflowFailure || list.offline) ->
-                when {
-                    workflowRead !is SearchRead.Ready -> R.string.workflow_load_failed
-                    list.offline -> R.string.workflow_offline_cache
-                    else -> R.string.workflow_refresh_failed
-                }
-            type == WorkspaceSearchType.Artifacts && (artifactFailure || list.offline) ->
+            type == WorkspaceSearchType.Workflows && workflowFailure ->
+                if (workflowRead is SearchRead.Ready) R.string.chat_search_workflows_saved
+                else R.string.chat_search_workflows_failed
+            type == WorkspaceSearchType.Artifacts && artifactFailure ->
                 if (artifacts.isNotEmpty()) R.string.chat_search_saved_results
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
-    val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty() && status == null)
+    val showSkeleton =
+        rememberChatWaitIndicator(
+            waitingForList && !remotePending && items.isEmpty() && status == null,
+            delayMillis = 250,
+        )
+    val showProgress = rememberChatWaitIndicator(remotePending, delayMillis = 250)
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
@@ -645,126 +645,138 @@ private fun SearchResults(
             }
         }
     }
-    LazyColumn(
-        modifier
-            .fillMaxWidth()
-            .focusRequester(resultFocus)
-            .focusable()
-            .testTag("chat_search_results"),
-        state = search.position,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
-    ) {
-        items(items, key = { it.key }) { row ->
-            when (row) {
-                is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
-                is SearchItem.Chat -> {
-                    val chat = row.chat
-                    val project = projectNames[chat.projectId]
-                    val metadata =
-                        listOfNotNull(project, archived.takeIf { chat.archived })
-                            .joinToString(" · ")
-                            .ifEmpty { null }
-                    SearchResult(
-                        search,
-                        row.key,
-                        restoreResultFocus,
-                        highlightedSearchTitle(chat.searchTitle(untitled), keyword),
-                        metadata = metadata,
-                    ) {
-                        search.returnToResult(row.key)
-                        onOpen(chat)
-                    }
-                }
-                is SearchItem.Message -> {
-                    val hit = row.message
-                    val chat = row.chat
-                    val metadata =
-                        listOfNotNull(
-                                projectNames[chat.projectId],
-                                archived.takeIf { chat.archived },
-                            )
-                            .joinToString(" · ")
-                            .ifEmpty { null }
-                    SearchResult(
-                        search,
-                        row.key,
-                        restoreResultFocus,
-                        highlightedSearchTitle(chat.searchTitle(untitled), keyword),
-                        snippet = messageSnippet(hit),
-                        metadata = metadata,
-                    ) {
-                        search.returnToResult(row.key)
-                        onOpenMessage(hit)
-                    }
-                }
-                is SearchItem.Workflow -> {
-                    val hit = row.workflow
-                    SearchResult(
-                        search,
-                        row.key,
-                        restoreResultFocus,
-                        highlightedSearchTitle(hit.title, keyword),
-                        snippet =
-                            hit.description
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { highlightedSearchTitle(it, keyword) },
-                    ) {
-                        search.returnToResult(row.key)
-                        onOpenWorkflow?.invoke(hit)
-                    }
-                }
-                is SearchItem.Artifact -> {
-                    val hit = row.artifact
-                    SearchResult(
-                        search,
-                        row.key,
-                        restoreResultFocus,
-                        highlightedSearchTitle(hit.title, keyword),
-                        metadata = stringResource(hit.kind.label()),
-                    ) {
-                        search.returnToResult(row.key)
-                        onOpenArtifact?.invoke(hit)
-                    }
-                }
-            }
-        }
-        if (
-            type == WorkspaceSearchType.Artifacts &&
-                artifactCursor != null &&
-                !moreArtifactsFailed &&
-                !artifactPage.refreshFailed &&
-                !list.offline
+    Box(modifier) {
+        LazyColumn(
+            Modifier.fillMaxSize()
+                .focusRequester(resultFocus)
+                .focusable()
+                .testTag("chat_search_results"),
+            state = search.position,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         ) {
-            item(key = "search_more_artifacts") {
-                LaunchedEffect(keyword, artifactCursor) { onMoreArtifacts(keyword, artifactCursor) }
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(12.dp))
-            }
-        }
-        if (showSkeleton) item(key = "search_loading") { ChatListSkeleton() }
-        if (status != null) {
-            item(key = "search_status") {
-                ChatContentLoadNotice(
-                    status,
-                    retry = retry.takeIf { canRetryList },
-                    retryEnabled = list.listPhase != ChatReadPhase.Loading,
-                )
-            }
-        } else if (items.isEmpty() && !pending) {
-            item(key = "search_empty") {
-                if (keyword.isEmpty()) {
-                    Text(
-                        stringResource(R.string.chat_search_enter_keyword),
-                        Modifier.padding(12.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = searchSecondaryStyle(),
-                    )
-                } else {
-                    SearchEmpty(
-                        if (list.offline) R.string.chat_search_empty else type.emptyLabel,
-                        onBroaden.takeIf { !list.offline && type != WorkspaceSearchType.All },
-                    )
+            items(items, key = { it.key }) { row ->
+                when (row) {
+                    is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
+                    is SearchItem.Chat -> {
+                        val chat = row.chat
+                        val project = projectNames[chat.projectId]
+                        val metadata =
+                            listOfNotNull(project, archived.takeIf { chat.archived })
+                                .joinToString(" · ")
+                                .ifEmpty { null }
+                        SearchResult(
+                            search,
+                            row.key,
+                            restoreResultFocus,
+                            highlightedSearchTitle(chat.searchTitle(untitled), keyword),
+                            metadata = metadata,
+                        ) {
+                            search.returnToResult(row.key)
+                            onOpen(chat)
+                        }
+                    }
+                    is SearchItem.Message -> {
+                        val hit = row.message
+                        val chat = row.chat
+                        val metadata =
+                            listOfNotNull(
+                                    projectNames[chat.projectId],
+                                    archived.takeIf { chat.archived },
+                                )
+                                .joinToString(" · ")
+                                .ifEmpty { null }
+                        SearchResult(
+                            search,
+                            row.key,
+                            restoreResultFocus,
+                            highlightedSearchTitle(chat.searchTitle(untitled), keyword),
+                            snippet = messageSnippet(hit),
+                            metadata = metadata,
+                        ) {
+                            search.returnToResult(row.key)
+                            onOpenMessage(hit)
+                        }
+                    }
+                    is SearchItem.Workflow -> {
+                        val hit = row.workflow
+                        SearchResult(
+                            search,
+                            row.key,
+                            restoreResultFocus,
+                            highlightedSearchTitle(hit.title, keyword),
+                            snippet =
+                                hit.description
+                                    ?.takeIf { it.isNotBlank() }
+                                    ?.let { highlightedSearchTitle(it, keyword) },
+                        ) {
+                            search.returnToResult(row.key)
+                            onOpenWorkflow?.invoke(hit)
+                        }
+                    }
+                    is SearchItem.Artifact -> {
+                        val hit = row.artifact
+                        SearchResult(
+                            search,
+                            row.key,
+                            restoreResultFocus,
+                            highlightedSearchTitle(hit.title, keyword),
+                            metadata = stringResource(hit.kind.label()),
+                        ) {
+                            search.returnToResult(row.key)
+                            onOpenArtifact?.invoke(hit)
+                        }
+                    }
                 }
             }
+            if (
+                type == WorkspaceSearchType.Artifacts &&
+                    artifactCursor != null &&
+                    !moreArtifactsFailed &&
+                    !artifactPage.refreshing &&
+                    !artifactPage.refreshFailed
+            ) {
+                item(key = "search_more_artifacts") {
+                    LaunchedEffect(keyword, artifactCursor) {
+                        onMoreArtifacts(keyword, artifactCursor)
+                    }
+                    LinearProgressIndicator(Modifier.fillMaxWidth().padding(12.dp))
+                }
+            }
+            if (showSkeleton) item(key = "search_loading") { ChatListSkeleton() }
+            if (status != null) {
+                item(key = "search_status") {
+                    ChatContentLoadNotice(
+                        status,
+                        retry = retry.takeIf { canRetryList },
+                        retryEnabled = list.listPhase != ChatReadPhase.Loading,
+                    )
+                }
+            } else if (items.isEmpty() && !pending) {
+                item(key = "search_empty") {
+                    if (keyword.isEmpty()) {
+                        Text(
+                            stringResource(R.string.chat_search_enter_keyword),
+                            Modifier.padding(12.dp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = searchSecondaryStyle(),
+                        )
+                    } else {
+                        SearchEmpty(
+                            type.emptyLabel,
+                            onBroaden.takeIf { type != WorkspaceSearchType.All },
+                        )
+                    }
+                }
+            }
+        }
+        if (showProgress) {
+            val colors = MaterialTheme.colorScheme
+            val label = stringResource(R.string.chat_search_loading)
+            LinearProgressIndicator(
+                modifier =
+                    Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
+                trackColor = lerp(colors.surface, colors.primary, 0.18f),
+            )
         }
     }
 }
