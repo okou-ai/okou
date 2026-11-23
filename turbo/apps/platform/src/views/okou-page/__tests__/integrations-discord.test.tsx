@@ -618,6 +618,7 @@ test("Returning to Works shows the Discord description while the membership refr
   });
   const returningCard = await screen.findByText(description);
   expect(returningCard).toBeInTheDocument();
+  expect(queryAction("button", "Connect", card())).toBeNull();
   publish.resolve();
   await waitFor(() => {
     return expect(card()).toHaveTextContent(/Connected/u);

@@ -233,3 +233,23 @@ test("A still-active timed grant shows when access will expire", async () => {
   expect(queryAction("button", "Confirm")).toBeNull();
   expect(screen.queryByText(/expired/i)).toBeNull();
 });
+
+test("The permission review changes with consecutive Slack grant notifications", async () => {
+  mockPermissionCatalog(context);
+  const grants = mockPermissionGrants(context);
+  const topic = "connectorPermissionUpdated";
+  await setupPage({
+    context,
+    path: permissionLink({ action: "deny", connectorSlug: "slack" }),
+  });
+  await expect(findAction("button", "Confirm")).resolves.toBeEnabled();
+  grants.saved.set("slack", [
+    { permission: ANALYTICS, action: "deny", expiresAt: null },
+  ]);
+  context.mocks.ably.trigger(topic);
+  await screen.findByText("Already denied");
+  grants.saved.set("slack", []);
+  context.mocks.ably.trigger(topic);
+  await expect(findAction("button", "Confirm")).resolves.toBeEnabled();
+  expect(screen.queryByText("Already denied")).toBeNull();
+});

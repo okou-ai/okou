@@ -111,3 +111,37 @@ test("chat-private-artifact-previews-009 the assistant's two private pictures ke
   expect(screen.getByAltText("West map")).toHaveAttribute("src", thumbs[0]);
   expect(screen.getByAltText("Site survey")).toHaveAttribute("src", thumbs[1]);
 });
+
+test("A relative map reference resolves to its signed image and opens the original in the sidebar", async () => {
+  const relative = "/artifacts/f000000000004000a000000000000941.png";
+  const map = attachment(
+    "districts.png",
+    "image/png",
+    "f0000000-0000-4000-a000-000000000941",
+  );
+  const reference = context.mocks.deferred<string>();
+  context.mocks.api(
+    artifactReferencesContract.resolve,
+    ({ params, respond }) => {
+      if (!reference.settled()) {
+        reference.resolve(params.reference);
+      }
+      return respond(200, {
+        url: map.url,
+        downloadUrl: map.url,
+        filename: map.filename,
+        contentType: map.contentType,
+        target: { kind: "file", id: map.id },
+        expiresAt: "2099-02-02T00:00:00.000Z",
+      });
+    },
+  );
+  await conversation(context, {
+    chatEvents: [assistantRow("![District boundary](" + relative + ")")],
+  });
+  expect("/artifacts/" + (await reference.promise)).toBe(relative);
+  const image = await imageCard("District boundary");
+  expect(decodeURIComponent(image.src)).toContain("districts.png");
+  click(image);
+  await previewImage(map.url);
+});

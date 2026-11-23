@@ -85,3 +85,36 @@ test("Enter runs the focused Morning Brief action and exposes its completed chat
   await screen.findByText("Morning Brief completed.");
   await expect(displayedRequest(issued)).resolves.toBeTruthy();
 });
+
+test("The keyboard-triggered brief stays busy until the requested conversation is ready", async () => {
+  const issued = context.mocks.deferred<void>(),
+    finished = context.mocks.deferred<void>();
+  const id = crypto.randomUUID();
+  context.mocks.api(
+    debugMorningBriefContract.run,
+    async ({ body, respond }) => {
+      issued.resolve();
+      await finished.promise;
+      return respond(200, {
+        requestId: body.requestId,
+        chatThreadId: id,
+        runId: null,
+        status: "completed",
+      });
+    },
+  );
+  await openDebug("admin");
+  const run = await findFastControl("button", "Run Morning Brief");
+  run.focus();
+  await userEvent.keyboard("{Enter}");
+  await issued.promise;
+  expect(
+    screen.queryByText("Morning Brief completed."),
+  ).not.toBeInTheDocument();
+  finished.resolve();
+  await screen.findByText("Morning Brief completed.");
+  await expect(findFastControl("link", "Open chat")).resolves.toHaveAttribute(
+    "href",
+    "/chats/" + id,
+  );
+});

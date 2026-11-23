@@ -115,3 +115,58 @@ test.each([
     expect(document.querySelector('iframe[title="report.pdf"]')).toBeNull();
   },
 );
+
+test("chat-resources-realtime-003 opening resources after a publication shows the latest video in this chat", async () => {
+  const old = artifactSummary(crypto.randomUUID(), "video", "First cut.mp4");
+  const replacement = artifactSummary(
+    crypto.randomUUID(),
+    "video",
+    "Approved cut.mp4",
+  );
+  const request = context.mocks.deferred<void>();
+  const respondWithCatalog = context.mocks.deferred<void>();
+  let latest = old;
+  mockArtifactConversation(context, { catalog: [old], chatEvents: [] });
+  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
+    const item = latest;
+    if (item.id === replacement.id) {
+      if (!request.settled()) {
+        request.resolve();
+      }
+      await respondWithCatalog.promise;
+    }
+    return respond(200, { artifacts: [item], nextCursor: null });
+  });
+  await setupPage({ context, path: "/chats/" + thread });
+  const topic = chatArtifactCatalogChangedEvent(thread);
+  await waitFor(() => {
+    return expect(context.mocks.ably.hasSubscription(topic)).toBeTruthy();
+  });
+  latest = replacement;
+  context.mocks.ably.trigger(topic, {});
+  const panel = await openResources();
+  await request.promise;
+  expect(within(panel).queryByText(replacement.title)).toBeNull();
+  respondWithCatalog.resolve();
+  await expect(
+    within(panel).findByText("Approved cut.mp4"),
+  ).resolves.toBeInTheDocument();
+  expect(within(panel).queryByText("First cut.mp4")).toBeNull();
+});
+
+test("The latest edit reaches a previously opened resource list when its publication arrives while the panel is closed", async () => {
+  const update = await publishableChat();
+  const first = await openResources();
+  await within(first).findByText("No artifacts yet");
+  click(await findFastControl("button", "Close artifacts and chats", first));
+  await waitFor(() => {
+    return expect(first).not.toBeInTheDocument();
+  });
+  update();
+  context.mocks.ably.trigger(chatArtifactCatalogChangedEvent(thread), {});
+  const reopened = await openResources();
+  await expect(
+    within(reopened).findByText("Quarterly update.mp4"),
+  ).resolves.toBeInTheDocument();
+  expect(within(reopened).queryByText("No artifacts yet")).toBeNull();
+});

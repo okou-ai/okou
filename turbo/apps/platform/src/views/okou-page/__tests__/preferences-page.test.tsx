@@ -187,3 +187,41 @@ test.each([
     expect(selectedPalette).toHaveAttribute("aria-pressed", "true");
   },
 );
+
+test.each([
+  ["color-themes-008", "Golden hour"],
+  ["color-themes-009", "Citrus spark"],
+])(
+  "%s keeps both ambient strengths in percentage units when switching appearance",
+  async (_id, paletteName) => {
+    workspace("light", null);
+    await setupPage({ context, path: "/preferences" });
+    const palette = await findAction("button", paletteName);
+    const style = document.createElement("style");
+    style.append(entryCss);
+    document.head.appendChild(style);
+    try {
+      click(palette);
+      for (const mode of ["Light", "Dark"]) {
+        click(await findAction("button", mode));
+        await waitFor(() => {
+          expect(palette).toHaveAttribute("aria-pressed", "true");
+          expect(document.documentElement).toHaveAttribute(
+            "data-theme",
+            mode.toLowerCase(),
+          );
+          const suffix = mode === "Light" ? "" : "-dark";
+          const colors = getComputedStyle(document.documentElement);
+          for (const role of ["anchor", "companion"]) {
+            const value = colors.getPropertyValue(
+              "--okou-color-theme-ambient-" + role + suffix,
+            );
+            expect(value.trim()).toMatch(/^\d+(?:\.\d+)?%$/u);
+          }
+        });
+      }
+    } finally {
+      style.remove();
+    }
+  },
+);

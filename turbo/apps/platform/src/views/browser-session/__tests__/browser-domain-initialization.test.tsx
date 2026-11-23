@@ -2,6 +2,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   arrangeNativePage,
@@ -193,4 +194,27 @@ test("browser-domain-initialization-014 A fresh connection takes input after the
   );
   expect(cdp.pageSession(owner.targetId)).toBe(current);
   expect(cdp.connections()).toBe(2);
+});
+
+test("Page setup failure leaves input unavailable past the pending inspector deadline", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = setup();
+  cdp.failNext("Page.enable", "navigation failed during setup");
+  const inspector = cdp.holdNext("Inspector.enable");
+  const reject = cdp.holdNext("Page.enable");
+  await openPage();
+  await Promise.all([inspector.received, reject.received]);
+  const old = cdp.pageSession(owner.targetId);
+  await reject.release();
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    return expect(cdp.detached).toContain(old);
+  });
+  advance(31_001);
+  await userEvent.type(input(), "z");
+  expect(input()).toBeDisabled();
+  expect(cdp.inputForTarget(owner.targetId)).not.toContainEqual(
+    expect.objectContaining({ params: expect.objectContaining({ text: "z" }) }),
+  );
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
 });

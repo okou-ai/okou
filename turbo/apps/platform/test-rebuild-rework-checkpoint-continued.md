@@ -3114,3 +3114,13 @@ The completed-run summary keeps its historical title and ID. The browser respons
 The #50136 sync preserves the stable check-in IDs and covers immediate award confirmation, delayed and unavailable status, retry and reopening the menu after dismissal. [Original check-in conditions and synchronized behavior](./test-rebuild-batch-86-main-sync.tsv)
 
 The subsequent sync keeps transcript assertions within the visible history and verifies the refreshed tail and leading spacer. The retired signal-level document test stays withdrawn. The new real-page artifact feedback readers cover file identity, saved filename snapshots, editing and sending in #50080. These are synchronization regressions outside the fixed selection.
+
+## Batch 87 concentrated revisit
+
+All 30 assigned frozen files and 44 selected IDs were reconciled against the 140-file opening queue at `17fce412540930104b6ab350a080fb15ce1db4ff`. The first pass remains 485 passed and zero unpassed. Four files closed and 136 remain. The previous disposition of feature-guides-012 in batch 82 completes the remaining non-selected clause for that file. The open files retain the complete opening BDD.
+
+Separate Chromium Vitest rows exercise the two-document session channel lifecycle, the cached conversation's first visible paint, and modified versus normal navigation from a Discord guide. The ordinary App suite covers both ambient percentages in both appearances, the original viewer session after an offscreen deadline, and the video catalog after a publication. The ID table distinguishes first verification, related regressions, outstanding clauses and source-backed retirements. The candidate retains the confirmed debounce and attachment behavior.
+
+The main sync keeps the member-only permission path, migrates the Markdown-first Lab override and preserves the catalog preview refresh. The five upstream suggestion analytics scenarios from #50158 run with their original behavior alongside the rebuilt suggestion suite. These upstream cases do not count toward batch 87 first verification.
+
+[Fixed selection](https://app.okou.ai/artifacts/rolqu8277z.md) · [44 ID dispositions](./test-rebuild-batch-87.tsv) · [Shared queue](./test-rebuild-first-pass.tsv)

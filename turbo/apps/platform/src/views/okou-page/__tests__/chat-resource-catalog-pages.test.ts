@@ -4,7 +4,11 @@ import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifac
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockArtifactConversation,
@@ -184,4 +188,50 @@ test("chat-resources-catalog-011 Retry keeps all first-page reports and clears t
   expect(catalogNames(panel).sort()).toStrictEqual(reports(65));
   expect(getButtonByName("Collapse", panel)).toBeVisible();
   expect(q.queryByText("Could not load artifacts")).toBeNull();
+});
+
+test("Keyboard activation copies the fourth expanded report and returns focus to its Copy link control", async () => {
+  const keyboard = userEvent.setup();
+  await setupOverflowResources(context, 4);
+  const panel = await screen.findByRole("dialog", {
+    name: "Artifacts and chats",
+  });
+  click(getButtonByName("Show more", panel));
+  await within(panel).findByText("report-4.pdf");
+  const copies = queryAllByRoleFast("button", panel).filter((button) => {
+    return button.getAttribute("aria-label") === "Copy link";
+  });
+
+  copies[3]!.focus();
+  await keyboard.keyboard("{Enter}");
+  expect(copies[3]).toHaveFocus();
+  await waitFor(async () => {
+    return await expect(navigator.clipboard.readText()).resolves.toBe(
+      "https://files.example.test/report-4.pdf",
+    );
+  });
+});
+
+test("A report without a public source opens its downloaded file from the resource list", async () => {
+  await setupResources(context, { sourceUrl: false });
+  const panel = await screen.findByRole("dialog", {
+    name: "Artifacts and chats",
+  });
+  const report = getButtonByName("report.pdf", panel);
+  await userEvent.hover(report);
+  expect(report).toHaveTextContent("report.pdf");
+  expect(within(panel).queryByRole("tablist")).toBeNull();
+  click(report);
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  expect(
+    within(sidebar).getByText("report.pdf", { exact: true }),
+  ).toBeVisible();
+  expect(getButtonByName("Download artifact", sidebar)).toBeEnabled();
+  click(getButtonByName("Back to all artifacts", sidebar));
+  await waitFor(() => {
+    return expect(sidebar).not.toBeInTheDocument();
+  });
+  await expect(
+    screen.findByText("report.pdf", { exact: true }),
+  ).resolves.toBeVisible();
 });

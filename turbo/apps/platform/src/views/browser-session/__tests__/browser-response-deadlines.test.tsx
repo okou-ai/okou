@@ -1,6 +1,6 @@
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -276,4 +276,106 @@ test("browser-response-deadlines-054 Retiring the target with a pending attachme
   await sendText(cdp, "original after retirement");
   expect(screen.queryByRole("alert")).toBeNull();
   expect(errors.reports).toStrictEqual([]);
+});
+
+test("browser-response-deadlines-004 The original tab accepts input after setup completes with the browser canvas outside the viewport", async () => {
+  const clock = browserRecoveryClock(context.signal);
+  const observations = new Map<Element, (visible: boolean) => void>();
+  const show = (visible: boolean) => {
+    const canvas = document.querySelector("canvas");
+    if (!canvas) {
+      throw new Error("The browser canvas is missing");
+    }
+    const report = observations.get(canvas);
+    if (!report) {
+      throw new Error(
+        "The displayed browser canvas has no intersection observer",
+      );
+    }
+    report(visible);
+  };
+  const NativeObserver = IntersectionObserver;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class extends NativeObserver {
+      constructor(
+        private readonly receive: IntersectionObserverCallback,
+        options?: IntersectionObserverInit,
+      ) {
+        super(receive, options);
+      }
+      override observe(element: Element) {
+        super.observe(element);
+        if (element instanceof HTMLCanvasElement) {
+          observations.set(element, (visible) => {
+            const bounds = element.getBoundingClientRect();
+            this.receive(
+              [
+                {
+                  target: element,
+                  time: performance.now(),
+                  boundingClientRect: bounds,
+                  intersectionRect: bounds,
+                  rootBounds: bounds,
+                  intersectionRatio: visible ? 1 : 0,
+                  isIntersecting: visible,
+                },
+              ],
+              this,
+            );
+          });
+        }
+      }
+      override unobserve(element: Element) {
+        super.unobserve(element);
+        observations.delete(element);
+      }
+    },
+  );
+  const { cdp, openPage } = viewer();
+  const setup = cdp.holdNext("Page.enable");
+  await openPage();
+  await setup.received;
+
+  show(false);
+  const consumed = context.mocks.deferred<void>();
+  await setup.release(undefined, () => {
+    if (!consumed.settled()) {
+      consumed.resolve();
+    }
+  });
+  await consumed.promise;
+  await screen.findByText("Viewing paused");
+  expect(remoteInput()).toBeDisabled();
+  clock(121_000);
+  show(true);
+  await expectStreamingAt(original.url);
+  await sendText(cdp, "viewport restored to original");
+  expect(cdp.connections()).toBe(1);
+});
+
+test("An empty assigned window can create a usable tab with the version reply held past 31 seconds", async () => {
+  const clock = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = arrangeNativePage(context, { targets: [] });
+  const version = cdp.holdNext("Browser.getVersion");
+  await openPage();
+  await version.received;
+  clock(31_001);
+  const create = await screen.findByLabelText("New tab", {
+    selector: "button[data-browser-new-tab]",
+  });
+  expect(create).toBeEnabled();
+  click(create);
+  await expectStreamingAt("");
+  expect(cdp.targets).toContainEqual(
+    expect.objectContaining({ url: "about:blank" }),
+  );
+  await waitFor(() => {
+    return expect(
+      cdp.requests.some((request) => {
+        return request.method === "Target.getTargets";
+      }),
+    ).toBeTruthy();
+  });
+  expect(cdp.connections()).toBe(1);
 });

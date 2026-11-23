@@ -204,3 +204,19 @@ test("Show a new credit rejection with the current balance", async () => {
   ).resolves.not.toHaveLength(0);
   expect(screen.queryByText("Credits available")).not.toBeInTheDocument();
 });
+
+test("A limited-free owner sees the specific recovery explanation for an exhausted balance", async () => {
+  arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
+  await openBlockedChat("insufficient_credits");
+  const explanation = await screen.findByText(
+    /^Upgrade to Pro to keep chatting with /u,
+  );
+  expect(explanation).toBeVisible();
+  expect(screen.queryByText("Upgrade to Pro to run")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("insufficient_credits", { exact: true }),
+  ).toBeNull();
+  await expect(
+    screen.findByText("Upgrade to Pro", { exact: true }),
+  ).resolves.toBeVisible();
+});

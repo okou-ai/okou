@@ -154,3 +154,19 @@ test.each([
     );
   },
 );
+
+test("A microphone stream reaching 73 seconds uploads windows before the member stops recording", async () => {
+  const { files, stop, editor } = await record(73 * rate, 0);
+  await waitFor(() => {
+    return expect(
+      files.map((file) => {
+        return file.start / rate;
+      }),
+    ).toStrictEqual([0, 13, 26, 39, 52]);
+  });
+  click(stop);
+  await waitFor(() => {
+    return expect(editor).toHaveTextContent("Window 6");
+  });
+  expect(files.at(-1)?.start).toBe(65 * rate);
+});

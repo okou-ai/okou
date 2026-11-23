@@ -1,6 +1,7 @@
 import { test, expect } from "vitest";
-import { screen } from "@testing-library/react";
-import { click } from "../../../__tests__/page-helper.ts";
+import userEvent from "@testing-library/user-event";
+import { screen, within } from "@testing-library/react";
+import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   findAction,
@@ -87,3 +88,32 @@ test("feishu-setup-guide-005 a member opening setup gets the workspace administr
   ).resolves.toBeInTheDocument();
   expect(queryAction("button", "Next")).toBeNull();
 });
+
+test.each(["feishu", "lark"] as const)(
+  "%s keeps both edited credentials when the member returns from the enlarged setup image",
+  async (provider) => {
+    botWorkspace(context, provider, true, () => {
+      return [];
+    });
+    await visitProvider(context, provider, "/settings/" + provider + "/setup");
+    click(await findAction("button", "Next"));
+    const appId = await screen.findByLabelText("App ID");
+    const secret = await screen.findByLabelText("App Secret");
+    await fill(appId, "cli_inshore");
+    await fill(secret, "demo_secret_inshore");
+    click(await findAction("button", "Show App Secret"));
+    expect(secret).toHaveAttribute("type", "text");
+    click(await findAction("button", "View setup reference"));
+    const stage = await screen.findByRole("region", {
+      name: "Setup reference",
+    });
+    const level = within(stage).getByTestId("feishu-guide-image-zoom-level");
+    const initial = level.textContent;
+    click(await findAction("button", "Zoom in", stage));
+    expect(level.textContent).not.toBe(initial);
+    await userEvent.keyboard("{Escape}");
+    click(await findAction("button", "Back to fields", stage));
+    expect(appId).toHaveValue("cli_inshore");
+    expect(secret).toHaveValue("demo_secret_inshore");
+  },
+);

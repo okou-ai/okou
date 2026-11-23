@@ -120,7 +120,7 @@ test.each([
     FeatureSwitchKey.TestOauthConnector,
   ],
   [
-    "An internal member can enable Markdown-first output in Lab and reset the override",
+    "A member can enable Markdown-first output in Lab and reset the override",
     FeatureSwitchKey.MarkdownFirstOutput,
   ],
 ] as const)("%s", async (_title, featureKey) => {
@@ -136,8 +136,11 @@ test.each([
     overrides = {};
     return respond(200, { deleted: true });
   });
-  await visitLab(false, true);
-  const label = screen.getByText(featureKey).closest("label")!;
+  await setupPage({ context, path: "/_/lab" });
+  const name = getFeatureSwitchMetadata()[featureKey].displayName ?? featureKey;
+  const label = (await screen.findByText(name, { exact: true })).closest(
+    "label",
+  )!;
   const toggle = within(label).getByRole("switch");
   expect(toggle).not.toBeChecked();
   click(toggle);

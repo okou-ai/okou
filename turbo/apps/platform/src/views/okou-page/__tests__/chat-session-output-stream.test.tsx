@@ -66,6 +66,17 @@ async function conversation() {
         delta,
       });
     },
+    nextBlock(text: string) {
+      context.mocks.ably.triggerOnChannel(channel, run, {
+        threadId: RUN_THREAD_ID,
+        runId: run,
+        eventId: crypto.randomUUID(),
+        runEventId: crypto.randomUUID(),
+        createdAt: "2026-08-01T10:00:03.000Z",
+        chunkIndex: 0,
+        delta: text,
+      });
+    },
     persist(text: string) {
       events.push(
         assistantEvent({ id: event, runId: run, seqId: 2, text, createdAt }),
@@ -262,3 +273,22 @@ test.each([
     }
   },
 );
+
+test("A returning conversation reacquires live output after its reader left for Workflows", async () => {
+  const session = await conversation();
+  session.chunk("Ready at platform nine.");
+  await screen.findByText("Ready at platform nine.");
+  click(await findFastControl("link", "Workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  await waitFor(() => {
+    return expect(session.subscribed()).toBeFalsy();
+  });
+  window.history.back();
+  await screen.findByText("Prepare the report");
+  await waitFor(() => {
+    return expect(session.subscribed()).toBeTruthy();
+  });
+  session.nextBlock("Depart from platform four.");
+  await screen.findByText("Depart from platform four.");
+  await expect(findComposerEditor()).resolves.toBeEnabled();
+});

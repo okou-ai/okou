@@ -322,3 +322,27 @@ test("Scrolling back to the beginning keeps that turn mounted until the reader r
   expect(leading.getBoundingClientRect().height).toBeGreaterThan(estimated);
   expect(decodedImages).not.toContain(image);
 });
+
+test("Closing Automations preserves a history reader's visible answer and distance from the bottom", async () => {
+  const pane = await transcript();
+  const answer = "Locator answer 5";
+  await within(pane).findByText(answer);
+  pane.scrollTop += messageOffset(answer, pane) - 73;
+  fireEvent.scroll(pane);
+  const at = messageOffset(answer, pane);
+  const tail = pane.scrollHeight - pane.scrollTop - pane.clientHeight;
+  expect(at).toBeGreaterThanOrEqual(0);
+  expect(at).toBeLessThan(pane.clientHeight);
+  expect(tail).toBeGreaterThan(0);
+  click(await findFastControl("button", "More actions"));
+  click(
+    await within(await screen.findByRole("menu")).findByText("Automations"),
+  );
+  const close = await findFastControl("button", "Close automations");
+  click(close);
+  await waitFor(() => {
+    expect(close).not.toBeInTheDocument();
+    expect(messageOffset(answer, pane)).toBe(at);
+    expect(pane.scrollHeight - pane.scrollTop - pane.clientHeight).toBe(tail);
+  });
+});
