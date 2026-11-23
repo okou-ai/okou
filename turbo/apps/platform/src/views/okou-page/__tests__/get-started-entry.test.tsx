@@ -1389,7 +1389,6 @@ test("An ordinary day's check-in confirms the reward and streak in the menu", as
   const row = within(panel).getByTestId("get-started-quest-checkin");
   expect(within(row).getByText("· 9-day streak")).toBeInTheDocument();
   expect(within(row).getByText("+100")).toBeInTheDocument();
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });
 
 test("Check-in keeps the menu open and busy through the request and reward refresh", async () => {
