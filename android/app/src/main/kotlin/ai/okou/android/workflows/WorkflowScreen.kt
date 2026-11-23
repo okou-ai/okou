@@ -82,6 +82,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -229,8 +230,6 @@ internal fun WorkflowScreen(
                 }
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    state.detailFailure == WorkflowReadFailure.Unavailable ->
-                        WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
                         WorkflowEditor(
@@ -446,7 +445,9 @@ private fun WorkflowDirectory(
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
-            WorkflowPlaceholder(R.string.workflow_unavailable)
+            Box(Modifier.widthIn(max = 730.dp).fillMaxWidth()) {
+                WorkflowInitialReadError(R.string.workflow_unavailable)
+            }
             return@Column
         }
         Column(
@@ -486,10 +487,8 @@ private fun WorkflowDirectory(
         }
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
-                catalog == null && state.catalogFailure == WorkflowReadFailure.Offline ->
-                    WorkflowPlaceholder(R.string.workflow_offline)
                 catalog == null && state.catalogFailure != null ->
-                    WorkflowPlaceholder(R.string.workflow_load_failed)
+                    WorkflowInitialReadError(R.string.workflow_load_failed)
                 catalog == null -> WorkflowSkeleton(directory = true)
                 rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
                 else ->
@@ -514,9 +513,13 @@ private fun WorkflowDirectory(
             }
         }
         if (catalog != null) {
+            val rulesFeedback =
+                if (state.rulesFailure != null && state.rules == null)
+                    R.string.workflow_rules_load_failed
+                else state.rulesFailure.cachedReadFeedback()
             WorkflowReadFeedback(
                 state.catalogFailure.cachedReadFeedback()
-                    ?: state.rulesFailure.cachedReadFeedback()
+                    ?: rulesFeedback
                     ?: state.connectionReadFeedback(),
             )
         }
@@ -891,8 +894,9 @@ private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) 
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when (failure) {
                 null -> WorkflowSkeleton(directory = false)
-                WorkflowReadFailure.Offline -> WorkflowPlaceholder(R.string.workflow_offline)
-                else -> WorkflowPlaceholder(R.string.workflow_load_failed)
+                WorkflowReadFailure.Unavailable ->
+                    WorkflowInitialReadError(R.string.workflow_unavailable)
+                else -> WorkflowInitialReadError(R.string.workflow_load_failed)
             }
         }
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
@@ -1188,10 +1192,11 @@ private fun WorkflowReadFeedback(label: Int?) {
     val shape = RoundedCornerShape(12.dp)
     Text(
         stringResource(label),
-        Modifier.widthIn(max = 480.dp)
+        Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 480.dp)
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
             .heightIn(min = 48.dp)
+            .shadow(2.dp, shape)
             .background(MaterialTheme.colorScheme.surface, shape)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .padding(12.dp)
@@ -1199,6 +1204,11 @@ private fun WorkflowReadFeedback(label: Int?) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
     )
+}
+
+@Composable
+internal fun WorkflowInitialReadError(label: Int) {
+    WorkflowNotice(label, PaddingValues(start = 12.dp, top = 24.dp, end = 12.dp))
 }
 
 @Composable

@@ -6,10 +6,12 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -34,7 +36,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -118,6 +122,57 @@ class WorkflowRootTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun terminalCatalogFailureReplacesTheSkeletonBelowTheFilters() {
+        val fixture = app.fixture
+        val gate = app.gate
+        val response = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                gate.await()
+                MockResponse().setResponseCode(400)
+            } else response(request)
+        }
+
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        waitForTag("workflow_loading")
+        gate.countDown()
+        waitFor("Could not load workflows")
+        val feedback =
+            compose
+                .onNodeWithText("Could not load workflows")
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+        compose.onNodeWithTag("workflow_loading").assertDoesNotExist()
+        compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_create").assertIsEnabled()
+        val filter =
+            compose
+                .onNode(
+                    hasText("All") and
+                        SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+                )
+                .getUnclippedBoundsInRoot()
+        val bounds = feedback.getUnclippedBoundsInRoot()
+        val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, bounds.left - directory.left)
+        assertEquals(32.dp, bounds.top - filter.bottom)
+        val layouts = mutableListOf<TextLayoutResult>()
+        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        selectScope("Workspace shared")
+        feedback.assertIsDisplayed()
+        back()
+        compose.onNodeWithContentDescription("Workflows").assertIsDisplayed()
     }
 
     @Test
