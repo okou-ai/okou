@@ -95,7 +95,7 @@ internal sealed interface ArtifactContent {
 
     data class Image(val bitmap: Bitmap) : ArtifactContent
 
-    data class Website(val url: HttpUrl) : ArtifactContent
+    data class Website(val url: HttpUrl, val remainingRetries: Int) : ArtifactContent
 
     data class Media(val url: HttpUrl, val video: Boolean) : ArtifactContent
 
@@ -277,11 +277,10 @@ internal constructor(
         }
     }
 
-    internal suspend fun siteContent(site: ArtifactResource.Site): ArtifactContent.Website {
+    internal suspend fun sitePreviewUrl(site: ArtifactResource.Site): HttpUrl {
         val url = site.url
         val preview = api.artifactSitePreview(url.host.substringBefore('.'), url.host)
-        val grant = artifactHttpsUrl(preview.url) ?: throw ApiFailure.IncompatibleResponse()
-        return ArtifactContent.Website(grant)
+        return artifactHttpsUrl(preview.url) ?: throw ApiFailure.IncompatibleResponse()
     }
 
     internal suspend fun thumbnail(value: String?, edge: Int = 120): Bitmap? {

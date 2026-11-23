@@ -4,10 +4,13 @@ import ai.okou.android.artifacts.ArtifactSaveResult
 import ai.okou.android.auth.SessionModel
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -428,6 +431,56 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    fun websiteGrantAndInitialDocumentShareTheRetryBudget() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val grantAttempts = AtomicInteger()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath == "/api/host/sites/fixture/preview" &&
+                    grantAttempts.incrementAndGet() == 1
+            ) {
+                MockResponse().setResponseCode(503)
+            } else respond(request)
+        }
+        openWebsite(fixture)
+        val first = checkNotNull(websiteView())
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val originalBounds = frame.getUnclippedBoundsInRoot()
+        failWebsiteDocument(first)
+        compose.waitUntil(10_000) { websiteView()?.let { it !== first } == true }
+        val retry = checkNotNull(websiteView())
+        assertEquals(fixture.requestedSiteGrants.single(), loadedWebsiteUrl())
+        assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
+
+        failWebsiteDocument(retry)
+        awaitText("Temporarily unavailable")
+        compose.mainClock.advanceTimeBy(6_000)
+        assertNull(websiteView())
+        assertEquals(2, grantAttempts.get())
+        assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        compose.onNodeWithText("Open in browser").assertIsEnabled()
+    }
+
+    @Test
+    fun websiteDoesNotRetryNavigationAfterTheFirstDocumentCommits() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        openWebsite(fixture)
+        val view = checkNotNull(websiteView())
+        compose.runOnIdle {
+            view.webViewClient.onPageCommitVisible(view, checkNotNull(shadowOf(view).lastLoadedUrl))
+        }
+        failWebsiteDocument(view)
+        awaitText("Temporarily unavailable")
+        compose.mainClock.advanceTimeBy(6_000)
+        assertNull(websiteView())
+        assertEquals(1, fixture.requestedSiteGrants.size)
+    }
+
+    @Test
     fun websiteReconnectKeepsItsFrameAndSourceWhileWaitingForFreshAccess() {
         val releaseGrant = CountDownLatch(1)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -782,10 +835,42 @@ class ArtifactCatalogRootTest {
         app.cacheSnapshot.restore()
     }
 
-    private fun loadedWebsiteUrl(): String? =
+    private fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
+
+    private fun websiteView(): WebView? =
+        compose.runOnIdle { compose.activity.window.decorView.website() }
+
+    private fun openWebsite(fixture: ArtifactApiFixture) {
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.site.title)
+        compose.onNodeWithText(fixture.site.title).performClick()
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
+    }
+
+    private fun failWebsiteDocument(view: WebView) {
         compose.runOnIdle {
-            compose.activity.window.decorView.website()?.let { shadowOf(it).lastLoadedUrl }
+            val address = Uri.parse(checkNotNull(shadowOf(view).lastLoadedUrl))
+            val request =
+                object : WebResourceRequest {
+                    override fun getUrl() = address
+
+                    override fun isForMainFrame() = true
+
+                    override fun isRedirect() = false
+
+                    override fun hasGesture() = false
+
+                    override fun getMethod() = "GET"
+
+                    override fun getRequestHeaders() = emptyMap<String, String>()
+                }
+            val response =
+                WebResourceResponse("text/plain", "UTF-8", 503, "Unavailable", emptyMap(), null)
+            view.webViewClient.onReceivedHttpError(view, request, response)
         }
+    }
 
     private fun View.website(): WebView? =
         when (this) {

@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+internal const val ArtifactRetryDelayMillis = 3_000L
+private const val ArtifactRetryLimit = 2
+
 internal enum class ArtifactProblem {
     Denied,
     Missing,
@@ -354,7 +357,7 @@ internal constructor(
                 var fileAccessAuthorized = false
                 try {
                     updatePreview(id) { copy(problem = null) }
-                    retryArtifactOperation {
+                    retryArtifactOperation { remainingRetries ->
                         detailAuthorized = false
                         fileAccessAuthorized = false
                         val info = service.info(id)
@@ -374,9 +377,13 @@ internal constructor(
                                     updatePreview(id) { copy(access = access) }
                                     service.fileContent(resource, access)
                                 }
-                                is ArtifactResource.Site -> service.siteContent(resource)
+                                is ArtifactResource.Site ->
+                                    ArtifactContent.Website(
+                                        service.sitePreviewUrl(resource),
+                                        remainingRetries,
+                                    )
                                 is ArtifactResource.ResolvedHtml ->
-                                    ArtifactContent.Website(resource.url)
+                                    ArtifactContent.Website(resource.url, remainingRetries)
                                 ArtifactResource.Unsupported -> ArtifactContent.Unsupported
                             }
                         updatePreview(id) {
@@ -444,10 +451,9 @@ private fun artifactProblem(error: Exception): ArtifactProblem =
                 403 -> ArtifactProblem.Denied
                 404,
                 410 -> ArtifactProblem.Missing
-                408,
-                429,
-                in 500..599 -> ArtifactProblem.Temporary
-                else -> ArtifactProblem.Unavailable
+                else ->
+                    if (isTemporaryArtifactHttpStatus(error.status)) ArtifactProblem.Temporary
+                    else ArtifactProblem.Unavailable
             }
         is ResponseLimitExceeded -> ArtifactProblem.Unsupported
         is ApiFailure.Network,
@@ -455,13 +461,16 @@ private fun artifactProblem(error: Exception): ArtifactProblem =
         else -> ArtifactProblem.Unavailable
     }
 
+internal fun isTemporaryArtifactHttpStatus(status: Int): Boolean =
+    status == 408 || status == 429 || status in 500..599
+
 private suspend fun <T> retryArtifactOperation(
     canRetry: () -> Boolean = { true },
-    operation: suspend () -> T,
+    operation: suspend (remainingRetries: Int) -> T,
 ): T {
-    repeat(2) {
+    repeat(ArtifactRetryLimit) { usedRetries ->
         try {
-            return operation()
+            return operation(ArtifactRetryLimit - usedRetries)
         } catch (error: Exception) {
             if (
                 error is CancellationException ||
@@ -470,10 +479,10 @@ private suspend fun <T> retryArtifactOperation(
             ) {
                 throw error
             }
-            delay(3_000)
+            delay(ArtifactRetryDelayMillis)
         }
     }
-    return operation()
+    return operation(0)
 }
 
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =
