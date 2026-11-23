@@ -363,6 +363,35 @@ test.each(["lost", "process", "generation", "run"] as const)(
   },
 );
 
+test("stops retrying an ambiguous first dispatch once the Run is cancelled", async () => {
+  const f = await launchFixture();
+  let offers = 0;
+  await f.api.registerDirectRunner(f.group, {
+    reply: async (envelope) => {
+      offers++;
+      if (offers === 1) {
+        await f.api.requestCancelRun(
+          f.actor,
+          envelope.executionContext.runId,
+          [200],
+        );
+        return HttpResponse.error();
+      }
+      return HttpResponse.json({
+        runnerId: envelope.runnerId,
+        heartbeatGeneration: envelope.heartbeatGeneration,
+        runId: envelope.executionContext.runId,
+        disposition: "accepted",
+      });
+    },
+  });
+  const run = await f.api.createThreadRun(f.actor, {
+    prompt: "cancel before retrying ambiguous delivery",
+  });
+  expect(offers).toBe(1);
+  expect(run.status).toBe("cancelled");
+});
+
 test("switches candidates only after a definite refusal", async () => {
   const f = await launchFixture();
   const visited: string[] = [];
