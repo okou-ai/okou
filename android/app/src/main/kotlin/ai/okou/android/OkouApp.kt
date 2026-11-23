@@ -50,6 +50,7 @@ import ai.okou.android.state.ArtifactsDestination
 import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
+import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsMode
 import ai.okou.android.state.WorkflowsRoute
@@ -60,6 +61,7 @@ import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationUiState
+import ai.okou.android.state.rememberWorkflowConnectorVisit
 import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -107,6 +109,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -172,8 +175,11 @@ internal fun OkouApp(
     var linkPosition by rememberConversationLinkPosition()
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     var connectorsOpen by rememberConnectorsOpen()
+    var workflowConnectorVisit by rememberWorkflowConnectorVisit()
+    var workflowConnectionReturn by remember { mutableStateOf<WorkflowConnectorVisit?>(null) }
+    val workflowPageState = rememberSaveableStateHolder()
     val canOpenConnectors = connectors != null && workspaceReady
-    val showingConnectors = canOpenConnectors && connectorsOpen
+    val showingConnectors = canOpenConnectors && (connectorsOpen || workflowConnectorVisit != null)
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
     var workflowHistoryReturnRunId by
@@ -187,13 +193,15 @@ internal fun OkouApp(
     val showWorkflows =
         workflows != null && !showingConnectors && workflowRoute.mode == WorkflowsMode.Directory
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
+    val retainWorkflowVisit = workflowConnectionReturn != null
     fun syncWorkflowDestination(route: WorkflowsRoute, open: Boolean) {
         workflows?.let {
             if (open) it.select(route.id, route.tab)
-            it.visibilityChanged(open)
+            it.visibilityChanged(open, retainCurrentVisit = retainWorkflowVisit)
         }
     }
     fun changeWorkflowRoute(route: WorkflowsRoute) {
+        if (route != workflowRoute) workflowConnectionReturn = null
         syncWorkflowDestination(route, !showingConnectors && route.mode == WorkflowsMode.Directory)
         workflowRoute = route
     }
@@ -421,6 +429,8 @@ internal fun OkouApp(
     fun closeWorkflows() {
         handoff?.cancel()
         handoff = null
+        workflowConnectionReturn = null
+        workflowPageState.removeState("workflow")
         changeWorkflowRoute(WorkflowsRoute())
     }
 
@@ -813,46 +823,66 @@ internal fun OkouApp(
 
     if (showWorkflows && workflowState != null) {
         val creation = stringResource(R.string.workflow_creation_prompt)
-        WorkflowScreen(
-            model = workflows,
-            state = workflowState,
-            route = workflowRoute,
-            changeRoute = {
-                if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
-                    workflowDraftError = null
-                changeWorkflowRoute(it)
-            },
-            query = workflowQuery,
-            positions = workflowPositions,
-            listWidth = listWidth,
-            timezone = workflowTimezone,
-            handoffPending = handoffPending,
-            createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
-            useError = workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
-            feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
-            onClose = ::closeWorkflows,
-            onCreate = { workflowDraft("$creation\n\n") },
-            onUse = { workflowDraft("/${it.name} ", it.id) },
-            sourceChatAvailable = { id -> list.threads.any { it.id == id && it.hidden != true } },
-            restoreHistoryRunId = workflowHistoryReturnRunId,
-            onHistoryFocusRestored = { workflowHistoryReturnRunId = null },
-            onOpenChat = { runId, threadId ->
-                if (!handoffPending) {
-                    list.threads
-                        .firstOrNull { it.id == threadId && it.hidden != true }
-                        ?.let {
-                            workflowHistoryReturnRunId = runId
-                            openChat(it)
-                            changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
+        workflowPageState.SaveableStateProvider("workflow") {
+            WorkflowScreen(
+                model = workflows,
+                state = workflowState,
+                route = workflowRoute,
+                changeRoute = {
+                    if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
+                        workflowDraftError = null
+                    changeWorkflowRoute(it)
+                },
+                query = workflowQuery,
+                positions = workflowPositions,
+                listWidth = listWidth,
+                timezone = workflowTimezone,
+                handoffPending = handoffPending,
+                createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
+                useError =
+                    workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
+                feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
+                onClose = ::closeWorkflows,
+                onCreate = { workflowDraft("$creation\n\n") },
+                onUse = { workflowDraft("/${it.name} ", it.id) },
+                onViewConnection =
+                    if (canOpenConnectors) {
+                        { slug, ruleId ->
+                            focus.clearFocus()
+                            keyboard?.hide()
+                            workflowConnectionReturn = null
+                            workflowConnectorVisit = WorkflowConnectorVisit(slug, ruleId)
                         }
-                }
-            },
-        )
+                    } else null,
+                connectionReturn = workflowConnectionReturn,
+                onConnectionFocusRestored = { workflowConnectionReturn = null },
+                sourceChatAvailable = { id ->
+                    list.threads.any { it.id == id && it.hidden != true }
+                },
+                restoreHistoryRunId = workflowHistoryReturnRunId,
+                onHistoryFocusRestored = { workflowHistoryReturnRunId = null },
+                onOpenChat = { runId, threadId ->
+                    if (!handoffPending) {
+                        list.threads
+                            .firstOrNull { it.id == threadId && it.hidden != true }
+                            ?.let {
+                                workflowHistoryReturnRunId = runId
+                                openChat(it)
+                                changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
+                            }
+                    }
+                },
+            )
+        }
         return
     }
 
     if (showingConnectors) {
-        ConnectorsPage(connectors, listWidth) { connectorsOpen = false }
+        ConnectorsPage(connectors, listWidth, initialSlug = workflowConnectorVisit?.slug) {
+            workflowConnectionReturn = workflowConnectorVisit
+            workflowConnectorVisit = null
+            connectorsOpen = false
+        }
         return
     }
 

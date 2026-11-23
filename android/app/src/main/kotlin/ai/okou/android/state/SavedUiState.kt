@@ -76,6 +76,26 @@ internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable 
     mutableStateOf(false)
 }
 
+internal data class WorkflowConnectorVisit(val slug: String, val ruleId: String?)
+
+@Composable
+internal fun rememberWorkflowConnectorVisit(): MutableState<WorkflowConnectorVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<WorkflowConnectorVisit?, String>(
+                save = { visit ->
+                    if (visit == null) emptyList() else listOf(visit.slug, visit.ruleId.orEmpty())
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        WorkflowConnectorVisit(it, values[1].ifEmpty { null })
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
 internal class ConnectorDirectoryState(
     slug: String? = null,
     category: String? = null,
@@ -101,8 +121,9 @@ internal class ConnectorDirectoryState(
 }
 
 @Composable
-internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+internal fun rememberConnectorDirectory(initialSlug: String?): ConnectorDirectoryState =
     rememberSaveable(
+        initialSlug,
         saver =
             listSaver<ConnectorDirectoryState, Any>(
                 save = {
@@ -129,7 +150,7 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
                 },
             ),
     ) {
-        ConnectorDirectoryState()
+        ConnectorDirectoryState(slug = initialSlug)
     }
 
 @Composable
