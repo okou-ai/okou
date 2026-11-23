@@ -51,7 +51,7 @@ class UpdateRecoveryApplication : TestOkouApplication() {
                     minimum = selected.version,
                     checkedAt = System.currentTimeMillis(),
                     target = selected,
-                )
+                ),
             ),
             BuildConfig.VERSION_NAME,
             Build.VERSION.SDK_INT,

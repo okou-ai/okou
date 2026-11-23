@@ -99,8 +99,8 @@ fun AssistantRecoveryPanel(
                                 Text(
                                     stringResource(
                                         if (unknownReset) R.string.recovery_reset_retry
-                                        else R.string.recovery_reset
-                                    )
+                                        else R.string.recovery_reset,
+                                    ),
                                 )
                             }
                     }

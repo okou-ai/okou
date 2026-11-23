@@ -98,8 +98,9 @@ internal data class UpdateToolbarAction(
     val installsPackage: Boolean = false,
 )
 
-private fun UpdateTransfer.Downloading.fraction(): Float? =
-    downloadedBytes?.let { (it.toDouble() / release.size).coerceIn(0.0, 1.0).toFloat() }
+private fun UpdateTransfer.Downloading.fraction(): Float? = downloadedBytes?.let {
+    (it.toDouble() / release.size).coerceIn(0.0, 1.0).toFloat()
+}
 
 @Composable
 private fun updatePercent(fraction: Float): String {
@@ -239,7 +240,7 @@ internal fun UpdateHost(
         Box(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .safeDrawingPadding()
+                .safeDrawingPadding(),
         ) {
             // Retain navigation metadata while the required screen owns the task.
             savedUi.SaveableStateProvider("workspace") { content { details = true } }
@@ -285,7 +286,7 @@ internal fun AppUpdateSettings(
                 stringResource(
                     installProgress
                         ?: if (state.installFailed) R.string.updates_install_failed
-                        else R.string.updates_ready
+                        else R.string.updates_ready,
                 )
             (transfer is UpdateTransfer.Failed || transfer is UpdateTransfer.Waiting) &&
                 state.available -> stringResource(R.string.updates_download_failed)
@@ -331,7 +332,7 @@ internal fun AppUpdateSettings(
                 {
                     Box(
                         Modifier.size(8.dp)
-                            .background(LocalActivityStatusColor.current, CircleShape)
+                            .background(LocalActivityStatusColor.current, CircleShape),
                     )
                 }
             } else null,
@@ -385,7 +386,7 @@ private fun UpdateSheet(
                 .heightIn(max = windowHeight * 0.8f)
                 .padding(horizontal = inset)
                 .padding(top = if (centered) inset else 0.dp)
-                .padding(bottom = if (short) 8.dp else if (compact) 12.dp else 24.dp)
+                .padding(bottom = if (short) 8.dp else if (compact) 12.dp else 24.dp),
         ) {
             val actions = measureUpdateSheetActions(maxWidth)
             val headingStyle =
@@ -408,7 +409,7 @@ private fun UpdateSheet(
                 )
                 Column(
                     if (scrollWholePanel) Modifier
-                    else Modifier.weight(1f, fill = false).verticalScroll(scroll)
+                    else Modifier.weight(1f, fill = false).verticalScroll(scroll),
                 ) {
                     UpdateCopy(
                         stringResource(R.string.updates_installed, state.installedVersion),
@@ -478,7 +479,7 @@ private fun RequiredUpdateScreen(
                             if (compact) 8.dp
                             else (window.height.dp * 0.08f).coerceIn(24.dp, 72.dp),
                         bottom = if (compact) 12.dp else 24.dp,
-                    )
+                    ),
             ) {
                 if (!compact) {
                     Icon(
@@ -491,7 +492,7 @@ private fun RequiredUpdateScreen(
                 }
                 Text(
                     stringResource(
-                        if (compact) R.string.updates_required_short else R.string.updates_required
+                        if (compact) R.string.updates_required_short else R.string.updates_required,
                     ),
                     style =
                         MaterialTheme.typography.headlineSmall.copy(
@@ -655,7 +656,7 @@ private fun UpdateAction(
                         Modifier.align(Alignment.BottomStart)
                             .fillMaxWidth(fraction)
                             .height(2.dp)
-                            .background(LocalActivityStatusColor.current)
+                            .background(LocalActivityStatusColor.current),
                     )
                 }
             }
@@ -740,7 +741,8 @@ private fun ActionText(label: String, action: () -> Unit, modifier: Modifier = M
                 .heightIn(min = updateActionMinHeight)
                 .updateFocusOutline(ButtonDefaults.shape, LocalActivityStatusColor.current),
         contentPadding = updateActionPadding,
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(label, style = updateActionLabelStyle(), textAlign = TextAlign.Center)
     }

@@ -113,7 +113,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                             thread = threadId,
                             kind = "pinned",
                             extra = ",\"pinOrder\":\"$pinOrder\"",
-                        )
+                        ),
                     )
 
                 override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) =
@@ -124,7 +124,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                             thread = threadId,
                             kind = "sort_touched",
                             extra = ",\"muted\":$muted",
-                        )
+                        ),
                     )
 
                 override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
@@ -145,7 +145,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
             }
         val events =
             Json.decodeFromString<ChatEvents>(
-                """{"events":[${chatEventWire(title = CACHED_CHAT)}],"hasMore":false}"""
+                """{"events":[${chatEventWire(title = CACHED_CHAT)}],"hasMore":false}""",
             )
         val identity =
             WorkspaceIdentity(
@@ -193,7 +193,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
                 seq = 18,
                 kind = "renamed",
                 title = title,
-            )
+            ),
         )
 
     override fun createWorkspaceSession(
@@ -532,7 +532,7 @@ class PendingWorkspaceRootTest {
             SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,
                 "Muted, Updating chat…",
-            )
+            ),
         )
         compose.onNodeWithContentDescription("Settings").assertIsEnabled()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
@@ -598,10 +598,9 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertExists()
     }
 
-    private fun sessionState() =
-        compose.runOnIdle {
-            ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
-        }
+    private fun sessionState() = compose.runOnIdle {
+        ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
+    }
 
     private fun listState() =
         sessionState().let {

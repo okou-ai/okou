@@ -56,17 +56,17 @@ class MemberPreferencesModelTest {
             error("Feature switches are outside this fixture")
 
         override suspend fun updateDefaultModelPreference(
-            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
         ): ai.okou.android.api.generated.DefaultModelPreference =
             error("Default model is outside this fixture")
 
         override suspend fun activateModelAccount(
-            accountId: String
+            accountId: String,
         ): ai.okou.android.api.generated.ActivatedModelAccount =
             error("Accounts are outside this fixture")
 
         override suspend fun sendControl(
-            request: ai.okou.android.api.generated.SendRequest
+            request: ai.okou.android.api.generated.SendRequest,
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")
 
         override suspend fun personalInstructions():
@@ -226,7 +226,7 @@ class MemberPreferencesModelTest {
                     .copy(
                         colorTheme =
                             UserPreferencesColorTheme.valueOf(
-                                checkNotNull(request.colorTheme).name
+                                checkNotNull(request.colorTheme).name,
                             ),
                         locale = UserPreferencesLocale.valueOf(checkNotNull(request.locale).name),
                     )
@@ -254,8 +254,8 @@ class MemberPreferencesModelTest {
                         stored.copy(
                             colorTheme =
                                 UserPreferencesColorTheme.valueOf(
-                                    checkNotNull(request.colorTheme).name
-                                )
+                                    checkNotNull(request.colorTheme).name,
+                                ),
                         )
                     throw IOException("response lost")
                 }

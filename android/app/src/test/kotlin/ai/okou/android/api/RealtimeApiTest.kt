@@ -26,8 +26,8 @@ class RealtimeApiTest {
                 for (nonce in listOf("first-single-use", "renewed-single-use")) server.enqueue(
                     MockResponse()
                         .setBody(
-                            """{"keyName":"app.key","timestamp":1700000000000,"ttl":3600000,"capability":"{}","clientId":"user-a","nonce":"$nonce","mac":"signed"}"""
-                        )
+                            """{"keyName":"app.key","timestamp":1700000000000,"ttl":3600000,"capability":"{}","clientId":"user-a","nonce":"$nonce","mac":"signed"}""",
+                        ),
                 )
                 ApiClient(server.url("/"), { "workspace-token" }, version = "0.1.0").use { api ->
                     val errors = mutableListOf<Exception>()
@@ -107,8 +107,8 @@ class RealtimeApiTest {
                 MockResponse()
                     .setResponseCode(426)
                     .setBody(
-                        """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}"""
-                    )
+                        """{"error":{"code":"ANDROID_UPDATE_REQUIRED","message":"Update"},"minimumSupportedVersion":"0.2.0"}""",
+                    ),
             )
             var requirement: RequiredUpdate? = null
             ApiClient(

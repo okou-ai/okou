@@ -454,7 +454,9 @@ internal fun OkouConfirmationDialog(
                                 enabled = dismissEnabled,
                                 contentPadding = buttonPadding,
                                 colors =
-                                    ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
+                                    ButtonDefaults.textButtonColors(
+                                        contentColor = colors.onSurface,
+                                    ),
                             ) {
                                 Text(stringResource(R.string.settings_cancel))
                             }
@@ -466,7 +468,7 @@ internal fun OkouConfirmationDialog(
                                 colors =
                                     ButtonDefaults.textButtonColors(
                                         contentColor =
-                                            if (destructive) colors.error else colors.onSurface
+                                            if (destructive) colors.error else colors.onSurface,
                                     ),
                             ) {
                                 Text(confirm)
@@ -490,8 +492,8 @@ internal fun OkouConfirmationDialog(
                         children[1].measure(
                             loose.copy(
                                 maxHeight =
-                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2)
-                            )
+                                    maxOf(bodySpace, bodyStyle.lineHeight.toDp().roundToPx() * 2),
+                            ),
                         )
                     val bodyTop = heading.height + titleSpace
                     val actionsTop = bodyTop + body.height + actionSpace

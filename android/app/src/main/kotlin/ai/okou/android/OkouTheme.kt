@@ -67,7 +67,7 @@ fun OkouTheme(
                 colors.background.toArgb(),
                 activityStatusColor(palette, !dark).toArgb(),
                 0.5f,
-            )
+            ),
         )
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }

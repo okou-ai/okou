@@ -106,28 +106,27 @@ internal class ProjectListOwner(
     }
 
     fun restore(afterChatCache: Job) {
-        projectsRestoreJob =
-            scope.launch {
-                try {
-                    // Both cache reads use the store mutex. Give first chat display priority.
-                    afterChatCache.join()
-                    requireCurrent()
-                    val checkpoint = cache.loadProjects()?.checkpoint ?: return@launch
-                    requireCurrent()
-                    if (state.source == ChatListSource.Network) return@launch
-                    val restored = replayConfirmedProjects(checkpoint)
-                    requireCurrent()
-                    if (state.source != ChatListSource.Network) {
-                        confirmedProjects = restored
-                        publishProjects(state.copy(source = ChatListSource.Cache))
-                    }
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    currentCoroutineContext().ensureActive()
-                    if (current()) state = state.copy(cacheUnavailable = true)
+        projectsRestoreJob = scope.launch {
+            try {
+                // Both cache reads use the store mutex. Give first chat display priority.
+                afterChatCache.join()
+                requireCurrent()
+                val checkpoint = cache.loadProjects()?.checkpoint ?: return@launch
+                requireCurrent()
+                if (state.source == ChatListSource.Network) return@launch
+                val restored = replayConfirmedProjects(checkpoint)
+                requireCurrent()
+                if (state.source != ChatListSource.Network) {
+                    confirmedProjects = restored
+                    publishProjects(state.copy(source = ChatListSource.Cache))
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (current()) state = state.copy(cacheUnavailable = true)
             }
+        }
     }
 
     private suspend fun replayConfirmedProjects(checkpoint: ProjectCheckpoint): ConfirmedProjects =
@@ -196,7 +195,7 @@ internal class ProjectListOwner(
                                     id,
                                     eventId,
                                     ProjectDeleteStatus.ConnectionFailed,
-                                )
+                                ),
                         )
                     return@launch
                 }
@@ -282,7 +281,7 @@ internal class ProjectListOwner(
         val previousRejection = snapshot.renameRejection
         publishProjects(
             if (previousRejection?.projectId == rename.id) snapshot.copy(renameRejection = null)
-            else snapshot
+            else snapshot,
         )
         scope.launch {
             var rejected = false
@@ -323,7 +322,7 @@ internal class ProjectListOwner(
                     val settled =
                         if (rejected && !hasProjectReceipt(rename.eventId))
                             snapshot.copy(
-                                renameRejection = ProjectRenameRejection(rename.id, rename.eventId)
+                                renameRejection = ProjectRenameRejection(rename.id, rename.eventId),
                             )
                         else snapshot
                     publishProjects(settled)
@@ -347,80 +346,77 @@ internal class ProjectListOwner(
     fun refresh(verifyWrite: Boolean = false) {
         if (current() && (verifyWrite || !offline()) && projectsJob?.isActive != true) {
             state = state.copy(phase = ChatReadPhase.Loading)
-            projectsJob =
-                scope.launch {
-                    try {
-                        projectsRestoreJob?.join()
-                        requireCurrent()
-                        val previous = confirmedProjects
-                        val result = projectSync.synchronize(previous?.checkpoint)
-                        val candidate =
-                            if (result.changed) replayConfirmedProjects(result.checkpoint)
-                            else checkNotNull(previous)
-                        requireCurrent()
-                        val saved =
-                            if (candidate === previous && !state.cacheUnavailable)
-                                candidate.checkpoint
-                            else persistProjects(candidate.checkpoint)
-                        val selected =
-                            if (saved === candidate.checkpoint) candidate
-                            else replayConfirmedProjects(saved)
-                        requireCurrent()
-                        confirmedProjects = selected
-                        if (retryableProjectDeletes.isNotEmpty()) {
-                            val ids = selected.rows.mapTo(hashSetOf()) { it.id }
-                            retryableProjectDeletes.keys.retainAll(ids)
-                        }
-                        if (retryableProjectRenames.isNotEmpty()) {
-                            val names = selected.rows.associate { it.id to it.name }
-                            val appliedEvents =
-                                selected.checkpoint.events.mapTo(hashSetOf()) { it.id }
-                            selected.checkpoint.archive.latestEventId?.let(appliedEvents::add)
-                            retryableProjectRenames.entries.removeAll { (id, rename) ->
-                                names[id] == null ||
-                                    names[id] == rename.name ||
-                                    rename.eventId in appliedEvents
-                            }
-                        }
-                        val snapshot = state
-                        val renameRejection =
-                            snapshot.renameRejection?.takeUnless {
-                                // A newer disk checkpoint can omit a receipt from this read.
-                                hasProjectReceipt(it.eventId) ||
-                                    (selected !== candidate &&
-                                        hasProjectReceipt(it.eventId, candidate.checkpoint))
-                            }
-                        publishProjects(
-                            snapshot.copy(
-                                phase = ChatReadPhase.Ready,
-                                source = ChatListSource.Network,
-                                renameRejection = renameRejection,
-                                deleteFeedback =
-                                    snapshot.deleteFeedback?.let { feedback ->
-                                        if (selected.rows.none { it.id == feedback.projectId })
-                                            feedback.copy(status = ProjectDeleteStatus.Confirmed)
-                                        else feedback
-                                    },
-                            )
-                        )
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        // A missing Projects collection does not revoke the workspace session.
-                        if (error is ApiFailure.Http && error.status == 404) {
-                            if (current()) {
-                                retryableProjectRenames.clear()
-                                // Keep the confirmed checkpoint for catch-up and rename receipts.
-                                publishProjects(
-                                    state.copy(source = null, phase = ChatReadPhase.Failed)
-                                )
-                            }
-                        } else if (current()) {
-                            onFailure(error)
-                            if (current()) state = state.copy(phase = ChatReadPhase.Failed)
+            projectsJob = scope.launch {
+                try {
+                    projectsRestoreJob?.join()
+                    requireCurrent()
+                    val previous = confirmedProjects
+                    val result = projectSync.synchronize(previous?.checkpoint)
+                    val candidate =
+                        if (result.changed) replayConfirmedProjects(result.checkpoint)
+                        else checkNotNull(previous)
+                    requireCurrent()
+                    val saved =
+                        if (candidate === previous && !state.cacheUnavailable) candidate.checkpoint
+                        else persistProjects(candidate.checkpoint)
+                    val selected =
+                        if (saved === candidate.checkpoint) candidate
+                        else replayConfirmedProjects(saved)
+                    requireCurrent()
+                    confirmedProjects = selected
+                    if (retryableProjectDeletes.isNotEmpty()) {
+                        val ids = selected.rows.mapTo(hashSetOf()) { it.id }
+                        retryableProjectDeletes.keys.retainAll(ids)
+                    }
+                    if (retryableProjectRenames.isNotEmpty()) {
+                        val names = selected.rows.associate { it.id to it.name }
+                        val appliedEvents = selected.checkpoint.events.mapTo(hashSetOf()) { it.id }
+                        selected.checkpoint.archive.latestEventId?.let(appliedEvents::add)
+                        retryableProjectRenames.entries.removeAll { (id, rename) ->
+                            names[id] == null ||
+                                names[id] == rename.name ||
+                                rename.eventId in appliedEvents
                         }
                     }
+                    val snapshot = state
+                    val renameRejection =
+                        snapshot.renameRejection?.takeUnless {
+                            // A newer disk checkpoint can omit a receipt from this read.
+                            hasProjectReceipt(it.eventId) ||
+                                (selected !== candidate &&
+                                    hasProjectReceipt(it.eventId, candidate.checkpoint))
+                        }
+                    publishProjects(
+                        snapshot.copy(
+                            phase = ChatReadPhase.Ready,
+                            source = ChatListSource.Network,
+                            renameRejection = renameRejection,
+                            deleteFeedback =
+                                snapshot.deleteFeedback?.let { feedback ->
+                                    if (selected.rows.none { it.id == feedback.projectId })
+                                        feedback.copy(status = ProjectDeleteStatus.Confirmed)
+                                    else feedback
+                                },
+                        ),
+                    )
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    // A missing Projects collection does not revoke the workspace session.
+                    if (error is ApiFailure.Http && error.status == 404) {
+                        if (current()) {
+                            retryableProjectRenames.clear()
+                            // Keep the confirmed checkpoint for catch-up and rename receipts.
+                            publishProjects(
+                                state.copy(source = null, phase = ChatReadPhase.Failed),
+                            )
+                        }
+                    } else if (current()) {
+                        onFailure(error)
+                        if (current()) state = state.copy(phase = ChatReadPhase.Failed)
+                    }
                 }
+            }
         }
     }
 

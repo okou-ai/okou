@@ -114,7 +114,7 @@ data class MemberPreferencesState(
 }
 
 private fun MemberPreferencesState.afterTimezoneConflict(
-    sent: PreferenceChange
+    sent: PreferenceChange,
 ): MemberPreferencesState {
     // The timezone endpoint returns this conflict after saving the fields and before finishing
     // Morning Brief reconciliation. Keep the schedule repair pending and acknowledge the values.
@@ -250,11 +250,10 @@ class MemberPreferencesModel(
         readRequested = false
         val saving = change != null
         val verifying = saving && needsWriteReadback
-        val pendingForWrite =
-            change?.let {
-                if (verifying || it.timezoneToWrite == null) it
-                else it.copy(timezoneToReconcile = it.timezoneToWrite)
-            }
+        val pendingForWrite = change?.let {
+            if (verifying || it.timezoneToWrite == null) it
+            else it.copy(timezoneToReconcile = it.timezoneToWrite)
+        }
         mutable.value =
             mutable.value.copy(
                 pending = pendingForWrite,
@@ -334,12 +333,11 @@ class MemberPreferencesModel(
             if (online) {
                 val wait = retryDelay
                 retryDelay = (retryDelay * 2).coerceAtMost(60_000L)
-                recovery =
-                    viewModelScope.launch {
-                        delay(wait)
-                        recovery = null
-                        synchronize()
-                    }
+                recovery = viewModelScope.launch {
+                    delay(wait)
+                    recovery = null
+                    synchronize()
+                }
             }
         }
     }

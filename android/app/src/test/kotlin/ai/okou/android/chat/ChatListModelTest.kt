@@ -95,12 +95,12 @@ class ChatListModelTest {
 
     private fun page(seq: Long = 17) =
         json.decodeFromString<ChatEvents>(
-            """{"events":[${chatEventWire(seq = seq)}],"hasMore":false}"""
+            """{"events":[${chatEventWire(seq = seq)}],"hasMore":false}""",
         )
 
     private fun page(events: List<String>) =
         json.decodeFromString<ChatEvents>(
-            """{"events":[${events.joinToString(",")}],"hasMore":false}"""
+            """{"events":[${events.joinToString(",")}],"hasMore":false}""",
         )
 
     private open inner class Service : TestChatService() {
@@ -111,7 +111,7 @@ class ChatListModelTest {
 
         override suspend fun chatSnapshot() =
             json.decodeFromString<ChatSnapshot>(
-                """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"""
+                """{"chatThreads":[],"latestEventId":null,"latestSeqId":null}""",
             )
 
         override suspend fun chatEvents(since: Long?) = listRead()
@@ -151,7 +151,7 @@ class ChatListModelTest {
                         seq = seq,
                         thread = threadId,
                         kind = if (archived) "archived" else "unarchived",
-                    )
+                    ),
             )
             if (!archived) afterUnarchive()
         }
@@ -645,7 +645,7 @@ class ChatListModelTest {
                                     historyEventWire(
                                         checkNotNull(latestReply.eventId),
                                         latestReply.seqId,
-                                    )
+                                    ),
                                 )
                             HistoryPage(listOf(event), latestReply, false)
                         }
@@ -805,7 +805,7 @@ class ChatListModelTest {
                     eventId: String,
                 ) {
                     events.add(
-                        chatEventWire(id = eventId, seq = 19, thread = threadId, kind = "archived")
+                        chatEventWire(id = eventId, seq = 19, thread = threadId, kind = "archived"),
                     )
                 }
             }
@@ -837,7 +837,7 @@ class ChatListModelTest {
             val sibling = group.threads.single { it.id == CHAT_IN_PROJECT }
             assertFalse(
                 ChatRowAction.Pin in
-                    model.uiState.value.rowActions(sibling, group, group.threads.indexOf(sibling))
+                    model.uiState.value.rowActions(sibling, group, group.threads.indexOf(sibling)),
             )
             assertTrue(model.performRowAction(CHAT_IN_PROJECT, ChatRowAction.Archive))
             runCurrent()
@@ -856,7 +856,7 @@ class ChatListModelTest {
                     if (since == null) return page()
                     readback.await()
                     return page(
-                        listOf(chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, kind = "deleted"))
+                        listOf(chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, kind = "deleted")),
                     )
                 }
 
@@ -909,7 +909,7 @@ class ChatListModelTest {
                     eventId: String,
                 ) {
                     events.add(
-                        chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title)
+                        chatEventWire(id = eventId, seq = 18, kind = "renamed", title = title),
                     )
                     throw ApiFailure.Network(IOException("Response lost after commit"))
                 }
@@ -931,7 +931,7 @@ class ChatListModelTest {
                     seq = 19,
                     kind = "renamed",
                     title = "Newer title",
-                )
+                ),
             )
             advanceTimeBy(5_000)
             runCurrent()
@@ -1033,7 +1033,7 @@ class ChatListModelTest {
                             thread = threadId,
                             kind = "sort_touched",
                             extra = ""","pinOrder":"$pinOrder"""",
-                        )
+                        ),
                     )
                 }
             }
@@ -1066,7 +1066,7 @@ class ChatListModelTest {
                     thread = submitted,
                     kind = "sort_touched",
                     extra = ""","pinOrder":"a4"""",
-                )
+                ),
             )
             readback.complete(Unit)
             runCurrent()
@@ -1223,7 +1223,7 @@ class ChatListModelTest {
             assertTrue(
                 chatListGroups(model.uiState.value, ChatListFilter.Unread).all {
                     it.threads.isEmpty()
-                }
+                },
             )
 
             source.statusRead = { stale.await() }
@@ -1403,7 +1403,7 @@ class ChatListModelTest {
                                     seq = 18,
                                     thread = CHAT_IN_PROJECT,
                                 ),
-                            )
+                            ),
                         )
                     }
                 }
@@ -1703,7 +1703,7 @@ class ChatListModelTest {
                             thread = threadId,
                             kind = "sort_touched",
                             extra = ",\"muted\":$muted",
-                        )
+                        ),
                     )
                     writeResponse.await()
                 }
@@ -1764,7 +1764,7 @@ class ChatListModelTest {
                 json.decodeFromString<SendRequestVariant1>(
                     """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
                             "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
-                            "hasTextContent":true,"chatThreadSortEventId":"$sortEvent"}"""
+                            "hasTextContent":true,"chatThreadSortEventId":"$sortEvent"}""",
                 ),
                 TextStage.Sending,
             )
@@ -1783,7 +1783,7 @@ class ChatListModelTest {
                     eventId: String,
                 ) {
                     events.add(
-                        chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title)
+                        chatEventWire(id = eventId, seq = 19, kind = "renamed", title = title),
                     )
                 }
             }
@@ -1818,7 +1818,7 @@ class ChatListModelTest {
                     seq = 20,
                     thread = preview.threadId,
                     extra = ""","projectId":"$CHAT_PROJECT"""",
-                )
+                ),
             )
             olderRead.complete(Unit)
             runCurrent()
@@ -1846,7 +1846,7 @@ class ChatListModelTest {
                     seq = 21,
                     kind = "renamed",
                     title = "Remote edit",
-                )
+                ),
             )
             model.refreshList()
             advanceUntilIdle()
@@ -1879,7 +1879,7 @@ class ChatListModelTest {
                     """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
                             "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
                             "hasTextContent":true,
-                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}""",
                 ),
                 TextStage.Sending,
             )
@@ -1931,8 +1931,8 @@ class ChatListModelTest {
                             id = checkNotNull(pending.send.chatThreadSortEventId),
                             seq = 19,
                             kind = "sort_touched",
-                        )
-                    )
+                        ),
+                    ),
                 )
             }
             online.value = true
@@ -1962,7 +1962,7 @@ class ChatListModelTest {
                     """{"prompt":"Hello","threadId":"$CHAT_PERSONAL",
                             "userMessage":{"version":1,"parts":[{"type":"text","text":"Hello"}]},
                             "hasTextContent":true,
-                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}"""
+                            "chatThreadSortEventId":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}""",
                 ),
                 TextStage.Sending,
             )
@@ -2046,8 +2046,8 @@ class ChatListModelTest {
             service.listRead = {
                 page(
                     listOf(
-                        chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = preview.threadId)
-                    )
+                        chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, thread = preview.threadId),
+                    ),
                 )
             }
             model.refreshList()
@@ -2136,7 +2136,7 @@ class ChatListModelTest {
                             thread = preview.threadId,
                             kind = "deleted",
                         ),
-                    )
+                    ),
                 )
             }
             model.refreshList()
@@ -2198,7 +2198,7 @@ class ChatListModelTest {
                     seq = 18,
                     kind = "renamed",
                     title = "Seen after reconnect",
-                )
+                ),
             )
             model.updates.retry()
             model.refresh()
@@ -2224,7 +2224,7 @@ class ChatListModelTest {
             Service().apply {
                 listRead = {
                     json.decodeFromString(
-                        """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
+                        """{"events":[${tail.joinToString(",")}],"hasMore":false}""",
                     )
                 }
             }
@@ -2276,7 +2276,7 @@ class ChatListModelTest {
                     seq = 19,
                     kind = "renamed",
                     title = "Remote edit",
-                )
+                ),
             )
             model.refreshList()
             advanceUntilIdle()
@@ -2304,7 +2304,7 @@ class ChatListModelTest {
                                 kind = "sort_touched",
                                 extra = ""","muted":true""",
                             ),
-                        )
+                        ),
                     )
 
                 override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
@@ -2355,7 +2355,7 @@ class ChatListModelTest {
             Service().apply {
                 listRead = {
                     json.decodeFromString(
-                        """{"events":[${tail.joinToString(",")}],"hasMore":false}"""
+                        """{"events":[${tail.joinToString(",")}],"hasMore":false}""",
                     )
                 }
                 statusRead = { Indicators(emptyMap(), emptyMap()) }
@@ -2372,7 +2372,7 @@ class ChatListModelTest {
                             thread = threadId,
                             kind = "sort_touched",
                             extra = ",\"muted\":$muted",
-                        )
+                        ),
                     )
                 }
             }
@@ -2409,7 +2409,7 @@ class ChatListModelTest {
                         CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
                     ),
                     mapOf(CHAT_PERSONAL to CHAT_DATE),
-                )
+                ),
             )
             advanceUntilIdle()
 
@@ -2639,7 +2639,7 @@ class ChatListModelTest {
             assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
             service.listRead = {
                 json.decodeFromString<ChatEvents>(
-                    """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}"""
+                    """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}""",
                 )
             }
             model.refreshList()
@@ -2739,9 +2739,10 @@ class ChatListModelTest {
                     ChatArchive(
                         listOf(
                             row.copy(
-                                title = if (url == oldSnapshot.url) "Superseded" else "Other device"
-                            )
-                        )
+                                title =
+                                    if (url == oldSnapshot.url) "Superseded" else "Other device",
+                            ),
+                        ),
                     )
 
                 override suspend fun renameThread(
@@ -2763,7 +2764,7 @@ class ChatListModelTest {
                                     listOf(
                                         renamed(104, "Local rename", renameEventId.await()),
                                         renamed(105, "Other device"),
-                                    )
+                                    ),
                                 )
                             else page(emptyList())
                         105L -> page(emptyList())
@@ -2975,7 +2976,7 @@ class ChatListModelTest {
                     it.saveProjects(
                         ProjectCheckpoint(ProjectArchive(listOf(project), null, 0)),
                         100,
-                    )
+                    ),
                 )
             }
         withCatchUpModel(service, chatCache = cache(root, dispatcher)) { model ->
@@ -3594,7 +3595,7 @@ class ChatListModelTest {
     }
 
     private inner class ProjectOrganizationService(
-        private val additionalProjectId: String? = null
+        private val additionalProjectId: String? = null,
     ) : Service() {
         private val events =
             mutableListOf(
@@ -3735,7 +3736,7 @@ class ChatListModelTest {
                         projectName,
                         CHAT_DATE,
                         CHAT_DATE,
-                    )
+                    ),
                 ),
                 latestEventId = null,
                 latestSeqId = 0,
@@ -3773,7 +3774,7 @@ class ChatListModelTest {
                                 "Before",
                                 CHAT_DATE,
                                 CHAT_DATE,
-                            )
+                            ),
                         ),
                         latestEventId = null,
                         latestSeqId = 0,
@@ -3832,7 +3833,7 @@ class ChatListModelTest {
             object : TestChatService() {
                 override suspend fun projectSnapshot() =
                     json.decodeFromString<ProjectSnapshot>(
-                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}"""
+                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":null,"latestSeqId":0}""",
                     )
 
                 override suspend fun projectEvents(since: Long) = page
@@ -3861,7 +3862,7 @@ class ChatListModelTest {
                             kind = ProjectEventsEventsItemKind.RENAMED,
                             name = "Missing project",
                             createdAt = CHAT_DATE,
-                        )
+                        ),
                     ),
                     false,
                 )
@@ -3880,7 +3881,7 @@ class ChatListModelTest {
             assertFalse(model.uiState.value.projectCacheUnavailable)
             page =
                 json.decodeFromString<ProjectEvents>(
-                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}"""
+                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}""",
                 )
             model.refreshMetadata()
             advanceUntilIdle()
@@ -3958,10 +3959,10 @@ class ChatListModelTest {
                             assertTrue(
                                 it.saveProjects(
                                     ProjectCheckpoint(
-                                        ProjectArchive(listOf(project), CHAT_EVENT, 17)
+                                        ProjectArchive(listOf(project), CHAT_EVENT, 17),
                                     ),
                                     100,
-                                )
+                                ),
                             )
                         }
                     return ProjectSnapshotVariant1(emptyList(), null, 0)
@@ -4146,7 +4147,7 @@ class ChatListModelTest {
                             thread = CHAT_IN_PROJECT,
                             extra = ",\"projectId\":\"$CHAT_PROJECT\"",
                         ),
-                    )
+                    ),
                 )
                 .events
         cache
@@ -4198,11 +4199,11 @@ class ChatListModelTest {
                             "Research",
                             CHAT_DATE,
                             CHAT_DATE,
-                        )
+                        ),
                     ),
                     null,
                     0,
-                )
+                ),
             )
             runCurrent()
             val ready = model.uiState.value
@@ -4220,7 +4221,7 @@ class ChatListModelTest {
                             kind = ProjectEventsEventsItemKind.DELETED,
                             name = project.name,
                             createdAt = CHAT_DATE,
-                        )
+                        ),
                     ),
                     false,
                 )
@@ -4241,9 +4242,9 @@ class ChatListModelTest {
                             thread = CHAT_IN_PROJECT,
                             kind = "project_updated",
                             extra = ",\"projectId\":null",
-                        )
-                    )
-                )
+                        ),
+                    ),
+                ),
             )
             runCurrent()
             val detached = chatListGroups(model.uiState.value).single()
