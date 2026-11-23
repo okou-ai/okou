@@ -843,7 +843,7 @@ describe("CHAT-02: admission without spendable credits", () => {
       if (accepted.status !== 201) {
         throw new Error("Expected the pending Run input");
       }
-      await signing.entered;
+      await signing.waitForPending();
       const pendingRunId = (
         await chat.listThreadEvents(actor, accepted.body.threadId)
       ).events.find((event) => {

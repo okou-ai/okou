@@ -33,7 +33,10 @@ import {
   dispatchPreparedRun$,
   type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
-import { publishDirectRunCache$ } from "./direct-run-preparation.service";
+import {
+  prepareExecutionBundleUrls$,
+  publishDirectRunCache$,
+} from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -491,12 +494,16 @@ function createPickObjects() {
       waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const preparation = set(claimed.prepareRunAdmission$, signal);
-      const bundleCache = settle(get(claimed.executionBundleCache$));
-      // The pick owns the in-flight cache read even when admission loses.
-      waitUntil(bundleCache);
+      const bundleUrls = set(
+        prepareExecutionBundleUrls$,
+        get(claimed.executionBundleCache$),
+        signal,
+      );
+      // The pick owns preparation even if admission loses.
+      waitUntil(settle(bundleUrls));
       const prepared = await preparation;
       signal.throwIfAborted();
-      const pending = prepared
+      const admitted = prepared
         ? await set(claimed.admitRun$, prepared, signal)
         : null;
       signal.throwIfAborted();
@@ -513,10 +520,11 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (!pending) {
+      if (!admitted) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
+      const { pending, resources } = admitted;
       if (pending.marketingRewardEventId) {
         waitUntil(
           set(
@@ -537,7 +545,8 @@ function createPickObjects() {
           set(
             prepareDirectRunDispatch$,
             pending.admittedLaunch,
-            bundleCache,
+            bundleUrls,
+            resources,
             signal,
           ),
         ],
