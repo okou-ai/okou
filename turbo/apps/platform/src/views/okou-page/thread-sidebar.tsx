@@ -410,6 +410,7 @@ function ThreadArtifactDetail({
           resourceUrl$: sidebar.selectedArtifactResourceUrl$,
           imageUrl$: sidebar.selectedArtifactImageUrl$,
           shareUrl$: sidebar.selectedArtifactShareUrl$,
+          zipPreview: sidebar.selectedArtifactZipPreview,
           kind: preview.kind,
           filename: preview.filename,
           contentType: preview.contentType,
