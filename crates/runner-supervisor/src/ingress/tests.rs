@@ -320,6 +320,43 @@ async fn dispatch_bounds_chunked_bodies_even_without_content_length() {
 }
 
 #[tokio::test]
+async fn dispatch_body_timing_distinguishes_one_and_multiple_data_frames() {
+    let (_root, directory) = namespace();
+    let id = identity(1);
+    let runtime = IngressRuntime::start(directory.clone(), id, HOST.into(), TOKEN, RUNNER_VERSION)
+        .await
+        .unwrap();
+    let (intake, _receiver) =
+        dispatch::DispatchIntake::new(Arc::new(tokio::sync::Semaphore::new(1)), None);
+    runtime.enable_dispatch(intake);
+    let socket = directory.join(format!("{}.sock", id.runner_id()));
+    let run_id = runner_types::ids::RunId::new_v4();
+    let head = format!(
+        "POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n",
+        id.runner_id()
+    );
+    for (wire_body, multiple) in [
+        ("1\r\n{\r\n0\r\n\r\n", false),
+        ("1\r\n{\r\n1\r\n \r\n0\r\n\r\n", true),
+    ] {
+        // The data frames carry deliberately invalid JSON so no work is queued.
+        let (status, _, headers) = request(&socket, &format!("{head}{wire_body}")).await;
+        assert_eq!(status, 200);
+        let timing = dispatch_timing(&headers).unwrap();
+        let total = timing["bodyReadMs"].as_f64().unwrap();
+        let first = timing["bodyFirstFrameMs"].as_f64().unwrap();
+        let remainder = timing["bodyFirstToLastFrameMs"].as_f64().unwrap();
+        assert!(first >= 0.0 && total >= first && total >= remainder);
+        if multiple {
+            assert!(remainder > 0.0);
+        } else {
+            assert_eq!(remainder, 0.0);
+        }
+    }
+    runtime.shutdown().await;
+}
+
+#[tokio::test]
 async fn incomplete_dispatch_body_times_out_and_releases_its_transaction_slot() {
     let (_root, directory) = namespace();
     let id = identity(1);
@@ -353,11 +390,12 @@ async fn incomplete_dispatch_body_times_out_and_releases_its_transaction_slot() 
         .await
         .unwrap()
         .unwrap();
-    assert!(
-        String::from_utf8(response)
-            .unwrap()
-            .starts_with("HTTP/1.1 408")
-    );
+    let response = String::from_utf8(response).unwrap();
+    assert!(response.starts_with("HTTP/1.1 408"));
+    let timing = dispatch_timing(&response).unwrap();
+    assert!(timing["bodyReadMs"].is_number());
+    assert!(timing.get("bodyFirstFrameMs").is_none());
+    assert!(timing.get("bodyFirstToLastFrameMs").is_none());
     assert_eq!(
         request(&socket, &dispatch_request(id, run_id, "{")).await.0,
         200,

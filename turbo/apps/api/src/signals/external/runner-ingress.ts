@@ -30,6 +30,8 @@ const runnerElapsedMs = number().nonnegative().optional();
 const runnerDispatchTimingSchema = object({
   runnerVersion: runnerVersionSchema,
   bodyReadMs: runnerElapsedMs,
+  bodyFirstFrameMs: runnerElapsedMs,
+  bodyFirstToLastFrameMs: runnerElapsedMs,
   envelopeParseMs: runnerElapsedMs,
   contextDecodeMs: runnerElapsedMs,
   acceptanceMs: runnerElapsedMs,
@@ -277,6 +279,8 @@ export async function postRunnerDispatch(
             observation ?? (signal.aborted ? "aborted" : "error"),
           runner_version: timings?.runnerVersion,
           runner_body_read_ms: timings?.bodyReadMs,
+          runner_body_first_frame_ms: timings?.bodyFirstFrameMs,
+          runner_body_first_to_last_frame_ms: timings?.bodyFirstToLastFrameMs,
           runner_envelope_parse_ms: timings?.envelopeParseMs,
           runner_context_decode_ms: timings?.contextDecodeMs,
           runner_acceptance_ms:
