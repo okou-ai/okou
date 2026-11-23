@@ -222,29 +222,28 @@ internal constructor(
                 artifactPageJob?.isActive == true
         )
             return
-        artifactPageJob =
-            viewModelScope.launch {
-                searches[WorkspaceSearchType.Artifacts]?.join()
-                val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
-                if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
-                readSearch(
-                    { it == WorkspaceSearchType.Artifacts },
-                    { artifactPage(keyword, cursor) },
-                ) { next ->
-                    val latest = mutable.value
-                    val merged =
-                        (next as? SearchRead.Ready)?.let { page ->
-                            val rows = (currentPage.rows + page.rows).distinctBy { it.id }
-                            if (rows.size == currentPage.rows.size && page.nextCursor != null) null
-                            else SearchRead.Ready(rows, page.nextCursor)
-                        }
-                    mutable.value =
-                        if (next == SearchRead.AccessLost)
-                            latest.copy(artifacts = next, moreArtifactsFailed = false)
-                        else if (merged == null) latest.copy(moreArtifactsFailed = true)
-                        else latest.copy(artifacts = merged, moreArtifactsFailed = false)
-                }
+        artifactPageJob = viewModelScope.launch {
+            searches[WorkspaceSearchType.Artifacts]?.join()
+            val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
+            if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
+            readSearch(
+                { it == WorkspaceSearchType.Artifacts },
+                { artifactPage(keyword, cursor) },
+            ) { next ->
+                val latest = mutable.value
+                val merged =
+                    (next as? SearchRead.Ready)?.let { page ->
+                        val rows = (currentPage.rows + page.rows).distinctBy { it.id }
+                        if (rows.size == currentPage.rows.size && page.nextCursor != null) null
+                        else SearchRead.Ready(rows, page.nextCursor)
+                    }
+                mutable.value =
+                    if (next == SearchRead.AccessLost)
+                        latest.copy(artifacts = next, moreArtifactsFailed = false)
+                    else if (merged == null) latest.copy(moreArtifactsFailed = true)
+                    else latest.copy(artifacts = merged, moreArtifactsFailed = false)
             }
+        }
     }
 
     private suspend fun artifactPage(
@@ -261,13 +260,12 @@ internal constructor(
         publish: (WorkspaceSearchResults, SearchRead<T>) -> WorkspaceSearchResults,
     ) {
         if (searches.containsKey(type)) return
-        searches[type] =
-            viewModelScope.launch {
-                delay(SearchDebounceMillis)
-                readSearch({ it.includes(type) }, read) { result ->
-                    mutable.value = publish(mutable.value, result)
-                }
+        searches[type] = viewModelScope.launch {
+            delay(SearchDebounceMillis)
+            readSearch({ it.includes(type) }, read) { result ->
+                mutable.value = publish(mutable.value, result)
             }
+        }
     }
 
     private suspend fun <T> readSearch(
@@ -306,7 +304,7 @@ internal constructor(
                                     SearchRead.AccessLost
                                 retryAfter == null -> SearchRead.Failed
                                 else -> SearchRead.Retrying
-                            }
+                            },
                         )
                     }
                     if (retryAfter == null) return
