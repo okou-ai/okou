@@ -74,20 +74,7 @@ struct ChatFeedbackSurface: View {
             offset = value.translation.width
           }
         }
-        .onEnded { value in
-          guard abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)),
-            abs(value.translation.width) > OkouControl.minimumTarget
-              || (value.predictedEndTranslation.width * value.translation.width > 0
-                && abs(value.predictedEndTranslation.width) > OkouControl.minimumTarget * 2)
-          else { return }
-          // Take over from the transient drag before SwiftUI resets its gesture state.
-          let distance = max(abs(value.translation.width), cardWidth + 2 * OkouSpace.lg)
-          withAnimation(OkouMotion.press) {
-            exitOffset = value.translation.width < 0 ? -distance : distance
-          } completion: {
-            dismiss()
-          }
-        }
+        .onEnded(finishSwipe)
     )
     // Only the visible feedback owns expiry; overlay handoff starts a fresh idle window.
     .onDisappear { isTouching = false }
@@ -102,6 +89,21 @@ struct ChatFeedbackSurface: View {
     .padding(.vertical, OkouSpace.sm)
     .accessibilityElement(children: .contain)
     .accessibilityAction(.escape, dismiss)
+  }
+
+  private func finishSwipe(_ value: DragGesture.Value) {
+    guard abs(value.translation.width) > max(OkouSpace.md, abs(value.translation.height)),
+      abs(value.translation.width) > OkouControl.minimumTarget
+        || (value.predictedEndTranslation.width * value.translation.width > 0
+          && abs(value.predictedEndTranslation.width) > OkouControl.minimumTarget * 2)
+    else { return }
+    // Take over from the transient drag before SwiftUI resets its gesture state.
+    let distance = max(abs(value.translation.width), cardWidth + 2 * OkouSpace.lg)
+    withAnimation(OkouMotion.press) {
+      exitOffset = value.translation.width < 0 ? -distance : distance
+    } completion: {
+      dismiss()
+    }
   }
 
   private var messageLabel: some View {
