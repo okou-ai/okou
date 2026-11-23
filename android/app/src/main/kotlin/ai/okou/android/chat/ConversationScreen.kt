@@ -101,6 +101,8 @@ internal fun ConversationRoute(
     controls: ConversationRunControls? = null,
     showComposerStatus: Boolean = false,
     stopPlacement: ConversationStopPlacement? = null,
+    queueOpen: Boolean = false,
+    dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
     linkPosition: ConversationLinkPosition? = null,
@@ -115,18 +117,18 @@ internal fun ConversationRoute(
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
     val state = model.uiState.collectAsStateWithLifecycle().value
     val output = model.output.state.collectAsStateWithLifecycle().value
-    val input = composer?.uiState?.collectAsStateWithLifecycle()
+    val input = if (controls == null) composer?.uiState?.collectAsStateWithLifecycle() else null
     val localMessages by
         remember(input, threadId) {
             derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
     val transcript = state.transcript.takeIf { thread != null }
-    val hiddenQueueInputs = controls?.hiddenQueueInputs.orEmpty()
     val presentation =
-        remember(transcript, output, threadId, localMessages, hiddenQueueInputs) {
-            conversationContent(transcript, output, threadId, localMessages, hiddenQueueInputs)
-        }
+        controls?.presentation
+            ?: remember(transcript, output, threadId, localMessages) {
+                conversationContent(transcript, output, threadId, localMessages, emptySet())
+            }
     val content = presentation.messages
     val queue = presentation.queue
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
@@ -305,7 +307,11 @@ internal fun ConversationRoute(
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
         val stopSnackbar = remember { SnackbarHostState() }
-        val stopFeedbackVisible = stopSnackbar.currentSnackbarData != null
+        val queueSnackbar = remember { SnackbarHostState() }
+        val detailSnackbar =
+            if (!queueOpen && queueSnackbar.currentSnackbarData != null) queueSnackbar
+            else stopSnackbar
+        val stopFeedbackVisible = detailSnackbar.currentSnackbarData != null
         val stopFeedbackBounds =
             if (stopPlacement != null && stopFeedbackVisible) {
                 DisposableEffect(stopPlacement) {
@@ -336,7 +342,10 @@ internal fun ConversationRoute(
             LaunchedEffect(failure) {
                 if (controls.model.consumeActionFailure(failure) && message != null) {
                     scope.launch {
-                        stopSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                        val snackbar =
+                            if (failure.kind == RunControlKind.Revoke) queueSnackbar
+                            else stopSnackbar
+                        snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
                     }
                 }
             }
@@ -701,7 +710,7 @@ internal fun ConversationRoute(
                             )
                         }
                     }
-                    WorkspaceFeedbackHost(stopSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
+                    WorkspaceFeedbackHost(detailSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
@@ -725,10 +734,10 @@ internal fun ConversationRoute(
                     if (showComposerStatus && list.offline) ConversationOffline(short = false)
                     if (controls?.storageFailed == true)
                         ConversationControlStorageFailure(controls.model::retryLocal)
-                    ConversationQueue(queue, controls, timelineFocus)
                 }
             }
         }
+        if (queueOpen) ConversationQueueModal(queue, controls, queueSnackbar, dismissQueue)
     }
 }
 

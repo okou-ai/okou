@@ -370,6 +370,8 @@ class ChatComposerRootTest {
             messageText(pending.eventId, prompt).assertIsDisplayed()
             history.countDown()
             val withdrawalLabel = app.getString(R.string.conversation_revoke)
+            compose.waitUntilExactlyOneExists(hasTestTag("open_conversation_queue"), 10_000)
+            compose.onNodeWithTag("open_conversation_queue").performClick()
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty() &&
                     compose
@@ -701,8 +703,12 @@ class ChatComposerRootTest {
             app.sendGate.countDown()
             awaitConversation {
                 listStarted.count == 0L &&
-                    compose.onAllNodesWithText("Queued").fetchSemanticsNodes().size == 1
+                    compose
+                        .onAllNodesWithTag("open_conversation_queue")
+                        .fetchSemanticsNodes()
+                        .size == 1
             }
+            compose.onNodeWithTag("open_conversation_queue").performClick()
             compose
                 .onNode(
                     hasContentDescription(app.getString(R.string.conversation_revoke)) and
@@ -719,6 +725,9 @@ class ChatComposerRootTest {
             assertEquals(eventId, request.getValue("revokesEventId").jsonPrimitive.content)
             assertEquals(1, app.fixture.inputs.size)
             compose.onNodeWithTag("message_$eventId").assertDoesNotExist()
+            compose
+                .onNodeWithText(app.getString(R.string.conversation_queue_empty))
+                .assertIsDisplayed()
         } finally {
             releaseList.countDown()
         }
@@ -822,6 +831,7 @@ class ChatComposerRootTest {
                 ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
                     ready.controls.uiState.value.persistence == RunControlPersistence.Durable
             }
+            compose.onNodeWithTag("open_conversation_queue").performClick()
             withdraw
                 .assertIsEnabled()
                 .performSemanticsAction(SemanticsActions.RequestFocus)

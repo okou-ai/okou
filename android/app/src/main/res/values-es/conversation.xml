@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Cola (%1$d)</string>
+    <string name="conversation_queue_empty">No hay elementos en cola</string>
+    <string name="conversation_queue_message">Mensaje</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Mensaje · %d adjunto</item>
+        <item quantity="other">Mensaje · %d adjuntos</item>
+    </plurals>
     <string name="conversation_run_queued">Esperando para empezar</string>
     <string name="conversation_welcome">¿En qué te gustaría trabajar?</string>
     <string name="conversation_welcome_detail">Cuéntale a Okou qué quieres hacer.</string>

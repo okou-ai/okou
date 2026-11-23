@@ -9,7 +9,6 @@ import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
 import androidx.annotation.StringRes
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -33,7 +32,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -123,63 +121,6 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
     }
 
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
-
-@Composable
-internal fun QueuedMessageCard(
-    entry: ConversationMessage,
-    controls: ConversationRunControls?,
-    modifier: Modifier,
-    beforeAction: () -> Unit,
-) {
-    val message = entry.message
-    val workflow = message.queuedWorkflow
-    val revoke = controls?.revoke(message.id, entry.preview)
-    val colors = MaterialTheme.colorScheme
-    val queued = stringResource(R.string.history_queued)
-    val status =
-        if (workflow == null) queued
-        else
-            "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
-    Surface(
-        modifier = modifier.fillMaxWidth().testTag("message_${message.id}"),
-        shape = RoundedCornerShape(12.dp),
-        color = colors.surface,
-        border = BorderStroke(1.dp, colors.outline),
-    ) {
-        Row(
-            Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                ConversationMeta(status)
-                if (workflow?.name != null)
-                    Text(workflow.name, style = MaterialTheme.typography.bodyMedium)
-                else MessageBody(message, compact = true)
-            }
-            IconButton(
-                onClick = {
-                    beforeAction()
-                    revoke?.invoke()
-                },
-                enabled = revoke != null,
-                modifier = Modifier.size(48.dp),
-                colors =
-                    IconButtonDefaults.iconButtonColors(contentColor = colors.onSurfaceVariant),
-            ) {
-                Icon(
-                    painterResource(R.drawable.ic_close),
-                    contentDescription =
-                        stringResource(
-                            if (workflow == null) R.string.conversation_revoke
-                            else R.string.conversation_skip_automation,
-                        ),
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-        }
-    }
-}
 
 @Composable
 internal fun ConversationMessageRow(

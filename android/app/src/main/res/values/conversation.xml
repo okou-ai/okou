@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Queue (%1$d)</string>
+    <string name="conversation_queue_empty">No queued items</string>
+    <string name="conversation_queue_message">Message</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Message · %d attachment</item>
+        <item quantity="other">Message · %d attachments</item>
+    </plurals>
     <string name="conversation_run_queued">Waiting to start</string>
     <string name="conversation_welcome">What would you like to work on?</string>
     <string name="conversation_welcome_detail">Tell Okou what you’d like to do.</string>

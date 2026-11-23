@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">排队（%1$d）</string>
+    <string name="conversation_queue_empty">暂无排队项</string>
+    <string name="conversation_queue_message">消息</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">消息 · %d 个附件</item>
+    </plurals>
     <string name="conversation_run_queued">排队中</string>
     <string name="conversation_welcome">今天想推进什么？</string>
     <string name="conversation_welcome_detail">把想做的事告诉 Okou。</string>

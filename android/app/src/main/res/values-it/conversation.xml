@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Coda (%1$d)</string>
+    <string name="conversation_queue_empty">Nessun elemento in coda</string>
+    <string name="conversation_queue_message">Messaggio</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Messaggio · %d allegato</item>
+        <item quantity="other">Messaggio · %d allegati</item>
+    </plurals>
     <string name="conversation_run_queued">In attesa di avvio</string>
     <string name="conversation_welcome">Su cosa vuoi lavorare?</string>
     <string name="conversation_welcome_detail">Di’ a Okou cosa vuoi fare.</string>

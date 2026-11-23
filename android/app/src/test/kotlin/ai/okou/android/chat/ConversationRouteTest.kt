@@ -500,7 +500,7 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun staleSyncLetsTheQueuedInputCardProvideFeedback() {
+    fun staleSyncLetsTheQueuedTaskStatusProvideFeedback() {
         val eventId = scrollEventId(40)
         val prompt = "Please check the launch notes"
         val queuedInput =
@@ -536,7 +536,7 @@ class ConversationRouteTest {
             compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
         }
         assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
-        val queuedLabel = compose.activity.getString(R.string.history_queued)
+        val queuedLabel = compose.activity.getString(R.string.conversation_run_queued)
         val status = compose.onNodeWithText(queuedLabel).assertIsDisplayed()
         val statusBounds = status.getUnclippedBoundsInRoot()
         val refreshRequested = CountDownLatch(1)
@@ -558,7 +558,6 @@ class ConversationRouteTest {
                 .onNode(hasContentDescription(compose.activity.getString(R.string.history_syncing)))
                 .assertDoesNotExist()
             assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
-            compose.onNodeWithText(prompt).assertIsDisplayed()
         } finally {
             allowRefreshResponse.countDown()
         }

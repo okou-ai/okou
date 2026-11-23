@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">대기열(%1$d)</string>
+    <string name="conversation_queue_empty">대기 중인 항목 없음</string>
+    <string name="conversation_queue_message">메시지</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">메시지 · 첨부 파일 %d개</item>
+    </plurals>
     <string name="conversation_run_queued">시작 대기 중</string>
     <string name="conversation_welcome">오늘 어떤 일을 할까요?</string>
     <string name="conversation_welcome_detail">하고 싶은 일을 Okou에게 알려 주세요.</string>
