@@ -639,12 +639,7 @@ internal constructor(
 
     internal fun edit(value: WorkflowEdit?) {
         val state = mutable.value
-        val ruleId = (value as? WorkflowEdit.Rule)?.id
-        if (
-            !authorized() ||
-                state.writing ||
-                value != null && state.detail?.canChange(ruleId) != true
-        )
+        if (!authorized() || state.writing || value != null && state.detail?.canEdit(value) != true)
             return
         val issue =
             state.issue?.takeIf {
@@ -715,7 +710,13 @@ internal constructor(
         val detail = state.detail ?: return
         if (!authorized() || !visible || !foreground || state.writing || detail.id != selected)
             return
-        if (!detail.canChange(ruleId)) {
+        val permitted =
+            when {
+                creating -> detail.canAddAutomation
+                ruleId != null -> detail.canManageAutomation(ruleId)
+                else -> detail.canManage
+            }
+        if (!permitted) {
             if (ruleId != null)
                 mutable.value =
                     state.copy(issue = WorkflowWriteIssue(WorkflowWriteFailure.Failed, ruleId))

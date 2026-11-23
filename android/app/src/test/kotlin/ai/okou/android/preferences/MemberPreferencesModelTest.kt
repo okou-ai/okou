@@ -66,6 +66,14 @@ class MemberPreferencesModelTest {
         ): ai.okou.android.api.generated.ActivatedModelAccount =
             error("Accounts are outside this fixture")
 
+        override suspend fun emailSubscription(): ai.okou.android.api.generated.EmailSubscription =
+            error("Email subscriptions are outside this fixture")
+
+        override suspend fun updateEmailSubscription(
+            subscribed: Boolean,
+        ): ai.okou.android.api.generated.EmailSubscriptionUpdate =
+            error("Email subscriptions are outside this fixture")
+
         override suspend fun sendControl(
             request: ai.okou.android.api.generated.SendRequest,
         ): ai.okou.android.api.generated.AcceptedInput = error("No control backend in this fixture")

@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -33,14 +34,13 @@ internal class WorkflowApiFixture(
     val gmailEnabled = AtomicBoolean(false)
     val gmailConnected = AtomicBoolean(false)
     private val githubEnabled = AtomicBoolean(false)
-    private val sharedScheduleEnabled = AtomicBoolean(true)
-    @Volatile private var sharedScheduleCron = "0 9 * * 1-5"
+    @Volatile private var sharedAutomation: SharedSchedule? = null
     @Volatile var githubAppInstalled: Boolean? = null
     @Volatile var githubAccountConnected = false
-    @Volatile var hasSharedSchedule = false
     @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeReleaseDetailRead: () -> Unit = {}
+    @Volatile var beforeSharedScheduleCreate: () -> Unit = {}
     @Volatile var beforeHistoryRead: () -> Unit = {}
     @Volatile
     var firstRunHistory =
@@ -141,9 +141,18 @@ internal class WorkflowApiFixture(
                     detail(
                         shared(),
                         if (chinese) "整理发布发现。" else "Collect launch findings.",
-                        if (hasSharedSchedule) "[${sharedSchedule()}]" else "[]",
+                        sharedAutomation?.let { "[${it.response()}]" } ?: "[]",
                     ),
                 )
+            "/api/workflows/$WORKFLOW_SHARED/automations" -> {
+                if (request.method != "POST") return null
+                beforeSharedScheduleCreate()
+                val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                val confirmed =
+                    readSharedSchedule(body, body.getValue("enabled").jsonPrimitive.boolean)
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response()).setResponseCode(201)
+            }
             "/api/workflows/$WORKFLOW_RELEASE/run-history" -> {
                 beforeHistoryRead()
                 val page =
@@ -156,7 +165,7 @@ internal class WorkflowApiFixture(
             "/api/workflow-automations" -> {
                 val rules = buildList {
                     releaseRules().forEach { add(automationEntry(release(), it)) }
-                    if (hasSharedSchedule) add(automationEntry(shared(), sharedSchedule()))
+                    sharedAutomation?.let { add(automationEntry(shared(), it.response())) }
                     add(automationEntry(feedback(), schedule(id = "feedback", enabled = true)))
                 }
                 jsonResponse(rules.joinToString(prefix = "[", postfix = "]"))
@@ -171,19 +180,16 @@ internal class WorkflowApiFixture(
             }
             "/api/workflow-automations/shared-weekday/enable",
             "/api/workflow-automations/shared-weekday/disable" -> {
-                sharedScheduleEnabled.set(path.endsWith("/enable"))
-                jsonResponse(sharedSchedule())
+                val confirmed =
+                    checkNotNull(sharedAutomation).copy(enabled = path.endsWith("/enable"))
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response())
             }
             "/api/workflow-automations/shared-weekday" -> {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
-                sharedScheduleCron =
-                    body
-                        .getValue("schedule")
-                        .jsonObject
-                        .getValue("cronExpression")
-                        .jsonPrimitive
-                        .content
-                jsonResponse(sharedSchedule())
+                val confirmed = readSharedSchedule(body, checkNotNull(sharedAutomation).enabled)
+                sharedAutomation = confirmed
+                jsonResponse(confirmed.response())
             }
             "/api/workflow-automations/calendar-created" -> {
                 val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
@@ -294,13 +300,24 @@ internal class WorkflowApiFixture(
         id: String = "weekday",
         enabled: Boolean = active.get(),
         cron: String = "0 9 * * 1-5",
+        timezone: String = "Asia/Shanghai",
     ): String {
         val next = if (enabled) """"2026-11-23T01:00:00.000Z"""" else "null"
-        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"$cron","timezone":"Asia/Shanghai"},"scheduleSummary":"Weekdays at 09:00"}"""
+        return """{"id":"$id","ownerUserId":"user-a","enabled":$enabled,"chatThreadId":"$CHAT_PERSONAL","nextRunAt":$next,"lastRunAt":"2026-11-20T01:00:00.000Z","official":null,"kind":"schedule","schedule":{"type":"cron","cronExpression":"$cron","timezone":"$timezone"},"scheduleSummary":"Weekdays at 09:00"}"""
     }
 
-    private fun sharedSchedule() =
-        schedule("shared-weekday", sharedScheduleEnabled.get(), sharedScheduleCron)
+    private data class SharedSchedule(val cron: String, val timezone: String, val enabled: Boolean)
+
+    private fun readSharedSchedule(body: JsonObject, enabled: Boolean): SharedSchedule {
+        val schedule = body.getValue("schedule").jsonObject
+        return SharedSchedule(
+            schedule.getValue("cronExpression").jsonPrimitive.content,
+            schedule.getValue("timezone").jsonPrimitive.content,
+            enabled,
+        )
+    }
+
+    private fun SharedSchedule.response() = schedule("shared-weekday", enabled, cron, timezone)
 
     private fun automationEntry(workflow: String, rule: String) =
         """{"workflow":$workflow,"automation":$rule}"""

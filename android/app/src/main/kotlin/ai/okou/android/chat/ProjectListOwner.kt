@@ -74,8 +74,10 @@ internal class ProjectListOwner(
     private val retryableProjectDeletes = mutableMapOf<String, String>()
     private var projectsRestoreJob: Job? = null
     private var projectsJob: Job? = null
+    private var projectsRetry: ChatDependencyRetry? = null
     private val projectSync = ProjectSync(service, dispatcher)
     private val projectInvalidations = Channel<Unit>(Channel.CONFLATED)
+    private var projectsInvalidated = false
 
     private data class ConfirmedProjects(
         val checkpoint: ProjectCheckpoint,
@@ -92,8 +94,8 @@ internal class ProjectListOwner(
     init {
         scope.launch {
             for (ignored in projectInvalidations) {
-                projectsJob?.join()
-                if (current()) {
+                while (projectsJob?.isCompleted == false) projectsJob?.join()
+                if (current() && projectsInvalidated) {
                     refresh()
                     projectsJob?.join()
                 }
@@ -102,6 +104,7 @@ internal class ProjectListOwner(
     }
 
     fun invalidate() {
+        projectsInvalidated = true
         projectInvalidations.trySend(Unit)
     }
 
@@ -333,7 +336,10 @@ internal class ProjectListOwner(
 
     private suspend fun refreshAfterWrite(): Boolean {
         // Wait out a read that could have started before the write.
-        while (projectsJob?.isCompleted == false) projectsJob?.join()
+        while (projectsJob?.isCompleted == false) {
+            projectsRetry?.stopRetrying()
+            projectsJob?.join()
+        }
         requireCurrent()
         val previousRead = projectsJob
         refresh(verifyWrite = true)
@@ -345,13 +351,22 @@ internal class ProjectListOwner(
 
     fun refresh(verifyWrite: Boolean = false) {
         if (current() && (verifyWrite || !offline()) && projectsJob?.isActive != true) {
+            val retry = if (verifyWrite) null else ChatDependencyRetry()
+            projectsRetry = retry
             state = state.copy(phase = ChatReadPhase.Loading)
             projectsJob = scope.launch {
                 try {
                     projectsRestoreJob?.join()
                     requireCurrent()
                     val previous = confirmedProjects
-                    val result = projectSync.synchronize(previous?.checkpoint)
+                    val checkpoint = previous?.checkpoint
+                    suspend fun fetch(): MetadataSyncResult<ProjectCheckpoint> {
+                        projectsInvalidated = false
+                        return projectSync.synchronize(checkpoint)
+                    }
+                    val result =
+                        retry?.read(online = { current() && !offline() }, fetch = ::fetch)
+                            ?: fetch()
                     val candidate =
                         if (result.changed) replayConfirmedProjects(result.checkpoint)
                         else checkNotNull(previous)
@@ -415,6 +430,8 @@ internal class ProjectListOwner(
                         onFailure(error)
                         if (current()) state = state.copy(phase = ChatReadPhase.Failed)
                     }
+                } finally {
+                    projectsRetry = null
                 }
             }
         }

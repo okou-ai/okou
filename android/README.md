@@ -258,8 +258,8 @@ cd android
 ```
 
 The chat suites exercise real disk reopening, the generated canonical HTTP/codec
-boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
-holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+boundary, cursor/replay recovery and retired-owner publication. The chat-list
+Compose suites hold real HTTP responses while exercising native navigation. `NativeChatListTest`
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.
@@ -409,9 +409,21 @@ On a Linux x64 host with read/write access to `/dev/kvm`, run from `android/`:
 ```
 
 Gradle configures the Pixel 2 API 35 device and owns its lifecycle. Use
-`:app:assembleDebugAndroidTest` to compile without starting the device. CI
-requires every case to pass and retains JUnit, Test Storage and logcat diagnostics
-in the `android-instrumentation-api35-<revision>` artifact.
+`:app:assembleDebugAndroidTest` to compile without starting the device. CI runs
+three `instrumentation` shards on separate runners and verifies the combined
+JUnit results at `ci-gate-android`. JUnit, Test Storage, and logcat diagnostics
+are in `android-instrumentation-api35-<revision>-shard-<index>` artifacts, with an
+attempt suffix on reruns.
+
+CI also runs three `build-test` shards on separate runners with two test JVMs
+each. Shard 0 runs the format, policy, and lint checks and builds the Debug APK.
+Each shard retains its XML in `android-jvm-results-<revision>-shard-<index>`.
+The local commands above run the full suites by default. See
+[test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
+for case budgets and class boundaries.
+
+After running the full `:app:testDebugUnitTest` suite, check the JVM class size limit from
+`android/` with `python3 scripts/check-jvm-test-counts.py app/build/test-results/testDebugUnitTest`.
 
 ### Release Smoke Tests
 
@@ -481,14 +493,14 @@ commits skip Android validation after release-context detection succeeds. The
 production release job independently builds, signs and verifies its exact-target
 APK; it does not consume validation artifacts. Ordinary change selection includes
 Android sources/docs, CI inputs, Web semantic colors, and shared font/color-evaluator
-assets. One job runs the JVM tests and lint, then uploads the Debug APK for seven
-days. Two separate Linux/KVM jobs run the Debug device integration tests and
-the Release smoke tests. The Release job uploads the unsigned APK and compressed
-R8 map for seven days.
+assets. Three jobs run the Debug JVM suite. Shard 0 also runs lint and uploads
+the Debug APK for seven days. Separate Linux/KVM jobs run the three Debug device
+shards and the Release smoke tests. The Release job uploads the unsigned APK and
+compressed R8 map for seven days.
 The final `ci-gate-android` check always reports an aggregate result. For
-non-release changes it requires successful change detection and all three jobs
-to pass when Android checks are selected. Cancellation, failure or an unexpected
-skip fails the gate. Emulator functional evidence does not establish OEM
+non-release changes it requires successful change detection and every selected
+job to pass. Cancellation, failure or an unexpected skip fails the gate.
+Emulator functional evidence does not establish OEM
 input-method behavior or physical-device startup budgets.
 
 The shared security workflow retains Semgrep scanning. Its result handler

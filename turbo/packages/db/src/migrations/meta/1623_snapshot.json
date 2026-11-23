@@ -1,5 +1,5 @@
 {
-  "id": "008c1c35-2cc1-45e1-91ed-a32c59ebf4d0",
+  "id": "bf73f215-c373-4709-b2ff-9d52acb7e4b0",
   "prevId": "2b8bc54a-42b6-4a23-a42b-b83123b3da49",
   "version": "7",
   "dialect": "postgresql",
@@ -24108,12 +24108,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "recent_workflow_ids": {
-          "name": "recent_workflow_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "onboarding_role": {
           "name": "onboarding_role",
           "type": "text",
@@ -24178,6 +24172,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "presentation_format": {
+          "name": "presentation_format",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "onboarding_done": {
           "name": "onboarding_done",
           "type": "boolean",
@@ -24239,13 +24239,13 @@
           "name": "org_members_metadata_explicit_model_settings_check",
           "value": "jsonb_typeof(\"org_members_metadata\".\"model_settings\") = 'object' AND NOT jsonb_path_exists(\"org_members_metadata\".\"model_settings\", '$.keyvalue() ? (@.key == \"auto\" || @.key == \"okou-1.0\" || @.key == \"okou-1.0-pro\" || @.key == \"okou-1.0-max\" || @.key starts with \"@preset/\")')"
         },
-        "org_members_metadata_recent_workflow_ids_check": {
-          "name": "org_members_metadata_recent_workflow_ids_check",
-          "value": "\"org_members_metadata\".\"recent_workflow_ids\" IS NULL OR (\n          jsonb_typeof(\"org_members_metadata\".\"recent_workflow_ids\") = 'array'\n          AND NOT jsonb_path_exists(\"org_members_metadata\".\"recent_workflow_ids\", '$[*] ? (@.type() != \"string\" || !(@ like_regex \"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$\"))')\n        )"
-        },
         "chk_org_members_metadata_service_tier": {
           "name": "chk_org_members_metadata_service_tier",
           "value": "\"org_members_metadata\".\"service_tier\" IS NULL OR \"org_members_metadata\".\"service_tier\" = 'priority'"
+        },
+        "chk_org_members_metadata_presentation_format": {
+          "name": "chk_org_members_metadata_presentation_format",
+          "value": "\"org_members_metadata\".\"presentation_format\" IS NULL OR \"org_members_metadata\".\"presentation_format\" IN ('html', 'pptx')"
         }
       },
       "isRLSEnabled": false

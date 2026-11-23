@@ -1521,15 +1521,31 @@ data class ConnectorOauthCompletion(
 )
 
 @Serializable
+enum class ConnectorOauthStartNativeAppAuthorizationProvider {
+    @SerialName("strava") STRAVA,
+}
+
+@Serializable
+data class ConnectorOauthStartNativeAppAuthorization(
+    val `provider`: ConnectorOauthStartNativeAppAuthorizationProvider,
+)
+
+@Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
+    val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
 )
 
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeAppAuthorization {
+    @SerialName("ios") IOS,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1624,6 +1640,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
@@ -12997,6 +13014,30 @@ data class UpdateDefaultModelPreference(
 )
 
 @Serializable
+enum class EmailSubscriptionDeliveryStatus {
+    @SerialName("available") AVAILABLE,
+    @SerialName("suppressed") SUPPRESSED,
+    @SerialName("no-email") NO_EMAIL,
+}
+
+@Serializable
+data class EmailSubscription(
+    val `subscribed`: Boolean,
+    val `email`: String?,
+    val `deliveryStatus`: EmailSubscriptionDeliveryStatus,
+)
+
+@Serializable
+data class UpdateEmailSubscriptionRequest(
+    val `subscribed`: Boolean,
+)
+
+@Serializable
+data class EmailSubscriptionUpdate(
+    val `subscribed`: Boolean,
+)
+
+@Serializable
 data class FeatureSwitches(
     val `effectiveSwitches`: Map<String, Boolean>,
 )
@@ -15404,6 +15445,12 @@ enum class UserPreferencesColorTheme {
 }
 
 @Serializable
+enum class UserPreferencesPresentationFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class UserPreferences(
     val `timezone`: String?,
     val `locale`: UserPreferencesLocale?,
@@ -15413,6 +15460,7 @@ data class UserPreferences(
     val `chatResourcesEnabledByDefault`: Boolean,
     val `theme`: UserPreferencesTheme?,
     val `colorTheme`: UserPreferencesColorTheme?,
+    val `presentationFormat`: UserPreferencesPresentationFormat? = null,
     val `forYouCoverId`: String?,
     val `captureNetworkBodiesRemaining`: Long,
     val `memoryInitialized`: Boolean,
@@ -15482,6 +15530,12 @@ enum class UpdatePreferencesRequestColorTheme {
 }
 
 @Serializable
+enum class UpdatePreferencesRequestPresentationFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class UpdatePreferencesRequest(
     val `timezone`: String? = null,
     val `locale`: UpdatePreferencesRequestLocale? = null,
@@ -15489,6 +15543,7 @@ data class UpdatePreferencesRequest(
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,
     val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
+    val `presentationFormat`: UpdatePreferencesRequestPresentationFormat? = null,
     val `forYouCoverId`: CanonicalOptional<String?> = CanonicalOptional.Absent,
     val `captureNetworkBodiesRemaining`: Long? = null,
 )

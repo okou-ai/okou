@@ -83,7 +83,7 @@ def validate(directory):
         if not isinstance(key, str) or not re.fullmatch("[0-9a-f]{64}", key) or key in keys:
             raise ValueError("dual history has no distinct physical cache key")
         keys.add(key)
-        reuse = "thread:native-guarded-"+run
+        reuse = report.GUARDED_IDLE_REUSE_KEY_PREFIX+run
         if core[0]["evidence"]["same_reuse_key"] != reuse:
             raise ValueError("dual history escaped the actual captured reuse key")
         original_bytes = history(original.get("history_hex"), thread)

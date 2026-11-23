@@ -42,14 +42,13 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35], application = TestOkouApplication::class)
-class ChatComposerModelTest {
+internal abstract class ChatComposerModelTestFixture {
     @get:Rule val temporary = TemporaryFolder()
-    private val identity = WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
-    private val existing = ComposerTarget(threadId = CHAT_PERSONAL)
+    protected val identity =
+        WorkspaceIdentity("https://api.example/", "user-a", "session-a", "org-a")
+    protected val existing = ComposerTarget(threadId = CHAT_PERSONAL)
 
-    private class Service : ChatComposerService {
+    protected class Service : ChatComposerService {
         val requests = mutableListOf<SendRequestVariant1>()
         val creates = mutableListOf<CreateThreadRequest>()
         val accepted = mutableMapOf<String, SendRequestVariant1>()
@@ -110,7 +109,7 @@ class ChatComposerModelTest {
         fun gate() = CompletableDeferred<Unit>().also { gates += it }
     }
 
-    private fun check(
+    protected fun check(
         blockedDisk: Boolean = false,
         sendClock: TestTimeSource = TestTimeSource(),
         action:
@@ -151,7 +150,12 @@ class ChatComposerModelTest {
             Dispatchers.resetMain()
         }
     }
+}
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatComposerModelTest : ChatComposerModelTestFixture() {
     @Test
     fun heldHydrationKeepsEditsAndDebouncesTheCanonicalFullValue() =
         check { service, store, create ->
@@ -184,21 +188,6 @@ class ChatComposerModelTest {
             assertEquals("Latest input restarts the debounce", service.drafts[remote]!!.plainText())
             assertFalse(store.load(identity).journal.drafts[remote.key]!!.dirty)
         }
-
-    @Test
-    fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
-        val model = create(false, identity)
-        model.open(existing)
-        runCurrent()
-        val whitespace = " \t\n\u00a0\ufeff"
-        model.edit(existing, whitespace)
-        assertFalse(model.uiState.value.canSend(existing))
-        model.send(existing)
-        advanceUntilIdle()
-        assertTrue(service.requests.isEmpty())
-        assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
-        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText())
-    }
 
     @Test
     fun newerEditsAndClearWaitForOlderPatchWithoutLosingTheirIntent() =
@@ -423,6 +412,63 @@ class ChatComposerModelTest {
                 service.drafts[ServerDraftTarget()]!!.plainText(),
             )
         }
+
+    @Test
+    fun realDiskReopenKeepsTargetsAndAccountsSeparateAndCorruptionDoesNotResetInput() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val root = temporary.newFolder()
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        var store = ComposerJournalStore(context, root, dispatcher)
+        val journal =
+            ComposerJournal(
+                entries =
+                    mapOf(
+                        existing.key to ComposerEntry("saved existing"),
+                        "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
+                    ),
+            )
+        store.persist(identity, journal)
+        runCurrent()
+        store.close()
+        store = ComposerJournalStore(context, root, dispatcher)
+        assertEquals(journal, store.load(identity.copy(sessionId = "another")).journal)
+        for (other in
+            listOf(
+                identity.copy(userId = "user-b"),
+                identity.copy(workspaceId = "org-b"),
+                identity.copy(apiOrigin = "https://other.example/"),
+            )) assertTrue(store.load(other).journal.entries.isEmpty())
+        store.close()
+        val file = checkNotNull(root.listFiles()).single { it.extension == "json" }
+        file.writeText("broken input evidence")
+        store = ComposerJournalStore(context, root, dispatcher)
+        try {
+            store.load(identity)
+            fail("Corrupt intent cannot be reset")
+        } catch (_: Exception) {}
+        assertEquals("broken input evidence", file.readText())
+        store.close()
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatComposerSendModelTest : ChatComposerModelTestFixture() {
+    @Test
+    fun webWhitespaceStaysLocalAndDoesNotAuthorizeSend() = check { service, store, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        val whitespace = " \t\n\u00a0\ufeff"
+        model.edit(existing, whitespace)
+        assertFalse(model.uiState.value.canSend(existing))
+        model.send(existing)
+        advanceUntilIdle()
+        assertTrue(service.requests.isEmpty())
+        assertEquals(whitespace, store.load(identity).journal.drafts[existing.key]!!.text)
+        assertEquals("", service.drafts[ServerDraftTarget(CHAT_PERSONAL)]!!.plainText())
+    }
 
     @Test
     fun olderProjectSendCannotConsumeAnotherNewChatEditorsInput() = check { service, _, create ->
@@ -776,41 +822,4 @@ class ChatComposerModelTest {
             assertNull(model.uiState.value.entry(b).createdThreadId)
             assertEquals(aId, model.uiState.value.entry(a).createdThreadId)
         }
-
-    @Test
-    fun realDiskReopenKeepsTargetsAndAccountsSeparateAndCorruptionDoesNotResetInput() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        val root = temporary.newFolder()
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        var store = ComposerJournalStore(context, root, dispatcher)
-        val journal =
-            ComposerJournal(
-                entries =
-                    mapOf(
-                        existing.key to ComposerEntry("saved existing"),
-                        "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
-                    ),
-            )
-        store.persist(identity, journal)
-        runCurrent()
-        store.close()
-        store = ComposerJournalStore(context, root, dispatcher)
-        assertEquals(journal, store.load(identity.copy(sessionId = "another")).journal)
-        for (other in
-            listOf(
-                identity.copy(userId = "user-b"),
-                identity.copy(workspaceId = "org-b"),
-                identity.copy(apiOrigin = "https://other.example/"),
-            )) assertTrue(store.load(other).journal.entries.isEmpty())
-        store.close()
-        val file = checkNotNull(root.listFiles()).single { it.extension == "json" }
-        file.writeText("broken input evidence")
-        store = ComposerJournalStore(context, root, dispatcher)
-        try {
-            store.load(identity)
-            fail("Corrupt intent cannot be reset")
-        } catch (_: Exception) {}
-        assertEquals("broken input evidence", file.readText())
-        store.close()
-    }
 }

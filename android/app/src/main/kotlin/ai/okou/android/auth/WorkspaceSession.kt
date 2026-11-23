@@ -9,6 +9,8 @@ import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DefaultModelPreference
+import ai.okou.android.api.generated.EmailSubscription
+import ai.okou.android.api.generated.EmailSubscriptionUpdate
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.InitializePreferencesRequest
 import ai.okou.android.api.generated.InitializePreferencesRequestLocale
@@ -111,6 +113,10 @@ interface WorkspaceSession :
     suspend fun updateDefaultModelPreference(
         update: UpdateDefaultModelPreference,
     ): DefaultModelPreference
+
+    suspend fun emailSubscription(): EmailSubscription
+
+    suspend fun updateEmailSubscription(subscribed: Boolean): EmailSubscriptionUpdate
 
     suspend fun featureSwitches(): FeatureSwitches
 
@@ -264,6 +270,11 @@ class CanonicalWorkspaceSession(
 
     override suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) =
         api.updateDefaultModelPreference(update)
+
+    override suspend fun emailSubscription() = api.emailSubscription()
+
+    override suspend fun updateEmailSubscription(subscribed: Boolean) =
+        api.updateEmailSubscription(subscribed)
 
     override suspend fun featureSwitches() = api.featureSwitches()
 

@@ -1953,7 +1953,7 @@
       },
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "hint": "Cari alur kerja atau pilih templat…",
+        "hint": "Pilih tindakan",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -2997,6 +2997,7 @@
       "edit": "Edit",
       "grant": "Berikan",
       "reconnect": "Hubungkan ulang",
+      "returnToOkou": "Kembali ke Okou",
       "revoke": "Cabut",
       "save": "Simpan",
       "saving": "Menyimpan...",

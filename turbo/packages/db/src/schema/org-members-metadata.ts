@@ -32,6 +32,10 @@ export const orgMembersMetadata = pgTable(
         "chk_org_members_metadata_service_tier",
         sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
       ),
+      check(
+        "chk_org_members_metadata_presentation_format",
+        sql`${table.presentationFormat} IS NULL OR ${table.presentationFormat} IN ('html', 'pptx')`,
+      ),
     ];
   },
 );

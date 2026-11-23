@@ -310,6 +310,17 @@ internal interface CanonicalApi {
         @Body body: UpdateDefaultModelPreference,
     ): Response<DefaultModelPreference>
 
+    @GET("/api/preferences/email-subscription")
+    suspend fun `emailSubscription`(
+        @Header("Authorization") token: String,
+    ): Response<EmailSubscription>
+
+    @PUT("/api/preferences/email-subscription")
+    suspend fun `updateEmailSubscription`(
+        @Header("Authorization") token: String,
+        @Body body: UpdateEmailSubscriptionRequest,
+    ): Response<EmailSubscriptionUpdate>
+
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 

@@ -99,7 +99,7 @@ for consumer in (android['build-test'], android['instrumentation'], android['rel
         save, = saves
         assert save['with']['path'] == restore['with']['path']
         assert save['with']['key'] == '${{ steps.' + restore['id'] + '.outputs.cache-primary-key }}'
-        assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
+        assert "matrix.shard == 0 && github.event_name == 'push' && github.ref == 'refs/heads/main'" in save['if']
     else:
         assert not saves
 assert all(spec == restores[0] for spec in restores)
@@ -113,13 +113,21 @@ assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.o
 build_steps = android['build-test']['steps']
 shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
 history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
-assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
+assert shallow['if'] == "matrix.shard == 0 && needs.detect.outputs.shallow-discovery == 'true'"
 assert 'if' not in history
 assert build_steps.index(shallow) < build_steps.index(history)
 assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
 for native in ['build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
+for sharded in ['build-test', 'instrumentation']:
+    assert android[sharded]['strategy'] == {'fail-fast': False, 'matrix': {'shard': [0, 1, 2]}}
+native_results, = (
+    step['with'] for step in android['instrumentation']['steps']
+    if step.get('with', {}).get('name', '').startswith('android-native-results-')
+)
+assert native_results['retention-days'] == 1
+assert native_results['overwrite'] is True
 retrace = android['retrace-failure']
 assert retrace['needs'] == 'release-smoke'
 assert '!cancelled()' in retrace['if']

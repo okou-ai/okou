@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.47.0](https://github.com/okou-ai/okou/compare/android-v0.46.1...android-v0.47.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### CI
+
+* **android:** shard debug jvm and instrumentation tests ([#50162](https://github.com/okou-ai/okou/issues/50162)) ([95dc02a](https://github.com/okou-ai/okou/commit/95dc02a356934d3be75ec6003e68e36962bbaf2a))
+
 ## [0.46.1](https://github.com/okou-ai/okou/compare/android-v0.46.0...android-v0.46.1) (2026-11-23)
 
 

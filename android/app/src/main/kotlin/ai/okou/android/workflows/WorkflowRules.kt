@@ -154,9 +154,20 @@ internal fun WorkflowAutomation.githubRepositorySummary(): String? =
         ?.takeIf { it.isNotEmpty() }
         ?.joinToString()
 
+// The detail endpoint already scopes the workflow to callers with access.
+internal val WorkflowDetail.canAddAutomation: Boolean
+    get() = official == null
+
 // The workflow detail endpoint includes only the caller's automations.
-internal fun WorkflowDetail.canChange(ruleId: String?): Boolean =
-    if (ruleId == null) canManage else automations.any { it.id == ruleId && it.official == null }
+internal fun WorkflowDetail.canManageAutomation(ruleId: String): Boolean = automations.any {
+    it.id == ruleId && it.official == null
+}
+
+internal fun WorkflowDetail.canEdit(editor: WorkflowEdit): Boolean =
+    when (editor) {
+        is WorkflowEdit.Instructions -> canManage
+        is WorkflowEdit.Rule -> editor.id?.let(::canManageAutomation) ?: canAddAutomation
+    }
 
 internal sealed interface WorkflowEdit {
     val changed: Boolean

@@ -1953,7 +1953,7 @@
       },
       "slashPanel": {
         "browseAll": "浏览全部模板",
-        "hint": "搜索工作流或选择模板…",
+        "hint": "选择一个操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "临时切换到",
@@ -2997,6 +2997,7 @@
       "edit": "编辑",
       "grant": "授予",
       "reconnect": "重新连接",
+      "returnToOkou": "返回 Okou",
       "revoke": "撤销",
       "save": "保存",
       "saving": "正在保存…",

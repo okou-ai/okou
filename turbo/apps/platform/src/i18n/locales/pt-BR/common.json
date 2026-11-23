@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todos os modelos",
-        "hint": "Pesquise fluxos de trabalho ou escolha um modelo…",
+        "hint": "Escolha uma ação",
         "useTemplate": "Usar o modelo {{title}}"
       },
       "temporarilySwitchTo": "Mudar temporariamente para",
@@ -3068,6 +3068,7 @@
       "edit": "Editar",
       "grant": "Conceder",
       "reconnect": "Reconectar",
+      "returnToOkou": "Voltar ao Okou",
       "revoke": "Revogar",
       "save": "Salvar",
       "saving": "Salvando...",

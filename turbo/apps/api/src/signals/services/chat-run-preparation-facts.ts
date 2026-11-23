@@ -37,7 +37,7 @@ export interface ChatRunPreparationFacts {
     readonly grantId: string;
   } | null;
   readonly currentProject: ProjectReferenceRow | null;
-  readonly projectReferences?: readonly ProjectReferenceRow[];
+  readonly projectReferences: readonly ProjectReferenceRow[];
 }
 
 /** Canonical facts of the input published by a Chat send. */
