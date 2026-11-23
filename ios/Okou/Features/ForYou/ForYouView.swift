@@ -131,16 +131,16 @@ struct ForYouView: View {
         OkouBanner(Text(error), icon: "circle-alert", tone: .problem)
       } else if let notice = store.notice {
         if let undo = notice.undo {
-          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: { store.notice = nil }) {
+          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
             Button("Undo") { run { await store.undo(undo) } }
               .accessibilityIdentifier("for-you-undo")
           }
         } else if let id = notice.threadID {
-          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: { store.notice = nil }) {
+          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice) {
             Button("Open chat") { run { if await store.open(id) { showChat() } } }
           }
         } else {
-          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: { store.notice = nil })
+          OkouBanner(Text(notice.text), icon: "circle-check", dismiss: clearNotice)
         }
       }
     }
@@ -325,6 +325,8 @@ struct ForYouView: View {
     .buttonStyle(.plain)
     .frame(height: OkouControl.minimumTarget + OkouSpace.md)
   }
+
+  private func clearNotice() { store.notice = nil }
 
   private func browse(_ offset: Int) {
     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { store.move(offset) }
