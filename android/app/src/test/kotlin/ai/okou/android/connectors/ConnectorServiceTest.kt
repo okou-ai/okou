@@ -8,6 +8,7 @@ import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
 import ai.okou.android.CONNECTOR_OAUTH_ATTEMPT
 import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.FixtureConnectorIcon
 import ai.okou.android.api.ApiFailure
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -35,6 +36,31 @@ class ConnectorServiceTest {
             )
             val inspection = service.inspect(service.connected())
             assertEquals(ConnectorAccountStatus.Reauthorize, inspection[CONNECTOR_SLACK_ACCOUNT])
+        }
+    }
+
+    @Test
+    fun discoveryOverviewAndDetailCarryTheCurrentCatalogArtwork() = runBlocking {
+        ConnectorApiFixture().use { fixture ->
+            val service = fixture.service
+            fixture.omittedFromDefaultBrowse = setOf("slack")
+            val artwork = FixtureConnectorIcon("slack-v1", "", invertInDarkMode = true, scale = 2.2)
+            fixture.icons = mapOf("slack" to artwork)
+
+            assertFalse(service.discover(null, null).entries.any { it.slug == "slack" })
+            val connected = checkNotNull(service.connected().getValue("slack").entry.icon)
+            assertEquals("slack-v1.svg", connected.url.pathSegments.last())
+            assertTrue(connected.invertInDarkMode)
+            assertEquals(2.2f, connected.scale, 0f)
+            assertEquals(connected, service.discover("slack", null).entries.single().icon)
+            assertEquals(connected, service.detail("slack").entry.icon)
+            assertTrue(fixture.iconRequests.isEmpty())
+
+            fixture.icons = mapOf("slack" to artwork.copy(asset = "slack-v2", scale = null))
+            val updated = checkNotNull(service.detail("slack").entry.icon)
+            assertEquals("slack-v2.svg", updated.url.pathSegments.last())
+            assertEquals(1f, updated.scale, 0f)
+            assertEquals(updated, service.connected().getValue("slack").entry.icon)
         }
     }
 
