@@ -358,7 +358,9 @@ test("A member batch card reports saving and then allowed after confirmation", a
       ),
     ).toBeInTheDocument();
   });
-  click(getButton("Close", dialog));
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
   await waitFor(() => {
     expect(
       getButton(
