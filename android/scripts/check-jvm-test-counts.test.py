@@ -32,14 +32,9 @@ class JvmTestCountsTest(unittest.TestCase):
         self.assertNotEqual(over_limit.returncode, 0)
         self.assertIn("app.RouteTest has 21 JVM test cases (limit 20)", over_limit.stderr)
 
-    def test_existing_oversized_class_can_keep_its_count(self):
-        class_name = "ai.okou.android.ChatListRootTest"
-        at_limit = self.check_counts({class_name: 48, "app.RouteTest": 20})
-        self.assertEqual(at_limit.returncode, 0, at_limit.stderr)
-
-        over_limit = self.check_counts({class_name: 49})
-        self.assertNotEqual(over_limit.returncode, 0)
-        self.assertIn(f"{class_name} has 49 JVM test cases (limit 48)", over_limit.stderr)
+    def test_independent_top_level_classes_each_get_the_full_limit(self):
+        result = self.check_counts({"app.DirectoryTest": 20, "app.RouteTest": 20})
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_cases_fail_the_check(self):
         result = self.check_counts({})

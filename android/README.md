@@ -245,8 +245,8 @@ cd android
 ```
 
 The chat suites exercise real disk reopening, the generated canonical HTTP/codec
-boundary, cursor/replay recovery and retired-owner publication. `ChatListRootTest`
-holds real HTTP responses while exercising native navigation. `NativeChatListTest`
+boundary, cursor/replay recovery and retired-owner publication. The chat-list
+Compose suites hold real HTTP responses while exercising native navigation. `NativeChatListTest`
 runs list → history → Back, Settings and recreation on the existing API 35 managed
 device. History tests cover real gzip transport, malformed archives, paired
 cursors, disk reopen, dirty retry, retired results and visible read confirmation.

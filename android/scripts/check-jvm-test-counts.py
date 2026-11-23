@@ -8,16 +8,6 @@ from xml.etree import ElementTree
 
 
 MAX_CASES = 20
-# Existing oversized classes may keep their current counts while they are split.
-EXISTING_CLASS_LIMITS = {
-    "ai.okou.android.ArtifactCatalogRootTest": 21,
-    "ai.okou.android.ChatListRootTest": 48,
-    "ai.okou.android.WorkflowRootTest": 23,
-    "ai.okou.android.chat.ChatListModelTest": 73,
-    "ai.okou.android.chat.ConversationHistoryTest": 24,
-    "ai.okou.android.chat.RunControlsModelTest": 24,
-    "ai.okou.android.connectors.ConnectorModelTest": 21,
-}
 
 
 def violations(directory):
@@ -33,10 +23,9 @@ def violations(directory):
 
     errors = []
     for class_name, count in sorted(counts.items()):
-        limit = EXISTING_CLASS_LIMITS.get(class_name, MAX_CASES)
-        if count > limit:
+        if count > MAX_CASES:
             errors.append(
-                f"{class_name} has {count} JVM test cases (limit {limit}). "
+                f"{class_name} has {count} JVM test cases (limit {MAX_CASES}). "
                 f"Split independent behaviors into top-level classes of at most {MAX_CASES} cases."
             )
     return errors

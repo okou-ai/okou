@@ -75,15 +75,9 @@ class WorkflowRootApplication : TestOkouApplication() {
     }
 }
 
-@RunWith(RobolectricTestRunner::class)
-@Config(
-    sdk = [35],
-    qualifiers = "en-rUS-w412dp-h840dp",
-    application = WorkflowRootApplication::class,
-)
-class WorkflowRootTest {
+internal abstract class WorkflowRootTestFixture {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    private val app
+    protected val app
         get() = compose.activity.application as WorkflowRootApplication
 
     @After
@@ -120,6 +114,56 @@ class WorkflowRootTest {
         }
     }
 
+    protected fun openWorkflowDetail(id: String = WORKFLOW_RELEASE) {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val row = "workflow_row_$id"
+        waitForTag(row)
+        compose.onNodeWithTag(row).performClick()
+        waitForTag("workflow_detail_title")
+    }
+
+    protected fun withHardwareKeyboard(run: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            run()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
+    }
+
+    protected fun selectScope(label: String) =
+        compose
+            .onNode(
+                hasText(label) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+            )
+            .performClick()
+
+    protected fun waitFor(label: String) =
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
+        }
+
+    protected fun waitForTag(tag: String) =
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
+        }
+
+    protected fun back() = compose.runOnIdle {
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowRootTest : WorkflowRootTestFixture() {
     @Test
     fun workflowDirectoryScopesRulesAndReturnsFromDraftWithoutSending() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
@@ -352,6 +396,30 @@ class WorkflowRootTest {
     }
 
     @Test
+    fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
+        openWorkflowDetail()
+        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+        val automations = compose.onNodeWithTag("workflow_tab_automations")
+        val history = compose.onNodeWithTag("workflow_tab_history")
+
+        instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        instructions.performKeyInput { pressKey(Key.DirectionRight) }
+        automations.assertIsSelected().assertIsFocused()
+        automations.performKeyInput { pressKey(Key.MoveEnd) }
+        history.assertIsSelected().assertIsFocused()
+        history.performKeyInput { pressKey(Key.DirectionRight) }
+        instructions.assertIsSelected().assertIsFocused()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
+    @Test
     fun newScheduleUsesTheLocalTimezoneBeforePreferencesSync() {
         openWorkflowDetail()
         app.connectivity.value = false
@@ -537,22 +605,6 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun keyboardArrowsSelectAndFocusTheAdjacentDetailTabs() = withHardwareKeyboard {
-        openWorkflowDetail()
-        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
-        val automations = compose.onNodeWithTag("workflow_tab_automations")
-        val history = compose.onNodeWithTag("workflow_tab_history")
-
-        instructions.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
-        instructions.performKeyInput { pressKey(Key.DirectionRight) }
-        automations.assertIsSelected().assertIsFocused()
-        automations.performKeyInput { pressKey(Key.MoveEnd) }
-        history.assertIsSelected().assertIsFocused()
-        history.performKeyInput { pressKey(Key.DirectionRight) }
-        instructions.assertIsSelected().assertIsFocused()
-    }
-
-    @Test
     fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() = withHardwareKeyboard {
         app.fixture.gmailEnabled.set(true)
         openWorkflowDetail()
@@ -652,7 +704,15 @@ class WorkflowRootTest {
         calendar.assertTextContains("test-calendar")
         compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
     }
+}
 
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     @Test
     fun historyShowsConfirmedResultsAndOnlyLinksAvailableSourceChats() {
         val page = app.fixture.firstRunHistory
@@ -858,47 +918,5 @@ class WorkflowRootTest {
         } finally {
             releaseDelete.countDown()
         }
-    }
-
-    private fun openWorkflowDetail(id: String = WORKFLOW_RELEASE) {
-        app.gate.countDown()
-        compose.onNodeWithContentDescription("Workflows").performClick()
-        val row = "workflow_row_$id"
-        waitForTag(row)
-        compose.onNodeWithTag(row).performClick()
-        waitForTag("workflow_detail_title")
-    }
-
-    private fun withHardwareKeyboard(run: () -> Unit) {
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        instrumentation.setInTouchMode(false)
-        try {
-            compose.activityRule.scenario.recreate()
-            run()
-        } finally {
-            instrumentation.resetInTouchMode()
-        }
-    }
-
-    private fun selectScope(label: String) =
-        compose
-            .onNode(
-                hasText(label) and
-                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
-            )
-            .performClick()
-
-    private fun waitFor(label: String) =
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(label).fetchSemanticsNodes().isNotEmpty()
-        }
-
-    private fun waitForTag(tag: String) =
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-
-    private fun back() = compose.runOnIdle {
-        compose.activity.onBackPressedDispatcher.onBackPressed()
     }
 }
