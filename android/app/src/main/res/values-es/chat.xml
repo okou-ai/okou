@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">No se pudo confirmar si se deshizo el cambio.</string>
     <string name="chat_feedback_dismiss">Cerrar</string>
     <string name="chat_list_offline">Sin conexión</string>
-    <string name="chat_list_refresh_failed">No se pudo actualizar la lista de chats</string>
     <string name="chat_list_first_load_failed">No se puede cargar temporalmente</string>
     <string name="chat_list_load_when_online">Los chats se cargarán al volver a conectarte.</string>
     <string name="chat_list_title">Chats</string>
