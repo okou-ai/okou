@@ -205,6 +205,7 @@ final class ConnectorActionStore {
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let url = try browserURL(result.authorizationUrl)
+      try ConnectorAuthorizationReturn.validateCallback(result)
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
       flow.browserURL = url
@@ -353,10 +354,14 @@ final class ConnectorActionStore {
   }
 
   func authenticationFinished(
-    flow: ConnectorAuthorizationFlow, url: URL, error: Error?
+    flow: ConnectorAuthorizationFlow, url: URL, callbackURL: URL? = nil, error: Error?
   ) {
     guard !closed, active === flow, flow.browserURL == url else { return }
-    if let error, !(error is CancellationError) {
+    let failure: Error? =
+      error == nil && flow.session?.nativeCallbackUrl != nil
+        && callbackURL != flow.session?.nativeCallbackUrl
+      ? APIClientError.invalidResponse : error
+    if let error = failure, !(error is CancellationError) {
       task?.cancel()
       task = nil
       flow.session = nil
@@ -367,6 +372,15 @@ final class ConnectorActionStore {
     }
     // Closing the system session does not establish whether the API committed.
     // The existing completion check resolves that race before allowing a retry.
+    browserDismissed()
+  }
+
+  func authenticationReturned(_ url: URL) {
+    guard !closed, let flow = active, let expected = flow.session?.nativeCallbackUrl,
+      let attemptID = ConnectorAuthorizationReturn.attemptID(url),
+      attemptID == ConnectorAuthorizationReturn.attemptID(expected)
+    else { return }
+    // A link is a reconciliation hint, never evidence that credentials were saved.
     browserDismissed()
   }
 

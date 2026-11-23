@@ -20,6 +20,7 @@
     <key>ClerkKeychainAccessGroup</key><string>$(OKOU_CLERK_KEYCHAIN_ACCESS_GROUP)</string>
     <key>APIBaseURL</key><string>$(OKOU_API_BASE_URL)</string>
     <key>WebBaseURL</key><string>$(OKOU_WEB_BASE_URL)</string>
+    <key>ConnectorCallbackHost</key><string>$(OKOU_CONNECTOR_CALLBACK_HOST)</string>
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
     <key>SentryDSN</key><string>$(OKOU_SENTRY_DSN)</string>
     <key>CFBundleURLTypes</key>

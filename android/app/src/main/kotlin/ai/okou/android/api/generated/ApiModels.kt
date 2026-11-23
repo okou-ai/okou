@@ -1523,6 +1523,7 @@ data class ConnectorOauthCompletion(
 @Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
+    val `nativeCallbackUrl`: String? = null,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
 )
@@ -1530,6 +1531,11 @@ data class ConnectorOauthStart(
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeCallback {
+    @SerialName("ios-https") IOS_HTTPS,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1624,6 +1630,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeCallback`: ConnectorOauthStartRequestNativeCallback? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 

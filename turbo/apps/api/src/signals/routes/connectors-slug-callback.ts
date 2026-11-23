@@ -74,6 +74,10 @@ import {
   connectorOAuthRedirectResponse,
 } from "../../lib/connector-oauth-state";
 import { openIdRealmForOrigin } from "./connector-openid-auth-start";
+import {
+  connectorHttpsReturnFromResponse,
+  connectorHttpsReturnResponse,
+} from "./connector-https-return";
 
 const L = logger("connectors:oauth-callback");
 type CallbackIdentity = {
@@ -553,11 +557,13 @@ function callbackResultFromRedirect(
     return {
       status: "success",
       username: url.searchParams.get("username") || null,
+      nativeCallbackUrl: connectorHttpsReturnFromResponse(response),
     };
   }
   if (url.pathname === "/connector/error") {
     return {
       status: "error",
+      nativeCallbackUrl: connectorHttpsReturnFromResponse(response),
       message:
         url.searchParams.get("message") ||
         "OAuth authorization failed. Please try again.",
@@ -1050,6 +1056,7 @@ const authCodeProviderErrorResponse$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     let callbackOrigin = args.origin;
+    let storedState: StoredBuiltinOAuthState | undefined;
     if (args.query.state) {
       const claimedState = await set(
         claimStoredOAuthStateForCallback$,
@@ -1065,8 +1072,9 @@ const authCodeProviderErrorResponse$ = command(
         return claimedState.response;
       }
       callbackOrigin = appCallbackOrigin();
+      storedState = claimedState.storedState;
     }
-    return redirectWithError(
+    const response = redirectWithError(
       callbackOrigin,
       args.connectorSlug,
       args.query.error_description ||
@@ -1074,6 +1082,9 @@ const authCodeProviderErrorResponse$ = command(
         "OAuth authorization failed",
       true,
     );
+    return storedState
+      ? connectorHttpsReturnResponse(response, storedState)
+      : response;
   },
 );
 
@@ -1181,7 +1192,10 @@ const handleAuthCodeConnectorCallback$ = command(
       signal,
     );
     if (!resolvedState.ok) {
-      return resolvedState.response;
+      return connectorHttpsReturnResponse(
+        resolvedState.response,
+        claimedState.storedState,
+      );
     }
 
     const diagnostics: OAuthCallbackDiagnostics = {
@@ -1225,14 +1239,15 @@ const handleAuthCodeConnectorCallback$ = command(
     );
     signal.throwIfAborted();
 
-    return (
+    return connectorHttpsReturnResponse(
       callbackResponse ??
-      redirectWithError(
-        callbackOrigin,
-        args.connectorSlug,
-        "OAuth authorization failed. Please try again.",
-        true,
-      )
+        redirectWithError(
+          callbackOrigin,
+          args.connectorSlug,
+          "OAuth authorization failed. Please try again.",
+          true,
+        ),
+      claimedState.storedState,
     );
   },
 );
@@ -1284,6 +1299,10 @@ const callbackBuiltinConnectorInner$ = command(
     signal.throwIfAborted();
 
     if (query.responseMode !== "json") {
+      const nativeUrl = connectorHttpsReturnFromResponse(response);
+      if (nativeUrl) {
+        response.headers.set("Location", nativeUrl);
+      }
       return response;
     }
 

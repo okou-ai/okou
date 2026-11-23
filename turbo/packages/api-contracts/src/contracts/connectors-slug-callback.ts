@@ -15,10 +15,12 @@ export const connectorOauthCallbackResultSchema = discriminatedUnion("status", [
   object({
     status: literal("success"),
     username: string().nullable(),
+    nativeCallbackUrl: string().optional(),
   }),
   object({
     status: literal("error"),
     message: string(),
+    nativeCallbackUrl: string().optional(),
   }),
 ]);
 

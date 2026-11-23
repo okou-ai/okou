@@ -308,6 +308,12 @@ export const setupConnectorCallbackPage$ = command(
             query,
             signal,
           );
+    if (result.nativeCallbackUrl) {
+      // The API only returns this after consuming an iOS-owned OAuth attempt.
+      // Navigation completes the system session; account readiness is read by iOS.
+      window.location.replace(result.nativeCallbackUrl);
+      return;
+    }
     if (!connectorIcon && connectorSlug) {
       connectorIcon = await set(
         loadConnectorCallbackIcon$,

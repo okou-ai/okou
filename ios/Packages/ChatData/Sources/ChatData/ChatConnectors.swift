@@ -97,6 +97,7 @@ public struct ChatConnectorReceipt: Decodable, Sendable {
   public let result: String?
   public let status: String?
   public let authorizationUrl: URL?
+  public let nativeCallbackUrl: URL?
   public let oauthAttemptId: String?
   public let connectionId: String?
   public let sessionId: String?
@@ -280,6 +281,7 @@ public struct ChatConnectorService: Sendable {
       let account: Account
       let authMethod: String
       var callbackTarget: String?
+      var nativeCallback: String?
       var values: [String: String]?
       var options: [String: String]?
     }
@@ -294,6 +296,7 @@ public struct ChatConnectorService: Sendable {
       let body = Body(
         account: account, authMethod: method.id,
         callbackTarget: method.grantKind == "auth-code" ? "app" : nil,
+        nativeCallback: method.grantKind == "auth-code" ? "ios-https" : nil,
         values: method.grantKind == "manual" ? method.manualValues(values) : nil,
         options: method.grantKind == "device-auth" ? method.deviceOptions(options) : nil)
       let data = try JSONEncoder().encode(body)

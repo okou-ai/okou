@@ -60,6 +60,7 @@ export const builtinConnectorOauthStartContract = c.router({
     body: object({
       authMethod: connectorAuthMethodIdSchema,
       callbackTarget: literal("app").optional(),
+      nativeCallback: literal("ios-https").optional(),
       account: connectorAccountMutationIntentSchema,
     }),
     responses: {

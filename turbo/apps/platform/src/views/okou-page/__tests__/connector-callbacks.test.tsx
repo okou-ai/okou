@@ -18,6 +18,33 @@ import {
 
 const context = testContext();
 
+test("A native OAuth completion returns to the HTTPS session before loading the catalog", async () => {
+  const navigation = context.mocks.browser.locationReplace();
+  const nativeCallbackUrl =
+    "https://app.okou.ai/native/connector-authorization?attemptId=11111111-2222-4333-8444-555555555555";
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, respond }) => {
+      expect(query).toMatchObject({
+        code: "native-code",
+        state: "native-state",
+        responseMode: "json",
+      });
+      return respond(200, {
+        status: "success",
+        username: null,
+        nativeCallbackUrl,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors/github/callback?code=native-code&state=native-state",
+    auth: null,
+  });
+  expect(navigation.calls).toStrictEqual([nativeCallbackUrl]);
+});
+
 function githubIcon(): PublicConnectorCatalogIcon {
   return {
     url: "https://icons.example.test/github.svg",
