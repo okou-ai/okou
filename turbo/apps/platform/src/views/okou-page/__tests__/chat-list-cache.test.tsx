@@ -127,7 +127,7 @@ async function openCachedSearch(count: number, standalone = false) {
         return {
           chatThreadId: source.id,
           matchedMessage: {
-            role: "assistant",
+            role: "assistant" as const,
             chatThreadId: source.id,
             seqId: index + 2,
             runId: null,

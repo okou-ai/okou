@@ -323,7 +323,7 @@ internal fun SettingsModal(
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
                 else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
-                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
+                shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 content(true)
@@ -340,8 +340,6 @@ internal fun SettingsModal(
                     confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
                 ),
             sheetGesturesEnabled = dismissible,
-            sheetMaxWidth = 460.dp,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(

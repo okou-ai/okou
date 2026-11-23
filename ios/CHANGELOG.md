@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.59.1](https://github.com/okou-ai/okou/compare/ios-v0.59.0...ios-v0.59.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard up when an attachment finishes uploading ([#50298](https://github.com/okou-ai/okou/issues/50298)) ([d6f92a0](https://github.com/okou-ai/okou/commit/d6f92a03ce1b2937b3b053d1fbea640774620f8d))
+
 ## [0.59.0](https://github.com/okou-ai/okou/compare/ios-v0.58.0...ios-v0.59.0) (2026-11-23)
 
 

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -88,28 +88,24 @@ function thumbnail(row: HTMLElement, width: number) {
   ).toContain("width=" + width);
   expect(image?.src).toContain("/" + authorized);
 }
-test("thread-resource-thumbnails-002 Workspace search shows the matching private image thumbnail only after its 64-pixel preview is authorized", async () => {
-  const { asked, reply } = privateArtwork();
-  try {
-    await open();
-    click(await findFastControl("button", "Search workspace"));
-    const search = await screen.findByRole("dialog");
-    const field = await within(search).findByRole("combobox");
-    await fill(field, "Private");
-    const label = await within(search).findByText(title);
-    const row = label.closest('[role="option"],button,a')! as HTMLElement;
-    await asked.promise;
-    expect(row).toBeVisible();
-    expect(row.querySelector("img")).toBeNull();
-    reply.resolve();
-    await waitFor(() => {
-      return thumbnail(row, 64);
-    });
-  } finally {
-    if (!reply.settled()) {
-      reply.resolve();
-    }
-  }
+test("Private courtyard is available from the chat's artifacts after an empty workspace search for its title", async () => {
+  const grant = privateArtwork();
+  grant.reply.resolve();
+  await open();
+  click(await findFastControl("button", "Search workspace"));
+  const dialog = await screen.findByRole("dialog");
+  const box = within(dialog).getByRole("combobox");
+  await fill(box, title);
+  await expect(
+    within(dialog).findByText("No results found"),
+  ).resolves.toBeVisible();
+  expect(within(dialog).queryByRole("option")).toBeNull();
+  fireEvent.keyDown(box, { key: "Escape" });
+  click(await findFastControl("button", "Artifacts and chats"));
+  const catalog = await screen.findByRole("dialog", {
+    name: "Artifacts and chats",
+  });
+  await expect(within(catalog).findByText(title)).resolves.toBeVisible();
 });
 
 test("thread-resource-thumbnails-001 The private image from the conversation’s resource list opens with its authorized source", async () => {
