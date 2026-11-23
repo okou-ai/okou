@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">Chat desarchivado</string>
     <string name="chat_undo_marked_read">Chat marcado como leído</string>
     <string name="chat_undo">Deshacer</string>
-    <string name="chat_undo_connection_failed">No se pudo deshacer el cambio. Comprueba tu conexión y vuelve a intentarlo.</string>
     <string name="chat_action_connection_failed">No se pudo conectar. Comprueba tu conexión y vuelve a intentarlo.</string>
     <string name="chat_undo_checking">Comprobando el resultado…</string>
     <string name="chat_undo_failed">No se pudo deshacer el cambio.</string>

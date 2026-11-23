@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
-    <string name="chat_undo_connection_failed">Impossibile annullare la modifica. Controlla la connessione e riprova.</string>
     <string name="chat_action_connection_failed">Impossibile connettersi. Controlla la connessione e riprova.</string>
     <string name="chat_undo_checking">Verifica dell’annullamento…</string>
     <string name="chat_undo_failed">Impossibile annullare la modifica.</string>

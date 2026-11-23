@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">Chat aus dem Archiv geholt</string>
     <string name="chat_undo_marked_read">Chat als gelesen markiert</string>
     <string name="chat_undo">Rückgängig</string>
-    <string name="chat_undo_connection_failed">Die Änderung konnte nicht rückgängig gemacht werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_action_connection_failed">Verbindung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_undo_checking">Ergebnis wird geprüft …</string>
     <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>

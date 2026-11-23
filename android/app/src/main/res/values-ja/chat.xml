@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_connection_failed">変更を元に戻せませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_action_connection_failed">接続できませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_undo_checking">元に戻せたか確認しています…</string>
     <string name="chat_undo_failed">元に戻せませんでした</string>

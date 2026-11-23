@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">已取消封存</string>
     <string name="chat_undo_marked_read">已標為已讀</string>
     <string name="chat_undo">復原</string>
-    <string name="chat_undo_connection_failed">未能復原，請檢查網路連線後再試。</string>
     <string name="chat_action_connection_failed">無法連線，請檢查網路連線後再試。</string>
     <string name="chat_undo_checking">正在確認復原結果</string>
     <string name="chat_undo_failed">未能復原</string>

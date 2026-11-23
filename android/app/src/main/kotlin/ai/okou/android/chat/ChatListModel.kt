@@ -169,7 +169,6 @@ internal constructor(
 internal enum class ChatUndoPhase {
     Offered,
     Checking,
-    ConnectionFailed,
     Failed,
     Unconfirmed,
 }
@@ -192,9 +191,6 @@ internal constructor(
                 ChatRowAction.MarkRead -> ChatRowAction.MarkUnread
                 else -> error("Chat action cannot be undone")
             }
-
-    internal val canRetry
-        get() = phase == ChatUndoPhase.Offered || phase == ChatUndoPhase.ConnectionFailed
 }
 
 data class ChatListUiState(
@@ -837,7 +833,7 @@ class ChatListModel(
         if (
             !current() ||
                 state.rowUndo !== undo ||
-                !undo.canRetry ||
+                undo.phase != ChatUndoPhase.Offered ||
                 undo.threadId in state.pendingRowActions
         )
             return
@@ -930,7 +926,7 @@ class ChatListModel(
         } else {
             val undo = state.rowUndo
             if (
-                undo?.canRetry == true &&
+                undo?.phase == ChatUndoPhase.Offered &&
                     undo.threadId == threadId &&
                     state.undoTarget(undo) == null
             )
@@ -1144,13 +1140,7 @@ class ChatListModel(
                     if (rollback == ChatRowMutationOwner.Rollback.Rejected) refreshList()
                     completeRowUndo(
                         undoRequest,
-                        when {
-                            confirmedRead == true -> null
-                            confirmation?.connectionFailed == true ||
-                                rollback == ChatRowMutationOwner.Rollback.ConnectionFailed ->
-                                ChatUndoPhase.ConnectionFailed
-                            else -> ChatUndoPhase.Failed
-                        },
+                        if (confirmedRead == true) null else ChatUndoPhase.Failed,
                     )
                     invalidateIndicators()
                     return@launch

@@ -136,6 +136,9 @@ until success or a terminal failure. If a write stays unconfirmed, Refresh
 chats reads back the list and clears the unresolved projection once that
 read succeeds.
 
+A definitively failed Undo keeps the confirmed row state and closes its offer.
+An uncertain Undo keeps its receipt check available.
+
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an
 existing chat updates its visible recency in memory while preserving pin and

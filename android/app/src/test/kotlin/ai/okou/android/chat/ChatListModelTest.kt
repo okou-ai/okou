@@ -569,15 +569,14 @@ class ChatListModelTest {
     }
 
     @Test
-    fun undoKeepsItsOfferAfterConnectionFailureAndChecksAnAmbiguousRetryByReceipt() = runTest {
+    fun undoClosesTheOfferAfterAConnectionFailure() = runTest {
         val connectivity = MutableStateFlow(true)
         val source = ArchiveService()
         var inverseWrites = 0
         source.beforeUnarchive = {
             inverseWrites++
-            if (inverseWrites == 1) throw ApiFailure.Network(ConnectException("Unreachable"))
+            throw ApiFailure.Network(ConnectException("Unreachable"))
         }
-        source.afterUnarchive = { throw ApiFailure.Network(IOException("Lost response")) }
         withCatchUpModel(source, connectivity = connectivity) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -590,29 +589,47 @@ class ChatListModelTest {
             model.undoRowAction(offer)
             advanceUntilIdle()
             val failed = checkNotNull(model.uiState.value.rowUndo)
-            assertEquals(ChatUndoPhase.ConnectionFailed, failed.phase)
-            assertTrue(failed.canRetry)
+            assertEquals(ChatUndoPhase.Failed, failed.phase)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
 
             connectivity.value = true
             advanceUntilIdle()
             assertSame(failed, model.uiState.value.rowUndo)
-            assertEquals(1, inverseWrites)
-            source.beforeEvents = { throw IOException("Readback unavailable") }
             model.undoRowAction(failed)
+            model.undoRowAction(offer)
+            advanceUntilIdle()
+            assertEquals(1, inverseWrites)
+        }
+    }
+
+    @Test
+    fun undoChecksAnAmbiguousResultByReceipt() = runTest {
+        val source = ArchiveService()
+        var inverseWrites = 0
+        source.beforeUnarchive = { inverseWrites++ }
+        source.afterUnarchive = { throw ApiFailure.Network(IOException("Lost response")) }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            advanceUntilIdle()
+
+            val offer = checkNotNull(model.uiState.value.rowUndo)
+            source.beforeEvents = { throw IOException("Readback unavailable") }
+            model.undoRowAction(offer)
             advanceUntilIdle()
             val unconfirmed = checkNotNull(model.uiState.value.rowUndo)
             assertEquals(ChatUndoPhase.Unconfirmed, unconfirmed.phase)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(2, inverseWrites)
+            assertEquals(1, inverseWrites)
 
             source.beforeEvents = {}
             model.checkRowUndo(unconfirmed)
             advanceUntilIdle()
             assertNull(model.uiState.value.rowUndo)
             assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(2, inverseWrites)
+            assertEquals(1, inverseWrites)
         }
     }
 

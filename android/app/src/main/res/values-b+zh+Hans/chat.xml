@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">已取消归档</string>
     <string name="chat_undo_marked_read">已标为已读</string>
     <string name="chat_undo">撤销</string>
-    <string name="chat_undo_connection_failed">未能撤销，请检查网络后重试。</string>
     <string name="chat_action_connection_failed">未能连接，请检查网络后重试。</string>
     <string name="chat_undo_checking">正在核对撤销结果</string>
     <string name="chat_undo_failed">未能撤销</string>

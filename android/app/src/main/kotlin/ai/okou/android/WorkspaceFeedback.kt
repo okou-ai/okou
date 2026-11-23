@@ -102,7 +102,6 @@ private fun ChatUndoFeedback(
                     },
                 )
             ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
-            ChatUndoPhase.ConnectionFailed -> stringResource(R.string.chat_undo_connection_failed)
             ChatUndoPhase.Failed -> stringResource(R.string.chat_undo_failed)
             ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }

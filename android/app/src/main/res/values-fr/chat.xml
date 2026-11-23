@@ -7,7 +7,6 @@
     <string name="chat_undo_unarchived">Discussion désarchivée</string>
     <string name="chat_undo_marked_read">Discussion marquée comme lue</string>
     <string name="chat_undo">Annuler</string>
-    <string name="chat_undo_connection_failed">Impossible d’annuler la modification. Vérifiez votre connexion, puis réessayez.</string>
     <string name="chat_action_connection_failed">Connexion impossible. Vérifiez votre connexion, puis réessayez.</string>
     <string name="chat_undo_checking">Vérification de l’annulation…</string>
     <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
