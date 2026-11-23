@@ -1,21 +1,10 @@
 import { command } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import {
   pageCatalog,
   artifactCatalogSidebar,
 } from "./artifact-catalog-instance.ts";
 import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/artifact-catalog";
 import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { isTextPreviewKind } from "../text-preview.ts";
-import {
-  closeLightboxWithDialogExit$,
-  openAudioLightbox$,
-  openDocumentLightbox$,
-  openImageLightbox$,
-  openFileLightbox$,
-  openVideoLightbox$,
-} from "../okou-page/attachment-chips.ts";
 import {
   historyState$,
   pathname$,
@@ -24,8 +13,7 @@ import {
   updateSearchParams$,
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { onRef, resetSignal } from "../utils.ts";
-import { artifactDetailPreview } from "./artifact-catalog-preview.ts";
+import { onRef } from "../utils.ts";
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 
@@ -147,110 +135,21 @@ export const prepareArtifactCatalogPreviewHistory$ = command(
   },
 );
 
-export const closeArtifactCatalogPreview$ = command(
-  ({ get, set }, signal: AbortSignal) => {
-    set(artifactCatalogSidebar.close$);
-    const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
-    const previewArtifactId = artifactIdFromHistoryState(
-      get(historyState$),
-      ARTIFACT_PREVIEW_HISTORY_STATE_KEY,
-    );
-    if (
-      get(pathname$) === ROUTES.artifacts &&
-      artifactId !== null &&
-      artifactId === previewArtifactId
-    ) {
-      window.history.back();
-      return;
-    }
-    set(closeLightboxWithDialogExit$, signal);
-  },
-);
+export const closeArtifactCatalogPreview$ = command(({ get, set }) => {
+  set(artifactCatalogSidebar.close$);
+  const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
+  const previewArtifactId = artifactIdFromHistoryState(
+    get(historyState$),
+    ARTIFACT_PREVIEW_HISTORY_STATE_KEY,
+  );
+  if (
+    get(pathname$) === ROUTES.artifacts &&
+    artifactId !== null &&
+    artifactId === previewArtifactId
+  ) {
+    window.history.back();
+    return;
+  }
+});
 
-/**
- * Open a card. The kind entity is fetched here rather than with the list, so
- * browsing the grid never pays for detail queries.
- */
-const resetOpenArtifactSignal$ = resetSignal();
-
-export const openArtifact$ = command(
-  async ({ get, set }, artifactId: string, signal: AbortSignal) => {
-    if (
-      (await get(featureSwitches$))[FeatureSwitchKey.ArtifactSidebarPreview]
-    ) {
-      await set(artifactCatalogSidebar.openArtifact$, artifactId, signal);
-      return;
-    }
-    const openSignal = set(resetOpenArtifactSignal$, signal);
-    set(pageCatalog.selectArtifact$, artifactId);
-    const detail = await get(pageCatalog.selectedArtifactDetail$);
-    signal.throwIfAborted();
-    openSignal.throwIfAborted();
-    if (!detail) {
-      return;
-    }
-
-    if (detail.kind === "shared-thread") {
-      window.location.assign(
-        `/share/threads/${encodeURIComponent(detail.sharedThread.id)}`,
-      );
-      return;
-    }
-
-    const preview = artifactDetailPreview(detail);
-    const previewSignals = await set(
-      pageCatalog.ensureSelectedArtifactPreview$,
-      artifactId,
-      openSignal,
-    );
-    signal.throwIfAborted();
-    openSignal.throwIfAborted();
-    if (!previewSignals) {
-      return;
-    }
-    const base = {
-      catalogArtifactId: detail.id,
-      filename: preview.filename,
-      contentType: preview.contentType,
-      artifactKind: preview.artifactKind,
-      preview: previewSignals,
-      showSizeInSubtitle: false,
-      splitViewAvailable: false,
-      url: preview.url,
-    };
-    if (preview.kind === "file") {
-      await set(openFileLightbox$, base, undefined, signal);
-      return;
-    }
-    if (preview.kind === "image") {
-      await set(openImageLightbox$, base, undefined, signal);
-      return;
-    }
-    if (preview.kind === "video") {
-      await set(openVideoLightbox$, base, undefined, signal);
-      return;
-    }
-    if (preview.kind === "audio") {
-      await set(openAudioLightbox$, base, undefined, signal);
-      return;
-    }
-    if (isTextPreviewKind(preview.kind)) {
-      await set(
-        openDocumentLightbox$,
-        {
-          ...base,
-          kind: preview.kind,
-        },
-        undefined,
-        signal,
-      );
-      return;
-    }
-    await set(
-      openDocumentLightbox$,
-      { ...base, kind: preview.kind },
-      undefined,
-      signal,
-    );
-  },
-);
+export const openArtifact$ = artifactCatalogSidebar.openArtifact$;

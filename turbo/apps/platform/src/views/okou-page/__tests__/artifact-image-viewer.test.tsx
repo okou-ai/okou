@@ -79,7 +79,7 @@ function wheelImage(image: HTMLElement, init: WheelEventInit): void {
 }
 
 function getLightboxImage(): HTMLImageElement {
-  const image = screen.getByTestId("attachment-lightbox-image");
+  const image = screen.getByTestId("artifact-sidebar-body-image");
   if (!(image instanceof HTMLImageElement)) {
     throw new Error("Expected the lightbox image");
   }
@@ -219,7 +219,8 @@ async function openImageViewer(deferFirstDecode: boolean) {
     expect(image).toHaveAttribute("alt", "first.png");
     expect(image).toHaveAttribute("src", firstImageUrl);
   });
-  const dialog = screen.getByRole("dialog", { name: "first.png preview" });
+  const dialog = screen.getByTestId("artifact-sidebar");
+  click(within(dialog).getByTestId("zoomable-image-canvas"));
   await waitFor(() => {
     expect(
       within(dialog).getByRole("group", { name: "first.png preview" }),
@@ -273,7 +274,9 @@ test("The image viewer resolves and decodes the next image during keyboard navig
     ).toBeVisible();
   });
   expect(firstLightboxImage).not.toBeInTheDocument();
-  expect(dialog).toHaveAccessibleName("second.png preview");
+  expect(within(dialog).getByRole("group")).toHaveAccessibleName(
+    "second.png preview",
+  );
   expect(within(dialog).getByRole("group")).toHaveFocus();
   secondUrlReady.resolve();
   await waitFor(() => {
@@ -296,7 +299,7 @@ test("The image viewer resolves and decodes the next image during keyboard navig
   ).toBeNull();
 });
 
-test.each(["lightbox", "sidebar", "fullscreen"] as const)(
+test.each(["sidebar", "fullscreen"] as const)(
   "Image gestures use the approved continuous zoom in the %s",
   async (surface) => {
     context.mocks.browser.matchMedia((query) => {
@@ -305,26 +308,18 @@ test.each(["lightbox", "sidebar", "fullscreen"] as const)(
       );
     });
     const { dialog } = await openImageViewer(false);
-    let preview = dialog;
-    if (surface !== "lightbox") {
-      click(getButtonByName("Open in split view", dialog));
-      preview = await screen.findByTestId("artifact-sidebar");
-      if (surface === "fullscreen") {
-        click(getButtonByName("Enter fullscreen", preview));
-        await waitFor(() => {
-          return getButtonByName("Exit fullscreen", preview);
-        });
-      }
+    const preview = dialog;
+    if (surface === "fullscreen") {
+      click(getButtonByName("Enter fullscreen", preview));
+      await waitFor(() => {
+        return getButtonByName("Exit fullscreen", preview);
+      });
     }
     const image = await within(preview).findByTestId(
-      surface === "lightbox"
-        ? "attachment-lightbox-image"
-        : "artifact-sidebar-body-image",
+      "artifact-sidebar-body-image",
     );
     const zoom = await within(preview).findByTestId(
-      surface === "lightbox"
-        ? "artifact-dialog-image-zoom-level"
-        : "artifact-sidebar-image-zoom-level",
+      "artifact-sidebar-image-zoom-level",
     );
     await waitFor(() => {
       expect(image).toBeVisible();

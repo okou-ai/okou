@@ -1,3 +1,5 @@
+import { ApiError } from "../../lib/api-error.ts";
+import { ArtifactAccessCard } from "../components/artifact-access-card.tsx";
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
 import { ArtifactPreviewActionGroup } from "./artifact-preview-action-group.tsx";
@@ -226,7 +228,7 @@ export function ArtifactSidebarContent({
   text$,
   threadId,
 }: ArtifactSidebarContentProps) {
-  useTranslation();
+  const { t } = useTranslation();
   const fullscreen = fullscreenState.active;
   const toggleFullscreen = fullscreenState.toggle;
   const resource = useLastLoadable(
@@ -254,13 +256,30 @@ export function ArtifactSidebarContent({
     });
   const recoveryTarget =
     display.kind === "html" ? hostedSiteRecoveryTarget(display.url) : null;
-  const recovery =
-    resource.state === "hasError" && recoveryTarget ? (
-      <HostedSiteAccessCard
-        target={recoveryTarget}
-        reason={hostedSiteRecoveryReason(resource.error)}
-      />
-    ) : null;
+  let recovery: ReactNode = null;
+  if (resource.state === "hasError") {
+    if (recoveryTarget) {
+      recovery = (
+        <HostedSiteAccessCard
+          target={recoveryTarget}
+          reason={hostedSiteRecoveryReason(resource.error)}
+        />
+      );
+    } else if (
+      resource.error instanceof ApiError &&
+      [401, 403, 404].includes(resource.error.status)
+    ) {
+      recovery = <ArtifactAccessCard />;
+    } else {
+      recovery = (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.artifacts.preview.genericUnavailable;
+          })}
+        </p>
+      );
+    }
+  }
 
   return (
     <ArtifactSidebarResolvedContent
@@ -368,8 +387,9 @@ function ArtifactSidebarResolvedContent({
         onClose={closePreview}
       />
       <div className="min-h-0 flex-1 overflow-hidden bg-background">
-        {recovery ?? (
+        {(display.kind === "image" ? null : recovery) ?? (
           <ArtifactBody
+            recovery={recovery}
             resourceUrl={resourceUrl}
             shareUrl={shareUrl}
             url={display.url}
@@ -825,6 +845,7 @@ function ArtifactCloseAction({ onClose }: { onClose: () => void }) {
 }
 
 function ArtifactBody({
+  recovery,
   resourceUrl,
   shareUrl,
   url,
@@ -837,6 +858,7 @@ function ArtifactBody({
   markdownTree$,
   text$,
 }: {
+  recovery: ReactNode;
   resourceUrl: string | null;
   shareUrl: string | null | undefined;
   url: string;
@@ -886,6 +908,7 @@ function ArtifactBody({
   if (kind === "image") {
     return (
       <ArtifactImageBody
+        recovery={recovery}
         resourceUrl={resourceUrl}
         fullscreen={fullscreen}
         imageCanvasSignals={imageCanvasSignals}
@@ -926,8 +949,15 @@ function ArtifactBody({
 }
 
 function ArtifactSpinner() {
+  const { t } = useTranslation();
   return (
-    <div className="flex h-full items-center justify-center text-muted-foreground">
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.artifacts.catalog.loading;
+      })}
+      className="flex h-full items-center justify-center text-muted-foreground"
+    >
       <Loader2 size={20} className="animate-spin" />
     </div>
   );
@@ -1199,6 +1229,7 @@ function ArtifactCsvBody({ text$ }: { text$: TextPreviewComputed }) {
 }
 
 function ArtifactImageBody({
+  recovery,
   resourceUrl,
   fullscreen,
   imageCanvasSignals,
@@ -1206,6 +1237,7 @@ function ArtifactImageBody({
   url,
   filename,
 }: {
+  recovery: ReactNode;
   resourceUrl: string | null;
   fullscreen: boolean;
   imageCanvasSignals: ZoomableImageCanvasSignals;
@@ -1219,31 +1251,32 @@ function ArtifactImageBody({
         <ArtifactImageNavigationRegion
           signals={imageCanvasSignals}
           filename={filename}
-          navigation={resourceUrl === null ? undefined : imageNavigation}
+          navigation={imageNavigation}
           testIdPrefix="artifact-sidebar"
         >
-          {resourceUrl === null ? (
-            <ArtifactSpinner />
-          ) : (
-            <ZoomableArtifactImageCanvas
-              key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
-              src={resourceUrl}
-              alt={filename}
-              signals={imageCanvasSignals}
-              imageTestId="artifact-sidebar-body-image"
-              contentClassName="p-6"
-              pendingContent={<ArtifactSpinner />}
-            >
-              {(controls) => {
-                return (
-                  <ArtifactImageZoomControls
-                    controls={controls}
-                    testIdPrefix="artifact-sidebar"
-                  />
-                );
-              }}
-            </ZoomableArtifactImageCanvas>
-          )}
+          {recovery ??
+            (resourceUrl === null ? (
+              <ArtifactSpinner />
+            ) : (
+              <ZoomableArtifactImageCanvas
+                key={`${fullscreen ? "fullscreen" : "sidebar"}:${url}`}
+                src={resourceUrl}
+                alt={filename}
+                signals={imageCanvasSignals}
+                imageTestId="artifact-sidebar-body-image"
+                contentClassName="p-6"
+                pendingContent={<ArtifactSpinner />}
+              >
+                {(controls) => {
+                  return (
+                    <ArtifactImageZoomControls
+                      controls={controls}
+                      testIdPrefix="artifact-sidebar"
+                    />
+                  );
+                }}
+              </ZoomableArtifactImageCanvas>
+            ))}
         </ArtifactImageNavigationRegion>
       </ArtifactStageCard>
     </ArtifactStageShell>

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -53,9 +52,6 @@ test("Chat artifacts open a closed sidebar directly", async () => {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-    },
   });
   const card = await screen.findByLabelText(
     "Open pdf preview for sidebar-report.pdf",
@@ -125,7 +121,6 @@ test("Sent user attachments open in the sidebar and retain their private sharing
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   click(await screen.findByLabelText("Open text preview for upload.txt"));
   const preview = await screen.findByTestId("artifact-sidebar");
@@ -185,7 +180,6 @@ async function openCsvSidebar(source: string) {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   click(await screen.findByLabelText("Open csv preview for review.csv"));
   return screen.findByTestId("artifact-sidebar");

@@ -23,7 +23,6 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
-    FeatureSwitchKey.ArtifactSidebarPreview,
     FeatureSwitchKey.ArtifactPreviewActionGroup,
     FeatureSwitchKey.FollowupPlaceholder,
   ])("defaults %s to staff and honors Lab overrides", (key) => {

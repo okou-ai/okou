@@ -104,26 +104,12 @@ async function openMermaidSplitView() {
 
   click(firstExpand);
 
-  const dialog = await screen.findByRole("dialog", {
-    name: "diagram.svg preview",
-  });
-  expect(getButtonByName("Open in split view", dialog)).toBeVisible();
-  expect(
-    queryAllByRoleFast("button", dialog).some((button) => {
-      return button.getAttribute("aria-label") === "Share";
-    }),
-  ).toBeFalsy();
-
-  const dialogRemoved = waitForElementToBeRemoved(dialog);
-  click(getButtonByName("Open in split view", dialog));
-
   const sidebar = await screen.findByTestId("artifact-sidebar");
   expect(within(sidebar).getByText("diagram.svg")).toBeVisible();
   const firstSidebarImage = await within(sidebar).findByRole("img", {
     name: "diagram.svg",
   });
   const firstSidebarSource = firstSidebarImage.getAttribute("src");
-  await dialogRemoved;
   return { sidebar, firstSidebarSource };
 }
 

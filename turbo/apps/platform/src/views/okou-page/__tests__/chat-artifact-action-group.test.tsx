@@ -43,8 +43,6 @@ const fileId = "f0000000-0000-4000-a000-000000000941";
 const canonical = artifactReferencePath(fileId, report.title);
 const resourceUrl = "https://files.example.test/action-group.txt";
 
-type Surface = "dialog" | "sidebar";
-
 function mockPreview({
   metadataReady,
   ownershipReady,
@@ -171,54 +169,39 @@ function mockPreview({
   });
 }
 
-async function openPreview(surface: Surface, groupedActions = true) {
+async function openPreview(groupedActions = true) {
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
     },
   });
   click(await findNamedLink(report.title));
-  return screen.findByTestId(
-    surface === "sidebar" ? "artifact-sidebar" : "attachment-lightbox",
-  );
+  return screen.findByTestId("artifact-sidebar");
 }
 
-function downloadLabel(surface: Surface) {
-  return surface === "sidebar" ? "Download artifact" : "Download options";
-}
-
-function readyDownload(preview: HTMLElement, surface: Surface) {
+function readyDownload(preview: HTMLElement) {
   return waitFor(() => {
-    const download = buttonNamed(downloadLabel(surface), preview);
+    const download = buttonNamed("Download artifact", preview);
     expect(download).toBeVisible();
     return download;
   });
 }
 
-test.each([
-  { surface: "dialog", groupedActions: false },
-  { surface: "dialog", groupedActions: true },
-  { surface: "sidebar", groupedActions: false },
-  { surface: "sidebar", groupedActions: true },
-] as const)(
-  "the $surface places fullscreen after the separator with action grouping $groupedActions",
-  async ({ surface, groupedActions }) => {
+test.each([{ groupedActions: false }, { groupedActions: true }] as const)(
+  "the sidebar places fullscreen after the separator with action grouping $groupedActions",
+  async ({ groupedActions }) => {
     mockPreview();
-    const preview = await openPreview(surface, groupedActions);
-    const download = await readyDownload(preview, surface);
+    const preview = await openPreview(groupedActions);
+    const download = await readyDownload(preview);
     const lastArtifactAction = groupedActions
       ? buttonNamed("More artifact actions", preview)
       : download;
     const separator = within(preview).getByRole("separator");
     const fullscreen = buttonNamed("Enter fullscreen", preview);
-    const close = buttonNamed(
-      surface === "sidebar" ? "Close artifact" : "Close",
-      preview,
-    );
+    const close = buttonNamed("Close artifact", preview);
     expect(separator).toHaveAttribute("aria-orientation", "vertical");
     expect(
       lastArtifactAction.compareDocumentPosition(separator) &
@@ -333,13 +316,12 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
     path: `/chats/${leftThreadId}?sidebar=${rightThreadId}`,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: true,
     },
   });
   click(await findNamedLink(leftName));
   const firstPreview = await screen.findByTestId("artifact-sidebar");
-  await readyDownload(firstPreview, "sidebar");
+  await readyDownload(firstPreview);
 
   click(await findNamedLink(rightName));
   const preview = await waitFor(() => {
@@ -351,7 +333,7 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
   expect(within(preview).getByLabelText("Download artifact")).not.toBeVisible();
   expect(buttonNamed("Close artifact", preview)).toBeEnabled();
   metadata.resolve();
-  await readyDownload(preview, "sidebar");
+  await readyDownload(preview);
   await expect(
     within(preview).findByText(rightReport.title),
   ).resolves.toBeVisible();
@@ -360,14 +342,9 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
   });
 });
 
-test.each([
-  { surface: "dialog", first: "ownership" },
-  { surface: "dialog", first: "sharing" },
-  { surface: "sidebar", first: "ownership" },
-  { surface: "sidebar", first: "sharing" },
-] as const)(
-  "the $surface reveals all actions together when $first resolves first",
-  async ({ surface, first }) => {
+test.each([{ first: "ownership" }, { first: "sharing" }] as const)(
+  "the sidebar reveals all actions together when $first resolves first",
+  async ({ first }) => {
     const ownership = context.mocks.deferred<void>();
     const sharing = context.mocks.deferred<void>();
     const firstReady = first === "ownership" ? ownership : sharing;
@@ -377,172 +354,144 @@ test.each([
       sharingReady: sharing.promise,
       contentReady: firstReady.promise,
     });
-    const preview = await openPreview(surface);
-    expect(
-      buttonNamed(surface === "sidebar" ? "Close artifact" : "Close", preview),
-    ).toBeEnabled();
+    const preview = await openPreview();
+    expect(buttonNamed("Close artifact", preview)).toBeEnabled();
     firstReady.resolve();
     await expect(
       within(preview).findByText("Action group content"),
     ).resolves.toBeInTheDocument();
     expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
     expect(
-      within(preview).getByLabelText(downloadLabel(surface)),
+      within(preview).getByLabelText("Download artifact"),
     ).not.toBeVisible();
     lastReady.resolve();
-    await readyDownload(preview, surface);
-    expect(
-      buttonNamed(surface === "sidebar" ? "Share artifact" : "Share", preview),
-    ).toBeVisible();
+    await readyDownload(preview);
+    expect(buttonNamed("Share artifact", preview)).toBeVisible();
     expect(buttonNamed("More artifact actions", preview)).toBeVisible();
   },
 );
 
-test.each(["dialog", "sidebar"] as const)(
-  "the %s waits for artifact metadata before choosing its actions",
-  async (surface) => {
-    const metadata = context.mocks.deferred<void>();
-    mockPreview({ metadataReady: metadata.promise });
-    const preview = await openPreview(surface);
-    await expect(
-      within(preview).findByText("Action group content"),
-    ).resolves.toBeInTheDocument();
-    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      within(preview).getByLabelText(downloadLabel(surface)),
-    ).not.toBeVisible();
-    metadata.resolve();
-    await readyDownload(preview, surface);
-    expect(buttonNamed("More artifact actions", preview)).toBeVisible();
-  },
-);
+test("the %s waits for artifact metadata before choosing its actions", async () => {
+  const metadata = context.mocks.deferred<void>();
+  mockPreview({ metadataReady: metadata.promise });
+  const preview = await openPreview();
+  await expect(
+    within(preview).findByText("Action group content"),
+  ).resolves.toBeInTheDocument();
+  expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+  expect(within(preview).getByLabelText("Download artifact")).not.toBeVisible();
+  metadata.resolve();
+  await readyDownload(preview);
+  expect(buttonNamed("More artifact actions", preview)).toBeVisible();
+});
 
-test.each(["dialog", "sidebar"] as const)(
-  "the %s can close during action loading and reopen normally",
-  async (surface) => {
-    const ownership = context.mocks.deferred<void>();
-    mockPreview({ ownershipReady: ownership.promise });
-    const preview = await openPreview(surface);
-    await expect(
-      within(preview).findByText("Action group content"),
-    ).resolves.toBeInTheDocument();
-    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      within(preview).getByLabelText(downloadLabel(surface)),
-    ).not.toBeVisible();
-    click(
-      buttonNamed(surface === "sidebar" ? "Close artifact" : "Close", preview),
-    );
-    await waitFor(() => {
-      expect(preview).not.toBeInTheDocument();
-    });
-    ownership.resolve();
-    click(await findNamedLink(report.title));
-    const reopened = await screen.findByTestId(
-      surface === "sidebar" ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    await readyDownload(reopened, surface);
-  },
-);
+test("the %s can close during action loading and reopen normally", async () => {
+  const ownership = context.mocks.deferred<void>();
+  mockPreview({ ownershipReady: ownership.promise });
+  const preview = await openPreview();
+  await expect(
+    within(preview).findByText("Action group content"),
+  ).resolves.toBeInTheDocument();
+  expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+  expect(within(preview).getByLabelText("Download artifact")).not.toBeVisible();
+  click(buttonNamed("Close artifact", preview));
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+  ownership.resolve();
+  click(await findNamedLink(report.title));
+  const reopened = await screen.findByTestId("artifact-sidebar");
+  await readyDownload(reopened);
+});
 
-test.each(["dialog", "sidebar"] as const)(
-  "the %s keeps Download separate from deletion and restores More focus on cancel",
-  async (surface) => {
-    const user = userEvent.setup({ delay: null });
-    const browser = context.mocks.browser.blobDownload();
-    let removed = false;
-    mockPreview({
-      available: () => {
-        return !removed;
-      },
-    });
-    context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
-      removed = true;
-      return respond(200, { deleted: true });
-    });
-    const preview = await openPreview(surface);
-    const download = await readyDownload(preview, surface);
-    const more = buttonNamed("More artifact actions", preview);
-    click(more);
-    const menu = await screen.findByRole("menu");
-    expect(
-      queryAllByRoleFast("menuitem", menu).map((item) => {
-        return item.textContent?.trim();
-      }),
-    ).toStrictEqual(["Delete"]);
-    await user.click(
-      buttonNamed(surface === "sidebar" ? "Share artifact" : "Share", preview),
-    );
-    await expect(
-      screen.findByRole("dialog", { name: "Share" }),
-    ).resolves.toBeInTheDocument();
-    await user.keyboard("{Escape}");
-    click(download);
-    const downloads = await screen.findByRole("menu");
-    click(await findNamedMenuItem("Download", downloads));
-    await waitFor(() => {
-      expect(browser.downloads).toHaveLength(1);
-    });
-    expect(browser.downloads[0]?.filename).toBe(report.title);
-    click(more);
-    click(await findNamedMenuItem("Delete", await screen.findByRole("menu")));
-    const cancelled = await screen.findByRole("dialog", {
-      name: `Delete ${report.title}?`,
-    });
-    click(buttonNamed("Cancel", cancelled));
-    await waitFor(() => {
-      expect(more).toHaveFocus();
-    });
-    click(more);
-    click(await findNamedMenuItem("Delete", await screen.findByRole("menu")));
-    const confirmed = await screen.findByRole("dialog", {
-      name: `Delete ${report.title}?`,
-    });
-    click(buttonNamed("Delete", confirmed));
-    await expect(
-      screen.findByText("Artifact deleted"),
-    ).resolves.toBeInTheDocument();
-    await waitFor(() => {
-      expect(preview).not.toBeInTheDocument();
-    });
-  },
-);
+test("the %s keeps Download separate from deletion and restores More focus on cancel", async () => {
+  const user = userEvent.setup({ delay: null });
+  const browser = context.mocks.browser.blobDownload();
+  let removed = false;
+  mockPreview({
+    available: () => {
+      return !removed;
+    },
+  });
+  context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
+    removed = true;
+    return respond(200, { deleted: true });
+  });
+  const preview = await openPreview();
+  const download = await readyDownload(preview);
+  const more = buttonNamed("More artifact actions", preview);
+  click(more);
+  const menu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent?.trim();
+    }),
+  ).toStrictEqual(["Delete"]);
+  await user.click(buttonNamed("Share artifact", preview));
+  await expect(
+    screen.findByRole("dialog", { name: "Share" }),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  click(download);
+  const downloads = await screen.findByRole("menu");
+  click(await findNamedMenuItem("Download", downloads));
+  await waitFor(() => {
+    expect(browser.downloads).toHaveLength(1);
+  });
+  expect(browser.downloads[0]?.filename).toBe(report.title);
+  click(more);
+  click(await findNamedMenuItem("Delete", await screen.findByRole("menu")));
+  const cancelled = await screen.findByRole("dialog", {
+    name: `Delete ${report.title}?`,
+  });
+  click(buttonNamed("Cancel", cancelled));
+  await waitFor(() => {
+    expect(more).toHaveFocus();
+  });
+  click(more);
+  click(await findNamedMenuItem("Delete", await screen.findByRole("menu")));
+  const confirmed = await screen.findByRole("dialog", {
+    name: `Delete ${report.title}?`,
+  });
+  click(buttonNamed("Delete", confirmed));
+  await expect(
+    screen.findByText("Artifact deleted"),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(preview).not.toBeInTheDocument();
+  });
+});
 
-test.each(["dialog", "sidebar"] as const)(
-  "a read-only %s offers link copy and Download without an empty management menu",
-  async (surface) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    mockPreview({ owned: false });
-    const preview = await openPreview(surface);
-    await readyDownload(preview, surface);
-    click(
-      buttonNamed(surface === "sidebar" ? "Share artifact" : "Share", preview),
-    );
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([
-        new URL(canonical, "https://app.okou.ai").href,
-      ]);
-    });
-    expect(
-      queryAllByRoleFast("button", preview).find((button) => {
-        return button.getAttribute("aria-label") === "More artifact actions";
-      }),
-    ).toBeUndefined();
-  },
-);
+test("a read-only %s offers link copy and Download without an empty management menu", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  mockPreview({ owned: false });
+  const preview = await openPreview();
+  await readyDownload(preview);
+  click(buttonNamed("Share artifact", preview));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([
+      new URL(canonical, "https://app.okou.ai").href,
+    ]);
+  });
+  expect(
+    queryAllByRoleFast("button", preview).find((button) => {
+      return button.getAttribute("aria-label") === "More artifact actions";
+    }),
+  ).toBeUndefined();
+});
 
 test.each(["ownership", "sharing"] as const)(
   "a failed %s read still releases Download and Close",
   async (failure) => {
     const browser = context.mocks.browser.blobDownload();
     mockPreview({ failure });
-    const preview = await openPreview("dialog");
-    click(await readyDownload(preview, "dialog"));
+    const preview = await openPreview();
+    click(await readyDownload(preview));
     const menu = await screen.findByRole("menu");
     click(await findNamedMenuItem("Download", menu));
     await waitFor(() => {
       expect(browser.downloads).toHaveLength(1);
     });
-    expect(buttonNamed("Close", preview)).toBeEnabled();
+    expect(buttonNamed("Close artifact", preview)).toBeEnabled();
   },
 );

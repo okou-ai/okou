@@ -53,7 +53,7 @@ async function openDocument() {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   const card = await findNamedLink("Deployment notes");
   click(card);
-  const documentDialog = await screen.findByTestId("attachment-lightbox");
+  const documentDialog = await screen.findByTestId("artifact-sidebar");
   await within(documentDialog).findByRole("img", { name: "Diagram" });
   return { browser, documentDialog };
 }
@@ -66,13 +66,15 @@ test.each([false, true])(
       click(getNamedButton("Enter fullscreen", documentDialog));
     }
     await waitFor(() => {
-      expect(documentDialog).toHaveAttribute(
-        "data-mode",
-        fullscreen ? "fullscreen" : "windowed",
-      );
+      expect(
+        getNamedButton(
+          fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+          documentDialog,
+        ),
+      ).toBeInTheDocument();
     });
     const viewport = within(documentDialog).getByTestId(
-      "artifact-dialog-stage",
+      "artifact-sidebar-stage",
     );
     viewport.scrollTop = 120;
     click(within(documentDialog).getByText("Diagram source"));
@@ -88,10 +90,12 @@ test.each([false, true])(
     expect(
       within(documentDialog).getByText("Deployment notes", { selector: "h1" }),
     ).toBeInTheDocument();
-    expect(documentDialog).toHaveAttribute(
-      "data-mode",
-      fullscreen ? "fullscreen" : "windowed",
-    );
+    expect(
+      getNamedButton(
+        fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+        documentDialog,
+      ),
+    ).toBeInTheDocument();
     await waitFor(() => {
       return expect(diagram.contains(document.activeElement)).toBeTruthy();
     });
@@ -113,10 +117,12 @@ test.each([false, true])(
         screen.queryByTestId("artifact-diagram-lightbox"),
       ).not.toBeInTheDocument();
     });
-    expect(documentDialog).toHaveAttribute(
-      "data-mode",
-      fullscreen ? "fullscreen" : "windowed",
-    );
+    expect(
+      getNamedButton(
+        fullscreen ? "Exit fullscreen" : "Enter fullscreen",
+        documentDialog,
+      ),
+    ).toBeInTheDocument();
     expect(viewport.scrollTop).toBe(120);
     expect(
       within(documentDialog).getByText("Diagram source").closest("details"),
@@ -140,10 +146,10 @@ test.each([false, true])(
     });
     expect(documentDialog).toBeInTheDocument();
     expect(trigger).toHaveFocus();
-    await userEvent.keyboard("{Escape}");
+    click(getNamedButton("Close artifact", documentDialog));
     await waitFor(() => {
       return expect(
-        screen.queryByTestId("attachment-lightbox"),
+        screen.queryByTestId("artifact-sidebar"),
       ).not.toBeInTheDocument();
     });
     expect(browser.revokedUrls).toContain(inlineUrl);
@@ -152,9 +158,11 @@ test.each([false, true])(
 
 test("changing document fullscreen preserves the paragraph currently being read", async () => {
   const { documentDialog } = await openDocument();
-  const viewport = within(documentDialog).getByTestId("artifact-dialog-stage");
+  const viewport = within(documentDialog).getByTestId("artifact-sidebar-stage");
   const wide = () => {
-    return documentDialog.dataset.mode === "fullscreen";
+    return (
+      documentDialog.querySelector('[aria-label="Exit fullscreen"]') !== null
+    );
   };
   vi.spyOn(viewport, "getBoundingClientRect").mockImplementation(() => {
     return new DOMRect(0, 10, wide() ? 800 : 400, 100);
@@ -175,13 +183,17 @@ test("changing document fullscreen preserves the paragraph currently being read"
   viewport.scrollTop = 190;
   click(getNamedButton("Enter fullscreen", documentDialog));
   await waitFor(() => {
-    expect(documentDialog).toHaveAttribute("data-mode", "fullscreen");
+    expect(
+      getNamedButton("Exit fullscreen", documentDialog),
+    ).toBeInTheDocument();
   });
   expect(viewport.scrollTop).toBe(110);
   viewport.scrollTop = 295;
   click(getNamedButton("Exit fullscreen", documentDialog));
   await waitFor(() => {
-    expect(documentDialog).toHaveAttribute("data-mode", "windowed");
+    expect(
+      getNamedButton("Enter fullscreen", documentDialog),
+    ).toBeInTheDocument();
   });
   expect(viewport.scrollTop).toBe(495);
 });

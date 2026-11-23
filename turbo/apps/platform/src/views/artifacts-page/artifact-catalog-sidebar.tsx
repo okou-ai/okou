@@ -1,24 +1,22 @@
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Button } from "@okouai/ui";
 import { Loader2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { artifactCatalogSidebar } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ArtifactSidebarContent } from "../okou-page/artifact-sidebar.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 
 export function ArtifactCatalogSidebar() {
   const { t } = useTranslation();
-  const open = useLastResolved(artifactCatalogSidebar.open$);
+  const open = useGet(artifactCatalogSidebar.open$);
   const detail = useLoadable(artifactCatalogSidebar.detail$);
   const fullscreen = useGet(artifactCatalogSidebar.fullscreen$);
   const toggleFullscreen = useSet(artifactCatalogSidebar.toggleFullscreen$);
   const closePreview = useSet(closeArtifactCatalogPreview$);
-  const pageSignal = useGet(pageSignal$);
   const close = () => {
-    closePreview(pageSignal);
+    closePreview();
   };
   if (!open) {
     return null;

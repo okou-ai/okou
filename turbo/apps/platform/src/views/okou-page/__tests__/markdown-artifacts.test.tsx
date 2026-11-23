@@ -37,9 +37,9 @@ function installMessage(
 }
 
 async function closePreview() {
-  click(getNamedButton("Close"));
+  click(getNamedButton("Close artifact"));
   await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   });
 }
 
@@ -82,7 +82,7 @@ test("One image keeps distinct labels for every text link", async () => {
   expect(getNamedLink("Reference screenshot")).toHaveAttribute("href", url);
   click(link);
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", url);
   await closePreview();
 });
@@ -104,7 +104,7 @@ test("Repeated images share load state and open an image preview", async () => {
   }
   click(imageAction);
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", url);
 });
 
@@ -242,7 +242,7 @@ test("Bare platform URLs stay links and fenced URLs stay code", async () => {
   expect(code.closest("pre")).toBeVisible();
   click(link);
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", url);
 });
 
@@ -261,7 +261,7 @@ test("A platform document has both a text link and an explicit preview card", as
   );
   expect(card).toBeVisible();
   click(link);
-  const dialog = await screen.findByRole("dialog");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(dialog).findByTitle("a1b2c3d4e5.pdf preview"),
   ).resolves.toHaveAttribute("src", `${url}#navpanes=0`);

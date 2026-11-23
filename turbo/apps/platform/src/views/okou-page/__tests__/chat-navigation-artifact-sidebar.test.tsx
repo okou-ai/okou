@@ -263,7 +263,7 @@ test("Keep attachment cards closed until the user selects one", async () => {
   ).not.toBeInTheDocument();
 });
 
-test("Preview a DOCX attachment in the dialog and split view", async () => {
+test("Preview a DOCX attachment in the sidebar", async () => {
   const filename = "release-plan.docx";
   const url = await setupGeneratedFilePreview(
     filename,
@@ -272,13 +272,6 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
 
   click(await screen.findByLabelText(`Preview ${filename}`));
 
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  expectOfficeViewerFocusable(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
@@ -286,7 +279,7 @@ test("Preview a DOCX attachment in the dialog and split view", async () => {
   expectOfficeViewerFocusable(splitFrame);
 });
 
-test("Preview a PPTX attachment in the dialog and split view", async () => {
+test("Preview a PPTX attachment in the sidebar", async () => {
   const filename = "quarterly-review.pptx";
   const url = await setupGeneratedFilePreview(
     filename,
@@ -295,13 +288,6 @@ test("Preview a PPTX attachment in the dialog and split view", async () => {
 
   click(await screen.findByLabelText(`Preview ${filename}`));
 
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  expectOfficeViewerFocusable(dialogFrame);
-  click(buttonNamed("Open in split view", dialog));
-
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
   expect(splitFrame).toBeVisible();
@@ -309,7 +295,7 @@ test("Preview a PPTX attachment in the dialog and split view", async () => {
   expectOfficeViewerFocusable(splitFrame);
 });
 
-test("Preview an XLSX attachment in the dialog and split view", async () => {
+test("Preview an XLSX attachment in the sidebar", async () => {
   const filename = "launch-budget.xlsx";
   const url = await setupGeneratedFilePreview(
     filename,
@@ -317,12 +303,6 @@ test("Preview an XLSX attachment in the dialog and split view", async () => {
   );
 
   click(await screen.findByLabelText(`Preview ${filename}`));
-
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const dialogFrame = await within(dialog).findByTitle(`${filename} preview`);
-  expect(dialogFrame).toBeVisible();
-  expectOfficeViewerUrl(dialogFrame, url);
-  click(buttonNamed("Open in split view", dialog));
 
   const splitView = await screen.findByTestId("artifact-sidebar");
   const splitFrame = await within(splitView).findByTitle(`${filename} preview`);
@@ -358,7 +338,7 @@ test("Use a public URL for a private Office attachment preview", async () => {
 
   click(await screen.findByLabelText(`Preview ${filename}`));
 
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   const frame = await within(dialog).findByTitle(`${filename} preview`);
   expectOfficeViewerUrl(frame, publicUrl);
   expect(frame.getAttribute("src")).not.toContain(privateUrl);
@@ -393,11 +373,11 @@ test("Render a generated private image and offer sharing by default", async () =
   const embedded = await screen.findByAltText(filename);
   expect(embedded).toHaveAttribute("src", resourceUrl);
   click(embedded);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   expect(
-    within(dialog).getByTestId("attachment-lightbox-image"),
+    within(dialog).getByTestId("artifact-sidebar-body-image"),
   ).toHaveAttribute("src", resourceUrl);
-  expect(within(dialog).getByLabelText(/^share$/i)).toBeVisible();
+  expect(within(dialog).getByLabelText("Share artifact")).toBeVisible();
 });
 
 test.each([
@@ -415,9 +395,9 @@ test.each([
       `${url}?thumbnail=1&width=800&height=720&fit=scale-down&quality=85`,
     );
     click(image);
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     expect(
-      within(dialog).getByTestId("attachment-lightbox-image"),
+      within(dialog).getByTestId("artifact-sidebar-body-image"),
     ).toHaveAttribute("src", url);
   },
 );

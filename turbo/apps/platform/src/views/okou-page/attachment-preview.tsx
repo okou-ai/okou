@@ -1,4 +1,3 @@
-import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
@@ -175,20 +174,16 @@ function AttachmentAnchorChip({
         }
         event.preventDefault();
         event.currentTarget.blur();
-        detach(
-          openDocument(
-            {
-              kind,
-              url,
-              filename,
-              preview,
-              threadId,
-              ...(text$ ? { text$ } : {}),
-            },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openDocument(
+          {
+            kind,
+            url,
+            filename,
+            preview,
+            threadId,
+            ...(text$ ? { text$ } : {}),
+          },
+          pageSignal,
         );
       }}
       aria-label={t(
@@ -373,13 +368,9 @@ function HtmlSitePreviewCard({
         }
         event.preventDefault();
         event.currentTarget.blur();
-        detach(
-          openDocument(
-            { kind: "html", url, filename, preview, threadId },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openDocument(
+          { kind: "html", url, filename, preview, threadId },
+          pageSignal,
         );
       }}
       ariaLabel={t(
@@ -524,13 +515,9 @@ function AudioPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        detach(
-          openAudioLightbox(
-            { url, filename, contentType, preview, threadId },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openAudioLightbox(
+          { url, filename, contentType, preview, threadId },
+          pageSignal,
         );
       }}
       disabled={lightboxOpen}
@@ -586,13 +573,9 @@ function VideoThumbnailPreview({
       type="button"
       onClick={(event) => {
         event.currentTarget.blur();
-        detach(
-          openVideoLightbox(
-            { url, filename, contentType, preview, threadId },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openVideoLightbox(
+          { url, filename, contentType, preview, threadId },
+          pageSignal,
         );
       }}
       disabled={lightboxOpen}

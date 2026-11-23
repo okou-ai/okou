@@ -328,6 +328,7 @@ function ThreadArtifactDetail({
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
   const openAttachment = useSet(sidebar.openAttachment$);
+  const imageRole = useGet(thread.imageNavigation.sidebar.role$);
   const backToArtifacts = useOpenThreadArtifacts(thread);
   const pageSignal = useGet(pageSignal$);
   const detailLoadable = useLastLoadable(
@@ -344,6 +345,7 @@ function ThreadArtifactDetail({
         url: item.url,
         filename: item.filename,
         ...(item.preview ? { preview: item.preview } : {}),
+        ...(imageRole === "user" ? { shareAvailable: false } : {}),
       },
       pageSignal,
     );

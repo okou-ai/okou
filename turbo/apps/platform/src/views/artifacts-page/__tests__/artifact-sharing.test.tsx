@@ -104,7 +104,7 @@ async function openArtifact() {
     path: "/artifacts",
   });
   click(await findArtifactAction("Private report"));
-  await screen.findByTestId("artifact-dialog-site-frame");
+  await screen.findByTestId("artifact-sidebar-body-html");
 }
 
 function sharingStatus(
@@ -130,9 +130,9 @@ function sharingStatus(
 }
 async function openShareMenu() {
   await waitFor(() => {
-    return expect(queryAction("button", "Share")).toBeDefined();
+    return expect(queryAction("button", "Share artifact")).toBeDefined();
   });
-  click(action("button", "Share"));
+  click(action("button", "Share artifact"));
   await waitFor(() => {
     expect(permission("Only me")).toBeInTheDocument();
   });
@@ -225,7 +225,7 @@ test("a recipient's share button copies directly without a permissions menu or m
     });
   });
   await openArtifact();
-  click(action("button", "Share"));
+  click(action("button", "Share artifact"));
   await waitFor(() => {
     return expect(clipboard.writes).toStrictEqual([
       new URL(canonical, location.origin).href,
@@ -266,7 +266,7 @@ test("An unavailable permission read keeps the audience unknown", async () => {
     });
   });
   await openArtifact();
-  click(action("button", "Share"));
+  click(action("button", "Share artifact"));
   await screen.findByText("Unable to load permissions");
   expect(clipboard.writes).toStrictEqual([]);
   // The audience is unknown, not absent. The choices stay on screen so the

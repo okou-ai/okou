@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -16,7 +15,6 @@ const FILE_URL = "https://files.example.test/json-preview.json";
 
 async function openAttachment(options: {
   readonly source: string;
-  readonly sidebar?: boolean;
   readonly response?: ResponseInit;
 }) {
   context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
@@ -64,30 +62,22 @@ async function openAttachment(options: {
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: options.sidebar ?? true,
-    },
   });
   click(await screen.findByLabelText("Open json preview for review.json"));
-  return screen.findByTestId(
-    options.sidebar === false ? "attachment-lightbox" : "artifact-sidebar",
-  );
+  return screen.findByTestId("artifact-sidebar");
 }
 
-test.each([true, false])(
-  "A private chat JSON attachment uses the tree with sidebar=%s",
-  async (sidebar) => {
-    const source = '{"items":[{"id":9223372036854775807}],"empty":{}}';
-    const preview = await openAttachment({ source, sidebar });
-    const tree = await within(preview).findByTestId("json-preview");
-    click(buttonNamed('Expand "items"', tree));
-    click(buttonNamed("Expand [0]", tree));
-    expect(within(tree).getByText("9223372036854775807")).toBeInTheDocument();
-    expect(within(tree).getByText("{}")).toBeInTheDocument();
-    click(buttonNamed("Source", tree));
-    expect(tree.querySelector("pre")?.textContent).toBe(source);
-  },
-);
+test("A private chat JSON attachment uses the tree in the sidebar", async () => {
+  const source = '{"items":[{"id":9223372036854775807}],"empty":{}}';
+  const preview = await openAttachment({ source });
+  const tree = await within(preview).findByTestId("json-preview");
+  click(buttonNamed('Expand "items"', tree));
+  click(buttonNamed("Expand [0]", tree));
+  expect(within(tree).getByText("9223372036854775807")).toBeInTheDocument();
+  expect(within(tree).getByText("{}")).toBeInTheDocument();
+  click(buttonNamed("Source", tree));
+  expect(tree.querySelector("pre")?.textContent).toBe(source);
+});
 
 test("A ranged attachment cannot present a complete-looking JSON prefix as a full tree", async () => {
   const source = '{"looks":"complete"}';

@@ -517,16 +517,16 @@ async function expectSyncCompletedPreview(
 async function openDriveMessageMenu(actionName = "Connect Google Drive") {
   click(await findNamedLink("Drive preview"));
   const preview = await waitFor(() => {
-    const button = buttonNamed("Download options");
-    const dialog = button.closest('[role="dialog"]');
+    const button = buttonNamed("Download artifact");
+    const dialog = button.closest('[data-testid="artifact-sidebar"]');
     if (!(dialog instanceof HTMLElement)) {
-      throw new Error("Expected the artifact's preview dialog");
+      throw new Error("Expected the artifact sidebar");
     }
     expect(button).toBeEnabled();
     return dialog;
   });
   const downloadButton = () => {
-    return buttonNamed("Download options", preview);
+    return buttonNamed("Download artifact", preview);
   };
   click(downloadButton());
   await waitFor(() => {
@@ -538,13 +538,7 @@ async function openDriveMessageMenu(actionName = "Connect Google Drive") {
   return { preview, downloadButton };
 }
 
-test.each([
-  "dialog",
-  "sidebar",
-  "dialog moved to sidebar",
-  "existing sidebar",
-  "card",
-] as const)(
+test.each(["sidebar", "existing sidebar", "card"] as const)(
   "Upload another Chat's artifact from the %s using the viewing Chat's Drive account",
   async (surface) => {
     mockWideScreen();
@@ -560,7 +554,6 @@ test.each([
       googleDriveConnectionId: sourceAccount,
     });
     const viewingLink = `[Drive preview](${file.url})`;
-    const opensInSidebar = surface !== "dialog" && surface !== "card";
     mockSplitAttachmentChats(
       context,
       {
@@ -632,24 +625,11 @@ test.each([
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}?sidebar=${viewingThreadId}`,
       host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
-      },
     });
 
-    const moveToSidebar = async () => {
-      const dialog = await screen.findByRole("dialog", {
-        name: `${filename} preview`,
-      });
-      click(buttonNamed("Open in split view", dialog));
-      await waitFor(() => {
-        expect(dialog).not.toBeInTheDocument();
-      });
-    };
     let sourceSidebar: HTMLElement | undefined;
     if (surface === "existing sidebar") {
       click(await findNamedLink("Source preview"));
-      await moveToSidebar();
       sourceSidebar = await screen.findByTestId("artifact-sidebar");
     }
     click(
@@ -657,24 +637,14 @@ test.each([
         ? await screen.findByTestId("attachment-preview-pdf")
         : await findNamedLink("Drive preview"),
     );
-    if (surface === "dialog moved to sidebar") {
-      await moveToSidebar();
-    }
-    const preview = opensInSidebar
-      ? await waitFor(() => {
-          const sidebar = screen.getByTestId("artifact-sidebar");
-          if (sidebar === sourceSidebar) {
-            throw new Error("Waiting for the viewing Chat's artifact sidebar");
-          }
-          return sidebar;
-        })
-      : await screen.findByRole("dialog", { name: `${filename} preview` });
-    click(
-      buttonNamed(
-        opensInSidebar ? "Download artifact" : "Download options",
-        preview,
-      ),
-    );
+    const preview = await waitFor(() => {
+      const sidebar = screen.getByTestId("artifact-sidebar");
+      if (sidebar === sourceSidebar) {
+        throw new Error("Waiting for the viewing Chat's artifact sidebar");
+      }
+      return sidebar;
+    });
+    click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(
         roleItemNamed("menuitem", "Upload to Google Drive"),
@@ -885,7 +855,7 @@ test("Recheck Drive authorization after leaving and reopening the chat page", as
   ]);
   expect(drive.oauthRequests).toHaveLength(0);
 
-  click(buttonNamed("Close", initial.preview));
+  click(buttonNamed("Close artifact", initial.preview));
   await waitFor(() => {
     expect(initial.preview).not.toBeInTheDocument();
   });
@@ -1450,7 +1420,7 @@ test("Dismissed Drive scope recovery never resumes an upload", async () => {
   await waitFor(() => {
     expect(popup.location.href).toBe(AUTHORIZATION_URL);
   });
-  click(buttonNamed("Close", preview));
+  click(buttonNamed("Close artifact", preview));
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
   });
@@ -1582,10 +1552,8 @@ test("Keep a reopened artifact usable after cancelling the remaining Drive setup
     host: "app.okou.ai",
   });
   click(await findNamedLink("Drive preview"));
-  const preview = await screen.findByRole("dialog", {
-    name: "drive-report.pdf preview",
-  });
-  click(buttonNamed("Download options", preview));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(buttonNamed("Download artifact", preview));
   await waitFor(() => {
     expect(
       roleItemNamed("menuitem", "Connect Google Drive"),
@@ -1594,28 +1562,26 @@ test("Keep a reopened artifact usable after cancelling the remaining Drive setup
   click(roleItemNamed("menuitem", "Connect Google Drive"));
   await waitFor(() => {
     expect(popup.location.href).toBe(AUTHORIZATION_URL);
-    expect(buttonNamed("Download options", preview)).toHaveAttribute(
+    expect(buttonNamed("Download artifact", preview)).toHaveAttribute(
       "aria-expanded",
       "false",
     );
   });
   drive.completeAuthorization();
   await syncing.promise;
-  click(buttonNamed("Close", preview));
+  click(buttonNamed("Close artifact", preview));
   await waitFor(() => {
     expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0);
   });
 
   click(await findNamedLink("Drive preview"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "drive-report.pdf preview",
-  });
+  const reopened = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
-    expect(buttonNamed("Download options", reopened)).toBeEnabled();
+    expect(buttonNamed("Download artifact", reopened)).toBeEnabled();
   });
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
+  expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
   expect(popup.window.closed).toBeTruthy();
-  click(buttonNamed("Download options", reopened));
+  click(buttonNamed("Download artifact", reopened));
   await waitFor(() => {
     expect(
       roleItemNamed("menuitem", "Connect Google Drive"),
@@ -1625,8 +1591,8 @@ test("Keep a reopened artifact usable after cancelling the remaining Drive setup
 
   sync.resolve();
   expect(screen.queryByText("Synced to Google Drive")).toBeNull();
-  expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-  expect(buttonNamed("Download options", reopened)).toBeEnabled();
+  expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
+  expect(buttonNamed("Download artifact", reopened)).toBeEnabled();
 });
 
 test.each([false, true])(
@@ -1642,10 +1608,8 @@ test.each([false, true])(
       host: "app.okou.ai",
     });
     await user.click(await findNamedLink("Drive preview"));
-    const preview = await screen.findByRole("dialog", {
-      name: "drive-report.pdf preview",
-    });
-    await user.click(buttonNamed("Download options", preview));
+    const preview = await screen.findByTestId("artifact-sidebar");
+    await user.click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(
         roleItemNamed("menuitem", "Connect Google Drive"),
@@ -1653,22 +1617,22 @@ test.each([false, true])(
     });
     await user.click(roleItemNamed("menuitem", "Connect Google Drive"));
     await waitFor(() => {
-      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+      expect(buttonNamed("Download artifact", preview)).toHaveAttribute(
         "aria-expanded",
         "false",
       );
     });
-    expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1);
-    expect(buttonNamed("Close", preview)).toBeEnabled();
+    expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
+    expect(buttonNamed("Close artifact", preview)).toBeEnabled();
     await waitFor(() => {
       expect(popup.location.href).toBe(AUTHORIZATION_URL);
     });
 
     if (cancelled) {
-      await user.click(buttonNamed("Close", preview));
+      await user.click(buttonNamed("Close artifact", preview));
     }
     await waitFor(() => {
-      expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(
+      expect(screen.queryAllByTestId("artifact-sidebar")).toHaveLength(
         cancelled ? 0 : 1,
       );
     });
@@ -1682,7 +1646,7 @@ test.each([false, true])(
     await expect(
       screen.findByText("Synced to Google Drive"),
     ).resolves.toBeInTheDocument();
-    await user.click(buttonNamed("Download options", preview));
+    await user.click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(
         roleItemNamed("menuitem", "Upload to Google Drive"),
@@ -1699,7 +1663,7 @@ test.each([false, true])(
     await waitFor(() => {
       expect(
         queryAllByRoleFast("button").filter((button) => {
-          return button.getAttribute("aria-label") === "Download options";
+          return button.getAttribute("aria-label") === "Download artifact";
         }),
       ).toHaveLength(1);
     });
@@ -1949,10 +1913,8 @@ describe("google editor conversion", () => {
       host: "app.okou.ai",
     });
     click(await findNamedLink("Drive preview"));
-    const preview = await screen.findByRole("dialog", {
-      name: "report.txt preview",
-    });
-    click(buttonNamed("Download options", preview));
+    const preview = await screen.findByTestId("artifact-sidebar");
+    click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(
         roleItemNamed("menuitem", "Upload to Google Docs"),
@@ -1977,12 +1939,12 @@ describe("google editor conversion", () => {
       screen.findByText("Synced to Google Drive"),
     ).resolves.toBeInTheDocument();
     await waitFor(() => {
-      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+      expect(buttonNamed("Download artifact", preview)).toHaveAttribute(
         "aria-expanded",
         "false",
       );
     });
-    click(buttonNamed("Download options", preview));
+    click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
         "href",
@@ -2014,12 +1976,12 @@ describe("google editor conversion", () => {
     });
     expect(popup.open.calls).toHaveLength(1);
     await waitFor(() => {
-      expect(buttonNamed("Download options", preview)).toHaveAttribute(
+      expect(buttonNamed("Download artifact", preview)).toHaveAttribute(
         "aria-expanded",
         "false",
       );
     });
-    click(buttonNamed("Download options", preview));
+    click(buttonNamed("Download artifact", preview));
     await waitFor(() => {
       expect(roleItemNamed("menuitem", "Open in Google Docs")).toHaveAttribute(
         "href",

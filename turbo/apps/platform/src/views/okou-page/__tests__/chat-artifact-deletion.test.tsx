@@ -93,7 +93,7 @@ function mockReport(available: () => boolean, sourceUrl = url) {
   });
 }
 
-test.each(["lightbox", "sidebar", "resources"] as const)(
+test.each(["sidebar", "resources"] as const)(
   "a thread artifact can be deleted from the original %s toolbar",
   async (surface) => {
     let removed = false;
@@ -110,7 +110,6 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
       featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: surface === "sidebar",
         [FeatureSwitchKey.ArtifactPreviewActionGroup]: false,
       },
     });
@@ -119,8 +118,7 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     } else {
       click(await findNamedLink(report.title));
     }
-    const previewId =
-      surface === "lightbox" ? "attachment-lightbox" : "artifact-sidebar";
+    const previewId = "artifact-sidebar";
     const preview = await screen.findByTestId(previewId);
     await expect(
       within(preview).findByText("Thread report content"),
@@ -157,8 +155,7 @@ test.each(["lightbox", "sidebar", "resources"] as const)(
     });
     expect(removed).toBeTruthy();
     click(await findNamedLink(report.title));
-    const reopenedId =
-      surface === "sidebar" ? "artifact-sidebar" : "attachment-lightbox";
+    const reopenedId = "artifact-sidebar";
     const reopened = await screen.findByTestId(reopenedId);
     await expect(
       within(reopened).findByText("Thread report content"),
@@ -210,17 +207,17 @@ test("a read-only artifact retains Download and link copy without owner deletion
     featureSwitches: { [FeatureSwitchKey.ArtifactPreviewActionGroup]: false },
   });
   click(await findNamedLink(report.title));
-  const preview = await screen.findByTestId("attachment-lightbox");
+  const preview = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(preview).findByText("Thread report content"),
   ).resolves.toBeInTheDocument();
-  click(buttonNamed("Share", preview));
+  click(buttonNamed("Share artifact", preview));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([
       new URL(canonical, "https://app.okou.ai").href,
     ]);
   });
-  click(buttonNamed("Download options", preview));
+  click(buttonNamed("Download artifact", preview));
   const menu = await screen.findByRole("menu");
   await expect(
     findNamedMenuItem("Download", menu),

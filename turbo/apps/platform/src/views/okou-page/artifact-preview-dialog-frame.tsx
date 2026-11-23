@@ -12,6 +12,7 @@ import { X } from "lucide-react";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
   attachmentDiagramPreview,
+  closeLightboxWithDialogExit$,
   completeLightboxDialogExit$,
   lightboxDialogFullscreen$,
   lightboxDialogInitialFocus$,
@@ -19,7 +20,6 @@ import {
   lightboxDialogVisible$,
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
-import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 
 export function DialogIconButton({
@@ -48,9 +48,9 @@ export function DialogIconButton({
 
 function useCloseArtifactPreview() {
   const rootSignal = useGet(rootSignal$);
-  const closeArtifactCatalogPreview = useSet(closeArtifactCatalogPreview$);
+  const closeLightbox = useSet(closeLightboxWithDialogExit$);
   return () => {
-    closeArtifactCatalogPreview(rootSignal);
+    closeLightbox(rootSignal);
   };
 }
 

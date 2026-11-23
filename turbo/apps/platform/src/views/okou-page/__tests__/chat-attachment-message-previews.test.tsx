@@ -28,7 +28,6 @@ import {
   publicArtifactUrl,
   queryNamedButton,
   queryNamedButtons,
-  queryNamedLink,
   userMessage,
   type AttachmentChatEvent,
 } from "./chat-attachment-test-helpers.ts";
@@ -97,9 +96,9 @@ function getPreviewFrame(testId: string): HTMLIFrameElement {
 }
 
 async function closeFocusedPreview(): Promise<void> {
-  click(getNamedButton("Close"));
+  click(getNamedButton("Close artifact"));
   await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   });
 }
 
@@ -145,7 +144,7 @@ test("A short Okou artifact link opens as a rich preview", async () => {
   expect(preview).toHaveAttribute("href", shortArtifact);
   click(preview);
   await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-document-frame")).toHaveAttribute(
+    expect(getPreviewFrame("artifact-sidebar")).toHaveAttribute(
       "src",
       `${shortArtifact}#navpanes=0`,
     );
@@ -167,7 +166,7 @@ test("An ordinary first-party Markdown image uses a thumbnail and opens its orig
   );
   click(await findPreviewActionForImage("Report photo"));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", url);
 });
 
@@ -226,7 +225,8 @@ test("Image navigation stays within the current message", async () => {
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
 
   click(await findPreviewActionForImage("gallery-first.png"));
-  await screen.findByRole("dialog", { name: "gallery-first.png preview" });
+  const sidebar = await screen.findByTestId("artifact-sidebar");
+  click(within(sidebar).getByTestId("zoomable-image-canvas"));
   expect(queryNamedButton("Previous image artifact")).toBeNull();
   expect(getNamedButton("Next image artifact")).toBeVisible();
 
@@ -237,14 +237,14 @@ test("Image navigation stays within the current message", async () => {
   });
   await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "alt",
       "gallery-second.png",
     );
   });
   click(getNamedButton("Previous image artifact"));
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "alt",
       "gallery-first.png",
     );
@@ -288,7 +288,7 @@ test("Only exact trusted public links receive rich attachment previews", async (
   expect(sitePreview).toHaveAttribute("href", currentSite);
   click(sitePreview);
   await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-site-frame")).toHaveAttribute(
+    expect(getPreviewFrame("artifact-sidebar-body-html")).toHaveAttribute(
       "src",
       currentSite,
     );
@@ -299,7 +299,7 @@ test("Only exact trusted public links receive rich attachment previews", async (
   expect(pdfPreview).toHaveAttribute("href", artifactPdf);
   click(pdfPreview);
   await waitFor(() => {
-    expect(getPreviewFrame("artifact-dialog-document-frame")).toHaveAttribute(
+    expect(getPreviewFrame("artifact-sidebar")).toHaveAttribute(
       "src",
       `${artifactPdf}#navpanes=0`,
     );
@@ -308,12 +308,12 @@ test("Only exact trusted public links receive rich attachment previews", async (
 
   click(await findPreviewActionForImage("history.png"));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", historicalImage);
   await closeFocusedPreview();
   click(await findPreviewActionForImage("preview.png"));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", previewImage);
   await closeFocusedPreview();
 
@@ -387,7 +387,6 @@ test("Persisted video attachments open in the video sidebar", async () => {
   await expect(
     screen.findByLabelText("Video preview for demo.mp4"),
   ).resolves.toBeVisible();
-  click(getNamedButton("Open in split view"));
   await expect(
     screen.findByTestId("artifact-sidebar-body-video"),
   ).resolves.toBeVisible();
@@ -401,7 +400,6 @@ test("Persisted PDF attachments use the document sidebar", async () => {
   await setupPersistedAttachmentMessage();
 
   click(getNamedButton("Open pdf preview for brief.pdf"));
-  click(await findNamedButton("Open in split view"));
   await expect(
     screen.findByTestId("artifact-sidebar-body-pdf"),
   ).resolves.toBeVisible();
@@ -418,58 +416,45 @@ test("Persisted Markdown attachments render without offering sharing", async () 
   await expect(screen.findByText("Review notes")).resolves.toBeVisible();
   // The file belongs to the user's own message, so the preview has a download
   // but no share action even though a public URL resolved for it.
-  expect(getNamedButton("Download options")).toBeInTheDocument();
-  expect(queryNamedLink("Share")).toBeNull();
+  expect(getNamedButton("Download artifact")).toBeInTheDocument();
+  expect(queryNamedButton("Share artifact")).toBeNull();
   await closeFocusedPreview();
 });
 
-test.each([false, true])(
-  "Persisted HTML presentations open, expand and download (split view=%s)",
-  async (splitView) => {
-    const downloads = context.mocks.browser.blobDownload();
-    await setupPersistedAttachmentMessage();
+test("Persisted HTML presentations open, expand and download in the sidebar", async () => {
+  const downloads = context.mocks.browser.blobDownload();
+  await setupPersistedAttachmentMessage();
 
-    click(getNamedButton("Open html preview for quarterly-deck.html"));
-    await screen.findByTestId("presentation-artifact-viewport");
-    if (splitView) {
-      click(getNamedButton("Open in split view"));
-    }
-    const preview = await screen.findByTestId(
-      splitView ? "artifact-sidebar" : "attachment-lightbox",
+  click(getNamedButton("Open html preview for quarterly-deck.html"));
+  await screen.findByTestId("presentation-artifact-viewport");
+  const preview = await screen.findByTestId("artifact-sidebar");
+  const expectPresentation = () => {
+    const frame = within(preview).getByTitle("quarterly-deck.html preview");
+    expect(frame).toHaveAttribute(
+      "src",
+      "https://private-files.example/quarterly-deck.html",
     );
-    const expectPresentation = () => {
-      const frame = within(preview).getByTitle("quarterly-deck.html preview");
-      expect(frame).toHaveAttribute(
-        "src",
-        "https://private-files.example/quarterly-deck.html",
-      );
-      expect(frame).toHaveAttribute("tabindex", "-1");
-      expect(
-        within(preview).getByTestId("presentation-artifact-viewport"),
-      ).toContainElement(frame);
-    };
-    expectPresentation();
+    expect(frame).toHaveAttribute("tabindex", "-1");
+    expect(
+      within(preview).getByTestId("presentation-artifact-viewport"),
+    ).toContainElement(frame);
+  };
+  expectPresentation();
 
-    click(getNamedButton("Enter fullscreen", preview));
-    await findNamedButton("Exit fullscreen", preview);
-    expectPresentation();
-    click(getNamedButton("Exit fullscreen", preview));
-    await findNamedButton("Enter fullscreen", preview);
-    expectPresentation();
+  click(getNamedButton("Enter fullscreen", preview));
+  await findNamedButton("Exit fullscreen", preview);
+  expectPresentation();
+  click(getNamedButton("Exit fullscreen", preview));
+  await findNamedButton("Enter fullscreen", preview);
+  expectPresentation();
 
-    click(
-      getNamedButton(
-        splitView ? "Download artifact" : "Download options",
-        preview,
-      ),
-    );
-    click(await findNamedMenuItem("Download"));
-    await waitFor(() => {
-      expect(downloads.downloads).toHaveLength(1);
-    });
-    expect(downloads.downloads[0]?.filename).toBe("quarterly-deck.html");
-  },
-);
+  click(getNamedButton("Download artifact", preview));
+  click(await findNamedMenuItem("Download"));
+  await waitFor(() => {
+    expect(downloads.downloads).toHaveLength(1);
+  });
+  expect(downloads.downloads[0]?.filename).toBe("quarterly-deck.html");
+});
 
 test("A Slack-originated message keeps its attachment and original source", async () => {
   const fileId = "slack-review-markdown";
@@ -549,7 +534,7 @@ test("A Lark image stored as a binary object uses a thumbnail and opens its orig
   );
   click(await findPreviewActionForImage("image"));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", originalUrl);
 });
 

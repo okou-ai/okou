@@ -102,12 +102,12 @@ test("Loading older messages restores attachment navigation", async () => {
   click(preview);
 
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", firstImageUrl);
   click(await findFastControl("button", "Next image artifact"));
 
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       secondImageUrl,
     );

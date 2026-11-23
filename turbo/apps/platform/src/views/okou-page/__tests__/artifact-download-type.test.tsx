@@ -4,7 +4,6 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -36,14 +35,9 @@ vi.hoisted(() => {
 
 const context = testContext();
 
-test.each([
-  { kind: "hosted-site", sidebar: false },
-  { kind: "presentation", sidebar: false },
-  { kind: "hosted-site", sidebar: true },
-  { kind: "presentation", sidebar: true },
-] as const)(
-  "Catalog $kind download retains its type (sidebar: $sidebar)",
-  async ({ kind, sidebar }) => {
+test.each([{ kind: "hosted-site" }, { kind: "presentation" }] as const)(
+  "Catalog $kind download retains its type",
+  async ({ kind }) => {
     const telemetry = context.mocks.posthog();
     const browser = context.mocks.browser.blobDownload();
     // An editable title is not the file format or the product's semantic kind.
@@ -81,20 +75,10 @@ test.each([
       context,
       path: "/artifacts",
       host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
-      },
     });
     click(await findArtifactAction(title));
-    const preview = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    click(
-      await findNamedButton(
-        sidebar ? "Download artifact" : "Download options",
-        preview,
-      ),
-    );
+    const preview = await screen.findByTestId("artifact-sidebar");
+    click(await findNamedButton("Download artifact", preview));
     const menu = await screen.findByRole("menu");
     click(await findNamedMenuItem("Download", menu));
 
@@ -113,7 +97,7 @@ test.each([
         name: "artifact_action_clicked",
         properties: {
           action: "download",
-          surface: sidebar ? "page" : "dialog",
+          surface: "page",
           artifact_type: kind === "presentation" ? "presentation" : "website",
         },
         options: undefined,
@@ -162,15 +146,11 @@ test("A generic thread preview and its menu use the resolved file MIME", async (
     host: "app.okou.ai",
   });
   click(await findNamedLink("Forecast"));
-  const preview = await screen.findByTestId("attachment-lightbox");
-  click(await findNamedButton("Download", preview));
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  click(await findNamedButton("Download options", preview));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", preview));
   click(await findNamedMenuItem("Download"));
   await waitFor(() => {
-    expect(browser.downloads).toHaveLength(2);
+    expect(browser.downloads).toHaveLength(1);
   });
   expect(
     telemetry.events
@@ -181,12 +161,7 @@ test("A generic thread preview and its menu use the resolved file MIME", async (
         return event.properties;
       }),
   ).toStrictEqual([
-    {
-      action: "download",
-      surface: "file_preview",
-      artifact_type: "spreadsheet",
-    },
-    { action: "download", surface: "dialog", artifact_type: "spreadsheet" },
+    { action: "download", surface: "page", artifact_type: "spreadsheet" },
   ]);
 });
 
@@ -258,9 +233,6 @@ test("A MIME-only sent audio attachment retains its type in the sidebar", async 
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-    },
   });
   click(await findNamedButton(`Open audio preview for ${filename}`));
   const preview = await screen.findByTestId("artifact-sidebar");

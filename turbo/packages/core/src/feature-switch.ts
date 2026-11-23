@@ -168,14 +168,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ArtifactSidebarPreview]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Artifact sidebar preview",
-    description:
-      "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ArtifactPreviewActionGroup]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Artifact preview action group",

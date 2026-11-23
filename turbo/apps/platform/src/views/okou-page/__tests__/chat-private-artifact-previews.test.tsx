@@ -78,9 +78,9 @@ async function openChat() {
 }
 
 async function closePreview() {
-  click(await findNamedButton("Close"));
+  click(await findNamedButton("Close artifact"));
   await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   });
 }
 
@@ -108,7 +108,7 @@ test.each([
     fireEvent.load(image);
     click(image);
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         `${FIRST_URL}${fragment}`,
       );
@@ -123,7 +123,7 @@ test("opening and reopening an image uses the same presign as its thread thumbna
 
   click(image);
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       FIRST_URL,
     );
@@ -132,19 +132,16 @@ test("opening and reopening an image uses the same presign as its thread thumbna
 
   click(image);
   await waitFor(() => {
-    expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+    expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
       "src",
       FIRST_URL,
     );
   });
-  expect(screen.getByAltText("photo.png")).toHaveAttribute(
-    "src",
-    THUMBNAIL_URL,
-  );
+  expect(image).toHaveAttribute("src", THUMBNAIL_URL);
   expect(screen.queryByTestId("markdown-image-preview-loading")).toBeNull();
 });
 
-test("repeated thread images and their lightbox share one resolved original", async () => {
+test("repeated thread images and their sidebar preview share one resolved original", async () => {
   const canonical = artifactReferencePath(FILE_ID, "photo.png");
   mockPrivateImage(`![photo.png](${canonical})\n\n![photo.png](${canonical})`);
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
@@ -156,9 +153,9 @@ test("repeated thread images and their lightbox share one resolved original", as
     }
   });
   click(images[0]!);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(
-    within(dialog).findByTestId("attachment-lightbox-image"),
+    within(dialog).findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", FIRST_URL);
 });
 
@@ -215,7 +212,7 @@ test.each([null, "https://a.okou.io/0123456789.png"])(
     expect(image.closest("a")).toHaveAttribute("href", FIRST_URL);
     click(await findNamedLink("Preview upload.png"));
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         FIRST_URL,
       );
@@ -223,26 +220,6 @@ test.each([null, "https://a.okou.io/0123456789.png"])(
     expect(image).toHaveAttribute("src", THUMBNAIL_URL);
   },
 );
-
-test("promoting a thread image to split view keeps the same original credential", async () => {
-  mockPrivateImage();
-  const image = await openChat();
-  click(image);
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  await expect(
-    within(dialog).findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", FIRST_URL);
-  click(await findNamedButton("Open in split view"));
-  await waitFor(() => {
-    const images = screen.getAllByAltText("photo.png");
-    expect(
-      images.some((candidate) => {
-        return candidate.getAttribute("src") === FIRST_URL;
-      }),
-    ).toBeTruthy();
-  });
-  expect(image).toHaveAttribute("src", THUMBNAIL_URL);
-});
 
 test.each(["assistant", "user"] as const)(
   "navigating %s images reuses the original already resolved by each thread card",
@@ -358,21 +335,21 @@ test.each(["assistant", "user"] as const)(
       click(first);
     }
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         FIRST_URL,
       );
     });
     click(await findNamedButton("Next image artifact"));
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         NEXT_URL,
       );
     });
     click(await findNamedButton("Previous image artifact"));
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         FIRST_URL,
       );

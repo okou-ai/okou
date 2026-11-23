@@ -114,36 +114,22 @@ test("A generic ZIP preview counts downloads but copies its link without hosted-
     host: "app.okou.ai",
   });
   click(await findArtifactAction(filename));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(dialog).findByText("No inline preview available for this file."),
   ).resolves.toBeInTheDocument();
   expect(artifactActions(posthog)).toStrictEqual([]);
 
-  click(getNamedButton("Download", dialog));
-
+  click(getNamedButton("Download artifact", dialog));
+  const menu = await screen.findByRole("menu");
+  expect(artifactActions(posthog)).toStrictEqual([]);
+  click(await findNamedMenuItem("Download", menu));
   await waitFor(() => {
     expect(browser.downloads).toHaveLength(1);
   });
   expect(browser.downloads[0]).toStrictEqual({ filename, url, blob: null });
-  // Exact custom properties exclude filenames, signed URLs and other file data.
-  expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview", artifact_type: "archive" },
-  ]);
 
-  click(getNamedButton("Download options", dialog));
-  const menu = await screen.findByRole("menu");
-  expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview", artifact_type: "archive" },
-  ]);
-  click(await findNamedMenuItem("Download", menu));
-
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(2);
-  });
-  expect(browser.downloads[1]).toStrictEqual({ filename, url, blob: null });
-
-  click(await findNamedButton("Share", dialog));
+  click(await findNamedButton("Share artifact", dialog));
   const share = await screen.findByRole("dialog", { name: "Share" });
   const copy = await findNamedButton("Copy link", share);
   expect(copy).toBeEnabled();
@@ -152,8 +138,7 @@ test("A generic ZIP preview counts downloads but copies its link without hosted-
   await expect(findNamedButton("Copied", share)).resolves.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([ownerUrl]);
   expect(artifactActions(posthog)).toStrictEqual([
-    { action: "download", surface: "file_preview", artifact_type: "archive" },
-    { action: "download", surface: "dialog", artifact_type: "archive" },
+    { action: "download", surface: "page", artifact_type: "archive" },
   ]);
 });
 
@@ -227,7 +212,7 @@ test.each([
       host: "app.okou.ai",
     });
     click(await findNamedButton("Preview confidential-strategy.docx"));
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     await expect(
       within(dialog).findByTitle("confidential-strategy.docx preview"),
     ).resolves.toHaveAttribute(
@@ -239,11 +224,9 @@ test.each([
     expect(artifactActions(posthog)).toStrictEqual([]);
     expect(browser.downloads).toStrictEqual([]);
 
-    click(getNamedButton("Close", dialog));
+    click(getNamedButton("Close artifact", dialog));
     await waitFor(() => {
-      expect(
-        screen.queryByTestId("attachment-lightbox"),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
     });
     click(await findNamedButton(`Download ${filename}`));
 
@@ -370,7 +353,7 @@ test("An expanded diagram reports only its download, never its document or sourc
     host: "app.okou.ai",
   });
   click(await findNamedLink("Private deployment notes"));
-  const documentDialog = await screen.findByTestId("attachment-lightbox");
+  const documentDialog = await screen.findByTestId("artifact-sidebar");
   await within(documentDialog).findByRole("img", { name: "Diagram" });
   click(within(documentDialog).getByText("Diagram source"));
   expect(

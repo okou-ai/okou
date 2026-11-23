@@ -291,7 +291,7 @@ export interface ComposerSignals {
   readonly imageAnnotation: ImageAnnotationSignals;
   /** Previews draft media; images can also be marked up in the lightbox. */
   readonly openAttachmentPreview$: Command<
-    Promise<void>,
+    void,
     [ChatAttachment, AnnotationImage, AbortSignal]
   >;
   /** Produces a draft image's annotated copy again after it failed. */
@@ -748,7 +748,7 @@ function createComposerAttachmentAnnotation(
     },
   );
   const openAttachmentPreview$ = command(
-    async (
+    (
       { set },
       attachment: ChatAttachment,
       image: AnnotationImage,
@@ -766,16 +766,15 @@ function createComposerAttachmentAnnotation(
         splitViewAvailable: false,
       };
       if (attachment.contentType.startsWith("video/")) {
-        await set(openVideoLightbox$, input, undefined, signal);
+        set(openVideoLightbox$, input, signal);
         return;
       }
-      await set(
+      set(
         openImageLightbox$,
         {
           ...input,
           annotationTarget: { attachment, annotate$: annotateAttachment$ },
         },
-        undefined,
         signal,
       );
     },

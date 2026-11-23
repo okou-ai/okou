@@ -157,8 +157,8 @@ test("A binary can be downloaded from its preview", async () => {
 
   const archive = await findArtifactAction("release-bundle.zip");
   click(archive);
-  const viewer = await screen.findByTestId("attachment-lightbox");
-  click(getButtonByName("Download options", viewer));
+  const viewer = await screen.findByTestId("artifact-sidebar");
+  click(getButtonByName("Download artifact", viewer));
   const menu = await screen.findByRole("menu");
   const download = queryAllByRoleFast("menuitem", menu).find((item) => {
     return item.textContent?.trim() === "Download";
@@ -217,10 +217,10 @@ test("A native PPTX in Presentations keeps its Office preview and original downl
     "true",
   );
   click(card);
-  const viewer = await screen.findByTestId("attachment-lightbox");
+  const viewer = await screen.findByTestId("artifact-sidebar");
   const frame = await within(viewer).findByTitle(`${filename} preview`);
   expect(new URL(frame.getAttribute("src")!).searchParams.get("src")).toBe(url);
-  click(getButtonByName("Download options", viewer));
+  click(getButtonByName("Download artifact", viewer));
   const menu = await screen.findByRole("menu");
   const download = queryAllByRoleFast("menuitem", menu).find((item) => {
     return item.textContent?.trim() === "Download";

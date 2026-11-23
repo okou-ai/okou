@@ -3,7 +3,6 @@ import {
   type ArtifactSummary,
   artifactCatalogContract,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -56,10 +55,7 @@ function mockPreview(summary: ArtifactSummary = report) {
 }
 
 function currentPreview() {
-  return (
-    screen.queryByTestId("attachment-lightbox") ??
-    screen.queryByTestId("artifact-sidebar")
-  );
+  return screen.queryByTestId("artifact-sidebar");
 }
 
 async function openDeletion() {
@@ -77,90 +73,82 @@ async function openDeletion() {
   return await screen.findByRole("dialog", { name: `Delete ${report.title}?` });
 }
 
-test.each([false, true])(
-  "preview cancellation and deletion keep the catalog consistent (sidebar=%s)",
-  async (sidebar) => {
-    const user = userEvent.setup();
-    mockPreview();
-    let removed = false;
-    const deleting = context.mocks.deferred<void>();
-    const finish = context.mocks.deferred<void>();
-    context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-      return respond(200, {
-        artifacts: removed ? [] : [report],
-        nextCursor: null,
-      });
+test("Preview cancellation and deletion keep the catalog consistent", async () => {
+  const user = userEvent.setup();
+  mockPreview();
+  let removed = false;
+  const deleting = context.mocks.deferred<void>();
+  const finish = context.mocks.deferred<void>();
+  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
+    return respond(200, {
+      artifacts: removed ? [] : [report],
+      nextCursor: null,
     });
-    context.mocks.api(
-      artifactCatalogContract.delete,
-      async ({ params, respond }) => {
-        expect(params.artifactId).toBe(report.id);
-        deleting.resolve();
-        await finish.promise;
-        removed = true;
-        return respond(200, { deleted: true });
-      },
-    );
-    await setupPage({
-      context,
-      path: "/artifacts?tab=file",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
-      },
-    });
-    const cancelled = await openDeletion();
-    expect(
-      within(cancelled).getByText(/Copies already downloaded/),
-    ).toBeInTheDocument();
-    click(getButtonByName("Cancel", cancelled));
-    await waitFor(() => {
-      return expect(
-        screen.queryByRole("dialog", { name: `Delete ${report.title}?` }),
-      ).not.toBeInTheDocument();
-    });
-    await waitFor(() => {
-      const preview =
-        screen.queryByTestId("attachment-lightbox") ??
-        screen.getByTestId("artifact-sidebar");
-      expect(getButtonByName("Delete", preview)).toHaveFocus();
-    });
-    await user.keyboard("{Enter}");
-    const keyboardDialog = await screen.findByRole("dialog", {
-      name: `Delete ${report.title}?`,
-    });
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      expect(keyboardDialog).not.toBeInTheDocument();
-      expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
-    });
-    const dialog = await openDeletion();
-    click(getButtonByName("Delete", dialog));
-    await deleting.promise;
-    await waitFor(() => {
-      return expect(getButtonByName("Deleting…", dialog)).toBeDisabled();
-    });
-    expect(getButtonByName("Cancel", dialog)).toBeDisabled();
-    expect(queryButtonByName("Close", dialog)).toBeUndefined();
-    await user.keyboard("{Escape}");
-    expect(dialog).toBeInTheDocument();
-    expect(currentPreview()).toBeInTheDocument();
-    expect(
-      document.querySelector(`button[data-artifact-id="${report.id}"]`),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Artifact deleted")).not.toBeInTheDocument();
-    finish.resolve();
-    await expect(
-      screen.findByText("Artifact deleted"),
-    ).resolves.toBeInTheDocument();
-    await expect(
-      screen.findByText("No artifacts found"),
-    ).resolves.toBeInTheDocument();
-    expect(screen.queryByText(report.title)).not.toBeInTheDocument();
-    await waitFor(() => {
-      return expect(document.querySelector("main")).toHaveFocus();
-    });
-  },
-);
+  });
+  context.mocks.api(
+    artifactCatalogContract.delete,
+    async ({ params, respond }) => {
+      expect(params.artifactId).toBe(report.id);
+      deleting.resolve();
+      await finish.promise;
+      removed = true;
+      return respond(200, { deleted: true });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+  });
+  const cancelled = await openDeletion();
+  expect(
+    within(cancelled).getByText(/Copies already downloaded/),
+  ).toBeInTheDocument();
+  click(getButtonByName("Cancel", cancelled));
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("dialog", { name: `Delete ${report.title}?` }),
+    ).not.toBeInTheDocument();
+  });
+  await waitFor(() => {
+    const preview = screen.getByTestId("artifact-sidebar");
+    expect(getButtonByName("Delete", preview)).toHaveFocus();
+  });
+  await user.keyboard("{Enter}");
+  const keyboardDialog = await screen.findByRole("dialog", {
+    name: `Delete ${report.title}?`,
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(keyboardDialog).not.toBeInTheDocument();
+    expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
+  });
+  const dialog = await openDeletion();
+  click(getButtonByName("Delete", dialog));
+  await deleting.promise;
+  await waitFor(() => {
+    return expect(getButtonByName("Deleting…", dialog)).toBeDisabled();
+  });
+  expect(getButtonByName("Cancel", dialog)).toBeDisabled();
+  expect(queryButtonByName("Close", dialog)).toBeUndefined();
+  await user.keyboard("{Escape}");
+  expect(dialog).toBeInTheDocument();
+  expect(currentPreview()).toBeInTheDocument();
+  expect(
+    document.querySelector(`button[data-artifact-id="${report.id}"]`),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("Artifact deleted")).not.toBeInTheDocument();
+  finish.resolve();
+  await expect(
+    screen.findByText("Artifact deleted"),
+  ).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByText("No artifacts found"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText(report.title)).not.toBeInTheDocument();
+  await waitFor(() => {
+    return expect(document.querySelector("main")).toHaveFocus();
+  });
+});
 
 test("a failed deletion can be cancelled, reopened, and retried", async () => {
   mockPreview();
@@ -202,7 +190,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
     expect(getButtonByName("Delete", currentPreview()!)).toHaveFocus();
   });
   const preview = currentPreview()!;
-  click(getButtonByName("Close", preview));
+  click(getButtonByName("Close artifact", preview));
   await waitFor(() => {
     expect(preview).not.toBeInTheDocument();
   });
