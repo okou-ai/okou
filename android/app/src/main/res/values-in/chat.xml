@@ -18,9 +18,9 @@
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Muat ulang chat</string>
     <string name="chat_loading">Memuat chat…</string>
-    <string name="chat_refresh_failed">Tidak dapat memperbarui. Menampilkan chat terakhir yang dimuat.</string>
+    <string name="chat_refresh_failed">Status belum dibaca tidak dapat diperbarui.</string>
     <string name="chat_cache_unavailable">Penyimpanan offline tidak tersedia. Chat ini mungkin tidak tersedia setelah aplikasi dimulai ulang.</string>
-    <string name="chat_metadata_unavailable">Sebagian informasi Okou atau Proyek tidak tersedia.</string>
+    <string name="chat_metadata_unavailable">Informasi proyek untuk sementara tidak tersedia.</string>
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
