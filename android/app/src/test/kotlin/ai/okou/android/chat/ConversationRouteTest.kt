@@ -408,6 +408,61 @@ class ConversationRouteTest {
     }
 
     @Test
+    fun staleHistoryShowsProgressWhenAnAutomationHasNoVisibleMessages() {
+        val eventId = scrollEventId(1)
+        val automation =
+            historyEventWire(
+                id = eventId,
+                seq = 1,
+                thread = CHAT_IN_PROJECT,
+                type = "input.automation",
+                payload = "null",
+            )
+        fixture.historyRows = { request ->
+            val rows =
+                if (request.requestUrl?.queryParameter("sinceSeqId") == "1") "" else automation
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":1},"hasMore":false}""",
+            )
+        }
+        var now = System.currentTimeMillis()
+        val model = createListModel(wallMillis = { now })
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        val emptyHistory = compose.activity.getString(R.string.history_empty)
+        compose.waitUntilExactlyOneExists(hasText(emptyHistory), 10_000)
+        val refreshRequested = CountDownLatch(1)
+        val allowRefreshResponse = CountDownLatch(1)
+        val historyRows = fixture.historyRows
+        fixture.historyRows = { request ->
+            refreshRequested.countDown()
+            allowRefreshResponse.await()
+            historyRows(request)
+        }
+        val progress = hasContentDescription(compose.activity.getString(R.string.history_syncing))
+        try {
+            compose.runOnIdle {
+                now += 600_001
+                model.history.refresh()
+            }
+            compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            compose.onNode(progress).assertIsDisplayed()
+            compose.onNodeWithText(emptyHistory).assertIsDisplayed()
+        } finally {
+            allowRefreshResponse.countDown()
+        }
+        compose.waitUntilDoesNotExist(progress, 5_000)
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
     fun staleSyncLetsTheRunningStatusProvideFeedbackWithoutMovingIt() {
         var now = System.currentTimeMillis()

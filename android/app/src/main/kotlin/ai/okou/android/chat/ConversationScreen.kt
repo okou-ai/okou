@@ -163,7 +163,10 @@ internal fun ConversationRoute(
         }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
     val execution = transcript?.execution?.takeUnless { list.offline || missing }
-    val activity = R.string.conversation_processing.takeIf { execution == HistoryExecution.Running }
+    val activity =
+        R.string.conversation_processing.takeIf {
+            execution == HistoryExecution.Running && content.isNotEmpty()
+        }
     val activeMessage =
         remember(content, activeRun) {
             activeRun?.let { runId ->
@@ -175,7 +178,7 @@ internal fun ConversationRoute(
     val incomingTimeline =
         remember(content, activity, activeMessage) {
             val messages = content.asReversed()
-            if (activity == null || messages.isEmpty()) messages
+            if (activity == null) messages
             else
                 buildList<ConversationTimelineRow> {
                     addAll(messages)
