@@ -13,6 +13,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import iosClientCompatibility from "../../../lib/ios-client-compatibility.json";
 import webClientCompatibility from "../../../lib/web-client-compatibility.json";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { createRouteMocks } from "./helpers/route-test";
 import { featureSwitchesRoutes } from "../feature-switches";
 
@@ -141,7 +142,7 @@ describe("/api/feature-switches", () => {
     const api = client();
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
-    const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const orgId = createUniqueStaffOrgIdFixture();
     const userId = `user_${randomUUID()}`;
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
 

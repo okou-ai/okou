@@ -6,6 +6,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { runPhaseTimingRoutes } from "../run-phase-timing";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -70,7 +71,7 @@ describe("current Run phase timing", () => {
     ["allowlisted owner", { userId: timingOwnerId }],
     [
       "staff workspace member",
-      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", orgRole: "org:member" },
+      { orgId: createUniqueStaffOrgIdFixture(), orgRole: "org:member" },
     ],
   ] as const)(
     "gives the %s three-point guidance and accepts legal raw observations",
