@@ -3,6 +3,8 @@ import { settle } from "../utils";
 import { command, computed } from "ccstate";
 import { and, asc, eq, gt, sql, type SQL } from "drizzle-orm";
 import { array, boolean, number, object, uuid } from "zod";
+import { randomUUID } from "node:crypto";
+import { chatThreads } from "@okouai/db/schema/chat-thread";
 import { projects } from "@okouai/db/schema/project";
 import { projectEvents } from "@okouai/db/schema/project-event";
 import {
@@ -15,7 +17,10 @@ import {
   moveProjectSortOrder,
   projectSortOrder,
 } from "@okouai/core/project-sort-order";
-import { isFreshProjectOperation } from "@okouai/core/project-operation-id";
+import {
+  createProjectOperationId,
+  isFreshProjectOperation,
+} from "@okouai/core/project-operation-id";
 import { now } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { safeSqlStateCode } from "../../lib/pg-errors";
@@ -39,6 +44,8 @@ export function projectList(owner: ProjectOwner) {
           id: row.id,
           name: row.name,
           sortOrder: row.sortOrder,
+          archived: row.archived,
+          lastArchivedAt: row.lastArchivedAt?.toISOString() ?? null,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
         };
@@ -63,6 +70,8 @@ export function projectById(owner: ProjectOwner, id: string) {
           id: row.id,
           name: row.name,
           sortOrder: row.sortOrder,
+          archived: row.archived,
+          lastArchivedAt: row.lastArchivedAt?.toISOString() ?? null,
           createdAt: row.createdAt.toISOString(),
           updatedAt: row.updatedAt.toISOString(),
         }
@@ -85,7 +94,11 @@ export function projectEventsAfter(owner: ProjectOwner, since: number) {
       .limit(1001);
     return {
       events: rows.slice(0, 1000).map((row) => {
-        return { ...row, createdAt: row.createdAt.toISOString() };
+        return {
+          ...row,
+          lastArchivedAt: row.lastArchivedAt?.toISOString() ?? null,
+          createdAt: row.createdAt.toISOString(),
+        };
       }),
       hasMore: rows.length > 1000,
     };
@@ -98,6 +111,8 @@ type ProjectMutation = {
   readonly id: string;
   readonly eventId: string;
   readonly name?: string;
+  readonly archived?: boolean;
+  readonly recallAt?: Date;
   readonly fromThreadId?: string;
   readonly targetId?: string;
   readonly side?: "before" | "after";
@@ -128,7 +143,9 @@ function receiptMatches(
     receipt.reorderSide === (input.side ?? null) &&
     (input.kind === "deleted" ||
       input.kind === "sort_updated" ||
-      receipt.name === input.name)
+      (input.archived === undefined
+        ? receipt.archived === null && receipt.name === input.name
+        : receipt.archived === input.archived))
   );
 }
 
@@ -140,17 +157,24 @@ function projectChangeSql(
   threadGate: SQL,
 ) {
   return input.kind === "created"
-    ? sql`INSERT INTO projects (id,user_id,org_id,name,sort_order) SELECT ${input.id}::uuid,${owner.userId},${owner.orgId},${input.name},${tail} FROM reserved WHERE ${threadGate} AND (${input.fromThreadId ?? null}::uuid IS NULL OR EXISTS(SELECT 1 FROM detached)) RETURNING id,name,sort_order`
+    ? sql`INSERT INTO projects (id,user_id,org_id,name,sort_order) SELECT ${input.id}::uuid,${owner.userId},${owner.orgId},${input.name},${tail} FROM reserved WHERE ${threadGate} AND (${input.fromThreadId ?? null}::uuid IS NULL OR EXISTS(SELECT 1 FROM detached)) RETURNING id,name,sort_order,last_archived_at`
     : input.kind === "renamed"
-      ? sql`UPDATE projects p SET name=${input.name},updated_at=timezone('UTC',now()) WHERE p.id=${input.id}::uuid AND ${scopeSql(owner)} AND EXISTS(SELECT 1 FROM reserved) RETURNING id,name,sort_order`
+      ? sql`UPDATE projects p SET name=COALESCE(${input.name ?? null},p.name),
+          archived=COALESCE(${input.archived ?? null},p.archived),
+          last_archived_at=CASE WHEN ${input.archived ?? null}::boolean IS TRUE THEN timezone('UTC',statement_timestamp()) ELSE p.last_archived_at END,
+          updated_at=timezone('UTC',now())
+        WHERE p.id=${input.id}::uuid AND ${scopeSql(owner)}
+          AND EXISTS(SELECT 1 FROM reserved)
+          ${input.recallAt ? sql`AND p.archived AND p.last_archived_at < ${input.recallAt.toISOString()}::timestamp` : sql.empty()}
+        RETURNING id,name,sort_order,last_archived_at`
       : input.kind === "deleted"
-        ? sql`DELETE FROM projects p WHERE p.id=${input.id}::uuid AND ${scopeSql(owner)} AND EXISTS(SELECT 1 FROM reserved) AND (SELECT count(*) FROM detached)>=0 RETURNING id,name,sort_order`
+        ? sql`DELETE FROM projects p WHERE p.id=${input.id}::uuid AND ${scopeSql(owner)} AND EXISTS(SELECT 1 FROM reserved) AND (SELECT count(*) FROM detached)>=0 RETURNING id,name,sort_order,last_archived_at`
         : sql`UPDATE projects p SET sort_order=v.sort_order,updated_at=timezone('UTC',now()) FROM (VALUES ${sql.join(
             ranks.map((rank) => {
               return sql`(${rank.projectId}::uuid,${rank.sortOrder}::text)`;
             }),
             sql`,`,
-          )}) AS v(id,sort_order) WHERE p.id=v.id AND ${scopeSql(owner)} AND EXISTS(SELECT 1 FROM reserved) RETURNING p.id,p.name,p.sort_order`;
+          )}) AS v(id,sort_order) WHERE p.id=v.id AND ${scopeSql(owner)} AND EXISTS(SELECT 1 FROM reserved) RETURNING p.id,p.name,p.sort_order,p.last_archived_at`;
 }
 
 function projectMutationStatement(
@@ -209,10 +233,10 @@ function projectMutationStatement(
       thread_published AS (INSERT INTO chat_thread_events(id,user_id,org_id,seq_id,chat_thread_id,kind,project_id)
         SELECT ${threadEventId},${owner.userId},${owner.orgId},r.last_seq_id-(SELECT count(*) FROM detached)+row_number() OVER(ORDER BY d.id),d.id,'project_updated',${membership}
         FROM detached d CROSS JOIN thread_reserved r RETURNING id),
-      published AS (INSERT INTO project_events(id,user_id,org_id,seq_id,project_id,kind,name,sort_order,from_thread_id,reorder_target_id,reorder_side)
+      published AS (INSERT INTO project_events(id,user_id,org_id,seq_id,project_id,kind,name,sort_order,archived,last_archived_at,from_thread_id,reorder_target_id,reorder_side)
         SELECT CASE WHEN c.id=${input.id}::uuid THEN ${input.eventId}::uuid ELSE gen_random_uuid() END,
           ${owner.userId},${owner.orgId},r.last_seq_id-${Math.max(1, ranks.length)}+row_number() OVER(ORDER BY (c.id<>${input.id}::uuid),c.id),
-          c.id,${input.kind}::project_event_kind,c.name,c.sort_order,${input.fromThreadId ?? null}::uuid,
+          c.id,${input.kind}::project_event_kind,c.name,c.sort_order,${input.archived ?? null}::boolean,c.last_archived_at,${input.fromThreadId ?? null}::uuid,
           ${input.targetId ?? null}::uuid,${input.side ?? null}::text
         FROM changed c CROSS JOIN reserved r RETURNING project_id)
       SELECT EXISTS(SELECT 1 FROM published) AS written, EXISTS(SELECT 1 FROM reserved) AS reserved`;
@@ -330,6 +354,54 @@ export const mutateProject$ = command(
     return accepted && receiptMatches(owner, input, accepted)
       ? "written"
       : "conflict";
+  },
+);
+
+export const recallProjectForUnread$ = command(
+  async (
+    { get, set },
+    owner: ProjectOwner & { readonly threadId: string },
+    createdAt: Date,
+    signal: AbortSignal,
+  ) => {
+    const [project] = await get(db$)
+      .select({ id: projects.id })
+      .from(chatThreads)
+      .innerJoin(projects, eq(chatThreads.projectId, projects.id))
+      .where(
+        and(
+          eq(chatThreads.id, owner.threadId),
+          eq(chatThreads.userId, owner.userId),
+          eq(chatThreads.orgId, owner.orgId),
+          eq(chatThreads.muted, false),
+          eq(chatThreads.hidden, false),
+          eq(projects.userId, owner.userId),
+          eq(projects.orgId, owner.orgId),
+          eq(projects.archived, true),
+          sql`${projects.lastArchivedAt} < ${createdAt.toISOString()}::timestamp`,
+          sql`(${chatThreads.lastReadAt} IS NULL OR ${chatThreads.lastReadAt} < ${createdAt.toISOString()}::timestamp)`,
+        ),
+      );
+    signal.throwIfAborted();
+    if (project) {
+      const result = await set(
+        mutateProject$,
+        owner,
+        {
+          kind: "renamed",
+          id: project.id,
+          eventId: createProjectOperationId(now(), randomUUID()),
+          archived: false,
+          recallAt: createdAt,
+        },
+        signal,
+      );
+      if (result === "conflict") {
+        throw new Error(
+          "Project recall conflicted with another Project update",
+        );
+      }
+    }
   },
 );
 

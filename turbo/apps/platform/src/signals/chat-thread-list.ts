@@ -1,6 +1,7 @@
 import { pathParams$ } from "./route.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { chatThreadIndicatorsFromWorker$ } from "./shared-database.ts";
+import { sidebarUnreadThreadIds$ } from "./chat-page/sidebar-unread-threads.ts";
 import { chatThreadOnlyUnread$ } from "./chat-page/chat-thread-only-unread.ts";
 import { chatThreadOnlyArchived$ } from "./chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-page/chat-thread-only-muted.ts";
@@ -86,6 +87,8 @@ function createChatThreadListView({
   allProjectThreads$: allProjectThreadsSource$,
   projectIdsWithHiddenArchivedThreads$,
   hideEmptyProjects,
+  onlyArchived = false,
+  includeArchivedProjects = false,
   hasHiddenArchivedThreads$,
 }: {
   threads$: Computed<Promise<EventDrivenChatThread[]>>;
@@ -94,6 +97,8 @@ function createChatThreadListView({
   allProjectThreads$: Computed<Promise<readonly EventDrivenChatThread[]>>;
   projectIdsWithHiddenArchivedThreads$: Computed<Promise<ReadonlySet<string>>>;
   hideEmptyProjects: boolean;
+  onlyArchived?: boolean;
+  includeArchivedProjects?: boolean;
   hasHiddenArchivedThreads$: Computed<Promise<boolean>>;
 }): ChatThreadListSignals {
   const threadIds$ = computed(async (get): Promise<readonly string[]> => {
@@ -113,7 +118,10 @@ function createChatThreadListView({
       get(threadIds$),
     ]);
     return buildChatThreadListRows({
-      projects,
+      projects: projects.filter(
+        (project) => includeArchivedProjects || !project.archived,
+      ),
+      showArchivedProjects: onlyArchived,
       expandedProjectIds,
       projectThreads,
       projectIdsWithHiddenArchivedThreads,
@@ -190,7 +198,19 @@ function createChatThreadListSignals(
     // A filter applies to the chats inside Projects as it does to the rest.
     projectThreads$: computed(
       async (get): Promise<readonly EventDrivenChatThread[]> => {
-        return (await get(allProjectThreads$)).filter(listed);
+        const archivedProjects = filter.onlyArchived
+          ? new Set(
+              get(projects$)
+                .filter((project) => project.archived)
+                .map((project) => project.id),
+            )
+          : new Set<string>();
+        return (await get(allProjectThreads$)).filter(
+          (thread) =>
+            listed(thread) ||
+            (thread.projectId !== null &&
+              archivedProjects.has(thread.projectId)),
+        );
       },
     ),
     allProjectThreads$,
@@ -208,12 +228,13 @@ function createChatThreadListSignals(
       },
     ),
     hideEmptyProjects: !inbox,
+    onlyArchived: filter.onlyArchived,
+    includeArchivedProjects: !inbox,
     hasHiddenArchivedThreads$: computed(async (get): Promise<boolean> => {
       return (
         inbox &&
-        (await get(allThreads$)).some((thread) => {
-          return thread.archived;
-        })
+        (get(projects$).some((project) => project.archived) ||
+          (await get(allThreads$)).some((thread) => thread.archived))
       );
     }),
   });
@@ -243,10 +264,16 @@ const noProjectIds$ = computed((): Promise<ReadonlySet<string>> => {
 // never hides an unread message.
 export const unreadChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
-    const indicators = await get(chatThreadIndicatorsFromWorker$);
+    const [indicators, unreadIds] = await Promise.all([
+      get(chatThreadIndicatorsFromWorker$),
+      get(sidebarUnreadThreadIds$),
+    ]);
 
     const unread = get(eventDrivenChatThreads$).filter((thread) => {
-      return indicators.threads[thread.id] === "unread";
+      return (
+        indicators.threads[thread.id] === "unread" &&
+        (thread.projectId === null || unreadIds.has(thread.id))
+      );
     });
     const threads = sortChatThreads(
       unread.filter((thread) => {

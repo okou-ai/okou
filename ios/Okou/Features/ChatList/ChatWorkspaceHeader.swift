@@ -10,7 +10,7 @@ struct ChatWorkspaceHeader: View {
   let openSidebar: () -> Void
 
   var body: some View {
-    let hasUnread = store.list.hasUnreadThreads
+    let hasUnread = store.list.hasUnreadThreads(projects: store.projects.projects)
     HStack(spacing: OkouSpace.sm) {
       if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
         Text("\(sharing.selectedCount) selected").font(.okou(.headline))

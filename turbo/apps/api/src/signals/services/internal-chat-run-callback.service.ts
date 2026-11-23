@@ -1,3 +1,4 @@
+import { recallProjectForUnread$ } from "./project.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -512,6 +513,7 @@ interface AssistantErrorEventArgs {
 }
 
 interface TerminalEventProjection {
+  readonly markerCreatedAt: Date;
   readonly markerInserted: boolean;
   readonly deliveryReceipts: RunLifecycleDeliveryCallbacks;
 }
@@ -688,6 +690,7 @@ const insertAssistantErrorEvent$ = command(
           : undefined;
         return {
           markerInserted: insertedEvent !== null,
+          markerCreatedAt: event.createdAt,
           deliveryReceipts: {
             slackDeliveryCallbackId,
             feishuDeliveryCallbackId,
@@ -713,6 +716,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(input),
       signal,
     );
+    await set(recallProjectForUnread$, input, inserted.markerCreatedAt, signal);
     await set(publishAssistantErrorEventSignals$, input, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -992,9 +996,9 @@ const insertRunLifecycleMarker$ = command(
               runLifecycleMarkerInsertSql(input, markerCreatedAt),
             ),
           )[0] ?? null;
-        if (
-          !marker &&
-          !(await (async () => {
+        const persistedMarker =
+          marker ??
+          (await (async () => {
             const database = tx;
             const runId = input.runId;
             const eventType = runLifecycleMarkerEventType(input.event);
@@ -1004,12 +1008,13 @@ const insertRunLifecycleMarker$ = command(
               .where(plan.condition)
               .limit(plan.limit);
             return marker;
-          })())
-        ) {
+          })());
+        if (!persistedMarker) {
           return null;
         }
         return {
           markerInserted: marker !== null,
+          markerCreatedAt: persistedMarker.createdAt,
           deliveryReceipts: await set(
             registerRunLifecycleDeliveryCallbacks$,
             input,
@@ -1032,6 +1037,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
+    await set(recallProjectForUnread$, args, inserted.markerCreatedAt, signal);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return {

@@ -5171,6 +5171,7 @@
     }
   },
   "projects": {
+    "archiveProject": "",
     "back": "返回",
     "close": "Close",
     "collapse": "收起",
@@ -5207,6 +5208,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "",
     "retryThreads": "重新加载聊天",
     "save": "保存",
     "saveError": "无法保存 Project",

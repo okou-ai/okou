@@ -1,3 +1,4 @@
+import { projects$ } from "../projects/projects.ts";
 import { command, computed } from "ccstate";
 import { chatThreadMarkAllReadContract } from "@okouai/api-contracts/client/chat-threads";
 import { accept } from "../../lib/accept.ts";
@@ -31,20 +32,24 @@ export const sidebarUnreadThreadIds$ = computed(
   async (get): Promise<ReadonlySet<string>> => {
     const { unreadAt } = await get(chatThreadIndicatorsFromWorker$);
     const marks = get(optimisticReadMarks$);
-    const mutedIds = new Set(
-      get(eventDrivenChatThreads$)
-        .filter((thread) => {
-          return thread.muted;
-        })
-        .map((thread) => {
-          return thread.id;
-        }),
+    const projects = new Map(
+      get(projects$).map((project) => [project.id, project]),
+    );
+    const threads = new Map(
+      get(eventDrivenChatThreads$).map((thread) => [thread.id, thread]),
     );
     const ids = new Set<string>();
     for (const [threadId, timestamp] of Object.entries(unreadAt)) {
       const markedAt = marks.get(threadId);
+      const thread = threads.get(threadId);
+      const project = thread?.projectId
+        ? projects.get(thread.projectId)
+        : undefined;
       if (
-        !mutedIds.has(threadId) &&
+        !thread?.muted &&
+        !project?.archived &&
+        (!project?.lastArchivedAt ||
+          Date.parse(timestamp) > Date.parse(project.lastArchivedAt)) &&
         (markedAt === undefined || Date.parse(timestamp) > markedAt)
       ) {
         ids.add(threadId);

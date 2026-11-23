@@ -1,3 +1,4 @@
+import { setProjectArchived$ } from "../../signals/projects/projects.ts";
 import {
   projectIndicatorStates$,
   type ProjectIndicatorState,
@@ -176,6 +177,8 @@ function ProjectMenu({
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
+  const setArchived = useSet(setProjectArchived$);
+  const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
   return (
@@ -233,6 +236,19 @@ function ProjectMenu({
           {t(($) => {
             return $.projects.rename;
           })}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            return setArchived(project.id, !project.archived, signal);
+          }}
+        >
+          {project.archived
+            ? t(($) => $.projects.restoreProject, {
+                defaultValue: "Restore project",
+              })
+            : t(($) => $.projects.archiveProject, {
+                defaultValue: "Archive project",
+              })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -403,6 +419,11 @@ function ProjectTrigger({
         <HoverScrollTitle title={projectNameParts(project.name).text} />
       ) : (
         <span className="truncate">{projectNameParts(project.name).text}</span>
+      )}
+      {project.archived && (
+        <span className="ml-1 shrink-0 text-xs text-nav-copy-muted">
+          {t(($) => $.chat.sidebar.archived)}
+        </span>
       )}
       {indicator !== null && (
         <span id={stateId}>

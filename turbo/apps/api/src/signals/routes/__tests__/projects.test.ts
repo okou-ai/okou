@@ -1,3 +1,5 @@
+import { createStore } from "ccstate";
+import { recallProjectForUnread$ } from "../../services/project.service";
 import { randomUUID } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
@@ -127,6 +129,58 @@ async function listedIds(actor: ApiTestUser) {
     return project.id;
   });
 }
+
+it("archives a Project, recalls it for a new unread result, and keeps its original member", async () => {
+  const actor = owner();
+  const project = await create(actor);
+  const member = await thread(actor, project.id);
+  const update = async (archived: boolean) => {
+    return (
+      await accept(
+        client().update({
+          headers: headers(actor),
+          params: { id: project.id },
+          body: { eventId: operation(), archived },
+        }),
+        [200],
+      )
+    ).body;
+  };
+  const archived = await update(true);
+  expect(archived).toMatchObject({
+    archived: true,
+    lastArchivedAt: expect.any(String),
+  });
+  await createStore().set(
+    recallProjectForUnread$,
+    { userId: actor.userId, orgId: actor.orgId!, threadId: member.id },
+    new Date(Date.parse(archived.lastArchivedAt!) + 1),
+    context.signal,
+  );
+  const restored = await accept(
+    client().get({
+      headers: headers(actor),
+      params: { id: project.id },
+    }),
+    [200],
+  );
+  expect(restored.body).toMatchObject({
+    archived: false,
+    lastArchivedAt: archived.lastArchivedAt,
+    sortOrder: project.sortOrder,
+  });
+  const result = await accept(
+    client().threads({
+      headers: headers(actor),
+      params: { id: project.id },
+      query: { archived: "all", limit: 100 },
+    }),
+    [200],
+  );
+  expect(result.body.threads).toMatchObject([
+    { id: member.id, archived: false },
+  ]);
+});
 
 describe("private Project order", () => {
   it("moves whole groups before and after targets, preserves rank on rename and appends new Projects", async () => {

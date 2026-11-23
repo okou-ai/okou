@@ -1,6 +1,7 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import type { Project } from "@okouai/api-contracts/validators/projects";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadByIdContract,
@@ -101,7 +102,7 @@ function chatMenuButton(threadId: string) {
 }
 
 function installProjects(
-  projects = [
+  projects: Project[] = [
     { id: launchId, name: "Launch", createdAt: at, updatedAt: at },
     { id: researchId, name: "Research", createdAt: at, updatedAt: at },
   ],
@@ -231,6 +232,61 @@ test.each([false, true])(
     });
   },
 );
+
+test("Archived opens the full contents of an archived Project and the archived chats of an active Project", async () => {
+  const planning = {
+    ...continuityThread(326, 1, "Launch planning"),
+    projectId: launchId,
+  };
+  const notes = {
+    ...continuityThread(326, 2, "Launch notes"),
+    projectId: launchId,
+    archived: true,
+  };
+  const research = {
+    ...continuityThread(326, 3, "Research notes"),
+    projectId: researchId,
+    archived: true,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 326,
+    threads: [planning, notes, research],
+  });
+  installProjects([
+    {
+      id: launchId,
+      name: "Launch",
+      createdAt: at,
+      updatedAt: at,
+      archived: true,
+    },
+    { id: researchId, name: "Research", createdAt: at, updatedAt: at },
+  ]);
+  await setupPage({ context, path: "/", ...workspace.pageOptions });
+  await expect(screen.findByText("Research")).resolves.toBeInTheDocument();
+  click(projectToggle("Research", researchId));
+  await waitFor(() => {
+    expect(
+      button("Show archived chats", projectRows(researchId)),
+    ).toBeInTheDocument();
+  });
+  click(button("Show archived chats", projectRows(researchId)));
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toBeInTheDocument();
+  });
+  click(projectToggle("Launch"));
+  const researchToggle = projectToggle("Research", researchId);
+  if (researchToggle.getAttribute("aria-expanded") === "false") {
+    click(researchToggle);
+  }
+  await waitFor(() => {
+    expect(projectChatTitles()).toHaveLength(2);
+    expect(projectChatTitles()).toEqual(
+      expect.arrayContaining(["Launch planning", "Launch notes"]),
+    );
+    expect(projectChatTitles(researchId)).toEqual(["Research notes"]);
+  });
+});
 
 test("An unfolded Project without chats offers the archived ones it holds", async () => {
   const ordinary = continuityThread(303, 1, "Ordinary chat");

@@ -399,6 +399,9 @@ struct ChatSidebarView: View {
           .modifier(OkouRunningBadge(isVisible: working))
           .frame(width: statusColumn, alignment: .leading)
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
+        if project.isArchived {
+          Text("Archived").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        }
         Spacer(minLength: 0)
         // The fold's own mark ends the row in the trailing column, turning from down (open)
         // to right (folded) with the disclosure.
@@ -429,6 +432,9 @@ struct ChatSidebarView: View {
         close()
       }
       .disabled(store.isCreating || store.needsUpgrade)
+      Button(project.isArchived ? "Restore project" : "Archive project", okouSymbol: "archive") {
+        Task { await store.projects.setArchived(project.id, archived: !project.isArchived) }
+      }
       Button("Rename", okouSymbol: "pencil") { showEditor(editor(project: project)) }
       Button("Delete project", okouSymbol: "trash-2", role: .destructive) {
         deletingProject = project
@@ -555,7 +561,10 @@ struct ChatSidebarView: View {
   private func archiveRemovesRow(_ thread: ChatThread) -> Bool {
     switch store.sidebar.filter {
     case .recent: !thread.isArchived
-    case .archived: thread.isArchived
+    case .archived:
+      thread.isArchived && !store.projects.projects.contains {
+        $0.id == thread.projectId && $0.isArchived
+      }
     case .unread, .muted: false
     }
   }

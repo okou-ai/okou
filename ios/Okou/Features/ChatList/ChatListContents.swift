@@ -16,6 +16,12 @@ struct ChatListContents {
   /// The inbox leaves out archived chats outside Projects.
   let hasHiddenArchivedThreads: Bool
 
+  static func projectAllowsUnread(_ thread: ChatThread, _ project: ChatProject?) -> Bool {
+    if project?.isArchived == true { return false }
+    guard let cutoff = project?.lastArchivedAt else { return true }
+    return thread.unreadAt.map { $0 > cutoff } ?? false
+  }
+
   init(
     projects: [ChatProject], threads: [ChatThread],
     filter: ChatListFilter
@@ -34,8 +40,12 @@ struct ChatListContents {
     let ordered = projects.sorted(by: ChatProject.isOrderedBefore)
     self.projects = ordered.compactMap { project in
       let held = threads.filter { $0.projectId == project.id }
-      let members = held.filter(matches)
-      if members.isEmpty && !inbox { return nil }
+      if project.isArchived && (inbox || filter == .unread) { return nil }
+      let showWholeProject = filter == .archived && project.isArchived
+      let members = showWholeProject ? held : held.filter { thread in
+        matches(thread) && (filter != .unread || Self.projectAllowsUnread(thread, project))
+      }
+      if members.isEmpty && !inbox && !showWholeProject { return nil }
       return ProjectGroup(
         project: project, threads: members,
         hasHiddenArchivedThreads: inbox && held.contains(where: \.isArchived))
@@ -46,6 +56,7 @@ struct ChatListContents {
       !knownIDs.contains($0.projectId ?? "")
     }
     self.threads = outside.filter(matches)
-    hasHiddenArchivedThreads = inbox && outside.contains(where: \.isArchived)
+    hasHiddenArchivedThreads = inbox
+      && (outside.contains(where: \.isArchived) || projects.contains(where: \.isArchived))
   }
 }

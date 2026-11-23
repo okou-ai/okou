@@ -311,7 +311,10 @@ object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
 }
 
 @Serializable
-data class ChatEvents(val `events`: List<ChatEventsEventsItem>, val `hasMore`: Boolean)
+data class ChatEvents(
+    val `events`: List<ChatEventsEventsItem>,
+    val `hasMore`: Boolean,
+)
 
 @Serializable
 enum class IndicatorsThreadsValue {
@@ -332,9 +335,14 @@ data class ProjectsProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
-@Serializable data class Projects(val `projects`: List<ProjectsProjectsItem>)
+@Serializable
+data class Projects(
+    val `projects`: List<ProjectsProjectsItem>,
+)
 
 @Serializable
 enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
@@ -393,7 +401,10 @@ data class ChatArchiveChatThreadsItem(
     val `cloudBrowserEnabled`: Boolean? = null,
 )
 
-@Serializable data class ChatArchive(val `chatThreads`: List<ChatArchiveChatThreadsItem>)
+@Serializable
+data class ChatArchive(
+    val `chatThreads`: List<ChatArchiveChatThreadsItem>,
+)
 
 @Serializable
 enum class IndicatorMapValue {
