@@ -33,6 +33,19 @@ struct RequestBudget {
 }
 
 impl RequestBudget {
+    fn new(timeout: Duration) -> io::Result<Self> {
+        if timeout.is_zero() {
+            return Err(request_timeout_error(
+                RequestTimeoutStage::BeforeFrameWrite,
+                timeout,
+            ));
+        }
+        Ok(Self {
+            deadline: deadline_after(timeout, "request timeout overflowed")?,
+            timeout,
+        })
+    }
+
     fn is_expired(&self) -> bool {
         Instant::now() >= self.deadline
     }
@@ -101,14 +114,8 @@ pub(crate) async fn request_on_shared(
     payload: &[u8],
     timeout: Duration,
 ) -> io::Result<RawMessage> {
-    if timeout.is_zero() {
-        return Err(request_timeout_error(
-            RequestTimeoutStage::BeforeFrameWrite,
-            timeout,
-        ));
-    }
-    let deadline = deadline_after(timeout, "request timeout overflowed")?;
-    request_raw_on_shared(shared, msg_type, payload, deadline, timeout).await
+    let budget = RequestBudget::new(timeout)?;
+    request_raw_on_shared(shared, msg_type, payload, budget).await
 }
 
 async fn write_request_frame(
@@ -252,8 +259,7 @@ fn register_pending_response(
 async fn write_registered_request_and_wait(
     shared: &Arc<Shared>,
     data: &[u8],
-    deadline: Instant,
-    timeout: Duration,
+    budget: RequestBudget,
     before_write: impl FnOnce() -> io::Result<()>,
     rx: oneshot::Receiver<RawMessage>,
 ) -> io::Result<RawMessage> {
@@ -262,9 +268,8 @@ async fn write_registered_request_and_wait(
     // helper separately poisons the connection if cancellation interrupts an
     // in-progress frame write.
     let progress = RequestWriteProgress::default();
-    let budget = RequestBudget { deadline, timeout };
     time::timeout_at(
-        deadline,
+        budget.deadline,
         write_request_frame(
             shared,
             OutboundFrame::bytes(data, &[]),
@@ -275,9 +280,9 @@ async fn write_registered_request_and_wait(
         ),
     )
     .await
-    .map_err(|_| request_timeout_error(progress.timeout_stage(), timeout))??;
+    .map_err(|_| request_timeout_error(progress.timeout_stage(), budget.timeout))??;
 
-    await_pending_response(rx, deadline, timeout).await
+    await_pending_response(rx, &budget).await
 }
 
 async fn write_registered_request_and_wait_with_frame_builder<'a>(
@@ -306,7 +311,7 @@ async fn write_registered_request_and_wait_with_frame_builder<'a>(
     .map_err(|_| request_timeout_error(progress.timeout_stage(), budget.timeout))??;
 
     let wait_started = timing.as_ref().map(|_| Instant::now());
-    let response = await_pending_response(rx, budget.deadline, budget.timeout).await;
+    let response = await_pending_response(rx, &budget).await;
     if let (Some(timing), Some(started)) = (timing, wait_started) {
         timing.response_wait = Some(started.elapsed());
     }
@@ -315,8 +320,7 @@ async fn write_registered_request_and_wait_with_frame_builder<'a>(
 
 async fn await_pending_response(
     rx: oneshot::Receiver<RawMessage>,
-    deadline: Instant,
-    timeout: Duration,
+    budget: &RequestBudget,
 ) -> io::Result<RawMessage> {
     // `rx` returns `Ok(msg)` when the reader dispatches a response and
     // `Err(RecvError)` when `close()` drops the `Connected` variant. The
@@ -329,10 +333,10 @@ async fn await_pending_response(
                 "connection closed",
             ))
         }
-        _ = time::sleep_until(deadline) => {
+        _ = time::sleep_until(budget.deadline) => {
             Err(request_timeout_error(
                 RequestTimeoutStage::AwaitingTerminalResponse,
-                timeout,
+                budget.timeout,
             ))
         }
     }
@@ -349,8 +353,7 @@ async fn request_raw_on_shared(
     shared: &Arc<Shared>,
     msg_type: u8,
     payload: &[u8],
-    deadline: Instant,
-    timeout: Duration,
+    budget: RequestBudget,
 ) -> io::Result<RawMessage> {
     let (rx, pending_guard) = register_pending_response(shared, |route_id, tx| {
         Ok(PendingResponse {
@@ -364,7 +367,7 @@ async fn request_raw_on_shared(
     let seq = route_id.wire_seq();
     let data = encode_request_frame(msg_type, seq, payload)?;
 
-    write_registered_request_and_wait(shared, &data, deadline, timeout, || Ok(()), rx).await
+    write_registered_request_and_wait(shared, &data, budget, || Ok(()), rx).await
 }
 
 pub(crate) async fn normal_request_on_shared_with_write_observer_frame_builder(
@@ -394,13 +397,7 @@ pub(crate) async fn normal_request_on_shared_with_timing_frame_builder<'a>(
     build_frame: impl FnOnce(u32) -> io::Result<OutboundFrame<'a>>,
     mut timing: Option<&mut RequestTiming>,
 ) -> io::Result<RawMessage> {
-    if timeout.is_zero() {
-        return Err(request_timeout_error(
-            RequestTimeoutStage::BeforeFrameWrite,
-            timeout,
-        ));
-    }
-    let deadline = deadline_after(timeout, "request timeout overflowed")?;
+    let budget = RequestBudget::new(timeout)?;
     let setup_started = timing.as_ref().map(|_| Instant::now());
     let registration = (|| {
         let normal_operation = shared.reserve_normal_operation()?;
@@ -424,7 +421,7 @@ pub(crate) async fn normal_request_on_shared_with_timing_frame_builder<'a>(
         shared,
         seq,
         build_frame,
-        RequestBudget { deadline, timeout },
+        budget,
         || {
             mark_pending_normal_operation_possible_guest_write(shared, route_id, |_| Ok(()))?;
             write_observer.record_write_start()
@@ -443,13 +440,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
     write_observer: FrameWriteObserver,
     build_frame: impl FnOnce(u32, &mut Vec<u8>) -> io::Result<()>,
 ) -> io::Result<RawMessage> {
-    if timeout.is_zero() {
-        return Err(request_timeout_error(
-            RequestTimeoutStage::BeforeFrameWrite,
-            timeout,
-        ));
-    }
-    let deadline = deadline_after(timeout, "request timeout overflowed")?;
+    let budget = RequestBudget::new(timeout)?;
     let (rx, pending_guard) = register_pending_response(shared, |route_id, tx| {
         Ok(PendingResponse {
             route_id,
@@ -467,7 +458,7 @@ pub(crate) async fn request_on_shared_with_composite_operation_and_observer_fram
         shared,
         seq,
         contiguous_frame_builder(build_frame),
-        RequestBudget { deadline, timeout },
+        budget,
         || {
             mark_pending_normal_operation_possible_guest_write(shared, route_id, |_| Ok(()))?;
             write_observer.record_write_start()
