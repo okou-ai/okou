@@ -17,8 +17,6 @@
     <string name="chat_search_no_messages">कोई मिलता-जुलता संदेश नहीं</string>
     <string name="chat_search_no_workflows">कोई मिलता-जुलता वर्कफ़्लो नहीं</string>
     <string name="chat_search_no_artifacts">कोई मिलता-जुलता आर्टिफ़ैक्ट नहीं</string>
-    <string name="chat_search_online_only">इस प्रकार को खोजने के लिए ऑनलाइन जाएँ</string>
-    <string name="chat_search_offline_titles">ऑफ़लाइन केवल सहेजे गए चैट शीर्षक खोजे जाते हैं।</string>
     <string name="chat_search_unavailable">कुछ नतीजे लोड नहीं हो सके</string>
     <string name="chat_search_message_unavailable">यह संदेश अब उपलब्ध नहीं है</string>
     <string name="chat_search_workflow_add_draft">नई चैट के ड्राफ़्ट में जोड़ें</string>
@@ -31,5 +29,8 @@
     <string name="chat_search_saved_chats">अपडेट नहीं हो सका। सेव की गई चैट दिखाई जा रही हैं।</string>
     <string name="chat_search_saved_results">अपडेट नहीं हो सका। पिछले नतीजे दिखाई जा रहे हैं।</string>
     <string name="chat_search_messages_failed">मैसेज में खोज नहीं हो सकी</string>
+    <string name="chat_search_workflows_failed">वर्कफ़्लो में खोज नहीं हो सकी</string>
+    <string name="chat_search_workflows_saved">वर्कफ़्लो डायरेक्टरी रीफ़्रेश नहीं हो सकी। पिछली लोड की गई डायरेक्टरी में खोज की जा रही है।</string>
     <string name="chat_search_artifacts_failed">आर्टिफ़ैक्ट में खोज नहीं हो सकी</string>
+    <string name="chat_search_loading">खोज जारी है…</string>
 </resources>

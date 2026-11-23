@@ -810,7 +810,7 @@ class WorkflowRootTest {
         }
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_history").performClick()
-        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
         compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(source).performClick()
         waitForTag("conversation")
@@ -1158,22 +1158,28 @@ class WorkflowRootTest {
     }
 
     @Test
-    fun workspaceSearchReconnectsWithoutReopeningTheDismissedWorkflowIntro() {
+    fun workspaceSearchLoadsAndKeepsTheWorkflowIntroWithAnOfflineSignal() {
         app.gate.countDown()
+        waitForTag("workspace_search_entry")
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                ViewModelProvider(compose.activity)[SessionModel::class.java]
+                    .uiState
+                    .value
+                    .ready
+                    ?.workflows != null
+            }
+        }
+        compose.runOnIdle { app.connectivity.value = false }
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("search_type_Workflows").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput("launch")
         waitFor(app.fixture.releaseTitle)
         compose.onNodeWithText(app.fixture.releaseTitle).performClick()
         waitFor("View workflow details")
-
-        compose.runOnIdle { app.connectivity.value = false }
-        waitFor(app.getString(R.string.workflow_offline_cache))
-        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
-        compose.onNodeWithText("View workflow details").assertDoesNotExist()
+        compose.onNodeWithText("Add to new chat draft").assertIsEnabled()
         compose.runOnIdle { app.connectivity.value = true }
-        waitFor(app.fixture.releaseTitle)
-        compose.onNodeWithText("View workflow details").assertDoesNotExist()
+        compose.onNodeWithText("View workflow details").assertIsDisplayed()
     }
 
     private fun waitFor(label: String) =
