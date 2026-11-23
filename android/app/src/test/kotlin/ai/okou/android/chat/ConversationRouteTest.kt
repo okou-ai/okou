@@ -25,10 +25,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
-import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -288,7 +286,7 @@ class ConversationRouteTest {
                 ConversationRoute(model.history, CHAT_IN_PROJECT, list, visible = visible.value)
             }
         }
-        compose.mainClock.advanceTimeBy(160)
+        compose.mainClock.advanceTimeBy(300)
         compose.waitUntilExactlyOneExists(
             hasContentDescription(compose.activity.getString(R.string.history_loading)),
             5_000,
@@ -355,8 +353,9 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h320dp")
-    fun aReaderAtTheEndCanSeeTheSlowSyncNotice() {
-        val model = createListModel()
+    fun staleConversationShowsFixedProgressWithoutMovingMessages() {
+        var now = System.currentTimeMillis()
+        val model = createListModel(wallMillis = { now })
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
@@ -381,24 +380,22 @@ class ConversationRouteTest {
             allowRefreshResponse.await()
             historyRows(request)
         }
+        val bounds = reply.getUnclippedBoundsInRoot()
+        val progress = hasContentDescription(syncLabel)
         try {
-            compose.runOnIdle { model.history.refresh() }
-            compose.waitUntil(5_000) { compose.runOnIdle { refreshRequested.count == 0L } }
-            compose.mainClock.advanceTimeBy(300)
-            val notice = compose.onNodeWithText(syncLabel).assertIsDisplayed()
-            val messageGap =
-                notice.getUnclippedBoundsInRoot().top - reply.getUnclippedBoundsInRoot().bottom
-            assertEquals(4f, messageGap.value, 1f)
-            val noticeBottom = notice.getUnclippedBoundsInRoot().bottom
-            val viewportBottom = conversation.getUnclippedBoundsInRoot().bottom
-            assertTrue(
-                "Sync notice ends at $noticeBottom beyond $viewportBottom",
-                noticeBottom <= viewportBottom,
-            )
+            compose.runOnIdle {
+                now += 600_001
+                model.history.refresh()
+            }
+            compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            val bar = compose.onNode(progress).assertIsDisplayed().getUnclippedBoundsInRoot()
+            assertEquals(conversation.getUnclippedBoundsInRoot().top, bar.top)
+            assertEquals(4.dp, bar.bottom - bar.top)
+            assertEquals(bounds, reply.getUnclippedBoundsInRoot())
         } finally {
             allowRefreshResponse.countDown()
         }
-        compose.waitUntilDoesNotExist(hasText(syncLabel), 5_000)
+        compose.waitUntilDoesNotExist(progress, 5_000)
     }
 
     @Test
@@ -593,39 +590,16 @@ class ConversationRouteTest {
         compose.runOnIdle {
             model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
         }
-        val initialFailure = compose.activity.getString(R.string.chat_list_first_load_failed)
         val retryLabel = compose.activity.getString(R.string.retry)
-        compose.waitUntilExactlyOneExists(
-            hasText(initialFailure) and hasAnyAncestor(hasTestTag("conversation")),
-            5_000,
-        )
-        val retryRequested = CountDownLatch(1)
-        val allowRetryResponse = CountDownLatch(1)
-        fixture.historyRows = {
-            retryRequested.countDown()
-            allowRetryResponse.await()
-            MockResponse().setResponseCode(503)
-        }
-        try {
-            compose.runOnIdle {
-                realtime.invalidate(ChatChanges(messageThreads = setOf(CHAT_IN_PROJECT)))
-            }
-            compose.waitUntil(5_000) { compose.runOnIdle { retryRequested.count == 0L } }
-            compose.mainClock.advanceTimeBy(160)
-            compose.onNodeWithText(initialFailure).assertExists()
-            compose.onNodeWithText(retryLabel).assertIsNotEnabled()
-            compose
-                .onNode(hasContentDescription(compose.activity.getString(R.string.history_loading)))
-                .assertDoesNotExist()
-        } finally {
-            allowRetryResponse.countDown()
-        }
+        val skeleton = hasContentDescription(compose.activity.getString(R.string.history_loading))
+        compose.waitUntilExactlyOneExists(skeleton, 5_000)
         compose.waitUntil(5_000) {
-            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Failed }
+            compose.runOnIdle { model.history.uiState.value.consecutiveReadFailures > 0 }
         }
-        fixture.historyRows = historyRows
+        compose.onNode(skeleton).assertIsDisplayed()
         fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
-        compose.onNodeWithText(retryLabel).performClick()
+        fixture.historyRows = historyRows
+        compose.waitUntilDoesNotExist(skeleton, 10_000)
         val readFailure = compose.activity.getString(R.string.history_read_failed)
         compose.waitUntilExactlyOneExists(hasText(readFailure), 5_000)
         compose.onNodeWithText("Hello history").assertExists()
@@ -858,30 +832,33 @@ class ConversationRouteTest {
         )
     }
 
-    private fun createListModel(realtime: RealtimeService? = null): ChatListModel =
-        compose.runOnIdle {
-            val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
-            cache = storage
-            ViewModelProvider(
-                    owners,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(
-                                fixture.service,
-                                storage,
-                                fixture.identity,
-                                { true },
-                                {},
-                                realtime = realtime,
-                            )
-                        }
-                    },
-                )[ChatListModel::class.java]
-                .also {
-                    ownerJob = it.viewModelScope.coroutineContext[Job]
-                    it.refresh()
-                }
-        }
+    private fun createListModel(
+        realtime: RealtimeService? = null,
+        wallMillis: () -> Long = System::currentTimeMillis,
+    ): ChatListModel = compose.runOnIdle {
+        val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
+        cache = storage
+        ViewModelProvider(
+                owners,
+                viewModelFactory {
+                    initializer {
+                        ChatListModel(
+                            fixture.service,
+                            storage,
+                            fixture.identity,
+                            { true },
+                            {},
+                            realtime = realtime,
+                            wallMillis = wallMillis,
+                        )
+                    }
+                },
+            )[ChatListModel::class.java]
+            .also {
+                ownerJob = it.viewModelScope.coroutineContext[Job]
+                it.refresh()
+            }
+    }
 
     @Test
     fun anEffectCannotAcknowledgeContentThatArrivedAfterItsComposition() {

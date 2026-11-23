@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,6 +35,8 @@ data class ConversationUiState(
     val detailPhase: ChatReadPhase = ChatReadPhase.Idle,
     val detailFailure: Exception? = null,
     val initialReadFailed: Boolean = false,
+    val syncingStaleCache: Boolean = false,
+    val consecutiveReadFailures: Int = 0,
 )
 
 /** A completed network read, distinct from both selection identity and the event cursor. */
@@ -49,6 +52,7 @@ class ConversationHistoryModel(
     private val onRead: () -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val precedingReadWrite: (String) -> Job? = { null },
+    private val wallMillis: () -> Long = System::currentTimeMillis,
 ) {
     private val mutable = MutableStateFlow(ConversationUiState())
     val uiState = mutable.asStateFlow()
@@ -179,6 +183,7 @@ class ConversationHistoryModel(
         if (visit === value) {
             visit = null
             output.visible(false)
+            if (mutable.value.consecutiveReadFailures > 0) job?.cancel()
         }
     }
 
@@ -195,7 +200,15 @@ class ConversationHistoryModel(
         val thread = mutable.value.thread ?: return
         if (retired || !authorized() || job?.isActive == true) return
         val ticket = generation
-        publish(mutable.value.copy(phase = HistoryPhase.Loading, confirmation = null))
+        publish(
+            mutable.value.copy(
+                phase = HistoryPhase.Loading,
+                confirmation = null,
+                syncingStaleCache = confirmed?.history.isStale(),
+                consecutiveReadFailures = 0,
+                initialReadFailed = false,
+            ),
+        )
         job = scope.launch {
             var saved = dirty[thread.id] ?: confirmed?.history
             if (saved == null) {
@@ -217,14 +230,15 @@ class ConversationHistoryModel(
                         transcript = transcript,
                         source = ChatListSource.Cache,
                         initialReadFailed = false,
+                        syncingStaleCache = saved.isStale(),
                     ),
                 )
             }
             try {
                 var next =
                     CachedHistory(
-                        sync.synchronize(thread.id, saved?.checkpoint),
-                        System.currentTimeMillis(),
+                        readWithRetry(thread.id, saved?.checkpoint, ticket),
+                        wallMillis(),
                     )
                 requireCurrent(ticket)
                 dirty[thread.id] = next
@@ -254,6 +268,8 @@ class ConversationHistoryModel(
                         source = ChatListSource.Network,
                         cacheUnavailable = diskFailed,
                         initialReadFailed = false,
+                        syncingStaleCache = false,
+                        consecutiveReadFailures = 0,
                         // Equal rows still complete a new read; StateFlow may conflate phases.
                         confirmation =
                             HistoryConfirmation(ticket, ++revision, next.checkpoint.cursor),
@@ -274,10 +290,38 @@ class ConversationHistoryModel(
                             state.copy(
                                 phase = HistoryPhase.Failed,
                                 initialReadFailed = state.transcript == null,
+                                syncingStaleCache = false,
+                                consecutiveReadFailures = 0,
                             ),
                         )
                     }
                 }
+            }
+        }
+    }
+
+    private fun CachedHistory?.isStale() = this != null && wallMillis() - confirmedAt > 600_000L
+
+    private suspend fun readWithRetry(
+        threadId: String,
+        checkpoint: HistoryCheckpoint?,
+        ticket: Long,
+    ): HistoryCheckpoint {
+        var failures = 0
+        while (true) {
+            try {
+                return sync.synchronize(threadId, checkpoint)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(ticket)
+                val retryAfter = chatReadRetryAfterMillis(error)
+                if (visit == null || retryAfter == null) throw error
+                failures = (failures + 1).coerceAtMost(chatReadRetryDelays.size)
+                publish(mutable.value.copy(consecutiveReadFailures = failures))
+                delay(maxOf(chatReadRetryDelays[failures - 1], retryAfter))
+                requireCurrent(ticket)
+                if (visit == null) throw CancellationException("Conversation visit ended")
             }
         }
     }
@@ -324,6 +368,8 @@ class ConversationHistoryModel(
                 phase = HistoryPhase.Missing,
                 confirmation = null,
                 initialReadFailed = false,
+                syncingStaleCache = false,
+                consecutiveReadFailures = 0,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,
                 detailFailure = error,
@@ -346,11 +392,8 @@ class ConversationHistoryModel(
     }
 
     fun refreshAfterSend(threadId: String) {
-        val ticket = generation
-        scope.launch {
-            job?.join()
-            if (current(ticket) && mutable.value.thread?.id == threadId) refresh()
-        }
+        invalidate(threadId)
+        invalidateDetail(threadId)
     }
 
     fun invalidate(threadId: String? = null) {

@@ -24,6 +24,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -139,6 +140,52 @@ class ConversationHistoryTest {
             markCount++
             marked.complete(Unit)
             return ReadState(CHAT_DATE)
+        }
+    }
+
+    @Test
+    fun visibleHistoryRetriesWithCappedBackoffAndStopsWhenTheVisitEnds() = runTest {
+        val attempts = mutableListOf<Long>()
+        val service =
+            Service().apply {
+                rowsRead = { _, _ ->
+                    attempts += testScheduler.currentTime
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            val visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.consecutiveReadFailures == 1 }
+            val start = attempts.single()
+            for (interval in listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 48_000L)) {
+                advanceTimeBy(interval)
+                runCurrent()
+            }
+            assertEquals(
+                listOf(0L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L),
+                attempts.map { it - start },
+            )
+            assertEquals(HistoryPhase.Loading, model.uiState.value.phase)
+            model.endVisit(visit)
+            advanceTimeBy(96_000)
+            runCurrent()
+            assertEquals(8, attempts.size)
+        } finally {
+            model.close()
+            lease.close()
         }
     }
 
