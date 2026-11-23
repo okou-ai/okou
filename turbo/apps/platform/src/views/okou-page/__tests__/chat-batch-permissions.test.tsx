@@ -434,7 +434,7 @@ test("Keep the dialog open if the permission response omits requested grants", a
   });
   click(getButton("Allow all 3 permissions", dialog));
 
-  expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
     "Couldn't update permissions",
   );
 });
