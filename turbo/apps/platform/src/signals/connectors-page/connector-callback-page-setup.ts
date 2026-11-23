@@ -348,6 +348,13 @@ export const setupConnectorCallbackPage$ = command(
     if (result.nativeCallbackUrl) {
       // The API only returns this after consuming an iOS-owned OAuth attempt.
       // Navigation completes the system session; account readiness is read by iOS.
+      // Remove provider code/state before a same-origin return can send a Referer.
+      set(
+        replacePathSilently$,
+        ROUTES.connectorCallbackResult,
+        { connectorSlug: callbackConnectorSlug, status: result.status },
+        new URLSearchParams(),
+      );
       window.location.replace(result.nativeCallbackUrl);
       return;
     }

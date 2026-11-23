@@ -43,6 +43,7 @@ test("A native OAuth completion returns to the HTTPS session before loading the 
     auth: null,
   });
   expect(navigation.calls).toStrictEqual([nativeCallbackUrl]);
+  expect(search()).toBe("");
 });
 
 function githubIcon(): PublicConnectorCatalogIcon {
