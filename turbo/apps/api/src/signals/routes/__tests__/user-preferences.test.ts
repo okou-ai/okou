@@ -5,16 +5,15 @@ import {
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import { presentationFormatContract } from "@okouai/api-contracts/contracts/presentation-format";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_USER_TIMEZONE } from "@okouai/core/timezone";
 import { expect, test } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { userPreferencesRoutes } from "../user-preferences";
 import { featureSwitchesRoutes } from "../feature-switches";
-import { presentationFormatRoutes } from "../presentation-format";
 import { createBddApi } from "./helpers/api-bdd";
 import { createAuthDeviceApiActions } from "./helpers/api-bdd-auth-device";
 import { createRouteMocks } from "./helpers/route-test";
@@ -237,6 +236,57 @@ test("presentation preferences stay null until chosen and survive unrelated upda
   expect(persisted.body.presentationFormat).toBe("pptx");
 });
 
+test("presentation preferences stay isolated between members and workspaces", async () => {
+  const member = {
+    userId: eligibleUserId,
+    orgId: createUniqueStaffOrgIdFixture(),
+  };
+  mocks.clerk.session(member.userId, member.orgId);
+  await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "pptx" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(`user_${randomUUID()}`, member.orgId);
+  const otherMember = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(otherMember.body.presentationFormat).toBeNull();
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(member.userId, `org_${randomUUID()}`);
+  const otherWorkspace = await accept(
+    client().initialize({ headers: headers(), body: { locale: "en-US" } }),
+    [200],
+  );
+  expect(otherWorkspace.body.presentationFormat).toBeNull();
+  await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: "html" },
+    }),
+    [200],
+  );
+
+  mocks.clerk.session(member.userId, member.orgId);
+  const saved = await accept(client().get({ headers: headers() }), [200]);
+  expect(saved.body.presentationFormat).toBe("pptx");
+});
+
 test("saving a presentation preference does not initialize timezone, locale, or memory", async () => {
   newPresentationMember();
   const saved = await accept(
@@ -360,11 +410,6 @@ test("cli PATs retain legacy preference access but cannot save the enabled prese
     throw new Error("Expected the approved device to issue a CLI PAT");
   }
   const patHeaders = { authorization: `Bearer ${issued.body.access_token}` };
-  const format = setupApp({ context, routes: presentationFormatRoutes })(
-    presentationFormatContract,
-  );
-  const deniedRead = await accept(format.get({ headers: patHeaders }), [403]);
-  expect(deniedRead.body.error.code).toBe("FORBIDDEN");
   const legacy = await accept(
     client().update({ headers: patHeaders, body: { theme: "dark" } }),
     [200],

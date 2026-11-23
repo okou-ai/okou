@@ -926,12 +926,6 @@ export {
   type UserPreferencesContract,
 } from "./user-preferences";
 export {
-  presentationFormatContract,
-  type PresentationFormatContract,
-  presentationFormatResponseSchema,
-  type PresentationFormatResponse,
-} from "./presentation-format";
-export {
   featureSwitchesContract,
   type FeatureSwitchesContract,
 } from "./feature-switches";

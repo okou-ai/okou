@@ -51,24 +51,6 @@ export function presentationFormatEnabled({ orgId, userId }: UserScopedQuery) {
   });
 }
 
-export function userPresentationFormat({ orgId, userId }: UserScopedQuery) {
-  return computed(async (get) => {
-    const [row] = await get(db$)
-      .select({ presentationFormat: orgMembersMetadata.presentationFormat })
-      .from(orgMembersMetadata)
-      .where(
-        and(
-          eq(orgMembersMetadata.orgId, orgId),
-          eq(orgMembersMetadata.userId, userId),
-        ),
-      )
-      .limit(1);
-    return presentationOutputFormatSchema
-      .nullable()
-      .parse(row?.presentationFormat ?? null);
-  });
-}
-
 function parseSendMode(value: unknown): SendMode {
   return value === "cmd-enter" ? "cmd-enter" : "enter";
 }

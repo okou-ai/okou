@@ -597,10 +597,6 @@ export const clientDescriptorManifest = [
     contracts: ["phoneUseContract"],
   },
   {
-    module: "presentation-format",
-    contracts: ["presentationFormatContract"],
-  },
-  {
     module: "presentation-templates",
     contracts: ["presentationTemplatesContract"],
   },

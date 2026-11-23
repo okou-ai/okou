@@ -573,8 +573,6 @@ import {
 } from "./personal-model-providers";
 import { phoneUseContract as OriginalPhoneUseContract } from "../contracts/phone-use";
 import { phoneUseContract } from "./phone-use";
-import { presentationFormatContract as OriginalPresentationFormatContract } from "../contracts/presentation-format";
-import { presentationFormatContract } from "./presentation-format";
 import { presentationTemplatesContract as OriginalPresentationTemplatesContract } from "../contracts/presentation-templates";
 import { presentationTemplatesContract } from "./presentation-templates";
 import { proactiveSuggestionsContract as OriginalProactiveSuggestionsContract } from "../contracts/proactive-suggestions";
@@ -1262,7 +1260,6 @@ export const clientDescriptorContracts: readonly (readonly [
   ],
   [personalSubscriptionsContract, OriginalPersonalSubscriptionsContract],
   [phoneUseContract, OriginalPhoneUseContract],
-  [presentationFormatContract, OriginalPresentationFormatContract],
   [presentationTemplatesContract, OriginalPresentationTemplatesContract],
   [proactiveSuggestionsContract, OriginalProactiveSuggestionsContract],
   [projectChatContract, OriginalProjectChatContract],
