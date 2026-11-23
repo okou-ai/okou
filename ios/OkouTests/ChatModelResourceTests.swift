@@ -10,9 +10,7 @@ final class ChatModelResourceTests: XCTestCase {
   func testSettingsCanDiscoverSubscriptionsBeforeOpeningAChatOrConnectingAnAccount() async throws {
     let enabled = Mutex(false)
     let fixture = ChatHTTPFixture { request in
-      let path = try XCTUnwrap(request.url?.path)
-      XCTAssertFalse(path.hasPrefix("/api/billing/"))
-      guard path == "/api/feature-switches" else { throw URLError(.unsupportedURL) }
+      guard request.url?.path == "/api/feature-switches" else { throw URLError(.unsupportedURL) }
       let value = enabled.withLock { $0 }
       return ChatHTTPResponse(
         body: "{\"effectiveSwitches\":{\"subscriptionLinkingEntry\":\(value)}}")

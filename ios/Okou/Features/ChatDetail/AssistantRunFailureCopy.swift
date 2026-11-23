@@ -42,7 +42,7 @@ extension AssistantFailureCopy {
     ),
     insufficientCredits: (
       "Out of credits",
-      "The workspace did not have enough credits for this run."
+      "Check your workspace's plan or credit balance."
     ),
     providerInsufficientCredits: (
       "Your subscription account needs more credit",

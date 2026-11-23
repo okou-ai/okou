@@ -1955,6 +1955,43 @@
         }
       }
     },
+    "Add credits": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Guthaben hinzufügen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Añadir créditos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ajouter des crédits" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "क्रेडिट जोड़ें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tambah kredit" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Aggiungi crediti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "クレジットを追加" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "크레딧 추가" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Adicionar créditos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "充值积分" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "充值積分" }
+        }
+      }
+    },
     "Add to chat": {
       "localizations": {
         "de": {
@@ -4328,6 +4365,43 @@
         }
       }
     },
+    "Check credits": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Credits prüfen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Consultar créditos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Voir les crédits" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "क्रेडिट देखें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Periksa kredit" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Controlla crediti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "クレジットを確認" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "크레딧 확인" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Ver créditos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看积分" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "查看積分" }
+        }
+      }
+    },
     "Check status": {
       "localizations": {
         "de": {
@@ -4399,6 +4473,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "請檢查網路後重試，你的草稿仍然保留。" }
+        }
+      }
+    },
+    "Checking billing permissions…": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Abrechnungsberechtigungen werden geprüft…" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Comprobando permisos de facturación…" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Vérification des autorisations de facturation…" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "बिलिंग अनुमतियाँ जाँची जा रही हैं…" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Memeriksa izin penagihan…" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Verifica delle autorizzazioni di fatturazione…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "請求の権限を確認中…" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "결제 권한 확인 중…" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Verificando permissões de cobrança…" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在检查账单权限…" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在檢查帳單權限…" }
         }
       }
     },
@@ -11741,6 +11852,47 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "登入或建立你的帳號。" }
+        }
+      }
+    },
+    "Manage plan": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Tarif verwalten" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Manage plan" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Gestionar plan" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Gérer le forfait" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "प्लान प्रबंधित करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Kelola paket" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Gestisci piano" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "プランを管理" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "요금제 관리" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Gerenciar plano" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "管理套餐" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "管理方案" }
         }
       }
     },
@@ -22909,6 +23061,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "正在更新聊天…" }
+        }
+      }
+    },
+    "Upgrade to Pro": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Upgrade auf Pro" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Actualizar a Pro" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Passer à Pro" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "प्रो में अपग्रेड करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Upgrade ke Pro" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Passa a Pro" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "Pro にアップグレード" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "Pro로 업그레이드" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Fazer upgrade para o Pro" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "升级到 Pro" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "升級到 Pro" }
         }
       }
     },

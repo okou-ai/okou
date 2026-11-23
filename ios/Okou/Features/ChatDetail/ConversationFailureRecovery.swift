@@ -8,6 +8,7 @@ import Observation
 final class ConversationFailureRecovery {
   private typealias PendingMessage = ConversationStore.PendingMessage
   private weak var conversation: ConversationStore?
+  private let commands: ChatCommands
   private let lifecycleTasks: LifecycleTasks
   private let detailOwner: @MainActor () -> UUID?
   private let refresh: @MainActor () async -> Void
@@ -22,7 +23,7 @@ final class ConversationFailureRecovery {
   private var closed = false
 
   init(
-    conversation: ConversationStore, lifecycleTasks: LifecycleTasks,
+    conversation: ConversationStore, commands: ChatCommands, lifecycleTasks: LifecycleTasks,
     detailOwner: @escaping @MainActor () -> UUID?,
     refresh: @escaping @MainActor () async -> Void,
     continueMessage: @escaping @MainActor (ConversationStore.PendingMessage) async -> Void,
@@ -31,6 +32,7 @@ final class ConversationFailureRecovery {
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.conversation = conversation
+    self.commands = commands
     self.lifecycleTasks = lifecycleTasks
     self.detailOwner = detailOwner
     self.refresh = refresh
@@ -43,13 +45,13 @@ final class ConversationFailureRecovery {
   func failureState(
     _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
     accounts: [PersonalSubscription]? = nil,
-    accountsError: Error? = nil
+    accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     guard let conversation = conversation else {
       return AssistantFailureState.make(
         failure: failure, current: false, selection: nil, accounts: accounts, busy: false)
     }
-    return AssistantFailureState.make(
+    var state = AssistantFailureState.make(
       failure: failure,
       current: !closed && !conversation.needsUpgrade && failureReadsEnabled
         && conversation.pending.isEmpty
@@ -58,6 +60,11 @@ final class ConversationFailureRecovery {
       selection: conversation.modelSelection, accounts: accounts,
       busy: isRecoveringFailure || conversation.isSending,
       accountsError: accountsError.map(ChatRequestFailure.message(for:)))
+    if state.isCurrent {
+      state.billing = billing
+      state.billingError = billingError.map(ChatRequestFailure.message(for:))
+    }
+    return state
   }
 
   /// Commands await the same original reads as the card, then recheck the failure owner.
@@ -66,13 +73,28 @@ final class ConversationFailureRecovery {
       return failureState(failure)
     }
     do {
-      let accounts = try await context.readAccounts()
-      guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
-      return failureState(failure, context: context, accounts: accounts)
+      if context.accounts != nil {
+        let accounts = try await context.readAccounts()
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        return failureState(failure, context: context, accounts: accounts)
+      }
+      if let signal = context.billing {
+        let result = await (try context.store.get(signal)).result
+        guard !Task.isCancelled, failureContext === context else { return failureState(failure) }
+        switch result {
+        case .success(let billing): return failureState(failure, context: context, billing: billing)
+        case .failure(let error):
+          return failureState(failure, context: context, billingError: error)
+        }
+      }
     } catch {
       guard failureContext === context else { return failureState(failure) }
-      return failureState(failure, context: context, accountsError: error)
+      if context.accounts != nil {
+        return failureState(failure, context: context, accountsError: error)
+      }
+      return failureState(failure, context: context, billingError: error)
     }
+    return failureState(failure)
   }
 
   func newChatAfterFailure(_ id: String) {
@@ -88,7 +110,7 @@ final class ConversationFailureRecovery {
     guard !closed, !conversation.needsUpgrade, !Task.isCancelled else { return }
     requestFailureAccounts()
     guard let context = failureContext else { return }
-    do { try context.refresh() } catch is CancellationError {} catch { report(error) }
+    do { try context.retry() } catch is CancellationError {} catch { report(error) }
     guard let failure = conversation.messages.first(where: { $0.id == context.failureID })?.failure
     else {
       return
@@ -163,14 +185,14 @@ final class ConversationFailureRecovery {
     guard id != failureContext?.failureID else { return }
     failureContext?.close()
     failureContext = nil
-    guard let id, let failure = conversation.messages.first(where: { $0.id == id })?.failure,
-      failure.recovery(personalFramework: nil).kind == .usage,
-      let subscriptions = conversation.modelSelection?.models.subscriptions.resources
-    else { return }
+    guard let id, let failure = conversation.messages.first(where: { $0.id == id })?.failure else {
+      return
+    }
     let context = FailureRecoveryResources(
-      failureID: id, subscriptions: subscriptions, didFail: { [weak self] in self?.report($0) })
+      failure: failure, subscriptions: conversation.modelSelection?.models.subscriptions.resources,
+      commands: commands, didFail: { [weak self] in self?.report($0) })
     failureContext = context
-    do { try context.refresh() } catch is CancellationError {} catch { report(error) }
+    do { try context.start() } catch is CancellationError {} catch { report(error) }
   }
 
   func enableReads() { failureReadsEnabled = true }
@@ -199,10 +221,11 @@ extension ConversationStore {
   func failureState(
     _ failure: ChatFailure, context: FailureRecoveryResources? = nil,
     accounts: [PersonalSubscription]? = nil,
-    accountsError: Error? = nil
+    accountsError: Error? = nil, billing: ChatBillingRecovery? = nil, billingError: Error? = nil
   ) -> AssistantFailureState {
     failureRecoveryActions.failureState(
-      failure, context: context, accounts: accounts, accountsError: accountsError)
+      failure, context: context, accounts: accounts, accountsError: accountsError,
+      billing: billing, billingError: billingError)
   }
   func readFailureState(_ failure: ChatFailure) async -> AssistantFailureState {
     await failureRecoveryActions.readFailureState(failure)

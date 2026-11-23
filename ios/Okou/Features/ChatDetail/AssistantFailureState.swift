@@ -15,6 +15,8 @@ struct AssistantFailureState: Equatable {
   let resetAccountID: String?
   let resetsRemaining: Int
   let accountError: String?
+  var billing: ChatBillingRecovery?
+  var billingError: String?
 
   var showsModelPicker: Bool {
     recovery.showsModelPicker

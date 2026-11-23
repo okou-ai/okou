@@ -41,6 +41,13 @@ final class FailureRecoveryFixture: Sendable {
     var accountRequested: (@Sendable () -> Void)?
     var accountStatus = 200
     var accountStatusAfterReset: Int?
+    var billingStatus = 200
+    var billingGate: ModelResponseGate?
+    var billingRequested: (@Sendable () -> Void)?
+    var billingCancelled: (@Sendable () -> Void)?
+    var billingAdmin = true
+    var canBuyCredits = true
+    var credits = 0
     var draft = ComposerDraft()
   }
   let state: FailureRecoveryState
@@ -122,6 +129,12 @@ final class FailureRecoveryFixture: Sendable {
         return try Self.sendResponse(request, state: state)
       case "/api/me/3rd-party-subscriptions":
         return await Self.accountsResponse(state: state)
+      case "/api/billing/status":
+        return await Self.billingResponse(state: state)
+      case "/api/org":
+        return state.value.withLock {
+          ChatHTTPResponse(body: "{\"role\":\"\($0.billingAdmin ? "admin" : "member")\"}")
+        }
       default:
         if path.hasSuffix("/subscription-reset") {
           return try await Self.resetResponse(request, state: state)
@@ -288,6 +301,33 @@ final class FailureRecoveryFixture: Sendable {
     requested?()
     if let gate { await gate.wait() }
     return response
+  }
+
+  private static func billingResponse(
+    state: FailureRecoveryState
+  ) async -> ChatHTTPResponse {
+    let (response, gate, requested, cancelled) = state.value.withLock { value in
+      let response =
+        value.billingStatus == 200
+        ? ChatHTTPResponse(
+          body: "{\"canBuyCredits\":\(value.canBuyCredits),\"credits\":\(value.credits)}")
+        : ChatHTTPResponse(
+          status: value.billingStatus, body: #"{"error":{"message":"Billing unavailable"}}"#)
+      let gate = value.billingGate
+      let requested = value.billingRequested
+      let cancelled = value.billingCancelled
+      value.billingGate = nil
+      value.billingRequested = nil
+      value.billingCancelled = nil
+      return (response, gate, requested, cancelled)
+    }
+    requested?()
+    return await withTaskCancellationHandler {
+      if let gate { await gate.wait() }
+      return response
+    } onCancel: {
+      cancelled?()
+    }
   }
 
   @MainActor func conversation(

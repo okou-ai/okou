@@ -703,7 +703,7 @@ final class FailureRecoveryAccountTests: XCTestCase {
     }
     await fulfillment(of: [oldStarted], timeout: 3)
     let oldContext = try XCTUnwrap(conversation.failureContext)
-    let oldRead = try oldContext.store.get(oldContext.accounts)
+    let oldRead = try oldContext.store.get(XCTUnwrap(oldContext.accounts))
     fixture.state.value.withLock {
       $0.accountGate = newGate
       $0.accountRequested = { newStarted.fulfill() }
