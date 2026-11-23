@@ -986,14 +986,15 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun pendingDraftHandoffDisablesSourceNavigationAndRuleActions() {
+    fun pendingDraftHandoffDisablesActionsAndReturnsToItsOriginatingTab() {
         app.gate.countDown()
         waitFor("Personal chat")
         compose.onNodeWithContentDescription("Workflows").performClick()
         waitFor("Release checklist")
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
         waitForTag("workflow_detail_title")
-        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val history = compose.onNodeWithTag("workflow_tab_history")
+        history.performClick()
         val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
         compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(source).assertIsEnabled()
@@ -1009,7 +1010,7 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
             compose.waitUntil(10_000) { compose.runOnIdle { requested.count == 0L } }
             compose.onNode(source).assertIsNotEnabled()
 
-            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            compose.onNodeWithTag("workflow_tab_automations").performClick().assertIsSelected()
             compose.onNodeWithTag("workflow_toggle_weekday").assertIsNotEnabled()
             compose
                 .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_weekday")))
@@ -1021,6 +1022,9 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         compose
             .onNodeWithTag("message_input")
             .assertTextContains("/release-review Keep my existing draft")
+
+        back()
+        history.assertIsSelected()
     }
 
     @Test

@@ -756,6 +756,8 @@ internal fun OkouApp(
     ) {
         val activeComposer = composer ?: return
         if (handoffPending) return
+        val useOriginTab =
+            workflowRoute.tab.takeIf { draftReturn?.action == WorkflowDraftAction.Use }
         handoffPending = true
         workflowDraftError = null
         handoff = scope.launch {
@@ -787,6 +789,7 @@ internal fun OkouApp(
                             changeWorkflowRoute(
                                 workflowRoute.copy(
                                     mode = WorkflowsMode.Chat,
+                                    tab = useOriginTab ?: workflowRoute.tab,
                                     draftReturn = draftReturn,
                                 ),
                             )
