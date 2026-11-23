@@ -715,8 +715,8 @@ class ChatComposerRootTest {
             compose.activityRule.scenario.recreate()
             awaitConversation { checkStarted.count == 0L }
             compose.onNodeWithTag("message_input").assertTextContains("Newer draft 你好")
+            // Canonical history can confirm the message while this status response is still held.
             messageText(event, "Original **message** 👋").assertIsDisplayed()
-            messageDelivery(event, "Checking delivery…").assertIsDisplayed()
         } finally {
             checkResponse.countDown()
         }

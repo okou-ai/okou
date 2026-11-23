@@ -59,7 +59,6 @@ private constructor(
     private val facts: HistoryEventFacts,
     val content: String?,
     val userMessage: JsonElement?,
-    val usage: JsonElement?,
     val inputError: String?,
     val outputError: String?,
     val failureReason: String?,
@@ -104,8 +103,7 @@ private constructor(
                     HistoryEventType.OutputMessage,
                     HistoryEventType.OutputError,
                     HistoryEventType.OutputFollowups,
-                    HistoryEventType.RunCompleted,
-                    HistoryEventType.UsageRecorded ->
+                    HistoryEventType.RunCompleted ->
                         wire["payload"]?.takeUnless { it === JsonNull }?.jsonObject
                     else -> null
                 }
@@ -140,8 +138,6 @@ private constructor(
                 facts,
                 content,
                 userMessage,
-                if (facts.eventType == HistoryEventType.UsageRecorded) payload?.get("usage")
-                else null,
                 if (facts.eventType == HistoryEventType.InputRejected) error else null,
                 if (facts.eventType == HistoryEventType.OutputError) error else null,
                 if (facts.eventType == HistoryEventType.RunFailed)

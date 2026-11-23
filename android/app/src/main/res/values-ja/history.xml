@@ -8,7 +8,7 @@
     <string name="history_empty">メッセージはまだありません。</string>
     <string name="history_queued">待機中</string>
     <string name="history_rejected">未送信</string>
-    <string name="history_unsupported">このコンテンツは元の形式で表示されます。</string>
+    <string name="history_unsupported">このコンテンツは Android では表示できません。</string>
     <string name="history_reference">参照</string>
     <string name="history_cancelled">停止済み</string>
     <string name="history_run_failed">失敗</string>

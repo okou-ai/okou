@@ -8,7 +8,7 @@
     <string name="history_empty">尚無訊息。</string>
     <string name="history_queued">排隊中</string>
     <string name="history_rejected">未傳送</string>
-    <string name="history_unsupported">此內容以原始形式顯示。</string>
+    <string name="history_unsupported">此內容暫時無法在 Android 上顯示。</string>
     <string name="history_reference">引用</string>
     <string name="history_cancelled">已停止</string>
     <string name="history_run_failed">失敗</string>

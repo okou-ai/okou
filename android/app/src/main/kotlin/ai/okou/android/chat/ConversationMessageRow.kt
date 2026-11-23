@@ -94,7 +94,11 @@ internal data class ConversationMessage(
 }
 
 internal fun HistoryMessage.visibleInConversation() =
-    status != "run.completed" || blocks.isNotEmpty()
+    when (status) {
+        null,
+        "run.completed" -> blocks.isNotEmpty() || queued || rejected
+        else -> true
+    }
 
 internal fun conversationMessages(messages: List<HistoryMessage>): List<ConversationMessage> =
     buildList {
@@ -264,18 +268,20 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val label = stringResource(R.string.conversation_reply_actions)
+    val copyableReply =
+        message?.takeIf { it.blocks.any { block -> block.kind == HistoryBlockKind.Text } }
     val openMenu by rememberUpdatedState {
         restoreFocus = keyboardFocused
-        menuMessage = message
+        menuMessage = copyableReply
     }
     Box(Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
         Row(
             Modifier.fillMaxWidth()
                 .heightIn(min = 48.dp)
                 .then(
-                    if (message == null) Modifier
+                    if (copyableReply == null) Modifier
                     else
-                        Modifier.pointerInput(message.id) {
+                        Modifier.pointerInput(copyableReply.id) {
                             detectTapGestures(onLongPress = { openMenu() })
                         }
                 ),
@@ -293,7 +299,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            if (message != null) {
+            if (copyableReply != null) {
                 Box {
                     IconButton(
                         onClick = openMenu,
@@ -321,11 +327,11 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                                         scope.launch {
                                             val copy =
                                                 withContext(Dispatchers.Default) {
-                                                    selected.blocks.joinToString("\n\n") {
-                                                        if (it.kind == HistoryBlockKind.Text)
+                                                    selected.blocks
+                                                        .filter { it.kind == HistoryBlockKind.Text }
+                                                        .joinToString("\n\n") {
                                                             conversationMarkdownForCopy(it.text)
-                                                        else it.text
-                                                    }
+                                                        }
                                                 }
                                             clipboard.setClipEntry(
                                                 ClipEntry(ClipData.newPlainText(null, copy))
@@ -415,19 +421,20 @@ private fun MessageBody(
                     HistoryBlockKind.Unsupported ->
                         ConversationMeta(stringResource(R.string.history_unsupported))
                     HistoryBlockKind.Reference ->
-                        ConversationMeta(stringResource(R.string.history_reference))
-                    else -> Unit
+                        ConversationMeta(block.title ?: stringResource(R.string.history_reference))
+                    HistoryBlockKind.Error -> Text(block.text, style = style, color = foreground)
+                    HistoryBlockKind.Text ->
+                        if (message.role == HistoryRole.Assistant)
+                            HistoryMarkdown(
+                                block.text,
+                                style,
+                                artifactActions,
+                                "${message.id}/$index",
+                                markdownHighlight,
+                                links,
+                            )
+                        else Text(block.text, style = style, color = foreground)
                 }
-                if (block.kind == HistoryBlockKind.Text && message.role == HistoryRole.Assistant)
-                    HistoryMarkdown(
-                        block.text,
-                        style,
-                        artifactActions,
-                        "${message.id}/$index",
-                        markdownHighlight,
-                        links,
-                    )
-                else Text(block.text, style = style, color = foreground)
             }
         }
     }

@@ -30,7 +30,7 @@ enum class HistoryExecution {
     Cancelled,
 }
 
-data class HistoryBlock(val kind: HistoryBlockKind, val text: String)
+data class HistoryBlock(val kind: HistoryBlockKind, val text: String, val title: String? = null)
 
 data class HistoryMessage(
     val id: String,
@@ -108,6 +108,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         rows.filterNot {
             it.type == "control.revoke" ||
                 it.type == "input.budget" ||
+                it.type == "usage.recorded" ||
                 (it.type == "run.cancelled" && it.runId in interrupted) ||
                 (it.type == "input.rejected" && it.revokesId in automationInputs)
         }
@@ -157,9 +158,6 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         row.outputError?.let {
                             blocks.add(HistoryBlock(HistoryBlockKind.Error, it))
                         }
-                        row.failureReason?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
-                        }
                         HistoryRole.System
                     }
                     "run.cancelled",
@@ -172,18 +170,8 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                         row.content?.let { blocks.add(HistoryBlock(HistoryBlockKind.Text, it)) }
                         HistoryRole.Assistant
                     }
-                    "usage.recorded" -> {
-                        row.usage?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it.toString()))
-                        }
-                        if (blocks.isEmpty()) return@mapNotNull null
-                        HistoryRole.System
-                    }
                     "output.followups" -> {
-                        row.content?.let {
-                            blocks.add(HistoryBlock(HistoryBlockKind.Reference, it))
-                        }
-                        if (blocks.isEmpty()) return@mapNotNull null
+                        if (row.content == null) return@mapNotNull null
                         HistoryRole.System
                     }
                     else -> return@mapNotNull null
@@ -266,28 +254,29 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
     val parts = document?.get("parts") as? JsonArray
     if ((document?.get("version") as? JsonPrimitive)?.intOrNull != 1 || parts == null)
         return listOf(HistoryBlock(HistoryBlockKind.Unsupported, value?.toString() ?: "null"))
-    return parts
-        .map { part ->
-            val objectPart = part as? JsonObject
-            when (objectPart?.text("type")) {
-                "text" ->
-                    objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
-                        ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
-                // Preserve the complete reference/annotation, including IDs and capability
-                // metadata.
-                "attachment",
-                "file",
-                "image",
-                "annotation",
-                "feedback",
-                "chat_thread",
-                "project",
-                "template",
-                "source",
-                "automation",
-                "model" -> HistoryBlock(HistoryBlockKind.Reference, part.toString())
-                else -> HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
-            }
+    if (parts.isEmpty()) return listOf(HistoryBlock(HistoryBlockKind.Unsupported, value.toString()))
+    return parts.mapNotNull { part ->
+        val objectPart = part as? JsonObject
+        when (objectPart?.text("type")) {
+            "text" ->
+                objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
+                    ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
+            "model",
+            "additional_info" -> null
+            "chat_thread",
+            "template" -> objectPart.reference("titleSnapshot")
+            "project" -> objectPart.reference("nameSnapshot")
+            "file" -> objectPart.reference("filenameSnapshot")
+            "automation" -> objectPart.reference("workflowName")
+            "feedback" -> objectPart.reference("quote")
+            "source" -> objectPart.reference("clientName")
+            "attachment",
+            "image",
+            "annotation" -> objectPart.reference()
+            else -> HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
         }
-        .ifEmpty { listOf(HistoryBlock(HistoryBlockKind.Unsupported, value.toString())) }
+    }
 }
+
+private fun JsonObject.reference(titleKey: String? = null) =
+    HistoryBlock(HistoryBlockKind.Reference, toString(), titleKey?.let { text(it) })

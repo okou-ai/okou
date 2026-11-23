@@ -18,6 +18,7 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -103,6 +105,84 @@ class ConversationRouteTest {
         compose.runOnIdle { displayed.value = message("future_reason") }
         compose.onNodeWithText("This run couldn't finish").assertExists()
         compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun canonicalHistoryShowsAuthoredJsonAndReferenceTitlesWithoutInternalPayloads() {
+        val authored = """{"color":"blue"}"""
+        val source = "Launch decision"
+        val file = "checklist.pdf"
+        val reply = """{"status":"ready"}"""
+        val followups = """[{"prompt":"Review the checklist"}]"""
+        val rows =
+            listOf(
+                    historyEventWire(
+                        scrollEventId(17),
+                        17,
+                        type = "input.prompt",
+                        payload =
+                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(authored)}},{"type":"model","selectedModel":"fixture-internal-model"},{"type":"additional_info","text":"internal context only"},{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":${JsonPrimitive(source)}},{"type":"file","fileId":"internal-file-id","filenameSnapshot":${JsonPrimitive(file)},"contentType":"application/pdf"},{"type":"future","opaqueKey":8}]}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(23),
+                        23,
+                        payload = """{"content":${JsonPrimitive(reply)}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(29),
+                        29,
+                        type = "output.followups",
+                        payload = """{"content":${JsonPrimitive(followups)}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(31),
+                        31,
+                        type = "usage.recorded",
+                        payload = """{"usage":{"inputTokens":9}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(37),
+                        37,
+                        type = "run.completed",
+                        payload = "null",
+                    ),
+                )
+                .map(HistoryEvent::decode)
+        val transcript =
+            projectHistory(
+                HistoryCheckpoint(CHAT_PERSONAL, rows, HistoryCursor(scrollEventId(37), 37))
+            )
+        assertTrue(scrollEventId(31) in transcript.persistedIds)
+        compose.setContent {
+            OkouTheme {
+                Column {
+                    for (row in conversationMessages(transcript.messages)) {
+                        ConversationMessageRow(row, revoke = null)
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText(reply).assertIsDisplayed()
+        compose.onNodeWithText(authored).assertIsDisplayed()
+        compose.onNodeWithText(source).assertIsDisplayed()
+        compose.onNodeWithText(file).assertIsDisplayed()
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.history_unsupported))
+            .assertIsDisplayed()
+        for (internal in
+            listOf(
+                "fixture-internal-model",
+                "internal context only",
+                "internal-file-id",
+                "opaqueKey",
+                "inputTokens",
+                "Review the checklist",
+            )) {
+            compose.onNodeWithText(internal, substring = true).assertDoesNotExist()
+        }
+        compose.onNodeWithTag("message_${scrollEventId(31)}").assertDoesNotExist()
+        compose.onNodeWithTag("message_${scrollEventId(29)}").assertDoesNotExist()
     }
 
     @Test

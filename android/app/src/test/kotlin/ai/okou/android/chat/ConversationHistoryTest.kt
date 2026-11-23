@@ -1160,21 +1160,17 @@ class ConversationHistoryTest {
             )
         assertEquals(listOf("Final answer"), content.messages.flatMap { it.blocks }.map { it.text })
         val usage = row(type = "usage.recorded", payload = """{"usage":{"futureMetric":5}}""")
-        assertEquals(
-            "{\"futureMetric\":5}",
+        val usageOnly =
             projectHistory(
-                    HistoryCheckpoint(
-                        CHAT_PERSONAL,
-                        listOf(usage),
-                        HistoryCursor(HISTORY_LAST_EVENT, 37),
-                    )
+                HistoryCheckpoint(
+                    CHAT_PERSONAL,
+                    listOf(usage),
+                    HistoryCursor(HISTORY_LAST_EVENT, 37),
                 )
-                .messages
-                .single()
-                .blocks
-                .single()
-                .text,
-        )
+            )
+        assertTrue(usageOnly.messages.isEmpty())
+        assertEquals(setOf(usage.id), usageOnly.persistedIds)
+        assertTrue(usage.archiveJson().contains("\"futureMetric\":5"))
         val rendered =
             renderHistoryMarkdown(
                 "# Heading\n\n**bold** and `code`\n\n```kotlin\nval x = 1\n```\n<script>literal</script>"

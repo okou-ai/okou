@@ -8,7 +8,7 @@
     <string name="history_empty">अभी कोई संदेश नहीं है।</string>
     <string name="history_queued">कतार में</string>
     <string name="history_rejected">नहीं भेजा गया</string>
-    <string name="history_unsupported">यह सामग्री अपने मूल रूप में दिखाई गई है।</string>
+    <string name="history_unsupported">यह सामग्री Android पर दिखाई नहीं जा सकती।</string>
     <string name="history_reference">संदर्भ</string>
     <string name="history_cancelled">रोका गया</string>
     <string name="history_run_failed">विफल</string>

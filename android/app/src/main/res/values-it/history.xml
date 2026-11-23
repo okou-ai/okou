@@ -8,7 +8,7 @@
     <string name="history_empty">Nessun messaggio.</string>
     <string name="history_queued">In coda</string>
     <string name="history_rejected">Non inviato</string>
-    <string name="history_unsupported">Questo contenuto viene mostrato nella sua forma originale.</string>
+    <string name="history_unsupported">Questo contenuto non può essere visualizzato su Android.</string>
     <string name="history_reference">Riferimento</string>
     <string name="history_cancelled">Interrotto</string>
     <string name="history_run_failed">Errore</string>
