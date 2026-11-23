@@ -24,6 +24,8 @@ export async function openSharing(
   options: {
     audience?: HostedSiteVisibility;
     free?: boolean;
+    emailSharing?: boolean;
+    siteId?: string;
     denyBanner?: boolean;
     denyVisibility?: boolean;
     visibilityRead?: Promise<void>;
@@ -31,7 +33,7 @@ export async function openSharing(
     refreshPreview?: () => Promise<void>;
   } = {},
 ) {
-  const site = crypto.randomUUID();
+  const site = options.siteId ?? crypto.randomUUID();
   const entry = artifact({ kind: "hosted-site", title: "Studio notes" });
   const detail = hostedSiteArtifactDetail(entry, {
     siteId: site,
@@ -122,6 +124,7 @@ export async function openSharing(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteShareRows]: true,
+      [FeatureSwitchKey.HostedSiteEmailSharing]: options.emailSharing ?? false,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]:
         options.refreshPreview !== undefined,
       [FeatureSwitchKey.FreePlanArtifactPaywall]: options.free ?? false,

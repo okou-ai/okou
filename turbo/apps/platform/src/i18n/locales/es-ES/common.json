@@ -591,6 +591,28 @@
       "generated": "Generado el {{date}}",
       "updated": "Actualizado el {{date}}"
     },
+    "people": {
+      "accounts": "Miembros coincidentes del espacio de trabajo",
+      "anyone": "Cualquiera",
+      "empty": "Nadie más tiene acceso todavía.",
+      "hint": "¿Fuera de tu espacio de trabajo? Usa su correo completo.",
+      "invitationProcessed": "Invitación para compartir procesada",
+      "label": "Compartir con personas",
+      "noAccounts": "No hay miembros que coincidan. Introduce un correo completo para invitar.",
+      "placeholder": "Nombre o correo electrónico",
+      "remove": "Quitar acceso a {{email}}",
+      "removed": "Acceso eliminado",
+      "restricted": "Personas invitadas",
+      "restrictedDescription": "Solo tú y las personas invitadas",
+      "searching": "Buscando miembros del espacio de trabajo…",
+      "searchUnavailable": "La búsqueda de miembros no está disponible temporalmente. Inténtalo de nuevo en unos momentos.",
+      "share": "Invitar",
+      "updateUnavailable": "No se pudo actualizar el uso compartido. Inténtalo de nuevo en unos momentos.",
+      "viewers": "Personas con acceso",
+      "workspace": "Espacio de trabajo",
+      "workspaceDescription": "Miembros de {{organization}} y personas invitadas",
+      "workspaceDescriptionUnnamed": "Miembros del espacio de trabajo y personas invitadas"
+    },
     "preview": {
       "audioLabel": "Vista previa de audio para {{filename}}",
       "badge": "Vista previa",

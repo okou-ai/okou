@@ -20,6 +20,7 @@ import ai.okou.android.preferences.PreferenceFeedback
 import ai.okou.android.settings.DefaultModelFeedback
 import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.WorkspaceSettingsDataPage
+import ai.okou.android.settings.WorkspaceSettingsProgress
 import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.rememberSettingsFlag
@@ -140,6 +141,9 @@ internal fun SessionRoot(
                             snackbar,
                             { feedbackInOverlay = it },
                         )
+                    },
+                    settingsProgress = { destination ->
+                        if (ready != null) WorkspaceSettingsProgress(destination, ready.settings)
                     },
                     recovery = ready?.recovery,
                     artifacts = ready?.artifacts,

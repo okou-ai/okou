@@ -575,6 +575,28 @@
       "generated": "Generiert {{date}}",
       "updated": "Aktualisiert {{date}}"
     },
+    "people": {
+      "accounts": "Passende Workspace-Mitglieder",
+      "anyone": "Alle",
+      "empty": "Noch hat niemand sonst Zugriff.",
+      "hint": "Außerhalb deines Arbeitsbereichs? Nutze die vollständige E-Mail-Adresse.",
+      "invitationProcessed": "Freigabeeinladung verarbeitet",
+      "label": "Mit Personen teilen",
+      "noAccounts": "Keine passenden Mitglieder. Gib eine vollständige E-Mail-Adresse zum Einladen ein.",
+      "placeholder": "Name oder E-Mail-Adresse",
+      "remove": "Zugriff für {{email}} entfernen",
+      "removed": "Zugriff entfernt",
+      "restricted": "Eingeladene",
+      "restrictedDescription": "Nur du und eingeladene Personen",
+      "searching": "Workspace-Mitglieder werden gesucht…",
+      "searchUnavailable": "Die Mitgliedersuche ist vorübergehend nicht verfügbar. Versuche es in Kürze erneut.",
+      "share": "Einladen",
+      "updateUnavailable": "Die Freigabe konnte nicht aktualisiert werden. Versuche es in Kürze erneut.",
+      "viewers": "Personen mit Zugriff",
+      "workspace": "Arbeitsbereich",
+      "workspaceDescription": "Mitglieder von {{organization}} und eingeladene Personen",
+      "workspaceDescriptionUnnamed": "Mitglieder des Arbeitsbereichs und eingeladene Personen"
+    },
     "preview": {
       "audioLabel": "Audiovorschau für {{filename}}",
       "badge": "Vorschau",

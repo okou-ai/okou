@@ -575,6 +575,28 @@
       "generated": "Generated {{date}}",
       "updated": "Updated at {{date}}"
     },
+    "people": {
+      "accounts": "Matching workspace members",
+      "anyone": "Anyone",
+      "empty": "No one else has access yet.",
+      "hint": "Outside your workspace? Use their full email.",
+      "invitationProcessed": "Sharing invitation processed",
+      "label": "Share with people",
+      "noAccounts": "No workspace matches. Enter a full email to invite.",
+      "placeholder": "Name or email address",
+      "remove": "Remove access for {{email}}",
+      "removed": "Access removed",
+      "restricted": "Invited people",
+      "restrictedDescription": "Only you and invited people",
+      "searching": "Searching workspace members…",
+      "searchUnavailable": "Member search is temporarily unavailable. Try again shortly.",
+      "share": "Invite",
+      "updateUnavailable": "Could not update sharing. Try again shortly.",
+      "viewers": "People with access",
+      "workspace": "Workspace",
+      "workspaceDescription": "{{organization}} members and invited people",
+      "workspaceDescriptionUnnamed": "Workspace members and invited people"
+    },
     "preview": {
       "audioLabel": "Audio preview for {{filename}}",
       "badge": "Preview",

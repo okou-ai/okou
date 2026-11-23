@@ -29,6 +29,7 @@
     <string name="settings_account_select">선택</string>
     <string name="settings_account_reconnect">다시 연결해야 함</string>
     <string name="settings_account_switching">전환 중…</string>
+    <string name="settings_account_switch_unconfirmed">전환 결과 미확인</string>
     <string name="settings_account_switch_failed">계정을 전환하지 못했습니다.</string>
     <string name="settings_quota">할당량</string>
     <string name="settings_hour_quota">%1$d시간 할당량</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">매우 높음</string>
     <string name="settings_model_effort_max">최대</string>
     <string name="settings_model_effort_ultra">울트라</string>
+    <string name="settings_refreshing_model_accounts">모델 계정 새로고침 중</string>
+    <string name="settings_refreshing_credit_balance">크레딧 잔액 새로고침 중</string>
 </resources>

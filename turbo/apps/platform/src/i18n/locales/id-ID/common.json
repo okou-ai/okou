@@ -574,6 +574,28 @@
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"
     },
+    "people": {
+      "accounts": "Anggota ruang kerja yang cocok",
+      "anyone": "Siapa saja",
+      "empty": "Belum ada orang lain yang memiliki akses.",
+      "hint": "Di luar ruang kerja Anda? Gunakan alamat email lengkapnya.",
+      "invitationProcessed": "Undangan berbagi telah diproses",
+      "label": "Bagikan dengan orang",
+      "noAccounts": "Tidak ada anggota yang cocok. Masukkan email lengkap untuk mengundang.",
+      "placeholder": "Nama atau alamat email",
+      "remove": "Hapus akses {{email}}",
+      "removed": "Akses dihapus",
+      "restricted": "Orang yang diundang",
+      "restrictedDescription": "Hanya Anda dan orang yang diundang",
+      "searching": "Mencari anggota ruang kerja…",
+      "searchUnavailable": "Pencarian anggota sementara tidak tersedia. Coba lagi sebentar.",
+      "share": "Undang",
+      "updateUnavailable": "Tidak dapat memperbarui pengaturan berbagi. Coba lagi sebentar.",
+      "viewers": "Orang dengan akses",
+      "workspace": "Ruang kerja",
+      "workspaceDescription": "Anggota {{organization}} dan orang yang diundang",
+      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang"
+    },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",
       "badge": "Pratinjau",

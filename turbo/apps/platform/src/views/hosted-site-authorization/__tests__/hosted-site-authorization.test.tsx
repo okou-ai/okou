@@ -64,28 +64,28 @@ test.each([
   },
 );
 
-test("hosted-site-authorization-006 carries the complete pending verification through organization selection", async () => {
-  const bridge = verificationPath(
-    "https://archive.okou.app",
-    "/notes?edition=2&section=index",
+test("An invited website viewer without an organization reaches the signed site callback", async () => {
+  const origin = "https://archive.okou.app";
+  const path = verificationPath(origin, "/annual-report");
+  const callback = new URL("/.okou/auth/callback", origin);
+  callback.searchParams.set("code", "d".repeat(64));
+  callback.searchParams.set(
+    "state",
+    new URL(path, origin).searchParams.get("state")!,
   );
+  context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
+    return respond(200, { callbackUrl: callback.href });
+  });
   await startPage({
     context,
     host: "app.okou.ai",
-    path: bridge,
+    path,
     auth: {
-      user: { id: "archive-reviewer", fullName: "Archive Reviewer" },
+      user: { id: "invited-reader", fullName: "Invited Reader" },
       organization: { activeOrg: null, memberships: [] },
     },
   });
   await waitFor(() => {
-    return expect(location.pathname).toBe("/sign-in/tasks/choose-organization");
+    expect(location.href).toBe(callback.href);
   });
-  const choice = new URL(location.href);
-  expect(choice.origin + choice.pathname).toBe(
-    "https://app.okou.ai/sign-in/tasks/choose-organization",
-  );
-  expect(choice.searchParams.get("redirect_url")).toBe(
-    "https://app.okou.ai" + bridge,
-  );
 });

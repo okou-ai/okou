@@ -591,6 +591,28 @@
       "generated": "Gerado em {{date}}",
       "updated": "Atualizado em {{date}}"
     },
+    "people": {
+      "accounts": "Membros correspondentes do espaço de trabalho",
+      "anyone": "Qualquer pessoa",
+      "empty": "Ninguém mais tem acesso ainda.",
+      "hint": "Fora do seu espaço de trabalho? Use o e-mail completo da pessoa.",
+      "invitationProcessed": "Convite de compartilhamento processado",
+      "label": "Compartilhar com pessoas",
+      "noAccounts": "Nenhum membro correspondente. Digite um e-mail completo para convidar.",
+      "placeholder": "Nome ou endereço de e-mail",
+      "remove": "Remover acesso de {{email}}",
+      "removed": "Acesso removido",
+      "restricted": "Pessoas convidadas",
+      "restrictedDescription": "Somente você e as pessoas convidadas",
+      "searching": "Buscando membros do espaço de trabalho…",
+      "searchUnavailable": "A busca de membros está temporariamente indisponível. Tente novamente em instantes.",
+      "share": "Convidar",
+      "updateUnavailable": "Não foi possível atualizar o compartilhamento. Tente novamente em instantes.",
+      "viewers": "Pessoas com acesso",
+      "workspace": "Espaço de trabalho",
+      "workspaceDescription": "Membros de {{organization}} e pessoas convidadas",
+      "workspaceDescriptionUnnamed": "Membros do espaço de trabalho e pessoas convidadas"
+    },
     "preview": {
       "audioLabel": "Visualização de áudio de {{filename}}",
       "badge": "Visualizar",
