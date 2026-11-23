@@ -186,6 +186,11 @@ class ScreenshotScenario {
                             awaitProgressActivity(indicator.visibleBounds)
                             ScreenshotCapture.capture("chat-resources-phone-sync.png")
                             visible
+                        } catch (error: Throwable) {
+                            runCatching { ScreenshotCapture.capture("chat-resources-sync-diagnostic.png") }
+                                .exceptionOrNull()
+                                ?.let(error::addSuppressed)
+                            throw error
                         } finally {
                             refresh.release?.countDown()
                         }
@@ -296,24 +301,31 @@ class ScreenshotScenario {
         }
 
     private fun awaitProgressActivity(bounds: Rect) {
+        var widestSegment = 0
         val painted =
             device.wait(
                 Condition<UiDevice, Boolean> {
                     val frame = takeScreenshot()
                     try {
-                        (bounds.left until bounds.right).count { x ->
-                            val color = frame.getPixel(x, bounds.centerY())
-                            Color.red(color) > 225 &&
-                                Color.green(color) < 220 &&
-                                Color.blue(color) < 90
-                        } >= 24
+                        val region = Rect(bounds)
+                        check(region.intersect(0, 0, frame.width, frame.height))
+                        val width = (region.top until region.bottom).maxOf { y ->
+                            (region.left until region.right).count { x ->
+                                val color = frame.getPixel(x, y)
+                                Color.red(color) > 225 &&
+                                    Color.green(color) < 220 &&
+                                    Color.blue(color) < 90
+                            }
+                        }
+                        widestSegment = maxOf(widestSegment, width)
+                        width >= 24
                     } finally {
                         frame.recycle()
                     }
                 },
                 12_000L,
             )
-        assertTrue("The progress bar needs a visible activity segment", painted == true)
+        assertTrue("No visible progress segment in $bounds (widest: $widestSegment px)", painted == true)
     }
 
     private fun assertWidth(activity: ActivityScenario<MainActivity>, width: Int) {
