@@ -185,13 +185,6 @@ final class ConnectorActionStore {
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
     flow.usesSystemAuthenticationSession = false
-    if ["auth-code", "automatic", "openid-auth"].contains(flow.method?.grantKind ?? "")
-      || flow.status.custom?.usesBrowserAuthorization == true
-    {
-      let usesSystemSession = try await service.usesSystemAuthenticationSession()
-      try check(flow)
-      flow.usesSystemAuthenticationSession = usesSystemSession
-    }
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options)
     try check(flow)
@@ -199,7 +192,6 @@ final class ConnectorActionStore {
     flow.code = ""
     flow.browserClosed = false
     if let sessionID = result.sessionId {
-      flow.usesSystemAuthenticationSession = false
       guard UUID(uuidString: sessionID) != nil, result.sessionToken != nil,
         let expires = result.expiresIn, expires > 0
       else { throw APIClientError.invalidResponse }
@@ -213,9 +205,13 @@ final class ConnectorActionStore {
     }
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
+      let url = try browserURL(result.authorizationUrl)
+      let usesSystemSession = try await service.usesSystemAuthenticationSession()
+      try check(flow)
+      flow.usesSystemAuthenticationSession = usesSystemSession
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
-      flow.browserURL = try browserURL(result.authorizationUrl)
+      flow.browserURL = url
       startPolling(flow)
       return
     }
