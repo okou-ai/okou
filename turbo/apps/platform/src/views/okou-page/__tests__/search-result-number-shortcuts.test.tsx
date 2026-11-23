@@ -1,11 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  workflowsCollectionContract,
-  workflowsDetailContract,
-  type WorkflowSummary,
-} from "@okouai/api-contracts/contracts/workflows";
+import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   click,
   fill,
@@ -16,10 +11,6 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import {
-  artifactSummary,
-  fileArtifactDetail,
-} from "./chat-navigation-artifact-test-helpers.ts";
 import {
   chatListThread,
   fastButton,
@@ -60,65 +51,6 @@ function searchResultTitles(dialog: HTMLElement): string[] {
   return queryAllByRoleFast("option", dialog).map((option) => {
     return option.querySelector(".truncate")?.textContent ?? "";
   });
-}
-
-function installSearchResources() {
-  const workflow: WorkflowSummary = {
-    id: "f7000000-0000-4000-a000-000000000001",
-    name: "budget-review",
-    displayName: "Budget review",
-    description: null,
-    visibility: "private",
-    ownerUserId: "test-user",
-    createdAt: "2026-08-01T01:00:00.000Z",
-    canManage: true,
-    canPublish: true,
-    importSource: null,
-    official: null,
-  };
-  context.mocks.api(workflowsCollectionContract.list, ({ respond }) => {
-    return respond(200, [workflow]);
-  });
-  context.mocks.api(workflowsDetailContract.get, ({ respond }) => {
-    return respond(200, {
-      ...workflow,
-      createdByUserId: workflow.ownerUserId,
-      updatedByUserId: workflow.ownerUserId,
-      updatedAt: workflow.createdAt,
-      instruction: "Review the budget.",
-      files: [],
-      fileContents: [],
-      automations: [],
-    });
-  });
-  const artifact = artifactSummary(
-    "f7000000-0000-4000-a000-000000000002",
-    "file",
-    "Budget report",
-  );
-  context.mocks.http.get(
-    "https://cdn.vm7.io/search-shortcuts/budget.txt",
-    () => {
-      return new Response("Budget report contents", {
-        headers: { "Content-Type": "text/plain" },
-      });
-    },
-  );
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [artifact], nextCursor: null });
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(
-      200,
-      fileArtifactDetail(artifact, {
-        contentType: "text/plain",
-        fileId: "f7000000-0000-4000-a000-000000000002",
-        filename: "budget.txt",
-        url: "https://cdn.vm7.io/search-shortcuts/budget.txt",
-      }),
-    );
-  });
-  return { workflow, artifact };
 }
 
 test("Limit empty search to 25 cached chats in sidebar order", async () => {
@@ -255,69 +187,64 @@ test.each([
   },
 );
 
-test.each([
-  {
-    filter: "All",
-    titles: ["Budget planning", "Budget review", "Budget report"],
-    hints: ["1", "2", "3"],
-    digit: "3",
-  },
-])(
-  "Open a resource from numbered search results in $filter",
-  async ({ filter, titles, hints, digit }) => {
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
-      );
+test("Group matching chats before messages and open the first message with its shortcut", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return (
+      query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
+    );
+  });
+  const threads = Array.from({ length: 5 }, (_, index) => {
+    return chatListThread(
+      index + 1,
+      index === 0 ? "Planning" : `Budget ${index}`,
+    );
+  });
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 29,
+    threads,
+  });
+  const target = threads[0]!;
+  context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
+    return respond(200, {
+      results: Array.from({ length: 26 }, (_, index) => {
+        return {
+          chatThreadId: target.id,
+          matchedMessage: {
+            chatThreadId: target.id,
+            role: "user" as const,
+            content: `${query.keyword} note ${index + 1}`,
+            seqId: index + 1,
+            createdAt: target.sortAt,
+            runId: null,
+          },
+          matchedRanges: [{ start: 0, end: query.keyword.length }],
+        };
+      }),
     });
-    const titleMatch = chatListThread(1, "Budget planning");
-    const workspace = installContinuityWorkspace(context, {
-      caseId: 29,
-      threads: [titleMatch],
-    });
-    const { workflow, artifact } = installSearchResources();
-    await setupPage({
-      context,
-      path: `/`,
-      ...workspace.pageOptions,
-    });
-    const { dialog, search } = await openSearch();
-    await fill(search, "budget");
-    fireEvent.keyDown(search, { key: "Control", ctrlKey: true });
-    await waitFor(() => {
-      expect(searchResultTitles(dialog)).toStrictEqual([
-        "Budget planning",
-        "Budget review",
-        "Budget report",
-      ]);
-      expect(numberedHints(dialog)).toStrictEqual(["1", "2", "3"]);
-    });
-    const filterButton = queryAllByRoleFast("button", dialog).find((item) => {
-      return item.textContent === filter;
-    });
-    if (!filterButton) {
-      throw new Error(`Expected ${filter} filter`);
-    }
-    click(filterButton);
-    await waitFor(() => {
-      expect(searchResultTitles(dialog)).toStrictEqual(titles);
-      expect(numberedHints(dialog)).toStrictEqual(hints);
-    });
-    fireEvent.keyDown(search, {
-      key: digit,
-      code: `Digit${digit}`,
-      ctrlKey: true,
-      shiftKey: false,
-    });
-    const expectedPath =
-      filter === "Workflows" ? `/workflows/${workflow.id}` : "/artifacts";
-    const expectedArtifact = filter === "All" ? artifact.id : null;
-    const expectedTab = filter === "All" ? "file" : null;
-    await waitFor(() => {
-      expect(pathname()).toBe(expectedPath);
-      const searchParams = new URL(window.location.href).searchParams;
-      expect(searchParams.get("artifact")).toBe(expectedArtifact);
-      expect(searchParams.get("tab")).toBe(expectedTab);
-    });
-  },
-);
+  });
+  await setupPage({ context, path: "/", ...workspace.pageOptions });
+  const { dialog, search } = await openSearch();
+  await fill(search, "note");
+  const messageOnly = await within(dialog).findByRole("group", {
+    name: "Messages",
+  });
+  expect(queryAllByRoleFast("option", messageOnly)).toHaveLength(25);
+  expect(within(dialog).queryByRole("group", { name: "Chats" })).toBeNull();
+
+  await fill(search, "budget");
+  const messages = await within(dialog).findByRole("group", {
+    name: "Messages",
+  });
+  const chats = within(dialog).getByRole("group", { name: "Chats" });
+  expect(searchResultTitles(chats)).toStrictEqual([
+    "Budget 4",
+    "Budget 3",
+    "Budget 2",
+  ]);
+  expect(queryAllByRoleFast("option", messages)).toHaveLength(22);
+  fireEvent.keyDown(search, { key: "4", code: "Digit4", ctrlKey: true });
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${target.id}`);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});

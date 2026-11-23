@@ -6354,17 +6354,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Semua",
     "markAllRead": "Tandai semua sudah dibaca",
     "noResults": "Tidak ada hasil ditemukan",
     "resultCount_other": "{{count}} hasil",
     "searching": "Mencari...",
     "searchWorkspace": "Cari di ruang kerja...",
     "sections": {
-      "artifacts": "Artefak",
       "chats": "Chat",
-      "messages": "Pesan",
-      "workflows": "Alur kerja"
+      "messages": "Pesan"
     }
   },
   "ssh": {

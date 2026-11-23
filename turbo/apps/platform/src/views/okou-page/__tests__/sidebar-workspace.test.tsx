@@ -1,7 +1,6 @@
 import {
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
-  buttonByText,
   createSidebarHelpers,
   createThread,
   INCIDENT_THREAD_ID,
@@ -16,7 +15,6 @@ import {
   chatSearchContract,
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { emptySearchImg } from "../platform-assets.ts";
@@ -75,9 +73,6 @@ async function setupWorkspaceSearch({
           : [],
     });
   });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [], nextCursor: null });
-  });
 
   await setupSidebarPage({
     context,
@@ -98,16 +93,15 @@ async function setupWorkspaceSearch({
   return dialog;
 }
 
-test("Filter workspace search to matching messages", async () => {
+test("Navigate from a matching message in workspace search", async () => {
   const dialog = await setupWorkspaceSearch();
-  await waitFor(() => {
-    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
+  const messages = await within(dialog).findByRole("group", {
+    name: "Messages",
   });
-  click(buttonByText("Messages", dialog));
-  expect(
-    within(dialog).queryByText("Deployment notes"),
-  ).not.toBeInTheDocument();
-  expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
+  click(within(messages).getByText("Incident response"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${INCIDENT_THREAD_ID}`);
+  });
 });
 
 function searchResultOption(dialog: HTMLElement, text: string): HTMLElement {
@@ -138,16 +132,10 @@ test("Show running and unread chat states in workspace search results", async ()
   });
 });
 
-test("Filter workspace search to chats and navigate", async () => {
+test("Navigate from a matching chat in workspace search", async () => {
   const dialog = await setupWorkspaceSearch();
-  click(buttonByText("Chats", dialog));
-  await waitFor(() => {
-    expect(within(dialog).getByText("Deployment notes")).toBeInTheDocument();
-    expect(
-      within(dialog).queryByText("Incident response"),
-    ).not.toBeInTheDocument();
-  });
-  click(within(dialog).getByText("Deployment notes"));
+  const chats = await within(dialog).findByRole("group", { name: "Chats" });
+  click(within(chats).getByText("Deployment notes"));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);
     expect(
@@ -177,9 +165,6 @@ test("Show useful search-result ages and an illustrated empty state", async () =
   ]);
   context.mocks.api(chatSearchContract.search, ({ respond }) => {
     return respond(200, { results: [] });
-  });
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, { artifacts: [], nextCursor: null });
   });
 
   await setupSidebarPage({

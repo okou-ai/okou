@@ -6354,17 +6354,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部標為已讀",
     "noResults": "沒有找到結果",
     "resultCount_other": "{{count}} 條結果",
     "searching": "搜尋中…",
     "searchWorkspace": "搜尋工作區…",
     "sections": {
-      "artifacts": "成果",
       "chats": "聊天",
-      "messages": "訊息",
-      "workflows": "工作流"
+      "messages": "訊息"
     }
   },
   "ssh": {

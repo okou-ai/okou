@@ -6354,17 +6354,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "すべて",
     "markAllRead": "すべて既読としてマークする",
     "noResults": "結果が見つかりませんでした",
     "resultCount_other": "{{count}} 件の結果",
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "artifacts": "アーティファクト",
       "chats": "チャット",
-      "messages": "メッセージ",
-      "workflows": "ワークフロー"
+      "messages": "メッセージ"
     }
   },
   "ssh": {
