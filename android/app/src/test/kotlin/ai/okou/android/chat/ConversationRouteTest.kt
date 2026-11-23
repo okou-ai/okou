@@ -18,7 +18,6 @@ import ai.okou.android.historyEventWire
 import ai.okou.android.jsonResponse
 import android.content.ClipboardManager
 import androidx.activity.ComponentActivity
-import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -59,7 +58,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -111,8 +114,10 @@ class ConversationRouteTest {
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun canonicalHistoryShowsAuthoredJsonAndReferenceTitlesWithoutInternalPayloads() {
         val authored = """{"color":"blue"}"""
-        val source = "Launch decision"
+        val referenceTitle = "Launch decision"
         val file = "checklist.pdf"
+        val mcpPrompt = "Please check the release date."
+        val clientName = "Fixture MCP client"
         val reply = """{"status":"ready"}"""
         val followups = """[{"prompt":"Review the checklist"}]"""
         val rows =
@@ -122,7 +127,31 @@ class ConversationRouteTest {
                         17,
                         type = "input.prompt",
                         payload =
-                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(authored)}},{"type":"model","selectedModel":"fixture-internal-model"},{"type":"additional_info","text":"internal context only"},{"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":${JsonPrimitive(source)}},{"type":"file","fileId":"internal-file-id","filenameSnapshot":${JsonPrimitive(file)},"contentType":"application/pdf"},{"type":"future","opaqueKey":8}]}}""",
+                            """
+                            {"userMessage":{"version":1,"parts":[
+                                {"type":"text","text":${JsonPrimitive(authored)}},
+                                {"type":"model","selectedModel":"fixture-internal-model"},
+                                {"type":"additional_info","text":"internal context only"},
+                                {"type":"source","kind":"slack"},
+                                {"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":${JsonPrimitive(referenceTitle)}},
+                                {"type":"file","fileId":"internal-file-id","filenameSnapshot":${JsonPrimitive(file)},"contentType":"application/pdf"},
+                                {"type":"future","opaqueKey":8}
+                            ]}}
+                            """
+                                .trimIndent(),
+                    ),
+                    historyEventWire(
+                        scrollEventId(19),
+                        19,
+                        type = "input.prompt",
+                        payload =
+                            """
+                            {"userMessage":{"version":1,"parts":[
+                                {"type":"text","text":${JsonPrimitive(mcpPrompt)}},
+                                {"type":"source","kind":"mcp","clientId":"fixture-client-id","clientName":${JsonPrimitive(clientName)}}
+                            ]}}
+                            """
+                                .trimIndent(),
                     ),
                     historyEventWire(
                         scrollEventId(23),
@@ -148,28 +177,45 @@ class ConversationRouteTest {
                         payload = "null",
                     ),
                 )
-                .map(HistoryEvent::decode)
-        val transcript =
-            projectHistory(
-                HistoryCheckpoint(CHAT_PERSONAL, rows, HistoryCursor(scrollEventId(37), 37))
+                .map { Json.parseToJsonElement(it).jsonObject }
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0L
+            val tail = JsonArray(rows.filter { it.getValue("seqId").jsonPrimitive.long > after })
+            jsonResponse(
+                """{"rows":$tail,"cursor":{"lastEventId":"${scrollEventId(37)}","lastSeqId":37},"hasMore":false}"""
             )
-        assertTrue(scrollEventId(31) in transcript.persistedIds)
-        compose.setContent {
-            OkouTheme {
-                Column {
-                    for (row in conversationMessages(transcript.messages)) {
-                        ConversationMessageRow(row, revoke = null)
-                    }
-                }
-            }
         }
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_PERSONAL, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        val history = model.history.uiState.value
+        assertEquals(HistoryPhase.Ready, history.phase)
+        assertTrue(scrollEventId(31) in history.transcript?.persistedIds.orEmpty())
         compose.onNodeWithText(reply).assertIsDisplayed()
         compose.onNodeWithText(authored).assertIsDisplayed()
-        compose.onNodeWithText(source).assertIsDisplayed()
+        compose.onNodeWithText(referenceTitle).assertIsDisplayed()
         compose.onNodeWithText(file).assertIsDisplayed()
+        compose.onNodeWithText(mcpPrompt).assertIsDisplayed()
         compose
             .onNodeWithText(compose.activity.getString(R.string.history_unsupported))
             .assertIsDisplayed()
+        compose
+            .onNode(
+                hasText(clientName) or
+                    hasText(compose.activity.getString(R.string.history_reference))
+            )
+            .assertDoesNotExist()
         for (internal in
             listOf(
                 "fixture-internal-model",

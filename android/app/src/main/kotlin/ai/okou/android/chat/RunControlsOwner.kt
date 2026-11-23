@@ -218,7 +218,10 @@ internal class RunControlsOwner(
     fun skip(connection: Connection, threadId: String, eventId: String) {
         if (!current(connection)) return
         val state = connection.history.uiState.value
-        if (state.thread?.id != threadId || eventId !in state.transcript?.pendingInputIds.orEmpty())
+        if (
+            state.thread?.id != threadId ||
+                eventId !in state.transcript?.revocableInputIds.orEmpty()
+        )
             return
         append(
             connection,

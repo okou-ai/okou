@@ -52,6 +52,7 @@ data class HistoryTranscript(
     val liveRunIds: List<String> = listOfNotNull(activeRunId),
     val terminatedRunIds: Set<String> = emptySet(),
     val pendingInputIds: Set<String> = emptySet(),
+    val revocableInputIds: Set<String> = emptySet(),
 )
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
@@ -61,12 +62,19 @@ internal data class HistoryControlFacts(
     val liveRunIds: List<String>,
     val terminatedRunIds: Set<String>,
     val pendingInputIds: Set<String>,
+    val revocableInputIds: Set<String>,
 )
 
 /** Control readback uses event identities without re-decoding user documents on Main. */
 internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlFacts {
     val revoked = checkpoint.rows.mapNotNullTo(hashSetOf()) { it.revokesId }
     val rows = checkpoint.rows.filter { it.id !in revoked }
+    val pending =
+        rows.filter {
+            it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
+        }
+    // The recall endpoint requires an original queue entry.
+    val revocable = pending.filter { it.revokesId == null }
     val ended =
         checkpoint.rows
             .filter { it.terminal || it.type == "control.interrupt" }
@@ -81,12 +89,8 @@ internal fun historyControlFacts(checkpoint: HistoryCheckpoint): HistoryControlF
             .distinct()
             .toList(),
         ended,
-        rows
-            .asSequence()
-            .filter {
-                it.runId == null && (it.type == "input.prompt" || it.type == "input.automation")
-            }
-            .mapTo(mutableSetOf()) { it.id },
+        pending.mapTo(mutableSetOf()) { it.id },
+        revocable.mapTo(mutableSetOf()) { it.id },
     )
 }
 
@@ -222,6 +226,7 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
         liveRunIds,
         controls.terminatedRunIds,
         pending,
+        controls.revocableInputIds,
     )
 }
 
@@ -262,14 +267,14 @@ private fun userBlocks(value: JsonElement?): List<HistoryBlock> {
                 objectPart.text("text")?.let { HistoryBlock(HistoryBlockKind.Text, it) }
                     ?: HistoryBlock(HistoryBlockKind.Unsupported, part.toString())
             "model",
-            "additional_info" -> null
+            "additional_info",
+            "source" -> null
             "chat_thread",
             "template" -> objectPart.reference("titleSnapshot")
             "project" -> objectPart.reference("nameSnapshot")
             "file" -> objectPart.reference("filenameSnapshot")
             "automation" -> objectPart.reference("workflowName")
             "feedback" -> objectPart.reference("quote")
-            "source" -> objectPart.reference("clientName")
             "attachment",
             "image",
             "annotation" -> objectPart.reference()

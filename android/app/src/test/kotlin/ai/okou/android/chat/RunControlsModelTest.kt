@@ -878,6 +878,45 @@ class RunControlsModelTest {
     }
 
     @Test
+    fun queuedFollowupRemainsPendingWithoutSubmittingARevoke() = runTest {
+        val followup = eventId("recommended-followup")
+        val queued = eventId("queued-followup")
+        withControls(
+            initial =
+                listOf(
+                    input("input", 1),
+                    historyEventWire(
+                        id = followup,
+                        seq = 2,
+                        type = "output.followups",
+                        payload =
+                            """{"content":"{\"version\":1,\"followups\":[{\"prompt\":\"Check the checklist\",\"kind\":\"talk\"}]}"}""",
+                    ),
+                    historyEventWire(
+                        id = eventId("completed"),
+                        seq = 3,
+                        type = "run.completed",
+                        payload = "null",
+                    ),
+                    historyEventWire(
+                        id = queued,
+                        seq = 4,
+                        type = "input.prompt",
+                        payload =
+                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Check the checklist"}]}}""",
+                        run = null,
+                        revoke = followup,
+                    ),
+                )
+        ) { f ->
+            assertEquals(setOf(queued), f.history.uiState.value.transcript?.pendingInputIds)
+            f.controls.skip(CHAT_PERSONAL, queued)
+            assertTrue(f.controls.uiState.value.journal!!.pending.isEmpty())
+            assertTrue(f.remote.posts.isEmpty())
+        }
+    }
+
+    @Test
     fun controlReadFailureIsIndependentOfOrdinaryHistoryAndDoesNotPermitRetry() = runTest {
         withControls { f ->
             f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
