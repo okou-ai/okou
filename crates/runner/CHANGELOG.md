@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.111](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.110...runner-rs-v0.249.111) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share guarded idle history payload construction ([#50161](https://github.com/okou-ai/okou/issues/50161)) ([f88b877](https://github.com/okou-ai/okou/commit/f88b877447ffb173d532fa58104765dd3936ab76))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.110](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.109...runner-rs-v0.249.110) (2026-11-23)
 
 

@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">वर्कफ़्लो के निर्देश</string>
     <string name="workflow_keep_editing">संपादन जारी रखें</string>
     <string name="workflow_load_failed">वर्कफ़्लो लोड नहीं हो सके</string>
+    <string name="workflow_rules_load_failed">ट्रिगर के नियम लोड नहीं हो सके।</string>
     <string name="workflow_mail_from_contains">भेजने वाले में %1$s है</string>
     <string name="workflow_mail_labeled">Gmail लेबल लगा</string>
     <string name="workflow_mail_received">Gmail संदेश मिला</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Notion उपपेज बना</string>
     <string name="workflow_notion_item">Notion डेटाबेस आइटम बना</string>
     <string name="workflow_notion_updated">Notion पेज अपडेट हुआ</string>
-    <string name="workflow_offline">वर्कफ़्लो लोड करने के लिए ऑनलाइन जाएँ</string>
-    <string name="workflow_offline_cache">ऑफ़लाइन · पिछला लोड किया गया डेटा</string>
     <string name="workflow_offline_changes">सहेजने के लिए ऑनलाइन जाएँ। आपके बदलाव सुरक्षित हैं।</string>
     <string name="workflow_pause">रोकें</string>
     <string name="workflow_paused">ऑटोमेशन रुके हुए हैं</string>
@@ -113,7 +112,6 @@
     <string name="workflow_history_event">इवेंट</string>
     <string name="workflow_history_failed">रन का इतिहास लोड नहीं हो सका</string>
     <string name="workflow_history_loading">रन का इतिहास लोड हो रहा है…</string>
-    <string name="workflow_history_offline">रन का इतिहास लोड करने के लिए कनेक्ट करें</string>
     <string name="workflow_history_open_chat">संबंधित चैट खोलें</string>
     <string name="workflow_history_unavailable">रन का इतिहास उपलब्ध नहीं है</string>
     <string name="workflow_run_pending">लंबित</string>

@@ -41,7 +41,11 @@ data class HistoryMessage(
     val rejected: Boolean = false,
     val status: String? = null,
     val failureReason: String? = null,
+    val queueSequence: Long? = null,
+    val queuedWorkflow: QueuedWorkflow? = null,
 )
+
+data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
 
 data class HistoryTranscript(
     val messages: List<HistoryMessage>,
@@ -54,6 +58,9 @@ data class HistoryTranscript(
     val pendingInputIds: Set<String> = emptySet(),
     val revocableInputIds: Set<String> = emptySet(),
 )
+
+internal fun HistoryTranscript.hasSettledInput(eventId: String) =
+    eventId in persistedIds && eventId !in pendingInputIds
 
 internal fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.contentOrNull
 
@@ -186,6 +193,17 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
             if (row.type == "control.interrupt") "run.cancelled"
             else row.type.takeIf { row.terminal || it == "output.error" },
             if (row.type == "run.failed") row.failureReason else null,
+            queueSequence = row.seqId.takeIf { row.id in pending },
+            queuedWorkflow =
+                if (row.id in queued) {
+                    val document = row.userMessage as? JsonObject
+                    val part =
+                        (document?.get("parts") as? JsonArray)
+                            ?.asSequence()
+                            ?.mapNotNull { it as? JsonObject }
+                            ?.firstOrNull { it.text("type") == "automation" }
+                    QueuedWorkflow(part?.text("workflowName"), part?.text("automationBrief"))
+                } else null,
         )
     }
     val endedRuns = terminals + interrupted

@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">Istruzioni del flusso di lavoro</string>
     <string name="workflow_keep_editing">Continua a modificare</string>
     <string name="workflow_load_failed">Impossibile caricare i flussi di lavoro</string>
+    <string name="workflow_rules_load_failed">Impossibile caricare le regole di attivazione.</string>
     <string name="workflow_mail_from_contains">Il mittente contiene %1$s</string>
     <string name="workflow_mail_labeled">Etichetta Gmail applicata</string>
     <string name="workflow_mail_received">Messaggio Gmail ricevuto</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Sottopagina Notion creata</string>
     <string name="workflow_notion_item">Elemento del database Notion creato</string>
     <string name="workflow_notion_updated">Pagina Notion aggiornata</string>
-    <string name="workflow_offline">Connettiti per caricare i flussi di lavoro</string>
-    <string name="workflow_offline_cache">Offline · Ultimi dati caricati</string>
     <string name="workflow_offline_changes">Connettiti per salvare. Le tue modifiche sono ancora disponibili.</string>
     <string name="workflow_pause">Sospendi</string>
     <string name="workflow_paused">Automazioni in pausa</string>
@@ -114,7 +113,6 @@
     <string name="workflow_history_event">Evento</string>
     <string name="workflow_history_failed">Impossibile caricare la cronologia delle esecuzioni</string>
     <string name="workflow_history_loading">Caricamento della cronologia delle esecuzioni…</string>
-    <string name="workflow_history_offline">Connettiti per caricare la cronologia delle esecuzioni</string>
     <string name="workflow_history_open_chat">Apri la chat di origine</string>
     <string name="workflow_history_unavailable">Cronologia delle esecuzioni non disponibile</string>
     <string name="workflow_run_pending">In attesa</string>

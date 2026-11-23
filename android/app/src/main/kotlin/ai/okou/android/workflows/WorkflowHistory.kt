@@ -45,15 +45,13 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?) {
     if (failure != null) {
-        WorkflowNotice(
-            when (failure) {
-                WorkflowReadFailure.Unavailable -> R.string.workflow_history_unavailable
-                WorkflowReadFailure.Offline -> R.string.workflow_history_offline
-                WorkflowReadFailure.CouldNotLoad,
-                WorkflowReadFailure.RefreshFailed -> R.string.workflow_history_failed
-            },
+        WorkflowInitialReadError(
+            if (failure == WorkflowReadFailure.Unavailable) R.string.workflow_history_unavailable
+            else R.string.workflow_history_failed,
         )
-    } else if (rememberChatWaitIndicator(true)) {
+    } else if (
+        rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)
+    ) {
         val label = stringResource(R.string.workflow_history_loading)
         Column(
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {

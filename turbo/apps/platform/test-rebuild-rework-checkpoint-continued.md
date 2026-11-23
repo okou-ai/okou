@@ -3124,3 +3124,7 @@ Separate Chromium Vitest rows exercise the two-document session channel lifecycl
 The main sync keeps the member-only permission path, migrates the Markdown-first Lab override and preserves the catalog preview refresh. The five upstream suggestion analytics scenarios from #50158 run with their original behavior alongside the rebuilt suggestion suite. These upstream cases do not count toward batch 87 first verification.
 
 [Fixed selection](https://app.okou.ai/artifacts/rolqu8277z.md) · [44 ID dispositions](./test-rebuild-batch-87.tsv) · [Shared queue](./test-rebuild-first-pass.tsv)
+
+## Batch 87 recovery and main sync
+
+The original tested head is `fbdf7abc75090a18ff40ad0c15b4d28fff18e3c5`. The synchronization through `18bb4f75f0909b35d2aec9c398e36a894611083c` retains the withdrawal of project-deletion.test.tsx in b9aa48260b. Upstream #50164 changes five deletion-button labels in the archived-page, unknown-thread-deletion retry, changed membership, open-thread completion and unknown-project-deletion retry cases (counts 101, 3, 1, 3 and 1). Three routed editor rows independently check the singular/plural wording and confirmation list for those distinct counts, including the second archived page. This synchronization credits the changed label and preview, not all of the older retry behavior. The eight upstream #50081 Markdown quoting rows remain separate from frozen-ID acceptance. The shared queue is 136 pending after 485 first-pass files, with zero first-pass failures.

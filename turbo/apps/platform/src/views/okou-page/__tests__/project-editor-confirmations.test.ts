@@ -1,3 +1,5 @@
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill } from "../../../__tests__/page-helper.ts";
@@ -112,3 +114,44 @@ test("projects-049 The optimistic renamed folder appears before its persisted na
     queryFastControl("button", "Show or hide chats in Launch renamed"),
   ).toBeNull();
 });
+
+test.each([1, 3, 101])(
+  "Deleting a project with %i conversations previews the named threads",
+  async (count) => {
+    const collection = project("Field notes");
+    await projectEditor(context, [collection]);
+    const records = Array.from({ length: count }, (_, index) => {
+      return chatListThread(index + 1, "Field record " + (index + 1), {
+        archived: true,
+        projectId: collection.id,
+      });
+    });
+    context.mocks.api(projectsContract.threads, ({ query, respond }) => {
+      if (query.archived === "false") {
+        return respond(200, { threads: [], nextAfter: null });
+      }
+      const start =
+        records.findIndex((item) => {
+          return item.id === query.after;
+        }) + 1;
+      const page = records.slice(start, start + query.limit);
+      return respond(200, {
+        threads: page,
+        nextAfter: start + page.length < count ? page.at(-1)!.id : null,
+      });
+    });
+    const choices = await options(collection.name, "Delete");
+    const label =
+      count === 1
+        ? "Delete project and 1 thread"
+        : "Delete project and " + count + " threads";
+    click(await findFastControl("button", label, choices));
+    const review = await screen.findByRole("dialog", {
+      name: "Delete project and threads?",
+    });
+    expect(
+      within(review).getByText("Field record " + count, { exact: true }),
+    ).toBeInTheDocument();
+    expect(within(review).getAllByRole("listitem")).toHaveLength(count);
+  },
+);

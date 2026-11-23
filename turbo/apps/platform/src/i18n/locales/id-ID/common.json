@@ -5157,7 +5157,7 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",

@@ -32,6 +32,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -65,7 +66,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -128,9 +131,89 @@ internal fun conversationMessages(messages: List<HistoryMessage>): List<Conversa
 private fun HistoryMessage.isReply() = role == HistoryRole.Assistant && blocks.isNotEmpty()
 
 @Composable
+internal fun QueuedMessageCard(
+    entry: ConversationMessage,
+    controls: ConversationRunControls?,
+) {
+    val message = entry.message
+    val workflow = message.queuedWorkflow
+    val revoke = controls?.revoke(message.id, entry.preview)
+    val phase = controls?.withdrawalPhase(message.id)
+    val check = controls?.checkWithdrawal(message.id)
+    val colors = MaterialTheme.colorScheme
+    val queued = stringResource(R.string.history_queued)
+    val status =
+        when (phase) {
+            null,
+            RunControlPhase.Retryable ->
+                if (workflow == null) queued
+                else
+                    "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
+            RunControlPhase.Unknown ->
+                stringResource(
+                    if (workflow == null) R.string.conversation_withdraw_unknown
+                    else R.string.conversation_skip_unknown,
+                )
+            else ->
+                stringResource(
+                    if (workflow == null) R.string.conversation_withdrawing
+                    else R.string.conversation_skipping,
+                )
+        }
+    Surface(
+        modifier = Modifier.fillMaxWidth().testTag("message_${message.id}"),
+        shape = RoundedCornerShape(12.dp),
+        color = colors.surface,
+        border = BorderStroke(1.dp, colors.outline),
+    ) {
+        Row(
+            Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                    ConversationMeta(status)
+                    if (phase == RunControlPhase.Retryable)
+                        ConversationMeta(
+                            stringResource(
+                                if (workflow == null) R.string.conversation_withdraw_failed
+                                else R.string.conversation_skip_failed,
+                            ),
+                        )
+                }
+                if (workflow?.name != null)
+                    Text(workflow.name, style = MaterialTheme.typography.bodyMedium)
+                else MessageBody(message, compact = true)
+                if (phase == RunControlPhase.Unknown)
+                    TextButton(onClick = { check?.invoke() }, enabled = check != null) {
+                        Text(stringResource(R.string.controls_check))
+                    }
+            }
+            IconButton(
+                onClick = { revoke?.invoke() },
+                enabled = revoke != null,
+                modifier = Modifier.size(48.dp),
+                colors =
+                    IconButtonDefaults.iconButtonColors(contentColor = colors.onSurfaceVariant),
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_close),
+                    contentDescription =
+                        stringResource(
+                            if (workflow == null) R.string.conversation_revoke
+                            else R.string.conversation_skip_automation,
+                        ),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 internal fun ConversationMessageRow(
     entry: ConversationMessage,
-    revoke: (() -> Unit)?,
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
@@ -138,31 +221,6 @@ internal fun ConversationMessageRow(
     val message = entry.message
     val colors = MaterialTheme.colorScheme
     when {
-        message.queued && message.role == HistoryRole.User ->
-            Surface(
-                modifier = Modifier.fillMaxWidth().testTag("message_${message.id}"),
-                shape = RoundedCornerShape(12.dp),
-                color = colors.surface,
-                border = BorderStroke(1.dp, colors.outline),
-            ) {
-                Row(
-                    Modifier.padding(start = 12.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        ConversationMeta(stringResource(R.string.history_queued))
-                        MessageBody(message, compact = true, findHighlight = findHighlight)
-                    }
-                    TextButton(
-                        onClick = { revoke?.invoke() },
-                        enabled = revoke != null,
-                        colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-                    ) {
-                        Text(stringResource(R.string.conversation_revoke))
-                    }
-                }
-            }
         message.role == HistoryRole.User ->
             Box(
                 Modifier.fillMaxWidth().testTag("message_${message.id}"),
