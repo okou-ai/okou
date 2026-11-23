@@ -522,8 +522,8 @@ internal fun ConnectorSheet(
     actions: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height.dp
-    val fullScreen = expandInShortWindow && windowHeight < 480.dp
+    val shortWindow = currentWindowSizeDp().height < 480
+    val fullScreen = expandInShortWindow && shortWindow
     val scroll = key(title) { rememberScrollState() }
     val titleStyle =
         if (fullScreen)
@@ -534,7 +534,6 @@ internal fun ConnectorSheet(
             if (fullScreen) Modifier.fillMaxSize()
             else
                 Modifier.fillMaxWidth()
-                    .heightIn(max = windowHeight * 0.80f)
                     .animateContentSize(
                         alignment = if (centered) Alignment.Center else Alignment.BottomCenter,
                     )
@@ -545,7 +544,7 @@ internal fun ConnectorSheet(
                     start = 16.dp,
                     end = 16.dp,
                     top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
+                    bottom = if (shortWindow) 12.dp else 22.dp,
                 ),
         ) {
             val minimumControlsHeight =
