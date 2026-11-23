@@ -1449,6 +1449,19 @@ internal fun OkouApp(
                                     onMoreArtifacts = { term, cursor ->
                                         workspaceSearch?.nextArtifacts(term, cursor)
                                     },
+                                    onRetrySearch = {
+                                        workspaceSearch?.update(
+                                            searchKeyword,
+                                            searchState.type,
+                                            artifactsAvailable = searchArtifactsAvailable,
+                                            visible = searchVisible,
+                                            retryFailed = true,
+                                        )
+                                        if (
+                                            searchState.type.includes(WorkspaceSearchType.Workflows)
+                                        )
+                                            workflows?.retrySearchCatalog()
+                                    },
                                     onOpenWorkflow =
                                         if (!searchWorkflowsAvailable) null
                                         else

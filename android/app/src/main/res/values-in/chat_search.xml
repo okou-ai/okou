@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">Direktori workflow tidak dapat diperbarui. Pencarian menggunakan direktori terakhir yang dimuat.</string>
     <string name="chat_search_artifacts_failed">Tidak dapat mencari artefak</string>
     <string name="chat_search_loading">Sedang mencari…</string>
+    <string name="chat_search_failed">Tidak dapat memuat hasil pencarian</string>
 </resources>

@@ -115,6 +115,9 @@ internal val SearchRead<*>?.hasFailure: Boolean
             else -> false
         }
 
+internal val SearchRead<*>?.canRetrySearch: Boolean
+    get() = this != SearchRead.AccessLost && hasFailure
+
 private fun <T> SearchRead<T>.updated(read: SearchRead<T>): SearchRead<T> =
     when {
         this !is SearchRead.Ready -> read
@@ -166,6 +169,7 @@ internal constructor(
         type: WorkspaceSearchType,
         artifactsAvailable: Boolean = false,
         visible: Boolean = true,
+        retryFailed: Boolean = false,
     ) {
         if (!authorized()) return
         val previousType = visibleType.value
@@ -188,7 +192,9 @@ internal constructor(
         if (type.includes(WorkspaceSearchType.Messages)) {
             request(
                 WorkspaceSearchType.Messages,
-                refresh = previousType?.includes(WorkspaceSearchType.Messages) != true,
+                refresh =
+                    previousType?.includes(WorkspaceSearchType.Messages) != true ||
+                        retryFailed && mutable.value.messages.canRetrySearch,
                 read = { SearchRead.Ready(service.searchMessages(keyword)) },
             ) { state, read ->
                 state.copy(messages = state.messages.updated(read))
@@ -202,7 +208,10 @@ internal constructor(
             // A preview return must retain any pages needed to restore the selected result.
             val refresh =
                 previousType?.includes(WorkspaceSearchType.Artifacts) != true &&
-                    (previousType != null || mutable.value.artifacts.hasFailure)
+                    (previousType != null || mutable.value.artifacts.hasFailure) ||
+                    retryFailed &&
+                        (mutable.value.artifacts.canRetrySearch ||
+                            mutable.value.moreArtifactsFailed)
             request(WorkspaceSearchType.Artifacts, refresh, { artifactPage(keyword, null) }) {
                 state,
                 read ->
