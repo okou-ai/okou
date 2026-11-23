@@ -613,15 +613,14 @@ class ChatListRootTest {
     fun returningToRecentSearchFocusesTheOpenedChatAfterItMovesUp() {
         val app = compose.activity.application as ChatListApplication
         val threads = List(8) { UUID.randomUUID().toString() }
-        val events =
-            threads.mapIndexed { index, id ->
-                chatEventWire(
-                    id = UUID.randomUUID().toString(),
-                    seq = 17L + index,
-                    thread = id,
-                    title = "Visit $index",
-                )
-            }
+        val events = threads.mapIndexed { index, id ->
+            chatEventWire(
+                id = UUID.randomUUID().toString(),
+                seq = 17L + index,
+                thread = id,
+                title = "Visit $index",
+            )
+        }
         app.fixture.historyThreadIds = threads.toSet()
         app.fixture.events = { request ->
             val rows =
@@ -631,15 +630,11 @@ class ChatListRootTest {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val ready =
-            compose.runOnIdle {
-                checkNotNull(
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready
-                )
-            }
+        val ready = compose.runOnIdle {
+            checkNotNull(
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready,
+            )
+        }
         runBlocking { threads.forEach { app.searchRecents.record(ready.identity, it) } }
 
         compose.onNodeWithContentDescription("Search workspace").performClick()
@@ -770,7 +765,7 @@ class ChatListRootTest {
                   "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                     "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
                   "matchedRanges":[{"start":7,"end":14}]}]}
-                """
+                """,
             )
         }
         app.responseGate.countDown()
@@ -817,7 +812,7 @@ class ChatListRootTest {
                   "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                     "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
                   "matchedRanges":[{"start":7,"end":14}]}]}
-                """
+                """,
             )
         }
         app.responseGate.countDown()
@@ -873,22 +868,21 @@ class ChatListRootTest {
                   "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
                     "content":"$text","createdAt":"$CHAT_DATE","seqId":41,"runId":"$HISTORY_RUN"},
                   "matchedRanges":[{"start":4,"end":10}]}]}
-                """
+                """,
             )
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        val history =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .chats
-                    .history
-            }
+        val history = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+                .history
+        }
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
         compose.waitUntil(10_000) {
             compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
@@ -913,7 +907,7 @@ class ChatListRootTest {
                 val event =
                     historyEventWire(id = eventId, seq = 41, payload = """{"content":"$text"}""")
                 jsonResponse(
-                    """{"rows":[$event],"cursor":{"lastEventId":"$eventId","lastSeqId":41},"hasMore":false}"""
+                    """{"rows":[$event],"cursor":{"lastEventId":"$eventId","lastSeqId":41},"hasMore":false}""",
                 )
             }
         }
