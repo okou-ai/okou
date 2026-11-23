@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.105.0](https://github.com/okou-ai/okou/compare/api-v2.104.5...api-v2.105.0) (2026-11-23)
+
+
+### Features
+
+* **android:** show confirmed workflow run history ([#50055](https://github.com/okou-ai/okou/issues/50055)) ([a3c5ba1](https://github.com/okou-ai/okou/commit/a3c5ba1c7418d75fa58233da2de637380ed1814b))
+* **api:** separate app store and testflight minimum versions ([#50101](https://github.com/okou-ai/okou/issues/50101)) ([fe33370](https://github.com/okou-ai/okou/commit/fe333701c6a92676741d61982e3aeadd99fd0f85))
+
+
+### Performance Improvements
+
+* **api:** overlap memory and network policy preparation ([#50090](https://github.com/okou-ai/okou/issues/50090)) ([717a564](https://github.com/okou-ai/okou/commit/717a564f4d61fb25b7bdbdf2876b6d158189a6b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+    * @okouai/core bumped to 8.860.3
+    * @okouai/db bumped to 2.58.15
+    * @okouai/pi-agent-runtime bumped to 1.52.44
+
 ## [2.104.5](https://github.com/okou-ai/okou/compare/api-v2.104.4...api-v2.104.5) (2026-11-23)
 
 
