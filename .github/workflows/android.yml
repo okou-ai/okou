@@ -101,7 +101,7 @@ jobs:
       - name: Install Android SDK
         run: bash android/scripts/setup-sdk.sh --accept-licenses
       - name: Test native state and application, lint, and assemble
-        run: bash android/scripts/check.sh
+        run: bash android/scripts/check.sh -Pokou.debugUnitTestForks=2
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-debug-${{ github.sha }}

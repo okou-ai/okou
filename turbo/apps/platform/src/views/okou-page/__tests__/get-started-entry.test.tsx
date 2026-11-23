@@ -435,24 +435,45 @@ test("get-started-entry-018 browsing connectors leaves the quest dialog for the 
 });
 function checkIn(
   data: GetStartedStatus,
-  hold: Promise<void> | undefined,
-  review = false,
+  options: {
+    statusGate?: Promise<void>;
+    claimGate?: () => Promise<void>;
+    pendingReview?: boolean;
+    statusUnavailable?: boolean;
+    retryClaim?: boolean;
+  } = {},
 ) {
   let confirmed = false;
   const refreshed = context.mocks.deferred<void>();
-  serve(data, () => {
-    if (!confirmed) {
-      return undefined;
+  let retry = options.retryClaim;
+  context.mocks.api(getStartedContract.status, async ({ respond }) => {
+    if (confirmed) {
+      if (!refreshed.settled()) {
+        refreshed.resolve();
+      }
+      await options.statusGate;
+      if (options.statusUnavailable) {
+        return respond(503, {
+          error: {
+            code: "SERVICE_UNAVAILABLE",
+            message: "Rewards status unavailable",
+          },
+        });
+      }
     }
-    if (!refreshed.settled()) {
-      refreshed.resolve();
-    }
-    return hold;
+    return respond(200, data);
   });
-  context.mocks.api(getStartedContract.checkin, ({ respond }) => {
+  context.mocks.api(getStartedContract.checkin, async ({ respond }) => {
+    await options.claimGate?.();
+    if (retry) {
+      retry = false;
+      return respond(503, {
+        error: { code: "SERVICE_UNAVAILABLE", message: "Check-in unavailable" },
+      });
+    }
     confirmed = true;
     const row = record(data, "checkin");
-    if (review) {
+    if (options.pendingReview) {
       row.pendingCount = 1;
       return respond(202, {
         status: "pending",
@@ -480,41 +501,134 @@ function checkIn(
   });
   return refreshed;
 }
-test("get-started-entry-036 the ninth daily check-in confirms its streak and credits in the menu", async () => {
-  const days = 8;
+function rewardReceipt() {
+  return screen.findByRole("dialog", { name: "Checked in for today" });
+}
+test("get-started-entry-036 a ninth-day receipt shows the award and returns focus to the rewards entry", async () => {
   const data = rewards(["connector", "invite", "checkin"]);
-  data.checkinStreak = days;
-  checkIn(data, undefined);
+  data.checkinStreak = 8;
+  checkIn(data);
   await home(false);
-  await open();
+  const entry = await open();
   click(await quest("checkin"));
-  await screen.findByText("Checked in");
-  const row = await quest("checkin");
-  expect(row).toHaveTextContent(String(days + 1) + "-day streak");
-  expect(row).toHaveTextContent("100");
-  expect(row).not.toHaveAttribute("role", "menuitem");
+  const receipt = await rewardReceipt();
+  await within(receipt).findByText("9-day streak");
+  expect(receipt).toHaveTextContent("+100 credits");
+  click(await findFastControl("button", "Back to work", receipt));
+  await waitFor(() => {
+    expect(receipt).not.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  });
 });
-test("get-started-entry-037 check-in stays busy until the refreshed reward and ninth day are delivered", async () => {
+test("get-started-entry-037 the confirmed credit arrives before the refreshed ninth-day streak", async () => {
   const data = rewards(["connector", "checkin"]);
   data.checkinStreak = 8;
-  const delivery = context.mocks.deferred<void>();
-  const asked = checkIn(data, delivery.promise);
+  const claim = context.mocks.deferred<void>(),
+    approve = context.mocks.deferred<void>(),
+    status = context.mocks.deferred<void>();
+  const refreshing = checkIn(data, {
+    statusGate: status.promise,
+    claimGate: async () => {
+      claim.resolve();
+      await approve.promise;
+    },
+  });
+  await home(false);
+  const entry = await open();
+  const row = await quest("checkin");
+  click(row);
+  await claim.promise;
+  expect(row).toHaveAttribute("aria-busy", "true");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  approve.resolve();
+  const receipt = await rewardReceipt();
+  await refreshing.promise;
+  expect(receipt).toHaveTextContent("+100 credits");
+  expect(receipt).not.toHaveTextContent("9-day streak");
+  expect(row).not.toBeInTheDocument();
+  status.resolve();
+  await within(receipt).findByText("9-day streak");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(receipt).not.toBeInTheDocument();
+    expect(entry).toHaveFocus();
+  });
+});
+test("The first daily credit receipt leads back to a completed check-in", async () => {
+  const data = rewards(["checkin", "connector"]);
+  data.checkinStreak = 0;
+  checkIn(data);
   await home(false);
   await open();
   click(await quest("checkin"));
-  await asked.promise;
-  await expect(quest("checkin")).resolves.toHaveAttribute("aria-busy", "true");
-  expect(screen.queryByText("Checked in")).toBeNull();
+  const receipt = await rewardReceipt();
+  await within(receipt).findByText("1-day streak");
+  expect(receipt).toHaveTextContent("+100 credits");
+  click(await findFastControl("button", "Back to work", receipt));
+  await waitFor(() => {
+    expect(receipt).not.toBeInTheDocument();
+  });
+  await open();
+  const completed = await quest("checkin");
+  expect(completed).toHaveTextContent("Checked in");
+  expect(completed).not.toHaveAttribute("role", "menuitem");
+});
+test("A member retries a rejected check-in and receives the credit confirmation", async () => {
+  checkIn(rewards(["checkin", "connector"]), { retryClaim: true });
+  await home(false);
+  await open();
+  click(await quest("checkin"));
+  await screen.findByText("Check-in unavailable");
   expect(screen.queryByRole("dialog")).toBeNull();
-  delivery.resolve();
-  await screen.findByText("Checked in");
-  const row = await quest("checkin");
-  expect(row).toHaveTextContent("9-day streak");
-  expect(row).toHaveTextContent("100");
+  const retry = await quest("checkin");
+  expect(retry).toHaveTextContent("Check in");
+  click(retry);
+  const receipt = await rewardReceipt();
+  expect(receipt).toHaveTextContent("+100 credits");
+});
+test("Leaving an outstanding check-in keeps the reopened rewards menu usable after the claim settles", async () => {
+  const request = context.mocks.deferred<void>(),
+    finish = context.mocks.deferred<void>();
+  checkIn(rewards(["checkin", "workflow", "connector"]), {
+    claimGate: async () => {
+      request.resolve();
+      await finish.promise;
+    },
+  });
+  await home(false);
+  await open();
+  click(await quest("checkin"));
+  await request.promise;
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+  await open();
+  finish.resolve();
+  const panel = await screen.findByRole("menu");
+  await within(panel).findByText("Checked in");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  click(await quest("workflow"));
+  await screen.findByRole("dialog");
+});
+test("The claim receipt can be dismissed after the rewards status becomes unavailable", async () => {
+  checkIn(rewards(["checkin", "invite"]), { statusUnavailable: true });
+  await home(false);
+  const entry = await open();
+  click(await quest("checkin"));
+  const receipt = await rewardReceipt();
+  await waitFor(() => {
+    expect(entry).not.toBeInTheDocument();
+  });
+  expect(receipt).toHaveTextContent("+100 credits");
+  click(await findFastControl("button", "Back to work", receipt));
+  await waitFor(() => {
+    expect(receipt).not.toBeInTheDocument();
+  });
 });
 test("get-started-entry-038 a check-in awaiting financial confirmation shows its review state", async () => {
   const data = rewards(["connector", "checkin"]);
-  checkIn(data, undefined, true);
+  checkIn(data, { pendingReview: true });
   await home(false);
   await open();
   click(await quest("checkin"));

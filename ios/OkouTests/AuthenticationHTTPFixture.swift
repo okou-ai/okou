@@ -118,8 +118,12 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    // Retire SDK-owned work and drain persistence before replacing this fixture's runtime.
-    await clerk.runtime.shutdown()
+    // Retire this fixture's runtime and drain its queued Keychain writes before replacing it.
+    // `runtime.shutdown()` would also await the SDK's cancelled tasks; session polling runs at
+    // background priority, which a busy simulator can leave unscheduled for tens of seconds.
+    clerk.runtime.state.retire()
+    clerk.runtime.stop()
+    await clerk.runtime.dependencies.cacheWrites.waitForPendingWrites()
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
