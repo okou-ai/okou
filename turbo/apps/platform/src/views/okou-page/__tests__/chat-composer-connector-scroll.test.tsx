@@ -74,7 +74,7 @@ test("chat-composer-connector-scroll-003 A filtered result list starts at the to
   expect(search).toHaveFocus();
   expect(screen.getByRole("list", { name: "Connectors" }).scrollTop).toBe(0);
 });
-test("chat-composer-connector-scroll-005 A removed account panel stays closed when its connector returns", async () => {
+async function reopenRestoredAccount(companions: number) {
   const connector = builtinConnector({
     slug: "github",
     label: "Review archive",
@@ -96,6 +96,28 @@ test("chat-composer-connector-scroll-005 A removed account panel stays closed wh
       }),
     ],
   });
+  const neighbors = Array.from({ length: companions }, (_, index) => {
+    const neighbor = {
+      kind: "custom",
+      customConnectorId: crypto.randomUUID(),
+    } as const;
+    const label = `Archive companion ${index}`;
+    return chatConnectorOverviewFixture({
+      target: neighbor,
+      label,
+      accounts: [
+        connectorAccount({
+          target: neighbor,
+          id: crypto.randomUUID(),
+          displayName: label,
+          isDefault: true,
+        }),
+      ],
+    });
+  });
+  context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
+    return respond(200, [...neighbors, restored]);
+  });
   let available = false;
   context.mocks.api(
     chatConnectorAccessContract.overviewTarget,
@@ -104,7 +126,12 @@ test("chat-composer-connector-scroll-005 A removed account panel stays closed wh
     },
   );
   await openChatMenu(context);
-  click(await findFastControl("button", "Review archive"));
+  const row = await findFastControl("button", "Review archive");
+  const directory = await screen.findByRole("list", { name: "Connectors" });
+  expect(within(directory).queryAllByText(/^Archive companion /u)).toHaveLength(
+    companions,
+  );
+  click(row);
   await expect(
     screen.findByRole("group", { name: "Review archive" }),
   ).resolves.toBeVisible();
@@ -113,15 +140,22 @@ test("chat-composer-connector-scroll-005 A removed account panel stays closed wh
     return expect(queryFastControl("button", "Review archive")).toBeNull();
   });
   expect(screen.queryByRole("group", { name: "Review archive" })).toBeNull();
-  const popup = screen.getByRole("dialog", { name: "Connectors" });
-  expect(popup).toContainElement(document.activeElement as HTMLElement);
   await expect(
     findFastControl("button", "Add connectors"),
   ).resolves.toBeVisible();
   available = true;
   context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
-  await expect(
-    findFastControl("button", "Review archive"),
-  ).resolves.toBeVisible();
+  const returned = await findFastControl("button", "Review archive");
+  expect(returned).toHaveAttribute("aria-expanded", "false");
   expect(screen.queryByRole("group", { name: "Review archive" })).toBeNull();
+  click(returned);
+  return screen.findByRole("dialog", { name: "Review archive" });
+}
+
+test("chat-composer-connector-scroll-005 A removed account panel stays closed when its connector returns", async () => {
+  await expect(reopenRestoredAccount(0)).resolves.toBeVisible();
+});
+
+test("Restoring an account among 29 neighbors leaves its panel closed until selected", async () => {
+  await expect(reopenRestoredAccount(29)).resolves.toBeVisible();
 });

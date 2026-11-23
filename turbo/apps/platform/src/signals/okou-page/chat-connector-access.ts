@@ -19,13 +19,12 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
-import { resetSignal } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import {
   connectorAccountTargetKey,
   createConnectorAccountListSignals,
 } from "./connector-accounts.ts";
 import { createChatConnectorOverviewSignals } from "./chat-connector-overview.ts";
-import { createChatConnectorMenuNavigationSignals } from "./chat-connector-menu-navigation.ts";
 import {
   createConnectorPermissionsSignals,
   type ConnectorPermissionsTarget,
@@ -269,6 +268,53 @@ function createChatConnectorMutations({
   return { setOverride$ };
 }
 
+function createAccountPanelSignals(
+  list: ReturnType<typeof createConnectorAccountListSignals>,
+) {
+  const target$ = state<ChatConnectorMenuTarget | null>(null);
+  const closeTarget$ = command(({ set }) => {
+    set(target$, null);
+    set(list.clearTarget$);
+  });
+  // A connector removed by an overview refresh releases its account list.
+  const openRowRef$ = onRef<HTMLButtonElement>(
+    command(({ get, set }, _row, signal: AbortSignal) => {
+      const target = get(target$);
+      signal.addEventListener("abort", () => {
+        if (target && get(target$) === target) {
+          set(closeTarget$);
+        }
+      });
+    }),
+  );
+  const anchor$ = state<{ getBoundingClientRect(): DOMRect } | undefined>(
+    undefined,
+  );
+  const openTarget$ = command(
+    (
+      { set },
+      target: ChatConnectorMenuTarget,
+      rect: DOMRect | undefined,
+      signal: AbortSignal,
+    ) => {
+      // Pin the panel to its opening position while the connector list scrolls.
+      set(
+        anchor$,
+        rect
+          ? {
+              getBoundingClientRect() {
+                return rect;
+              },
+            }
+          : undefined,
+      );
+      set(target$, target);
+      set(list.setTarget$, target.target, signal);
+    },
+  );
+  return { target$, anchor$, openTarget$, closeTarget$, openRowRef$ };
+}
+
 /** One composer's Chat preferences; opening the menu owns its account reads. */
 export function createChatConnectorAccessSignals(threadId?: string) {
   const pending$ = state<PendingChatConnectorAccess>({
@@ -279,10 +325,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     null,
   );
   const resetOwner$ = resetSignal();
-  const target$ = state<ChatConnectorMenuTarget | null>(null);
-  const menuTarget$ = computed((get) => {
-    return get(target$);
-  });
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
@@ -307,6 +349,8 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(setPermissions$, null);
   });
   const list = createConnectorAccountListSignals();
+  const { target$, anchor$, openTarget$, closeTarget$, openRowRef$ } =
+    createAccountPanelSignals(list);
   const cache = createChatConnectorOverviewSignals(threadId);
   const { overview$, active$ } = createChatConnectorReads({
     entries$: cache.entries$,
@@ -318,22 +362,11 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(requests$, accountAccessRequests(set(resetOwner$, parentSignal)));
     set(cache.open$, parentSignal);
   });
-  const closeTarget$ = command(({ set }) => {
-    set(target$, null);
-    set(list.clearTarget$);
-  });
-  const navigation = createChatConnectorMenuNavigationSignals(closeTarget$);
   const close$ = command(({ set }) => {
     set(resetOwner$);
     set(requests$, null);
     set(closeTarget$);
   });
-  const openTarget$ = command(
-    ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(target$, target);
-      set(list.setTarget$, target.target, signal);
-    },
-  );
   const { setOverride$ } = createChatConnectorMutations({
     pending$,
     target$,
@@ -378,8 +411,13 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     targetRevision: cache.targetRevision,
     retry$: cache.retry$,
     current$,
-    navigation,
-    target$: menuTarget$,
+    openRowRef$,
+    anchor$: computed((get) => {
+      return get(anchor$);
+    }),
+    target$: computed((get) => {
+      return get(target$);
+    }),
     permissions$: computed((get) => {
       return get(permissions$);
     }),

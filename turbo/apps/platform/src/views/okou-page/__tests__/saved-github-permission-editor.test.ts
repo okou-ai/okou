@@ -140,6 +140,11 @@ test("chat-composer-chat-connector-access-001 Shared GitHub rules retain a repos
   );
   const dialog = description.closest("[role=dialog]") as HTMLElement;
   await within(dialog).findByText("repos|write");
+  await waitFor(() => {
+    return expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
   click(await findFastControl("button", /^Deny$/, dialog));
   click(await findFastControl("button", "Apply", dialog));
   await waitFor(() => {

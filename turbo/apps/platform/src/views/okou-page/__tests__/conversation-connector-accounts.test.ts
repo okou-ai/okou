@@ -222,6 +222,11 @@ test("chat-composer-chat-connector-access-011 Managing the saved Work account re
   });
   await within(dialog).findByText("Work");
   await findFastControl("button", "Add account", dialog);
+  await waitFor(() => {
+    return expect(dialog).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+  });
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Escape}");
   await waitFor(() => {

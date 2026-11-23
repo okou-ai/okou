@@ -154,7 +154,6 @@ import {
   COMPOSER_VOICE_INPUT_SHORTCUT,
 } from "../../lib/composer-voice-input-shortcut.ts";
 import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
-import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
   connectorCatalogStatus$,
@@ -4236,14 +4235,7 @@ function ConnectorsPopoverButton({
 }) {
   const { t } = useTranslation();
   const popoverOpen = useGet(signals.connector.popoverOpen$);
-  const remoteAccessDialogOpen = useGet(
-    signals.connector.remoteAccessDialogOpen$,
-  );
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
-  const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
-  const accountManagerOpen = useGet(
-    signals.connector.chatAccess.accountManager.managerOpen$,
-  );
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const phoneUseSetupOpen = useGet(signals.connector.phoneUseSetupOpen$);
   const downloadDialogOpen = useGet(
@@ -4285,17 +4277,6 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
-        initialFocus={isMobileTextInputDevice() ? false : undefined}
-        // The modal takes focus during the handoff; ordinary dismissal still
-        // returns to this popover's trigger through Base UI.
-        finalFocus={
-          remoteAccessDialogOpen ||
-          phoneUseSetupOpen ||
-          chatPermissions !== null ||
-          accountManagerOpen
-            ? false
-            : undefined
-        }
         side="top"
         align="start"
         aria-label={t(($) => {

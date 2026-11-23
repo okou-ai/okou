@@ -3191,4 +3191,6 @@ Entering Remote control mounts the SSH management subscription. The selected cat
 
 The rewards picker exposes both provider methods after the selected connector's detail arrives. Exact catalog-read cardinality remains open. The Image composer's clipboard accepts a PDF while the style file chooser filters it. Retrying a paid image submission can produce the same input and run. These distinctions remain in the ledger.
 
+The subsequent main sync includes [#50239](https://github.com/okou-ai/okou/pull/50239). Three conflicts touched the original connector access, focus and scroll tests. The migrated permission editor and account manager check focus inside their dialogs. The directory keeps focus on Add connectors as a delayed inventory arrives and reopens with an empty search. With one or thirty connectors, a restored row stays collapsed until selected. The upstream change explicitly removed the assertion about focus after an open row disappears. These integration checks sit outside the fixed 42 IDs.
+
 [Fixed selection](https://app.okou.ai/artifacts/pn1e4t5mc4.md) · [42 dispositions and regression rows](./test-rebuild-batch-92.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv)
