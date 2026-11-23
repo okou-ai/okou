@@ -160,8 +160,11 @@ function accountPolicy(
   };
 }
 
-export const readConnectorAccountPolicies$ = command(
-  async ({ get }, owner: ConnectorAccessOwner, signal: AbortSignal) => {
+export function connectorAccountPolicies(
+  scope$: Computed<ConnectorAccessOwner>,
+) {
+  return computed(async (get) => {
+    const owner = get(scope$);
     const rows = await get(db$)
       .select(policyColumns())
       .from(connectors)
@@ -172,13 +175,12 @@ export const readConnectorAccountPolicies$ = command(
         ),
       )
       .orderBy(asc(connectors.createdAt), asc(connectors.id));
-    signal.throwIfAborted();
     const at = nowDate();
     return rows.map((row) => {
       return accountPolicy(row, at);
     });
-  },
-);
+  });
+}
 
 const policyDurationHours = {
   deny: null,

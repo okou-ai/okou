@@ -11,7 +11,7 @@ import type { RouteEntry } from "../route-entry";
 import {
   chatConnectorAccess,
   connectorAccountAccessDefaults,
-  readConnectorAccountPolicies$,
+  connectorAccountPolicies,
   setChatConnectorAccessOverride$,
   setChatConnectorCurrent$,
   updateConnectorAccountDefaultEnabled$,
@@ -36,15 +36,18 @@ const defaultsScope$ = computed((get) => {
   };
 });
 const defaults$ = connectorAccountAccessDefaults(defaultsScope$);
+const policies$ = connectorAccountPolicies(
+  computed((get) => {
+    return {
+      ...get(owner$),
+      target: get(queryOf(chatConnectorAccessContract.accountPolicies)),
+    };
+  }),
+);
 const readPoliciesHandler$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "no-store");
-    const target = get(queryOf(chatConnectorAccessContract.accountPolicies));
-    const body = await set(
-      readConnectorAccountPolicies$,
-      { ...get(owner$), target },
-      signal,
-    );
+    const body = await get(policies$);
     signal.throwIfAborted();
     return { status: 200 as const, body };
   },
