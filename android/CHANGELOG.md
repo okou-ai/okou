@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.44.0](https://github.com/okou-ai/okou/compare/android-v0.43.0...android-v0.44.0) (2026-11-23)
+
+
+### Features
+
+* **android:** add the default model settings panel ([#49942](https://github.com/okou-ai/okou/issues/49942)) ([70f788d](https://github.com/okou-ai/okou/commit/70f788db14707e4db546a03614c557d4d0d82d9b))
+* **android:** add the native workflows destination ([#49862](https://github.com/okou-ai/okou/issues/49862)) ([5573408](https://github.com/okou-ai/okou/commit/55734083ff40c46c586f5330dd9fbfda7820a1ce))
+* **android:** align the session entry ui with design ([#50015](https://github.com/okou-ai/okou/issues/50015)) ([6b5c890](https://github.com/okou-ai/okou/commit/6b5c890ad05834301cfb77f929f55675aff0d1ac))
+* **android:** keep connector directory reads fresh across visits ([#50013](https://github.com/okou-ai/okou/issues/50013)) ([1dd26be](https://github.com/okou-ai/okou/commit/1dd26be83ebf1ea6a30d88dbae3ced6512f4b555))
+
+
+### Bug Fixes
+
+* **android:** align artifact preview recovery and catalog return with design ([#50014](https://github.com/okou-ai/okou/issues/50014)) ([b545afb](https://github.com/okou-ai/okou/commit/b545afbbd3966fe6814389dc04255a4ee3c838a1))
+
 ## [0.43.0](https://github.com/okou-ai/okou/compare/android-v0.42.0...android-v0.43.0) (2026-11-22)
 
 
