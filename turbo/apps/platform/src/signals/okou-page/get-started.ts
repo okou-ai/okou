@@ -1,5 +1,4 @@
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
 import type { AgentPhoneLinkStatusResponse } from "@okouai/api-contracts/contracts/integrations-agentphone";
 import type { SlackOrgStatus } from "@okouai/api-contracts/contracts/integrations-slack";
 import { GET_STARTED_REWARDS_CHANGED_EVENT } from "@okouai/api-contracts/validators/get-started";
@@ -7,13 +6,14 @@ import { getStartedContract } from "@okouai/api-contracts/client/get-started";
 import type {
   GetStartedQuestKey,
   GetStartedStatus,
+  GetStartedClaim,
 } from "@okouai/api-contracts/contracts/get-started";
 import { apiClient$ } from "../api-client.ts";
 import { runtimeAuthenticatedIdentity$ } from "../auth-context.ts";
 import { subscribeBuiltinConnectorChanges$ } from "../external/connectors.ts";
 import { pageSignal$, pageVersion$ } from "../page-signal.ts";
 import { accept } from "../../lib/accept.ts";
-import { resetSignal, settle } from "../utils.ts";
+import { onRef, resetSignal, settle } from "../utils.ts";
 import { reloadAccountMenuCreditBalances$ } from "./billing.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { agentPhoneLinkStatus$ } from "./agentphone.ts";
@@ -58,13 +58,26 @@ const reloadGetStarted$ = command(({ set }) => {
   });
 });
 const menuOpenPageVersion$ = state<number | null>(null);
-const resetMenuClose$ = resetSignal();
+const resetCheckinFeedback$ = resetSignal();
+const menuTriggerElement$ = state<HTMLButtonElement | null>(null);
+export const setGetStartedMenuTrigger$ = onRef(
+  command(({ set }, element: HTMLButtonElement, signal: AbortSignal) => {
+    set(menuTriggerElement$, element);
+    signal.addEventListener("abort", () => {
+      set(menuTriggerElement$, null);
+    });
+  }),
+);
+// The pending row unmounts on success; return focus to its persistent entry.
+export const checkinConfirmationFinalFocus$ = command(({ get }) => {
+  return get(menuTriggerElement$) ?? true;
+});
 export const getStartedMenuOpen$ = computed((get) => {
   return get(menuOpenPageVersion$) === get(pageVersion$);
 });
 export const setGetStartedMenuOpen$ = command(({ get, set }, open: boolean) => {
-  // Dismissing or reopening the menu cancels a previous check-in's auto-close.
-  set(resetMenuClose$);
+  // An old check-in must not interrupt a menu the user dismissed or reopened.
+  set(resetCheckinFeedback$);
   set(menuOpenPageVersion$, open ? get(pageVersion$) : null);
   if (open) {
     set(reloadSlackOrg$);
@@ -261,13 +274,35 @@ export const setQuestIntroKey$ = command(
   },
 );
 
-const checkinRequestState$ = state<Promise<boolean> | null>(null);
+const checkinConfirmationState$ = state<{
+  readonly claim: GetStartedClaim;
+  readonly pageVersion: number;
+  readonly open: boolean;
+} | null>(null);
+export const checkinConfirmation$ = computed((get) => {
+  const confirmation = get(checkinConfirmationState$);
+  return (
+    confirmation && {
+      claim: confirmation.claim,
+      open: confirmation.open && confirmation.pageVersion === get(pageVersion$),
+    }
+  );
+});
+export const closeCheckinConfirmation$ = command(({ get, set }) => {
+  const confirmation = get(checkinConfirmationState$);
+  if (confirmation) {
+    set(checkinConfirmationState$, { ...confirmation, open: false });
+  }
+});
+
+const checkinRequestState$ = state<Promise<void> | null>(null);
 export const checkinRequest$ = computed((get) => {
   return get(checkinRequestState$);
 });
 
 const claimGetStartedCheckin$ = command(
-  async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+  async ({ get, set }, signal: AbortSignal): Promise<void> => {
+    const feedbackSignal = set(resetCheckinFeedback$, signal);
     const result = await accept(
       get(apiClient$)(getStartedContract).checkin({
         fetchOptions: { signal },
@@ -276,31 +311,31 @@ const claimGetStartedCheckin$ = command(
       signal,
     );
     signal.throwIfAborted();
+    const granted = result.status === 200 && result.body.status === "granted";
+    if (granted && !feedbackSignal.aborted) {
+      set(setGetStartedMenuOpen$, false);
+      set(checkinConfirmationState$, {
+        claim: result.body,
+        pageVersion: get(pageVersion$),
+        open: true,
+      });
+    }
+    // The financial receipt confirms success. Refreshing the list must not
+    // delay or erase it, even if another service is slow or unavailable.
     set(reloadGetStarted$);
     await Promise.all([
-      get(getStartedSummary$),
+      granted ? undefined : get(getStartedStatus$),
       set(reloadAccountMenuCreditBalances$, signal),
     ]);
     signal.throwIfAborted();
-    return result.status === 200 && result.body.status === "granted";
   },
 );
 
 export const checkInGetStarted$ = command(
   async ({ set }, signal: AbortSignal): Promise<void> => {
-    const closeSignal = set(resetMenuClose$, signal);
     const request = set(claimGetStartedCheckin$, signal);
     set(checkinRequestState$, request);
-    const granted = await request;
-    signal.throwIfAborted();
-    if (!granted || closeSignal.aborted) {
-      return;
-    }
-    // The refreshed row confirms the reward in place before the menu closes.
-    await delay(800, { signal: closeSignal });
-    signal.throwIfAborted();
-    closeSignal.throwIfAborted();
-    set(setGetStartedMenuOpen$, false);
+    await request;
   },
 );
 

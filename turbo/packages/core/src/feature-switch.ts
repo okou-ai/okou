@@ -71,7 +71,8 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Record versioned research, generation, and authenticated completion observations in Axiom.",
     enabled: false,
-    enabledUserHashes: ["032a75d8"], // Bingjie's account only, independent of workspace
+    enabledUserHashes: ["032a75d8"], // Bingjie's account, independent of workspace
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.PhoneUse]: {

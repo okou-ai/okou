@@ -873,17 +873,16 @@ test("Daily rewards are claimed by selecting check in", async () => {
   expect(normalizedText(checkinRow)).toContain("Check in daily+100Check in");
 
   click(checkinRow);
-  await expect(screen.findByText("Checked in")).resolves.toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("get-started-quest-checkin")).getByText(
-      "· 1-day streak",
-    ),
-  ).toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("get-started-quest-checkin")).getByText("+100"),
-  ).toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  await expect(
+    within(dialog).findByText("1-day streak"),
+  ).resolves.toBeInTheDocument();
+  click(buttonNamed("Back to work", dialog));
   await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   const updatedPanel = await openQuestPanel();
@@ -1376,22 +1375,29 @@ test("Picking a workflow hands its sentence to the composer", async () => {
   });
 });
 
-test("An ordinary day's check-in confirms the reward and streak in the menu", async () => {
+test("An ordinary day's check-in confirms the reward and streak in a dialog", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
   data.checkinStreak = 8;
   await setupPage({ context, path: questChatPath() });
   const panel = await openQuestPanel();
   click(screen.getByTestId("get-started-quest-checkin"));
 
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
   await expect(
-    within(panel).findByText("Checked in"),
+    within(dialog).findByText("9-day streak"),
   ).resolves.toBeInTheDocument();
-  const row = within(panel).getByTestId("get-started-quest-checkin");
-  expect(within(row).getByText("· 9-day streak")).toBeInTheDocument();
-  expect(within(row).getByText("+100")).toBeInTheDocument();
+  expect(panel).not.toBeInTheDocument();
+  click(buttonNamed("Back to work", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("get-started-entry")).toHaveFocus();
+  });
 });
 
-test("Check-in keeps the menu open and busy through the request and reward refresh", async () => {
+test("Check-in stays busy until confirmed and opens the reward before status refresh", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
   data.checkinStreak = 8;
   const claimStarted = context.mocks.deferred<void>();
@@ -1434,18 +1440,19 @@ test("Check-in keeps the menu open and busy through the request and reward refre
 
   claimReady.resolve();
   await refreshStarted.promise;
-  expect(panel).toBeInTheDocument();
-  expect(row).toHaveAttribute("aria-busy", "true");
-  refreshReady.resolve();
-  await waitFor(() => {
-    expect(
-      within(panel).getByTestId("get-started-quest-checkin"),
-    ).toHaveAttribute("aria-busy", "false");
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
   });
-  expect(within(panel).getByText("Checked in")).toBeInTheDocument();
-  expect(within(panel).getByText("· 9-day streak")).toBeInTheDocument();
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  refreshReady.resolve();
+  await expect(
+    within(dialog).findByText("9-day streak"),
+  ).resolves.toBeInTheDocument();
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
   await waitFor(() => {
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByTestId("get-started-entry")).toHaveFocus();
   });
 });
 
@@ -1506,23 +1513,29 @@ test("A failed check-in keeps the menu open and can be retried", async () => {
   expect(within(panel).getByText("Check in")).toBeInTheDocument();
   fail = false;
   click(row);
-  await expect(
-    within(panel).findByText("Checked in"),
-  ).resolves.toBeInTheDocument();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
 });
 
-test("A check-in continues after manual dismissal and updates the reopened menu", async () => {
+test("A check-in continues after manual dismissal without interrupting the reopened menu", async () => {
   const data = configureQuestPage(context, "member", { claimedToday: false });
-  const refreshStarted = context.mocks.deferred<void>();
-  const refreshReady = context.mocks.deferred<void>();
-  context.mocks.api(getStartedContract.status, async ({ respond }) => {
-    if (data.claimedToday) {
-      if (!refreshStarted.settled()) {
-        refreshStarted.resolve();
-      }
-      await refreshReady.promise;
+  const claimStarted = context.mocks.deferred<void>();
+  const claimReady = context.mocks.deferred<void>();
+  context.mocks.api(getStartedContract.checkin, async ({ respond }) => {
+    claimStarted.resolve();
+    await claimReady.promise;
+    data.claimedToday = true;
+    data.checkinStreak = 1;
+    const checkin = data.quests.find((quest) => {
+      return quest.key === "checkin";
+    });
+    if (!checkin) {
+      throw new Error("Expected check-in quest");
     }
-    return respond(200, data);
+    checkin.canEarnMore = false;
+    return respond(200, makeCheckinGrant(data.serverNow));
   });
   await setupPage({ context, path: questChatPath() });
   await openQuestPanel();
@@ -1530,24 +1543,52 @@ test("A check-in continues after manual dismissal and updates the reopened menu"
   row.focus();
   const user = userEvent.setup({ delay: null });
   await user.keyboard("{Enter}");
-  await refreshStarted.promise;
+  await claimStarted.promise;
   expect(row).toHaveAttribute("aria-busy", "true");
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
   const panel = await openQuestPanel();
-  refreshReady.resolve();
+  claimReady.resolve();
   await expect(
     within(panel).findByText("Checked in"),
   ).resolves.toBeInTheDocument();
-  // Another quest must remain usable after this check-in finishes.
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   click(within(panel).getByTestId("get-started-quest-workflow"));
   await expect(
     screen.findByRole("dialog", {
       name: "One good run becomes something the team keeps",
     }),
   ).resolves.toBeInTheDocument();
+});
+
+test("A confirmed reward remains visible when the subsequent status refresh fails", async () => {
+  const data = configureQuestPage(context, "member", { claimedToday: false });
+  context.mocks.api(getStartedContract.status, ({ respond }) => {
+    return data.claimedToday
+      ? respond(503, {
+          error: {
+            code: "SERVICE_UNAVAILABLE",
+            message: "Rewards are temporarily unavailable",
+          },
+        })
+      : respond(200, data);
+  });
+  await setupPage({ context, path: questChatPath() });
+  await openQuestPanel();
+  click(screen.getByTestId("get-started-quest-checkin"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Checked in for today",
+  });
+  await waitFor(() => {
+    expect(screen.queryByTestId("get-started-entry")).not.toBeInTheDocument();
+  });
+  expect(within(dialog).getByText("+100 credits")).toBeInTheDocument();
+  click(buttonNamed("Back to work", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
 });
 
 test("The quest entry leaves the connector catalog unread until the connector step opens", async () => {
