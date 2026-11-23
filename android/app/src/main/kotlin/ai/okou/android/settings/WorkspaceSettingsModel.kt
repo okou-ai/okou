@@ -123,6 +123,17 @@ internal constructor(
         ) {
             messages.trySend(it)
         }
+    internal val proactive =
+        service.proactivePreferences?.let {
+            ProactiveSettingsModel(
+                viewModelScope,
+                it,
+                identity,
+                cache,
+                authorized,
+                ::reportSessionFailure,
+            )
+        }
     internal val defaultModel =
         DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
             reportSessionFailure(it)
@@ -141,6 +152,7 @@ internal constructor(
             connectivity.collect { online ->
                 defaultModel.online(online)
                 emailSubscription.online(online)
+                proactive?.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
                 if (changed) {
