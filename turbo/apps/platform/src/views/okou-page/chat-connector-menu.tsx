@@ -194,16 +194,10 @@ function ConnectorOverviewRow({
 }) {
   const { t } = useTranslation();
   const target = useGet(signals.connector.chatAccess.target$);
-  const anchor = useGet(signals.connector.chatAccess.navigation.anchor$);
+  const anchor = useGet(signals.connector.chatAccess.anchor$);
   const openTarget = useSet(signals.connector.chatAccess.openTarget$);
   const closeTarget = useSet(signals.connector.chatAccess.closeTarget$);
-  const restoreFocus = useSet(
-    signals.connector.chatAccess.navigation.restoreFocus$,
-  );
-  const permissions = useGet(signals.connector.chatAccess.permissions$);
-  const accountManagerOpen = useGet(
-    signals.connector.chatAccess.accountManager.managerOpen$,
-  );
+  const openRowRef = useSet(signals.connector.chatAccess.openRowRef$);
   const signal = useGet(pageSignal$);
   const open =
     target !== null &&
@@ -221,7 +215,7 @@ function ConnectorOverviewRow({
       }}
     >
       <PopoverTrigger
-        data-connector-target={connectorAccountTargetKey(entry.target)}
+        ref={open ? openRowRef : undefined}
         className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover data-popup-open:bg-gray-50"
       >
         {entry.target.kind === "builtin" ? (
@@ -252,11 +246,6 @@ function ConnectorOverviewRow({
         align="start"
         sideOffset={8}
         collisionAvoidance={{ fallbackAxisSide: "end" }}
-        finalFocus={() => {
-          return permissions !== null || accountManagerOpen
-            ? false
-            : restoreFocus(entry.target);
-        }}
         aria-label={entry.label}
         className="flex max-h-[min(25rem,var(--available-height))] w-88 max-w-[var(--available-width)] flex-col overflow-hidden p-0"
       >
@@ -427,7 +416,6 @@ export function ChatConnectorMenu({
   const failed =
     overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
-  const setViewport = useSet(accounts.navigation.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
@@ -458,7 +446,6 @@ export function ChatConnectorMenu({
       onOpenAddDialog={onOpenAddDialog}
       footer={footer}
       contentKey={`overview:${ui.popoverSearch}`}
-      contentRef={setViewport}
     >
       <ChatConnectorOverviewRetry signals={signals} failed={failed} />
       <ChatConnectorOverviewList signals={signals} entries={filtered} />

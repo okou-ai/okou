@@ -1,21 +1,7 @@
-import type { ReactNode, Ref } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Search } from "lucide-react";
 import { cn, PopoverClose } from "@okouai/ui";
-import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
-
-function focusConnectorSearch(element: HTMLElement | null) {
-  const panel = element?.closest("[data-connector-panel]");
-  if (
-    panel?.closest("[data-slot='popover-content'][data-open]") &&
-    panel.ownerDocument.activeElement === panel &&
-    !isMobileTextInputDevice()
-  ) {
-    panel
-      .querySelector<HTMLInputElement>("[data-connector-search]")
-      ?.focus({ preventScroll: true });
-  }
-}
 
 function ConnectorSearch({
   search,
@@ -33,8 +19,6 @@ function ConnectorSearch({
         className="pointer-events-none shrink-0 text-muted-foreground"
       />
       <input
-        ref={focusConnectorSearch}
-        data-connector-search
         type="text"
         aria-label={t(($) => {
           return $.chat.connectors.find;
@@ -90,7 +74,6 @@ export function ComposerConnectorMenuShell({
   contentRole = "list",
   contentLabel,
   contentKey,
-  contentRef,
 }: {
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -104,18 +87,10 @@ export function ComposerConnectorMenuShell({
   readonly contentRole?: "list" | "group";
   readonly contentLabel?: string;
   readonly contentKey?: string;
-  readonly contentRef?: Ref<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   return (
     <div
-      ref={!hasContent && !loading ? contentRef : undefined}
-      data-connector-panel
-      // Base UI focuses this while loading; once ready, search is first.
-      tabIndex={loading ? 0 : -1}
-      onFocus={(event) => {
-        focusConnectorSearch(event.currentTarget);
-      }}
       className={cn(
         "flex min-h-0 flex-col outline-none",
         showSearch && "h-100",
@@ -149,8 +124,6 @@ export function ComposerConnectorMenuShell({
           ) : (
             <div
               key={contentKey}
-              ref={contentRef}
-              tabIndex={contentRef ? -1 : undefined}
               role={contentRole}
               aria-label={
                 contentLabel ??

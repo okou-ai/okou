@@ -664,6 +664,9 @@ test.each([{ label: "GitHub", custom: false }])(
     const dialog = await screen.findByRole("dialog", {
       name: `${label} permissions`,
     });
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBeTruthy();
+    });
     const permissionRow = await within(dialog).findByRole("group", {
       name: "repos|write",
     });
@@ -722,6 +725,9 @@ test.each([
     await expect(
       within(dialog).findByText("Work"),
     ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBeTruthy();
+    });
     expectRetainedDraft(path, composer);
     await expect(
       findFastControl("button", "Add account", dialog),

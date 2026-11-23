@@ -80,9 +80,6 @@ async function prepareLoadedConnectorSearch() {
   authorization.resolve(undefined);
   const search =
     await within(dialog).findByPlaceholderText("Find connectors...");
-  await waitFor(() => {
-    expect(search).toHaveFocus();
-  });
   await fill(search, "Focus app 20");
   expect(search).toHaveValue("Focus app 20");
   expect(within(dialog).getByText("Focus app 20")).toBeInTheDocument();
@@ -100,7 +97,7 @@ describe("connector search, Chat accounts=%s", () => {
     );
   });
 
-  it("focuses the loaded connector search during reopen", async () => {
+  it("reopens with an empty search and keyboard focus inside the popover", async () => {
     const { user, trigger } = await prepareLoadedConnectorSearch();
     await user.keyboard("{Escape}");
     await waitFor(() => {
@@ -110,18 +107,18 @@ describe("connector search, Chat accounts=%s", () => {
     const reopenedSearch =
       await screen.findByPlaceholderText("Find connectors...");
     await waitFor(() => {
-      expect(reopenedSearch).toHaveFocus();
+      expect(
+        screen.getByRole("dialog", { name: "Connectors" }),
+      ).toContainElement(document.activeElement);
     });
     expect(reopenedSearch).toHaveValue("");
   });
 
-  it("does not take focus after keyboard navigation when search loads", async () => {
-    const { user, authorization, dialog, add } = await openLoadingConnectors();
+  it("keeps focus on Add connectors when search loads", async () => {
+    const { authorization, dialog, add } = await openLoadingConnectors();
     await waitFor(() => {
       expect(dialog.contains(document.activeElement)).toBeTruthy();
     });
-    expect(add).not.toHaveFocus();
-    await user.keyboard("{Tab}");
     expect(add).toHaveFocus();
 
     authorization.resolve(undefined);
