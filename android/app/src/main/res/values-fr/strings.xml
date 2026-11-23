@@ -114,7 +114,7 @@
     <string name="updates_toolbar">Mettre à jour</string>
     <string name="updates_download">Télécharger la mise à jour</string>
     <string name="updates_download_failed">Échec du téléchargement</string>
-    <string name="updates_check_compatible">Rechercher des versions compatibles</string>
+    <string name="updates_check_compatible">Vérifier les versions</string>
     <string name="updates_required_incompatible">Cet appareil ne peut pas mettre à jour Okou</string>
     <string name="updates_required_short">Mise à jour requise</string>
     <string name="updates_ready">Reprendre l’installation</string>

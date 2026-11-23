@@ -114,7 +114,7 @@
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">下載更新</string>
     <string name="updates_download_failed">下載失敗</string>
-    <string name="updates_check_compatible">檢查可用版本</string>
+    <string name="updates_check_compatible">檢查版本</string>
     <string name="updates_required_incompatible">此裝置暫時無法更新 Okou</string>
     <string name="updates_required_short">需要更新</string>
     <string name="updates_ready">繼續安裝</string>

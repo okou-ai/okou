@@ -114,7 +114,7 @@
     <string name="updates_toolbar">업데이트</string>
     <string name="updates_download">업데이트 다운로드</string>
     <string name="updates_download_failed">다운로드 실패</string>
-    <string name="updates_check_compatible">호환 버전 확인</string>
+    <string name="updates_check_compatible">버전 확인</string>
     <string name="updates_required_incompatible">이 기기에서는 Okou를 업데이트할 수 없습니다</string>
     <string name="updates_required_short">업데이트 필요</string>
     <string name="updates_ready">설치 계속</string>

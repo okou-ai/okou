@@ -114,7 +114,7 @@
     <string name="updates_toolbar">अपडेट</string>
     <string name="updates_download">अपडेट डाउनलोड करें</string>
     <string name="updates_download_failed">डाउनलोड विफल</string>
-    <string name="updates_check_compatible">संगत संस्करणों की जाँच करें</string>
+    <string name="updates_check_compatible">वर्शन की जाँच करें</string>
     <string name="updates_required_incompatible">इस डिवाइस पर Okou अपडेट नहीं हो सकता</string>
     <string name="updates_required_short">अपडेट ज़रूरी है</string>
     <string name="updates_ready">इंस्टॉलेशन जारी रखें</string>

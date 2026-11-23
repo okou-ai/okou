@@ -373,15 +373,17 @@ private fun UpdateSheet(
                 .padding(top = if (centered) inset else 0.dp)
                 .padding(bottom = if (short) 8.dp else if (compact) 12.dp else 24.dp),
         ) {
-            val actions = measureUpdateSheetActions(maxWidth, state.requiresNewerAndroid)
+            val actions = measureUpdateSheetActions(maxWidth)
             val headingStyle =
                 if (compact)
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
                 else MaterialTheme.typography.headlineSmall
             val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
+            val resultLineHeight =
+                with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
             val scroll = rememberScrollState()
             val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
-            val headingGap = if (short) 4.dp else contentSpacing
+            val headingGap = if (short) 4.dp else 8.dp
             val scrollWholePanel =
                 maxHeight < actions.height + headingGap + contentSpacing + titleLineHeight
             Column(
@@ -403,13 +405,14 @@ private fun UpdateSheet(
                         muted = true,
                     )
                     Spacer(Modifier.height(if (short) 4.dp else 8.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    Column(
+                        Modifier.heightIn(min = resultLineHeight * 2 + 4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (release != null) {
                             FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
                                 UpdateMetadata(release)
@@ -595,14 +598,13 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
     Text(
         stringResource(message),
         color =
-            if (
-                offline ||
-                    state.check == UpdateCheck.Waiting ||
-                    state.transfer is UpdateTransfer.Waiting ||
-                    state.problem == UpdateProblem.Check
-            )
-                MaterialTheme.colorScheme.onSurfaceVariant
-            else MaterialTheme.colorScheme.error,
+            when (message) {
+                R.string.updates_error_integrity,
+                R.string.updates_error_identity,
+                R.string.updates_error_storage,
+                R.string.updates_error_install -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
         style = MaterialTheme.typography.bodyMedium,
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
     )
@@ -688,7 +690,8 @@ private fun UpdateAction(
                 R.string.updates_download to { download(checkNotNull(state.candidate)) }
             state.check == UpdateCheck.Waiting || state.offline ->
                 R.string.updates_waiting_to_check to {}
-            state.requiresNewerAndroid -> R.string.updates_check_compatible to check
+            state.required || state.requiresNewerAndroid ->
+                R.string.updates_check_compatible to check
             else -> R.string.updates_check to check
         }
     Button(
@@ -782,19 +785,14 @@ private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
 
 // Reserve room for both buttons and progress so localized wrapping cannot move the footer.
 @Composable
-private fun measureUpdateSheetActions(
-    width: Dp,
-    requiresNewerAndroid: Boolean,
-): UpdateSheetActionSize {
+private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
     val measurer = rememberTextMeasurer()
     val dismissLabel = stringResource(R.string.updates_close)
     val mainLabels =
         listOf(
             stringResource(R.string.updates_download),
-            stringResource(
-                if (requiresNewerAndroid) R.string.updates_check_compatible
-                else R.string.updates_check,
-            ),
+            stringResource(R.string.updates_check),
+            stringResource(R.string.updates_check_compatible),
             stringResource(R.string.updates_waiting_to_check),
             stringResource(R.string.updates_waiting_to_download),
             stringResource(R.string.updates_ready),

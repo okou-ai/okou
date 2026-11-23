@@ -166,7 +166,7 @@ class AppUpdatesTest {
     }
 
     @Test
-    fun recentDiscoveryIsReusedAcrossProcessesAndAutomaticChecksHonorTheirCooldown() = runTest {
+    fun automaticChecksUseLastSuccessfulDiscoveryAcrossProcesses() = runTest {
         val store = MemoryUpdateStore()
         val original =
             ControlledUpdates().apply { response = AndroidUpdates(null, updateRelease("0.12.0")) }
@@ -211,11 +211,7 @@ class AppUpdatesTest {
             service.failCheck = false
             owner.check(false)
             advanceUntilIdle()
-            assertEquals(UpdateCheck.Failed, owner.state.value.check)
-
-            now += 60_000
-            owner.check(false)
-            advanceUntilIdle()
+            assertEquals(UpdateCheck.Checked, owner.state.value.check)
             assertEquals("0.14.0", owner.state.value.displayedRelease?.version)
         }
         runCurrent()

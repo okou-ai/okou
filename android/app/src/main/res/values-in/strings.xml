@@ -114,7 +114,7 @@
     <string name="updates_toolbar">Perbarui</string>
     <string name="updates_download">Unduh pembaruan</string>
     <string name="updates_download_failed">Pengunduhan gagal</string>
-    <string name="updates_check_compatible">Periksa versi yang kompatibel</string>
+    <string name="updates_check_compatible">Periksa versi</string>
     <string name="updates_required_incompatible">Perangkat ini tidak dapat memperbarui Okou</string>
     <string name="updates_required_short">Pembaruan diperlukan</string>
     <string name="updates_ready">Lanjutkan instalasi</string>

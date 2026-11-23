@@ -182,7 +182,6 @@ class AppUpdates(
     private val connectivityReady = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
-    private var attemptedAt: Long? = null
     private var checkJob: Job? = null
     private var transferJob: Job? = null
     @Volatile private var transferTicket = 0L
@@ -252,17 +251,13 @@ class AppUpdates(
             connectivityReady.await()
             val snapshot = mutable.value
             if (snapshot.offline) return@launch
-            if (!manual) {
-                val time = now()
-                val lastAttempt = attemptedAt
-                if (lastAttempt != null && time - lastAttempt in 0 until 60_000) return@launch
-                if (
+            if (
+                !manual &&
                     !snapshot.needsRequiredRelease &&
-                        checkedAt > 0 &&
-                        time - checkedAt in 0 until 10.minutes.inWholeMilliseconds
-                )
-                    return@launch
-            }
+                    checkedAt > 0 &&
+                    now() - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+            )
+                return@launch
             val info = readRelease() ?: return@launch
             val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
             val blocked =
@@ -289,7 +284,6 @@ class AppUpdates(
     private suspend fun readRelease(): AndroidUpdates? {
         var retries = 0
         while (true) {
-            attemptedAt = now()
             mutable.update { it.copy(check = UpdateCheck.Checking) }
             try {
                 return service.check().also { currentCoroutineContext().ensureActive() }

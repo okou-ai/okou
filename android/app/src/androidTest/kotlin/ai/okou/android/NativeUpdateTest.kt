@@ -156,8 +156,12 @@ class NativeUpdateTest {
             assertGap(8, button(filterAction).visibleBounds.left - searchBounds.right)
             captureState("toolbar-current")
             val updateTarget = app.getString(R.string.updates_version, "99.0.0")
+            val installedVersion =
+                app.getString(R.string.updates_installed, BuildConfig.VERSION_NAME)
+            val close = By.pkg(app.packageName).text(app.getString(R.string.updates_close))
+            fun detailsBounds() =
+                checkNotNull(text(installedVersion)).visibleBounds to button(close).visibleBounds
             fun closeDetails() {
-                val close = By.pkg(app.packageName).text(app.getString(R.string.updates_close))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 assertTrue(
                     "Back did not dismiss the update details",
@@ -174,21 +178,28 @@ class NativeUpdateTest {
             click(R.string.updates_title)
             exists(R.string.updates_check_in_progress)
             captureState("details-checking")
+            val initialDetailsBounds = detailsBounds()
             gate.complete(Unit)
             exists(R.string.updates_error_check)
             captureState("details-check-failed")
+            assertEquals(initialDetailsBounds, detailsBounds())
             click(R.string.updates_check)
             exists(R.string.updates_current)
             captureState("details-up-to-date")
+            assertEquals(initialDetailsBounds, detailsBounds())
             candidate.set(release)
             click(R.string.updates_check)
             assertNotNull(text(updateTarget))
+            device.waitForIdle()
+            assertEquals(initialDetailsBounds, detailsBounds())
             closeDetails()
             backToChatList()
 
             val updateAction = app.getString(R.string.updates_toolbar)
             val updateBounds = button(By.pkg(app.packageName).desc(updateAction)).visibleBounds
             assertEquals(searchBounds, button(search).visibleBounds)
+            assertGap(48, updateBounds.width())
+            assertGap(48, updateBounds.height())
             assertGap(8, updateBounds.left - searchBounds.right)
             captureState("toolbar-available")
             assertTrue(
@@ -295,6 +306,25 @@ class NativeUpdateTest {
             assertEquals(settingsTitleBounds.height(), progressTitleBounds.height())
             captureState("settings-progress")
             backToChatList()
+
+            download.get().completeExceptionally(IOException("fixture download failed"))
+            val failed =
+                button(
+                    By.pkg(app.packageName).desc(app.getString(R.string.updates_download_failed)),
+                )
+            assertEquals(updateBounds, failed.visibleBounds)
+            captureState("toolbar-failed")
+            failed.click()
+            val targetBounds = checkNotNull(text(updateTarget)).visibleBounds
+            val errorBounds =
+                checkNotNull(text(app.getString(R.string.updates_error_download))).visibleBounds
+            assertTrue(errorBounds.top >= targetBounds.bottom)
+            captureState("details-download-failed")
+            assertEquals(initialDetailsBounds, detailsBounds())
+            download.set(CompletableDeferred())
+            click(R.string.updates_download)
+            assertNotNull(text(progressLabel))
+            click(R.string.updates_close)
 
             button(search).click()
             val searchQuery = "fixture query"
