@@ -379,12 +379,14 @@ class ChatComposerRootTest {
                         .fetchSemanticsNodes()
                         .size == 1 &&
                     compose
-                        .onAllNodesWithContentDescription(withdrawalLabel)
+                        .onAllNodesWithContentDescription(withdrawalLabel, substring = true)
                         .fetchSemanticsNodes()
                         .size == 1
             }
             messageText(pending.eventId, prompt).assertIsDisplayed()
-            compose.onNodeWithContentDescription(withdrawalLabel).assertIsDisplayed()
+            compose
+                .onNodeWithContentDescription(withdrawalLabel, substring = true)
+                .assertIsDisplayed()
             assertEquals(1, app.fixture.inputs.size)
         } finally {
             create.countDown()
@@ -711,8 +713,10 @@ class ChatComposerRootTest {
             compose.onNodeWithTag("open_conversation_queue").performClick()
             compose
                 .onNode(
-                    hasContentDescription(app.getString(R.string.conversation_revoke)) and
-                        hasAnyAncestor(hasTestTag("message_$eventId")),
+                    hasContentDescription(
+                        app.getString(R.string.conversation_revoke),
+                        substring = true,
+                    ) and hasAnyAncestor(hasTestTag("message_$eventId")),
                 )
                 .assertIsDisplayed()
                 .assertIsEnabled()
@@ -826,7 +830,10 @@ class ChatComposerRootTest {
                 )
             }
             val withdraw =
-                compose.onNodeWithContentDescription(app.getString(R.string.conversation_revoke))
+                compose.onNodeWithContentDescription(
+                    app.getString(R.string.conversation_revoke),
+                    substring = true,
+                )
             awaitConversation {
                 ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
                     ready.controls.uiState.value.persistence == RunControlPersistence.Durable

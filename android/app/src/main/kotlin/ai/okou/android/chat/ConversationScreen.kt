@@ -51,11 +51,13 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -288,6 +290,18 @@ internal fun ConversationRoute(
     key(model, threadId) {
         val position = rememberLazyListState()
         val timelineFocus = remember { FocusRequester() }
+        val inputMode = LocalInputModeManager.current
+        var queueWasOpen by remember { mutableStateOf(false) }
+        LaunchedEffect(queueOpen) {
+            if (
+                !queueOpen &&
+                    queueWasOpen &&
+                    queue.isEmpty() &&
+                    inputMode.inputMode == InputMode.Keyboard
+            )
+                timelineFocus.requestFocus()
+            queueWasOpen = queueOpen
+        }
         val holdTimeline by
             remember(position) {
                 derivedStateOf {
