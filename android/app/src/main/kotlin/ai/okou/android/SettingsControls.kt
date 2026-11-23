@@ -1,6 +1,7 @@
 package ai.okou.android
 
 import ai.okou.android.state.rememberSettingsFlag
+import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -269,9 +270,16 @@ internal fun SettingsPickerRow(
     value: String?,
     leading: @Composable () -> Unit,
     enabled: Boolean = true,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
     sheet: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
-    SettingsTrigger(enabled = enabled, content = sheet) { modifier, open ->
+    SettingsTrigger(
+        enabled = enabled,
+        visible = visible,
+        fallbackFocus = fallbackFocus,
+        content = sheet,
+    ) { modifier, open ->
         SettingsRow(title, leading, modifier, value, onClick = open, enabled = enabled)
     }
 }
@@ -279,6 +287,8 @@ internal fun SettingsPickerRow(
 @Composable
 internal fun SettingsTrigger(
     enabled: Boolean = true,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
     content: @Composable (dismiss: () -> Unit) -> Unit,
     trigger: @Composable (Modifier, open: () -> Unit) -> Unit,
 ) {
@@ -286,15 +296,23 @@ internal fun SettingsTrigger(
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by rememberSettingsFlag()
     val focus = remember { FocusRequester() }
-    trigger(Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }) {
-        if (enabled) {
-            restoreFocus = focused
-            open = true
+    // Resolve return focus before Compose detaches the hidden trigger.
+    val restoreRelatedFocus = !visible && (focused || restoreFocus)
+    if (visible) {
+        trigger(Modifier.focusRequester(focus).onFocusChanged { focused = it.isFocused }) {
+            if (enabled) {
+                restoreFocus = focused
+                open = true
+            }
         }
+        if (open && enabled) content { open = false }
     }
-    if (open && enabled) content { open = false }
-    LaunchedEffect(open, enabled) {
-        if (!open && enabled && restoreFocus) {
+    LaunchedEffect(open, enabled, visible) {
+        if (!visible) {
+            open = false
+            restoreFocus = false
+            if (restoreRelatedFocus) fallbackFocus?.requestFocus()
+        } else if (!open && enabled && restoreFocus) {
             restoreFocus = false
             focus.requestFocus()
         }
@@ -307,9 +325,11 @@ internal fun SettingsModal(
     onDismiss: () -> Unit,
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
+    maxHeight: Dp = Dp.Unspecified,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
+    val panelHeight = Modifier.heightIn(max = maxHeight)
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
             onDismissRequest = onDismiss,
@@ -322,7 +342,11 @@ internal fun SettingsModal(
         ) {
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
-                else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
+                else
+                    Modifier.padding(horizontal = 24.dp)
+                        .widthIn(max = 460.dp)
+                        .fillMaxWidth()
+                        .then(panelHeight),
                 shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
                 color = MaterialTheme.colorScheme.surface,
             ) {
@@ -333,6 +357,7 @@ internal fun SettingsModal(
         val allowDismiss by rememberUpdatedState(dismissible)
         ModalBottomSheet(
             onDismissRequest = onDismiss,
+            modifier = panelHeight,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -343,6 +368,19 @@ internal fun SettingsModal(
             sheetMaxWidth = 460.dp,
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
+            dragHandle = {
+                Box(
+                    Modifier.padding(
+                            top = 14.dp,
+                            bottom = if (window.height < 480) 12.dp else 20.dp,
+                        )
+                        .size(width = 32.dp, height = 4.dp)
+                        .background(
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            RoundedCornerShape(2.dp),
+                        ),
+                )
+            },
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible,
@@ -367,11 +405,10 @@ internal fun SettingsSheet(
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
     val scroll = if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier
-    SettingsModal(onDismiss) { centered ->
+    SettingsModal(onDismiss, maxHeight = windowHeight * 0.80f) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
-                .heightIn(max = windowHeight * 0.80f)
                 .padding(
                     start = 16.dp,
                     end = 16.dp,
@@ -389,6 +426,7 @@ internal fun SettingsSheet(
                         MaterialTheme.typography.titleLarge.copy(
                             fontSize = 22.sp,
                             lineHeight = 28.sp,
+                            fontWeight = FontWeight.SemiBold,
                         ),
                 )
                 if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
@@ -569,11 +607,13 @@ internal fun SettingsChoiceRow(
 ) {
     val colors = MaterialTheme.colorScheme
     val foreground = if (selected) colors.onSecondaryContainer else colors.onSurface
+    val shape = RoundedCornerShape(12.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(shape)
+            .updateFocusOutline(shape, LocalActivityStatusColor.current)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),

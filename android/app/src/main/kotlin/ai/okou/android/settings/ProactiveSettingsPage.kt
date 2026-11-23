@@ -106,26 +106,34 @@ internal fun ProactiveSettingsPage(
     val suggestions by model.suggestions.state.collectAsStateWithLifecycle()
     val needsTimezone =
         morning.confirmed?.needsTimezone == true || suggestions.confirmed?.needsTimezone == true
+    val morningFocus = remember { FocusRequester() }
+    val current =
+        if (needsTimezone) preferences.uiState.collectAsStateWithLifecycle().value else null
+    val canSelect = current != null && morning.online && current.pending?.timezoneToWrite == null
+    val select: (String) -> Unit = { preferences.selectTimezone(it, missingOnServer = true) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ProactiveDetail(stringResource(R.string.settings_proactive_scope, workspace))
         SettingsGroup {
             if (morning.loading) ProactiveSettingPlaceholder()
-            else MorningBriefRow(morning, model.morningBrief::choose)
+            else
+                MorningBriefRow(
+                    morning,
+                    model.morningBrief::choose,
+                    Modifier.focusRequester(morningFocus),
+                )
             if (!suggestions.hidden && (suggestions.confirmed != null || suggestions.loading)) {
                 HorizontalDivider()
                 if (suggestions.loading) ProactiveSettingPlaceholder()
                 else SuggestionsRow(suggestions, model.suggestions::choose)
             }
-            if (needsTimezone) {
-                HorizontalDivider()
-                val current by preferences.uiState.collectAsStateWithLifecycle()
-                val canSelect = morning.online && current.pending?.timezoneToWrite == null
-                val select: (String) -> Unit = {
-                    preferences.selectTimezone(it, missingOnServer = true)
-                }
-                TimezonePicker(current.timezone, select.takeIf { canSelect })
-                PreferenceFeedback(current, preferences::retry)
-            }
+            if (needsTimezone) HorizontalDivider()
+            TimezonePicker(
+                current?.timezone,
+                select.takeIf { canSelect },
+                visible = needsTimezone,
+                fallbackFocus = morningFocus,
+            )
+            if (current != null) PreferenceFeedback(current, preferences::retry)
         }
         if (suggestions.readFailed && suggestions.confirmed == null) {
             ProactiveDetail(stringResource(R.string.settings_proactive_read_failed))
@@ -137,13 +145,18 @@ private val ProactiveSettingState.loading: Boolean
     get() = confirmed == null && online && !readFailed
 
 @Composable
-private fun MorningBriefRow(state: ProactiveSettingState, select: (Boolean) -> Unit) {
+private fun MorningBriefRow(
+    state: ProactiveSettingState,
+    select: (Boolean) -> Unit,
+    modifier: Modifier,
+) {
     SettingsSwitchRow(
         stringResource(R.string.settings_morning_brief),
         leading = { SettingsIcon(R.drawable.ic_wb_twilight) },
         checked = state.enabled,
         onCheckedChange =
             select.takeIf { state.canChoose && state.confirmed?.needsTimezone == false },
+        modifier = modifier,
         supportingText = stringResource(state.detail(R.string.settings_morning_brief_detail)),
     )
 }

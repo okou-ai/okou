@@ -23,6 +23,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -30,11 +31,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import java.time.Instant
 import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -134,9 +136,14 @@ class ProactiveSettingsPageTest {
             val trigger = compose.onNodeWithText("Time zone").assertIsDisplayed()
             trigger.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
             trigger.performKeyInput { pressKey(Key.Enter) }
-            compose
-                .onNodeWithText(app.getString(R.string.settings_timezone_hint))
-                .assertIsDisplayed()
+            val note = compose.onNodeWithText(app.getString(R.string.settings_timezone_hint))
+            val heading =
+                compose.onNode(
+                    hasText("Time zone") and
+                        SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
+                )
+            val headingBounds = heading.assertIsDisplayed().getUnclippedBoundsInRoot()
+            val noteBounds = note.assertIsDisplayed().getUnclippedBoundsInRoot()
             compose
                 .onNode(hasText("Shanghai (UTC+8)") and isSelectable())
                 .assertIsDisplayed()
@@ -144,33 +151,57 @@ class ProactiveSettingsPageTest {
                 .assertIsFocused()
 
             val kathmandu = TimeZone.getCanonicalID("Asia/Kathmandu")
-            val options =
-                timezoneOptions(
-                    "Asia/Shanghai",
-                    Locale.US,
-                    app.getString(R.string.settings_timezone_utc),
-                )
-            val offsets = options.mapNotNull { it.offsetMinutes }
-            assertEquals(offsets.sorted(), offsets)
-            val destination = options.indexOfFirst { it.id == kathmandu }
-            assertTrue(destination >= 0)
-            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(destination)
-            compose
-                .onNode(
-                    hasText("Time zone") and
-                        SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
-                )
-                .assertIsDisplayed()
-            compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable()).performClick()
+            compose.onNode(hasScrollToIndexAction()).performScrollToKey(kathmandu)
+            assertEquals(headingBounds, heading.getUnclippedBoundsInRoot())
+            assertEquals(noteBounds, note.getUnclippedBoundsInRoot())
+            val choice = compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable())
+            choice.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            fixture.morningNeedsTimezone = false
+            choice.performKeyInput { pressKey(Key.Enter) }
             compose.waitUntil(10_000) {
                 compose.runOnIdle {
                     app.snapshotApiPreferences().values.any { it.timezone == kathmandu }
                 }
             }
+            val morning = hasText("Morning Brief") and nativeSwitch and isEnabled()
+            compose.waitUntilExactlyOneExists(morning, 10_000)
+            trigger.assertDoesNotExist()
+            compose.onNode(morning).assertIsFocused()
             assertTrue(fixture.writes.isEmpty())
         } finally {
             instrumentation.setInTouchMode(true)
         }
+    }
+
+    @Test
+    fun timezoneOrderAccountsForDaylightSavingAndSortsEqualOffsetsByCity() {
+        val utcName = app.getString(R.string.settings_timezone_utc)
+        val winter =
+            timezoneOptions(
+                "Europe/London",
+                Locale.US,
+                utcName,
+                Instant.parse("2026-01-15T12:00:00Z").toEpochMilli(),
+            )
+        val summer =
+            timezoneOptions(
+                "Europe/London",
+                Locale.US,
+                utcName,
+                Instant.parse("2026-07-15T12:00:00Z").toEpochMilli(),
+            )
+        val londonInWinter = winter.indexOfFirst { it.id == "Europe/London" }
+        val monroviaInWinter = winter.indexOfFirst { it.id == "Africa/Monrovia" }
+        val londonInSummer = summer.indexOfFirst { it.id == "Europe/London" }
+        val monroviaInSummer = summer.indexOfFirst { it.id == "Africa/Monrovia" }
+        assertEquals(0, winter[londonInWinter].offsetMinutes)
+        assertEquals(0, winter[monroviaInWinter].offsetMinutes)
+        assertTrue(londonInWinter < monroviaInWinter)
+        assertEquals(60, summer[londonInSummer].offsetMinutes)
+        assertEquals(0, summer[monroviaInSummer].offsetMinutes)
+        assertTrue(monroviaInSummer < londonInSummer)
+        val offsets = summer.mapNotNull { it.offsetMinutes }
+        assertEquals(offsets.sorted(), offsets)
     }
 
     @Test

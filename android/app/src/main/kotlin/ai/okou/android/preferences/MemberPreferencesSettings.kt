@@ -150,13 +150,20 @@ internal fun MemberPreferencesSettings(
 }
 
 @Composable
-internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
+internal fun TimezonePicker(
+    current: String?,
+    onSelect: ((String) -> Unit)?,
+    visible: Boolean = true,
+    fallbackFocus: FocusRequester? = null,
+) {
     val title = stringResource(R.string.settings_timezone)
     SettingsPickerRow(
         title,
         value = current?.let { timezoneLabel(it) },
         leading = { SettingsIcon(R.drawable.ic_schedule) },
         enabled = current != null && onSelect != null,
+        visible = visible,
+        fallbackFocus = fallbackFocus,
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
         SettingsSheet(title, dismiss, scrollContent = false) {
