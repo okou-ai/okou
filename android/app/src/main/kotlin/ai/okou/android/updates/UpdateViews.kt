@@ -235,7 +235,16 @@ internal fun UpdateHost(
                 .safeDrawingPadding(),
         ) {
             // Retain navigation metadata while the required screen owns the task.
-            savedUi.SaveableStateProvider("workspace") { content { details = true } }
+            savedUi.SaveableStateProvider("workspace") {
+                content {
+                    details = true
+                    if (
+                        state.check == UpdateCheck.Failed &&
+                            (!state.available || state.requiresNewerAndroid)
+                    )
+                        check()
+                }
+            }
         }
     }
     if (showDetails) {
@@ -266,7 +275,7 @@ internal fun AppUpdateSettings(
 ) {
     val status =
         when (state.check) {
-            UpdateCheck.Checking -> R.string.updates_status_checking
+            UpdateCheck.Checking -> R.string.updates_check_in_progress
             UpdateCheck.Waiting,
             UpdateCheck.Failed -> R.string.updates_status_check_failed
             UpdateCheck.Unknown,
@@ -353,8 +362,13 @@ private fun UpdateSheet(
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
                 else MaterialTheme.typography.headlineSmall
             val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
-            val resultLineHeight =
-                with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
+            val resultSpacing = 4.dp
+            // Match the rounding of each text row and the gap.
+            val resultMinHeight =
+                with(LocalDensity.current) {
+                    val lineHeight = MaterialTheme.typography.bodyMedium.lineHeight.toDp()
+                    (lineHeight.roundToPx() * 2 + resultSpacing.roundToPx()).toDp()
+                }
             val scroll = rememberScrollState()
             val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
             val headingGap = if (short) 4.dp else 8.dp
@@ -380,8 +394,8 @@ private fun UpdateSheet(
                     )
                     Spacer(Modifier.height(if (short) 4.dp else 8.dp))
                     Column(
-                        Modifier.heightIn(min = resultLineHeight * 2 + 4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        Modifier.heightIn(min = resultMinHeight),
+                        verticalArrangement = Arrangement.spacedBy(resultSpacing),
                     ) {
                         if (release != null) {
                             FlowRow(

@@ -122,10 +122,9 @@
     <string name="updates_required">Aggiorna Okou per continuare</string>
     <string name="updates_required_description">Questa versione non è più supportata. Aggiorna per continuare a lavorare.</string>
     <string name="updates_downloading">Download in corso · %1$s</string>
-    <string name="updates_needed">Aggiornamento necessario</string>
-    <string name="updates_not_needed">Nessun aggiornamento necessario</string>
-    <string name="updates_status_checking">Ricerca aggiornamenti</string>
-    <string name="updates_status_check_failed">Verifica aggiornamenti non riuscita</string>
+    <string name="updates_needed">Nuova versione</string>
+    <string name="updates_not_needed">Aggiornata</string>
+    <string name="updates_status_check_failed">Verifica non riuscita</string>
     <string name="updates_package_size">Pacchetto: %1$s</string>
     <string name="updates_check_in_progress">Verifica in corso…</string>
     <string name="updates_version">Nuova versione: %1$s</string>

@@ -122,10 +122,9 @@
     <string name="updates_required">Okou 업데이트 필요</string>
     <string name="updates_required_description">이 버전은 더 이상 지원되지 않습니다. 작업을 계속하려면 업데이트하세요.</string>
     <string name="updates_downloading">다운로드 중 · %1$s</string>
-    <string name="updates_needed">업데이트 필요</string>
-    <string name="updates_not_needed">업데이트 필요 없음</string>
-    <string name="updates_status_checking">업데이트 확인 중</string>
-    <string name="updates_status_check_failed">업데이트 확인 실패</string>
+    <string name="updates_needed">새 버전 사용 가능</string>
+    <string name="updates_not_needed">최신 버전</string>
+    <string name="updates_status_check_failed">확인 실패</string>
     <string name="updates_package_size">패키지: %1$s</string>
     <string name="updates_check_in_progress">확인 중…</string>
     <string name="updates_version">새 버전: %1$s</string>

@@ -103,7 +103,7 @@
     <string name="composer_revoked">訊息已撤回</string>
     <string name="updates_title">應用程式更新</string>
     <string name="updates_installed">目前版本 %1$s</string>
-    <string name="updates_current">已是最新版本</string>
+    <string name="updates_current">目前已是最新版</string>
     <string name="updates_preparing">準備中…</string>
     <string name="updates_installing">正在安裝…</string>
     <string name="updates_connect_to_check">連上網路後檢查更新。</string>
@@ -122,10 +122,9 @@
     <string name="updates_required">更新後繼續使用 Okou</string>
     <string name="updates_required_description">目前版本已不受支援。請更新至新版本以繼續工作。</string>
     <string name="updates_downloading">下載中 %1$s</string>
-    <string name="updates_needed">需要更新</string>
-    <string name="updates_not_needed">不需要更新</string>
-    <string name="updates_status_checking">檢查更新中</string>
-    <string name="updates_status_check_failed">檢查更新失敗</string>
+    <string name="updates_needed">有新版本</string>
+    <string name="updates_not_needed">已是最新版</string>
+    <string name="updates_status_check_failed">檢查失敗</string>
     <string name="updates_package_size">安裝套件 %1$s</string>
     <string name="updates_check_in_progress">檢查中</string>
     <string name="updates_version">新版本 %1$s</string>
