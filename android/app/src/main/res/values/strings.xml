@@ -141,8 +141,8 @@
     <string name="realtime_connecting">Connecting to live updates…</string>
     <string name="realtime_unavailable">Live updates unavailable. You can still refresh manually.</string>
     <string name="settings_account">Account</string>
-    <string name="chat_project_expansion_read_failed">Could not load Project expansion on this device.</string>
-    <string name="chat_project_expansion_save_failed">Could not save Project expansion on this device.</string>
+    <string name="chat_project_expansion_read_failed">Could not read saved Project expansion.</string>
+    <string name="chat_project_expansion_save_failed">Project expansion could not be saved for next time.</string>
     <string name="settings_cancel">Cancel</string>
     <string name="settings_saving">Saving…</string>
     <string name="settings_sign_out_title">Sign out?</string>

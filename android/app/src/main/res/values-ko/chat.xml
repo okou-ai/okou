@@ -18,9 +18,9 @@
     <string name="chat_list_title">채팅</string>
     <string name="chat_refresh">채팅 새로고침</string>
     <string name="chat_loading">채팅을 불러오는 중…</string>
-    <string name="chat_refresh_failed">새로고침하지 못했습니다. 마지막으로 불러온 채팅을 표시합니다.</string>
+    <string name="chat_refresh_failed">읽지 않음 상태를 새로고침하지 못했습니다.</string>
     <string name="chat_cache_unavailable">오프라인 저장소를 사용할 수 없습니다. 다시 시작한 후에는 이 채팅을 볼 수 없을 수 있습니다.</string>
-    <string name="chat_metadata_unavailable">일부 Okou 또는 프로젝트 정보를 사용할 수 없습니다.</string>
+    <string name="chat_metadata_unavailable">프로젝트 정보를 일시적으로 불러올 수 없습니다.</string>
     <string name="chat_inbox">받은편지함</string>
     <string name="chat_mark_all_read">모두 읽음으로 표시</string>
     <string name="chat_mark_all_read_unconfirmed">일부 채팅이 아직 읽지 않은 상태일 수 있습니다.</string>
