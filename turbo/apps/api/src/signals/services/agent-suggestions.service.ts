@@ -13,7 +13,15 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { canonicalChatEventUserMessage } from "./canonical-chat-event-read.service";
 import { isDeepStrictEqual } from "node:util";
 import { command } from "ccstate";
-import { and, arrayContains, eq, not, sql } from "drizzle-orm";
+import {
+  and,
+  arrayContains,
+  eq,
+  inArray,
+  not,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { feedItems } from "@okouai/db/schema/feed-item";
@@ -30,7 +38,7 @@ import {
   type SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/feed";
 import { organizationAuthContext$ } from "../auth/auth-context";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import {
   badRequestMessage,
   conflict,
@@ -46,7 +54,6 @@ import { PROACTIVE_SUGGESTIONS_DEFINITION_NAME } from "@okouai/api-contracts/con
 import { loadProactivePreferences$ } from "./proactive-workflows-eligibility.service";
 import {
   storedSuggestion$,
-  storedSuggestions$,
   suggestionOwner,
 } from "./agent-suggestion-read.service";
 import {
@@ -744,6 +751,27 @@ export const recordSuggestionFeedback$ = command(
   },
 );
 
+function acceptedSuggestionMessageQuery(
+  database: Db,
+  owner: Owner,
+  threadId: string,
+  eventId: string,
+) {
+  return database
+    .select({ document: canonicalChatEventUserMessage().as("document") })
+    .from(chatEvents)
+    .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
+    .where(
+      and(
+        eq(chatEvents.id, eventId),
+        eq(chatEvents.chatThreadId, threadId),
+        eq(chatThreads.userId, owner.userId),
+        chatThreadOrganizationPredicate(owner.orgId),
+      ),
+    )
+    .limit(1);
+}
+
 const acceptedSuggestionMessage$ = command(
   async (
     { set },
@@ -752,19 +780,12 @@ const acceptedSuggestionMessage$ = command(
     eventId: string,
     signal: AbortSignal,
   ) => {
-    const [event] = await set(writeDb$)
-      .select({ document: canonicalChatEventUserMessage() })
-      .from(chatEvents)
-      .innerJoin(chatThreads, eq(chatThreads.id, chatEvents.chatThreadId))
-      .where(
-        and(
-          eq(chatEvents.id, eventId),
-          eq(chatEvents.chatThreadId, threadId),
-          eq(chatThreads.userId, owner.userId),
-          chatThreadOrganizationPredicate(owner.orgId),
-        ),
-      )
-      .limit(1);
+    const [event] = await acceptedSuggestionMessageQuery(
+      set(writeDb$),
+      owner,
+      threadId,
+      eventId,
+    );
     signal.throwIfAborted();
     return event?.document ?? null;
   },
@@ -782,29 +803,60 @@ export const validateSuggestionFollowup$ = command(
     signal: AbortSignal,
   ) => {
     const { threadId, eventId, document } = input;
-    // An accepted replay must repair its receipt even if curation has since changed.
-    const acceptedDocument = await set(
-      acceptedSuggestionMessage$,
-      owner,
-      threadId,
-      eventId,
-      signal,
-    );
+    const feedbacks = suggestionFeedbacks(document);
+    const ids = [
+      ...new Set(
+        feedbacks.map(({ context }) => {
+          return context.suggestionId.toLowerCase();
+        }),
+      ),
+    ];
+    const database = set(writeDb$);
+    const accepted = database
+      .$with("accepted_suggestion_input")
+      .as(acceptedSuggestionMessageQuery(database, owner, threadId, eventId));
+    // An independent predicate lets PostgreSQL skip the card scan on replay.
+    const cards = database
+      .select()
+      .from(feedItems)
+      .where(
+        and(
+          suggestionOwner(owner),
+          inArray(feedItems.id, ids),
+          notExists(
+            database
+              .select({ document: accepted.document })
+              .from(accepted)
+              .where(sql`${accepted.document} <> 'null'::jsonb`),
+          ),
+        ),
+      )
+      .limit(ids.length)
+      .as("suggestion_cards");
+    const rows = await database
+      .with(accepted)
+      .select({
+        acceptedDocument: accepted.document,
+        suggestion: cards._.selectedFields,
+      })
+      .from(sql`(select 1) as suggestion_input`)
+      .leftJoin(accepted, sql`true`)
+      .leftJoin(cards, sql`true`);
+    signal.throwIfAborted();
+    // An accepted replay repairs its receipt from the saved message.
+    const acceptedDocument = rows[0]?.acceptedDocument;
     if (acceptedDocument) {
       return { acceptedDocument };
     }
-    const feedbacks = suggestionFeedbacks(document);
-    // One read serves every quoted card; parts are still checked in order.
-    const stored = await set(
-      storedSuggestions$,
-      owner,
-      feedbacks.map(({ context }) => {
-        return context.suggestionId;
+    const stored = new Map(
+      rows.flatMap(({ suggestion }) => {
+        return suggestion
+          ? [[suggestion.id, suggestionRow(suggestion)] as const]
+          : [];
       }),
-      signal,
     );
     for (const { context, part } of feedbacks) {
-      const entry = stored.get(context.suggestionId);
+      const entry = stored.get(context.suggestionId.toLowerCase());
       const item =
         entry?.content && entry.state.status === "active" ? entry : null;
       // A saved quote is self-contained and can outlive its disposable card.
