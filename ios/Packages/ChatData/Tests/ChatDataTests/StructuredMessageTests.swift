@@ -55,7 +55,14 @@ final class StructuredMessageTests: XCTestCase {
       #"[{"type":"source","kind":"mcp","clientId":"research-client","clientName":"Research client"},{"type":"text","text":"Research this."}]"#,
       #"[{"type":"feedback","quote":"Keep this quoted passage.","note":[{"type":"text","text":"Please revise it."}],"source":{"type":"mail","id":"private-mail-id","status":"draft"}}]"#,
       #"[{"type":"template","titleSnapshot":"Saved style","template":{"type":"illustration","selection":{"illustrationStyleId":"saved-style"}}}]"#,
-      #"[{"type":"file","fileId":"original-image","filenameSnapshot":"marked.jpg","contentType":"image/jpeg","annotatedFileId":"marked-image"}]"#
+      #"[{"type":"file","fileId":"original-image","filenameSnapshot":"marked.jpg","contentType":"image/jpeg","annotatedFileId":"marked-image"}]"#,
+      #"""
+      [
+        {"type":"feedback","quote":"First file","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Original.md","artifactId":"artifact"}},
+        {"type":"feedback","quote":"Second file","note":[],"source":{"type":"artifact","fileId":"file-b","filenameSnapshot":"Original.md","artifactId":"artifact"}},
+        {"type":"feedback","quote":"Renamed file","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Renamed.md"}}
+      ]
+      """#
     ]
     let rows = documents.enumerated().map { index, parts in
       let id = String(format: "50000000-0000-4000-8000-%012d", index + 1)
@@ -78,7 +85,7 @@ final class StructuredMessageTests: XCTestCase {
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0
         return ChatHTTPResponse(
           body: """
-            {"rows":[\(rows.dropFirst(after).joined(separator: ","))],"cursor":{"lastEventId":"50000000-0000-4000-8000-000000000006","lastSeqId":6},"hasMore":false}
+            {"rows":[\(rows.dropFirst(after).joined(separator: ","))],"cursor":{"lastEventId":"50000000-0000-4000-8000-000000000007","lastSeqId":7},"hasMore":false}
             """)
       case "/api/chat-threads/\(thread)":
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
@@ -91,19 +98,26 @@ final class StructuredMessageTests: XCTestCase {
       apiBaseURL: fixture.baseURL, userID: "reader", workspaceID: "workspace")
     let cache = ChatCache(scope: scope, directory: directory)
     let history = try await ChatSync(client: fixture.client, cache: cache).history(threadID: thread)
-    XCTAssertEqual(history.messages.count, 6)
+    XCTAssertEqual(history.messages.count, 7)
     XCTAssertEqual(history.messages[0].userMessage?.annotation?.kind, "slack")
     XCTAssertEqual(
       history.messages[0].userMessage?.annotation?.href, "https://example.slack.com/archives/C1/p1")
     XCTAssertEqual(history.messages[1].text, "A matching email arrived.")
     XCTAssertEqual(history.messages[1].userMessage?.annotation?.workflowId, workflow)
     XCTAssertEqual(history.messages[2].userMessage?.annotation?.clientName, "Research client")
-    XCTAssertEqual(history.messages[3].userMessage?.bodyParts.first?.source?.status, "draft")
+    XCTAssertEqual(
+      history.messages[3].userMessage?.bodyParts.first?.source,
+      .mail(id: "private-mail-id", status: .draft, sentId: nil))
     XCTAssertTrue(history.messages[3].copyText.contains("Please revise it."))
     XCTAssertFalse(history.messages[3].copyText.contains("private-mail-id"))
     XCTAssertEqual(history.messages[4].copyText, "Saved style")
     XCTAssertEqual(history.messages[5].attachments.first?.id, "original-image")
     XCTAssertEqual(history.messages[5].attachments.first?.downloadID, "marked-image")
+    XCTAssertEqual(history.messages[6].userMessage?.bodyParts.map(\.source), [
+      .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+      .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
+      .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
+    ])
 
     online.withLock { $0 = false }
     let reopened = ChatSync(

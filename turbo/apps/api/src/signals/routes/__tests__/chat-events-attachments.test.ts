@@ -376,6 +376,147 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, sent.runId);
   }, 90_000);
 
+  it("attributes artifact quotes to stored snapshots without granting file access", async () => {
+    const { actor } = await entitledChatActor();
+    const owner = bdd.user();
+    const storage = installS3Fixture(context);
+    const bytes = Buffer.from("The file currently has a different name.");
+    const uploaded = await chat.prepareUpload(owner, {
+      filename: "current-name.md",
+      contentType: "text/markdown",
+      size: bytes.length,
+    });
+    if (!("uploadUrl" in uploaded)) {
+      throw new Error("Expected a single-part upload");
+    }
+    storage.put(uploaded.uploadUrl, bytes, "text/markdown");
+    await chat.completeUpload(owner, { id: uploaded.id });
+    await chat.requestWebFileUrl(actor, uploaded.id, [404]);
+    const source = {
+      type: "artifact" as const,
+      fileId: uploaded.id,
+      filenameSnapshot: "quoted-name.md",
+      artifactId: randomUUID(),
+    };
+    const userMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        { type: "feedback", quote: "First passage", note: [], source },
+        {
+          type: "feedback",
+          quote: "Second passage\nwith another line",
+          note: [{ type: "text", text: "Clarify this" }],
+          source,
+        },
+      ],
+    };
+    const sent = await sendChatRun(actor, {
+      prompt: "legacy fallback",
+      userMessage,
+    });
+    const run = await api.executionInput(sent.runId);
+    expect(run.prompt).toBe(
+      `The user quoted 2 parts of a file "quoted-name.md" (file ID: ${uploaded.id}):\n\n` +
+        "> First passage\n\n---\n\n> Second passage\n> with another line\n\nClarify this",
+    );
+    expect(run.prompt).not.toContain(source.artifactId);
+    expect(run.prompt).not.toContain(uploaded.uploadUrl);
+    const messages = await chat.listThreadEvents(actor, sent.threadId);
+    const message = userMessages(messages.events).find((item) => {
+      return item.eventType === "input.prompt" && item.runId === sent.runId;
+    });
+    if (message?.eventType !== "input.prompt") {
+      throw new Error("Expected the submitted user message in history");
+    }
+    expect(message.userMessage?.parts.slice(0, 2)).toStrictEqual(
+      userMessage.parts,
+    );
+    await chat.requestWebFileUrl(actor, uploaded.id, [404]);
+    await cancelAndCompleteChatRun(actor, sent.runId);
+  }, 90_000);
+
+  it.each(["fileId", "filenameSnapshot", "artifactId"] as const)(
+    "keeps artifact quotes separate when %s differs",
+    async (difference) => {
+      const { actor } = await entitledChatActor();
+      const source = {
+        type: "artifact" as const,
+        fileId: randomUUID(),
+        filenameSnapshot: "brief.md",
+      };
+      const otherSource = {
+        ...source,
+        ...(difference === "fileId" ? { fileId: randomUUID() } : {}),
+        ...(difference === "filenameSnapshot"
+          ? { filenameSnapshot: "renamed.md" }
+          : {}),
+        ...(difference === "artifactId" ? { artifactId: randomUUID() } : {}),
+      };
+      const sent = await sendChatRun(actor, {
+        prompt: "legacy fallback",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "feedback", quote: "First passage", note: [], source },
+            {
+              type: "feedback",
+              quote: "Second passage",
+              note: [],
+              source: otherSource,
+            },
+          ],
+        },
+      });
+      const run = await api.executionInput(sent.runId);
+      expect(run.prompt).toBe(
+        "The user quoted 2 selected passages:\n\n" +
+          `Source: a file "brief.md" (file ID: ${source.fileId})\n\n> First passage\n\n---\n\n` +
+          `Source: a file "${otherSource.filenameSnapshot}" (file ID: ${otherSource.fileId})\n\n> Second passage`,
+      );
+      if (otherSource.artifactId !== undefined) {
+        expect(run.prompt).not.toContain(otherSource.artifactId);
+      }
+      await cancelAndCompleteChatRun(actor, sent.runId);
+    },
+    90_000,
+  );
+
+  it("keeps artifact, mail and source-less quotes in order", async () => {
+    const { actor } = await entitledChatActor();
+    const fileId = randomUUID();
+    const mailId = randomUUID();
+    const sentId = `gmail-${randomUUID()}`;
+    const sent = await sendChatRun(actor, {
+      prompt: "legacy fallback",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote: "Artifact passage",
+            note: [],
+            source: { type: "artifact", fileId, filenameSnapshot: "brief.md" },
+          },
+          {
+            type: "feedback",
+            quote: "Email passage",
+            note: [],
+            source: { type: "mail", id: mailId, status: "sent", sentId },
+          },
+          { type: "feedback", quote: "Reply passage", note: [] },
+        ],
+      },
+    });
+    const run = await api.executionInput(sent.runId);
+    expect(run.prompt).toBe(
+      "The user quoted 3 selected passages:\n\n" +
+        `Source: a file "brief.md" (file ID: ${fileId})\n\n> Artifact passage\n\n---\n\n` +
+        `Source: a sent email (mail ID: ${mailId}, sent ID: ${sentId})\n\n> Email passage\n\n---\n\n` +
+        "> Reply passage",
+    );
+    await cancelAndCompleteChatRun(actor, sent.runId);
+  }, 90_000);
+
   it("projects forwarded passages from the authoritative source title", async () => {
     const { actor } = await entitledChatActor();
 
@@ -440,7 +581,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     await cancelAndCompleteChatRun(actor, source.runId);
   }, 90_000);
 
-  it("preserves common mail identifiers in forwarded prompts", async () => {
+  it("preserves common source labels in forwarded prompts", async () => {
     const { actor } = await entitledChatActor();
 
     const source = await chat.sendAndLaunch(actor, {
@@ -456,6 +597,29 @@ describe("CHAT-02: generation templates and attachments", () => {
       readonly userMessage: UserMessageInputDocument;
       readonly expectedPrompt: string;
     }[] = [
+      {
+        name: "artifact snapshot without a note",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "feedback",
+              quote: "The file launch date is Wednesday.",
+              note: [],
+              source: {
+                type: "artifact",
+                fileId: "forwarded-file-id",
+                filenameSnapshot: "launch-plan.md",
+                artifactId: "private-artifact-id",
+              },
+            },
+          ],
+        },
+        expectedPrompt:
+          'The user forwarded this from the chat "Source launch plan":\n\n' +
+          'Source: a file "launch-plan.md" (file ID: forwarded-file-id)\n\n' +
+          "> The file launch date is Wednesday.",
+      },
       {
         name: "draft feedback with a note",
         userMessage: {

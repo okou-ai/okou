@@ -10556,24 +10556,110 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Range(
     val `end`: Long,
 )
 
+@Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceSerializer::class)
+sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source
+
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceType {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1Type {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceStatus {
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1Status {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source(
-    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceType,
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1Type,
     val `id`: String,
-    val `status`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceStatus,
+    val `status`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1Status,
     val `sentId`: String? = null,
-)
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source
+
+@Serializable
+enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2Type {
+    @SerialName("artifact") ARTIFACT
+}
+
+@Serializable
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2(
+    val `type`: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2Type,
+    val `fileId`: String,
+    val `filenameSnapshot`: String,
+    val `artifactId`: String? = null,
+) : SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source
+
+object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceSerializer :
+    KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("mail")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("artifact")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source,
+    ) {
+        when (value) {
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1 ->
+                encoder.encodeSerializableValue(
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            is SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2 ->
+                encoder.encodeSerializableValue(
+                    SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10(
@@ -12116,24 +12202,110 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10Range(
     val `end`: Long,
 )
 
+@Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant10SourceSerializer::class)
+sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10Source
+
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceType {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1Type {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceStatus {
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1Status {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant10Source(
-    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceType,
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1Type,
     val `id`: String,
-    val `status`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceStatus,
+    val `status`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1Status,
     val `sentId`: String? = null,
-)
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10Source
+
+@Serializable
+enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2Type {
+    @SerialName("artifact") ARTIFACT
+}
+
+@Serializable
+data class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2(
+    val `type`: SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2Type,
+    val `fileId`: String,
+    val `filenameSnapshot`: String,
+    val `artifactId`: String? = null,
+) : SaveThreadDraftDraftUserMessagePartsItemVariant10Source
+
+object SaveThreadDraftDraftUserMessagePartsItemVariant10SourceSerializer :
+    KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10Source> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): SaveThreadDraftDraftUserMessagePartsItemVariant10Source {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("mail")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("artifact")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SaveThreadDraftDraftUserMessagePartsItemVariant10Source,
+    ) {
+        when (value) {
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1 ->
+                encoder.encodeSerializableValue(
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            is SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2 ->
+                encoder.encodeSerializableValue(
+                    SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10(
@@ -14251,24 +14423,110 @@ data class SendRequestVariant1UserMessagePartsItemVariant10Range(
     val `end`: Long,
 )
 
+@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer::class)
+sealed interface SendRequestVariant1UserMessagePartsItemVariant10Source
+
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant10SourceType {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type {
     @SerialName("mail") MAIL
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant10SourceStatus {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Status {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant10Source(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceType,
+data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type,
     val `id`: String,
-    val `status`: SendRequestVariant1UserMessagePartsItemVariant10SourceStatus,
+    val `status`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Status,
     val `sentId`: String? = null,
-)
+) : SendRequestVariant1UserMessagePartsItemVariant10Source
+
+@Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type {
+    @SerialName("artifact") ARTIFACT
+}
+
+@Serializable
+data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type,
+    val `fileId`: String,
+    val `filenameSnapshot`: String,
+    val `artifactId`: String? = null,
+) : SendRequestVariant1UserMessagePartsItemVariant10Source
+
+object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant10Source> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10Source"
+        )
+
+    override fun deserialize(
+        decoder: Decoder
+    ): SendRequestVariant1UserMessagePartsItemVariant10Source {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("mail")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("artifact")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SendRequestVariant1UserMessagePartsItemVariant10Source,
+    ) {
+        when (value) {
+            is SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1 ->
+                encoder.encodeSerializableValue(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            is SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2 ->
+                encoder.encodeSerializableValue(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10(

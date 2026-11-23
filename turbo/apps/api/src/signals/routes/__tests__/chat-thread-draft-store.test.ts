@@ -143,6 +143,36 @@ describe("thread drafts", () => {
     );
   });
 
+  it("round-trips artifact quote snapshots without requiring an attachment", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    const draftUserMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        {
+          type: "feedback",
+          quote: "Quoted before the file was renamed",
+          note: [{ type: "text", text: "Clarify this paragraph" }],
+          source: {
+            type: "artifact",
+            fileId: randomUUID(),
+            filenameSnapshot: "original-name.md",
+          },
+        },
+      ],
+    };
+    await chat.patchThread(actor, threadId, {
+      draftUserMessage,
+      draftAttachments: null,
+    });
+    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
+      draftUserMessage,
+      draftAttachments: null,
+    });
+    await expect(listedDraftIds({ actor, threadId })).resolves.toContain(
+      threadId,
+    );
+  });
+
   it("saves rich draft edits containing unpaired surrogates", async () => {
     const { actor, threadId } = await createDraftFixture();
     const image = persistedAttachment(

@@ -39,6 +39,58 @@ final class ChatUserMessageTests: XCTestCase {
     XCTAssertEqual(message.text, "\nA passage\nRead the note\n")
   }
 
+  func testFeedbackSourcesPreserveMailAndArtifactIdentityAndFilenameSnapshots() throws {
+    let document = try storedMessage(
+      #"""
+      {"type":"feedback","quote":"No source","note":[]},
+      {"type":"feedback","quote":"Draft","note":[],"source":{"type":"mail","id":"mail-draft","status":"draft"}},
+      {"type":"feedback","quote":"Sent","note":[],"source":{"type":"mail","id":"mail-sent","status":"sent","sentId":"sent-message"}},
+      {"type":"feedback","quote":"First file","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Original.md","artifactId":"artifact"}},
+      {"type":"feedback","quote":"Same name, different file","note":[],"source":{"type":"artifact","fileId":"file-b","filenameSnapshot":"Original.md","artifactId":"artifact"}},
+      {"type":"feedback","quote":"Later filename","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Renamed.md","artifactId":"artifact"}}
+      """#)
+    let message = try XCTUnwrap(history([document]).messages.first)
+    let parts = try XCTUnwrap(message.userMessage?.bodyParts)
+    XCTAssertEqual(parts.map(\.source), [
+      nil,
+      .mail(id: "mail-draft", status: .draft, sentId: nil),
+      .mail(id: "mail-sent", status: .sent, sentId: "sent-message"),
+      .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+      .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
+      .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: "artifact")
+    ])
+    XCTAssertNotEqual(parts[3].source, parts[4].source)
+    XCTAssertNotEqual(parts[3].source, parts[5].source)
+    XCTAssertTrue(message.copyText.contains("Same name, different file"))
+    XCTAssertFalse(message.copyText.contains("mail-draft"))
+    XCTAssertFalse(message.copyText.contains("file-a"))
+  }
+
+  func testKnownFeedbackSourcesRequireTheirVariantMetadata() throws {
+    for source in [
+      #"{"type":"artifact","filenameSnapshot":"Notes.md"}"#,
+      #"{"type":"artifact","fileId":"file","filenameSnapshot":42}"#,
+      #"{"type":"mail","id":"draft","status":"future"}"#,
+      #"{"type":"mail","status":"sent"}"#,
+      #"{"type":"future","fileId":"file","filenameSnapshot":"Notes.md"}"#
+    ] {
+      XCTAssertThrowsError(
+        try storedMessage(
+          "{\"type\":\"feedback\",\"quote\":\"Passage\",\"note\":[],\"source\":\(source)}"), source)
+    }
+    for source in [
+      #"{"type":"artifact","fileId":"","filenameSnapshot":"Notes.md"}"#,
+      #"{"type":"artifact","fileId":"file","filenameSnapshot":""}"#,
+      #"{"type":"artifact","fileId":"file","filenameSnapshot":"Notes.md","artifactId":""}"#,
+      #"{"type":"mail","id":"","status":"draft"}"#,
+      #"{"type":"mail","id":"draft","status":"sent","sentId":""}"#
+    ] {
+      let document = try storedMessage(
+        "{\"type\":\"feedback\",\"quote\":\"Passage\",\"note\":[],\"source\":\(source)}")
+      XCTAssertThrowsError(try history([document]), source)
+    }
+  }
+
   func testMalformedKnownPartsAndDiscriminatorsStillFail() throws {
     for raw in [
       #"{"text":"Missing type"}"#, #"{"type":42}"#, #"{"type":"source"}"#,
