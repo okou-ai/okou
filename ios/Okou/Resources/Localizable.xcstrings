@@ -2964,6 +2964,46 @@
         }
       }
     },
+    "Delete account": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Konto löschen" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Delete account" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar cuenta" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer le compte" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "खाता हटाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus akun" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina account" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "アカウントを削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "계정 삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conta" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除账号" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除帳號" }
+        }
+      }
+    },
     "Delete project": {
       "extractionState": "manual",
       "localizations": {
