@@ -1,14 +1,25 @@
 package ai.okou.android
 
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.pressKey
 import androidx.test.core.app.ApplicationProvider
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -28,6 +39,64 @@ class SessionRootTest {
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Okou").assertExists()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
+    }
+
+    @Test
+    fun keyboardCheckKeepsFocusAndBoundsWhilePendingAndAfterFailure() {
+        val app = ApplicationProvider.getApplicationContext<TestOkouApplication>()
+        val auth = app.authentication as TestAuthentication
+        val previousState = auth.state.value
+        val previousWorkspaces = auth.available
+        val previousMemberships = auth.membershipsAction
+        val response = CompletableDeferred<Unit>()
+        val requests = AtomicInteger()
+        val check = compose.onNodeWithText(app.getString(R.string.auth_check_workspace))
+        val setup = compose.onNodeWithText(app.getString(R.string.auth_workspace_setup))
+        val signOut = compose.onNodeWithText(app.getString(R.string.auth_sign_out))
+        try {
+            compose.runOnIdle {
+                auth.available = emptyList()
+                auth.state.value = testAuthenticationState(workspace = null)
+            }
+            compose.waitUntilExactlyOneExists(
+                hasText(app.getString(R.string.auth_no_workspace)),
+                5_000,
+            )
+            compose.runOnIdle {
+                auth.membershipsAction = {
+                    requests.incrementAndGet()
+                    response.await()
+                    error("Workspace check failed")
+                }
+            }
+            check.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+            val bounds = check.getUnclippedBoundsInRoot()
+            check.performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntil(5_000) { requests.get() > 0 }
+
+            check.assertIsFocused().assertIsNotEnabled()
+            assertEquals(bounds, check.getUnclippedBoundsInRoot())
+            setup.assertIsEnabled()
+            signOut.assertIsEnabled()
+            compose.onNodeWithText(app.getString(R.string.auth_checking_workspace)).assertExists()
+            check.performKeyInput { pressKey(Key.Enter) }
+
+            response.complete(Unit)
+            compose.waitUntilExactlyOneExists(
+                hasText(app.getString(R.string.auth_check_failed)),
+                5_000,
+            )
+            check.assertIsFocused().assertIsEnabled()
+            assertEquals(bounds, check.getUnclippedBoundsInRoot())
+            assertEquals(1, requests.get())
+        } finally {
+            response.complete(Unit)
+            compose.runOnIdle {
+                auth.membershipsAction = previousMemberships
+                auth.available = previousWorkspaces
+                auth.state.value = previousState
+            }
+        }
     }
 
     @Test
