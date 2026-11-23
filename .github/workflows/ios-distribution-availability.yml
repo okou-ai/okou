@@ -37,6 +37,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.23.4
+      - name: Ensure territory codes for App Store lookup
+        if: inputs.channel == 'app-store'
+        run: |
+          if [ ! -r /usr/share/iso-codes/json/iso_3166-1.json ]; then
+            sudo apt-get update -qq && sudo apt-get install -y iso-codes
+          fi
       - name: Verify exact release against Apple
         id: apple
         env:

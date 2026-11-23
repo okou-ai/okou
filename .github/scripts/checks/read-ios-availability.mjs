@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const channels = ["app-store", "testflight"];
 const receiptName =
-  /^iOS availability receipt (app-store|testflight) ((?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}) ([1-9]\d{0,3}) ([a-f0-9]{40}) ([a-f0-9]{64}) (\d+)$/u;
+  /^iOS availability receipt (app-store|testflight) ((?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}) ([1-9]\d{0,3}) ([a-f0-9]{40}) ([a-f0-9]{64}) (\d+) (-|(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2})$/u;
 const day = 24 * 60 * 60 * 1000;
 
 export async function readAvailability(
@@ -44,7 +44,8 @@ export async function readAvailability(
           continue;
         const verified = Date.parse(step.completed_at);
         if (!(verified <= now && verified > now - day)) continue;
-        const [, , version, build, commit, scope, expiry] = match;
+        const [, , version, build, commit, scope, expiry, publishedVersion] =
+          match;
         if (channel === "testflight" && Number(expiry) <= now) continue;
         if (channel === "app-store") {
           const countries = configuredCountries
@@ -55,11 +56,15 @@ export async function readAvailability(
             countries.some((country) => !/^[A-Z]{2}$/u.test(country)) ||
             createHash("sha256").update(countries.join(",")).digest("hex") !==
               scope ||
-            expiry !== "0"
+            expiry !== "0" ||
+            publishedVersion === "-"
           )
             continue;
         }
-        result[channel] = { version, build, commit };
+        result[channel] =
+          channel === "app-store"
+            ? { version, build, commit, publishedVersion }
+            : { version, build, commit };
       }
     } catch (error) {
       console.error(

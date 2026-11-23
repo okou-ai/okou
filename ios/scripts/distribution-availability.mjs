@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { appleClientFromEnvironment, required } from "./testflight.mjs";
 
@@ -81,9 +81,81 @@ async function catalog(country) {
   return response.json();
 }
 
+const marketingVersion = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}$/u;
+const numericVersions = new Intl.Collator("en", { numeric: true });
+
+// App Store Connect uses three-letter territory IDs, the public catalog uses two.
+function appleTerritoryCodes() {
+  const countries = JSON.parse(
+    readFileSync("/usr/share/iso-codes/json/iso_3166-1.json", "utf8"),
+  )["3166-1"];
+  return new Map(countries.map((entry) => [entry.alpha_2, entry.alpha_3]));
+}
+
+async function publicVersion(
+  client,
+  regions,
+  codes,
+  lookup,
+  version,
+  replaced,
+) {
+  const availability = (
+    await client.request(`/v1/apps/${appId}/appAvailabilityV2`)
+  ).data;
+  const territories = await client.list(
+    `/v2/appAvailabilities/${availability.id}/territoryAvailabilities?${new URLSearchParams({ include: "territory", "fields[territoryAvailabilities]": "territory,available,contentStatuses", limit: "200" })}`,
+  );
+  let published;
+  for (const country of regions) {
+    const id = codes.get(country);
+    const status =
+      id &&
+      territories.find((item) => item.relationships?.territory?.data?.id === id)
+        ?.attributes;
+    if (
+      status?.available !== true ||
+      status.contentStatuses?.length !== 1 ||
+      status.contentStatuses[0] !== "AVAILABLE"
+    ) {
+      throw new Error(
+        `Storefront ${country} is not available for download in App Store Connect`,
+      );
+    }
+    const product = (await lookup(country)).results.find(
+      (entry) =>
+        String(entry.trackId) === appId &&
+        entry.bundleId === bundleId &&
+        entry.kind === "software",
+    );
+    const live = product?.version;
+    if (
+      !marketingVersion.test(live ?? "") ||
+      (replaced
+        ? numericVersions.compare(live, version) <= 0
+        : live !== version) ||
+      (published !== undefined && live !== published)
+    ) {
+      throw new Error(
+        `Storefront ${country} serves ${live ?? "no Okou app"}; expected a consistent public replacement for ${version}`,
+      );
+    }
+    published = live;
+  }
+  return published;
+}
+
 export async function verifyDistribution(
   client,
-  { channel, version, build, countries, internalGroup, externalGroups },
+  {
+    channel,
+    version,
+    build,
+    countries,
+    territoryCodes,
+    internalGroup,
+    externalGroups,
+  },
   lookup = catalog,
 ) {
   const app = one(
@@ -102,7 +174,11 @@ export async function verifyDistribution(
     );
     const state =
       release.attributes.appVersionState ?? release.attributes.appStoreState;
-    if (!["READY_FOR_DISTRIBUTION", "READY_FOR_SALE"].includes(state)) {
+    const replaced = state === "REPLACED_WITH_NEW_VERSION";
+    if (
+      !replaced &&
+      !["READY_FOR_DISTRIBUTION", "READY_FOR_SALE"].includes(state)
+    ) {
       throw new Error(`App Store version is not publicly released: ${state}`);
     }
     const selected = (
@@ -115,19 +191,19 @@ export async function verifyDistribution(
       throw new Error("App Store release does not use this valid build");
     }
     const regions = storefronts(countries);
-    for (const country of regions) {
-      const product = (await lookup(country)).results.find(
-        (entry) =>
-          String(entry.trackId) === appId &&
-          entry.bundleId === bundleId &&
-          entry.kind === "software",
-      );
-      if (product?.version !== version)
-        throw new Error(
-          `Storefront ${country} serves ${product?.version ?? "no Okou app"}; expected ${version}`,
-        );
-    }
-    return { storefronts: regions, appleBuildId: selected.id };
+    const publishedVersion = await publicVersion(
+      client,
+      regions,
+      territoryCodes ?? appleTerritoryCodes(),
+      lookup,
+      version,
+      replaced,
+    );
+    return {
+      storefronts: regions,
+      appleBuildId: selected.id,
+      publishedVersion,
+    };
   }
 
   if (channel !== "testflight" || !internalGroup?.trim())
@@ -199,10 +275,7 @@ if (
     const version = required("IOS_VERSION");
     const build = required("IOS_BUILD_NUMBER");
     const channel = required("IOS_CHANNEL");
-    if (
-      !/^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}$/u.test(version) ||
-      !/^[1-9]\d{0,3}$/u.test(build)
-    ) {
+    if (!marketingVersion.test(version) || !/^[1-9]\d{0,3}$/u.test(build)) {
       throw new Error(
         "Supply a stable marketing version and an integer Apple build number",
       );
@@ -250,7 +323,7 @@ if (
       channel === "testflight" ? Date.parse(availability.expiresAt) : 0;
     appendFileSync(
       required("GITHUB_OUTPUT"),
-      `identity=${channel} ${version} ${build} ${commit} ${scope} ${expiry}\n`,
+      `identity=${channel} ${version} ${build} ${commit} ${scope} ${expiry} ${availability.publishedVersion ?? "-"}\n`,
     );
     console.log(JSON.stringify(receipt));
   } catch (error) {

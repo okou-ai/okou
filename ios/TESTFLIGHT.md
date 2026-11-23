@@ -193,8 +193,11 @@ mapping.
 - For App Store, set the repository variable `IOS_APP_STORE_STOREFRONTS` to
   the complete list of supported storefronts (comma-separated two-letter
   country codes). Use the same repository variable in production and CI. The
-  workflow checks the exact build selected in App Store Connect and the
-  version actually served by Apple's public catalog in every listed country.
+  workflow checks the exact build selected in App Store Connect, each
+  territory's download status, and the version served by Apple's public
+  catalog in every country. A previously published version that Apple marks
+  as replaced can still become the minimum when every storefront serves
+  the same newer release. The receipt identifies both versions.
 
 A successful run retains a JSON receipt. PRs and merge groups read the
 latest protected verification for each channel, valid for 24 hours or until

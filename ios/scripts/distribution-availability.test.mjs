@@ -34,6 +34,20 @@ function apple(options = {}) {
         attributes: { ...testable, version: options.storeBuild ?? build },
       },
     },
+    [`/v1/apps/${appId}/appAvailabilityV2`]: { data: { id: "availability" } },
+    "/v2/appAvailabilities/availability/territoryAvailabilities": [
+      "USA",
+      "JPN",
+    ].map((id) => ({
+      attributes: {
+        available: true,
+        contentStatuses:
+          id === "JPN"
+            ? (options.japanStatuses ?? ["AVAILABLE"])
+            : ["AVAILABLE"],
+      },
+      relationships: { territory: { data: { id } } },
+    })),
     "/v1/builds": [
       { id: "b", attributes: { ...testable, ...options.buildAttrs } },
     ],
@@ -62,7 +76,16 @@ function apple(options = {}) {
   return { list: read, request: read };
 }
 
-const store = { channel: "app-store", version, build, countries: "US,JP" };
+const store = {
+  channel: "app-store",
+  version,
+  build,
+  countries: "US,JP",
+  territoryCodes: new Map([
+    ["US", "USA"],
+    ["JP", "JPN"],
+  ]),
+};
 const beta = {
   channel: "testflight",
   version,
@@ -105,6 +128,27 @@ test("public release requires the selected build and matching public listings in
         country === "JP" ? [{ ...product, version: "1.1.0" }] : [product],
     })),
     /Storefront JP/,
+  );
+});
+
+test("verifies a previously public minimum against a newer live replacement and excludes preorders", async () => {
+  const historical = apple({ state: "REPLACED_WITH_NEW_VERSION" });
+  const newer = async () => ({ results: [{ ...product, version: "1.10.0" }] });
+  assert.equal(
+    (await verifyDistribution(historical, store, newer)).publishedVersion,
+    "1.10.0",
+  );
+  await assert.rejects(
+    verifyDistribution(historical, store, lookup),
+    /Storefront JP/,
+  );
+  await assert.rejects(
+    verifyDistribution(
+      apple({ japanStatuses: ["AVAILABLE_FOR_PREORDER"] }),
+      store,
+      lookup,
+    ),
+    /JP is not available for download/,
   );
 });
 
@@ -187,7 +231,7 @@ test("PRs accept only fresh, scope-matched receipts from the latest main dispatc
             conclusion: "success",
             steps: [
               {
-                name: `iOS availability receipt app-store ${version} ${build} ${sha} ${scope} 0`,
+                name: `iOS availability receipt app-store ${version} ${build} ${sha} ${scope} 0 ${version}`,
                 conclusion: "success",
                 completed_at: new Date(now - age).toISOString(),
               },
@@ -209,4 +253,47 @@ test("PRs accept only fresh, scope-matched receipts from the latest main dispatc
     [read([{ ...run, head_branch: "feature" }]), "US,JP"],
   ])
     assert.deepEqual(await readAvailability(reader, repo, regions, now), {});
+});
+
+test("a beta receipt stops authorizing a raise when the Apple build expires", async () => {
+  const now = Date.parse("2026-11-23T12:00:00Z");
+  const repository = "okou-ai/okou";
+  const read = (expiry) => async (path) =>
+    path.includes("workflows/")
+      ? {
+          workflow_runs: [
+            {
+              id: 25,
+              run_attempt: 1,
+              head_branch: "main",
+              event: "workflow_dispatch",
+              head_sha: sha,
+              head_repository: { full_name: repository },
+              display_title: "Verify iOS testflight availability",
+              conclusion: "success",
+              status: "completed",
+            },
+          ],
+        }
+      : {
+          jobs: [
+            {
+              name: "verify",
+              head_sha: sha,
+              conclusion: "success",
+              steps: [
+                {
+                  name: `iOS availability receipt testflight ${version} ${build} ${sha} ${"b".repeat(64)} ${expiry} -`,
+                  conclusion: "success",
+                  completed_at: new Date(now - 1000).toISOString(),
+                },
+              ],
+            },
+          ],
+        };
+  assert.deepEqual(
+    (await readAvailability(read(now + 1), repository, "", now)).testflight,
+    { version, build, commit: sha },
+  );
+  assert.deepEqual(await readAvailability(read(now), repository, "", now), {});
 });
