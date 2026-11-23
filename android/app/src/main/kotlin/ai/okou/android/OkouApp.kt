@@ -1536,7 +1536,7 @@ internal fun OkouApp(
                                     },
                                     remote = remote,
                                     workflowResults = workflowRead,
-                                    workspaceToolsRead =
+                                    workspacePreparation =
                                         when {
                                             workspaceReady -> null
                                             startupRecovery == null -> SearchRead.Loading
