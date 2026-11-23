@@ -195,10 +195,10 @@ async function sendWorkflow(editor: HTMLElement, name: string) {
   });
 }
 
-async function disableSyncInLab() {
+async function setSyncInLab(enabled: boolean) {
   let switches: Record<string, boolean> = {
     [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.WorkflowRecencySync]: true,
+    [FeatureSwitchKey.WorkflowRecencySync]: !enabled,
   };
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches, effectiveSwitches: switches });
@@ -222,10 +222,10 @@ async function disableSyncInLab() {
     throw new Error("Workflow recency switch row not found");
   }
   const control = within(row).getByRole("switch");
-  expect(control).toHaveAttribute("aria-checked", "true");
+  expect(control).toHaveAttribute("aria-checked", String(!enabled));
   await user.click(control);
   await waitFor(() => {
-    expect(control).toHaveAttribute("aria-checked", "false");
+    expect(control).toHaveAttribute("aria-checked", String(enabled));
   });
   act(() => {
     window.history.back();
@@ -245,7 +245,7 @@ test("Disabling sync in Lab preserves browser-only history when an earlier read 
   });
   await openPage(context, true, true);
   await reading.promise;
-  const editor = await disableSyncInLab();
+  const editor = await setSyncInLab(false);
   await act(async () => {
     response.resolve();
     await response.promise;
@@ -270,12 +270,46 @@ test("Disabling sync in Lab preserves new browser-only uses when an earlier writ
   let editor = await openPage(context, true, true);
   await sendWorkflow(editor, "delta");
   await writing.promise;
-  editor = await disableSyncInLab();
+  editor = await setSyncInLab(false);
   await sendWorkflow(editor, "zulu");
   await act(async () => {
     response.resolve();
     await response.promise;
   });
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+});
+
+test("Enabling sync in Lab keeps the first accepted use ahead of its initial baseline when persistence fails", async () => {
+  const id = installWorkflows();
+  mockCache({});
+  const reading = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const writing = context.mocks.deferred<void>();
+  context.mocks.api(workflowsCollectionContract.recent, async ({ respond }) => {
+    reading.resolve();
+    await response.promise;
+    return respond(200, { workflowIds: [id("echo")] });
+  });
+  context.mocks.api(
+    workflowsCollectionContract.recordRecentUse,
+    ({ respond }) => {
+      writing.resolve();
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Recency unavailable",
+        },
+      });
+    },
+  );
+  await openPage(context, false, true);
+  const editor = await setSyncInLab(true);
+  await sendWorkflow(editor, "zulu");
+  await reading.promise;
+  response.resolve();
+  // Starting persistence means the initial response has already been applied.
+  await writing.promise;
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("zulu"));
 });

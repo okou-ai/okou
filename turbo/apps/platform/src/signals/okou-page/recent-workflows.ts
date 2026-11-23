@@ -131,10 +131,11 @@ const synchronizeRecentWorkflows$ = command(
     owner: RecentWorkflowOwner,
     signal: AbortSignal,
   ): Promise<void> => {
+    // Snapshot before yielding so initialization cannot erase a new local use.
+    const revision = get(owner.revision$);
     if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
       return;
     }
-    const revision = get(owner.revision$);
     const localIds = set(readLocalRecentWorkflows$, owner);
     const response = await accept(
       owner.client.recent({ fetchOptions: { signal } }),
