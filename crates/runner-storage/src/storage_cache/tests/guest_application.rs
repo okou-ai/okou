@@ -3,8 +3,15 @@ use super::*;
 use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
-async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
-    for cache_state in ["missing", "warm", "lock", "abort"] {
+async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() {
+    for (cache_state, guest_eligible, abort) in [
+        ("missing", true, false),
+        ("warm", true, false),
+        ("locked", true, false),
+        ("missing", true, true),
+        ("warm", true, true),
+        ("warm", false, false),
+    ] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let cache = decoded::DecodedCache::new(home.clone());
@@ -18,12 +25,21 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             .unwrap();
 
         let ordinary_url = "https://example.test/ordinary";
-        if cache_state == "warm" {
+        if matches!(cache_state, "warm" | "locked") {
             write_cached_archive(&home, "ordinary", "v1", &archive);
         }
-        if cache_state == "lock" {
-            write_storage_lock(&home, "ordinary", "v1");
-        }
+        let _writer = if cache_state == "locked" {
+            let lock::TryLock::Acquired(writer) =
+                lock::try_acquire_or_busy(home.storage_lock("ordinary", "v1"))
+                    .await
+                    .unwrap()
+            else {
+                panic!("ordinary writer is already held");
+            };
+            Some(writer)
+        } else {
+            None
+        };
         let mut storages = Vec::new();
         let mut requests = Vec::new();
         for index in 0..FRESH_DELIVERY_PER_RUN_LIMIT {
@@ -63,6 +79,15 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         .await
         .unwrap();
         assert_eq!(plan.decoded_mount_count(), 1);
+        if cache_state != "missing" {
+            // Seed the observed header delay without sleeping in this test.
+            let mut phase = FreshArchivePhaseGuard::new(
+                &delivery.phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+            );
+            phase.started_at -= FRESH_DELIVERY_SLOW_HEADERS;
+            phase.finish(Ok(()));
+        }
         let cancel = delivery.cancellation_token();
         let mut held_bodies = Vec::new();
         let mut servers = Vec::new();
@@ -82,6 +107,13 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
 
         let runtime = temp.path().join("runtime");
         let sandbox = Arc::new(MockSandbox::new("saturated-archive-delivery"));
+        if !guest_eligible {
+            sandbox.push_exec_result(Ok(sandbox::ExecResult::new(
+                0,
+                b"false\n".to_vec(),
+                Vec::new(),
+            )));
+        }
         let (send, receive) = oneshot::channel();
         let application = GuestApplication::new(
             send,
@@ -110,10 +142,15 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             }
         });
 
-        let early = matches!(cache_state, "missing" | "abort");
-        if early {
-            held_bodies.remove(0).send(()).unwrap();
-        } else {
+        held_bodies.remove(0).send(()).unwrap();
+        if !guest_eligible {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while sandbox.storage_manifest_calls().is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
             for body in held_bodies.drain(..) {
                 body.send(()).unwrap();
             }
@@ -138,14 +175,34 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         };
         assert_eq!(ordinary.archive_url.as_deref(), Some(expected_url.as_str()));
         let readiness = input.initial.manifest.archive_readiness;
-        assert_eq!(readiness.is_some(), early);
+        assert_eq!(readiness.is_some(), guest_eligible);
         if let Some(readiness) = &readiness {
             assert_eq!(readiness.sources.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
-            assert!(sandbox.write_files_calls().len() <= 1);
+            if cache_state == "warm" {
+                let paths = sandbox
+                    .write_files_calls()
+                    .into_iter()
+                    .flat_map(|batch| batch.files)
+                    .map(|file| file.path)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    paths,
+                    [
+                        guest_archive_path("fresh-0", "v1"),
+                        guest_archive_path("ordinary", "v1"),
+                    ]
+                );
+                assert_eq!(
+                    admission.permits.available_permits(),
+                    FRESH_DELIVERY_RUNNER_LIMIT - FRESH_DELIVERY_PER_RUN_LIMIT + 1
+                );
+            } else {
+                assert!(sandbox.write_files_calls().len() <= 1);
+            }
             assert!(sandbox.private_write_files_calls().len() <= 1);
             assert!(!task.is_finished());
         }
-        if cache_state == "abort" {
+        if abort {
             cancel.cancel();
         } else {
             for body in held_bodies.drain(..) {
@@ -157,7 +214,7 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             .await
             .unwrap()
             .unwrap();
-        if cache_state == "abort" {
+        if abort {
             assert!(matches!(result, Err(RunnerError::Cancelled)));
             let abort = sandbox.private_write_file_calls();
             assert_eq!(abort.len(), 1);
@@ -194,7 +251,8 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
                     .collect::<Vec<_>>();
                 assert_eq!(published, expected);
             } else {
-                assert!(sandbox.storage_manifest_calls().is_empty());
+                assert_eq!(sandbox.storage_manifest_calls().len(), 1);
+                assert!(sandbox.private_write_files_calls().is_empty());
             }
         }
         assert_eq!(

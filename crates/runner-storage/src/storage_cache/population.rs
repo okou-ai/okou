@@ -77,7 +77,7 @@ pub(super) async fn prepare_mixed(
                 }
             };
             collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
-            if matches!(&ordinary, OrdinaryPreparation::Unread { absent: true, .. })
+            if matches!(&ordinary, OrdinaryPreparation::Unread { .. })
                 && !complete
                 && ready.is_empty()
             {
@@ -88,17 +88,45 @@ pub(super) async fn prepare_mixed(
                 }
                 collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
             }
+            let mut fresh = Vec::new();
+            // Split staging only after observing a slow origin response.
+            // Near-simultaneous fast bodies benefit from complete batching.
+            let ordinary = match ordinary {
+                OrdinaryPreparation::Unread {
+                    groups,
+                    absent: false,
+                } if !ready.is_empty()
+                    && !delivery.fetches.is_empty()
+                    && delivery.phase_records.has_slow_header_response() =>
+                {
+                    // A staged body releases its permit. Give those slots to
+                    // ordinary readers while the remaining fresh fetches run.
+                    let concurrency = ready.len();
+                    check_cancel(Some(&cancel_fresh))?;
+                    fresh = stage_fresh_archives(std::mem::take(&mut ready), stage).await?;
+                    let outcomes =
+                        prepare_ordinary(groups, home, concurrency, Some(&cancel_fresh), stage)
+                            .await?;
+                    collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
+                    OrdinaryPreparation::Staged(outcomes)
+                }
+                ordinary => ordinary,
+            };
             // A saturated delivery uses direct URLs only while there is still
             // a fetch after the first publication. Draining completed bodies
             // avoids an eligibility RPC and extra stage writes for fast origins.
             let early_ordinary = match &ordinary {
-                OrdinaryPreparation::Staged(outcomes) => Some(outcomes.as_slice()),
+                OrdinaryPreparation::Staged(outcomes)
+                    if fresh.is_empty() || !delivery.fetches.is_empty() =>
+                {
+                    Some(outcomes.as_slice())
+                }
                 OrdinaryPreparation::Unread { absent: true, .. }
                     if !delivery.fetches.is_empty() =>
                 {
                     Some(&[][..])
                 }
-                OrdinaryPreparation::Unread { .. } => None,
+                _ => None,
             };
             let incremental = if !complete
                 && let Some(early) = early.as_mut()
@@ -117,13 +145,22 @@ pub(super) async fn prepare_mixed(
             } else {
                 false
             };
-            // Ordinary groups can be passthroughs, and Guest can reject an
-            // early plan. Preserve complete batching unless it actually starts.
+            if incremental
+                && !fresh.is_empty()
+                && let Some(early) = early.as_mut()
+            {
+                check_cancel(Some(&cancel_fresh))?;
+                early
+                    .application
+                    .publish_staged(stage.sandbox, &fresh)
+                    .await?;
+            }
+            // Batch the remaining fresh archives when Guest apply has not
+            // started, including when Guest rejects the early plan.
             if !complete && !incremental {
                 ready.extend(delivery.resolve_inner(home, &mut metrics).await?);
                 complete = true;
             }
-            let mut fresh = Vec::new();
             loop {
                 collect_ready(delivery, home, &mut metrics, &mut ready, &mut complete).await?;
                 // When only atomic cache publications remain, collect them as
