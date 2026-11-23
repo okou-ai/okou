@@ -97,7 +97,7 @@ function makeSuggestion(): Suggestion {
       selectedOptionId: null,
     },
     type: "suggestion",
-    expiresAt: new Date(Date.parse(timestamp) + 86400000).toISOString(),
+    expiresAt: new Date(Date.parse(timestamp) + 86_400_000).toISOString(),
   };
 }
 function makeOption(

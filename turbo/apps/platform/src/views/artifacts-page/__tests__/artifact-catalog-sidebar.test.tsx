@@ -225,9 +225,9 @@ test("The catalog sidebar refreshes a private website after publication changes"
     },
   };
   serveCatalog(detail);
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) =>
-    respond(200, detail),
-  );
+  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
+    return respond(200, detail);
+  });
   context.mocks.api(hostContract.sitePreview, ({ respond }) => {
     return respond(200, {
       url: `https://pv-private-release-v${version}.okou.app/`,
