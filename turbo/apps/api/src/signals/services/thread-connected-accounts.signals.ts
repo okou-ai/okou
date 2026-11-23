@@ -558,9 +558,7 @@ function createStoredConnectorRowSignals(
               {
                 ...row,
                 connectorSlug: row.connectorSlug,
-                secretNames: source.credentials.map((credential) => {
-                  return credential.name;
-                }),
+                secretNames: source.credentialNames,
                 variableValues: source.variables,
               },
             ]
@@ -949,13 +947,6 @@ function customConnectorSourceSelectionRows(
   if (source.kind !== "custom" || !binding) {
     return [];
   }
-  const credentialId = (name: string) => {
-    return (
-      snapshot.credentials.find((credential) => {
-        return credential.name === name;
-      })?.id ?? null
-    );
-  };
   const base = {
     id: source.sourceId,
     updatedAt: connection.updatedAt,
@@ -967,10 +958,10 @@ function customConnectorSourceSelectionRows(
     definitionAuthMethod: binding.definitionAuthMode,
     definitionMcpTransport: binding.definitionMcpTransport,
     definitionStorageVersion: binding.definitionStorageVersion,
-    oauthAccessTokenId: credentialId(
+    hasAccessToken: snapshot.credentialNames.includes(
       CUSTOM_CONNECTOR_OAUTH_ACCESS_TOKEN_SECRET_NAME,
     ),
-    oauthRefreshTokenId: credentialId(
+    hasRefreshToken: snapshot.credentialNames.includes(
       CUSTOM_CONNECTOR_OAUTH_REFRESH_TOKEN_SECRET_NAME,
     ),
     automaticOAuthBindingId: binding.automaticOAuthBindingId,
@@ -986,11 +977,11 @@ function customConnectorSourceSelectionRows(
     ? [
         ...(connection.authMethod === "none"
           ? []
-          : snapshot.credentials.map((credential) => {
+          : snapshot.credentialNames.map((name) => {
               return {
                 connectorId: source.customConnectorId,
                 kind: "secret" as const,
-                key: credential.name,
+                key: name,
               };
             })),
         ...Object.entries(snapshot.variables).map(([key, value]) => {
