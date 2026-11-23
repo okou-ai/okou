@@ -1,7 +1,7 @@
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import { modelCatalogForOrg, type ModelCatalog } from "./model-catalog.service";
 import type { memberModelSourcesFromRows } from "./model-source-context.service";
-import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
+import type { ExecutionOrgPlan } from "./execution-org-context.service";
 
 export type OrgModelBootstrap = ReturnType<typeof modelFactsFromSnapshot>;
 export type MemberModelBootstrap = ReturnType<
@@ -37,7 +37,7 @@ export function memberModelBootstrapFromSources({
 }
 export function modelFactsFromSnapshot(
   orgId: string,
-  capabilities: OrgPlanCapabilities | null,
+  capabilities: ExecutionOrgPlan | null,
   org: RunOrgMetadata | null,
   globalCatalog: ModelCatalog,
 ) {

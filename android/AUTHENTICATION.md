@@ -1,17 +1,17 @@
 # Authentication Setup and Workspace Sessions
 
-Android uses the official Clerk Android API/UI 1.4.1. A signed-out launch opens
-the native Compose `AuthView`; it does not open the unauthenticated workspace
-shell. This follows the iOS root presentation contract. Clerk renders enabled
-email/code/password/signup/legal/extra-verification/passkey methods and owns
-provider OAuth. Provider OAuth uses the SDK's system-browser session; first-party
-credentials are entered in native controls. Google uses browser OAuth rather
-than a separate One Tap integration.
+Android uses the official Clerk Android API and UI. A signed-out launch opens
+the native Compose `AuthView`, following the iOS root presentation contract.
+Clerk renders enabled methods for email, codes, passwords, signup, legal steps,
+extra verification and passkeys. Provider OAuth, including Google, uses the SDK's
+system-browser session. First-party credentials are entered in native controls.
 
-The first native login/restoration page is composed while SDK initialization is
-pending. Initialization errors expose a localized retry. An authenticated user
-without a usable workspace sees membership selection or web workspace setup
-and refresh/sign-out actions. Full first-user onboarding remains a separate slice.
+The platform launch window briefly covers SDK initialization. The first native
+frame shows the shared brand if restoration is still pending. Initialization
+errors expose a localized retry. An authenticated user without a usable workspace
+sees membership selection or web workspace setup and refresh/sign-out actions.
+The empty workspace page checks memberships when the user returns from web setup
+in the same session. Full first-user onboarding remains a separate slice.
 
 ## Public configuration and provider setup
 

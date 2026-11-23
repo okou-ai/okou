@@ -21,7 +21,6 @@ UI_DUMP = "/data/local/tmp/okou-release-smoke.xml"
 APP_DATA = f"/data/user/0/{PACKAGE}"
 UPDATE_STATE = "files/updates/state.json"
 AUTH_HEADINGS = {
-    "Restoring your session…",
     "Couldn’t load your session or workspace",
     "Continue to Okou",
 }

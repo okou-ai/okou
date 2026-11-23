@@ -9,26 +9,31 @@ import { pgInt8ToSafeIntegerSchema } from "../../lib/db-raw-rows";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import { executionCreditQueries } from "./execution-credit-balance.service";
 import { activeConcurrencySubscriptionPredicate } from "./org-concurrency-entitlements.service";
-import { orgPlanCapabilitiesFromRow } from "./org-plan-entitlement-read.service";
+import {
+  orgPlanCapabilitiesFromRow,
+  type OrgPlanCapabilities,
+} from "./org-plan-entitlement-read.service";
 
 const rawDecoder = zodDriverValueDecoder(zUnknown());
 const metadataSchema = object({
   credits: number(),
   openrouterPreset: string().nullable(),
 });
+export type ExecutionOrgPlan = Pick<
+  OrgPlanCapabilities,
+  | "planKey"
+  | "status"
+  | "baseConcurrencyLimit"
+  | "canBuyCredits"
+  | "restrictedBuiltInModels"
+>;
+
 const planSchema = object({
   planKey: string(),
   status: string(),
   baseConcurrencyLimit: number(),
-  canBuyConcurrency: boolean(),
   canBuyCredits: boolean(),
-  showUsagePack: boolean(),
-  autoRechargeAllowed: boolean(),
   restrictedBuiltInModels: boolean().nullable(),
-  workflowWebhookAutomationAllowed: boolean(),
-  audioLifetimeLimit: number().nullable(),
-  audioDailyRateLimit: number(),
-  audioDailyDurationSeconds: number(),
 });
 /**
  * Transport only: business decoding belongs to independent derived consumers.
@@ -64,12 +69,8 @@ export function executionOrgQuery(orgId: string, at: Date) {
         plan: sql`(SELECT jsonb_build_object(
         'planKey', ${orgPlanEntitlements.planKey}, 'status', ${orgPlanEntitlements.status},
         'baseConcurrencyLimit', ${orgPlanEntitlements.baseConcurrencyLimit},
-        'canBuyConcurrency', ${orgPlanEntitlements.canBuyConcurrency}, 'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
-        'showUsagePack', ${orgPlanEntitlements.showUsagePack}, 'autoRechargeAllowed', ${orgPlanEntitlements.autoRechargeAllowed},
-        'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels},
-        'workflowWebhookAutomationAllowed', ${orgPlanEntitlements.workflowWebhookTriggerAllowed},
-        'audioLifetimeLimit', ${orgPlanEntitlements.audioLifetimeLimit}, 'audioDailyRateLimit', ${orgPlanEntitlements.audioDailyRateLimit},
-        'audioDailyDurationSeconds', ${orgPlanEntitlements.audioDailyDurationSeconds})
+        'canBuyCredits', ${orgPlanEntitlements.canBuyCredits},
+        'restrictedBuiltInModels', ${orgPlanEntitlements.restrictedBuiltInModels})
         FROM ${orgPlanEntitlements} WHERE ${eq(orgPlanEntitlements.orgId, orgId)})`
           .mapWith(rawDecoder)
           .as("plan"),
@@ -103,7 +104,10 @@ function requiredOrgRow(snapshot: ExecutionOrgRows) {
 export function executionOrgMetadata(snapshot: ExecutionOrgRows) {
   return metadataSchema.nullable().parse(requiredOrgRow(snapshot).metadata);
 }
-export function executionOrgPlan(snapshot: ExecutionOrgRows, orgId: string) {
+export function executionOrgPlan(
+  snapshot: ExecutionOrgRows,
+  orgId: string,
+): ExecutionOrgPlan | null {
   const row = requiredOrgRow(snapshot);
   if (row.plan === null) {
     if (row.metadata !== null) {

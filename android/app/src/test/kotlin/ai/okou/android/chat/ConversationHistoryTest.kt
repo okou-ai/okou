@@ -24,11 +24,13 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import okio.GzipSink
 import okio.buffer
@@ -143,6 +145,129 @@ internal class ConversationHistoryTest : ConversationHistoryTestFixture() {
         assertEquals(anchor, lease.loadReadingAnchor(CHAT_PERSONAL))
         lease.saveReadingAnchor(CHAT_PERSONAL, null)
         assertNull(lease.loadReadingAnchor(CHAT_PERSONAL))
+    }
+
+    @Test
+    fun visibleHistoryRetriesWithCappedBackoffAndStopsWhenTheVisitEnds() = runTest {
+        val attempts = mutableListOf<Long>()
+        val service =
+            Service().apply {
+                rowsRead = { _, _ ->
+                    attempts += testScheduler.currentTime
+                    throw ApiFailure.Http(503, null, null, null)
+                }
+            }
+        val lease = cache().open(identity) { true }
+        val model =
+            ConversationHistoryModel(
+                service,
+                lease,
+                backgroundScope,
+                { true },
+                {},
+                {},
+                StandardTestDispatcher(testScheduler),
+            )
+        try {
+            model.open(thread())
+            val visit =
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+            model.uiState.first { it.consecutiveReadFailures == 1 }
+            val start = attempts.single()
+            for (interval in listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 48_000L)) {
+                advanceTimeBy(interval)
+                runCurrent()
+            }
+            assertEquals(
+                listOf(0L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L),
+                attempts.map { it - start },
+            )
+            assertEquals(HistoryPhase.Loading, model.uiState.value.phase)
+            model.endVisit(visit)
+            advanceTimeBy(96_000)
+            runCurrent()
+            assertEquals(8, attempts.size)
+        } finally {
+            model.close()
+            lease.close()
+        }
+    }
+
+    @Test
+    fun interruptedSignedHistoryArchiveRecoversAndHonorsRetryAfter() = runTest {
+        ChatListApiFixture().use { fixture ->
+            val archiveBody = "${historyEventWire()}\n"
+            fixture.historySnapshot = {
+                jsonResponse(
+                    """{"url":"${fixture.server.url("/history-archive")}","expiresInSeconds":60,"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37}""",
+                )
+            }
+            fixture.historyArchive = {
+                MockResponse()
+                    .setBody(archiveBody)
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            }
+            val snapshotStarts = mutableListOf<Long>()
+            val service =
+                object : ConversationHistoryService by fixture.service {
+                    override suspend fun historySnapshot(threadId: String): HistorySnapshot {
+                        snapshotStarts += testScheduler.currentTime
+                        return fixture.service.historySnapshot(threadId)
+                    }
+                }
+            val lease = cache().open(fixture.identity) { true }
+            val model =
+                ConversationHistoryModel(
+                    service,
+                    lease,
+                    backgroundScope,
+                    { true },
+                    {},
+                    {},
+                    StandardTestDispatcher(testScheduler),
+                )
+            try {
+                model.open(thread())
+                checkNotNull(model.beginVisit(CHAT_PERSONAL, model.uiState.value.generation))
+                val interrupted =
+                    model.uiState.first {
+                        it.phase != HistoryPhase.Loading || it.consecutiveReadFailures > 0
+                    }
+                assertEquals(HistoryPhase.Loading, interrupted.phase)
+                assertEquals(1, interrupted.consecutiveReadFailures)
+                assertNull(interrupted.transcript)
+
+                fixture.historyArchive = {
+                    MockResponse().setResponseCode(429).addHeader("Retry-After", "12")
+                }
+                advanceTimeBy(3_000)
+                runCurrent()
+                val throttled =
+                    model.uiState.first {
+                        it.phase != HistoryPhase.Loading || it.consecutiveReadFailures == 2
+                    }
+                assertEquals(HistoryPhase.Loading, throttled.phase)
+                assertEquals(2, throttled.consecutiveReadFailures)
+
+                fixture.historyArchive = { MockResponse().setBody(archiveBody) }
+                advanceTimeBy(11_999)
+                assertEquals(listOf(0L, 3_000L), snapshotStarts)
+                advanceTimeBy(1)
+                runCurrent()
+                val loaded = model.uiState.first { it.phase != HistoryPhase.Loading }
+                assertEquals(HistoryPhase.Ready, loaded.phase)
+                assertEquals(0, loaded.consecutiveReadFailures)
+                assertEquals(HISTORY_LAST_EVENT, loaded.transcript?.messages?.single()?.id)
+                assertEquals(listOf(0L, 3_000L, 15_000L), snapshotStarts)
+                assertEquals(
+                    HistoryCursor(HISTORY_LAST_EVENT, 37),
+                    lease.loadHistory(CHAT_PERSONAL)?.checkpoint?.cursor,
+                )
+            } finally {
+                model.close()
+                lease.close()
+            }
+        }
     }
 
     @Test

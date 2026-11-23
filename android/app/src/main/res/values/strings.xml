@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Checking workspaces…</string>
+    <string name="auth_check_failed">Couldn’t check workspace access.</string>
+    <string name="auth_selection_failed">Couldn’t open this workspace.</string>
+    <string name="auth_sign_out_failed">Couldn’t sign out.</string>
     <string name="composer_sync_loading">Loading saved draft…</string>
     <string name="composer_sync_saving">Syncing draft…</string>
     <string name="composer_sync_failed">Draft sync failed. Your input stays on this device.</string>
@@ -30,7 +34,6 @@
     <string name="appearance_dark">Dark</string>
     <string name="on_this_device">On this device</string>
     <string name="retry">Try again</string>
-    <string name="auth_restoring">Restoring your session…</string>
     <string name="auth_preparing_workspace">Preparing workspace…</string>
     <string name="auth_choose_workspace">Choose your workspace</string>
     <string name="auth_no_workspace">No workspace access yet</string>
