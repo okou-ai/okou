@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.110.0](https://github.com/okou-ai/okou/compare/api-v2.109.0...api-v2.110.0) (2026-11-23)
+
+
+### Features
+
+* persist presentation output format preference ([#50220](https://github.com/okou-ai/okou/issues/50220)) ([c68256f](https://github.com/okou-ai/okou/commit/c68256fc724a9baf19e9c099443be1a2d86b513e))
+
+
+### Bug Fixes
+
+* **api:** repair stale calendar and notion listener accounts ([#50218](https://github.com/okou-ai/okou/issues/50218)) ([fe10a84](https://github.com/okou-ai/okou/commit/fe10a84819276c22396cee7a1de7e31cc3385eb7))
+
+
+### Performance Improvements
+
+* **api:** narrow run startup sql projections ([#50236](https://github.com/okou-ai/okou/issues/50236)) ([42d9ddf](https://github.com/okou-ai/okou/commit/42d9ddf056b6df7bc9d7112e7f95b6034be2cb74))
+* **api:** narrow startup model and plan projections ([#50268](https://github.com/okou-ai/okou/issues/50268)) ([e1d3482](https://github.com/okou-ai/okou/commit/e1d34828328c22ee31c106d806d7b987fb85ed4f))
+* **api:** skip redundant incomplete chat history reads ([#50265](https://github.com/okou-ai/okou/issues/50265)) ([70488be](https://github.com/okou-ai/okou/commit/70488bef11ccc03ceb0251cd895fc9a3878f69a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+    * @okouai/core bumped to 8.863.0
+    * @okouai/db bumped to 2.61.0
+    * @okouai/pi-agent-runtime bumped to 1.52.50
+
 ## [2.109.0](https://github.com/okou-ai/okou/compare/api-v2.108.0...api-v2.109.0) (2026-11-23)
 
 

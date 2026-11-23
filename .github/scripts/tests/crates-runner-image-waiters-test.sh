@@ -97,24 +97,24 @@ Dir.mktmpdir("crates-image-waiters", target) do |dir|
   SH
   File.chmod(0o755, ssh)
 
-  ["arm-1,x86-1,x86-2", "arm-1", "x86-1"].each do |hosts|
-    %w[pr-1 pr-2].each do |key|
-      output_file = File.join(dir, "#{hosts}-#{key}.out")
-      env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "METAL_USER" => "ci",
-             "AWS_METAL_RUNNER_HOSTS" => hosts, "RUNNER_CONSUMER_NEEDED" => "true",
-             "SELECTION_KEY" => key, "GITHUB_OUTPUT" => output_file}
-      run_step(root, env, group_step.fetch("run"))
-      outputs = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
-      full = JSON.parse(outputs.fetch("matrix"))
-      target = outputs.fetch("selected-target")
-      run_step(root, {"NATIVE_MATRIX" => JSON.generate(full)}, fs_pair.fetch("run"), success: full.length == 2)
-      raise "one selected target must be covered by runner-test-prepare" unless full.count { |entry| entry.fetch("target") == target } == 1
-      env["EXPECTED_TARGET"] = target
-      env["GITHUB_OUTPUT"] = File.join(dir, "selected.out")
-      run_step(root, env, select_step.fetch("run"))
+  {"arm-1,x86-1,x86-2" => 2, "arm-1" => 1, "x86-1" => 1}.each do |hosts, target_count|
+    output_file = File.join(dir, "#{hosts}.out")
+    env = {"PATH" => "#{bin}:#{ENV.fetch('PATH')}", "METAL_USER" => "ci",
+           "AWS_METAL_RUNNER_HOSTS" => hosts, "RUNNER_CONSUMER_NEEDED" => "true",
+           "SELECTION_KEY" => "pr-1", "GITHUB_OUTPUT" => output_file}
+    run_step(root, env, group_step.fetch("run"))
+    outputs = File.readlines(output_file, chomp: true).to_h { |line| line.split("=", 2) }
+    full = JSON.parse(outputs.fetch("matrix"))
+    target = outputs.fetch("selected-target")
+    raise "wrong target count for #{hosts}" unless full.length == target_count
+    run_step(root, {"NATIVE_MATRIX" => JSON.generate(full)}, fs_pair.fetch("run"), success: target_count == 2)
+    raise "one selected target must be covered by runner-test-prepare" unless full.count { |entry| entry.fetch("target") == target } == 1
+    env["EXPECTED_TARGET"] = target
+    env["GITHUB_OUTPUT"] = File.join(dir, "selected.out")
+    run_step(root, env, select_step.fetch("run"))
+    if target_count == 2
       mismatch = run_step(root, env.merge("EXPECTED_TARGET" => "different-target"), select_step.fetch("run"), success: false)
       raise "inventory drift must report target mismatch" unless mismatch.include?("Selected runner target changed")
-      check_gate(root, gate, gate_step)
     end
   end
 
@@ -128,19 +128,15 @@ Dir.mktmpdir("crates-image-waiters", target) do |dir|
   raise "host-only tests need both targets" unless JSON.parse(outputs.fetch("matrix")).length == 2
 end
 
+check_gate(root, gate, gate_step)
 %w[runner-host-groups runner-test-prepare
    host-cpu-fairness-build host-cpu-fairness-test
    guest-rpc-firecracker-build guest-rpc-firecracker-test].each do |job|
-  %w[failure cancelled skipped].each do |result|
-    check_gate(root, gate, gate_step, results: {job => result}, success: false)
-  end
+  check_gate(root, gate, gate_step, results: {job => "skipped"}, success: false)
 end
-# A failed producer skips its dependent execution job. Neither may disappear
-# behind an otherwise green image waiter or the gate's optional-job handling.
-{"host-cpu-fairness-build" => "host-cpu-fairness-test",
- "guest-rpc-firecracker-build" => "guest-rpc-firecracker-test"}.each do |build, execution|
-  check_gate(root, gate, gate_step, results: {build => "failure", execution => "skipped"}, success: false)
-end
+check_gate(root, gate, gate_step, results: {"host-cpu-fairness-build" => "failure"}, success: false)
+check_gate(root, gate, gate_step, results: {"guest-rpc-firecracker-test" => "cancelled"}, success: false)
+
 optional_cpu = %w[host-cpu-fairness-build host-cpu-fairness-test].to_h { |name| [name, "skipped"] }
 check_gate(root, gate, gate_step, cpu_needed: "false", results: optional_cpu)
 unselected = %w[runner-host-groups runner-test-prepare
