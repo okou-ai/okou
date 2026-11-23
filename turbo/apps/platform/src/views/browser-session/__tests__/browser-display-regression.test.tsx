@@ -160,7 +160,9 @@ async function resizeWithPendingFrame() {
     return expect(sample()).toStrictEqual([172, 49, 15, 255]);
   });
   cdp.frame("AAEC", cdp.pageSession("reading"), 900, 47);
-  await waitFor(() => expect(picture).toHaveAttribute("width", "900"));
+  await waitFor(() => {
+    return expect(picture).toHaveAttribute("width", "900");
+  });
   const frame = cdp.holdTargetFrames("reading");
   vi.spyOn(
     HTMLCanvasElement.prototype,
