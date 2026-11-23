@@ -6,6 +6,7 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { runPhaseTimingRoutes } from "../run-phase-timing";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -66,23 +67,32 @@ async function fixture(
 }
 
 describe("current Run phase timing", () => {
-  it("gives the allowlisted owner three-point guidance and accepts legal raw observations", async () => {
-    const f = await fixture();
-    expect(f.execution.appendSystemPrompt).toContain(
-      "the only AI phase marks are research-start and generation-start",
-    );
-    expect(f.execution.appendSystemPrompt).toContain(
-      "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
-    );
-    for (const mark of [
-      { phase: "generation-start", kind: "report", skipResearch: false },
-      { phase: "research-start" },
-      { phase: "generation-start", kind: "image", skipResearch: true },
-      { phase: "research-start" },
-    ] satisfies readonly RunPhaseMark[]) {
-      await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
-    }
-  });
+  it.each([
+    ["allowlisted owner", { userId: timingOwnerId }],
+    [
+      "staff workspace member",
+      { orgId: createUniqueStaffOrgIdFixture(), orgRole: "org:member" },
+    ],
+  ] as const)(
+    "gives the %s three-point guidance and accepts legal raw observations",
+    async (_audience, identity) => {
+      const f = await fixture({ actor: createBddApi(context).user(identity) });
+      expect(f.execution.appendSystemPrompt).toContain(
+        "the only AI phase marks are research-start and generation-start",
+      );
+      expect(f.execution.appendSystemPrompt).toContain(
+        "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
+      );
+      for (const mark of [
+        { phase: "generation-start", kind: "report", skipResearch: false },
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "image", skipResearch: true },
+        { phase: "research-start" },
+      ] satisfies readonly RunPhaseMark[]) {
+        await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
+      }
+    },
+  );
 
   it.each([
     { scenario: "default", threePointEnabled: undefined },
