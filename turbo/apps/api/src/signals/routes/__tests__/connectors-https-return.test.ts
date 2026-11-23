@@ -242,10 +242,10 @@ test("keeps ordinary web grants and providers outside this delivery on the exist
 });
 
 test("keeps staging returns on their associated domain and omits HTTPS mode on arbitrary previews", async () => {
-  mockEnv("APP_URL", "https://staging-app-okou-app-preview.vm0.workers.dev");
+  mockEnv("APP_URL", "https://staging-app.omby.ai");
   const staging = await start("github");
   expect(staging.nativeCallbackUrl).toBe(
-    `https://staging-app-okou-app-preview.vm0.workers.dev/native/connector-authorization?attemptId=${staging.oauthAttemptId}`,
+    `https://staging-app.omby.ai/native/connector-authorization?attemptId=${staging.oauthAttemptId}`,
   );
   mockEnv("APP_URL", "https://pr-123-app-okou-app-preview.vm0.workers.dev");
   const preview = await start("github");

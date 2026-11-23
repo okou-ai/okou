@@ -245,6 +245,43 @@ const setupIntegrationOAuthCallbackPage$ = setupAuthPageWrapper(
   completeIntegrationOAuthCallback$,
 );
 
+const showConnectorCallbackResult$ = command(
+  (
+    { set },
+    args: {
+      readonly connectorSlug: ConnectorCallbackSlug;
+      readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
+      readonly label: string;
+      readonly result: ConnectorOauthCallbackResult;
+    },
+  ) => {
+    const { connectorSlug, connectorIcon, label, result } = args;
+    set(
+      updatePage$,
+      callbackPageElement(
+        connectorIcon,
+        connectorSlug === "custom" ? null : connectorSlug,
+        label,
+        result,
+      ),
+    );
+    const searchParams = new URLSearchParams();
+    if (result.status === "success" && result.username) {
+      searchParams.set("username", result.username);
+    }
+    if (result.status === "error") {
+      searchParams.set("message", result.message);
+    }
+    addConnectorIconSearchParams(searchParams, connectorIcon);
+    set(
+      replacePathSilently$,
+      ROUTES.connectorCallbackResult,
+      { connectorSlug, status: result.status },
+      searchParams,
+    );
+  },
+);
+
 export const setupConnectorCallbackPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const integration = integrationOAuthCallbackProvider(
@@ -321,24 +358,11 @@ export const setupConnectorCallbackPage$ = command(
         signal,
       );
     }
-    set(
-      updatePage$,
-      callbackPageElement(connectorIcon, connectorSlug, label, result),
-    );
-
-    const resultSearchParams = new URLSearchParams();
-    if (result.status === "success" && result.username) {
-      resultSearchParams.set("username", result.username);
-    }
-    if (result.status === "error") {
-      resultSearchParams.set("message", result.message);
-    }
-    addConnectorIconSearchParams(resultSearchParams, connectorIcon);
-    set(
-      replacePathSilently$,
-      ROUTES.connectorCallbackResult,
-      { connectorSlug: callbackConnectorSlug, status: result.status },
-      resultSearchParams,
-    );
+    set(showConnectorCallbackResult$, {
+      connectorSlug: callbackConnectorSlug,
+      connectorIcon,
+      label,
+      result,
+    });
   },
 );

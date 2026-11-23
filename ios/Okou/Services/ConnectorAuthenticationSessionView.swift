@@ -18,6 +18,7 @@ struct ConnectorAuthenticationSessionView: UIViewControllerRepresentable {
   }
 
   final class Controller: UIViewController {
+    private typealias BrowserCompletion = ASWebAuthenticationSession.CompletionHandler
     private var requestedURL: URL?
     private var callbackURL: URL?
     private var requestID: UUID?
@@ -46,8 +47,7 @@ struct ConnectorAuthenticationSessionView: UIViewControllerRepresentable {
       let id = UUID()
       requestID = id
       let presentation = Presentation(window: window)
-      let completion: ASWebAuthenticationSession.CompletionHandler = {
-        [weak self] callback, error in
+      let completion: BrowserCompletion = { [weak self] callback, error in
         Task { @MainActor [weak self] in
           self?.finish(id: id, url: url, callbackURL: callback, error: error)
         }
@@ -59,6 +59,8 @@ struct ConnectorAuthenticationSessionView: UIViewControllerRepresentable {
           completionHandler: completion)
       } else {
         // Older APIs and other providers still complete through receipt polling.
+        // Require HTTPS for these eight providers only after every serving and
+        // retained rollback API supports it; keep the other live paths (#50221).
         session = ASWebAuthenticationSession(
           url: url, callbackURLScheme: nil, completionHandler: completion)
       }

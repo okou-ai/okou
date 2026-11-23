@@ -9,7 +9,7 @@ const HTTPS_RETURN_HEADER = "X-Okou-Connector-Https-Return";
 // origins keep the existing receipt-based flow until tested on shared staging.
 const IOS_ASSOCIATED_HOSTS = Object.freeze([
   "app.okou.ai",
-  "staging-app-okou-app-preview.vm0.workers.dev",
+  "staging-app.omby.ai",
 ]);
 const IOS_HTTPS_CONNECTORS = Object.freeze([
   "gmail",
