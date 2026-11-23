@@ -44,6 +44,7 @@ PREFIX = "NATIVE_TERMINAL_RECEIPT "
 NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
 NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2
 HISTORY_PAYLOAD_BYTES = 64 * 1024
+GUARDED_IDLE_REUSE_KEY_PREFIX = "thread:native-guarded-"
 
 
 def history_payload(run_id):

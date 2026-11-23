@@ -1,7 +1,7 @@
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -139,4 +139,72 @@ test("connector-callbacks-002 GitHub publishes its account and catalog mark afte
   const query = new URLSearchParams(location.search);
   expect(query.has("code")).toBeFalsy();
   expect(query.has("state")).toBeFalsy();
+});
+
+function serveStravaCatalog() {
+  const connector = catalogConnector({
+    slug: "strava",
+    label: "Strava",
+    method: browserAuthMethod(),
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, { connector });
+  });
+}
+test("A Strava confirmation returns to the iOS app with the attempt identifier alone", async () => {
+  serveStravaCatalog();
+  const attempt = "b86a89e2-052a-4c88-ae3e-1d71aa1631d2";
+  const destination = "ai.okou.ios://connector-authorization/" + attempt;
+  const navigation = context.mocks.browser.locationAssign();
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, respond }) => {
+      expect(query).toMatchObject({
+        code: "activity-read",
+        state: "trail-return",
+        scope: "read",
+        responseMode: "json",
+      });
+      return respond(200, {
+        status: "success",
+        username: null,
+        nativeAppReturn: { platform: "ios", attemptId: attempt },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    auth: null,
+    path: "/connectors/strava/callback?code=activity-read&state=trail-return&scope=read",
+  });
+  const link = await findNamedLink("Return to Okou");
+  expect(link).toHaveAttribute("href", destination);
+  await waitFor(() => {
+    expect(navigation.calls).toContain(destination);
+  });
+});
+test("Refreshing a denied Strava callback keeps its explicit return to the iOS app", async () => {
+  serveStravaCatalog();
+  const attempt = "b9a238d5-0fb4-43ec-9cd2-d8d5547911a9";
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ never }) => {
+      return never();
+    },
+  );
+  await setupPage({
+    context,
+    auth: null,
+    path:
+      "/connectors/strava/callback/error?message=Access+denied&nativeAppAttemptId=" +
+      attempt,
+  });
+  const link = await findNamedLink("Return to Okou");
+  expect(link).toHaveAttribute(
+    "href",
+    "ai.okou.ios://connector-authorization/" + attempt,
+  );
+  expect(
+    screen.getByText("Access denied Close this window and try again."),
+  ).toBeVisible();
 });

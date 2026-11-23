@@ -1521,15 +1521,31 @@ data class ConnectorOauthCompletion(
 )
 
 @Serializable
+enum class ConnectorOauthStartNativeAppAuthorizationProvider {
+    @SerialName("strava") STRAVA,
+}
+
+@Serializable
+data class ConnectorOauthStartNativeAppAuthorization(
+    val `provider`: ConnectorOauthStartNativeAppAuthorizationProvider,
+)
+
+@Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
+    val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
 )
 
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeAppAuthorization {
+    @SerialName("ios") IOS,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1624,6 +1640,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
