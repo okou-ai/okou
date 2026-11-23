@@ -16,6 +16,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var notice: String?
   var busy = false
   var browserURL: URL?
+  var usesSystemAuthenticationSession = false
   var session: ChatConnectorReceipt?
   var expiresAt: Date?
   var checking = false
@@ -183,6 +184,13 @@ final class ConnectorActionStore {
   private func startAuthorization(
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
+    flow.usesSystemAuthenticationSession = false
+    if ["auth-code", "automatic", "openid-auth"].contains(flow.method?.grantKind ?? "")
+      || flow.status.custom?.usesBrowserAuthorization == true
+    {
+      flow.usesSystemAuthenticationSession = try await service.usesSystemAuthenticationSession()
+      try check(flow)
+    }
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options)
     try check(flow)
@@ -190,6 +198,7 @@ final class ConnectorActionStore {
     flow.code = ""
     flow.browserClosed = false
     if let sessionID = result.sessionId {
+      flow.usesSystemAuthenticationSession = false
       guard UUID(uuidString: sessionID) != nil, result.sessionToken != nil,
         let expires = result.expiresIn, expires > 0
       else { throw APIClientError.invalidResponse }
@@ -348,6 +357,24 @@ final class ConnectorActionStore {
     guard let flow = active else { return }
     flow.browserURL = nil
     flow.browserClosed = true
+  }
+
+  func authenticationFinished(
+    flow: ConnectorAuthorizationFlow, url: URL, error: Error?
+  ) {
+    guard !closed, active === flow, flow.browserURL == url else { return }
+    if let error, !(error is CancellationError) {
+      task?.cancel()
+      task = nil
+      flow.session = nil
+      flow.browserURL = nil
+      flow.error = String(localized: "Could not open connector")
+      didFail(error)
+      return
+    }
+    // Closing the system session does not establish whether the API committed.
+    // The existing completion check resolves that race before allowing a retry.
+    browserDismissed()
   }
 
   func cancel() {

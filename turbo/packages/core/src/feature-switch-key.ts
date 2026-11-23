@@ -50,4 +50,5 @@ export enum FeatureSwitchKey {
   BillingSurvey = "billingSurvey",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
+  IosConnectorAuthenticationSession = "iosConnectorAuthenticationSession",
 }

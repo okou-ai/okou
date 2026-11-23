@@ -121,6 +121,11 @@ public struct ChatConnectorService: Sendable {
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
 
+  public func usesSystemAuthenticationSession() async throws -> Bool {
+    let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
+    return features.effectiveSwitches["iosConnectorAuthenticationSession"] == true
+  }
+
   public func status(_ action: ChatConnectorAction) async throws -> ChatConnectorStatus? {
     do {
       if let threadID = action.threadID {
