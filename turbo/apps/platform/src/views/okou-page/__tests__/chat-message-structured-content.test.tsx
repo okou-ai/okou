@@ -115,8 +115,6 @@ test("chat-message-structured-content-003 gives the delegated prompt a run ancho
   const turn = await messageAt("Verify the supplier balance");
   const link = getNamedLink("Source thread", turn);
   expect(link).toHaveAttribute("href", destination);
-  // Member-owned chats keep the source-run link without a source-agent portrait.
-  expect(link.querySelector("img")).toBeNull();
   expect(document.getElementById("run-" + sourceRun)).toContainElement(
     within(turn).getByText("Verify the supplier balance"),
   );

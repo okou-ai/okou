@@ -116,18 +116,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Markdown-first document output",
     description:
-      "Prefer Markdown for unformatted text documents and offer DOCX and PDF exports.",
+      "Prefer Markdown for unformatted text documents, use a clearer heading hierarchy in document previews, and offer DOCX and PDF exports.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.MarkdownDocumentTypography]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Markdown document typography",
-    description:
-      "Use a clearer heading hierarchy in Markdown document previews without changing chat typography.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-    restrictOverridesToAudience: true,
   },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",

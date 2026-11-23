@@ -661,6 +661,30 @@ internal constructor(
                 }
             }
 
+        internal suspend fun renewChatConfirmation(saved: CachedChats) {
+            withContext(dispatcher) {
+                try {
+                    // A metadata-only write can leave the already-authorized data in place on
+                    // retirement.
+                    persist(clear = {}, saved = {}) { dao ->
+                        val checkpoint = saved.checkpoint
+                        dao.renewChatConfirmation(
+                            key,
+                            authorization,
+                            checkpoint.snapshotCursor.eventId,
+                            checkpoint.snapshotCursor.seqId,
+                            checkpoint.cursor.seqId,
+                            saved.confirmedAt,
+                        ) != 0
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    Log.w("ChatCacheStore", "Could not renew the chat list confirmation")
+                }
+            }
+        }
+
         /** Returns false when the transaction preserves a strictly newer Project checkpoint. */
         suspend fun saveProjects(checkpoint: ProjectCheckpoint, confirmedAt: Long): Boolean =
             withContext(dispatcher) {

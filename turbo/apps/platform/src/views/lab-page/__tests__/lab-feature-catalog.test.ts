@@ -114,7 +114,16 @@ test("lab-page-005 Filtering the Lab catalog preserves the All total and restore
   expect(screen.getAllByRole("switch")).toHaveLength(original);
 });
 
-test("lab-page-006 Reset all restores the test OAuth connector's original off state", async () => {
+test.each([
+  [
+    "lab-page-006 Reset all restores the test OAuth connector's original off state",
+    FeatureSwitchKey.TestOauthConnector,
+  ],
+  [
+    "An internal member can enable Markdown-first output in Lab and reset the override",
+    FeatureSwitchKey.MarkdownFirstOutput,
+  ],
+] as const)("%s", async (_title, featureKey) => {
   let overrides: Partial<Record<FeatureSwitchKey, boolean>> = {};
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, { switches: overrides, effectiveSwitches: overrides });
@@ -128,9 +137,7 @@ test("lab-page-006 Reset all restores the test OAuth connector's original off st
     return respond(200, { deleted: true });
   });
   await visitLab(false, true);
-  const label = screen
-    .getByText(FeatureSwitchKey.TestOauthConnector)
-    .closest("label")!;
+  const label = screen.getByText(featureKey).closest("label")!;
   const toggle = within(label).getByRole("switch");
   expect(toggle).not.toBeChecked();
   click(toggle);

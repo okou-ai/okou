@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">正在同步聊天…</string>
     <string name="workspace_workflows">工作流</string>
     <string name="workspace_connectors">連接器</string>
     <string name="workspace_artifacts">成果</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">已取消封存</string>
     <string name="chat_undo_marked_read">已標為已讀</string>
     <string name="chat_undo">復原</string>
-    <string name="chat_undo_connection_failed">未能復原，請檢查網路連線後再試。</string>
     <string name="chat_action_connection_failed">無法連線，請檢查網路連線後再試。</string>
     <string name="chat_undo_checking">正在確認復原結果</string>
     <string name="chat_undo_failed">未能復原</string>
@@ -70,6 +70,7 @@
     <string name="chat_rename_confirm">重新命名</string>
     <string name="chat_rename_cancel">取消</string>
     <string name="chat_delete">刪除聊天</string>
+    <string name="chat_delete_rejected">未能刪除聊天</string>
     <string name="chat_delete_title">刪除聊天？</string>
     <string name="chat_delete_description">「%1$s」的訊息與草稿將永久刪除。正在執行的任務會停止，關聯的自動化會暫停。</string>
     <string name="chat_delete_confirm">刪除</string>
@@ -92,4 +93,6 @@
     <string name="chat_project_deleted">已刪除專案，聊天已移到專案外。</string>
     <string name="chat_project_delete_rejected">無法刪除專案。</string>
     <string name="chat_project_delete_unconfirmed">無法確認專案是否已刪除。</string>
+    <string name="chat_row_action_rejected_named">未能完成「%1$s」。</string>
+    <string name="chat_row_action_offline_named">未能完成「%1$s」。請檢查網路連線後再試。</string>
 </resources>

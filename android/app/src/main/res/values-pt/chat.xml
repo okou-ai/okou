@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Sincronizando conversas…</string>
     <string name="workspace_workflows">Fluxos de trabalho</string>
     <string name="workspace_connectors">Conectores</string>
     <string name="workspace_artifacts">Artefatos</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">Conversa desarquivada</string>
     <string name="chat_undo_marked_read">Conversa marcada como lida</string>
     <string name="chat_undo">Desfazer</string>
-    <string name="chat_undo_connection_failed">Não foi possível desfazer a alteração. Verifique sua conexão e tente novamente.</string>
     <string name="chat_action_connection_failed">Não foi possível conectar. Verifique sua conexão e tente novamente.</string>
     <string name="chat_undo_checking">Verificando se a alteração foi desfeita…</string>
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
@@ -74,6 +74,7 @@
     <string name="chat_rename_confirm">Renomear</string>
     <string name="chat_rename_cancel">Cancelar</string>
     <string name="chat_delete">Excluir</string>
+    <string name="chat_delete_rejected">Não foi possível excluir a conversa.</string>
     <string name="chat_delete_title">Excluir conversa?</string>
     <string name="chat_delete_description">As mensagens e os rascunhos de “%1$s” serão excluídos permanentemente. As tarefas em andamento serão interrompidas e as automações vinculadas serão pausadas.</string>
     <string name="chat_delete_confirm">Excluir</string>
@@ -96,4 +97,6 @@
     <string name="chat_project_deleted">O projeto foi excluído e suas conversas foram movidas para fora dos projetos.</string>
     <string name="chat_project_delete_rejected">Não foi possível excluir o projeto.</string>
     <string name="chat_project_delete_unconfirmed">Não foi possível confirmar a exclusão do projeto.</string>
+    <string name="chat_row_action_rejected_named">Não foi possível concluir “%1$s”.</string>
+    <string name="chat_row_action_offline_named">Não foi possível concluir “%1$s”. Verifique sua conexão e tente novamente.</string>
 </resources>
