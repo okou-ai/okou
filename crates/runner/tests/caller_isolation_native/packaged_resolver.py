@@ -4,7 +4,7 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PATH = "/api/webhooks/agent/firewall/auth"
+PATH = "/api/webhooks/run/firewall/auth"
 BODY = {
     "authHeaders": {"Authorization": "Bearer ${{ secrets.OPENROUTER_API_KEY }}"},
     "secretConnectorMetadataMap": {

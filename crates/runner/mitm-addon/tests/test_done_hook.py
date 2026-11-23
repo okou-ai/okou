@@ -303,7 +303,7 @@ class TestDoneHook:
             f"shutdown:{wait}"
         )
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "secret-token",
             "run-1",
             [event(source_key="source-1")],
