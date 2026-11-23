@@ -189,7 +189,7 @@ internal class ProactiveSettingOwner(
             try {
                 return readOnce()
             } catch (error: ApiFailure) {
-                if (!error.transientRead() || !mutable.value.online) throw error
+                if (!error.retryableSettingsRead() || !mutable.value.online) throw error
                 delay(pause)
             }
         }
@@ -350,7 +350,3 @@ internal class ProactiveSettingOwner(
 
     private class Offline : Exception()
 }
-
-private fun ApiFailure.transientRead() =
-    this is ApiFailure.Network ||
-        this is ApiFailure.Http && (status in 500..599 || status in setOf(408, 429))
