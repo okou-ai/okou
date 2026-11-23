@@ -6,6 +6,7 @@ import ai.okou.android.SettingsGroup
 import ai.okou.android.SettingsIcon
 import ai.okou.android.SettingsRow
 import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsSheetDescription
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.preferences.MemberPreferencesModel
@@ -160,7 +161,7 @@ private fun SuggestionsRow(state: ProactiveSettingState, select: (Boolean) -> Un
                         false -> R.string.settings_suggestions_cards_only
                         null -> R.string.settings_suggestions_detail
                     }
-                ProactiveDetail(stringResource(note))
+                SettingsSheetDescription(stringResource(note))
                 val first = remember { FocusRequester() }
                 Column(Modifier.fillMaxWidth().selectableGroup()) {
                     SettingsChoiceRow(

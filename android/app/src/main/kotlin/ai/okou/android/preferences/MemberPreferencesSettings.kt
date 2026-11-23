@@ -8,6 +8,7 @@ import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioOptions
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsSheetDescription
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
@@ -44,7 +45,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -176,13 +176,7 @@ internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
         SettingsSheet(title, dismiss) {
-            Text(
-                stringResource(R.string.settings_timezone_hint),
-                Modifier.padding(horizontal = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
-            )
+            SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
             val options =
                 if (current in commonTimezones) commonTimezones
                 else

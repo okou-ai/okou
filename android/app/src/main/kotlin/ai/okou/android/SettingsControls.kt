@@ -403,6 +403,16 @@ internal fun SettingsSheet(
 }
 
 @Composable
+internal fun SettingsSheetDescription(text: String) {
+    Text(
+        text,
+        Modifier.padding(horizontal = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    )
+}
+
+@Composable
 internal fun OkouConfirmationDialog(
     title: String,
     confirm: String,
