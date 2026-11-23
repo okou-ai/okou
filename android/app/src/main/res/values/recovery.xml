@@ -17,4 +17,5 @@
     <string name="recovery_credits">Reset credits: %1$d</string>
     <string name="recovery_account">Model account: %1$s</string>
     <string name="recovery_reset_time">Usage resets: %1$s</string>
+    <string name="recovery_reset_title">Reset usage</string>
 </resources>

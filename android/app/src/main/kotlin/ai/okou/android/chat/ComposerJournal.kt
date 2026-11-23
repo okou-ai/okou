@@ -153,6 +153,7 @@ data class ComposerState(
     val busy: Set<String> = emptySet(),
     val checking: Set<String> = emptySet(),
     val recovering: Map<RecoverySelection, RecoveryOperationPhase> = emptyMap(),
+    val recoveryFailures: Map<String, RecoverySelection> = emptyMap(),
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
     val synchronization: Map<String, ComposerSync> = emptyMap(),

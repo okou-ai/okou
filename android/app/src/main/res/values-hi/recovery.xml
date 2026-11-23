@@ -17,4 +17,5 @@
     <string name="recovery_credits">रीसेट क्रेडिट: %1$d</string>
     <string name="recovery_account">मॉडल खाता: %1$s</string>
     <string name="recovery_reset_time">उपयोग रीसेट का समय: %1$s</string>
+    <string name="recovery_reset_title">उपयोग रीसेट करें</string>
 </resources>

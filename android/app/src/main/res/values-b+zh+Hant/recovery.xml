@@ -17,4 +17,5 @@
     <string name="recovery_credits">重設額度：%1$d</string>
     <string name="recovery_account">模型帳號：%1$s</string>
     <string name="recovery_reset_time">用量恢復時間：%1$s</string>
+    <string name="recovery_reset_title">重設用量</string>
 </resources>

@@ -322,6 +322,11 @@ class AssistantRecoveryModelTest {
             f.idle()
             val frozen = f.composer.uiState.value.entry(target).recovery!!
             assertNull(frozen.outcome)
+            assertEquals(
+                frozen.selection,
+                f.composer.uiState.value.recoveryFailures[target.key],
+            )
+            assertFalse(target.key in f.composer.uiState.value.failed)
             assertTrue(f.remote.inputs.isEmpty())
             assertEquals(
                 frozen,

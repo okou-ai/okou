@@ -1,5 +1,6 @@
 package ai.okou.android.chat
 
+import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.api.generated.ResetSubscriptionResultOutcome
 import android.text.format.DateUtils
@@ -11,14 +12,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,34 +61,23 @@ fun AssistantRecoveryPanel(
     val account = read.data?.resetAccount
     var confirmReset by remember(read.selection, account?.id) { mutableStateOf(false) }
     if (confirmReset && account != null && !unknownReset) {
-        AlertDialog(
-            onDismissRequest = { confirmReset = false },
-            title = { Text(stringResource(R.string.recovery_reset)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.recovery_reset_confirmation,
-                        account.accountEmail ?: account.workspaceName ?: account.id,
-                    ),
-                )
+        OkouConfirmationDialog(
+            title = stringResource(R.string.recovery_reset_title),
+            confirm = stringResource(R.string.recovery_reset),
+            onDismiss = { confirmReset = false },
+            onConfirm = {
+                confirmReset = false
+                composer.confirmRecoveryReset(target, failureId, account.id)
             },
-            confirmButton = {
-                TextButton(
-                    enabled = !busy && entry.pending == null,
-                    onClick = {
-                        confirmReset = false
-                        composer.confirmRecoveryReset(target, failureId, account.id)
-                    },
-                ) {
-                    Text(stringResource(R.string.recovery_reset))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmReset = false }) {
-                    Text(stringResource(R.string.chat_rename_cancel))
-                }
-            },
-        )
+            confirmEnabled = !busy && entry.pending == null,
+        ) {
+            Text(
+                stringResource(
+                    R.string.recovery_reset_confirmation,
+                    account.accountEmail ?: account.workspaceName ?: account.id,
+                ),
+            )
+        }
     }
     Surface(
         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -162,7 +150,7 @@ fun AssistantRecoveryPanel(
                         )
                     attempt?.submitted == true ->
                         RecoveryNote(stringResource(R.string.recovery_submitted), announced = true)
-                    target.key in input.failed ->
+                    input.recoveryFailures[target.key] == read.selection ->
                         RecoveryNote(stringResource(R.string.recovery_failed), error = true)
                     attempt?.outcome == ResetSubscriptionResultOutcome.NOCREDIT ->
                         RecoveryNote(stringResource(R.string.recovery_no_credit), error = true)
