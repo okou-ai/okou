@@ -124,6 +124,8 @@
     <string name="updates_downloading">Mengunduh · %1$s</string>
     <string name="updates_needed">Perlu diperbarui</string>
     <string name="updates_not_needed">Tidak perlu diperbarui</string>
+    <string name="updates_status_checking">Memeriksa pembaruan</string>
+    <string name="updates_status_check_failed">Gagal memeriksa pembaruan</string>
     <string name="updates_package_size">Paket: %1$s</string>
     <string name="updates_check_in_progress">Memeriksa…</string>
     <string name="updates_version">Versi baru: %1$s</string>

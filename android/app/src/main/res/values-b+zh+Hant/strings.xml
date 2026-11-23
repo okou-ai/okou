@@ -124,6 +124,8 @@
     <string name="updates_downloading">下載中 %1$s</string>
     <string name="updates_needed">需要更新</string>
     <string name="updates_not_needed">不需要更新</string>
+    <string name="updates_status_checking">檢查更新中</string>
+    <string name="updates_status_check_failed">檢查更新失敗</string>
     <string name="updates_package_size">安裝套件 %1$s</string>
     <string name="updates_check_in_progress">檢查中</string>
     <string name="updates_version">新版本 %1$s</string>

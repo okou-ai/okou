@@ -264,6 +264,15 @@ internal fun AppUpdateSettings(
     open: () -> Unit,
     detailsOpen: Boolean = false,
 ) {
+    val status =
+        when (state.check) {
+            UpdateCheck.Checking -> R.string.updates_status_checking
+            UpdateCheck.Waiting,
+            UpdateCheck.Failed -> R.string.updates_status_check_failed
+            UpdateCheck.Unknown,
+            UpdateCheck.Checked ->
+                if (state.available) R.string.updates_needed else R.string.updates_not_needed
+        }
     val focus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var restoreFocus by remember { mutableStateOf(false) }
@@ -280,10 +289,7 @@ internal fun AppUpdateSettings(
             Modifier.focusRequester(focus)
                 .onFocusChanged { focused = it.isFocused }
                 .updateFocusOutline(RoundedCornerShape(12.dp), LocalActivityStatusColor.current),
-        value =
-            stringResource(
-                if (state.available) R.string.updates_needed else R.string.updates_not_needed,
-            ),
+        value = stringResource(status),
         valueMaxLines = 1,
         reserveValueSpace = true,
         onClick = {
@@ -291,7 +297,7 @@ internal fun AppUpdateSettings(
             open()
         },
         valueLeading =
-            if (state.available) {
+            if (status == R.string.updates_needed) {
                 {
                     Box(
                         Modifier.size(8.dp)

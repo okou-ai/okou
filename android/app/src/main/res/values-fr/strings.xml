@@ -124,6 +124,8 @@
     <string name="updates_downloading">Téléchargement · %1$s</string>
     <string name="updates_needed">Mise à jour nécessaire</string>
     <string name="updates_not_needed">Aucune mise à jour requise</string>
+    <string name="updates_status_checking">Recherche de mise à jour</string>
+    <string name="updates_status_check_failed">Échec de la recherche de mises à jour</string>
     <string name="updates_package_size">Paquet : %1$s</string>
     <string name="updates_check_in_progress">Recherche…</string>
     <string name="updates_version">Nouvelle version : %1$s</string>

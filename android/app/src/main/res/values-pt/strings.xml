@@ -124,6 +124,8 @@
     <string name="updates_downloading">Baixando · %1$s</string>
     <string name="updates_needed">Atualização necessária</string>
     <string name="updates_not_needed">Não é preciso atualizar</string>
+    <string name="updates_status_checking">Verificando atualizações</string>
+    <string name="updates_status_check_failed">Falha ao verificar atualizações</string>
     <string name="updates_package_size">Pacote: %1$s</string>
     <string name="updates_check_in_progress">Verificando…</string>
     <string name="updates_version">Nova versão: %1$s</string>
