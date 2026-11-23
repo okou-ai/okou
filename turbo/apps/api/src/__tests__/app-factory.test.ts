@@ -817,11 +817,14 @@ describe("createApp", () => {
         expect(response.status).toBe(status);
         if (status === 426) {
           const body = await response.json();
-          expect(body.minimumSupportedVersion).toBe(
-            distribution === "testflight" ? "1.2.0" : "1.0.0",
-          );
+          expect(body).toMatchObject({
+            minimumSupportedVersion:
+              distribution === "testflight" ? "1.2.0" : "1.0.0",
+          });
           if (distribution === "app-store") {
-            expect(body.error.message).toContain("App Store");
+            expect(body).toMatchObject({
+              error: { message: expect.stringContaining("App Store") },
+            });
           }
         }
       },
@@ -866,7 +869,9 @@ describe("createApp", () => {
         },
       });
       expect(response.status).toBe(426);
-      expect((await response.json()).minimumSupportedVersion).toBe("0.51.12");
+      await expect(response.json()).resolves.toMatchObject({
+        minimumSupportedVersion: "0.51.12",
+      });
     });
 
     it.each(["ios", "IOS"])(
