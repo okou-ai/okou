@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { HostedSitePeople } from "./hosted-site-people.tsx";
+import { HostedSiteAudienceChoices } from "./hosted-site-audience-choices.tsx";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
@@ -59,7 +60,9 @@ function HostedSiteBannerSetting({
   const [operation, change] = useLoadableSet(session.changeBanner$);
   const signal = useGet(session.signal$);
   const features = useLastResolved(featureSwitches$);
-  const rows = features?.[FeatureSwitchKey.HostedSiteShareRows];
+  const rows =
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (
     !signal ||
@@ -130,11 +133,14 @@ function HostedSiteBannerSetting({
 
 function HostedSitePermissions({
   session,
+  children,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly children: ReactNode;
 }) {
   const { t } = useTranslation();
   const loadable = useLoadable(session.visibility$);
+  const current = useLastResolved(session.visibility$);
   const [operation, change] = useLoadableSet(session.changeVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
   const emailSharing =
@@ -156,22 +162,32 @@ function HostedSitePermissions({
         {saving && <Loader2 size={14} className="animate-spin" />}
       </div>
       {loadable.state === "loading" && !saving ? (
-        <ShareSkeleton showCopyButton={false} />
+        emailSharing ? (
+          <div aria-busy="true" className="space-y-3">
+            <Skeleton className="h-16 w-full rounded-xl" />
+            <Skeleton className="mx-2 h-5 w-48" />
+          </div>
+        ) : (
+          <ShareSkeleton showCopyButton={false} />
+        )
+      ) : emailSharing ? (
+        <>
+          <HostedSiteAudienceChoices
+            selected={current?.visibility}
+            organizationName={organization?.name ?? null}
+            saving={saving}
+            unavailable={failed}
+            onChange={(visibility) => {
+              detach(change(visibility, signal), Reason.DomCallback);
+            }}
+          >
+            {children}
+          </HostedSiteAudienceChoices>
+          {failed && <ShareLoadError />}
+        </>
       ) : (
         <>
           <SharePermissionChoices
-            privateAudience={
-              emailSharing
-                ? {
-                    label: t(($) => {
-                      return $.artifacts.people.restricted;
-                    }),
-                    description: t(($) => {
-                      return $.artifacts.people.restrictedDescription;
-                    }),
-                  }
-                : undefined
-            }
             selected={
               loadable.state === "hasData"
                 ? loadable.data?.visibility
@@ -460,10 +476,10 @@ function HostedSiteShareActions({
   const edit = useSet(session.edit$);
   const copy = useSet(session.copy$);
   const banner = useLoadable(session.banner$);
+  const features = useLastResolved(featureSwitches$);
   const rows =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteShareRows
-    ] === true;
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   const paywallLocked = useLastResolved(artifactPaywallLocked$) === true;
   if (!signal) {
     return null;
@@ -565,10 +581,10 @@ function HostedSiteShareUrl({
   // settled actions instead of a loading frame.
   const details = useLoadable(session.details$);
   const editing = useGet(session.editing$);
+  const features = useLastResolved(featureSwitches$);
   const rows =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.HostedSiteShareRows
-    ] === true;
+    features?.[FeatureSwitchKey.HostedSiteShareRows] ||
+    features?.[FeatureSwitchKey.HostedSiteEmailSharing];
   return (
     <>
       {editing ? (
@@ -616,20 +632,17 @@ function HostedSiteShareUrl({
 function HostedSiteShareBody({
   session,
   permissions,
-  people,
   banner,
   children,
 }: {
   readonly session: HostedSiteShareSession;
   readonly permissions: ReactNode;
   readonly banner: ReactNode;
-  readonly people?: ReactNode;
   readonly children: ReactNode;
 }) {
   const editing = useGet(session.editing$);
   return (
     <div className={editing ? "p-4" : "p-1.5"}>
-      {!editing && people}
       {!editing && permissions}
       <div className={cn(!editing && "px-2")}>
         {!editing && banner}
@@ -701,19 +714,21 @@ function HostedSiteSharePopover({
 function HostedSiteShareSessionMenu({
   session,
   surface,
-  permissions,
   banner,
   ...props
 }: ShareButtonProps & {
   readonly session: HostedSiteShareSession;
   readonly surface: "dialog" | "sidebar";
-  readonly permissions: ReactNode;
   readonly banner: ReactNode;
 }) {
   const signal = useGet(session.signal$);
   const [saving, save] = useLoadableSet(session.save$);
   const [sharing, share] = useLoadableSet(session.people.share$);
   const [removing, remove] = useLoadableSet(session.people.remove$);
+  const emailSharing =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.HostedSiteEmailSharing
+    ];
   if (!signal) {
     return null;
   }
@@ -731,26 +746,32 @@ function HostedSiteShareSessionMenu({
       <PopoverContent
         align="end"
         aria-label={props.ariaLabel}
-        className="w-90 max-w-[calc(100vw-2rem)] p-0"
+        className={cn(
+          "max-w-[calc(100vw-2rem)] p-0",
+          emailSharing ? "w-100" : "w-90",
+        )}
       >
         <HostedSiteShareBody
           session={session}
-          people={
-            <HostedSitePeople
-              session={session}
-              busy={sharing.state === "loading" || removing.state === "loading"}
-              failed={
-                sharing.state === "hasError" || removing.state === "hasError"
-              }
-              onShare={(email) => {
-                detach(share(email, signal), Reason.DomCallback);
-              }}
-              onRemove={(id) => {
-                detach(remove(id, signal), Reason.DomCallback);
-              }}
-            />
+          permissions={
+            <HostedSitePermissions session={session}>
+              <HostedSitePeople
+                session={session}
+                busy={
+                  sharing.state === "loading" || removing.state === "loading"
+                }
+                failed={
+                  sharing.state === "hasError" || removing.state === "hasError"
+                }
+                onShare={(email) => {
+                  detach(share(email, signal), Reason.DomCallback);
+                }}
+                onRemove={(id) => {
+                  detach(remove(id, signal), Reason.DomCallback);
+                }}
+              />
+            </HostedSitePermissions>
           }
-          permissions={permissions}
           banner={banner}
         >
           <HostedSiteShareUrl
@@ -786,7 +807,6 @@ export function HostedSiteShareMenu({
         <HostedSiteShareSessionMenu
           session={session}
           surface={surface}
-          permissions={<HostedSitePermissions session={session} />}
           banner={<HostedSiteBannerSetting session={session} />}
           {...props}
         />
