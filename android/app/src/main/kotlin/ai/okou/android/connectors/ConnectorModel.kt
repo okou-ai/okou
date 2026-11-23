@@ -239,15 +239,18 @@ class ConnectorModel(
             browseJob =
                 viewModelScope.launch {
                     load({ service.discover(null, null) }) { read ->
-                        mutableState.update { state ->
-                            state.copy(browse = read.retaining(state.browse))
-                        }
-                        if (read.failure == ConnectorReadFailure.Unavailable) {
+                        val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                        if (unavailable) {
                             matchesJob?.cancel()
                             recentMatches.clear()
-                            mutableState.update { state ->
-                                state.copy(matches = state.matches?.copy(entries = ConnectorRead()))
-                            }
+                        }
+                        mutableState.update { state ->
+                            state.copy(
+                                browse = read.retaining(state.browse),
+                                matches =
+                                    if (unavailable) state.matches?.copy(entries = read)
+                                    else state.matches,
+                            )
                         }
                     }
                 }

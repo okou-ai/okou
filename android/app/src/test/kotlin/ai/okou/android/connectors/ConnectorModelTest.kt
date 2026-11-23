@@ -44,6 +44,21 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectorModelTest {
     @Test
+    fun catalogDenialClearsTheVisibleCategoryAndReportsUnavailable() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val email = ConnectorBrowseFilter(null, "email")
+            model.setFilter(email)
+            model.await { it.browse.data != null && it.matches?.entries?.data != null }
+
+            fixture.denyDefaultDiscovery = true
+            model.resume()
+            val unavailable = model.await { it.browse.failure == ConnectorReadFailure.Unavailable }
+            assertEquals(email, unavailable.matches?.filter)
+            assertNull(unavailable.matches?.entries?.data)
+            assertEquals(ConnectorReadFailure.Unavailable, unavailable.matches?.entries?.failure)
+        }
+
+    @Test
     fun openContentSurvivesExpiryButReentryWithholdsExpiredScopes() {
         val clock = TestTimeSource()
         val online = MutableStateFlow(true)
