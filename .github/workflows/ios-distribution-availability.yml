@@ -17,6 +17,9 @@ on:
         required: true
         type: string
 
+env:
+  npm_config_audit: "false"
+
 permissions:
   contents: read
   actions: read
