@@ -65,7 +65,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       + mentionInputStatus(input)
   }
 
-  func testQuotedNoteKeepsItsSendKeyAvailabilityWhileItIsTypedAndEmptied() async throws {
+  func testQuotedNoteGatesItsSendKeyOnItsOwnTextWhileItIsTypedAndEmptied() async throws {
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
@@ -91,10 +91,11 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     try await focusMentionInput(input)
     input.insertText("Ask about this passage")
 
-    // The quote keeps Send valid without the note, so the note's text never owns the key.
+    // The quote is sendable without the note, yet only the note's own text gates its key,
+    // so typing and emptying the note stay in UIKit's native input session.
     preferences.setReturnKey(.send)
     try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
-    XCTAssertFalse(input.enablesReturnKeyAutomatically)
+    XCTAssertTrue(input.enablesReturnKeyAutomatically)
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.deleteBackward()
@@ -104,8 +105,55 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .default }
     preferences.setReturnKey(.send)
     try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
-    XCTAssertFalse(input.enablesReturnKeyAutomatically)
+    XCTAssertTrue(input.enablesReturnKeyAutomatically)
     XCTAssertTrue(input.isFirstResponder)
+  }
+
+  func testReadyAttachmentLeavesTheEmptyEditorsSendKeyToItsOwnText() async throws {
+    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let preferences = ComposerPreferences(storage: ComposerPreferencesStorage(directory: directory))
+    let files = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    try FileManager.default.createDirectory(at: files, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: files) }
+    let file = files.appending(path: "notes.txt")
+    try Data("notes".utf8).write(to: file)
+    let fixture = AttachmentFlowFixture()
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(
+        conversation: conversation, source: ComposerMentionSource(threads: [])
+      )
+      .environment(\.composerPreferences, preferences))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    try await focusMentionInput(input)
+    let attachments = conversation.attachmentDraft
+    attachments.importFiles([file])
+    try await waitForBusinessResult(
+      message: "Attachment items: \(attachments.items.count); "
+        + "error: \(String(describing: attachments.error)); " + mentionInputStatus(input)
+    ) { attachments.hasAttachments && attachments.isReady }
+    let ended = EndedEditingSessions()
+    let observer = NotificationCenter.default.addObserver(
+      forName: UITextView.textDidEndEditingNotification, object: input, queue: nil
+    ) { _ in MainActor.assumeIsolated { ended.count += 1 } }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    // Send now configures the editor with a sendable attachment in the draft. The empty
+    // editor's key still follows only its own text, so no input session restart puts the
+    // keyboard away and brings it back; the toolbar's Send covers the attachment.
+    preferences.setReturnKey(.send)
+    try await eventually(message: mentionInputStatus(input)) { input.returnKeyType == .send }
+    XCTAssertTrue(input.enablesReturnKeyAutomatically, mentionInputStatus(input))
+    // The trait change queued its keyboard refresh on the main queue. Queue the test behind it.
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      DispatchQueue.main.async { continuation.resume() }
+    }
+    XCTAssertEqual(ended.count, 0, mentionInputStatus(input))
+    XCTAssertTrue(input.isFirstResponder, mentionInputStatus(input))
   }
 
   func testReturnKeyRefreshLeavesTheKeyboardDownWhileASheetCoversTheEditor() async throws {
