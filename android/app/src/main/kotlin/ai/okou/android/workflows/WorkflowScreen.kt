@@ -120,6 +120,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.LifecycleResumeEffect
 
+internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
+
 @Composable
 internal fun WorkflowScreen(
     model: WorkflowModel,
@@ -1153,7 +1155,7 @@ private fun WorkflowPlaceholder(label: Int) {
 
 @Composable
 private fun WorkflowSkeleton(directory: Boolean) {
-    if (rememberChatWaitIndicator(true)) {
+    if (rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)) {
         val label = stringResource(R.string.workspace_workflows)
         Column(
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {

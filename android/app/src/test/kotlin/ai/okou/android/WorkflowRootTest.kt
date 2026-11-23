@@ -136,8 +136,19 @@ class WorkflowRootTest {
             } else response(request)
         }
 
-        compose.onNodeWithContentDescription("Workflows").performClick()
-        waitForTag("workflow_loading")
+        val loading = compose.onNodeWithTag("workflow_loading")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(200)
+            loading.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(80)
+            loading.assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         gate.countDown()
         waitFor("Could not load workflows")
         val feedback =

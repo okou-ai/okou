@@ -49,7 +49,9 @@ internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?) {
             if (failure == WorkflowReadFailure.Unavailable) R.string.workflow_history_unavailable
             else R.string.workflow_history_failed,
         )
-    } else if (rememberChatWaitIndicator(true)) {
+    } else if (
+        rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)
+    ) {
         val label = stringResource(R.string.workflow_history_loading)
         Column(
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {
