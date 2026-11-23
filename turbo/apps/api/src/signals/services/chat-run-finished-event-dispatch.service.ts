@@ -35,3 +35,34 @@ export const dispatchConfiguredChatRunFinishedEvent$ = command(
     await set(commandValue, event, signal);
   },
 );
+
+type ProjectRecallArgs = [
+  {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly threadId: string;
+  },
+  Date,
+  AbortSignal,
+];
+type ProjectRecallCommand = Command<Promise<void>, ProjectRecallArgs>;
+
+const projectRecallCommand$ = state<ProjectRecallCommand | undefined>(
+  undefined,
+);
+
+export const configureProjectRecallCommand$ = command(
+  ({ set }, implementation: ProjectRecallCommand) => {
+    set(projectRecallCommand$, implementation);
+  },
+);
+
+export const dispatchProjectRecall$ = command(
+  async ({ get, set }, ...args: ProjectRecallArgs): Promise<void> => {
+    const implementation = get(projectRecallCommand$);
+    if (!implementation) {
+      throw new Error("Project recall command is not configured");
+    }
+    await set(implementation, ...args);
+  },
+);

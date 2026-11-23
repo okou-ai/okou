@@ -3823,6 +3823,13 @@
       "when": 1795435594773,
       "tag": "1624_workflow_recency_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 1625,
+      "version": "7",
+      "when": 1795451971668,
+      "tag": "1625_project_archive",
+      "breakpoints": true
     }
   ]
 }

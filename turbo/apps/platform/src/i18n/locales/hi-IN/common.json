@@ -5192,6 +5192,7 @@
     }
   },
   "projects": {
+    "archiveProject": "प्रोजेक्ट संग्रहित करें",
     "back": "Back",
     "close": "Close",
     "collapse": "संक्षिप्त करें",
@@ -5230,6 +5231,7 @@
     "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "प्रोजेक्ट बहाल करें",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
