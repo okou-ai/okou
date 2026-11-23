@@ -73,7 +73,7 @@ internal fun SessionEntryScreen(
     val choosing = state.stage == SessionStage.ChooseWorkspace
     val noWorkspace = choosing && state.memberships.isEmpty()
     val accessRemoved = state.stage == SessionStage.AccessRemoved
-    var confirmSignOut by remember(state.generation) { mutableStateOf(false) }
+    var confirmSignOut by remember(state.entryPageGeneration) { mutableStateOf(false) }
     val title =
         when (state.stage) {
             SessionStage.LoadingWorkspace -> R.string.auth_preparing_workspace

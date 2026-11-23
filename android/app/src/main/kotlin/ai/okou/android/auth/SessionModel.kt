@@ -111,6 +111,8 @@ data class SessionUiState(
     val checkingWorkspace: Boolean = false,
     val entryFailure: SessionEntryFailure? = null,
     val entryReadFailed: Boolean = false,
+    // An in-place check can retire its work while the entry page stays open.
+    val entryPageGeneration: Long = generation,
 )
 
 enum class SessionEntryFailure {
@@ -351,6 +353,7 @@ class SessionModel(
                             memberships,
                             entryFailure =
                                 selection?.let { SessionEntryFailure.Selection } ?: browserFailure,
+                            entryPageGeneration = checkingFrom?.entryPageGeneration ?: generation,
                         )
                     return@launch
                 }
