@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.46.0](https://github.com/okou-ai/okou/compare/android-v0.45.2...android-v0.46.0) (2026-11-23)
+
+
+### Features
+
+* **app:** track suggestion card impressions and outcomes ([#50158](https://github.com/okou-ai/okou/issues/50158)) ([d1cb596](https://github.com/okou-ai/okou/commit/d1cb596036a9079ecd0eb85072610dce8d44f5fb))
+
+
+### Bug Fixes
+
+* **android:** recover chat list actions and reorder filtered pins ([#50016](https://github.com/okou-ai/okou/issues/50016)) ([0a63489](https://github.com/okou-ai/okou/commit/0a634898d4de6ff3c8f27de5506c1ccd447bd6d1))
+
 ## [0.45.2](https://github.com/okou-ai/okou/compare/android-v0.45.1...android-v0.45.2) (2026-11-23)
 
 
