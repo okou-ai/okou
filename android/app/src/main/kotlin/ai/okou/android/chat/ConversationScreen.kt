@@ -227,12 +227,7 @@ internal fun ConversationRoute(
     val linkTarget = linkPosition?.destination
     val searchEventId =
         remember(transcript, messageSequence) {
-            messageSequence?.let { sequence ->
-                transcript
-                    ?.messages
-                    ?.firstOrNull { it.sourceSeqId == sequence && it.visibleInConversation() }
-                    ?.id
-            }
+            messageSequence?.let { transcript?.searchMessage(it)?.id }
         }
     val requestedSearchTarget =
         remember(messageSequence, searchEventId) {
