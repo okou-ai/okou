@@ -127,7 +127,8 @@ final class ForYouStore {
           cards.insert(action.card, at: position)
         }
       }
-      notice = restored ? nil : Notice(text: String(localized: "This suggestion has expired."))
+      notice =
+        restored ? nil : Notice(text: String(localized: "This suggestion is no longer available."))
       workspace?.requestRefresh(.forYou)
     }
   }
@@ -178,6 +179,7 @@ final class ForYouStore {
 
   func sendDirection(_ card: ForYouCard, note: String) async -> Bool {
     guard case .suggestion(let suggestion) = card.content else { return false }
+    var sent = false
     await perform {
       let draft = try card.directionDraft(note: note)
       let attempt = try beginSelection(card, optionID: "custom", note: note)
@@ -187,8 +189,9 @@ final class ForYouStore {
       directionNotes[card.id] = nil
       // Accepting the annotated chat event atomically consumes the custom direction.
       remove(card)
+      sent = true
     }
-    return error == nil
+    return sent
   }
 
   func open(_ id: String) async -> Bool {

@@ -58,7 +58,6 @@ struct ForYouView: View {
                       }
                     }
                   )
-                  .accessibilityIdentifier("for-you-card")
                 if store.cards.count > 1 { pager }
               }
               .frame(maxWidth: OkouControl.readableWidth)

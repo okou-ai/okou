@@ -148,10 +148,10 @@
         }
       }
     },
-    "This suggestion has expired.": {
+    "This suggestion is no longer available.": {
       "localizations": {
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "这条推荐已过期。" }
+          "stringUnit": { "state": "translated", "value": "这条推荐已无法恢复。" }
         }
       }
     },
