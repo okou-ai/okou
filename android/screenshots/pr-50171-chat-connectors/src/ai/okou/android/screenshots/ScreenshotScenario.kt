@@ -75,7 +75,7 @@ class ScreenshotScenario {
         }
 
     @Test
-    fun wideExistingChatRetainsItsValueOnSaveFailure() =
+    fun wideExistingChatRetainsItsValueUntilTheWriteIsConfirmed() =
         onDevice("wide", 1180, 820) { _, connector ->
             connector.rejectChatOverride = 403
             action("Personal chat").click()
@@ -86,6 +86,14 @@ class ScreenshotScenario {
             assertTrue(action("工作日历").isChecked)
             awaitCalendarArtwork()
             capture("wide-connector-save-failed.png")
+
+            connector.rejectChatOverride = null
+            connector.loseChatOverrideReply = true
+            connector.failChatOverrideReads = true
+            action("工作日历").click()
+            text("结果尚未确认。")
+            assertTrue(action("工作日历").isChecked)
+            capture("wide-connector-result-unconfirmed.png")
         }
 
     @Test
