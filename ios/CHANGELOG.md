@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.57.0](https://github.com/okou-ai/okou/compare/ios-v0.56.1...ios-v0.57.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** rework the for you page around its directions ([#50196](https://github.com/okou-ai/okou/issues/50196)) ([6cbc8e2](https://github.com/okou-ai/okou/commit/6cbc8e2dea0e7c095eae00a6510f3deeb29ecc42))
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard down under a sheet when the return key refreshes ([#50193](https://github.com/okou-ai/okou/issues/50193)) ([76b22ce](https://github.com/okou-ai/okou/commit/76b22ce30c83afe73b2619dc495bf6683477525a))
+* **ios:** remove purchase guidance from chat ([#50192](https://github.com/okou-ai/okou/issues/50192)) ([178d62c](https://github.com/okou-ai/okou/commit/178d62c4525156146c89cf5ec8816e4f0b323934))
+
 ## [0.56.1](https://github.com/okou-ai/okou/compare/ios-v0.56.0...ios-v0.56.1) (2026-11-23)
 
 
