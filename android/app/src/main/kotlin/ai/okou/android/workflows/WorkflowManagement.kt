@@ -241,9 +241,10 @@ internal fun WorkflowEditorAction(
     }
     WorkflowAction(
         stringResource(label),
-        { onEdit(focused) },
+        { onEdit(focused && input.inputMode == InputMode.Keyboard) },
         Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused },
         enabled = enabled,
+        keyboardFocused = focused && input.inputMode == InputMode.Keyboard,
     )
 }
 

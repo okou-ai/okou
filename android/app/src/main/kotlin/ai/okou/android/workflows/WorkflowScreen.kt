@@ -1104,6 +1104,7 @@ internal fun WorkflowAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
+    keyboardFocused: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
@@ -1135,7 +1136,9 @@ internal fun WorkflowAction(
             enabled = enabled,
             shape = shape,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
-            border = BorderStroke(1.dp, colors.outline),
+            border =
+                if (keyboardFocused) BorderStroke(2.dp, colors.onSurfaceVariant)
+                else BorderStroke(1.dp, colors.outline),
             contentPadding = padding,
         ) {
             Text(

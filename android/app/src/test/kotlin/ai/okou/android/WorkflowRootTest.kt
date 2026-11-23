@@ -781,6 +781,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     fun connectingAnAccountPreservesTheSharedRuleEditorAndEnablesSave() = withHardwareKeyboard {
         val releaseConnections = CountDownLatch(1)
         app.fixture.beforeConnectionsRead = { releaseConnections.await() }
+        val add = compose.onNodeWithText("Add automation")
         val save = compose.onNodeWithTag("workflow_save")
         val connection = compose.onNodeWithText("View connections")
         val subject = compose.onNodeWithContentDescription("Subject contains")
@@ -788,7 +789,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         try {
             openWorkflowDetail(WORKFLOW_SHARED)
             compose.onNodeWithTag("workflow_tab_automations").performClick()
-            compose.onNodeWithText("Add automation").performClick()
+            add.pressEnter()
             compose.onNodeWithText("Schedule").performClick()
             compose.onNodeWithText("Gmail message received").performClick()
             subject.performTextInput("Release summary")
@@ -821,6 +822,9 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         }
         subject.assertTextContains("Release summary")
         save.assertIsEnabled().assertIsFocused()
+        compose.onNodeWithText("Cancel").pressEnter()
+        compose.onNodeWithText("Discard").pressEnter()
+        add.assertIsFocused()
     }
 
     @Test
