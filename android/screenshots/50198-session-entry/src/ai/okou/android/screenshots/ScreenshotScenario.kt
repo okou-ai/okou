@@ -137,7 +137,7 @@ class ScreenshotScenario {
                     val model = ViewModelProvider(activity)[SessionModel::class.java]
                     model.openWorkspaceSetup(model.uiState.value.generation) { false }
                 }
-                find(R.string.auth_browser_unavailable)
+                capture(R.string.auth_browser_unavailable, "browser-unavailable.png")
                 check.complete(Unit)
                 capture(R.string.auth_check_failed, "check-failed.png")
                 auth.state.value =
