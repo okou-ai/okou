@@ -86,7 +86,7 @@ if command == 'seq':
     start, end = map(int, args)
     # Shorten only a loop deliberately missing its completion condition. The
     # positive cases need the full iteration budget to observe asynchronous work.
-    missing_readiness = scenario in ('wrong-owner', 'missing-fifo')
+    missing_readiness = scenario in ('missing-claim', 'wrong-owner', 'preparing-only', 'missing-fifo')
     stalled_completion = scenario == 'stalled-completion' and (root / 'released-1').exists()
     if missing_readiness or stalled_completion:
         end = min(end, 16)
@@ -193,7 +193,8 @@ if args[:2] == ['local', 'submit']:
     temporary.write_text(json.dumps(request))
     claims = queue / 'claims'
     claims.mkdir(exist_ok=True)
-    (claims / f'{run_id}.claim').touch()
+    if scenario != 'missing-claim':
+        (claims / f'{run_id}.claim').touch()
     sandbox_id = f'sandbox-{number}'
     record = {'run_id': run_id, 'sandbox_id': sandbox_id, 'phase': 'preparing'}
     update(owner, lambda s: s['active_runs'].append(record))
@@ -208,7 +209,8 @@ if args[:2] == ['local', 'submit']:
         guest.wait(timeout=3)
         raise SystemExit(143)
     signal.signal(signal.SIGTERM, interrupted)
-    update(owner, lambda s: [r.update(phase='running') for r in s['active_runs'] if r['sandbox_id'] == sandbox_id])
+    if scenario != 'preparing-only':
+        update(owner, lambda s: [r.update(phase='running') for r in s['active_runs'] if r['sandbox_id'] == sandbox_id])
     # Publish only after cleanup can retire this submission and its guest.
     if scenario == 'ambiguous-request' and number == 1:
         # Expose both matches together so a poll cannot bind to just one.
@@ -379,7 +381,9 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
     cases = {
         'job2-a': None,
         'job2-b': None,
+        'missing-claim': 'not ready within observation budget',
         'wrong-owner': 'not ready within observation budget',
+        'preparing-only': 'not ready within observation budget',
         'missing-fifo': 'not ready within observation budget',
         'ambiguous-request': 'ambiguous submission',
         'missing-drain-mode': 'did not retain job 1 while draining',
