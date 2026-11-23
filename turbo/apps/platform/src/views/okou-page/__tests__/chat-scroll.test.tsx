@@ -412,3 +412,40 @@ test.each(["layout change", "tap"])(
     );
   },
 );
+
+test("A completed turn delivered behind Automations stays accessible after the reader returns to history", async () => {
+  context.mocks.browser.standaloneDisplayMode(true);
+  const records = pagedTurns(26);
+  const pane = await openPagedHistory(records);
+  await within(pane).findByText("Locator answer 26");
+  await expectTail(pane);
+  fireEvent.scroll(pane);
+  fireEvent.wheel(pane, { deltaY: 32 - pane.scrollTop });
+  pane.scrollTop = 32;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  const anchor = "Locator question 1";
+  await within(pane).findByText(anchor);
+  const y = messageOffset(anchor, pane);
+  click(await findFastControl("button", "More actions"));
+  click(
+    await within(await screen.findByRole("menu")).findByText("Automations"),
+  );
+  const close = await findFastControl("button", "Close automations");
+  records.push(...pagedTurn(27, "Harbor inspection completed"));
+  publishRunUpdate();
+  await waitFor(() => {
+    expect(
+      document.querySelector('[data-locator-tick][data-turn-index="26"]'),
+    ).toBeInTheDocument();
+  });
+  click(close);
+  await waitFor(() => {
+    expect(close).not.toBeInTheDocument();
+    expect(messageOffset(anchor, pane)).toBe(y);
+  });
+  click(await findFastControl("button", "Scroll to bottom"));
+  await expect(
+    within(pane).findByText("Harbor inspection completed"),
+  ).resolves.toBeVisible();
+});

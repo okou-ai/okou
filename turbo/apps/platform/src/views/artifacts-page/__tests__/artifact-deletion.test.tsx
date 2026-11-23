@@ -1,3 +1,4 @@
+import { findNamedMenuItem } from "../../okou-page/__tests__/chat-attachment-test-helpers.ts";
 import {
   artifactCatalogContract,
   type ArtifactSummary,
@@ -84,7 +85,7 @@ function reportCard(): Element | null {
 
 async function pickDelete() {
   const menu = await screen.findByRole("menu");
-  click(within(menu).getByRole("menuitem", { name: "Delete" }));
+  click(await findNamedMenuItem("Delete", menu));
 }
 
 async function findConfirmation(): Promise<HTMLElement> {
@@ -126,7 +127,10 @@ test("preview cancellation and deletion keep the catalog consistent in the catal
 
   await user.keyboard("{Enter}");
   const actions = await screen.findByRole("menu");
-  await waitFor(() => expect(within(actions).getByRole("menuitem", { name: "Delete" })).toHaveFocus());
+  const deleteAction = await findNamedMenuItem("Delete", actions);
+  await waitFor(() => {
+    return expect(deleteAction).toHaveFocus();
+  });
   await user.keyboard("{Enter}");
   const escaped = await findConfirmation();
   await user.keyboard("{Escape}");

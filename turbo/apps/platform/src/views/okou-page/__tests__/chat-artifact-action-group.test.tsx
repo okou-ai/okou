@@ -1,6 +1,6 @@
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
@@ -328,8 +328,14 @@ test("The owned sidebar offers Delete on More and downloads the original PDF", a
   const full = getAction("button", "Enter fullscreen", panel);
   const close = getAction("button", "Close artifact", panel);
   expect(separator).toHaveAttribute("aria-orientation", "vertical");
-  for (const [before, after] of [[more, separator], [separator, full], [full, close]] as const) {
-    expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  for (const [before, after] of [
+    [more, separator],
+    [separator, full],
+    [full, close],
+  ] as const) {
+    expect(
+      before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   }
   click(more);
   const menu = await screen.findByRole("menu");

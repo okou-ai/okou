@@ -120,3 +120,22 @@ test("queue-009 A full workspace offers Pro then Team as the billing tier change
     findFastControl("button", "Upgrade to Team", drawer),
   ).resolves.toBeEnabled();
 });
+
+test("The queue drawer receives the active organization's capacity update on its workspace channel", async () => {
+  const { drawer, api } = await open(plan("team", 7, 6));
+  const organization = "org:org_default";
+  const topic = "runQueueChanged";
+  await waitFor(() => {
+    expect(
+      context.mocks.ably.hasSubscriptionOnChannel(organization, topic),
+    ).toBeTruthy();
+  });
+  expect(
+    context.mocks.ably.hasSubscriptionOnChannel("user:test-user-123", topic),
+  ).toBeFalsy();
+  api.setQueueResponse(queueResponse(plan("team", 7, 4)));
+  context.mocks.ably.triggerOnChannel(organization, topic);
+  const view = within(drawer);
+  await expect(view.findByText("4 of 7 slots in use")).resolves.toBeVisible();
+  expect(view.getByText("3 slots")).toBeVisible();
+});

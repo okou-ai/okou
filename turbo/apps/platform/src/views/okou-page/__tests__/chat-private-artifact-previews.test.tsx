@@ -141,7 +141,9 @@ test("A relative map reference resolves to its signed image and opens the origin
   });
   expect("/artifacts/" + (await reference.promise)).toBe(relative);
   const image = await imageCard("District boundary");
-  expect(decodeURIComponent(image.src)).toContain("districts.png");
+  const thumbnail = decodeURIComponent(image.src);
+  expect(thumbnail).toContain(new URL(map.url).pathname);
+  expect(thumbnail).not.toContain(relative);
   click(image);
   await previewImage(map.url);
 });

@@ -105,7 +105,9 @@ test("chat-artifact-deletion-001 returns focus after Cancel and removes the owne
     return expect(within(reopened).getByAltText(file.filename)).toBeVisible();
   });
   await within(reopened).findByText("shore.png");
-  await expect(findNamedButton("Download artifact", reopened)).resolves.toBeVisible();
+  await expect(
+    findNamedButton("Download artifact", reopened),
+  ).resolves.toBeVisible();
   expect(queryNamedButton("More artifact actions", reopened)).toBeNull();
 });
 

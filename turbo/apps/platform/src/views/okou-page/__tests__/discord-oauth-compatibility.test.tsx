@@ -1,7 +1,7 @@
 import { initSentry } from "../../../lib/sentry.ts";
 import { expect, test, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   findAction,
@@ -185,4 +185,28 @@ test("discord-oauth-compatibility-014 leaving a failed installation closes the o
   await screen.findByText("Microsoft Teams");
   expect(location.pathname).toBe("/works");
   expect(tab.closed).toBeTruthy();
+});
+
+test("Losing the original Discord window after approval leaves the cleaned consent page interrupted", async () => {
+  const origin = browserPeer(context);
+  vi.stubGlobal("opener", origin);
+  const finish = context.mocks.deferred<void>();
+  const accepted = watchApproval(context, finish.promise);
+  statusService(context, () => {
+    return {};
+  });
+  const opening = await startPage({
+    context,
+    auth: harbor.auth,
+    path: "/settings/discord?status=pending" + consentFragment,
+  });
+  await accepted.promise;
+  expect(location.hash).toBe("");
+  origin.close();
+  finish.resolve();
+  await opening.ready;
+  await expect(
+    screen.findByText("This authorization was interrupted or refreshed."),
+  ).resolves.toBeVisible();
+  expect(queryAction("link", "Open Discord")).toBeNull();
 });

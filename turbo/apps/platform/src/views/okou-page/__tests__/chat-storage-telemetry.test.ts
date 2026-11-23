@@ -1,6 +1,7 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+import { openDB } from "idb";
 import { HttpResponse } from "msw";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 
 import { expect, test, vi } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -105,4 +106,109 @@ test("indexeddb-client-006 Opening a private chat reports its event-rows route w
   for (const value of [RUN_THREAD_ID, "test-token", "sinceSeqId"]) {
     expect(JSON.stringify(events)).not.toContain(value);
   }
+});
+
+test("chat-idb-002 A returning workspace keeps the previous generation's records and receives its later upgrade notification", async () => {
+  const name = "vm0-chat-chat-list-user-789-chat-list-org-789";
+  const previous = await openDB(name, 32_008, {
+    upgrade(db) {
+      const events = db.createObjectStore("chat_events", { keyPath: "id" });
+      events.createIndex("byThreadAndSeq", ["chatThreadId", "seqId"], {
+        unique: true,
+      });
+      db.createObjectStore("chat_thread_snapshot", { keyPath: "id" });
+      db.createObjectStore("chat_event_cursors", { keyPath: "threadId" });
+      db.createObjectStore("chat_thread_event_sync", { keyPath: "id" });
+      db.createObjectStore("chat_thread_events", { keyPath: "id" }).createIndex(
+        "bySeqId",
+        "seqId",
+        { unique: true },
+      );
+    },
+  });
+  const record = { id: "earlier-snapshot", title: "Ferry timetable" };
+  const seed = previous.transaction(
+    ["chat_thread_snapshot", "chat_events"],
+    "readwrite",
+  );
+  await seed.objectStore("chat_thread_snapshot").put(record);
+  for (const seqId of [2, 3, 1]) {
+    await seed.objectStore("chat_events").add({
+      id: "ferry-" + (4 - seqId),
+      chatThreadId: "ferry",
+      seqId,
+    });
+  }
+  await seed.done;
+  previous.close();
+  sink.mockClear();
+  await setupPage({ ...settings, path: "/workflows" });
+  await screen.findByRole("heading", { name: "Workflows" });
+  const upgraded = await openDB(name);
+  const version = upgraded.version;
+  try {
+    expect(version).toBeGreaterThan(32_008);
+    expect(Array.from(upgraded.objectStoreNames)).toStrictEqual([
+      "chat_event_cursors",
+      "chat_events",
+      "chat_thread_event_sync",
+      "chat_thread_events",
+      "chat_thread_snapshot",
+      "project_events",
+      "project_snapshot",
+    ]);
+    await expect(
+      upgraded.get("chat_thread_snapshot", record.id),
+    ).resolves.toStrictEqual(record);
+    const sequence = await upgraded.getAllKeysFromIndex(
+      "chat_events",
+      "byThreadAndSeq",
+      IDBKeyRange.bound(["ferry", 1], ["ferry", 3]),
+    );
+    expect(sequence).toStrictEqual(["ferry-3", "ferry-2", "ferry-1"]);
+  } finally {
+    upgraded.close();
+  }
+  const successor = await openDB(name, version + 1);
+  successor.close();
+  await waitFor(() => {
+    expect(reports("shared_database.worker_unavailable")).toStrictEqual([
+      expect.objectContaining({
+        "attributes.custom": expect.objectContaining({
+          "okou.shared_database.unavailable.reason":
+            "indexeddb-version-changed",
+        }),
+      }),
+    ]);
+  });
+});
+
+test("The workspace reports an unavailable private chat cache without publishing its diagnostic", async () => {
+  const native = indexedDB.open.bind(indexedDB);
+  const failed = new DOMException("private ferry archive", "InvalidStateError");
+  const attempted = context.mocks.deferred<void>();
+  vi.spyOn(indexedDB, "open").mockImplementation((name, version) => {
+    if (name === "vm0-chat-chat-list-user-789-chat-list-org-789") {
+      attempted.resolve();
+      throw failed;
+    }
+    return native(name, version);
+  });
+  sink.mockClear();
+  await setupPage({ ...settings, path: "/workflows" });
+  await attempted.promise;
+  await screen.findByRole("heading", { name: "Workflows" });
+  await waitFor(() => {
+    expect(reports("chat.open")).toContainEqual(
+      expect.objectContaining({
+        duration: expect.any(Number),
+        "attributes.custom": expect.objectContaining({
+          "okou.client.outcome": "error",
+        }),
+      }),
+    );
+  });
+  expect(JSON.stringify(reports("chat.open"))).not.toMatch(
+    /private ferry archive|chat-list-(?:org|user)-789/u,
+  );
 });

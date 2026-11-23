@@ -204,4 +204,14 @@ test("Opening Remote control lists newly configured devices while the selector s
   expect(screen.getByText("Night desk")).toBeVisible();
   expect(control).toHaveAttribute("aria-checked", "true");
   expect(control).toHaveTextContent(/Remote control\s*1/);
+  click(await findFastControl("link", "Workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  click(await findFastControl("link", "Connectors"));
+  const returned = await screen.findByTestId("connectors-scope-remote-control");
+  await waitFor(() => {
+    expect(returned).toHaveTextContent(/Remote control\s*2/);
+  });
+  click(returned);
+  await screen.findByText("Night desk");
+  expect(screen.getByText("Day desk")).toBeVisible();
 });

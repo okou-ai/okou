@@ -190,7 +190,7 @@ test("chat-resources-catalog-011 Retry keeps all first-page reports and clears t
   expect(q.queryByText("Could not load artifacts")).toBeNull();
 });
 
-test("Keyboard activation copies the fourth expanded report and returns focus to its Copy link control", async () => {
+test("chat-resources-catalog-013 Keyboard activation copies the fourth expanded report and returns focus to its Copy link control", async () => {
   const keyboard = userEvent.setup();
   await setupOverflowResources(context, 4);
   const panel = await screen.findByRole("dialog", {
@@ -212,7 +212,7 @@ test("Keyboard activation copies the fourth expanded report and returns focus to
   });
 });
 
-test("A report without a public source opens its downloaded file from the resource list", async () => {
+test("chat-resources-catalog-001 A report without a public source opens its downloaded file from the resource list", async () => {
   await setupResources(context, { sourceUrl: false });
   const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",

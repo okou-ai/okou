@@ -115,5 +115,12 @@ test.each(["feishu", "lark"] as const)(
     click(await findAction("button", "Back to fields", stage));
     expect(appId).toHaveValue("cli_inshore");
     expect(secret).toHaveValue("demo_secret_inshore");
+    const listName = provider === "feishu" ? "Feishu bots" : "Lark bots";
+    click(await findAction("link", listName));
+    click(await findAction("link", "Add bot"));
+    click(await findAction("button", "Next"));
+    const nextSecret = await screen.findByLabelText("App Secret");
+    expect(nextSecret).toHaveValue("");
+    expect(nextSecret).toHaveAttribute("type", "password");
   },
 );

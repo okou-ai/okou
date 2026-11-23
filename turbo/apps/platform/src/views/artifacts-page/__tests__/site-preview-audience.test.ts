@@ -1,4 +1,5 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
+import { queryFastControl } from "../../okou-page/__tests__/chat-message-experience-test-helpers.ts";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click } from "../../../__tests__/page-helper.ts";
@@ -61,18 +62,17 @@ test("hosted-site-sharing-027 Share and Copy remain usable throughout a held pre
   await button("Copied");
   expect(clipboard.writes).toStrictEqual([stable]);
 });
-test("hosted-site-sharing-033 Pending permissions expose no audience until Only me is confirmed", async () => {
+test("Sharing stays unavailable until the private audience is known", async () => {
   const release = context.mocks.deferred<void>();
-  const { menu } = await openSharing(context, {
+  const opening = openSharing(context, {
     audience: "private",
     visibilityRead: release.promise,
   });
-  await expect(
-    menu.findByRole("status", { name: "Loading permissions" }),
-  ).resolves.toBeVisible();
-  expect(menu.queryAllByRole("radio")).toHaveLength(0);
-  expect(menu.queryByText(publicChoice)).toBeNull();
+  await screen.findByTestId("artifact-sidebar");
+  expect(screen.queryByRole("dialog", { name: "Share artifact" })).toBeNull();
+  expect(queryFastControl("button", "Share artifact")).toBeNull();
   release.resolve();
+  const { menu } = await opening;
   await expect(
     menu.findByRole("radio", { name: privateChoice }),
   ).resolves.toBeChecked();

@@ -6,6 +6,7 @@ import {
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   builtinConnectorOpenIdStartContract,
+  builtinConnectorOauthStartContract,
   builtinConnectorManualGrantContract,
 } from "@okouai/api-contracts/contracts/connectors";
 import { screen, within, waitFor } from "@testing-library/react";
@@ -257,19 +258,7 @@ test.each([
     });
   },
 );
-test("directed-connect-page-011 The invalid saved GitHub token opens its missing credential field", async () => {
-  const account = connectorAccountFixture(
-    { kind: "builtin", connectorSlug: "github" },
-    {
-      authMethod: "api-token",
-      connectionStatus: "reconnect-required",
-      reconnectReason: "configuration_invalid",
-      missingRequiredFields: ["token"],
-    },
-  );
-  accounts(() => {
-    return [account];
-  });
+function githubMethods() {
   const github = publicStatusItem({
     connectorSlug: "github",
     label: "GitHub",
@@ -305,6 +294,21 @@ test("directed-connect-page-011 The invalid saved GitHub token opens its missing
   context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
     return respond(200, { connector: github });
   });
+}
+test("directed-connect-page-011 The invalid saved GitHub token opens its missing credential field", async () => {
+  const account = connectorAccountFixture(
+    { kind: "builtin", connectorSlug: "github" },
+    {
+      authMethod: "api-token",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "configuration_invalid",
+      missingRequiredFields: ["token"],
+    },
+  );
+  accounts(() => {
+    return [account];
+  });
+  githubMethods();
   await enter("/connectors/github/connect");
   await action("Connect");
   const dialog = await screen.findByRole("dialog");
@@ -328,4 +332,79 @@ test("Stripe asks a returning chat member to authorize the connection", async ()
   expect(dialog).toHaveTextContent(/Stripe/u);
   expect(dialog).toHaveTextContent(/API key|OAuth|Sign in/u);
   expect(chat.deliveries).toStrictEqual([]);
+});
+
+test("The expired GitHub OAuth account offers reconnection without switching to token entry", async () => {
+  const expired = connectorAccountFixture(
+    { kind: "builtin", connectorSlug: "github" },
+    {
+      authMethod: "oauth",
+      connectionStatus: "reconnect-required",
+      reconnectReason: "credential_expired",
+    },
+  );
+  const completed = context.mocks.deferred<void>();
+  accounts(() => {
+    return [
+      completed.settled()
+        ? { ...expired, connectionStatus: "connected", reconnectReason: null }
+        : expired,
+    ];
+  });
+  githubMethods();
+  const target = context.mocks.deferred<unknown>();
+  const authWindow = context.mocks.browser.authWindow();
+  Object.defineProperty(authWindow, "location", {
+    value: { href: "about:blank" },
+  });
+  context.mocks.browser.open(authWindow);
+  const destination = "https://github.example.test/authorize/dispatch";
+  const attemptId = crypto.randomUUID();
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      target.resolve(body.account);
+      return respond(200, {
+        authorizationUrl: destination,
+        oauthAttemptId: attemptId,
+      });
+    },
+  );
+  context.mocks.api(
+    connectorAccountsContract.oauthCompletion,
+    async ({ params, respond }) => {
+      expect(params.attemptId).toBe(attemptId);
+      await completed.promise;
+      return respond(200, { connectionId: expired.id });
+    },
+  );
+  const originalAgent = crypto.randomUUID();
+  await enter("/connectors/github/connect?agentId=" + originalAgent);
+  await action("Connect");
+  const dialog = await screen.findByRole("dialog");
+  await expect(
+    within(dialog).findByText("Connection expired"),
+  ).resolves.toBeVisible();
+  expect(
+    within(dialog).queryByPlaceholderText("Enter your GitHub token"),
+  ).toBeNull();
+  click(getConnectorAction("button", "Reconnect", dialog));
+  await expect(target.promise).resolves.toStrictEqual({
+    intent: "reconnect",
+    connectionId: expired.id,
+  });
+  await waitFor(() => {
+    return expect(authWindow.location.href).toBe(destination);
+  });
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscription("connector:changed"),
+    ).toBeTruthy();
+  });
+  completed.resolve();
+  context.mocks.ably.trigger("connector:changed", { connectorSlug: "github" });
+  await waitFor(() => {
+    return expect(dialog).not.toBeInTheDocument();
+  });
+  authWindow.close();
 });

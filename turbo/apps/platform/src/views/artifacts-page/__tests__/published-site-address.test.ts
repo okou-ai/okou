@@ -125,15 +125,18 @@ async function verifyCopy(writes: readonly string[], url: string) {
     return expect(writes).toStrictEqual([url]);
   });
 }
-test("hosted-site-sharing-001 Copy waits for the current published address and ignores the stale preview address", async () => {
+test("A site with a stale preview address only offers sharing once the current address arrives", async () => {
   const gate = context.mocks.deferred<void>();
   const clip = context.mocks.browser.clipboardWriteText();
   await openSite({ gate: gate.promise });
   await screen.findByTestId("artifact-sidebar");
   expect(screen.getByLabelText("Share artifact")).not.toBeVisible();
-  expect(await findFastControl("button", "Close artifact")).toBeEnabled();
+  await expect(
+    findFastControl("button", "Close artifact"),
+  ).resolves.toBeEnabled();
   gate.resolve();
   click(await findFastControl("button", "Share artifact"));
+  await currentAddressRow();
   await verifyCopy(clip.writes, link("planning-board"));
 });
 test("hosted-site-sharing-010 The share row and clipboard both expose the current site URL before editing", async () => {

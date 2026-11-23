@@ -191,6 +191,8 @@ test.each([
 test.each([
   ["color-themes-008", "Golden hour"],
   ["color-themes-009", "Citrus spark"],
+  ["color-themes-010", "Berry blush"],
+  ["color-themes-011", "Cotton sky"],
 ])(
   "%s keeps both ambient strengths in percentage units when switching appearance",
   async (_id, paletteName) => {

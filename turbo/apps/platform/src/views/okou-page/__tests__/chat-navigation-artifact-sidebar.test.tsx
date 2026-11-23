@@ -16,7 +16,6 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
-import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 const context = testContext();
 test.each([
   ["chat-navigation-artifact-sidebar-002", "docx"],
@@ -117,8 +116,7 @@ test("chat-navigation-artifact-sidebar-011 fullscreen and list navigation keep t
   await preview();
   click(await findAction("button", "Exit fullscreen", reopened));
   await preview();
-  click(await findAction("button", "More artifact actions", reopened));
-  click(await findNamedMenuItem("Close preview menu"));
+  click(await findAction("button", "Close artifact", reopened));
   await waitFor(() => {
     return expect(reopened).not.toBeInTheDocument();
   });
