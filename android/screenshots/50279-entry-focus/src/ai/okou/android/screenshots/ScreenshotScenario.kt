@@ -215,13 +215,13 @@ class ScreenshotScenario {
                 }
                 check(device.pressDPadCenter())
                 find(R.string.auth_checking_workspace)
-                device.awaitKeyboardFocus(checkAccess)
+                device.awaitKeyboardFocus(By.copy(checkAccess))
                 check(find(checkAccess).visibleBounds == bounds)
                 find(R.string.auth_sign_in_again)
                 ScreenshotCapture.capture("access-keyboard-pending.png")
                 response.complete(Unit)
                 find(R.string.auth_check_failed)
-                device.awaitKeyboardFocus(checkAccess)
+                device.awaitKeyboardFocus(By.copy(checkAccess))
             }
         } finally {
             response.complete(Unit)
@@ -258,7 +258,7 @@ class ScreenshotScenario {
                 val checkWorkspaces =
                     By.pkg(app.packageName).text(app.getString(R.string.auth_check_workspace))
                 check(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
-                device.awaitKeyboardFocus(checkWorkspaces)
+                device.awaitKeyboardFocus(By.copy(checkWorkspaces))
                 val bounds = find(checkWorkspaces).visibleBounds
                 auth.membershipsAction = {
                     requests.incrementAndGet()
@@ -267,7 +267,7 @@ class ScreenshotScenario {
                 }
                 check(device.pressDPadCenter())
                 find(R.string.auth_checking_workspace)
-                device.awaitKeyboardFocus(checkWorkspaces)
+                device.awaitKeyboardFocus(By.copy(checkWorkspaces))
                 check(find(checkWorkspaces).visibleBounds == bounds)
                 find(setup)
                 find(R.string.auth_sign_out)
@@ -276,7 +276,7 @@ class ScreenshotScenario {
 
                 response.complete(Unit)
                 find(R.string.auth_check_failed)
-                device.awaitKeyboardFocus(checkWorkspaces)
+                device.awaitKeyboardFocus(By.copy(checkWorkspaces))
                 check(find(checkWorkspaces).visibleBounds == bounds)
                 check(requests.get() == 1)
                 ScreenshotCapture.capture("check-keyboard-failed.png")
@@ -295,11 +295,11 @@ class ScreenshotScenario {
         instrumentation.setInTouchMode(false)
         if (
             !device.hasObject(By.copy(selector).focused(true)) &&
-                !device.hasObject(By.focused(true).hasChild(selector))
+            !device.hasObject(By.focused(true).hasChild(By.copy(selector)))
         ) {
             check(device.pressKeyCode(KeyEvent.KEYCODE_TAB))
         }
-        device.awaitKeyboardFocus(selector)
+        device.awaitKeyboardFocus(By.copy(selector))
     }
 
     @Test
