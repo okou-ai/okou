@@ -4,6 +4,8 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 helper="$repo_root/.github/scripts/runner/stage-native-test-binary.sh"
 system_timeout=$(command -v timeout)
+STAGE_TEST_REAL_SLEEP=$(command -v sleep)
+export STAGE_TEST_REAL_SLEEP
 test_root=$(mktemp -d)
 destination="/tmp/okou-native-stage-test-$$"
 cleanup() {
@@ -139,6 +141,18 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
+# The transfer outcomes exercise retry and exhaustion. Keep real cleanup waits
+# for the guarded caller and its parent.
+cat >"$test_root/bin/sleep" <<'SLEEP'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in
+  1|2) exit 0 ;;
+esac
+exec "$STAGE_TEST_REAL_SLEEP" "$@"
+SLEEP
+chmod +x "$test_root/bin/sleep"
+
 assert_checksum_rejection() {
   local log=$1 expected=$2
   if ! grep -Fxq -- "$expected" "$log"; then
@@ -151,7 +165,9 @@ assert_checksum_rejection() {
 for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; do
   case_dir="$test_root/$scenario"
   mkdir "$case_dir"
-  mkfifo "$case_dir/release" "$case_dir/done"
+  if [[ "$scenario" == late-writer ]]; then
+    mkfifo "$case_dir/release" "$case_dir/done"
+  fi
   rm -f -- "$destination"
   status=0
   PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
