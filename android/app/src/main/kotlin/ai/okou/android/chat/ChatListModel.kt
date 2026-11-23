@@ -1359,6 +1359,9 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
+    internal fun refreshSearchMetadata() =
+        requestListRead(userRequested = true, resetCompletedActivity = false)
+
     internal fun retryList() = requestListRead(userRequested = true)
 
     private fun canRefreshList() = !mutable.value.offline && listRetryAt == null
@@ -1472,17 +1475,21 @@ class ChatListModel(
             throw cancelled
         } catch (error: Exception) {
             val retryAfter = workspaceReadRetryAfterMillis(error)
+            val canRetryAutomatically =
+                !mutable.value.offline && generation == connectivityGeneration
             fail(error) {
                 it.copy(
                     listPhase = ChatReadPhase.Failed,
                     listReadFailure =
-                        if (it.offline || generation != connectivityGeneration) it.listReadFailure
-                        else if (retryAfter != null || listRetryAt != null)
-                            ChatListReadFailure.Retrying
-                        else ChatListReadFailure.NeedsRetry,
+                        when {
+                            !canRetryAutomatically && !batch.userRequested -> it.listReadFailure
+                            canRetryAutomatically && (retryAfter != null || listRetryAt != null) ->
+                                ChatListReadFailure.Retrying
+                            else -> ChatListReadFailure.NeedsRetry
+                        },
                 )
             }
-            if (current() && !mutable.value.offline && generation == connectivityGeneration) {
+            if (current() && canRetryAutomatically) {
                 recordListReadFailure(retryAfter, reportingFilterGeneration)
             }
         }
