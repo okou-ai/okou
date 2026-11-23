@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">Das Workflow-Verzeichnis konnte nicht aktualisiert werden. Die Suche verwendet das zuletzt geladene Verzeichnis.</string>
     <string name="chat_search_artifacts_failed">Artefakte konnten nicht durchsucht werden</string>
     <string name="chat_search_loading">Suche läuft…</string>
+    <string name="chat_search_failed">Suchergebnisse konnten nicht geladen werden</string>
 </resources>

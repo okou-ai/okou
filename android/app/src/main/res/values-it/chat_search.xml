@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">Impossibile aggiornare la directory dei workflow. La ricerca usa l’ultima directory caricata.</string>
     <string name="chat_search_artifacts_failed">Impossibile cercare gli artefatti</string>
     <string name="chat_search_loading">Ricerca in corso…</string>
+    <string name="chat_search_failed">Impossibile caricare i risultati di ricerca</string>
 </resources>

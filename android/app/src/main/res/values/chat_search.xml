@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">Couldn’t refresh the workflow directory. Searching the last loaded directory.</string>
     <string name="chat_search_artifacts_failed">Couldn’t search artifacts</string>
     <string name="chat_search_loading">Searching…</string>
+    <string name="chat_search_failed">Couldn’t load search results</string>
 </resources>
