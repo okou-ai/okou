@@ -829,6 +829,65 @@ class WorkflowRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideMessageSearchOpensAChatIndependentlyOfThePreviousWorkflow() {
+        val reply = "Project handoff found by search"
+        app.fixture.chats.historyReply = reply
+        app.fixture.chats.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_IN_PROJECT","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_IN_PROJECT","role":"assistant",
+                    "content":"$reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":0,"end":7}]}]}
+                """
+            )
+        }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("Project")
+        val hit = hasText(reply) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntil(10_000) { compose.onAllNodes(hit).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hit).performClick()
+        waitForTag("conversation_find_hit")
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideWorkflowSearchOpensADraftIndependentlyOfThePreviousWorkflow() {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        compose.onNodeWithText("Add to new chat draft").performClick()
+
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("chat_search").fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
     fun sourceChatBackClosesFindThenReturnsThroughTheLinkToWorkflowHistory() {
         app.fixture.chats.historyReply = "[Project handoff](/chats/$CHAT_IN_PROJECT)"
         openWorkflowDetail()
