@@ -47,7 +47,5 @@ test("chat-search-debounce-001 only the settled number reaches workspace message
   }
   const result = await screen.findByLabelText("32059 in the operations ledger");
   expect(result).toHaveTextContent("32059 in the operations ledger");
-  for (const superseded of ["3", "32", "320", "3205"]) {
-    expect(keywords.has(superseded)).toBeFalsy();
-  }
+  expect(keywords).toStrictEqual(new Set(["32059"]));
 });
