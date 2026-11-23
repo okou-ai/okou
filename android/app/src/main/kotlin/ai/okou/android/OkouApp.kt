@@ -504,12 +504,13 @@ internal fun OkouApp(
         changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Directory))
     }
 
-    fun openArtifacts(id: String? = null) {
-        leaveWorkflowChat()
+    fun openArtifacts(searchResultId: String? = null) {
+        if (searchResultId == null) leaveWorkflowChat()
         closeResources()
         focus.clearFocus()
         keyboard?.hide()
-        navigation = navigation.copy(artifacts = ArtifactsDestination(searchResultId = id))
+        navigation =
+            navigation.copy(artifacts = ArtifactsDestination(searchResultId = searchResultId))
     }
 
     fun returnToList() {
@@ -988,6 +989,7 @@ internal fun OkouApp(
                 onClose = { closeArtifacts(restoreFocus = searchArtifactId == null) },
                 searchArtifactId = searchArtifactId,
                 onSource = { source ->
+                    leaveWorkflowChat()
                     clearConversationLinks()
                     closeFind()
                     conversations.open(source.id)
