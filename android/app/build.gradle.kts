@@ -21,6 +21,7 @@ sentry {
 
 val appVersion = rootProject.file("version.txt").readText().trim()
 val screenshotScenarioDir = providers.gradleProperty("okou.screenshotScenarioDir").orNull
+val debugUnitTestForks = providers.gradleProperty("okou.debugUnitTestForks").map(String::toInt)
 val apiOrigin = providers.gradleProperty("okou.apiOrigin").getOrElse("https://api.okou.ai")
 val webOrigin = providers.gradleProperty("okou.webOrigin").getOrElse("https://app.okou.ai")
 val clerkPublishableKey =
@@ -136,6 +137,12 @@ android {
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
+
+tasks.withType<Test>().configureEach {
+    if (name == "testDebugUnitTest") {
+        maxParallelForks = debugUnitTestForks.getOrElse(1)
+    }
+}
 
 room { schemaDirectory("$projectDir/schemas") }
 
