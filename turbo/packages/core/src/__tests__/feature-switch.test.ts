@@ -22,10 +22,8 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
-  it.each([
-    FeatureSwitchKey.ArtifactPreviewActionGroup,
-    FeatureSwitchKey.FollowupPlaceholder,
-  ])("defaults %s to staff and honors Lab overrides", (key) => {
+  it("defaults the follow-up placeholder to staff and honors Lab overrides", () => {
+    const key = FeatureSwitchKey.FollowupPlaceholder;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
       [{}, false],

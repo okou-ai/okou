@@ -430,7 +430,6 @@
       "close": "Close",
       "closeArtifact": "Close artifact",
       "closeNamed": "Close {{title}}",
-      "closePreviewMenu": "Close preview menu",
       "download": "Download",
       "downloadArtifact": "Download artifact",
       "downloadMarkdownAs": "Download as {{format}}",

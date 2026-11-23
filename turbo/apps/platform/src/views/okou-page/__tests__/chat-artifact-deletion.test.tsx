@@ -4,7 +4,6 @@ import {
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -94,7 +93,7 @@ function mockReport(available: () => boolean, sourceUrl = url) {
 }
 
 test.each(["sidebar", "resources"] as const)(
-  "a thread artifact can be deleted from the original %s toolbar",
+  "a thread artifact can be deleted from the %s preview",
   async (surface) => {
     let removed = false;
     mockReport(() => {
@@ -109,9 +108,6 @@ test.each(["sidebar", "resources"] as const)(
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactPreviewActionGroup]: false,
-      },
     });
     if (surface === "resources") {
       await openResourceArtifact(report.title);
@@ -124,10 +120,14 @@ test.each(["sidebar", "resources"] as const)(
       within(preview).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
     const requestDeletion = async () => {
-      const button = await waitFor(() => {
-        return buttonNamed("Delete", preview);
+      const more = await waitFor(() => {
+        const button = buttonNamed("More artifact actions", preview);
+        expect(button).toBeVisible();
+        return button;
       });
-      click(button);
+      click(more);
+      const menu = await screen.findByRole("menu");
+      click(await findNamedMenuItem("Delete", menu));
     };
     await requestDeletion();
     const cancelled = await screen.findByRole("dialog", {
@@ -140,7 +140,7 @@ test.each(["sidebar", "resources"] as const)(
     expect(preview).toBeInTheDocument();
     expect(removed).toBeFalsy();
     await waitFor(() => {
-      expect(buttonNamed("Delete", preview)).toHaveFocus();
+      expect(buttonNamed("More artifact actions", preview)).toHaveFocus();
     });
     await requestDeletion();
     const confirmed = await screen.findByRole("dialog", {
@@ -160,9 +160,12 @@ test.each(["sidebar", "resources"] as const)(
     await expect(
       within(reopened).findByText("Thread report content"),
     ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(buttonNamed("Download artifact", reopened)).toBeVisible();
+    });
     expect(
       queryAllByRoleFast("button", reopened).find((button) => {
-        return button.getAttribute("aria-label") === "Delete";
+        return button.getAttribute("aria-label") === "More artifact actions";
       }),
     ).toBeUndefined();
   },
@@ -204,13 +207,15 @@ test("a read-only artifact retains Download and link copy without owner deletion
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactPreviewActionGroup]: false },
   });
   click(await findNamedLink(report.title));
   const preview = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(preview).findByText("Thread report content"),
   ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonNamed("Share artifact", preview)).toBeVisible();
+  });
   click(buttonNamed("Share artifact", preview));
   await waitFor(() => {
     expect(clipboard.writes).toStrictEqual([
@@ -224,7 +229,7 @@ test("a read-only artifact retains Download and link copy without owner deletion
   ).resolves.not.toHaveAttribute("aria-disabled", "true");
   expect(
     queryAllByRoleFast("button", preview).find((button) => {
-      return button.getAttribute("aria-label") === "Delete";
+      return button.getAttribute("aria-label") === "More artifact actions";
     }),
   ).toBeUndefined();
 });

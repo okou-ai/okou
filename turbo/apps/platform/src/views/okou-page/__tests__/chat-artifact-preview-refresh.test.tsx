@@ -16,7 +16,6 @@ import {
   NAVIGATION_ARTIFACT_RUN_ID,
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
-  roleItemNamed,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
 const context = testContext();
@@ -167,15 +166,9 @@ async function expectVersion(expected: number) {
   });
 }
 
-async function closePreview(entry: "message" | "catalog") {
+async function closePreview() {
   const sidebar = screen.getByTestId("artifact-sidebar");
-  if (entry === "catalog") {
-    click(buttonNamed("More artifact actions", sidebar));
-    const menu = await screen.findByRole("menu");
-    click(roleItemNamed("menuitem", "Close preview menu", menu));
-  } else {
-    click(buttonNamed("Close artifact", sidebar));
-  }
+  click(buttonNamed("Close artifact", sidebar));
   await waitFor(() => {
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   });
@@ -193,17 +186,17 @@ test.each([
     const publication = await setupPublication(source);
     await openPreview(entry);
     await expectVersion(1);
-    await closePreview(entry);
+    await closePreview();
     await openPreview(entry);
     await expectVersion(1);
 
     await publication.publish(2, delivery);
     await expectVersion(2);
-    await closePreview(entry);
+    await closePreview();
     await openPreview(entry);
     await expectVersion(2);
 
-    await closePreview(entry);
+    await closePreview();
     await publication.publish(3, delivery);
     await openPreview(entry);
     await waitFor(() => {
@@ -222,7 +215,7 @@ test.each(["snapshot", "deployment"] as const)(
     await openPreview("message");
     await expectVersion(1);
     await publication.publish(2);
-    await closePreview("message");
+    await closePreview();
     await openPreview("message");
     await waitFor(() => {
       expect(screen.getByTestId("artifact-sidebar-body-html")).toHaveAttribute(
@@ -254,7 +247,7 @@ test("A late v1 preview response preserves the published v2 sidebar", async () =
     release.resolve(previewUrl(1));
     await returned.promise;
   });
-  await closePreview("message");
+  await closePreview();
   await openPreview("message");
   await waitFor(() => {
     expect(screen.getByTestId("artifact-sidebar-body-html")).toHaveAttribute(
