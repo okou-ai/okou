@@ -55,7 +55,7 @@ private const val maxReadAttempts = 3
 private const val readRetryDelayMillis = 3_000L
 private val accountsSerializer = ListSerializer(RecoverySubscriptionsSubscriptionsItem.serializer())
 
-internal enum class WorkspaceSettingsResource(val cacheKey: String) {
+private enum class WorkspaceSettingsResource(val cacheKey: String) {
     Accounts("accounts"),
     UsagePack("usage-pack"),
     WorkspaceCredits("workspace-credits"),
@@ -177,28 +177,6 @@ internal constructor(
         val confirmed =
             cache?.load(identity, resource.cacheKey, serializer) ?: return SettingsRead()
         return SettingsRead(confirmed.value, readAt = confirmed.readAt)
-    }
-
-    internal fun retry(resource: WorkspaceSettingsResource) {
-        if (!canRead()) return
-        val state = mutable.value
-        when (resource) {
-            WorkspaceSettingsResource.Accounts -> {
-                if (visible == SettingsDestination.ModelAccounts && state.accounts.initialFailure)
-                    refreshAccounts()
-            }
-            WorkspaceSettingsResource.UsagePack -> {
-                if (visible == SettingsDestination.CreditBalance && state.usagePack.initialFailure)
-                    refreshUsagePack()
-            }
-            WorkspaceSettingsResource.WorkspaceCredits -> {
-                if (
-                    visible == SettingsDestination.CreditBalance &&
-                        state.workspaceCredits.initialFailure
-                )
-                    refreshWorkspaceCredits()
-            }
-        }
     }
 
     private fun canRead() = restored && authorized() && !mutable.value.offline

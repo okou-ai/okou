@@ -11,15 +11,19 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -28,6 +32,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -39,6 +44,7 @@ import org.junit.rules.TemporaryFolder
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkspaceSettingsModelTest {
     @get:Rule val temporary = TemporaryFolder()
+    private val presentationJobs = mutableListOf<Job>()
 
     @Test
     fun preservesAccountOrderAndReconcilesAnUnconfirmedSwitchWithoutResending() = runTest {
@@ -135,10 +141,7 @@ class WorkspaceSettingsModelTest {
                 assertEquals(confirmed.accounts.value, restored.accounts.value)
             }
         } finally {
-            reopenedStore.clear()
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
+            closeOwners(store, reopenedStore)
         }
     }
 
@@ -171,8 +174,7 @@ class WorkspaceSettingsModelTest {
                 assertEquals(2, fixture.billingReads.get())
             }
         } finally {
-            store.clear()
-            Dispatchers.resetMain()
+            closeOwners(store)
         }
     }
 
@@ -242,10 +244,7 @@ class WorkspaceSettingsModelTest {
             }
         } finally {
             releaseStore.complete(Unit)
-            reopenedStore.clear()
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
+            closeOwners(store, reopenedStore)
         }
     }
 
@@ -271,10 +270,7 @@ class WorkspaceSettingsModelTest {
                 assertEquals(confirmed, restored.usagePack.value)
             }
         } finally {
-            reopenedStore.clear()
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
+            closeOwners(store, reopenedStore)
         }
     }
 
@@ -343,8 +339,7 @@ class WorkspaceSettingsModelTest {
                 assertNull(fresh.workspaceCredits.value)
             }
         } finally {
-            store.clear()
-            Dispatchers.resetMain()
+            closeOwners(store)
         }
     }
 
@@ -398,13 +393,12 @@ class WorkspaceSettingsModelTest {
                 assertEquals(listOf(0L, 3_000L, 6_000L), failedAttempts)
             }
         } finally {
-            store.clear()
-            Dispatchers.resetMain()
+            closeOwners(store)
         }
     }
 
     @Test
-    fun retryOfInitialCreditFailureReadsOnlyTheFailedBalance() = runTest {
+    fun reopeningThePageRecoversAnInitialCreditFailure() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         try {
@@ -417,15 +411,15 @@ class WorkspaceSettingsModelTest {
                     it.usagePack.initialFailure && it.workspaceCredits.value != null
                 }
                 fixture.usagePackStatus = 200
-                model.retry(WorkspaceSettingsResource.UsagePack)
+                model.visible(null)
+                model.visible(SettingsDestination.CreditBalance)
                 val recovered = model.uiState.first { it.usagePack.value != null }
                 assertEquals(860L, recovered.usagePack.value!!.totalCredits)
                 assertEquals(2, fixture.usagePackReads.get())
-                assertEquals(1, fixture.billingReads.get())
+                assertFalse(recovered.usagePack.unavailable)
             }
         } finally {
-            store.clear()
-            Dispatchers.resetMain()
+            closeOwners(store)
         }
     }
 
@@ -449,7 +443,17 @@ class WorkspaceSettingsModelTest {
                 assertEquals(0, fixture.billingReads.get())
             }
         } finally {
-            store.clear()
+            closeOwners(store)
+        }
+    }
+
+    private suspend fun closeOwners(vararg stores: ViewModelStore) {
+        try {
+            withContext(NonCancellable) {
+                stores.forEach { it.clear() }
+                presentationJobs.joinAll()
+            }
+        } finally {
             Dispatchers.resetMain()
         }
     }
@@ -464,27 +468,30 @@ class WorkspaceSettingsModelTest {
         nowMillis: () -> Long = System::currentTimeMillis,
     ): WorkspaceSettingsModel =
         ViewModelProvider(
-            store,
-            viewModelFactory {
-                initializer {
-                    val file = temporary.newFolder().resolve("default-model.preferences_pb")
-                    val defaultModelStore =
-                        DefaultModelStore(
-                            PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
-                            backgroundScope,
+                store,
+                viewModelFactory {
+                    initializer {
+                        val file = temporary.newFolder().resolve("default-model.preferences_pb")
+                        val defaultModelStore =
+                            DefaultModelStore(
+                                PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
+                                backgroundScope,
+                            )
+                        WorkspaceSettingsModel(
+                            service,
+                            api.identity,
+                            defaultModelStore,
+                            admin,
+                            { true },
+                            { throw it },
+                            online,
+                            cache,
+                            nowMillis,
                         )
-                    WorkspaceSettingsModel(
-                        service,
-                        api.identity,
-                        defaultModelStore,
-                        admin,
-                        { true },
-                        { throw it },
-                        online,
-                        cache,
-                        nowMillis,
-                    )
-                }
-            },
-        )[WorkspaceSettingsModel::class.java]
+                    }
+                },
+            )[WorkspaceSettingsModel::class.java]
+            .also {
+                presentationJobs += checkNotNull(it.viewModelScope.coroutineContext[Job])
+            }
 }

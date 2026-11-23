@@ -134,12 +134,9 @@ internal fun WorkspaceSettingsDataPage(
         onDispose { model.visible(null) }
     }
     when (destination) {
-        SettingsDestination.ModelAccounts ->
-            ModelAccounts(workspace, state, model::activate) {
-                model.retry(WorkspaceSettingsResource.Accounts)
-            }
+        SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
         SettingsDestination.CreditBalance ->
-            CreditBalance(workspace, state, model.showWorkspaceCredits, model::retry)
+            CreditBalance(workspace, state, model.showWorkspaceCredits)
         else -> Unit
     }
 }
@@ -184,36 +181,15 @@ private fun SettingsDetailStatus(text: String) {
 }
 
 @Composable
-private fun SettingsReadError(@StringRes label: Int, retry: (() -> Unit)?) {
-    val typography = MaterialTheme.typography
-    Column(
-        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text(
-            stringResource(label),
-            Modifier.semantics {
-                heading()
-                liveRegion = LiveRegionMode.Polite
-            },
-            style = typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-        )
-        if (retry != null) {
-            TextButton(
-                onClick = retry,
-                modifier = Modifier.heightIn(min = 48.dp),
-                colors =
-                    ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                    ),
-            ) {
-                Text(
-                    stringResource(R.string.retry),
-                    style = typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 20.sp),
-                )
-            }
-        }
-    }
+private fun SettingsReadError(@StringRes label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp).semantics {
+            heading()
+            liveRegion = LiveRegionMode.Polite
+        },
+        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+    )
 }
 
 @Composable
@@ -254,7 +230,6 @@ private fun ModelAccounts(
     workspace: String,
     state: WorkspaceSettingsState,
     activateAccount: (String) -> Unit,
-    retry: () -> Unit,
 ) {
     val accounts = state.accounts.value
     val status =
@@ -272,10 +247,7 @@ private fun ModelAccounts(
     SettingsPageIntro(workspace, scope, status)
     when {
         accounts == null && (state.accounts.unavailable || state.offline) ->
-            SettingsReadError(
-                R.string.settings_accounts_unavailable,
-                retry.takeUnless { state.offline },
-            )
+            SettingsReadError(R.string.settings_accounts_unavailable)
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
                 SettingsSection(provider.name) { SettingsPlaceholder() }
@@ -526,7 +498,6 @@ private fun CreditBalance(
     workspace: String,
     state: WorkspaceSettingsState,
     showWorkspaceCredits: Boolean,
-    retry: (WorkspaceSettingsResource) -> Unit,
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
@@ -548,11 +519,7 @@ private fun CreditBalance(
                     stringResource(R.string.settings_credit_bonus) to member.bonusCredits,
                 ),
             )
-        } else {
-            CreditReadState(state.usagePack, state.offline) {
-                retry(WorkspaceSettingsResource.UsagePack)
-            }
-        }
+        } else CreditReadState(state.usagePack, state.offline)
     }
     if (showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
@@ -578,20 +545,16 @@ private fun CreditBalance(
                         stringResource(label) to credits
                     },
                 )
-            } else {
-                CreditReadState(state.workspaceCredits, state.offline) {
-                    retry(WorkspaceSettingsResource.WorkspaceCredits)
-                }
-            }
+            } else CreditReadState(state.workspaceCredits, state.offline)
         }
     }
     SettingsWebAction(stringResource(R.string.settings_credit_web), "usage")
 }
 
 @Composable
-private fun CreditReadState(state: SettingsRead<*>, offline: Boolean, retry: () -> Unit) {
+private fun CreditReadState(state: SettingsRead<*>, offline: Boolean) {
     if (state.initialFailure || offline) {
-        SettingsReadError(R.string.settings_credit_unavailable, retry.takeUnless { offline })
+        SettingsReadError(R.string.settings_credit_unavailable)
     } else SettingsPlaceholder()
 }
 
