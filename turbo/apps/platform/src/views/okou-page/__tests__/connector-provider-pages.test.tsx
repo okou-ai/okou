@@ -199,7 +199,7 @@ test("The signed-out Feishu callback renders its catalog mark before opening the
         query.responseMode === "json"
         ? respond(200, { redirectUrl: destination })
         : respond(400, {
-            error: { code: "INVALID_CALLBACK", message: "Wrong callback" },
+            error: "Wrong callback",
           });
     },
   );
