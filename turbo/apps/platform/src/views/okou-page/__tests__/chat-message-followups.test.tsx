@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadEventsContract,
   type ChatRecommendedFollowup,
@@ -35,6 +36,7 @@ const { installMessageExperienceChat } =
 const CREATED_AT = "2026-08-21T14:00:00.000Z";
 const FOLLOWUP_RUN_ID = "d0000000-0000-4000-a000-000000000061";
 const HANDOFF_THREAD_ID = "b0000000-0000-4000-a000-000000000062";
+const HANDOFF_PROMPT = "Summarize the handoff";
 const PRESENTATION_PROMPT = "Create a presentation outline";
 
 function variedFollowups() {
@@ -120,6 +122,10 @@ function installLateFollowupChat(options: {
   const handoffFollowup: MockChatEventInput = {
     ...currentFollowup,
     id: "handoff-late-followup",
+    content: JSON.stringify({
+      version: 1,
+      followups: [{ prompt: HANDOFF_PROMPT, kind: "talk" }],
+    }),
     runId: handoffRunId,
   };
   let currentIncludesFollowup = options.currentFollowupInitiallyPresent;
@@ -242,7 +248,7 @@ test("A late recommendation appears after navigating to another chat", async () 
   });
   expect(
     followupButtons(group).find((button) => {
-      return button.textContent?.trim() === PRESENTATION_PROMPT;
+      return button.textContent?.trim() === HANDOFF_PROMPT;
     }),
   ).toBeVisible();
   expect(document.querySelector("[data-thinking-indicator]")).toBeNull();
@@ -423,4 +429,98 @@ test("A fine-pointer device keeps the recommended follow-up rows at any width", 
 
   const group = await keepGoingGroup();
   expect(group).toHaveAttribute("data-followup-layout", "rows");
+});
+
+test.each([false, true])(
+  "The first follow-up fills an empty draft with Tab (touch: %s)",
+  async (touch) => {
+    context.mocks.browser.matchMedia((query) => {
+      return touch && query === "(pointer: coarse)";
+    });
+    installMessageExperienceChat({
+      threadId: context.resourceId,
+      chatEvents: completedReply(),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${context.resourceId}`,
+      featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+    });
+    const user = userEvent.setup({ delay: null });
+    const editor = await findComposer();
+    await waitFor(() => {
+      expect(editor).toHaveAttribute("aria-placeholder", PRESENTATION_PROMPT);
+    });
+    expect(screen.getByText(PRESENTATION_PROMPT)).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
+    await user.click(editor);
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(editor.textContent).toBe("");
+    await user.click(editor);
+    await user.keyboard("{Tab}");
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(editor).toHaveFocus();
+    await user.keyboard(" please");
+    expect(editor.textContent).toBe(`${PRESENTATION_PROMPT} please`);
+    await user.keyboard("{Tab}");
+    expect(editor).not.toHaveFocus();
+  },
+);
+
+test("An empty new chat has no fallback placeholder with follow-up placeholders enabled", async () => {
+  installMessageExperienceChat();
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await findComposer();
+  await waitFor(() => {
+    expect(editor).toHaveAttribute("placeholder", "");
+  });
+  expect(editor).toHaveAccessibleName("Message");
+  expect(
+    screen.queryByText("Ask me to automate workflows, manage tasks..."),
+  ).toBeNull();
+});
+
+test("A late follow-up preserves the current draft and appears when cleared", async () => {
+  const { currentThreadId, deliverCurrentFollowup } = installLateFollowupChat({
+    currentFollowupInitiallyPresent: false,
+  });
+  await setupPage({
+    context,
+    path: `/chats/${currentThreadId}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await findComposer();
+  await fill(editor, "Review the estimates");
+  deliverCurrentFollowup();
+  await waitFor(() => {
+    expect(editor).toHaveAttribute("aria-placeholder", PRESENTATION_PROMPT);
+  });
+  expect(editor.textContent).toBe("Review the estimates");
+  expect(screen.queryByText(PRESENTATION_PROMPT)).toBeNull();
+  await fill(editor, "");
+  await expect(screen.findByText(PRESENTATION_PROMPT)).resolves.toBeVisible();
+});
+
+test("Switching threads uses the destination's first follow-up for Tab", async () => {
+  const { currentThreadId } = installLateFollowupChat({
+    currentFollowupInitiallyPresent: true,
+  });
+  await setupPage({
+    context,
+    path: `/chats/${currentThreadId}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  await expect(screen.findByText(PRESENTATION_PROMPT)).resolves.toBeVisible();
+  click(await findFastControl("link", "Handoff response"));
+  const suggestion = await screen.findByText(HANDOFF_PROMPT);
+  expect(suggestion).toBeVisible();
+  const editor = await screen.findByPlaceholderText(HANDOFF_PROMPT);
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.keyboard("{Tab}");
+  expect(editor.textContent).toBe(HANDOFF_PROMPT);
 });

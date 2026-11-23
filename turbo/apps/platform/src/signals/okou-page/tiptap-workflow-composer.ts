@@ -179,12 +179,6 @@ const EDITOR_CONTENT_CLASS =
   "selection:bg-primary/20";
 
 const WORKFLOW_HIGHLIGHT_CLASS = "text-brand-text";
-function composerPlaceholder(): string {
-  return i18n.t(($) => {
-    return $.chat.composer.placeholder;
-  });
-}
-
 function feedbackPlaceholder(
   suggestionContext: SuggestionContext | null,
 ): string {
@@ -1823,7 +1817,6 @@ function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;
         }),
-        placeholder: composerPlaceholder(),
         tabindex: "0",
         class: EDITOR_CONTENT_CLASS,
       },
@@ -1926,10 +1919,10 @@ function configureMountedWorkflowEditor(editor: Editor): void {
       ...editor.options.editorProps,
       clipboardTextSerializer: workflowComposerClipboardText,
       attributes: {
+        ...editor.options.editorProps.attributes,
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;
         }),
-        placeholder: composerPlaceholder(),
         tabindex: "0",
         class: EDITOR_CONTENT_CLASS,
       },
@@ -1946,7 +1939,6 @@ function refreshMountedWorkflowEditorLocalization(editor: Editor): void {
         "aria-label": i18n.t(($) => {
           return $.chat.composer.message;
         }),
-        placeholder: composerPlaceholder(),
       },
     },
   });

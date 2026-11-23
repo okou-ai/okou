@@ -5,10 +5,12 @@ import {
   useSet,
 } from "ccstate-react";
 import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
+import { cn, Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
@@ -136,8 +138,10 @@ function workflowComposerHasContent(editor: Editor): boolean {
 
 function WorkflowComposerPlaceholder({
   composer,
+  followup,
 }: {
   composer: ComposerSignals;
+  followup: string | undefined;
 }) {
   useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
@@ -152,19 +156,22 @@ function WorkflowComposerPlaceholder({
   const hasTemplateAttachment = useGet(
     composer.template.hasTemplateAttachment$,
   );
-  if (hasInput || hasEditorContent) {
+  if (hasInput || hasEditorContent || followup === "") {
     return null;
   }
   return (
     <div
-      className={`pointer-events-none absolute left-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80 ${
-        hasTemplateAttachment ? "top-[54px]" : "top-0 pt-4"
-      }`}
+      className={cn(
+        "pointer-events-none absolute left-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80",
+        hasTemplateAttachment ? "top-[54px]" : "top-0 pt-4",
+        followup !== undefined && "right-0 line-clamp-2 wrap-anywhere",
+      )}
       aria-hidden="true"
     >
-      {createMode
-        ? composerCreatePlaceholder(createMode)
-        : workflowComposerPlaceholder(sending)}
+      {followup ??
+        (createMode
+          ? composerCreatePlaceholder(createMode)
+          : workflowComposerPlaceholder(sending))}
     </div>
   );
 }
@@ -178,6 +185,7 @@ interface TiptapWorkflowComposerProps {
 
 interface ComposerKeyDownContext {
   readonly composer: ComposerSignals;
+  readonly acceptFollowup?: (event: KeyboardEvent) => boolean;
   readonly selectedTask: ComposerTask | null;
   readonly selectTask: (task: ComposerTask | null) => void;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
@@ -266,6 +274,10 @@ function handleComposerKeyDownCapture(
   if (event.keyCode === 229) {
     // A confirming key can arrive after compositionend. Keep it out of editor
     // keymaps without preventing the input method's native confirmation.
+    return true;
+  }
+  if (context.acceptFollowup?.(event)) {
+    event.preventDefault();
     return true;
   }
   if (
@@ -929,6 +941,62 @@ function ComposerSuggestionSession({
   );
 }
 
+function useFollowupPlaceholder(composer: ComposerSignals) {
+  const switches = useLastResolved(featureSwitches$);
+  const source = useGet(composer.recommendedFollowupSource$);
+  const followup = switches
+    ? switches[FeatureSwitchKey.FollowupPlaceholder]
+      ? (source?.followups[0]?.prompt ?? "")
+      : undefined
+    : "";
+  const hasInput = useGet(composer.editor.hasInput$);
+  const insertText = useSet(composer.editor.insertText$);
+  const { t } = useTranslation();
+  const nativePlaceholder =
+    followup ??
+    t(($) => {
+      return $.chat.composer.placeholder;
+    });
+  const editor = composer.editor.editor;
+  const placeholderRef = (element: HTMLDivElement | null) => {
+    const attributes = editor.options.editorProps.attributes;
+    if (
+      element &&
+      typeof attributes === "object" &&
+      attributes.placeholder !== nativePlaceholder
+    ) {
+      editor.setOptions({
+        editorProps: {
+          ...editor.options.editorProps,
+          attributes: {
+            ...attributes,
+            placeholder: nativePlaceholder,
+            "aria-placeholder": nativePlaceholder,
+          },
+        },
+      });
+    }
+  };
+  const acceptFollowup = (event: KeyboardEvent) => {
+    if (
+      !followup ||
+      hasInput ||
+      event.key !== "Tab" ||
+      event.shiftKey ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.target !== editor.view.dom ||
+      workflowComposerHasContent(editor)
+    ) {
+      return false;
+    }
+    insertText(followup);
+    return true;
+  };
+  return { followup, placeholderRef, acceptFollowup };
+}
+
 /**
  * Keep the editor's parent and send owner mounted across menu transitions.
  * Presence only needs token ranges; no workflow/model/mention payload is read
@@ -944,6 +1012,8 @@ function ComposerSuggestionMenu({
   readonly actions: ComposerActions;
   readonly children: ReactNode;
 }) {
+  const { followup, placeholderRef, acceptFollowup } =
+    useFollowupPlaceholder(composer);
   const sessionActive = useGet(composer.suggestion.sessionActive$);
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
@@ -951,7 +1021,12 @@ function ComposerSuggestionMenu({
   return (
     <>
       <div
-        className="relative flex min-h-full flex-col"
+        ref={placeholderRef}
+        className={cn(
+          "relative flex min-h-full flex-col",
+          followup !== undefined &&
+            "[&_[data-placeholder]]:before:content-none [&_[data-placeholder]]:after:content-none",
+        )}
         onKeyDownCapture={(event) => {
           if (sessionActive) {
             // The open session handles capture on the editor itself, after
@@ -961,6 +1036,7 @@ function ComposerSuggestionMenu({
           const nativeEvent = event.nativeEvent;
           const handled = handleComposerKeyDownCapture(nativeEvent, {
             composer,
+            acceptFollowup,
             selectedTask,
             selectTask,
             onKeyDown,
@@ -970,6 +1046,7 @@ function ComposerSuggestionMenu({
           }
         }}
       >
+        <WorkflowComposerPlaceholder composer={composer} followup={followup} />
         {children}
       </div>
       {sessionActive && (
@@ -991,7 +1068,6 @@ export function TiptapWorkflowComposer({
 
   return (
     <ComposerSuggestionMenu composer={composer} actions={actions}>
-      <WorkflowComposerPlaceholder composer={composer} />
       <div
         // The composer card owns responsive height allocation so its footer
         // can change modes without changing the surrounding card height.

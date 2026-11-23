@@ -310,10 +310,10 @@ import {
   STRUCTURED_INLINE_REFERENCE_CLASS,
   STRUCTURED_INLINE_LINK_REFERENCE_CLASS,
 } from "../components/chat-thread-link-chip.tsx";
+import type { RecommendedFollowupSource } from "../../signals/chat-page/chat-event-projection-signals.ts";
 import { userMessageFileAttachments } from "../../signals/chat-page/user-message-files.ts";
 import type {
   ChatPanelSignals,
-  RecommendedFollowupSource,
   ThinkingIndicators,
 } from "../../signals/chat-page/chat-panel-signals.ts";
 import {
@@ -4306,13 +4306,20 @@ function ThinkingIndicatorRow({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function FinishedStatusRow({ thread }: { thread: ChatPanelSignals }) {
-  const recommendedFollowupSource =
-    useLastResolved(thread.recommendedFollowupSource$) ?? null;
+  const switches = useLastResolved(featureSwitches$);
+  const source = useGet(thread.composer.recommendedFollowupSource$);
   return (
     // Completed content also mounts when reopening a historical thread. Keep it
     // opaque so the PWA page-transition snapshot and the live page agree.
     <div data-role="assistant-thinking" className="min-w-0">
-      <FinishedRunRow thread={thread} source={recommendedFollowupSource} />
+      <FinishedRunRow
+        thread={thread}
+        source={
+          switches?.[FeatureSwitchKey.FollowupPlaceholder] === false
+            ? source
+            : null
+        }
+      />
     </div>
   );
 }
