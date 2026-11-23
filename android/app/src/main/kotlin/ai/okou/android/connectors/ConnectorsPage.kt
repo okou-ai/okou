@@ -52,6 +52,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -110,13 +111,21 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
         else ConnectorBrowseFilter.of(route.committedQuery.text, route.category)
     val wide = listWidth != null
     val selected = route.slug
+    val directoryVisible = wide || selected == null
 
-    LifecycleStartEffect(model) {
+    DisposableEffect(model) {
         model.setOpen(true)
-        onStopOrDispose { model.setOpen(false) }
+        onDispose { model.setOpen(false) }
+    }
+    LifecycleStartEffect(model) {
+        model.resume()
+        onStopOrDispose { model.pause() }
     }
     LaunchedEffect(model, selected) { model.select(selected) }
     LaunchedEffect(model, filter) { model.setFilter(filter) }
+    LaunchedEffect(model, route.connected, directoryVisible) {
+        if (directoryVisible) model.enterDirectoryTab(route.connected)
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
 
     fun back() {
@@ -151,7 +160,7 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
             .safeDrawingPadding()
             .imePadding()
     ) {
-        if (wide || selected == null) {
+        if (directoryVisible) {
             Column(
                 (if (listWidth == null) Modifier.weight(1f) else Modifier.width(listWidth.dp))
                     .fillMaxHeight()
@@ -322,7 +331,7 @@ private fun ConnectorDirectory(
         Spacer(Modifier.height(8.dp))
         ConnectorFilters(
             route,
-            directory.browse.data?.categories.orEmpty(),
+            directory.browse.data?.categories ?: catalogRead.data?.categories.orEmpty(),
             searchFocus,
             editQuery,
             ::clearQuery,
