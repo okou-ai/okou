@@ -93,22 +93,21 @@ class WorkflowRootTest {
         application.gate.countDown()
         application.fixture.use {
             try {
-                val jobs =
-                    compose.runOnIdle {
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                            ?.let {
-                                listOfNotNull(
-                                    it.chats.viewModelScope.coroutineContext[Job],
-                                    it.composer.viewModelScope.coroutineContext[Job],
-                                    it.search.viewModelScope.coroutineContext[Job],
-                                    it.workflows?.viewModelScope?.coroutineContext?.get(Job),
-                                )
-                            }
-                            .orEmpty()
-                    }
+                val jobs = compose.runOnIdle {
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.let {
+                            listOfNotNull(
+                                it.chats.viewModelScope.coroutineContext[Job],
+                                it.composer.viewModelScope.coroutineContext[Job],
+                                it.search.viewModelScope.coroutineContext[Job],
+                                it.workflows?.viewModelScope?.coroutineContext?.get(Job),
+                            )
+                        }
+                        .orEmpty()
+                }
                 compose.activityRule.scenario.close()
                 compose.waitUntil(10_000) {
                     shadowOf(Looper.getMainLooper()).idle()
@@ -155,7 +154,7 @@ class WorkflowRootTest {
         compose.onNodeWithText("Use 256 characters or fewer.").assertDoesNotExist()
         compose
             .onNodeWithText(
-                "Review launch copy and product notes.\nCheck the website, email, and community assets."
+                "Review launch copy and product notes.\nCheck the website, email, and community assets.",
             )
             .performTextReplacement("Confirm the release owner.")
         compose.onNodeWithTag("workflow_save").performClick()
@@ -194,7 +193,7 @@ class WorkflowRootTest {
             app.fixture.requests.any {
                 it.method == "POST" &&
                     it.requestUrl?.encodedPath in setOf("/api/chat-threads", "/api/chat/events")
-            }
+            },
         )
         back()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
@@ -265,7 +264,7 @@ class WorkflowRootTest {
         assertTrue(
             app.fixture.requests.any {
                 it.method == "GET" && it.requestUrl?.encodedPath == "/api/chat-drafts/composer"
-            }
+            },
         )
         assertEquals("Keep my existing draft", app.fixture.previousDraft)
 
@@ -312,7 +311,7 @@ class WorkflowRootTest {
             val notice = compose.onNodeWithText(error).getUnclippedBoundsInRoot()
             assertTrue(
                 notice.bottom <=
-                    save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top
+                    save.assertIsEnabled().assertIsFocused().getUnclippedBoundsInRoot().top,
             )
             val saves =
                 app.fixture.requests.filter {
@@ -347,7 +346,7 @@ class WorkflowRootTest {
         instruction.assertTextContains("Check the launch owner.")
         assertTrue(
             compose.onNodeWithText(error).getUnclippedBoundsInRoot().bottom <=
-                save.assertIsEnabled().getUnclippedBoundsInRoot().top
+                save.assertIsEnabled().getUnclippedBoundsInRoot().top,
         )
     }
 
@@ -605,7 +604,7 @@ class WorkflowRootTest {
         val connectionBounds = connection.getUnclippedBoundsInRoot()
         val saveBounds = save.getUnclippedBoundsInRoot()
         assertTrue(
-            cancelBounds.right < connectionBounds.left && connectionBounds.right < saveBounds.left
+            cancelBounds.right < connectionBounds.left && connectionBounds.right < saveBounds.left,
         )
         connection
             .performSemanticsAction(SemanticsActions.RequestFocus)
@@ -771,7 +770,7 @@ class WorkflowRootTest {
                   "matchedMessage":{"chatThreadId":"$CHAT_IN_PROJECT","role":"assistant",
                     "content":"$reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
                   "matchedRanges":[{"start":0,"end":7}]}]}
-                """
+                """,
             )
         }
         openWorkflowDetail()
@@ -945,7 +944,7 @@ class WorkflowRootTest {
         compose
             .onNode(
                 hasText(label) and
-                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton)
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
             )
             .performClick()
 
@@ -999,7 +998,7 @@ class WorkflowRootTest {
             app.fixture.requests.any {
                 it.method == "POST" &&
                     it.requestUrl?.encodedPath in setOf("/api/chat-threads", "/api/chat/events")
-            }
+            },
         )
         back()
         query.assertTextContains("launch")
@@ -1152,6 +1151,7 @@ class WorkflowRootTest {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
 
-    private fun back() =
-        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+    private fun back() = compose.runOnIdle {
+        compose.activity.onBackPressedDispatcher.onBackPressed()
+    }
 }

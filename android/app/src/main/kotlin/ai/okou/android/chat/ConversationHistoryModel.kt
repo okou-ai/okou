@@ -390,12 +390,11 @@ class ConversationHistoryModel(
         ) {
             refreshHistory()
         }
-        val resolved =
-            mutable.first {
-                it.generation != ticket ||
-                    it.phase == HistoryPhase.Ready ||
-                    it.phase == HistoryPhase.Missing
-            }
+        val resolved = mutable.first {
+            it.generation != ticket ||
+                it.phase == HistoryPhase.Ready ||
+                it.phase == HistoryPhase.Missing
+        }
         requireCurrent(ticket)
         return !resolved.hasSearchMessage(sequence)
     }
