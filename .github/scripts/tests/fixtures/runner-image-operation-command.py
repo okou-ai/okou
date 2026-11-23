@@ -148,8 +148,6 @@ def ssh(arguments):
                     return 255
                 if MODE == "wrong-result":
                     frame["result"]["identity"] = "0" * 64
-                elif MODE == "invalid-result-hash":
-                    frame["result"]["rootfsHash"] = "invalid"
                 line = (json.dumps(frame) + "\n").encode()
             sys.stdout.buffer.write(line)
             sys.stdout.buffer.flush()
