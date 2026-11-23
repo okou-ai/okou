@@ -43,6 +43,7 @@ import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowIntro
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
+import ai.okou.android.chat.WorkspaceSearchType
 import ai.okou.android.chat.conversationRunControls
 import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
@@ -1448,6 +1449,19 @@ internal fun OkouApp(
                                     restoreResultFocus = selectedWorkflowId == null,
                                     onMoreArtifacts = { term, cursor ->
                                         workspaceSearch?.nextArtifacts(term, cursor)
+                                    },
+                                    onRetrySearch = {
+                                        workspaceSearch?.update(
+                                            searchKeyword,
+                                            searchState.type,
+                                            artifactsAvailable = searchArtifactsAvailable,
+                                            visible = searchVisible,
+                                            retryFailed = true,
+                                        )
+                                        if (
+                                            searchState.type.includes(WorkspaceSearchType.Workflows)
+                                        )
+                                            workflows?.retrySearchCatalog()
                                     },
                                     onOpenWorkflow =
                                         if (!searchWorkflowsAvailable) null

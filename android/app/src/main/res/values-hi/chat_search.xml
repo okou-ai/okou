@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">वर्कफ़्लो डायरेक्टरी रीफ़्रेश नहीं हो सकी। पिछली लोड की गई डायरेक्टरी में खोज की जा रही है।</string>
     <string name="chat_search_artifacts_failed">आर्टिफ़ैक्ट में खोज नहीं हो सकी</string>
     <string name="chat_search_loading">खोज जारी है…</string>
+    <string name="chat_search_failed">खोज नतीजे लोड नहीं हो सके</string>
 </resources>
