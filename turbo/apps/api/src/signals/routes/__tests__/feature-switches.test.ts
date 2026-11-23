@@ -265,7 +265,7 @@ describe("/api/feature-switches", () => {
     },
     {
       type: CLIENT_TYPE_IOS,
-      version: iosClientCompatibility.minimumSupportedVersion,
+      version: iosClientCompatibility.testFlightMinimumSupportedVersion,
     },
   ])(
     "returns registered switches while merging known overrides for $type $version",

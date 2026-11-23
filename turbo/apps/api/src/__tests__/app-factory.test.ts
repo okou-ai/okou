@@ -1,4 +1,5 @@
 import {
+  CLIENT_DISTRIBUTION_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_TYPE_APP,
   CLIENT_TYPE_CLI,
@@ -711,6 +712,7 @@ describe("createApp", () => {
           method,
           headers: {
             [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+            [CLIENT_DISTRIBUTION_HEADER]: "testflight",
             [CLIENT_VERSION_HEADER]: "0.49.0",
           },
         });
@@ -722,7 +724,7 @@ describe("createApp", () => {
             message: "Update Okou in TestFlight to continue.",
           },
           minimumSupportedVersion:
-            iosClientCompatibility.minimumSupportedVersion,
+            iosClientCompatibility.testFlightMinimumSupportedVersion,
         });
         expect(response.headers.get("cache-control")).toBe("no-store");
       },
@@ -731,7 +733,8 @@ describe("createApp", () => {
     it.each([IOS_MINIMUM_VERSION, "0.8.1", "1.0.0"])(
       "allows iOS %s at or above the floor",
       async (version) => {
-        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        iosClientCompatibility.testFlightMinimumSupportedVersion =
+          IOS_MINIMUM_VERSION;
         const app = createApp({
           signal: context.signal,
           routes: TEST_APP_ROUTES,
@@ -739,6 +742,7 @@ describe("createApp", () => {
         const response = await app.request("/health", {
           headers: {
             [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+            [CLIENT_DISTRIBUTION_HEADER]: "testflight",
             [CLIENT_VERSION_HEADER]: version,
           },
         });
@@ -748,7 +752,7 @@ describe("createApp", () => {
     );
 
     it("allows every iOS version while the floor is null", async () => {
-      iosClientCompatibility.minimumSupportedVersion = null;
+      iosClientCompatibility.testFlightMinimumSupportedVersion = null;
       const app = createApp({
         signal: context.signal,
         routes: TEST_APP_ROUTES,
@@ -756,6 +760,7 @@ describe("createApp", () => {
       const response = await app.request("/health", {
         headers: {
           [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+          [CLIENT_DISTRIBUTION_HEADER]: "testflight",
           [CLIENT_VERSION_HEADER]: "0.0.1",
         },
       });
@@ -766,7 +771,8 @@ describe("createApp", () => {
     it.each([undefined, "development", "0.7"])(
       "preserves iOS requests without a parseable version (%s)",
       async (version) => {
-        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        iosClientCompatibility.testFlightMinimumSupportedVersion =
+          IOS_MINIMUM_VERSION;
         const app = createApp({
           signal: context.signal,
           routes: TEST_APP_ROUTES,
@@ -781,10 +787,93 @@ describe("createApp", () => {
       },
     );
 
+    it.each([
+      ["app-store", "1.1.0", 200],
+      ["testflight", "1.1.0", 426],
+      ["app-store", "1.0.0", 200],
+      ["testflight", "1.2.0", 200],
+      ["app-store", "0.9.0", 426],
+      ["unknown", "0.9.0", 426],
+      ["future-channel", "1.1.0", 200],
+      [undefined, "1.1.0", 200],
+      [undefined, "0.9.0", 426],
+    ] as const)(
+      "applies the correct floor to %s %s",
+      async (distribution, version, status) => {
+        iosClientCompatibility.appStoreMinimumSupportedVersion = "1.0.0";
+        iosClientCompatibility.testFlightMinimumSupportedVersion = "1.2.0";
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+          [CLIENT_VERSION_HEADER]: version,
+        });
+        if (distribution) {
+          headers.set(CLIENT_DISTRIBUTION_HEADER, distribution);
+        }
+        const response = await app.request("/health", { headers });
+        expect(response.status).toBe(status);
+        if (status === 426) {
+          const body = await response.json();
+          expect(body.minimumSupportedVersion).toBe(
+            distribution === "testflight" ? "1.2.0" : "1.0.0",
+          );
+          if (distribution === "app-store") {
+            expect(body.error.message).toContain("App Store");
+          }
+        }
+      },
+    );
+
+    it.each([
+      [undefined, "0.49.0", 426],
+      [undefined, "0.51.12", 200],
+      ["unknown", "0.49.0", 200],
+      ["app-store", "0.49.0", 200],
+      ["testflight", "0.51.12", 426],
+    ] as const)(
+      "preserves bootstrap behavior for %s %s",
+      async (distribution, version, status) => {
+        iosClientCompatibility.appStoreMinimumSupportedVersion = null;
+        iosClientCompatibility.testFlightMinimumSupportedVersion = "1.2.0";
+        const app = createApp({
+          signal: context.signal,
+          routes: TEST_APP_ROUTES,
+        });
+        const headers = new Headers({
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+          [CLIENT_VERSION_HEADER]: version,
+        });
+        if (distribution) {
+          headers.set(CLIENT_DISTRIBUTION_HEADER, distribution);
+        }
+        expect((await app.request("/health", { headers })).status).toBe(status);
+      },
+    );
+
+    it("keeps already excluded headerless installations below the historical floor", async () => {
+      iosClientCompatibility.appStoreMinimumSupportedVersion = "0.40.0";
+      const app = createApp({
+        signal: context.signal,
+        routes: TEST_APP_ROUTES,
+      });
+      const response = await app.request("/health", {
+        headers: {
+          [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS,
+          [CLIENT_VERSION_HEADER]: "0.49.0",
+        },
+      });
+      expect(response.status).toBe(426);
+      expect((await response.json()).minimumSupportedVersion).toBe("0.51.12");
+    });
+
     it.each(["ios", "IOS"])(
       "gates only the exact iOS client type, not %s",
       async (clientType) => {
-        iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+        iosClientCompatibility.testFlightMinimumSupportedVersion =
+          IOS_MINIMUM_VERSION;
         const app = createApp({
           signal: context.signal,
           routes: TEST_APP_ROUTES,
@@ -803,7 +892,7 @@ describe("createApp", () => {
     it.each([CLIENT_TYPE_APP, CLIENT_TYPE_DESKTOP])(
       "does not apply the iOS floor to %s clients",
       async (clientType) => {
-        iosClientCompatibility.minimumSupportedVersion = "99.0.0";
+        iosClientCompatibility.testFlightMinimumSupportedVersion = "99.0.0";
         const app = createApp({
           signal: context.signal,
           routes: TEST_APP_ROUTES,
@@ -820,7 +909,8 @@ describe("createApp", () => {
     );
 
     it("preserves requests without a client type", async () => {
-      iosClientCompatibility.minimumSupportedVersion = IOS_MINIMUM_VERSION;
+      iosClientCompatibility.testFlightMinimumSupportedVersion =
+        IOS_MINIMUM_VERSION;
       const app = createApp({
         signal: context.signal,
         routes: TEST_APP_ROUTES,

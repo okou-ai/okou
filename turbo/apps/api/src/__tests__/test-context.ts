@@ -5,6 +5,7 @@ import {
   expect,
   onTestFinished,
 } from "vitest";
+import type { IosCompatibilityPolicy } from "@okouai/api-contracts/contracts/ios-client-compatibility";
 import { createStore } from "ccstate";
 
 import { closeDbPool } from "../lib/db";
@@ -30,10 +31,9 @@ export const desktopCompatibility: { minimumSupportedVersion: string | null } =
 const shippedDesktopMinimumVersion =
   desktopCompatibility.minimumSupportedVersion;
 
-export const iosClientCompatibility: {
-  minimumSupportedVersion: string | null;
-} = iosClientCompatibilityConfig;
-const shippedIosMinimumVersion = iosClientCompatibility.minimumSupportedVersion;
+export const iosClientCompatibility: IosCompatibilityPolicy =
+  iosClientCompatibilityConfig;
+const shippedIosPolicy = Object.freeze({ ...iosClientCompatibility });
 export const androidClientCompatibility: {
   minimumSupportedVersion: string | null;
 } = androidClientCompatibilityConfig;
@@ -117,7 +117,7 @@ export function testContext(): TestContext {
     createStore().set(updateMaxAutonomyBudgetForTest$, undefined);
     clearMockListStripeInvoices();
     desktopCompatibility.minimumSupportedVersion = shippedDesktopMinimumVersion;
-    iosClientCompatibility.minimumSupportedVersion = shippedIosMinimumVersion;
+    Object.assign(iosClientCompatibility, shippedIosPolicy);
     androidClientCompatibility.minimumSupportedVersion =
       shippedAndroidMinimumVersion;
   });
