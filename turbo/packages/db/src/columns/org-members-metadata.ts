@@ -30,6 +30,8 @@ export function orgMembersMetadataColumns() {
       .default(true),
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
+    /** Null uses the default For you cover. */
+    forYouCoverId: text("for_you_cover_id"),
     selectedModel: varchar("selected_model", { length: 255 })
       .default("auto")
       .notNull(),

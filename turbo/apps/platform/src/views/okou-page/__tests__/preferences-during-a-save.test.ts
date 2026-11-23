@@ -181,6 +181,7 @@ function generalPreferences(): UserPreferencesResponse {
     sendMode: "cmd-enter",
     cloudBrowserEnabledByDefault: false,
     chatResourcesEnabledByDefault: false,
+    forYouCoverId: null,
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,

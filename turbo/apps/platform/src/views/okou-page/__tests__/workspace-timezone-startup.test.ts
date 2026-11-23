@@ -25,6 +25,7 @@ function preferences(timezone: string | null) {
     colorTheme: null,
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
+    forYouCoverId: null,
     captureNetworkBodiesRemaining: 0,
   };
   const calls: string[] = [];

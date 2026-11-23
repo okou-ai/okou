@@ -27,6 +27,7 @@ function workspace(
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
+    forYouCoverId: null,
     theme,
     colorTheme,
     captureNetworkBodiesRemaining: 0,

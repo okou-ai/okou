@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.44.1](https://github.com/okou-ai/okou/compare/android-v0.44.0...android-v0.44.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* persist for you cover preferences in the database ([#50069](https://github.com/okou-ai/okou/issues/50069)) ([c912fc4](https://github.com/okou-ai/okou/commit/c912fc4a238d3558ab6053520a1a63caf02f0ed5))
+
 ## [0.44.0](https://github.com/okou-ai/okou/compare/android-v0.43.0...android-v0.44.0) (2026-11-23)
 
 

@@ -1,13 +1,17 @@
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   feedContract,
   type Suggestion,
   type PlatformEvent,
 } from "@okouai/api-contracts/contracts/feed";
-import { screen, within, waitFor } from "@testing-library/react";
+import { screen, within, waitFor, cleanup } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { setupPage, click, fill } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import userEvent from "@testing-library/user-event";
 import { nowDate } from "../../../lib/time.ts";
 import {
@@ -672,4 +676,75 @@ test("agent-suggestions-041 dismissing a suggestion leaves the disabled automati
   await waitFor(() => {
     return expect(dismissed).toBeTruthy();
   });
+});
+
+test("The For you banner reads the saved artwork again when the member reopens the workspace", async () => {
+  const first = createTestRuntime(context);
+  context.mocks.data.userPreferences({ forYouCoverId: "cover-05" });
+  feed([proposal("Review the support rota")]);
+  async function show(runtime: typeof first) {
+    await setupPage({
+      context: runtime,
+      path: "/for-you",
+      featureSwitches: { [FeatureSwitchKey.AgentSuggestion]: true },
+    });
+    click(await findFastControl("button", "Change cover"));
+    return screen.findByRole("dialog", { name: "Change cover" });
+  }
+  const picker = within(await show(first));
+  expect(await picker.findByRole("radio", { name: "Cover 5" })).toBeChecked();
+  const next = picker.getByRole("radio", { name: "Cover 2" });
+  click(next);
+  const banner = () => document.querySelector('[data-slot="for-you-cover"]');
+  await waitFor(() =>
+    expect(banner()).toHaveAttribute(
+      "src",
+      expect.stringContaining("/cover-02-"),
+    ),
+  );
+  const artwork = banner()?.getAttribute("src");
+  first.dispose();
+  cleanup();
+  const reopened = within(await show(createTestRuntime(context)));
+  expect(await reopened.findByRole("radio", { name: "Cover 2" })).toBeChecked();
+  expect(banner()).toHaveAttribute("src", artwork!);
+  const original = reopened.getByRole("radio", { name: "Default Cover 1" });
+  click(original);
+  await waitFor(() =>
+    expect(banner()).toHaveAttribute(
+      "src",
+      expect.stringContaining("/cover-01-"),
+    ),
+  );
+});
+test("A failed cover change leaves the saved artwork and selection available for retry", async () => {
+  context.mocks.data.userPreferences({ forYouCoverId: "cover-08" });
+  context.mocks.api(userPreferencesContract.update, ({ respond }) =>
+    respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Artwork selection was declined",
+      },
+    }),
+  );
+  feed([proposal("Plan the service visit")]);
+  await openDeck();
+  click(await findFastControl("button", "Change cover"));
+  const chooser = within(
+    await screen.findByRole("dialog", { name: "Change cover" }),
+  );
+  const saved = await chooser.findByRole("radio", { name: "Cover 8" });
+  expect(saved).toBeChecked();
+  const current = document
+    .querySelector('[data-slot="for-you-cover"]')
+    ?.getAttribute("src");
+  const replacement = chooser.getByRole("radio", { name: "Cover 3" });
+  click(replacement);
+  await screen.findByText("Artwork selection was declined");
+  expect(saved).toBeChecked();
+  expect(replacement).toBeEnabled();
+  expect(document.querySelector('[data-slot="for-you-cover"]')).toHaveAttribute(
+    "src",
+    current!,
+  );
 });

@@ -67,6 +67,7 @@ test("sidebar-account-settings-002 Debug saves the capture allowance selected by
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: false,
+    forYouCoverId: null,
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,
