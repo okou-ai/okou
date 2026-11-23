@@ -1,5 +1,5 @@
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";

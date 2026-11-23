@@ -37,9 +37,9 @@ ruleTester.run("require-sql-result-mapping", requireSqlResultMapping, {
     },
     {
       code: `${preamble}
-        import { orgCustomConnectors } from "@okouai${"/db/runtime/org-custom-connector"}";
+        import { chatThreads } from "@okouai${"/db/runtime/chat-thread"}";
         import { sql } from "drizzle-orm";
-        db.select({ name: sql\`upper(\${orgCustomConnectors.displayName})\`.mapWith(orgCustomConnectors.displayName) }).from(orgCustomConnectors);
+        db.select({ name: sql\`upper(\${chatThreads.title})\`.mapWith(chatThreads.title) }).from(chatThreads);
       `,
     },
     {

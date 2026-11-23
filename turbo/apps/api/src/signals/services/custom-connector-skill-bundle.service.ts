@@ -1,7 +1,7 @@
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { prepareContentBundle } from "@okouai/core/content-bundle";
-import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { db$ } from "../external/db";
 import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
@@ -60,17 +60,16 @@ export const prepareCustomConnectorSkillBundle$ = command(
     signal.throwIfAborted();
     const [registered] = await get(db$)
       .select(customConnectorSkillBundleSelection())
-      .from(orgCustomConnectorSkillPublications)
+      .from(orgCustomConnectors)
       .where(
         and(
-          eq(orgCustomConnectorSkillPublications.id, args.connectorId),
-          eq(orgCustomConnectorSkillPublications.orgId, args.orgId),
+          eq(orgCustomConnectors.id, args.connectorId),
+          eq(orgCustomConnectors.orgId, args.orgId),
         ),
       )
       .limit(1);
     signal.throwIfAborted();
-    // Reuse a publication attested by this owner, including its historical source
-    // ID. An unchanged edit must not require a successful remote object read.
+    // Reuse the publication identity when the archive descriptor matches.
     if (
       registered?.skillContentBundle?.sha256 === prepared.descriptor.sha256 &&
       registered.skillContentBundle.archiveBytes ===
@@ -83,8 +82,7 @@ export const prepareCustomConnectorSkillBundle$ = command(
       };
     }
     const contentBundle = await set(publishContentBundle$, files, signal);
-    // New publications derive that identity from the canonical bundle bytes;
-    // it no longer names a generic Storage version. Historical IDs stay intact.
+    // The canonical archive digest supplies the identity of a new publication.
     return { contentBundle, sourceVersionId: contentBundle.sha256 };
   },
 );
