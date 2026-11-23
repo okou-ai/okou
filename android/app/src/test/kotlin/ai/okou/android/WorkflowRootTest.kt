@@ -30,6 +30,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -756,6 +757,38 @@ class WorkflowRootTest {
         back()
         compose.onNodeWithTag("chat_search_query").assertDoesNotExist()
         compose.onNodeWithTag("message_input").assertIsDisplayed()
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideArtifactSearchPreviewKeepsTheWorkflowDraftReturnPath() {
+        val fixture = ArtifactApiFixture(app.fixture.chats).apply { install() }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        val scope = compose.onNodeWithTag("search_type_Artifacts")
+        scope.performScrollTo().performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("Product launch")
+        waitFor(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        waitFor("Artifact preview")
+        compose.onNodeWithContentDescription("Close artifact preview").performClick()
+
+        query.assertTextContains("Product launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        back()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
 
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
