@@ -38,7 +38,6 @@ async function openSite(
     slug: last,
     url: link(last),
   });
-  const clipboard = context.mocks.browser.clipboardWriteText();
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, { artifacts: [published], nextCursor: null });
   });
@@ -92,7 +91,6 @@ async function openSite(
   });
   click(await findArtifactAction("Planning board"));
   click(await findFastControl("button", "Share artifact"));
-  return clipboard;
 }
 const shareDialog = () => {
   return screen.getByRole("dialog", { name: "Share artifact" });
@@ -127,7 +125,8 @@ async function verifyCopy(writes: readonly string[], url: string) {
 }
 test("hosted-site-sharing-001 Copy waits for the current published address and ignores the stale preview address", async () => {
   const gate = context.mocks.deferred<void>();
-  const clip = await openSite({ gate: gate.promise });
+  const clip = context.mocks.browser.clipboardWriteText();
+  await openSite({ gate: gate.promise });
   expect(queryFastControl("button", "Copy link", shareDialog())).toBeNull();
   await waitFor(() => {
     expect(shareDialog().querySelector('[aria-busy="true"]')).toBeVisible();
@@ -140,7 +139,8 @@ test("hosted-site-sharing-001 Copy waits for the current published address and i
   await verifyCopy(clip.writes, link("planning-board"));
 });
 test("hosted-site-sharing-010 The share row and clipboard both expose the current site URL before editing", async () => {
-  const clip = await openSite();
+  const clip = context.mocks.browser.clipboardWriteText();
+  await openSite();
   const row = await currentAddressRow();
   await waitFor(() => {
     return expect(row).toHaveTextContent(/planning-board/);
@@ -168,9 +168,10 @@ test("hosted-site-sharing-008 An address check error keeps Save disabled until a
   expect(button("Save")).toBeEnabled();
 });
 test("hosted-site-sharing-007 Cancelling a conflicting address change keeps the original copy destination", async () => {
-  const clip = await openSite({ rejectSave: 409 });
+  await openSite({ rejectSave: 409 });
   const input = await customize();
   await fill(input, "conflicting-title");
+  const clip = context.mocks.browser.clipboardWriteText();
   await screen.findByText("Available");
   click(button("Save"));
   await screen.findByText(
@@ -182,9 +183,10 @@ test("hosted-site-sharing-007 Cancelling a conflicting address change keeps the 
   await verifyCopy(clip.writes, link("planning-board"));
 });
 test("hosted-site-sharing-002 Saving the validated address updates the preview without copying until requested", async () => {
-  const clip = await openSite();
+  await openSite();
   const input = await customize();
   await fill(input, "launch-report");
+  const clip = context.mocks.browser.clipboardWriteText();
   await screen.findByText("Available");
   expect(screen.getByText(/The old URL will stop working/)).toBeVisible();
   click(button("Save"));
@@ -215,7 +217,8 @@ test("hosted-site-sharing-009 A failed save keeps the validated name editable an
 });
 test("hosted-site-sharing-015 The dialog allows copying while banner preferences are still loading", async () => {
   const gate = context.mocks.deferred<void>();
-  const clip = await openSite({ bannerGate: gate.promise });
+  const clip = context.mocks.browser.clipboardWriteText();
+  await openSite({ bannerGate: gate.promise });
   await currentAddressRow();
   expect(getButtonByName("Close artifact")).toBeVisible();
   expect(getButtonByName("Share artifact")).toBeVisible();
