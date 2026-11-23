@@ -41,7 +41,7 @@ internal fun retryAfter(value: String?): Long? {
     formatter.isLenient = false
     return try {
         ((formatter.parse(value)?.time ?: return null) - System.currentTimeMillis()).coerceAtLeast(
-            0
+            0,
         ) / 1000
     } catch (_: ParseException) {
         null
@@ -59,7 +59,7 @@ internal fun IOException.httpRejection(): HttpRejection? =
 internal fun validateTransportUrl(url: HttpUrl) {
     require(url.username.isEmpty() && url.password.isEmpty()) { "URL credentials are not allowed" }
     require(
-        url.isHttps || (BuildConfig.DEBUG && url.host in setOf("localhost", "127.0.0.1", "::1"))
+        url.isHttps || (BuildConfig.DEBUG && url.host in setOf("localhost", "127.0.0.1", "::1")),
     ) {
         "HTTPS is required; debug cleartext is limited to loopback"
     }
@@ -81,19 +81,18 @@ internal fun httpClient(callTimeout: Duration = DEFAULT_CALL_TIMEOUT): OkHttpCli
             if (!response.isSuccessful) {
                 // OkHttp can otherwise follow up a 503 with Retry-After: 0 even with
                 // connection retries disabled. Preserve the first result without replay.
-                val envelope =
-                    response.use {
-                        try {
-                            val body = it.errorBody()
-                            body
-                                .source()
-                                .timeout()
-                                .deadline(callTimeout.inWholeNanoseconds, TimeUnit.NANOSECONDS)
-                            body.bounded(64L * 1024).use { error -> error.string() }
-                        } catch (_: IOException) {
-                            null
-                        }
+                val envelope = response.use {
+                    try {
+                        val body = it.errorBody()
+                        body
+                            .source()
+                            .timeout()
+                            .deadline(callTimeout.inWholeNanoseconds, TimeUnit.NANOSECONDS)
+                        body.bounded(64L * 1024).use { error -> error.string() }
+                    } catch (_: IOException) {
+                        null
                     }
+                }
                 throw HttpRejection(response.code, response.header("Retry-After"), envelope)
             }
             response
@@ -173,9 +172,9 @@ internal suspend fun <T> Call.awaitBody(read: (ResponseBody) -> T): T =
                     // Keep the Call cancellable until streamed body consumption and cleanup finish.
                     // This callback runs on OkHttp's IO executor, not the main thread.
                     continuation.resumeWith(
-                        runCatching { response.use { read(checkNotNull(it.body)) } }
+                        runCatching { response.use { read(checkNotNull(it.body)) } },
                     )
                 }
-            }
+            },
         )
     }

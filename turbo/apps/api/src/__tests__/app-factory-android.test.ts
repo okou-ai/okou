@@ -71,7 +71,10 @@ describe("Android installed-client compatibility at the API boundary", () => {
     ["Android", "development"],
     ["Android", undefined],
     ["android", "0.1.0"],
-    ["iOS", iosClientCompatibility.minimumSupportedVersion ?? "0.1.0"],
+    [
+      "iOS",
+      iosClientCompatibility.testFlightMinimumSupportedVersion ?? "0.1.0",
+    ],
     ["Desktop", "0.1.0"],
     [undefined, "0.1.0"],
   ])(

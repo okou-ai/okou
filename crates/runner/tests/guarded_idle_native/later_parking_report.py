@@ -22,14 +22,16 @@ def identifier(value):
     return value
 
 
-def history_operation(evidence, identities, reason):
-    """Parse and reserve a distinct canonical history/operation identity pair."""
+def bind_history_operation(evidence, identities, baseline, sandbox, *, replay_error, binding_error):
+    """Reserve the canonical IDs and verify their binding to the original parked sandbox."""
     history = identifier(evidence.get("history_run_id"))
     operation = identifier(evidence.get("operation_run_id"))
     if history == operation or history in identities or operation in identities:
-        raise ValueError(reason)
+        raise ValueError(replay_error)
     identities.update((history, operation))
-    return history, operation
+    reuse = "thread:native-guarded-" + history
+    exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": sandbox}], binding_error)
+    return history, operation, reuse
 
 
 def clock(value, begin, end):

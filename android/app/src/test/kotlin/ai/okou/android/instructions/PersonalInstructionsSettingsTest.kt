@@ -85,8 +85,8 @@ class PersonalInstructionsSettingsTest {
                 ActivityScenario.launch(
                     Intent(app, MainActivity::class.java)
                         .addFlags(
-                            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-                        )
+                            Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK,
+                        ),
                 )
             compose.waitUntil(10_000) {
                 other.onActivity { secondSession = ViewModelProvider(it)[SessionModel::class.java] }
@@ -169,13 +169,12 @@ class PersonalInstructionsSettingsTest {
                 .assertIsDisplayed()
                 .performSemanticsAction(SemanticsActions.OnClick)
             compose.onNodeWithText("Cancel").assertExists()
-            val editor =
-                compose.runOnIdle {
-                    val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
-                    checkNotNull(session.uiState.value.ready).instructions.also {
-                        editorJob = it.viewModelScope.coroutineContext[Job]
-                    }
+            val editor = compose.runOnIdle {
+                val session = ViewModelProvider(compose.activity)[SessionModel::class.java]
+                checkNotNull(session.uiState.value.ready).instructions.also {
+                    editorJob = it.viewModelScope.coroutineContext[Job]
                 }
+            }
             app.readGate.countDown()
             compose.waitUntil(10_000) { compose.runOnIdle { !editor.uiState.value.busy } }
             assertEquals(InstructionsPhase.Ready, editor.uiState.value.phase)
@@ -199,17 +198,16 @@ class PersonalInstructionsSettingsTest {
         compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Loading Instructions…").assertExists()
-        val model =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .instructions
-                    .also { editorJob = it.viewModelScope.coroutineContext[Job] }
-            }
+        val model = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .instructions
+                .also { editorJob = it.viewModelScope.coroutineContext[Job] }
+        }
         fun awaitPhase(phase: InstructionsPhase) {
             compose.waitUntil(10_000) { compose.runOnIdle { model.uiState.value.phase == phase } }
         }
@@ -231,16 +229,15 @@ class PersonalInstructionsSettingsTest {
             }
         }
         input.performTextInputSelection(TextRange(5, 8))
-        val chats =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .chats
-            }
+        val chats = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+        }
         fun connectivity(online: Boolean) {
             compose.runOnIdle { app.connectivity.value = online }
             compose.waitUntil(10_000) {

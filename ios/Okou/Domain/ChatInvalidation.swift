@@ -12,6 +12,7 @@ enum ChatInvalidation: Hashable, Sendable {
   case modelPreference
   case threadList
   case indicators
+  case forYou
   case history(threadID: String)
   case detail(threadID: String)
   case readCursor
@@ -38,6 +39,7 @@ enum ChatInvalidation: Hashable, Sendable {
       self = .computerAccess
     case "runModelsChanged": self = .runModels
     case "userPreferenceChanged": self = .modelPreference
+    case "agentSuggestionsChanged": self = .forYou
     case "threadListChanged": self = .threadList
     case "chatIndicatorsChanged": self = .indicators
     case "chatThreadReadCursorUpdated": self = .readCursor

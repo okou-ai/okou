@@ -16,7 +16,7 @@ use crate::host_memory_operations::{
 use super::retirement::Allowance;
 use super::{
     AcceptedActivationCleanup, IdleEntry, IdlePool, IdleRetirementEnvelope, IdleSandboxIdentity,
-    RetainedActivationCleanup,
+    RetainedActivationCleanup, validate_grant_backing,
 };
 
 mod substitution;
@@ -233,13 +233,7 @@ impl IdlePoolRetirement {
         {
             return Err(MemoryOperationError::Consumed);
         }
-        let valid = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            self.candidate.backing.process.identity() == self.candidate.backing.identity
-        }))
-        .map_err(|_| MemoryOperationError::ProducerLost)?;
-        if !valid {
-            return Err(MemoryOperationError::OwnershipInvariant);
-        }
+        validate_grant_backing(&self.candidate.backing)?;
         self.ready = true;
         Ok(())
     }

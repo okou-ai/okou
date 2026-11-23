@@ -1881,6 +1881,7 @@ async fn execute_prepared_sandbox_attempt_with_process_cancel_timeouts(
             startup_report: lifecycle.startup_report,
             discovered_cli_agent_session_id,
             restored_session_identity,
+            memory_published: agent_result.memory_published,
         },
     }
 }

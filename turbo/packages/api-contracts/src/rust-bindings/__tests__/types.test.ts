@@ -186,6 +186,11 @@ const expectedBindings = [
     rustTypeName: "Response",
     direction: "response",
   },
+  {
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustTypeName: "Response",
+    direction: "response",
+  },
 ] as const;
 
 const exampleRootDoc = ["Example generated DTOs."] as const;

@@ -475,6 +475,71 @@ describe("chat thread generation template contract", () => {
     );
   });
 
+  it.each([
+    undefined,
+    { type: "mail", id: "draft-1", status: "draft" },
+    { type: "mail", id: "mail-1", status: "sent", sentId: "gmail-1" },
+    { type: "artifact", fileId: "file-1", filenameSnapshot: "brief.md" },
+    {
+      type: "artifact",
+      fileId: "file-1",
+      filenameSnapshot: "brief.md",
+      artifactId: "artifact-1",
+    },
+  ])(
+    "round-trips feedback source %j in input and stored documents",
+    (source) => {
+      const document = {
+        version: 1,
+        parts: [
+          {
+            type: "feedback",
+            quote: "Selected passage",
+            note: [],
+            ...(source === undefined ? {} : { source }),
+          },
+        ],
+      };
+      expect(userMessageInputDocumentSchema.parse(document)).toStrictEqual(
+        document,
+      );
+      expect(userMessageDocumentSchema.parse(document)).toStrictEqual(document);
+      expect(
+        chatEventsContract.send.body.parse({
+          prompt: "Review the passage",
+          hasTextContent: true,
+          userMessage: document,
+        }).userMessage,
+      ).toStrictEqual(document);
+    },
+  );
+
+  it("keeps artifact source identity strict rather than storing download URLs or mail fields", () => {
+    const source = {
+      type: "artifact",
+      fileId: "file-1",
+      filenameSnapshot: "brief.md",
+    };
+    for (const extra of [
+      { url: "https://storage.example.com/brief.md?signature=temporary" },
+      { id: "mail-1", status: "draft" },
+    ]) {
+      expect(
+        userMessageInputDocumentSchema.safeParse({
+          version: 1,
+          parts: [
+            {
+              type: "feedback",
+              quote: "Selected passage",
+              note: [],
+              source: { ...source, ...extra },
+            },
+          ],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it("accepts feedback event ranges without requiring them on legacy data", () => {
     const legacyFeedback = {
       version: 1,

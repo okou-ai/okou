@@ -12,10 +12,15 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1Type
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntry
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
+import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -40,6 +45,23 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkflowModelTest {
+    private val recentRun =
+        WorkflowRunHistoryEntry(
+            id = "48da3630-376b-4a70-82ce-f1d8e17a4433",
+            createdAt = "2026-11-23T01:00:00.000Z",
+            status = WorkflowRunHistoryEntryStatus.RUNNING,
+            trigger = WorkflowRunHistoryEntryTrigger.SCHEDULE,
+            eventType = null,
+            chatThreadId = "80d3cd3c-76aa-477f-90de-bdf6d58705d6",
+        )
+    private val earlierRun =
+        recentRun.copy(
+            id = "f84ea6d9-3243-450b-a58e-488fd5428130",
+            createdAt = "2026-11-22T01:00:00.000Z",
+            status = WorkflowRunHistoryEntryStatus.FAILED,
+            chatThreadId = null,
+        )
+
     @Test
     fun reopeningRevalidatesEachRangeAndOnlyShowsItsUnexpiredCache() = check { service, model ->
         val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
@@ -143,7 +165,7 @@ class WorkflowModelTest {
             assertEquals(3, service.detailReads)
             assertEquals(first, model.state.value.detail)
 
-            model.detailTabOpened(checkConnections = false)
+            model.select(first.id, WorkflowTab.History)
             runCurrent()
             assertEquals(3, service.detailReads)
 
@@ -152,6 +174,200 @@ class WorkflowModelTest {
             runCurrent()
             assertEquals(refreshed, model.state.value.detail)
         }
+
+    @Test
+    fun historyKeepsLoadedPagesDuringRefreshAndClearsExpiredCacheOnReturn() =
+        check { service, model ->
+            val id = service.summary.id
+            fun page(cursor: String?) =
+                if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
+                else WorkflowRunHistory(listOf(earlierRun), null)
+            service.historyRead = { workflowId, cursor ->
+                assertEquals(id, workflowId)
+                page(cursor)
+            }
+            model.visibilityChanged(true)
+            model.select(id)
+            runCurrent()
+            assertTrue(service.historyCursors.isEmpty())
+
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recentRun), model.state.value.history?.runs)
+            model.loadEarlierRuns()
+            model.loadEarlierRuns()
+            runCurrent()
+            assertEquals(listOf(null, "earlier"), service.historyCursors)
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+
+            val refresh = CompletableDeferred<Unit>()
+            service.historyRead = { _, cursor ->
+                refresh.await()
+                val page = page(cursor)
+                if (cursor == null)
+                    page.copy(
+                        runs =
+                            listOf(
+                                recentRun.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED),
+                            ),
+                    )
+                else page
+            }
+            model.select(id)
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+            advanceTimeBy(600_000)
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+            model.visibilityChanged(false)
+            model.visibilityChanged(true)
+            assertNull(model.state.value.history)
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(
+                listOf(
+                    WorkflowRunHistoryEntryStatus.COMPLETED,
+                    WorkflowRunHistoryEntryStatus.FAILED,
+                ),
+                model.state.value.history?.runs?.map { it.status },
+            )
+            assertEquals(listOf(null, "earlier"), service.historyCursors.takeLast(2))
+        }
+
+    @Test
+    fun historyRefreshPreservesTheBoundaryForLoadingEarlierRuns() = check { service, model ->
+        val id = service.summary.id
+        val olderRun =
+            earlierRun.copy(
+                id = "4af530dc-2f2d-4be2-9e85-8fd801a20828",
+                createdAt = "2026-11-21T01:00:00.000Z",
+            )
+        val oldestRun =
+            earlierRun.copy(
+                id = "ebce6d58-1225-4eeb-80fb-861035eeac7d",
+                createdAt = "2026-11-20T01:00:00.000Z",
+            )
+        val runs = mutableListOf(recentRun, earlierRun, olderRun, oldestRun)
+        service.historyRead = { _, cursor ->
+            val start = if (cursor == null) 0 else runs.indexOfFirst { it.id == cursor } + 1
+            val page = runs.drop(start).take(2)
+            WorkflowRunHistory(page, page.last().id.takeIf { start + page.size < runs.size })
+        }
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+
+        val newRun =
+            recentRun.copy(
+                id = "0fdf0291-fad4-4896-a33e-c7931f51a086",
+                createdAt = "2026-11-23T02:00:00.000Z",
+            )
+        runs.add(0, newRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(newRun, recentRun, earlierRun), model.state.value.history?.runs)
+
+        val newestRun =
+            newRun.copy(
+                id = "c98de40b-6ac1-429d-989d-2b5be0b330f3",
+                createdAt = "2026-11-23T03:00:00.000Z",
+            )
+        runs.add(0, newestRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(
+            listOf(newestRun, newRun, recentRun, earlierRun),
+            model.state.value.history?.runs,
+        )
+        assertEquals(listOf(null, null, recentRun.id, null, newRun.id), service.historyCursors)
+
+        model.loadEarlierRuns()
+        runCurrent()
+        assertEquals(earlierRun.id, service.historyCursors.last())
+        assertEquals(runs, model.state.value.history?.runs)
+        assertNull(model.state.value.history?.nextCursor)
+    }
+
+    @Test
+    fun revokedHistoryClearsTheCachedRange() = check { service, model ->
+        val id = service.summary.id
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertNotNull(model.state.value.history)
+        service.historyRead = { _, _ -> throw ApiFailure.Http(404, null, null, null) }
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNotNull(model.state.value.history)
+        runCurrent()
+        assertNull(model.state.value.history)
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.historyFailure)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNull(model.state.value.history)
+    }
+
+    @Test
+    fun restoringWorkflowAccessReloadsTheSelectedHistory() = check { service, model ->
+        val id = service.summary.id
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertNotNull(model.state.value.history)
+
+        service.catalogRead = { emptyList() }
+        service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
+        assertNull(model.state.value.history)
+
+        val restored = CompletableDeferred<WorkflowDetail>()
+        service.catalogRead = { listOf(service.summary) }
+        service.detailRead = { restored.await() }
+        model.foregroundChanged(false)
+        val historyReads = service.historyCursors.size
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(historyReads, service.historyCursors.size)
+
+        restored.complete(service.detail)
+        runCurrent()
+        assertNull(model.state.value.detailFailure)
+        assertNotNull(model.state.value.history)
+        assertEquals(historyReads + 1, service.historyCursors.size)
+    }
+
+    @Test
+    fun reconnectResumesTheRequestedEarlierHistoryPage() = check { service, model ->
+        var reachable = true
+        service.historyRead = { _, cursor ->
+            if (!reachable) throw ApiFailure.Network(IOException())
+            if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
+            else WorkflowRunHistory(listOf(earlierRun), null)
+        }
+        model.visibilityChanged(true)
+        model.select(service.summary.id, WorkflowTab.History)
+        runCurrent()
+
+        reachable = false
+        model.connectivityChanged(true)
+        model.loadEarlierRuns()
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Offline, model.state.value.historyFailure)
+        assertEquals(listOf(recentRun), model.state.value.history?.runs)
+
+        reachable = true
+        model.connectivityChanged(false)
+        runCurrent()
+        assertNull(model.state.value.historyFailure)
+        assertEquals(listOf(null, "earlier", "earlier"), service.historyCursors)
+        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+    }
 
     @Test
     fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
@@ -279,7 +495,7 @@ class WorkflowModelTest {
         assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
 
         olderDetail.complete(
-            service.detail.copy(automations = listOf(active.copy(enabled = false)))
+            service.detail.copy(automations = listOf(active.copy(enabled = false))),
         )
         runCurrent()
         assertEquals(latestSummary.displayName, model.state.value.detail?.displayName)
@@ -552,6 +768,10 @@ class WorkflowModelTest {
     }
 
     private class Service : WorkflowService {
+        val historyCursors = mutableListOf<String?>()
+        var historyRead: suspend (String, String?) -> WorkflowRunHistory = { _, _ ->
+            WorkflowRunHistory(emptyList(), null)
+        }
         val summary =
             WorkflowSummary(
                 id = "a1111111-1111-4111-8111-111111111111",
@@ -633,6 +853,11 @@ class WorkflowModelTest {
         override suspend fun workflow(id: String): WorkflowDetail {
             detailReads++
             return detailRead(id)
+        }
+
+        override suspend fun workflowRunHistory(id: String, cursor: String?): WorkflowRunHistory {
+            historyCursors.add(cursor)
+            return historyRead(id, cursor)
         }
 
         override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations {

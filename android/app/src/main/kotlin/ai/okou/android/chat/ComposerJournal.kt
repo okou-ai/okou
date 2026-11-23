@@ -38,13 +38,19 @@ enum class TextDisposition {
 @Serializable
 data class TextReceipt(val threadId: String, val eventId: String, val disposition: TextDisposition)
 
+enum class PendingDelivery {
+    Sending,
+    Checking,
+    Unconfirmed,
+}
+
 /** Local presentation of a frozen input while its history row is unavailable. */
 data class ComposerMessagePreview(
     val eventId: String,
     val threadId: String,
     val text: String,
     val disposition: TextDisposition? = null,
-    val sending: Boolean = false,
+    val pendingDelivery: PendingDelivery? = null,
 )
 
 @Serializable
@@ -121,7 +127,13 @@ data class ComposerState(
         receiptMessages.values.filterTo(this) { it.threadId == threadId }
         journal?.entries?.forEach { (key, entry) ->
             val pending = entry.pending?.takeIf { it.threadId == threadId } ?: return@forEach
-            add(pending.preview(sending = key in busy && key !in checking))
+            val delivery =
+                when {
+                    key in checking -> PendingDelivery.Checking
+                    key in busy -> PendingDelivery.Sending
+                    else -> PendingDelivery.Unconfirmed
+                }
+            add(pending.preview(pendingDelivery = delivery))
         }
     }
 
@@ -150,5 +162,7 @@ data class ComposerState(
             !entry(target).text.isBlankWebDraft()
 }
 
-internal fun PendingText.preview(disposition: TextDisposition? = null, sending: Boolean = false) =
-    ComposerMessagePreview(eventId, threadId, send.prompt, disposition, sending)
+internal fun PendingText.preview(
+    disposition: TextDisposition? = null,
+    pendingDelivery: PendingDelivery? = null,
+) = ComposerMessagePreview(eventId, threadId, send.prompt, disposition, pendingDelivery)

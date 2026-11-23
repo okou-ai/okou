@@ -46,7 +46,7 @@ final class ComposerConnectorStore {
 
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
-    thread: ChatThread? = nil,
+    threadID: String? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -56,7 +56,7 @@ final class ComposerConnectorStore {
     self.service = service
     self.authorizationService = authorizationService
     self.webURL = webURL
-    threadID = thread?.id
+    self.threadID = threadID
     self.didFail = didFail
     resources = makeResources()
   }

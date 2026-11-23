@@ -1,4 +1,7 @@
-import { resolveVoiceClips$ } from "./voice-clips.service";
+import {
+  resolveVoiceClipRecords,
+  voiceClipRequestError,
+} from "./voice-clips.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -62,6 +65,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -617,25 +621,52 @@ function attachmentResolutionCounts(
     ].sort(),
   };
 }
+interface IncomingAttachmentRecords {
+  readonly files: ReturnType<typeof userMessagePhysicalFiles>;
+  readonly voiceIds: readonly string[];
+  readonly rows: ReturnType<
+    typeof settleIncludingAbort<Map<string, AttachmentRecord>>
+  >;
+  readonly counts: ReturnType<typeof attachmentResolutionCounts>;
+}
 const startIncomingAttachmentRecords$ = command(
-  ({ get }, userMessage: UserMessageDocument, signal: AbortSignal) => {
+  (
+    { get },
+    userMessage: UserMessageDocument,
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ): IncomingAttachmentRecords | undefined => {
     const files = userMessagePhysicalFiles(userMessage);
-    if (files.length === 0) {
+    const voiceIds = userMessage.parts.flatMap((part) => {
+      return part.type === "voice"
+        ? part.clips.map((clip) => {
+            return clip.fileId;
+          })
+        : [];
+    });
+    if (files.length === 0 && voiceIds.length === 0) {
       return undefined;
     }
     const counts = attachmentResolutionCounts(files);
     const rows = settleIncludingAbort(async () => {
       signal.throwIfAborted();
-      const ids = [
+      const fileIds = [
         ...new Set(
-          files.flatMap((file) => {
-            return uuid().safeParse(file.fileId).success
-              ? [file.fileId.toLowerCase()]
+          files.flatMap(({ fileId }) => {
+            return uuid().safeParse(fileId).success
+              ? [fileId.toLowerCase()]
               : [];
           }),
         ),
       ];
-      if (ids.length === 0) {
+      const clipIds = [
+        ...new Set(
+          voiceIds.map((id) => {
+            return id.toLowerCase();
+          }),
+        ),
+      ];
+      if (fileIds.length === 0 && clipIds.length === 0) {
         return new Map<string, AttachmentRecord>();
       }
       counts.sqlReads += 1;
@@ -644,7 +675,21 @@ const startIncomingAttachmentRecords$ = command(
       const loaded = await get(db$)
         .select()
         .from(runUploadedFiles)
-        .where(sql`${runUploadedFiles.id} = ANY(${sql.param(ids)}::uuid[])`);
+        .where(
+          or(
+            fileIds.length
+              ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+              : undefined,
+            clipIds.length
+              ? and(
+                  sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                  eq(runUploadedFiles.orgId, owner.orgId),
+                  eq(runUploadedFiles.userId, owner.userId),
+                  isNull(runUploadedFiles.deletedAt),
+                )
+              : undefined,
+          ),
+        );
       signal.throwIfAborted();
       return new Map(
         loaded.map((row) => {
@@ -652,12 +697,36 @@ const startIncomingAttachmentRecords$ = command(
         }),
       );
     });
-    return { files, rows, counts };
+    return { files, voiceIds, rows, counts };
   },
 );
-type IncomingAttachmentRecords = NonNullable<
-  ReturnType<(typeof startIncomingAttachmentRecords$)["write"]>
->;
+
+const validateIncomingVoiceClips$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+    context: AgentRunContextSignals,
+    { voiceIds, rows }: IncomingAttachmentRecords,
+    signal: AbortSignal,
+  ) => {
+    const features = await get(context.featureSwitches$);
+    signal.throwIfAborted();
+    const error = voiceClipRequestError(voiceIds, features);
+    if (error) {
+      return error;
+    }
+    const records = await rows;
+    signal.throwIfAborted();
+    if (!records.ok) {
+      throw records.error;
+    }
+    const voice = resolveVoiceClipRecords(
+      { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+      records.value,
+    );
+    return "status" in voice ? voice : null;
+  },
+);
 
 const resolveIncomingAttachmentObject$ = command(
   async (
@@ -2443,73 +2512,49 @@ interface NormalSendBootstrap {
   readonly context: AgentRunContextSignals;
   readonly existingThread$: Computed<Promise<ExistingSendThreadRow | null>>;
   readonly inputId: string;
+  readonly chatRunSource: NormalSendChatRunSourceRead;
+  readonly attachmentRecords?: IncomingAttachmentRecords;
+  readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
 }
 
-function createNormalSendBootstrap(
-  owner: Pick<OrganizationAuthContext, "userId" | "orgId">,
-  body: NormalSendBody,
-  requireVisibleThread?: boolean,
-): NormalSendBootstrap {
-  // Shared input and template reads match PostgreSQL's canonical UUID form.
-  const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
-  const templates = projectUserMessage(body.userMessage).templates;
-  const graph = createAgentRunContextSignals(
-    {
-      userId: owner.userId,
-      orgId: owner.orgId,
-      chatThreadId: body.threadId ?? body.clientThreadId ?? randomUUID(),
-    },
-    {
-      inputId,
-      newThread: body.threadId === undefined,
-      requireVisibleThread,
-      presentationIds: selectedUserPresentationTemplateIds(templates),
-      userTemplateIds: selectedUserTemplateIds(templates),
-    },
-  );
-  return { ...graph, inputId };
-}
-
-export const startNormalSendBootstrap$ = command(
+const startNormalSendReads$ = command(
   (
-    { get },
+    { get, set },
     args: {
       readonly auth: OrganizationAuthContext;
-      readonly body: SendBody;
+      readonly body: NormalSendBody;
       readonly requireVisibleThread?: boolean;
     },
-  ) => {
-    const { body } = args;
-    if (
-      !isNormalSendBody(body) ||
-      isInterruptSendBody(body) ||
-      forgedMcpSource(body)
-    ) {
-      return undefined;
-    }
-    const bootstrap = createNormalSendBootstrap(
-      args.auth,
-      body,
-      args.requireVisibleThread,
+    signal: AbortSignal,
+  ): NormalSendBootstrap => {
+    signal.throwIfAborted();
+    const { body, auth } = args;
+    // Shared input and template reads match PostgreSQL's canonical UUID form.
+    const inputId = body.clientEventId?.toLowerCase() ?? randomUUID();
+    const templates = projectUserMessage(body.userMessage).templates;
+    const presentationIds = selectedUserPresentationTemplateIds(templates);
+    const userTemplateIds = selectedUserTemplateIds(templates);
+    const graph = createAgentRunContextSignals(
+      {
+        userId: auth.userId,
+        orgId: auth.orgId,
+        chatThreadId: body.threadId ?? body.clientThreadId ?? randomUUID(),
+      },
+      {
+        inputId,
+        newThread: body.threadId === undefined,
+        requireVisibleThread: args.requireVisibleThread,
+        presentationIds,
+        userTemplateIds,
+      },
     );
-    waitUntil(settle(get(bootstrap.context.modelFacts$)));
-    waitUntil(settle(get(bootstrap.context.memberMetadata$)));
-    return bootstrap;
-  },
-);
-
-const prepareNormalSendContext$ = command(
-  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
-    if (forgedMcpSource(request.body)) {
-      return badRequestMessage("MCP source annotations are server-managed");
+    const { context } = graph;
+    waitUntil(settle(get(context.modelFacts$)));
+    waitUntil(settle(get(context.memberMetadata$)));
+    waitUntil(settle(get(context.executionPackageSources$)));
+    if (presentationIds.length || userTemplateIds.length) {
+      waitUntil(settle(get(context.requestTemplateSources$)));
     }
-    const { context, existingThread$, inputId } =
-      request.bootstrap ?? createNormalSendBootstrap(request, request.body);
-    const existingRead =
-      request.body.threadId === undefined ? undefined : get(existingThread$);
-    const args = request;
-    const models = settle(set(prepareNormalSendModels$, context, signal));
-    waitUntil(models);
     // A forwarded or agent-token send also awaits its source Run. The read is
     // scoped to the caller's user and organization, and its outcome is used
     // only after authorization.
@@ -2517,9 +2562,9 @@ const prepareNormalSendContext$ = command(
       set(
         resolveNormalSendChatRunSource$,
         {
-          auth: args.auth,
-          userMessage: args.body.userMessage,
-          sourceRunId: args.body.sourceRunId,
+          auth,
+          userMessage: body.userMessage,
+          sourceRunId: body.sourceRunId,
         },
         signal,
       ),
@@ -2528,54 +2573,22 @@ const prepareNormalSendContext$ = command(
     // Only a validated send consumes these records and verifies the objects.
     const attachmentRecords = set(
       startIncomingAttachmentRecords$,
-      args.body.userMessage,
+      body.userMessage,
+      auth,
       signal,
     );
     if (attachmentRecords) {
       waitUntil(attachmentRecords.rows);
     }
-    // Package sources only depend on the authenticated member.
-    waitUntil(settle(get(context.executionPackageSources$)));
-    const existing = await existingRead;
-    signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
-    set(preloadAgentRunContext$, context, signal);
-    const prepared = await set(
-      authorizeNormalSend$,
-      { ...args, existing: existing ?? undefined, chatRunSource },
-      signal,
-    );
-    if ("status" in prepared) {
-      return prepared;
-    }
-    const voiceIds = args.body.userMessage.parts.flatMap((part) => {
-      return part.type === "voice"
-        ? part.clips.map((clip) => {
-            return clip.fileId;
-          })
-        : [];
-    });
-    if (voiceIds.length) {
-      const voice = await set(
-        resolveVoiceClips$,
-        { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
-        signal,
-      );
-      if ("status" in voice) {
-        return voice;
-      }
-    }
     const host =
-      args.body.computerUseHostId && args.body.cloudBrowserEnabled !== true
+      body.computerUseHostId && body.cloudBrowserEnabled !== true
         ? settleIncludingAbort(() => {
             return set(
               requestedThreadComputerAccess$,
               {
-                orgId: args.orgId,
-                userId: args.userId,
-                body: args.body,
+                orgId: auth.orgId,
+                userId: auth.userId,
+                body,
                 current: {
                   computerUseHostId: null,
                   cloudBrowserEnabled: false,
@@ -2588,6 +2601,56 @@ const prepareNormalSendContext$ = command(
     if (host) {
       waitUntil(host);
     }
+    return { ...graph, inputId, chatRunSource, attachmentRecords, host };
+  },
+);
+
+export const startNormalSendBootstrap$ = command(
+  (
+    { set },
+    args: {
+      readonly auth: OrganizationAuthContext;
+      readonly body: SendBody;
+      readonly requireVisibleThread?: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { body } = args;
+    if (
+      !isNormalSendBody(body) ||
+      isInterruptSendBody(body) ||
+      forgedMcpSource(body)
+    ) {
+      return undefined;
+    }
+    return set(startNormalSendReads$, { ...args, body }, signal);
+  },
+);
+
+const prepareNormalSendContext$ = command(
+  async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
+    if (forgedMcpSource(request.body)) {
+      return badRequestMessage("MCP source annotations are server-managed");
+    }
+    const {
+      context,
+      existingThread$,
+      inputId,
+      chatRunSource,
+      attachmentRecords,
+      host,
+    } = request.bootstrap ?? set(startNormalSendReads$, request, signal);
+    const existingRead =
+      request.body.threadId === undefined ? undefined : get(existingThread$);
+    const args = request;
+    const models = settle(set(prepareNormalSendModels$, context, signal));
+    waitUntil(models);
+    const existing = await existingRead;
+    signal.throwIfAborted();
+    if (request.body.threadId !== undefined && !existing) {
+      return notFound("Chat thread not found");
+    }
+    set(preloadAgentRunContext$, context, signal);
     const revocation =
       existing && args.body.revokesEventId
         ? settleIncludingAbort(() => {
@@ -2610,6 +2673,27 @@ const prepareNormalSendContext$ = command(
         : undefined;
     if (revocation) {
       waitUntil(revocation);
+    }
+    const prepared = await set(
+      authorizeNormalSend$,
+      { ...args, existing: existing ?? undefined, chatRunSource },
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    if (attachmentRecords?.voiceIds.length) {
+      const voiceError = await set(
+        validateIncomingVoiceClips$,
+        args,
+        context,
+        attachmentRecords,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (voiceError) {
+        return voiceError;
+      }
     }
     return {
       ...prepared,

@@ -66,11 +66,11 @@ class ChatReadBindingsTest {
         val nullable =
             JsonObject(
                 wire("snapshotRemote").jsonObject +
-                    mapOf("latestEventId" to JsonNull, "latestSeqId" to JsonNull)
+                    mapOf("latestEventId" to JsonNull, "latestSeqId" to JsonNull),
             )
         assertNull(
             (json.decodeFromJsonElement<ChatSnapshot>(nullable) as ChatSnapshotVariant1)
-                .latestEventId
+                .latestEventId,
         )
     }
 
@@ -101,8 +101,8 @@ class ChatReadBindingsTest {
                 mapOf(
                     "events" to JsonArray(listOf(missingProject)),
                     "hasMore" to JsonPrimitive(false),
-                )
-            )
+                ),
+            ),
         )
     }
 
@@ -115,7 +115,7 @@ class ChatReadBindingsTest {
         )
         val map =
             json.decodeFromJsonElement<IndicatorMap>(
-                wire("indicators").jsonObject.getValue("threads")
+                wire("indicators").jsonObject.getValue("threads"),
             )
         assertEquals(indicators.threads.keys, map.keys)
 
@@ -141,7 +141,7 @@ class ChatReadBindingsTest {
             listOf(
                 JsonObject(remote + ("chatThreads" to JsonArray(emptyList()))),
                 JsonObject(
-                    empty + ("chatThreads" to JsonArray(listOf(JsonPrimitive("not-empty"))))
+                    empty + ("chatThreads" to JsonArray(listOf(JsonPrimitive("not-empty")))),
                 ),
                 JsonObject(empty + ("latestSeqId" to JsonPrimitive(1))),
                 JsonObject(remote - "latestEventId"),
@@ -151,7 +151,7 @@ class ChatReadBindingsTest {
         val privateValue = "private-wire-value"
         val unknown =
             assertDecodeFails<ChatSnapshot>(
-                JsonObject(mapOf("private" to JsonPrimitive(privateValue)))
+                JsonObject(mapOf("private" to JsonPrimitive(privateValue))),
             )
         assertFalse(unknown.message.orEmpty().contains(privateValue))
         val first = wire("events").jsonObject.getValue("events").jsonArray[0].jsonObject
@@ -163,8 +163,8 @@ class ChatReadBindingsTest {
                         mapOf(
                             "events" to JsonArray(listOf(invalid)),
                             "hasMore" to JsonPrimitive(false),
-                        )
-                    )
+                        ),
+                    ),
                 )
             assertFalse(error.message.orEmpty().contains(privateValue))
         }
@@ -181,7 +181,7 @@ class ChatReadBindingsTest {
                         .baseUrl(server.url("/"))
                         .client(http)
                         .addConverterFactory(
-                            json.asConverterFactory("application/json".toMediaType())
+                            json.asConverterFactory("application/json".toMediaType()),
                         )
                         .build()
                         .create(FixtureApi::class.java)

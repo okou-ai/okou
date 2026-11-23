@@ -1,4 +1,5 @@
 import { array } from "zod";
+import { feedContract } from "../contracts/feed";
 import { composerDraftContract } from "../contracts/composer-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
@@ -84,6 +85,7 @@ import { voiceIoQuotaContract } from "../contracts/voice-io-quota";
 import { voiceIoTranscribeContract } from "../contracts/voice-io-transcribe";
 import { voiceIoPolishSegmentsContract } from "../contracts/voice-io-polish";
 import {
+  workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
 } from "../contracts/workflows";
@@ -126,6 +128,20 @@ export const iosClientContracts: readonly {
   {
     id: "ios.artifactReferencesContract.resolve",
     route: artifactReferencesContract.resolve,
+  },
+  { id: "ios.feedContract.summary", route: feedContract.summary },
+  { id: "ios.feedContract.list", route: feedContract.list },
+  { id: "ios.feedContract.markRead", route: feedContract.markRead },
+  { id: "ios.feedContract.consume", route: feedContract.consume },
+  { id: "ios.feedContract.feedback", route: feedContract.feedback },
+  { id: "ios.feedContract.dismiss", route: feedContract.dismiss },
+  {
+    id: "ios.workflowAutomationsContract.get",
+    route: workflowAutomationsContract.get,
+  },
+  {
+    id: "ios.workflowAutomationsContract.enable",
+    route: workflowAutomationsContract.enable,
   },
   { id: "ios.billingStatusContract.get", route: billingStatusContract.get },
   {

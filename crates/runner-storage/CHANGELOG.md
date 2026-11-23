@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.12...runner-storage-v0.12.13) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
 ## [0.12.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.11...runner-storage-v0.12.12) (2026-11-22)
 
 

@@ -8,12 +8,13 @@ plugins {
 }
 
 spotless {
+    val ktfmtVersion = libs.ktfmt.get().versionConstraint.requiredVersion
     kotlin {
         target("**/src/**/*.kt")
-        ktfmt("0.54").kotlinlangStyle()
+        ktfmt(ktfmtVersion).kotlinlangStyle()
     }
     kotlinGradle {
         target("*.gradle.kts", "**/build.gradle.kts")
-        ktfmt("0.54").kotlinlangStyle()
+        ktfmt(ktfmtVersion).kotlinlangStyle()
     }
 }

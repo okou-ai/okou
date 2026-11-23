@@ -57,6 +57,8 @@ final class WorkspaceStore {
   private var notificationReadRevision = 0
   let webURL: URL
   let messageMarkdown: MessageMarkdownCache
+  @ObservationIgnored lazy var forYou = ForYouStore(
+    workspace: self, resources: resources, feed: ForYouFeed(client: client), commands: commands)
   var settingsResources: WorkspaceResources { resources }
   private(set) var needsUpgrade = false
   private(set) var isCreating = false
@@ -278,6 +280,7 @@ final class WorkspaceStore {
     creationTask?.cancel()
     newChatSubmission?.close()
     newChatSubmission = nil
+    forYou.closeDirection()
     conversations.close()
     modelStore.close()
     composerWorkflows.close()

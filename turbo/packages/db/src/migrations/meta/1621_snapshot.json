@@ -1,6 +1,6 @@
 {
-  "id": "c43ba35b-9dc9-4b36-9303-360db26715d5",
-  "prevId": "32ff3701-c3f6-4286-875e-df6ee0d2aaf6",
+  "id": "e35810f8-2c84-47df-a73b-d6352a3fb892",
+  "prevId": "08e4c900-a7cb-47fc-86bb-f0a876283fd5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -37686,45 +37686,7 @@
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {
-    "public.org_custom_connector_skill_publications": {
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "org_id": {
-          "name": "org_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "skill_content_bundle": {
-          "name": "skill_content_bundle",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "skill_content_bundle_source_version_id": {
-          "name": "skill_content_bundle_source_version_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "definition": "select \"id\", \"org_id\", \"skill_content_bundle\", \"skill_content_bundle_source_version_id\" from \"org_custom_connectors\" where \"org_custom_connectors\".\"skill_content_bundle_source_version_id\" is not null",
-      "name": "org_custom_connector_skill_publications",
-      "schema": "public",
-      "isExisting": false,
-      "with": {
-        "securityInvoker": true
-      },
-      "materialized": false
-    }
-  },
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

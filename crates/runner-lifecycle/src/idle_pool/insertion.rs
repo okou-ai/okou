@@ -9,7 +9,7 @@ use crate::host_memory_operations::{HostMemoryOperations, MemoryOperationError};
 
 use super::{
     AcceptedActivationCleanup, IdleEntry, IdlePool, IdlePoolRetirement, IdleRetirementCandidate,
-    IdleRetirementEnvelope, ParkedIdleCandidate, ReservedIdleSandbox,
+    IdleRetirementEnvelope, ParkedIdleCandidate, ReservedIdleSandbox, validate_grant_backing,
 };
 use crate::captured_backing::CapturedBacking;
 
@@ -278,13 +278,7 @@ impl IdlePoolInsertion {
         if let InsertionAdmission::Replacement(retirement) = &mut self.admission {
             retirement.try_grant().await?;
         }
-        let valid = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            self.candidate.backing.process.identity() == self.candidate.backing.identity
-        }))
-        .map_err(|_| MemoryOperationError::ProducerLost)?;
-        if !valid {
-            return Err(MemoryOperationError::OwnershipInvariant);
-        }
+        validate_grant_backing(&self.candidate.backing)?;
         self.ready = true;
         Ok(())
     }

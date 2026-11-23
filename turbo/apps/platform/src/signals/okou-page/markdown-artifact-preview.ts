@@ -14,7 +14,6 @@ export const openMarkdownArtifact$ = command(
   (
     { set },
     card: Extract<MarkdownCardRef, { kind: "artifact" }>,
-    target: "lightbox" | undefined,
     signal: AbortSignal,
   ) => {
     const { signals, threadId } = card;
@@ -22,22 +21,21 @@ export const openMarkdownArtifact$ = command(
     const input = { threadId, filename, url, preview: signals };
     switch (kind) {
       case "image": {
-        return set(openImageLightbox$, input, target, signal);
+        return set(openImageLightbox$, input, signal);
       }
       case "video": {
-        return set(openVideoLightbox$, input, target, signal);
+        return set(openVideoLightbox$, input, signal);
       }
       case "audio": {
-        return set(openAudioLightbox$, input, target, signal);
+        return set(openAudioLightbox$, input, signal);
       }
       case "file": {
-        return set(openFileLightbox$, input, target, signal);
+        return set(openFileLightbox$, input, signal);
       }
       default: {
         return set(
           openDocumentLightbox$,
           { ...input, kind, text$: signals.text$ },
-          target,
           signal,
         );
       }

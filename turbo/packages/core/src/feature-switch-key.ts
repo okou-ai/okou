@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   MarkdownDocumentTypography = "markdownDocumentTypography",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",
@@ -28,7 +27,6 @@ export enum FeatureSwitchKey {
   TestOauthConnector = "_testOauthConnector",
   ZoomConnector = "zoomConnector",
   RealAgentInPreview = "_realAgentInPreview",
-  ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactPreviewActionGroup = "artifactPreviewActionGroup",
   LarkOfficialBot = "larkOfficialBot",
   FeishuIntegration = "_feishuIntegration",
@@ -53,5 +51,4 @@ export enum FeatureSwitchKey {
   BillingSurvey = "billingSurvey",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",
   ChatShareRefresh = "chatShareRefresh",
-  OkouRailEntry = "okouRailEntry",
 }

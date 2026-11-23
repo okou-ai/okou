@@ -58,6 +58,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -84,7 +89,7 @@ class ConversationRouteTest {
         fun message(reason: String): HistoryMessage {
             val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
             return projectHistory(
-                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId))
+                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
                 )
                 .messages
                 .single()
@@ -103,6 +108,127 @@ class ConversationRouteTest {
         compose.runOnIdle { displayed.value = message("future_reason") }
         compose.onNodeWithText("This run couldn't finish").assertExists()
         compose.onNodeWithText("Open the chat on the Okou website for details.").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun canonicalHistoryShowsAuthoredJsonAndReferenceTitlesWithoutInternalPayloads() {
+        val authored = """{"color":"blue"}"""
+        val referenceTitle = "Launch decision"
+        val file = "checklist.pdf"
+        val mcpPrompt = "Please check the release date."
+        val clientName = "Fixture MCP client"
+        val reply = """{"status":"ready"}"""
+        val followups = """[{"prompt":"Review the checklist"}]"""
+        val rows =
+            listOf(
+                    historyEventWire(
+                        scrollEventId(17),
+                        17,
+                        type = "input.prompt",
+                        payload =
+                            """
+                            {"userMessage":{"version":1,"parts":[
+                                {"type":"text","text":${JsonPrimitive(authored)}},
+                                {"type":"model","selectedModel":"fixture-internal-model"},
+                                {"type":"additional_info","text":"internal context only"},
+                                {"type":"source","kind":"slack"},
+                                {"type":"chat_thread","threadId":"$CHAT_IN_PROJECT","titleSnapshot":${JsonPrimitive(referenceTitle)}},
+                                {"type":"file","fileId":"internal-file-id","filenameSnapshot":${JsonPrimitive(file)},"contentType":"application/pdf"},
+                                {"type":"future","opaqueKey":8}
+                            ]}}
+                            """
+                                .trimIndent(),
+                    ),
+                    historyEventWire(
+                        scrollEventId(19),
+                        19,
+                        type = "input.prompt",
+                        payload =
+                            """
+                            {"userMessage":{"version":1,"parts":[
+                                {"type":"text","text":${JsonPrimitive(mcpPrompt)}},
+                                {"type":"source","kind":"mcp","clientId":"fixture-client-id","clientName":${JsonPrimitive(clientName)}}
+                            ]}}
+                            """
+                                .trimIndent(),
+                    ),
+                    historyEventWire(
+                        scrollEventId(23),
+                        23,
+                        payload = """{"content":${JsonPrimitive(reply)}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(29),
+                        29,
+                        type = "output.followups",
+                        payload = """{"content":${JsonPrimitive(followups)}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(31),
+                        31,
+                        type = "usage.recorded",
+                        payload = """{"usage":{"inputTokens":9}}""",
+                    ),
+                    historyEventWire(
+                        scrollEventId(37),
+                        37,
+                        type = "run.completed",
+                        payload = "null",
+                    ),
+                )
+                .map { Json.parseToJsonElement(it).jsonObject }
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLong() ?: 0L
+            val tail = JsonArray(rows.filter { it.getValue("seqId").jsonPrimitive.long > after })
+            jsonResponse(
+                """{"rows":$tail,"cursor":{"lastEventId":"${scrollEventId(37)}","lastSeqId":37},"hasMore":false}""",
+            )
+        }
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_PERSONAL, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_PERSONAL })
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        val history = model.history.uiState.value
+        assertEquals(HistoryPhase.Ready, history.phase)
+        assertTrue(scrollEventId(31) in history.transcript?.persistedIds.orEmpty())
+        compose.onNodeWithText(reply).assertIsDisplayed()
+        compose.onNodeWithText(authored).assertIsDisplayed()
+        compose.onNodeWithText(referenceTitle).assertIsDisplayed()
+        compose.onNodeWithText(file).assertIsDisplayed()
+        compose.onNodeWithText(mcpPrompt).assertIsDisplayed()
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.history_unsupported))
+            .assertIsDisplayed()
+        compose
+            .onNode(
+                hasText(clientName) or
+                    hasText(compose.activity.getString(R.string.history_reference)),
+            )
+            .assertDoesNotExist()
+        for (internal in
+            listOf(
+                "fixture-internal-model",
+                "internal context only",
+                "internal-file-id",
+                "opaqueKey",
+                "inputTokens",
+                "Review the checklist",
+            )) {
+            compose.onNodeWithText(internal, substring = true).assertDoesNotExist()
+        }
+        compose.onNodeWithTag("message_${scrollEventId(31)}").assertDoesNotExist()
+        compose.onNodeWithTag("message_${scrollEventId(29)}").assertDoesNotExist()
     }
 
     @Test
@@ -309,6 +435,68 @@ class ConversationRouteTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun slowSyncLetsTheQueuedInputCardProvideFeedback() {
+        val eventId = scrollEventId(40)
+        val prompt = "Please check the launch notes"
+        val queuedInput =
+            historyEventWire(
+                id = eventId,
+                seq = 40,
+                thread = CHAT_IN_PROJECT,
+                type = "input.prompt",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(prompt)}}]}}""",
+                run = null,
+            )
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+            val rows = if (after < 40) queuedInput else ""
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":40},"hasMore":false}""",
+            )
+        }
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+        val queuedLabel = compose.activity.getString(R.string.history_queued)
+        val status = compose.onNodeWithText(queuedLabel).assertIsDisplayed()
+        val statusBounds = status.getUnclippedBoundsInRoot()
+        val refreshRequested = CountDownLatch(1)
+        val allowRefreshResponse = CountDownLatch(1)
+        fixture.beforeHistoryResponse = { request ->
+            if (request.requestUrl?.pathSegments?.lastOrNull() == "event-rows") {
+                refreshRequested.countDown()
+                allowRefreshResponse.await()
+            }
+        }
+        try {
+            compose.runOnIdle { model.history.refresh() }
+            compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            compose.mainClock.advanceTimeBy(300)
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.history_syncing))
+                .assertDoesNotExist()
+            assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
+            compose.onNodeWithText(prompt).assertIsDisplayed()
+        } finally {
+            allowRefreshResponse.countDown()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun conversationRecoversAnInitialHistoryFailureAndKeepsRealtimeRetryReachable() {
         val realtime = TestRealtimeService()
@@ -444,7 +632,7 @@ class ConversationRouteTest {
         fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
                 )
             else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
@@ -560,7 +748,7 @@ class ConversationRouteTest {
                     )
                 }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
             )
         }
         val model = createListModel()
@@ -678,7 +866,7 @@ class ConversationRouteTest {
             )
         val thread =
             Json.decodeFromString<ChatArchive>(
-                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
                 )
                 .chatThreads
                 .single()

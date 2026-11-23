@@ -19,7 +19,21 @@ final class ChatClientTests: XCTestCase {
       XCTFail("Expected upgrade-required response")
     } catch let error as APIClientError {
       XCTAssertEqual(error.statusCode, 426)
-      XCTAssertEqual(error.errorDescription, "Update Okou in TestFlight to continue.")
+      XCTAssertEqual(error.errorDescription, "Update Okou to continue.")
+    }
+  }
+
+  func testFirstPartyRequestsSendTheInstallationChannel() async throws {
+    for channel in ClientDistribution.allCases {
+      let fixture = ChatHTTPFixture { request in
+        XCTAssertEqual(request.value(forHTTPHeaderField: "X-Client-Distribution"), channel.rawValue)
+        return ChatHTTPResponse(body: "{}")
+      }
+      let client = APIClient(
+        baseURL: fixture.baseURL, clientVersion: "1.0.0", session: fixture.session,
+        distribution: { channel }, bearerToken: { "test-token" }
+      )
+      _ = try await client.data("/api/feature-switches")
     }
   }
 

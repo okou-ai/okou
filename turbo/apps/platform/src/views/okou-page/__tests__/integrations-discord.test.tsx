@@ -257,7 +257,7 @@ test.each([true, false])(
     click(
       getAction(
         "link",
-        "Chat",
+        "Okou",
         screen.getByRole("navigation", { name: "Sidebar" }),
       ),
     );
@@ -431,7 +431,7 @@ test("Leaving Works after consent opens cancels the retained opener proof withou
   click(
     getAction(
       "link",
-      "Chat",
+      "Okou",
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   );
@@ -482,7 +482,7 @@ test("Leaving Works aborts an in-flight authenticated completion request", async
   click(
     getAction(
       "link",
-      "Chat",
+      "Okou",
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   );
@@ -515,7 +515,7 @@ test("Leaving Works cancels a pending authorization request and closes its blank
   click(
     getAction(
       "link",
-      "Chat",
+      "Okou",
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   );
@@ -1058,7 +1058,7 @@ test.each([false, true])(
     click(
       getAction(
         "link",
-        "Chat",
+        "Okou",
         screen.getByRole("navigation", { name: "Sidebar" }),
       ),
     );
@@ -1156,7 +1156,7 @@ test("A status error hides stale controls and recovers when returning to Works",
   click(
     getAction(
       "link",
-      "Chat",
+      "Okou",
       screen.getByRole("navigation", { name: "Sidebar" }),
     ),
   );

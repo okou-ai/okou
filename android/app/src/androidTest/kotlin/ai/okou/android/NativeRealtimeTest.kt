@@ -105,18 +105,18 @@ class NativeRealtimeTest {
             return buildString {
                 appendLine("step=$step")
                 appendLine(
-                    "controlPosts=${controlPosts.get()}; responseHeld=${controlResponse.count}"
+                    "controlPosts=${controlPosts.get()}; responseHeld=${controlResponse.count}",
                 )
                 appendLine("controlPersistence=${control?.persistence}; phases=${control?.phases}")
                 appendLine(
-                    "pendingControls=${control?.journal?.pending?.map { it.id to it.targetId }}"
+                    "pendingControls=${control?.journal?.pending?.map { it.id to it.targetId }}",
                 )
                 appendLine(
-                    "historyPhase=${history?.phase}; liveRuns=${history?.transcript?.liveRunIds}"
+                    "historyPhase=${history?.phase}; liveRuns=${history?.transcript?.liveRunIds}",
                 )
                 appendLine("composerPersistence=${draft?.persistence}; sync=${draft?.sync(target)}")
                 appendLine(
-                    "sendBusy=${draft?.busy?.contains(target.key)}; pendingSend=${draft?.entry(target)?.pending != null}; receipt=${draft?.entry(target)?.receipt?.disposition}"
+                    "sendBusy=${draft?.busy?.contains(target.key)}; pendingSend=${draft?.entry(target)?.pending != null}; receipt=${draft?.entry(target)?.receipt?.disposition}",
                 )
                 appendLine("stopBounds=$stopBounds")
             }
@@ -160,7 +160,7 @@ class NativeRealtimeTest {
                             }
                         },
                         10_000,
-                    )
+                    ),
                 ) {
                     "Native reply was not visible: $value"
                 }
@@ -185,10 +185,12 @@ class NativeRealtimeTest {
                                 By.pkg(app.packageName)
                                     .clickable(true)
                                     .enabled(true)
-                                    .hasDescendant(label(app.getString(R.string.conversation_stop)))
+                                    .hasDescendant(
+                                        label(app.getString(R.string.conversation_stop)),
+                                    ),
                             ),
                             10_000,
-                        )
+                        ),
                     )
                 stopBounds = button.visibleBounds.toString()
                 button.click()
@@ -208,7 +210,7 @@ class NativeRealtimeTest {
             scenario.onActivity {
                 val ready =
                     checkNotNull(
-                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready
+                        ViewModelProvider(it)[SessionModel::class.java].uiState.value.ready,
                     )
                 composerJob = ready.composer.viewModelScope.coroutineContext[Job]
                 chatJob = ready.chats.viewModelScope.coroutineContext[Job]
@@ -225,16 +227,16 @@ class NativeRealtimeTest {
                 device.wait(
                     Until.findObject(By.pkg(app.packageName).textContains("Native history")),
                     10_000,
-                )
+                ),
             )
             val editor =
                 checkNotNull(
                     device.wait(
                         Until.findObject(
-                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true)
+                            By.pkg(app.packageName).clazz("android.widget.EditText").enabled(true),
                         ),
                         10_000,
-                    )
+                    ),
                 )
             editor.click()
             editor.text = "Keep this draft"
@@ -252,7 +254,7 @@ class NativeRealtimeTest {
                 val fresh =
                     (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < seq
                 jsonResponse(
-                    """{"events":[${if (fresh) chatEventWire(seq = seq, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${if (seq == 41L) "41" else "52"}", kind = "renamed", title = title.get()) else ""}],"hasMore":false}"""
+                    """{"events":[${if (fresh) chatEventWire(seq = seq, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa${if (seq == 41L) "41" else "52"}", kind = "renamed", title = title.get()) else ""}],"hasMore":false}""",
                 )
             }
             val extraId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -290,7 +292,7 @@ class NativeRealtimeTest {
                     )
                 val rows = original.filter { it.first > cursor }.joinToString(",") { it.second }
                 jsonResponse(
-                    """{"rows":[$rows],"cursor":{"lastEventId":"$extraId","lastSeqId":41},"hasMore":false}"""
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$extraId","lastSeqId":41},"hasMore":false}""",
                 )
             }
             external.snapshot.value =
@@ -300,10 +302,10 @@ class NativeRealtimeTest {
             reveal("External input")
             assertTrue(
                 checkNotNull(
-                        device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
                     )
                     .text
-                    .contains("Keep this draft")
+                    .contains("Keep this draft"),
             )
 
             reveal("Changed on another client")
@@ -323,36 +325,35 @@ class NativeRealtimeTest {
             fixture.historyRows = { request ->
                 val cursor = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
                 val saved = savedOutput.get()
-                val rows =
-                    buildList {
-                            if (cursor < 53)
-                                add(
-                                    historyEventWire(
-                                        activeInput,
-                                        53,
-                                        CHAT_PERSONAL,
-                                        "input.prompt",
-                                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
-                                        activeRun,
-                                    )
-                                )
-                            if (saved && cursor < 54)
-                                add(
-                                    historyEventWire(
-                                        streamedEvent,
-                                        54,
-                                        CHAT_PERSONAL,
-                                        "output.message",
-                                        """{"content":"Saved native answer"}""",
-                                        activeRun,
-                                    )
-                                )
-                        }
-                        .joinToString(",")
+                val rows = buildList {
+                    if (cursor < 53)
+                        add(
+                            historyEventWire(
+                                activeInput,
+                                53,
+                                CHAT_PERSONAL,
+                                "input.prompt",
+                                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                                activeRun,
+                            ),
+                        )
+                    if (saved && cursor < 54)
+                        add(
+                            historyEventWire(
+                                streamedEvent,
+                                54,
+                                CHAT_PERSONAL,
+                                "output.message",
+                                """{"content":"Saved native answer"}""",
+                                activeRun,
+                            ),
+                        )
+                }
+                    .joinToString(",")
                 val lastId = if (saved) streamedEvent else activeInput
                 val lastSeq = if (saved) 54 else 53
                 jsonResponse(
-                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}"""
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}""",
                 )
             }
             external.invalidate()
@@ -367,7 +368,7 @@ class NativeRealtimeTest {
                         CHAT_DATE,
                         index,
                         value,
-                    )
+                    ),
                 )
             external.output(chunk(0, "Live native "))
             external.output(chunk(0, "duplicate"))
@@ -434,7 +435,7 @@ class NativeRealtimeTest {
                             controlResponse.await()
                             // A post-commit failure is uncertain. Recovery must only read back.
                             jsonResponse(
-                                    """{"error":{"code":"CONTROL_UNCERTAIN","message":"Result unavailable"}}"""
+                                    """{"error":{"code":"CONTROL_UNCERTAIN","message":"Result unavailable"}}""",
                                 )
                                 .setResponseCode(503)
                         } else {
@@ -445,7 +446,7 @@ class NativeRealtimeTest {
                     path.contains("/inputs/") -> {
                         val id = checkNotNull(followup.get())
                         jsonResponse(
-                            """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":55,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}"""
+                            """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":55,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}""",
                         )
                     }
                     else -> null
@@ -453,75 +454,74 @@ class NativeRealtimeTest {
             }
             fixture.historyDetail = {
                 jsonResponse(
-                    """{"lastReadAt":null,"cancellationRecoveryPending":${publishControl.get() && !terminal.get()}}"""
+                    """{"lastReadAt":null,"cancellationRecoveryPending":${publishControl.get() && !terminal.get()}}""",
                 )
             }
             fixture.historyRows = { request ->
                 val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
-                val rows =
-                    buildList {
+                val rows = buildList {
+                    add(
+                        historyEventWire(
+                            activeInput,
+                            53,
+                            type = "input.prompt",
+                            payload =
+                                """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                            run = activeRun,
+                        ),
+                    )
+                    add(
+                        historyEventWire(
+                            streamedEvent,
+                            54,
+                            payload = """{"content":"Saved native answer"}""",
+                            run = activeRun,
+                        ),
+                    )
+                    followup.get()?.let {
+                        add(
+                            historyEventWire(
+                                it,
+                                55,
+                                type = "input.prompt",
+                                payload =
+                                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Native follow-up"}]}}""",
+                                run = null,
+                            ),
+                        )
+                    }
+                    if (publishControl.get())
+                        interrupted.get()?.let {
                             add(
                                 historyEventWire(
-                                    activeInput,
-                                    53,
-                                    type = "input.prompt",
-                                    payload =
-                                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start live output"}]}}""",
+                                    it.getValue("clientEventId").jsonPrimitive.content,
+                                    56,
+                                    type = "control.interrupt",
+                                    payload = "null",
                                     run = activeRun,
-                                )
+                                ),
                             )
-                            add(
-                                historyEventWire(
-                                    streamedEvent,
-                                    54,
-                                    payload = """{"content":"Saved native answer"}""",
-                                    run = activeRun,
-                                )
-                            )
-                            followup.get()?.let {
-                                add(
-                                    historyEventWire(
-                                        it,
-                                        55,
-                                        type = "input.prompt",
-                                        payload =
-                                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Native follow-up"}]}}""",
-                                        run = null,
-                                    )
-                                )
-                            }
-                            if (publishControl.get())
-                                interrupted.get()?.let {
-                                    add(
-                                        historyEventWire(
-                                            it.getValue("clientEventId").jsonPrimitive.content,
-                                            56,
-                                            type = "control.interrupt",
-                                            payload = "null",
-                                            run = activeRun,
-                                        )
-                                    )
-                                }
-                            if (terminal.get())
-                                add(
-                                    historyEventWire(
-                                        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-                                        57,
-                                        type = "run.cancelled",
-                                        payload = "null",
-                                        run = activeRun,
-                                    )
-                                )
                         }
-                        .map { ai.okou.android.chat.HistoryEvent.decode(it) }
+                    if (terminal.get())
+                        add(
+                            historyEventWire(
+                                "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                                57,
+                                type = "run.cancelled",
+                                payload = "null",
+                                run = activeRun,
+                            ),
+                        )
+                }
+                    .map { ai.okou.android.chat.HistoryEvent.decode(it) }
                 val last = rows.last()
                 jsonResponse(
-                    """{"rows":[${rows.filter { it.seqId > since }.joinToString(",") { it.archiveJson() }}],"cursor":{"lastEventId":"${last.id}","lastSeqId":${last.seqId}},"hasMore":false}"""
+                    """{"rows":[${rows.filter { it.seqId > since }.joinToString(",") { it.archiveJson() }}],"cursor":{"lastEventId":"${last.id}","lastSeqId":${last.seqId}},"hasMore":false}""",
                 )
             }
             val followupEditor =
                 checkNotNull(
-                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
                 )
             followupEditor.setText("Native follow-up")
             checkNotNull(
@@ -530,10 +530,10 @@ class NativeRealtimeTest {
                             By.pkg(app.packageName)
                                 .desc(app.getString(R.string.composer_send))
                                 .clickable(true)
-                                .enabled(true)
+                                .enabled(true),
                         ),
                         10_000,
-                    )
+                    ),
                 )
                 .click()
             condition { followup.get() != null }
@@ -543,7 +543,7 @@ class NativeRealtimeTest {
                 } == true
             }
             checkNotNull(
-                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                    device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
                 )
                 .setText("Keep this draft")
             // Fixture receipt/transcript presence do not complete the composer or its layout.
@@ -585,7 +585,7 @@ class NativeRealtimeTest {
                 device.findObject(
                     By.pkg(app.packageName)
                         .clickable(true)
-                        .hasDescendant(label(app.getString(R.string.conversation_stop)))
+                        .hasDescendant(label(app.getString(R.string.conversation_stop))),
                 )
             checkNotNull(pendingStop)
             assertTrue(!pendingStop.isEnabled)
@@ -610,14 +610,14 @@ class NativeRealtimeTest {
             assertTrue(
                 chats?.history?.uiState?.value?.transcript?.messages?.any {
                     it.id == followup.get() && it.runId == null
-                } == true
+                } == true,
             )
             terminal.set(true)
             external.invalidate(
                 ChatChanges(
                     messageThreads = setOf(CHAT_PERSONAL),
                     detailThreads = setOf(CHAT_PERSONAL),
-                )
+                ),
             )
             condition {
                 chats?.history?.uiState?.value?.detail?.cancellationRecoveryPending == false
@@ -641,8 +641,8 @@ class NativeRealtimeTest {
                                 type = "input.prompt",
                                 payload = "{\"userMessage\":${wire.getValue("userMessage")}}",
                                 run = null,
-                            )
-                        )
+                            ),
+                        ),
                 )
                 jsonResponse("""{"threadId":"$CHAT_PERSONAL","createdAt":"$CHAT_DATE"}""")
                     .setResponseCode(201)
@@ -669,10 +669,10 @@ class NativeRealtimeTest {
             }
             assertTrue(
                 checkNotNull(
-                        device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText"))
+                        device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
                     )
                     .text
-                    .contains("Keep this draft")
+                    .contains("Keep this draft"),
             )
         } catch (error: Throwable) {
             failures += error
@@ -681,7 +681,7 @@ class NativeRealtimeTest {
                     device.findObject(
                         By.pkg(app.packageName)
                             .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.conversation_stop)))
+                            .hasDescendant(By.text(app.getString(R.string.conversation_stop))),
                     )
                 val summary =
                     diagnostics() +

@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "Sidebar",
-      "chat": "Chat",
       "hideChatList": "Hide chat list",
       "mobile": {
         "invite": "Invite",
@@ -2160,6 +2159,12 @@
         },
         "inReview": "In review",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} credits",
+            "confirm": "Back to work",
+            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
+            "title": "Checked in for today"
+          },
           "connector": {
             "confirm": "Browse all connectors",
             "connected": "Connected",

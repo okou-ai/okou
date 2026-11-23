@@ -92,16 +92,15 @@ async function openExportMenu(
     featureSwitches: {
       [FeatureSwitchKey.FreePlanArtifactPaywall]: true,
       [FeatureSwitchKey.MarkdownFirstOutput]: true,
-      [FeatureSwitchKey.ArtifactSidebarPreview]: false,
     },
   });
   click(await findNamedLink("Report"));
-  const preview = await screen.findByRole("dialog");
+  const preview = await screen.findByTestId("artifact-sidebar");
   await within(preview).findByRole("heading", {
     level: 1,
     name: "Summary report",
   });
-  click(await findNamedButton("Download options", preview));
+  click(await findNamedButton("Download artifact", preview));
   return screen.findByRole("menu");
 }
 

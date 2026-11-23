@@ -58,10 +58,9 @@ internal fun ReplayedChats.withLocalChanges(
 ): ReplayedChats {
     if (edits.isEmpty() && recentThreads.isEmpty()) return this
     val byThread = edits.groupBy { it.threadId }
-    var recency =
-        byRecency.map { row ->
-            byThread[row.id].orEmpty().fold(row) { current, edit -> edit.apply(current) }
-        }
+    var recency = byRecency.map { row ->
+        byThread[row.id].orEmpty().fold(row) { current, edit -> edit.apply(current) }
+    }
     if (recentThreads.isNotEmpty()) {
         val rows = recency.associateBy { it.id }
         val touched = recentThreads.toSet()

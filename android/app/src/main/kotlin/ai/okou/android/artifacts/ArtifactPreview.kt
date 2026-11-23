@@ -319,8 +319,8 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
                     SelectionContainer(Modifier.padding(16.dp)) {
                         ProvideTextStyle(
                             MaterialTheme.typography.bodyLarge.copy(
-                                lineHeight = if (content.markdown) 28.sp else 24.sp
-                            )
+                                lineHeight = if (content.markdown) 28.sp else 24.sp,
+                            ),
                         ) {
                             if (content.markdown)
                                 HistoryMarkdown(content.source, compactLists = true)
@@ -400,7 +400,7 @@ private fun PreviewStatus(@StringRes label: Int, ratio: Boolean = false) {
         Modifier.fillMaxWidth()
             .then(
                 if (ratio) Modifier.aspectRatio(16f / 9f, matchHeightConstraintsFirst = false)
-                else Modifier.heightIn(min = 96.dp)
+                else Modifier.heightIn(min = 96.dp),
             )
             .padding(16.dp),
         contentAlignment = Alignment.Center,
@@ -550,7 +550,7 @@ private fun isolatedPreview(
                             request.url.toString().substringBefore('#') == initialAddress
                     openingDocument = false
                     onFailure(
-                        if (retry) HostedLoadFailure.Temporary else HostedLoadFailure.Terminal
+                        if (retry) HostedLoadFailure.Temporary else HostedLoadFailure.Terminal,
                     )
                 }
             }
@@ -571,7 +571,7 @@ private fun MediaArtifactPreview(content: ArtifactContent.Media) {
                 Modifier.fillMaxWidth()
                     .then(
                         if (content.video) Modifier.aspectRatio(16f / 9f)
-                        else Modifier.height(96.dp)
+                        else Modifier.height(96.dp),
                     ),
             factory = { context ->
                 VideoView(context).apply {

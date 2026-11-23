@@ -14,27 +14,27 @@ import kotlinx.coroutines.flow.map
 internal fun Context.observeValidatedConnectivity(): Flow<Boolean> {
     val manager = checkNotNull(getSystemService(ConnectivityManager::class.java))
     return callbackFlow {
-            val callback =
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        trySend(Unit)
-                    }
-
-                    override fun onCapabilitiesChanged(
-                        network: Network,
-                        networkCapabilities: NetworkCapabilities,
-                    ) {
-                        trySend(Unit)
-                    }
-
-                    override fun onLost(network: Network) {
-                        trySend(Unit)
-                    }
+        val callback =
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    trySend(Unit)
                 }
-            manager.registerDefaultNetworkCallback(callback)
-            trySend(Unit)
-            awaitClose { manager.unregisterNetworkCallback(callback) }
-        }
+
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    networkCapabilities: NetworkCapabilities,
+                ) {
+                    trySend(Unit)
+                }
+
+                override fun onLost(network: Network) {
+                    trySend(Unit)
+                }
+            }
+        manager.registerDefaultNetworkCallback(callback)
+        trySend(Unit)
+        awaitClose { manager.unregisterNetworkCallback(callback) }
+    }
         .conflate()
         .map {
             manager.activeNetwork

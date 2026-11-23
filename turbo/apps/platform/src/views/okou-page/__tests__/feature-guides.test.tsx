@@ -728,10 +728,10 @@ test("starts a newly loaded edition at its first card and walkthrough step", asy
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
   const chatLink = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent?.trim() === "Chat";
+    return candidate.textContent?.trim() === "Okou";
   });
   if (!chatLink) {
-    throw new Error("Chat navigation link not found");
+    throw new Error("Okou navigation link not found");
   }
   click(chatLink);
   const nextDialog = await screen.findByRole("dialog", {

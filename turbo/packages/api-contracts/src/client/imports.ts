@@ -789,7 +789,11 @@ export const clientContractImportManifest = [
   },
   {
     module: "data-router",
-    contracts: ["dataRouterHistoryContract", "dataRouterRequestContract"],
+    contracts: [
+      "dataRouterHistoryContract",
+      "dataRouterRequestContract",
+      "runDataRouterRequestContract",
+    ],
     bindings: [],
   },
   {
@@ -2203,6 +2207,7 @@ export const clientContractImportManifest = [
       "webhookGoogleFormsContract",
       "webhookGoogleWorkspaceEventsContract",
       "webhookHeartbeatContract",
+      "webhookMemoryArchiveContract",
       "webhookNotionContract",
       "webhookSessionOutputContract",
       "webhookStoragesCommitContract",

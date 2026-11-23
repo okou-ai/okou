@@ -1,6 +1,251 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "What do you have in mind?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "你有什么想法？" }
+        }
+      }
+    },
+    "Ask a question or describe what you’d like to do.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "提个问题，或说说你想做什么。" }
+        }
+      }
+    },
+    "View source": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看来源" }
+        }
+      }
+    },
+    "Prepare a draft in the existing chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "在原对话中准备草稿" }
+        }
+      }
+    },
+    "Send to a new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "发送到新对话" }
+        }
+      }
+    },
+    "How is this suggestion?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条建议怎么样？" }
+        }
+      }
+    },
+    "Noted — this is already done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记下，这件事已经处理了" }
+        }
+      }
+    },
+    "Noted — this is not planned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记下，这件事暂无计划" }
+        }
+      }
+    },
+    "Noted — please don’t nudge me about this again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记录，请不要再催这件事" }
+        }
+      }
+    },
+    "You’ll see fewer suggestions like this.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "会少推荐类似的建议" }
+        }
+      }
+    },
+    "Sent to the chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送到该聊天" }
+        }
+      }
+    },
+    "All caught up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "全部处理完了" }
+        }
+      }
+    },
+    "Okou will bring the next thing here when there is something worth your time.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "有值得你花时间的事时，Okou 会把下一件带到这里。" }
+        }
+      }
+    },
+    "Okou’s picks to handle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "Okou 为你挑出的待处理事项" }
+        }
+      }
+    },
+    "Next suggestion": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "下一条建议" }
+        }
+      }
+    },
+    "Previous suggestion": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "上一条建议" }
+        }
+      }
+    },
+    "Show suggestion %lld of %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看第 %1$lld 条建议（共 %2$lld 条）" }
+        }
+      }
+    },
+    "For you": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "为你推荐" }
+        }
+      }
+    },
+    "Already done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已经处理了" }
+        }
+      }
+    },
+    "Not planned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂无计划" }
+        }
+      }
+    },
+    "Don’t nudge me": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "别催了" }
+        }
+      }
+    },
+    "Less like this": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "少推荐这类内容" }
+        }
+      }
+    },
+    "Feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "反馈" }
+        }
+      }
+    },
+    "Suggestion dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略推荐" }
+        }
+      }
+    },
+    "Sent to a new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送到新聊天" }
+        }
+      }
+    },
+    "This suggestion was already handled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条推荐已处理。" }
+        }
+      }
+    },
+    "This suggestion is no longer available.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条推荐已无法恢复。" }
+        }
+      }
+    },
+    "Couldn’t open this chat.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂时无法打开这个聊天。" }
+        }
+      }
+    },
+    "Retry the previous action to confirm its result.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "请重试上一个操作，确认处理结果。" }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "忽略" }
+        }
+      }
+    },
+    "Automation paused": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "自动化已暂停" }
+        }
+      }
+    },
+    "Re-enable automation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "重新启用自动化" }
+        }
+      }
+    },
+    "Paused after %lld consecutive failures.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "连续失败 %lld 次后已暂停。" }
+        }
+      }
+    },
+    "Automation enabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已启用自动化" }
+        }
+      }
+    },
+    "Event dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略事件" }
+        }
+      }
+    },
     "Chat archived": {
       "localizations": {
         "zh-Hans": {
@@ -3719,43 +3964,6 @@
         }
       }
     },
-    "Billing": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Abrechnung" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Facturación" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Facturation" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बिलिंग" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Penagihan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Fatturazione" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "請求" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "결제" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Faturamento" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "账单" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "帳單" }
-        }
-      }
-    },
     "Build a website for my business": {
       "extractionState": "stale",
       "localizations": {
@@ -7097,43 +7305,6 @@
         }
       }
     },
-    "Credit balance": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Credit-Guthaben" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Solde de crédits" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "क्रेडिट बैलेंस" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Saldo kredit" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Saldo crediti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "クレジット残高" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "크레딧 잔액" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "Credits 余额" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "Credits 餘額" }
-        }
-      }
-    },
     "Credits expire %@": {
       "extractionState": "manual",
       "localizations": {
@@ -7172,43 +7343,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "積分將於 %@ 過期" }
-        }
-      }
-    },
-    "Current plan": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Aktueller Tarif" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Plan actual" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Offre actuelle" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "मौजूदा प्लान" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Paket saat ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Piano attuale" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "現在のプラン" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "현재 요금제" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Plano atual" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "当前套餐" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "目前方案" }
         }
       }
     },
@@ -11592,80 +11726,6 @@
         }
       }
     },
-    "Loading credits": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Credits werden geladen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cargando créditos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Chargement des crédits" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "क्रेडिट लोड हो रहे हैं" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Memuat kredit" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Caricamento dei crediti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "クレジットを読み込み中" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "크레딧 로딩 중" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Carregando créditos" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在加载 Credits" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在載入 Credits" }
-        }
-      }
-    },
-    "Loading plan": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Tarif wird geladen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cargando plan" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Chargement de l’offre" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "प्लान लोड हो रहा है" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Memuat paket" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Caricamento del piano" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "プランを読み込み中" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "요금제 로딩 중" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Carregando plano" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在加载套餐" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在載入方案" }
-        }
-      }
-    },
     "Loading remote access…": {
       "localizations": {
         "de": {
@@ -12037,43 +12097,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "登入或建立你的帳號。" }
-        }
-      }
-    },
-    "Manage billing": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Abrechnung verwalten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Gestionar facturación" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Gérer la facturation" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बिलिंग प्रबंधित करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kelola penagihan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Gestisci fatturazione" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "請求を管理" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "결제 관리" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Gerenciar faturamento" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "管理账单" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "管理帳單" }
         }
       }
     },
@@ -14810,6 +14833,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "開啟來源" }
+        }
+      }
+    },
+    "Open App Store": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "App Store öffnen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abrir App Store" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouvrir App Store" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "App Store खोलें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Buka App Store" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apri App Store" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "App Store を開く" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "App Store 열기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abrir o App Store" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "打开 App Store" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "開啟 App Store" }
         }
       }
     },

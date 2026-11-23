@@ -79,7 +79,7 @@ class ChatCacheStoreTest {
                 assertEquals(checkpoint, prepared.saved.checkpoint)
                 assertEquals(replayChatList(checkpoint), prepared.rows)
                 assertNull(
-                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default)
+                    store.prepareChatList(identity.copy(userId = "other"), Dispatchers.Default),
                 )
                 val rejected = runCatching {
                     store.prepareChatList(
@@ -102,7 +102,7 @@ class ChatCacheStoreTest {
                     listOf(ConfirmedProject(CHAT_PROJECT, "Example", CHAT_DATE, CHAT_DATE)),
                     null,
                     0,
-                )
+                ),
             )
         val store = cache(root)
         store
@@ -117,11 +117,11 @@ class ChatCacheStoreTest {
         val driver = BundledSQLiteDriver()
         driver.open(database.path).use {
             it.execSQL(
-                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0"
+                "ALTER TABLE chat_scopes ADD COLUMN projectsEnabled INTEGER NOT NULL DEFAULT 0",
             )
             it.execSQL("ALTER TABLE chat_scopes ADD COLUMN hasAgents INTEGER NOT NULL DEFAULT 0")
             it.execSQL(
-                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)"
+                "CREATE TABLE chat_agents (scope TEXT NOT NULL, id TEXT NOT NULL, position INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY (scope, id), FOREIGN KEY (scope) REFERENCES chat_scopes(scope) ON DELETE CASCADE)",
             )
             it.execSQL("PRAGMA user_version = 2")
         }
@@ -162,7 +162,7 @@ class ChatCacheStoreTest {
         }
         assertTrue(
             runCatching { returning.saveUnread(snapshot) }.exceptionOrNull()
-                is CancellationException
+                is CancellationException,
         )
         reopened.open(identity) { true }.use { assertEquals(snapshot, it.loadUnread()) }
     }
@@ -193,16 +193,16 @@ class ChatCacheStoreTest {
                     listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
                     null,
                     0,
-                )
+                ),
             )
         val renamed =
             snapshot.copy(
                 events =
                     json
                         .decodeFromString<ProjectEvents>(
-                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                            """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}""",
                         )
-                        .events
+                        .events,
             )
         store
             .open(identity) { true }
@@ -239,7 +239,7 @@ class ChatCacheStoreTest {
         val first = cache(root)
         val deferred =
             checkpoint(
-                chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\"")
+                chatEventWire(kind = "project_updated", extra = ",\"projectId\":\"$CHAT_PROJECT\""),
             )
         first.open(identity) { true }.use { it.save(deferred, 1234) }
         first.close()
@@ -253,7 +253,7 @@ class ChatCacheStoreTest {
                 ChatListApiFixture().use { fixture ->
                     fixture.events = {
                         jsonResponse(
-                            """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23)}],"hasMore":false}"""
+                            """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23)}],"hasMore":false}""",
                         )
                     }
                     val confirmed =
@@ -310,7 +310,7 @@ class ChatCacheStoreTest {
                 replacement.save(newer, 2345)
                 assertTrue(
                     runCatching { old.save(checkpoint(), 1234) }.exceptionOrNull()
-                        is CancellationException
+                        is CancellationException,
                 )
                 assertEquals(newer.cursor, checkNotNull(replacement.load()).checkpoint.cursor)
             }
@@ -334,7 +334,7 @@ class ChatCacheStoreTest {
                                 seq = 23,
                                 kind = "renamed",
                                 title = "New title",
-                            )
+                            ),
                     )
                 assertTrue(lease.save(newer, 2345))
                 assertFalse(lease.save(original, 1234))
@@ -373,7 +373,7 @@ class ChatCacheStoreTest {
             )
             .use {
                 it.execSQL(
-                    "CREATE TRIGGER fail_event BEFORE INSERT ON chat_thread_events BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END"
+                    "CREATE TRIGGER fail_event BEFORE INSERT ON chat_thread_events BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
                 )
             }
         store
@@ -387,7 +387,7 @@ class ChatCacheStoreTest {
                             seq = 23,
                             kind = "renamed",
                             title = "New title",
-                        )
+                        ),
                     )
                 val replacement =
                     tail.copy(archive = ChatArchive(replayChats(original)), snapshotCursor = cursor)
@@ -457,7 +457,7 @@ class ChatCacheStoreTest {
                                         id = "77777777-7777-4777-8777-777777777777",
                                         seq = 23,
                                         kind = "renamed",
-                                    )
+                                    ),
                             ),
                             2345,
                         )
@@ -539,7 +539,7 @@ class ChatCacheStoreTest {
                 assertTrue(
                     restored.archive.chatThreads.zip(rows).all { (saved, expected) ->
                         saved == expected
-                    }
+                    },
                 )
             }
         store

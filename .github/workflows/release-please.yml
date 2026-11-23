@@ -801,6 +801,8 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
         run: node ios/scripts/testflight.mjs distribute
+      - name: Verified iOS ${{ needs.release-please.outputs.ios_version }} (${{ steps.prepare.outputs.build_number }}) at ${{ needs.release-please.outputs.release_target }}
+        run: echo "Recorded the exact build and release commit after internal availability verification."
       - name: Retain release symbols
         if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

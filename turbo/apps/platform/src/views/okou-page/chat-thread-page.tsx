@@ -6640,20 +6640,16 @@ function MessageAttachment({
         buttonClassName={CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS}
         filename={a.filename}
         onPreview={() => {
-          detach(
-            openVideoLightbox(
-              {
-                threadId,
-                url: a.url,
-                filename: a.filename,
-                contentType: a.signals.contentType,
-                preview: a.signals,
-                shareAvailable: false,
-              },
-              undefined,
-              pageSignal,
-            ),
-            Reason.DomCallback,
+          openVideoLightbox(
+            {
+              threadId,
+              url: a.url,
+              filename: a.filename,
+              contentType: a.signals.contentType,
+              preview: a.signals,
+              shareAvailable: false,
+            },
+            pageSignal,
           );
         }}
         posterClassName="h-full w-full"
@@ -7110,20 +7106,16 @@ function UserMessageFileReference({
         buttonClassName={CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS}
         filename={part.filenameSnapshot}
         onPreview={() => {
-          detach(
-            openVideoLightbox(
-              {
-                threadId,
-                url: signals.url,
-                filename: part.filenameSnapshot,
-                contentType: part.contentType,
-                preview: signals,
-                shareAvailable: false,
-              },
-              undefined,
-              pageSignal,
-            ),
-            Reason.DomCallback,
+          openVideoLightbox(
+            {
+              threadId,
+              url: signals.url,
+              filename: part.filenameSnapshot,
+              contentType: part.contentType,
+              preview: signals,
+              shareAvailable: false,
+            },
+            pageSignal,
           );
         }}
         posterClassName="h-full w-full"
@@ -7240,8 +7232,16 @@ function equalFeedbackSources(
   if (left === undefined || right === undefined) {
     return left === right;
   }
+  if (left.type === "artifact") {
+    return (
+      right.type === "artifact" &&
+      left.fileId === right.fileId &&
+      left.filenameSnapshot === right.filenameSnapshot &&
+      left.artifactId === right.artifactId
+    );
+  }
   return (
-    left.type === right.type &&
+    right.type === "mail" &&
     left.id === right.id &&
     left.status === right.status &&
     left.sentId === right.sentId
@@ -7252,7 +7252,8 @@ function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
   chatRunSourceTitle: string | undefined,
 ): string {
-  if (chatRunSourceTitle) {
+  const source = parts[0]?.part.source;
+  if (chatRunSourceTitle && source?.type !== "artifact") {
     return parts.length === 1
       ? i18n.t(
           ($) => {
@@ -7267,7 +7268,6 @@ function userMessageFeedbackHeading(
           { count: parts.length, title: chatRunSourceTitle },
         );
   }
-  const source = parts[0]?.part.source;
   if (!source) {
     return parts.length === 1
       ? i18n.t(($) => {
@@ -7283,13 +7283,15 @@ function userMessageFeedbackHeading(
         );
   }
   const description =
-    source.status === "draft"
-      ? i18n.t(($) => {
-          return $.chat.feedback.emailDraftDescription;
-        })
-      : i18n.t(($) => {
-          return $.chat.feedback.sentEmailDescription;
-        });
+    source.type === "artifact"
+      ? source.filenameSnapshot
+      : source.status === "draft"
+        ? i18n.t(($) => {
+            return $.chat.feedback.emailDraftDescription;
+          })
+        : i18n.t(($) => {
+            return $.chat.feedback.sentEmailDescription;
+          });
   return parts.length === 1
     ? i18n.t(
         ($) => {
@@ -7732,22 +7734,18 @@ function PagedUserMessage({
   const pageSignal = useGet(pageSignal$);
   const openImageLightbox = useSet(openAttachmentImageLightbox$);
   const openLightbox: OpenMessageImagePreview = (attachment) => {
-    detach(
-      openImageLightbox(
-        {
-          threadId: thread.threadId,
-          url: attachment.url,
-          filename: attachment.filename,
-          contentType: attachment.signals.contentType,
-          preview: attachment.signals,
-          // The user's own attachment, not a published artifact: previewing it
-          // offers no sharing controls.
-          shareAvailable: false,
-        },
-        undefined,
-        pageSignal,
-      ),
-      Reason.DomCallback,
+    openImageLightbox(
+      {
+        threadId: thread.threadId,
+        url: attachment.url,
+        filename: attachment.filename,
+        contentType: attachment.signals.contentType,
+        preview: attachment.signals,
+        // The user's own attachment, not a published artifact: previewing it
+        // offers no sharing controls.
+        shareAvailable: false,
+      },
+      pageSignal,
     );
   };
   const copyEvent = useSet(thread.copyEvent$);
@@ -8393,8 +8391,6 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
   const { t } = useTranslation();
   const openArtifact = useSet(openMarkdownArtifact$);
   const featureSwitches = useLastResolved(featureSwitches$);
-  const sidebarPreview =
-    featureSwitches?.[FeatureSwitchKey.ArtifactSidebarPreview];
   const showMarkdownExport =
     card.signals.kind === "markdown" &&
     featureSwitches?.[FeatureSwitchKey.MarkdownFirstOutput] === true;
@@ -8417,7 +8413,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       )}
       data-chat-run-related-artifact-url={card.signals.url}
       onClick={() => {
-        detach(openArtifact(card, "lightbox", pageSignal), Reason.DomCallback);
+        openArtifact(card, pageSignal);
       }}
     >
       <RelatedArtifactIcon kind={card.signals.kind} />
@@ -8437,7 +8433,7 @@ function RelatedArtifactRow({ card }: { readonly card: RelatedArtifactCard }) {
       />
     </Button>
   );
-  const previewAction = sidebarPreview ? <DialogClose render={row} /> : row;
+  const previewAction = <DialogClose render={row} />;
   if (!showMarkdownExport) {
     return previewAction;
   }

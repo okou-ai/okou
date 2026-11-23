@@ -111,7 +111,7 @@ async def test_real_x_hooks_deliver_shared_wire_contract(
     assert [request.json_body() for request in captured] == case["expectedPayloads"]
     for request in captured:
         assert request.method == "POST"
-        assert request.path == "/api/webhooks/agent/usage-event"
+        assert request.path == "/api/webhooks/run/usage-event"
         assert request.header("authorization") == "Bearer x-resource-contract-token"
         assert request.header("content-type") == "application/json"
         assert len(request.body) <= 256 * 1024

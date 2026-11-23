@@ -84,7 +84,7 @@ class DefaultModelSettingTest {
                 val claude = compose.onNode(hasText("Claude Sonnet 5") and isSelectable())
                 gpt.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
                 assertTrue(
-                    gpt.getUnclippedBoundsInRoot().top < claude.getUnclippedBoundsInRoot().top
+                    gpt.getUnclippedBoundsInRoot().top < claude.getUnclippedBoundsInRoot().top,
                 )
 
                 compose.runOnIdle {
@@ -98,7 +98,7 @@ class DefaultModelSettingTest {
                     }
                 }
                 assertTrue(
-                    claude.getUnclippedBoundsInRoot().top < gpt.getUnclippedBoundsInRoot().top
+                    claude.getUnclippedBoundsInRoot().top < gpt.getUnclippedBoundsInRoot().top,
                 )
                 gpt.assertIsFocused()
 

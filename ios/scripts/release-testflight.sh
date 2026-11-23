@@ -97,7 +97,7 @@ identity=$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*) 
 [[ "$identity" =~ ^[A-F0-9]{40}$ ]] || { echo 'Expected one valid Apple Distribution identity' >&2; exit 1; }
 
 # An unsigned archive has no signature from which export can recover app capabilities.
-# Sign only the prepared copy so export retains the source-declared APNs entitlement.
+# Sign the prepared copy with each bundle's source-declared entitlements.
 app="$work/Okou.xcarchive/Products/Applications/Okou.app"
 extension="$app/PlugIns/OkouNotificationService.appex"
 cp "$work/extension.mobileprovision" "$extension/embedded.mobileprovision"
@@ -151,8 +151,11 @@ if entitlements['application-identifier'] != 'C5UWSXYB67.' + sys.argv[2]:
     raise ValueError('Exported bundle has the wrong application entitlement')
 if entitlements['com.apple.developer.team-identifier'] != 'C5UWSXYB67':
     raise ValueError('Exported bundle has the wrong signing team')
-if sys.argv[2] == 'ai.okou.ios' and entitlements.get('aps-environment') != 'production':
-    raise ValueError('Exported app must have production APNs')
+if sys.argv[2] == 'ai.okou.ios':
+    if entitlements.get('aps-environment') != 'production':
+        raise ValueError('Exported app must have production APNs')
+    if entitlements.get('com.apple.developer.applesignin') != ['Default']:
+        raise ValueError('Exported app must enable Sign in with Apple')
 if entitlements.get('com.apple.security.application-groups') != ['group.ai.okou.ios']:
     raise ValueError('Exported bundle must share the Okou cache App Group')
 # The widgets read the App's snapshot from the App Group; only signed-in bundles share the Keychain.

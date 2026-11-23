@@ -516,14 +516,20 @@ export const userMessageInputPartSchema = discriminatedUnion("type", [
     note: array(feedbackNotePartSchema),
     eventId: string().min(1).optional(),
     range: feedbackRangeSchema.optional(),
-    source: object({
-      type: literal("mail"),
-      id: string().min(1),
-      status: zEnum(["draft", "sent"]),
-      sentId: string().min(1).optional(),
-    })
-      .strict()
-      .optional(),
+    source: discriminatedUnion("type", [
+      object({
+        type: literal("mail"),
+        id: string().min(1),
+        status: zEnum(["draft", "sent"]),
+        sentId: string().min(1).optional(),
+      }).strict(),
+      object({
+        type: literal("artifact"),
+        fileId: string().min(1),
+        filenameSnapshot: string().min(1),
+        artifactId: string().min(1).optional(),
+      }).strict(),
+    ]).optional(),
   })
     .strict()
     .refine(

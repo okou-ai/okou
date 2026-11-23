@@ -21,6 +21,9 @@ final class AuthenticationHTTPFixture: Sendable {
     var membershipFailureOffset: Int?
     var membershipFailureStatus = 400
     var failActivation = false
+    var canCreateWorkspace = true
+    var hasInvitation = false
+    var createdWorkspaces = 0
   }
 
   let identityOverride = Mutex<(@Sendable (URLRequest) throws -> ChatHTTPResponse?)?>(nil)
@@ -115,8 +118,12 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    // Retire SDK-owned work and drain persistence before replacing this fixture's runtime.
-    await clerk.runtime.shutdown()
+    // Retire this fixture's runtime and drain its queued Keychain writes before replacing it.
+    // `runtime.shutdown()` would also await the SDK's cancelled tasks; session polling runs at
+    // background priority, which a busy simulator can leave unscheduled for tens of seconds.
+    clerk.runtime.state.retire()
+    clerk.runtime.stop()
+    await clerk.runtime.dependencies.cacheWrites.waitForPendingWrites()
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,
@@ -285,6 +292,24 @@ final class AuthenticationHTTPFixture: Sendable {
     case "/v1/client":
       await clientReads.enter()
       return try json(ClientEnvelope(response: client()))
+    case "/v1/me/organization_invitations":
+      let rows = state.withLock { $0.hasInvitation ? [UserOrganizationInvitation.mock] : [] }
+      return try json(ResponseEnvelope(response: PageEnvelope(data: rows, totalCount: rows.count)))
+    case "/v1/me/organization_invitations/1/accept":
+      let invitation = UserOrganizationInvitation.mock
+      state.withLock {
+        $0.hasInvitation = false
+        $0.workspaceIDs.append(invitation.publicOrganizationData.id)
+      }
+      return try json(ResponseEnvelope(response: invitation))
+    case "/v1/organizations":
+      var organization = Organization.mock
+      organization.id = "org_created"
+      state.withLock {
+        $0.createdWorkspaces += 1
+        $0.workspaceIDs.append(organization.id)
+      }
+      return try json(ResponseEnvelope(response: organization))
     case "/v1/me/organization_memberships":
       let snapshot = state.withLock { $0 }
       await memberships.enter()
@@ -305,7 +330,7 @@ final class AuthenticationHTTPFixture: Sendable {
       }
       return try json(
         ResponseEnvelope(
-          response: MembershipEnvelope(data: rows, totalCount: snapshot.workspaceIDs.count)))
+          response: PageEnvelope(data: rows, totalCount: snapshot.workspaceIDs.count)))
     case let path where path.hasSuffix("/touch"):
       await activation.enter()
       if state.withLock({ $0.failActivation }) { return failure("Activation unavailable") }
@@ -344,6 +369,7 @@ final class AuthenticationHTTPFixture: Sendable {
     let snapshot = state.withLock { $0 }
     var user = User.mock
     user.id = snapshot.userID
+    user.createOrganizationEnabled = snapshot.canCreateWorkspace
     user.firstName = snapshot.userID.hasPrefix("user_startup_") ? "Startup" : "Replacement"
     user.hasImage = false
     user.imageUrl = ""
@@ -387,8 +413,8 @@ final class AuthenticationHTTPFixture: Sendable {
     let response: Session
     let client: Client
   }
-  private struct MembershipEnvelope: Encodable {
-    let data: [OrganizationMembership]
+  private struct PageEnvelope<Element: Encodable>: Encodable {
+    let data: [Element]
     let totalCount: Int
   }
 }

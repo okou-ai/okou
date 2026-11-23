@@ -333,17 +333,11 @@ final class ComposerConnectorAccountTests: XCTestCase {
   private func makeComposer(_ fixture: AccountPageFixture, thread: Bool = false) async
     -> ComposerConnectorStore
   {
-    let value =
-      thread
-      ? ChatThread(
-        id: FixtureData.threadID, title: "Accounts",
-        selectedModel: nil,
-        createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
-        pinnedAt: nil, pinOrder: nil, indicator: nil) : nil
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, thread: value, didFail: { _ in })
+      webURL: fixture.http.baseURL, threadID: thread ? FixtureData.threadID : nil, didFail: { _ in }
+    )
     await composer.refresh()
     return composer
   }

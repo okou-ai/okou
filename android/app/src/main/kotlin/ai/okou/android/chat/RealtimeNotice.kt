@@ -49,7 +49,7 @@ internal fun RealtimeNotice(model: ChatUpdatesModel, phase: RealtimePhase) {
             Text(
                 stringResource(
                     if (phase == RealtimePhase.Connecting) R.string.realtime_connecting
-                    else R.string.realtime_unavailable
+                    else R.string.realtime_unavailable,
                 ),
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.bodySmall,
@@ -59,7 +59,7 @@ internal fun RealtimeNotice(model: ChatUpdatesModel, phase: RealtimePhase) {
                     onClick = model::retry,
                     colors =
                         ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 ) {
                     Text(stringResource(R.string.retry))

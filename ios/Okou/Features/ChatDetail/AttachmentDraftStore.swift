@@ -64,18 +64,35 @@ final class AttachmentDraftStore {
     let parts = draft.draftUserMessage?.parts ?? []
     let ids = Set(parts.compactMap { $0["type"]?.string == "file" ? $0["fileId"]?.string : nil })
     let metadata = draft.draftAttachments ?? []
-    let saved = metadata.filter { ids.contains($0.id) }.compactMap { file -> SavedItem? in
-      guard let url = URL(string: file.url), !url.isFileURL else { return nil }
-      return SavedItem(
-        file: ImportedAttachmentFile(
-          url: url, filename: file.filename,
-          contentType: file.contentType, size: file.size, thumbnail: nil), uploaded: file.attachment
-      )
-    }
+    let saved = Self.remoteFiles(metadata.filter { ids.contains($0.id) })
     reset()
     restore(saved)
     if !ids.isSubset(of: Set(saved.compactMap { $0.uploaded?.id })) {
       error = "Some draft files have no recoverable metadata. Open this draft on the web."
+    }
+  }
+
+  private static func remoteFiles(_ files: [ComposerDraft.DraftAttachment]) -> [SavedItem] {
+    files.compactMap { file in
+      guard let url = URL(string: file.url), !url.isFileURL else { return nil }
+      return SavedItem(
+        file: ImportedAttachmentFile(
+          url: url, filename: file.filename, contentType: file.contentType, size: file.size,
+          thumbnail: nil),
+        uploaded: file.attachment)
+    }
+  }
+
+  /// New suggestion files can be validated alongside the user's ongoing imports.
+  func appendRemoteFiles(_ files: [ComposerDraft.DraftAttachment]) throws {
+    let saved = Self.remoteFiles(files)
+    guard saved.count == files.count else { throw ChatError.composerUnavailable }
+    for entry in saved {
+      guard let file = entry.uploaded else { continue }
+      let item = Item(file: entry.file, state: .checking(file))
+      items.append(item)
+      remoteFiles[item.id] = file
+      validateRemote(item)
     }
   }
 

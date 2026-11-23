@@ -413,33 +413,25 @@ function MailMediaAttachmentPreview({
   const openVideoLightbox = useSet(openVideoLightbox$);
   const onPreview = () => {
     if (kind === "image") {
-      detach(
-        openImageLightbox(
-          {
-            url,
-            filename,
-            shareAvailable: false,
-            splitViewAvailable: false,
-          },
-          undefined,
-          pageSignal,
-        ),
-        Reason.DomCallback,
-      );
-      return;
-    }
-    detach(
-      openVideoLightbox(
+      openImageLightbox(
         {
           url,
           filename,
           shareAvailable: false,
           splitViewAvailable: false,
         },
-        undefined,
         pageSignal,
-      ),
-      Reason.DomCallback,
+      );
+      return;
+    }
+    openVideoLightbox(
+      {
+        url,
+        filename,
+        shareAvailable: false,
+        splitViewAvailable: false,
+      },
+      pageSignal,
     );
   };
   return (

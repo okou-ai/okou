@@ -29,7 +29,7 @@ class NativeAuthenticationRootTest {
                         device.wait(
                             Until.findObject(By.text(app.getString(R.string.auth_restoring))),
                             10_000,
-                        )
+                        ),
                     )
                     assertFalse(device.hasObject(chatListRegion(app)))
                     assertFalse(device.hasObject(By.text(app.getString(R.string.settings))))

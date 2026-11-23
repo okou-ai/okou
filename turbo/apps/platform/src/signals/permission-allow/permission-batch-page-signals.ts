@@ -1,7 +1,5 @@
 import { computed } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createPermissionBatchSignals } from "../chat-page/permission-batch-signals.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { parsePermissionBatchActionUrl } from "../chat-page/permission-batch-action-block.ts";
 import { pathname, search, hash } from "../location.ts";
 import { searchParams$ } from "../route.ts";
@@ -19,10 +17,7 @@ export const permissionBatchPageDescriptor$ = computed((get) => {
 });
 
 /** The route identity owns the graph; setup only waits for and displays it. */
-export const permissionBatchPageSignals$ = computed(async (get) => {
+export const permissionBatchPageSignals$ = computed((get) => {
   const descriptor = get(permissionBatchPageDescriptor$);
-  const features = await get(featureSwitches$);
-  return descriptor && features[FeatureSwitchKey.BatchConnectorPermissions]
-    ? createPermissionBatchSignals(descriptor)
-    : null;
+  return descriptor ? createPermissionBatchSignals(descriptor) : null;
 });

@@ -31,6 +31,7 @@ member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-mem
 widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
 agent_connector_schema_floor=$(<"${repo_root}/.github/rollback-floors/agent-connector-schema-independent-api")
 agent_api_profile_floor=$(<"${repo_root}/.github/rollback-floors/agent-api-profile-independent-api")
+connector_skill_view_floor=$(<"${repo_root}/.github/rollback-floors/custom-connector-skill-publication-view-independent-api")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -271,6 +272,12 @@ case "${1:-}" in
       else
         [ "${MOCK_AGENT_API_PROFILE_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "$MOCK_CONNECTOR_SKILL_VIEW_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_CONNECTOR_SKILL_VIEW_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_CONNECTOR_SKILL_VIEW_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_MEMBER_MEMORY_PROTOCOL_ON_MAIN:-1}" = "1" ]
@@ -494,7 +501,7 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
-    elif [[ "$*" == *run-webhook-callbacks* ]]; then
+    elif [[ "$*" == *run-mitm-webhooks* ]]; then
       printf '%s\n' "${MOCK_RUN_WEBHOOK_PATHS_COMMIT-a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7}"
     elif [[ "$*" == *hosted-site-url-routing* ]]; then
       printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"
@@ -553,6 +560,11 @@ case "${1:-}" in
     if [ "${2:-}" = "origin/main:.github/rollback-floors/agent-api-profile-independent-api" ]; then
       [ "${MOCK_AGENT_API_PROFILE_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_AGENT_API_PROFILE_COMMIT-$MOCK_AGENT_API_PROFILE_FLOOR}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/custom-connector-skill-publication-view-independent-api" ]; then
+      [ "${MOCK_CONNECTOR_SKILL_VIEW_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_CONNECTOR_SKILL_VIEW_COMMIT-$MOCK_CONNECTOR_SKILL_VIEW_FLOOR}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
@@ -709,6 +721,7 @@ run_resolver() {
     MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
     MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR="$agent_connector_schema_floor" \
     MOCK_AGENT_API_PROFILE_FLOOR="$agent_api_profile_floor" \
+    MOCK_CONNECTOR_SKILL_VIEW_FLOOR="$connector_skill_view_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -2592,6 +2605,20 @@ for agent_api_profile_case in \
   [ ! -s "${tmp_dir}/agent-api-profile-policy.output" ] || fail "invalid Agent API profile floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Agent API profile floor must reject before provider or host access"
+  fi
+done
+
+for connector_skill_view_case in \
+  "MOCK_CONNECTOR_SKILL_VIEW_AVAILABLE=0|Cannot read the Custom Connector Skill view rollback floor from main" \
+  "MOCK_CONNECTOR_SKILL_VIEW_COMMIT=invalid|Missing or invalid Custom Connector Skill view rollback floor" \
+  "MOCK_CONNECTOR_SKILL_VIEW_ON_MAIN=0|Custom Connector Skill view rollback floor is not on main" \
+  "MOCK_CONNECTOR_SKILL_VIEW_VALID=0|Rollback target predates direct Custom Connector Skill publication reads"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${connector_skill_view_case#*|}" \
+    run_resolver "${tmp_dir}/connector-skill-view-policy.output" "${connector_skill_view_case%%|*}"
+  [ ! -s "${tmp_dir}/connector-skill-view-policy.output" ] || fail "invalid Custom Connector Skill view floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Custom Connector Skill view floor must reject before provider or host access"
   fi
 done
 

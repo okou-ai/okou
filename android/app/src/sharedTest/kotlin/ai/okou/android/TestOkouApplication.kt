@@ -155,7 +155,7 @@ open class TestOkouApplication : OkouApplication() {
                     ?: ai.okou.android.api.generated.DefaultModelPreference(null, null, emptyMap())
 
             override suspend fun updateDefaultModelPreference(
-                update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+                update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
             ) = (fixture ?: canonical.value).updateDefaultModelPreference(update)
 
             override suspend fun featureSwitches() =
@@ -181,7 +181,7 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun preferences() = stored()
 
             override suspend fun updatePreferences(
-                update: UpdatePreferencesRequest
+                update: UpdatePreferencesRequest,
             ): UserPreferences {
                 val updated =
                     stored()

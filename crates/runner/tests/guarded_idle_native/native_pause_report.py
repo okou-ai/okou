@@ -59,12 +59,11 @@ def validate(directory):
             path_error="invalid or replayed native physical pause status path",
             receipt_error="native physical pause changed original inputs",
         )
-        history, operation = later.history_operation(
-            captured, identities, "native physical pause replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            captured, identities, baseline, identity[0],
+            replay_error="native physical pause replayed run or resource identity",
+            binding_error="native physical pause lost original history binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key":reuse,"sandbox_id":identity[0]}],
-              "native physical pause lost original history binding")
         started = batch.clock(captured.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         verified = batch.clock(captured.get("data_verified_ns"), started, events[1]["monotonic_ns"])

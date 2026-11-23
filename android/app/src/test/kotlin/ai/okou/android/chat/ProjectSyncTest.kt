@@ -24,7 +24,7 @@ class ProjectSyncTest {
                     """{"archive":{"projects":[
                     {"id":"$later","name":"Later","sortOrder":null,"createdAt":"2026-11-14T00:00:00Z","updatedAt":"$CHAT_DATE"},
                     {"id":"$CHAT_PROJECT","name":"Old","createdAt":"2026-11-13T00:00:00Z","updatedAt":"$CHAT_DATE"}
-                    ],"latestEventId":"$CHAT_EVENT","latestSeqId":17}}"""
+                    ],"latestEventId":"$CHAT_EVENT","latestSeqId":17}}""",
                 )
             assertEquals(listOf("Old", "Later"), replayProjects(cached).map { it.name })
             fixture.projectEvents = {
@@ -33,7 +33,7 @@ class ProjectSyncTest {
                     {"id":"11111111-1111-4111-8111-111111111111","seqId":18,"projectId":"$later","kind":"sort_updated","name":null,"sortOrder":"Zz","createdAt":"$CHAT_DATE"},
                     {"id":"22222222-2222-4222-8222-222222222222","seqId":19,"projectId":"$later","kind":"renamed","name":"Moved","createdAt":"$CHAT_DATE"},
                     {"id":"33333333-3333-4333-8333-333333333333","seqId":20,"projectId":"$created","kind":"created","name":"Tie","sortOrder":"Zz","createdAt":"$CHAT_DATE"}
-                    ],"hasMore":false}"""
+                    ],"hasMore":false}""",
                 )
             }
             val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
@@ -45,8 +45,8 @@ class ProjectSyncTest {
                 ranked,
                 replayProjects(
                     Json.decodeFromString<ProjectCheckpoint>(
-                        Json.encodeToString(ProjectCheckpoint.serializer(), confirmed)
-                    )
+                        Json.encodeToString(ProjectCheckpoint.serializer(), confirmed),
+                    ),
                 ),
             )
         }
@@ -57,17 +57,17 @@ class ProjectSyncTest {
         ChatListApiFixture().use { fixture ->
             fixture.projects = {
                 jsonResponse(
-                    """{"url":"${fixture.server.url("/archive")}","latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                    """{"url":"${fixture.server.url("/archive")}","latestEventId":"$CHAT_EVENT","latestSeqId":17}""",
                 )
             }
             fixture.archive = {
                 jsonResponse(
-                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}""",
                 )
             }
             fixture.projectEvents = {
                 jsonResponse(
-                    """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                    """{"events":[{"id":"77777777-7777-4777-8777-777777777777","seqId":23,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}""",
                 )
             }
             val confirmed = ProjectSync(fixture.service).synchronize(null).checkpoint
@@ -78,12 +78,12 @@ class ProjectSyncTest {
             assertEquals("2026-11-14T00:00:00Z", project.updatedAt)
             fixture.projectEvents = {
                 jsonResponse(
-                    """{"events":[{"id":"88888888-8888-4888-8888-888888888888","seqId":29,"projectId":"$CHAT_PROJECT","kind":"deleted","name":null,"createdAt":"2026-11-15T00:00:00Z"}],"hasMore":false}"""
+                    """{"events":[{"id":"88888888-8888-4888-8888-888888888888","seqId":29,"projectId":"$CHAT_PROJECT","kind":"deleted","name":null,"createdAt":"2026-11-15T00:00:00Z"}],"hasMore":false}""",
                 )
             }
             assertTrue(
                 replayProjects(ProjectSync(fixture.service).synchronize(confirmed).checkpoint)
-                    .isEmpty()
+                    .isEmpty(),
             )
         }
     }
@@ -97,12 +97,12 @@ class ProjectSyncTest {
                         listOf(ConfirmedProject(CHAT_PROJECT, "Before", CHAT_DATE, CHAT_DATE)),
                         null,
                         0,
-                    )
+                    ),
                 )
             fixture.projects = { MockResponse().setResponseCode(503) }
             fixture.projectEvents = {
                 jsonResponse(
-                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}"""
+                    """{"events":[{"id":"$CHAT_EVENT","seqId":17,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"After","createdAt":"$CHAT_DATE"}],"hasMore":false}""",
                 )
             }
             val confirmed = ProjectSync(fixture.service).synchronize(cached).checkpoint
@@ -117,7 +117,7 @@ class ProjectSyncTest {
             val cached = ProjectCheckpoint(ProjectArchive(emptyList(), null, 0))
             fixture.projects = {
                 jsonResponse(
-                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}"""
+                    """{"projects":[{"id":"$CHAT_PROJECT","name":"Research","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"$CHAT_EVENT","latestSeqId":17}""",
                 )
             }
             fixture.projectEvents = { request ->
@@ -142,7 +142,7 @@ class ProjectSyncTest {
                 fixture.projects = {
                     snapshotSeq += 20
                     jsonResponse(
-                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"00000000-0000-4000-8000-${snapshotSeq.toString().padStart(12, '0')}","latestSeqId":$snapshotSeq}"""
+                        """{"projects":[{"id":"$CHAT_PROJECT","name":"Before","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}],"latestEventId":"00000000-0000-4000-8000-${snapshotSeq.toString().padStart(12, '0')}","latestSeqId":$snapshotSeq}""",
                     )
                 }
                 fixture.projectEvents = { request ->
@@ -151,7 +151,7 @@ class ProjectSyncTest {
                     else {
                         val next = seq + 1
                         jsonResponse(
-                            """{"events":[{"id":"00000000-0000-4000-8000-${next.toString().padStart(12, '0')}","seqId":$next,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"$name","createdAt":"$CHAT_DATE"}],"hasMore":${next == 41}}"""
+                            """{"events":[{"id":"00000000-0000-4000-8000-${next.toString().padStart(12, '0')}","seqId":$next,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"$name","createdAt":"$CHAT_DATE"}],"hasMore":${next == 41}}""",
                         )
                     }
                 }
@@ -160,8 +160,10 @@ class ProjectSyncTest {
                 assertEquals(61L, confirmed.cursor.seqId)
                 assertEquals(name, replayProjects(confirmed).single().name)
                 fixture.projectEvents = { MockResponse().setResponseCode(410) }
-                val error =
-                    runCatching { ProjectSync(fixture.service).synchronize(null) }.exceptionOrNull()
+                val error = runCatching {
+                    ProjectSync(fixture.service).synchronize(null)
+                }
+                    .exceptionOrNull()
                 assertTrue(error is ApiFailure.Http && error.status == 410)
             }
         }

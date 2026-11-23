@@ -109,4 +109,17 @@
     <string name="workflow_rule_change_failed">無法變更此規則。</string>
     <string name="workflow_rule_network_failed">無法變更此規則，請檢查網路後重試。</string>
     <string name="workflow_write_conflict">儲存時此工作流已更新。你的變更已保留。</string>
+    <string name="workflow_history_earlier">查看更早的執行</string>
+    <string name="workflow_history_event">事件觸發</string>
+    <string name="workflow_history_failed">暫時無法載入執行記錄</string>
+    <string name="workflow_history_loading">正在載入執行記錄…</string>
+    <string name="workflow_history_offline">連線後載入執行記錄</string>
+    <string name="workflow_history_open_chat">開啟對應對話</string>
+    <string name="workflow_history_unavailable">執行記錄無法使用</string>
+    <string name="workflow_run_pending">待執行</string>
+    <string name="workflow_run_running">執行中</string>
+    <string name="workflow_run_timeout">已逾時</string>
+    <string name="workflow_history_trigger_unavailable">觸發方式無法取得</string>
+    <string name="workflow_history_scheduled">排程觸發</string>
+    <string name="workflow_history_manual">手動執行</string>
 </resources>

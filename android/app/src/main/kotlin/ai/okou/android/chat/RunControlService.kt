@@ -54,7 +54,7 @@ data class RunControlJournal(
         require(
             pending.all {
                 it.id.isNotEmpty() && it.threadId.isNotEmpty() && it.targetId.isNotEmpty()
-            }
+            },
         )
     }
 }
@@ -101,7 +101,7 @@ internal class RunControlObservation(private val checkpoint: HistoryCheckpoint) 
                 when {
                     intent.targetId in replaced -> RunControlEvidence.TargetSettled
                     byId[intent.targetId]?.runId != null -> RunControlEvidence.TargetSettled
-                    intent.targetId in facts.queuedEventIds -> RunControlEvidence.Eligible
+                    intent.targetId in facts.revocableInputIds -> RunControlEvidence.Eligible
                     else -> RunControlEvidence.Unknown
                 }
         }

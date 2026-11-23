@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "側邊欄",
-      "chat": "聊天",
       "hideChatList": "隱藏聊天列表",
       "mobile": {
         "invite": "邀請",
@@ -2151,6 +2150,12 @@
         },
         "inReview": "稽核中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} 積分",
+            "confirm": "回去幹活",
+            "description": "積分用來支付真正的工作：每一次執行、每一份成果、每一個按時間執行的工作流。",
+            "title": "今天這一步完成了"
+          },
           "connector": {
             "confirm": "瀏覽全部連接器",
             "connected": "已連線",

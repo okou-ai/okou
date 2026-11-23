@@ -111,7 +111,7 @@ test.each(["assistant", "user"] as const)(
       click(image);
     }
     await waitFor(() => {
-      expect(screen.getByTestId("attachment-lightbox-image")).toHaveAttribute(
+      expect(screen.getByTestId("artifact-sidebar-body-image")).toHaveAttribute(
         "src",
         ORIGINAL_URL,
       );

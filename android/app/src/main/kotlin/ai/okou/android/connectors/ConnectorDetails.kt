@@ -181,11 +181,11 @@ internal fun ConnectorDetails(
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(top = if (wide) 28.dp else 20.dp, bottom = 24.dp)
-                .testTag("connector-detail")
+                .testTag("connector-detail"),
         ) {
             if (entry != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ConnectorIcon(entry, large = true)
+                    ConnectorIcon(entry.icon, large = true)
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
                             entry.name,
@@ -266,7 +266,7 @@ internal fun ConnectorDetails(
                             },
                             modifier =
                                 (if (wide) Modifier else Modifier.fillMaxWidth()).focusRequester(
-                                    addFocus
+                                    addFocus,
                                 ),
                             enabled = canModify,
                             treatment =
@@ -509,7 +509,7 @@ internal fun ConnectorSheet(
                     end = 16.dp,
                     top = if (centered) 16.dp else 0.dp,
                     bottom = 16.dp,
-                )
+                ),
         ) {
             val minimumControlsHeight =
                 with(LocalDensity.current) {
@@ -638,7 +638,7 @@ private fun ConnectorAccountActions(
                 stringResource(
                     if (account.status == ConnectorAccountStatus.UpdatePermissions)
                         R.string.connector_update_permissions
-                    else R.string.connector_reauthorize
+                    else R.string.connector_reauthorize,
                 ),
                 enabled = canModify,
                 modifier = Modifier.focusRequester(reauthorizeFocus),
@@ -777,7 +777,11 @@ private fun ConnectorDisconnectDialog(
                 count != null && count > 0 -> {
                     val displayed = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                     Text(
-                        pluralStringResource(R.plurals.connector_impact_count, displayed, displayed)
+                        pluralStringResource(
+                            R.plurals.connector_impact_count,
+                            displayed,
+                            displayed,
+                        ),
                     )
                 }
                 count == null && impact.failure == ConnectorReadFailure.Network ->
@@ -797,7 +801,7 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
         ConnectorProgress(
             if (action.reconciling || action.authorization is ConnectorAuthorization.Browser)
                 R.string.connector_working
-            else R.string.connector_submitting
+            else R.string.connector_submitting,
         )
     else if (action?.problem != null)
         ConnectorStatusBanner(
@@ -810,7 +814,7 @@ internal fun ConnectorActionFeedback(action: ConnectorAction?) {
                     R.string.connector_authorization_unconfirmed
                 ConnectorProblem.VerificationPending -> R.string.connector_verify_pending
                 ConnectorProblem.VerificationNetwork -> R.string.connector_verify_network
-            }
+            },
         )
 }
 

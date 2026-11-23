@@ -1,3 +1,9 @@
+CREATE TABLE "hosted_site_share_rate_limits" (
+	"key" text PRIMARY KEY NOT NULL,
+	"window_started_at" timestamp NOT NULL,
+	"requests" integer NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE "hosted_site_shares" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"site_id" uuid NOT NULL,

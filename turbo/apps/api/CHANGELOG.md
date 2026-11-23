@@ -10,6 +10,74 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.105.1](https://github.com/okou-ai/okou/compare/api-v2.105.0...api-v2.105.1) (2026-11-23)
+
+
+### Performance Improvements
+
+* **api:** consolidate chat startup reads and advance package prefetch ([#50114](https://github.com/okou-ai/okou/issues/50114)) ([b275885](https://github.com/okou-ai/okou/commit/b2758859687e179dd43b826e46afa361611cdb73))
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.1
+    * @okouai/core bumped to 8.860.4
+    * @okouai/db bumped to 2.58.16
+    * @okouai/pi-agent-runtime bumped to 1.52.45
+
+## [2.105.0](https://github.com/okou-ai/okou/compare/api-v2.104.5...api-v2.105.0) (2026-11-23)
+
+
+### Features
+
+* **android:** show confirmed workflow run history ([#50055](https://github.com/okou-ai/okou/issues/50055)) ([a3c5ba1](https://github.com/okou-ai/okou/commit/a3c5ba1c7418d75fa58233da2de637380ed1814b))
+* **api:** separate app store and testflight minimum versions ([#50101](https://github.com/okou-ai/okou/issues/50101)) ([fe33370](https://github.com/okou-ai/okou/commit/fe333701c6a92676741d61982e3aeadd99fd0f85))
+
+
+### Performance Improvements
+
+* **api:** overlap memory and network policy preparation ([#50090](https://github.com/okou-ai/okou/issues/50090)) ([717a564](https://github.com/okou-ai/okou/commit/717a564f4d61fb25b7bdbdf2876b6d158189a6b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+    * @okouai/core bumped to 8.860.3
+    * @okouai/db bumped to 2.58.15
+    * @okouai/pi-agent-runtime bumped to 1.52.44
+
+## [2.104.5](https://github.com/okou-ai/okou/compare/api-v2.104.4...api-v2.104.5) (2026-11-23)
+
+
+### Bug Fixes
+
+* **api:** preserve drive scope recovery in conversion preflight ([#50079](https://github.com/okou-ai/okou/issues/50079)) ([495d69d](https://github.com/okou-ai/okou/commit/495d69dcf11f2db2bec4624ac71938d000a45f4b))
+
+
+### Refactoring
+
+* **api:** retire single-agent flags and migrate mitm callbacks ([#50073](https://github.com/okou-ai/okou/issues/50073)) ([b755712](https://github.com/okou-ai/okou/commit/b7557125818de8883c22704c19728207f5308428))
+
+
+### Performance Improvements
+
+* **runner:** measure dispatch body frame latency ([#50088](https://github.com/okou-ai/okou/issues/50088)) ([33b2a66](https://github.com/okou-ai/okou/commit/33b2a66c0f79129a3fe8e9940672014f3b2f826a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.2
+    * @okouai/core bumped to 8.860.2
+    * @okouai/db bumped to 2.58.14
+    * @okouai/pi-agent-runtime bumped to 1.52.43
+
 ## [2.104.4](https://github.com/okou-ai/okou/compare/api-v2.104.3...api-v2.104.4) (2026-11-23)
 
 

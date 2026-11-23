@@ -6,7 +6,7 @@
 pub(crate) mod dispatch;
 
 use std::convert::Infallible;
-use std::io;
+use std::io::{self, Read};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
@@ -182,7 +182,6 @@ impl IngressHandler {
             return response(StatusCode::METHOD_NOT_ALLOWED, "");
         }
         if request.headers().contains_key("upgrade")
-            || request.headers().contains_key("content-encoding")
             || request
                 .headers()
                 .get("content-type")
@@ -190,6 +189,12 @@ impl IngressHandler {
         {
             return response(StatusCode::BAD_REQUEST, "");
         }
+        let mut encodings = request.headers().get_all("content-encoding").iter();
+        let gzip = match (encodings.next(), encodings.next()) {
+            (None, None) => false,
+            (Some(encoding), None) if encoding.as_bytes().eq_ignore_ascii_case(b"gzip") => true,
+            _ => return response(StatusCode::BAD_REQUEST, ""),
+        };
         if request
             .headers()
             .get("content-length")
@@ -206,6 +211,8 @@ impl IngressHandler {
             return self.dispatch_response(run_id, dispatch::Disposition::Busy);
         };
         let read_started = Instant::now();
+        let mut first_data_at = None;
+        let mut last_data_at = None;
         let read = async {
             let mut bytes = Vec::new();
             while let Some(frame) = request.body_mut().frame().await {
@@ -213,6 +220,11 @@ impl IngressHandler {
                 if let Ok(data) = frame.into_data() {
                     if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
                         return Err(StatusCode::PAYLOAD_TOO_LARGE);
+                    }
+                    if !data.is_empty() {
+                        let received_at = Instant::now();
+                        first_data_at.get_or_insert(received_at);
+                        last_data_at = Some(received_at);
                     }
                     bytes.extend_from_slice(&data);
                 } else {
@@ -223,10 +235,26 @@ impl IngressHandler {
         };
         let read = tokio::time::timeout(Duration::from_secs(5), read).await;
         timing.body_read_ms = Some(read_started.elapsed().as_secs_f64() * 1000.0);
+        timing.body_first_frame_ms =
+            first_data_at.map(|at| at.duration_since(read_started).as_secs_f64() * 1000.0);
         let bytes = match read {
             Ok(Ok(bytes)) => bytes,
             Ok(Err(status)) => return response(status, ""),
             Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
+        };
+        timing.body_first_to_last_frame_ms = first_data_at
+            .zip(last_data_at)
+            .map(|(first, last)| last.duration_since(first).as_secs_f64() * 1000.0);
+        let bytes = if gzip {
+            let started = Instant::now();
+            let decoded = decode_dispatch_gzip(&bytes);
+            timing.body_gzip_decode_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+            match decoded {
+                Ok(decoded) => decoded,
+                Err(status) => return response(status, ""),
+            }
+        } else {
+            bytes
         };
         let verdict = intake
             .submit(
@@ -269,6 +297,21 @@ impl IngressHandler {
         );
         result
     }
+}
+
+fn decode_dispatch_gzip(bytes: &[u8]) -> Result<Vec<u8>, StatusCode> {
+    let mut decoder = flate2::bufread::GzDecoder::new(bytes);
+    let mut decoded = Vec::new();
+    let result = (&mut decoder)
+        .take(dispatch::MAX_BODY as u64 + 1)
+        .read_to_end(&mut decoded);
+    if decoded.len() > dispatch::MAX_BODY {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    if result.is_err() || !decoder.into_inner().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(decoded)
 }
 
 fn response(status: StatusCode, body: &str) -> Response<Full<Bytes>> {

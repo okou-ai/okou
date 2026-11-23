@@ -6,6 +6,7 @@ import {
   currentRightThread$,
 } from "./chat-page/chat-thread-pane-state.ts";
 import { closeDeletedThreadArtifact$ } from "./chat-page/thread-sidebar-coordinator.ts";
+import { closeLightboxWithDialogExit$ } from "./okou-page/attachment-chips.ts";
 import { rootSignal$ } from "./root-signal.ts";
 import { detachedNavigateTo$ } from "./route.ts";
 
@@ -17,7 +18,7 @@ import { detachedNavigateTo$ } from "./route.ts";
 export type ArtifactDeletionOrigin =
   /** The standalone artifact page, which returns to the catalog. */
   | { readonly kind: "artifact-page" }
-  /** The preview dialog over the catalog or a chat. */
+  /** The lightbox preview dialog. */
   | { readonly kind: "preview-dialog" }
   /** The artifacts page sidebar. */
   | { readonly kind: "catalog-sidebar" }
@@ -51,11 +52,11 @@ const leaveDeletedArtifactSurface$ = command(
       }
       case "preview-dialog": {
         // The preview may belong to a chat that outlives this page.
-        set(closeArtifactCatalogPreview$, get(rootSignal$));
+        set(closeLightboxWithDialogExit$, get(rootSignal$));
         return;
       }
       case "catalog-sidebar": {
-        set(closeArtifactCatalogPreview$, signal);
+        set(closeArtifactCatalogPreview$);
         return;
       }
       case "thread-sidebar": {

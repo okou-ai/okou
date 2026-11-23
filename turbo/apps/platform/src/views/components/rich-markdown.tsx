@@ -1,4 +1,3 @@
-import { detach, Reason } from "../../signals/utils.ts";
 import {
   useGet,
   useLastLoadable,
@@ -245,18 +244,14 @@ function MediaImage({
         const threadId = event.currentTarget.closest<HTMLElement>(
           "[data-chat-thread-container-id]",
         )?.dataset.chatThreadContainerId;
-        detach(
-          openImageLightbox(
-            {
-              threadId,
-              url,
-              filename,
-              preview: resolvedPreview,
-            },
-            undefined,
-            pageSignal,
-          ),
-          Reason.DomCallback,
+        openImageLightbox(
+          {
+            threadId,
+            url,
+            filename,
+            preview: resolvedPreview,
+          },
+          pageSignal,
         );
       }}
       className={className}
@@ -344,19 +339,15 @@ function MediaLink({ href, children, ...rest }: MarkdownAnchorProps) {
           openMailDraft(card.signals);
         } else if (card?.kind === "artifact") {
           event.preventDefault();
-          detach(openArtifact(card, undefined, pageSignal), Reason.DomCallback);
+          openArtifact(card, pageSignal);
         } else if (href && isSafeMediaUrl(href) && isImageUrl(href)) {
           event.preventDefault();
           const threadId = event.currentTarget.closest<HTMLElement>(
             "[data-chat-thread-container-id]",
           )?.dataset.chatThreadContainerId;
-          detach(
-            openImageLightbox(
-              threadId ? { threadId, url: href } : href,
-              undefined,
-              pageSignal,
-            ),
-            Reason.DomCallback,
+          openImageLightbox(
+            threadId ? { threadId, url: href } : href,
+            pageSignal,
           );
         }
       }}

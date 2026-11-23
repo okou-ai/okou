@@ -1,6 +1,5 @@
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -32,7 +31,6 @@ const artifactId = "00000000-0000-4000-8000-000000000043";
 const siteTitle = "Quarterly launch report";
 
 async function setupHostedSite(
-  sidebar: boolean,
   initialSlug = "launch-site",
   hostDomain = "okou.app",
 ) {
@@ -172,9 +170,6 @@ async function setupHostedSite(
     context,
     host: "app.okou.ai",
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
-    },
   });
   await screen.findByText("Open website");
   const link = queryAllByRoleFast("link").find((element) => {
@@ -182,9 +177,7 @@ async function setupHostedSite(
   });
   expect(link).toBeDefined();
   click(link!);
-  return await screen.findByTestId(
-    sidebar ? "artifact-sidebar" : "attachment-lightbox",
-  );
+  return await screen.findByTestId("artifact-sidebar");
 }
 
 async function copyFromResources() {
@@ -201,8 +194,8 @@ async function copyFromResources() {
   click(buttonNamed("Copy link", row));
 }
 
-async function openHostedSiteShare(preview: HTMLElement, sidebar: boolean) {
-  const shareLabel = sidebar ? "Share artifact" : "Share";
+async function openHostedSiteShare(preview: HTMLElement) {
+  const shareLabel = "Share artifact";
   await waitFor(() => {
     expect(buttonNamed(shareLabel, preview)).toBeEnabled();
   });
@@ -237,69 +230,61 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
 }
 
-test.each([false, true])(
-  "owners see visibility and banner settings from chat deployment links (sidebar=%s)",
-  async (sidebar) => {
-    const preview = await setupHostedSite(sidebar);
-    const menu = await openHostedSiteShare(preview, sidebar);
-    const banner = await within(menu).findByRole("switch", {
-      name: "Show Okou banner",
-    });
-    expect(banner).toBeChecked();
-    expect(banner).toBeEnabled();
-    const publicAccess = queryAllByRoleFast("radio", menu).find((row) => {
-      return row.getAttribute("aria-label") === "Anyone with the link";
-    });
-    expect(publicAccess).toHaveAttribute("aria-checked", "true");
-    expect(publicAccess).toBeEnabled();
-  },
-);
+test("owners see visibility and banner settings from chat deployment links", async () => {
+  const preview = await setupHostedSite();
+  const menu = await openHostedSiteShare(preview);
+  const banner = await within(menu).findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  expect(banner).toBeChecked();
+  expect(banner).toBeEnabled();
+  const publicAccess = queryAllByRoleFast("radio", menu).find((row) => {
+    return row.getAttribute("aria-label") === "Anyone with the link";
+  });
+  expect(publicAccess).toHaveAttribute("aria-checked", "true");
+  expect(publicAccess).toBeEnabled();
+});
 
-test.each([false, true])(
-  "consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=%s)",
-  async (sidebar) => {
-    const preview = await setupHostedSite(sidebar);
-    const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent(siteTitle);
-    const shareMenu = await openHostedSiteShare(preview, sidebar);
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    for (const slug of ["renamed-site", "final-site"]) {
-      await renameHostedSite(shareMenu, slug);
-      click(buttonNamed("Copy link", shareMenu));
-      await waitFor(() => {
-        expect(title).toHaveTextContent(siteTitle);
-        expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
-        expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
-      });
-    }
-    expect(clipboard.writes).toStrictEqual([
-      "https://renamed-site.okou.app",
-      "https://final-site.okou.app",
-    ]);
-    await userEvent.keyboard("{Escape}", { delay: null });
+test("consecutive site renames preserve the title, link and Share/Resources copy addresses", async () => {
+  const preview = await setupHostedSite();
+  const title = await within(preview).findByTestId("artifact-title-link");
+  expect(title).toHaveTextContent(siteTitle);
+  const shareMenu = await openHostedSiteShare(preview);
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  for (const slug of ["renamed-site", "final-site"]) {
+    await renameHostedSite(shareMenu, slug);
+    click(buttonNamed("Copy link", shareMenu));
     await waitFor(() => {
-      expect(shareMenu).not.toBeInTheDocument();
+      expect(title).toHaveTextContent(siteTitle);
+      expect(title).toHaveAttribute("href", `https://${slug}.okou.app/`);
+      expect(clipboard.writes.at(-1)).toBe(`https://${slug}.okou.app`);
     });
-    click(buttonNamed(sidebar ? "Close artifact" : "Close", preview));
-    await waitFor(() => {
-      expect(title).not.toBeInTheDocument();
-    });
-    const resourceClipboard = context.mocks.browser.clipboardWriteText();
-    await copyFromResources();
-    await waitFor(() => {
-      expect(resourceClipboard.writes.at(-1)).toBe(
-        "https://final-site.okou.app",
-      );
-    });
-    expect(resourceClipboard.writes).toStrictEqual([
-      "https://final-site.okou.app",
-    ]);
-  },
-);
+  }
+  expect(clipboard.writes).toStrictEqual([
+    "https://renamed-site.okou.app",
+    "https://final-site.okou.app",
+  ]);
+  await userEvent.keyboard("{Escape}", { delay: null });
+  await waitFor(() => {
+    expect(shareMenu).not.toBeInTheDocument();
+  });
+  click(buttonNamed("Close artifact", preview));
+  await waitFor(() => {
+    expect(title).not.toBeInTheDocument();
+  });
+  const resourceClipboard = context.mocks.browser.clipboardWriteText();
+  await copyFromResources();
+  await waitFor(() => {
+    expect(resourceClipboard.writes.at(-1)).toBe("https://final-site.okou.app");
+  });
+  expect(resourceClipboard.writes).toStrictEqual([
+    "https://final-site.okou.app",
+  ]);
+});
 
 test("a reopened chat shows the catalog title and copies the current site address", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const preview = await setupHostedSite(true, "already-renamed");
+  const preview = await setupHostedSite("already-renamed");
   const title = await within(preview).findByTestId("artifact-title-link");
   expect(title).toHaveTextContent(siteTitle);
   expect(title).toHaveAttribute("href", "https://already-renamed.okou.app/");
@@ -315,29 +300,20 @@ test("a reopened chat shows the catalog title and copies the current site addres
   });
 });
 
-test.each([false, true])(
-  "Share directly copies legacy website links without URL customization (sidebar=%s)",
-  async (sidebar) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    const preview = await setupHostedSite(
-      sidebar,
-      "legacy-site",
-      "sites.vm0.io",
-    );
-    const title = await within(preview).findByTestId("artifact-title-link");
-    expect(title).toHaveTextContent(siteTitle);
-    expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
-    const shareLabel = sidebar ? "Share artifact" : "Share";
-    await waitFor(() => {
-      expect(buttonNamed(shareLabel, preview)).toBeEnabled();
-    });
-    click(buttonNamed(shareLabel, preview));
-    await screen.findByText("Link copied");
-    expect(clipboard.writes).toStrictEqual([
-      "https://legacy-site.sites.vm0.io",
-    ]);
-    expect(
-      screen.queryByRole("dialog", { name: shareLabel }),
-    ).not.toBeInTheDocument();
-  },
-);
+test("Share directly copies legacy website links without URL customization", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const preview = await setupHostedSite("legacy-site", "sites.vm0.io");
+  const title = await within(preview).findByTestId("artifact-title-link");
+  expect(title).toHaveTextContent(siteTitle);
+  expect(title).toHaveAttribute("href", "https://legacy-site.sites.vm0.io/");
+  const shareLabel = "Share artifact";
+  await waitFor(() => {
+    expect(buttonNamed(shareLabel, preview)).toBeEnabled();
+  });
+  click(buttonNamed(shareLabel, preview));
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual(["https://legacy-site.sites.vm0.io"]);
+  expect(
+    screen.queryByRole("dialog", { name: shareLabel }),
+  ).not.toBeInTheDocument();
+});

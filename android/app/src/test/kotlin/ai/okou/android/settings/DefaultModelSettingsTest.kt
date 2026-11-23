@@ -232,11 +232,11 @@ class DefaultModelSettingsTest {
                                         mapOf(
                                             "selectedModel" to JsonPrimitive("claude-test"),
                                             "serviceTier" to JsonNull,
-                                        )
+                                        ),
                                     ),
                                 "failedAttempts" to JsonPrimitive(1),
                                 "lastFailureMillis" to JsonPrimitive(currentTime),
-                            )
+                            ),
                         )
                     values[key] =
                         JsonObject(
@@ -244,7 +244,7 @@ class DefaultModelSettingsTest {
                                     mapOf(
                                         "edit" to oldEdit,
                                         "label" to JsonPrimitive("Claude Sonnet 5"),
-                                    )
+                                    ),
                             )
                             .toString()
                 }
@@ -312,7 +312,7 @@ class DefaultModelSettingsTest {
             fixture.preference =
                 JsonObject(
                     fixture.preference +
-                        ("modelSettings" to JsonObject(mapOf("claude-test" to changedElsewhere)))
+                        ("modelSettings" to JsonObject(mapOf("claude-test" to changedElsewhere))),
                 )
 
             model.effort(ModelEffort.HIGH)
@@ -410,7 +410,7 @@ class DefaultModelSettingsTest {
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         if (update.selectedModel == "gpt-test") {
                             first.complete(Unit)
@@ -490,7 +490,7 @@ class DefaultModelSettingsTest {
                     override suspend fun defaultModelPreference() = pref
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         if (writes.size < 3) throw ApiFailure.Network(UnknownHostException())
@@ -537,7 +537,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         throw ApiFailure.Http(503, null, null, null)
@@ -642,7 +642,7 @@ class DefaultModelSettingsTest {
             val remote =
                 object : WorkspaceSession by api.service {
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += update.selectedModel to update.serviceTier?.name
                         if (update.serviceTier != null) {
@@ -688,7 +688,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         if (update.selectedModel == "claude-test") {
                             started.complete(Unit)
@@ -737,7 +737,7 @@ class DefaultModelSettingsTest {
                     }
 
                     override suspend fun updateDefaultModelPreference(
-                        update: UpdateDefaultModelPreference
+                        update: UpdateDefaultModelPreference,
                     ): DefaultModelPreference {
                         writes += currentTime
                         throw ApiFailure.Network(NoRouteToHostException())
@@ -855,9 +855,9 @@ class DefaultModelSettingsTest {
                             JsonObject(
                                 mapOf(
                                     "gpt-test" to
-                                        JsonObject(mapOf("effort" to JsonPrimitive("ultra")))
-                                )
-                            ))
+                                        JsonObject(mapOf("effort" to JsonPrimitive("ultra"))),
+                                ),
+                            )),
                 )
             val model = model(api)
             val pi = model.openAfterSync()

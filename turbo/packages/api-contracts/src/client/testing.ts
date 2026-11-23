@@ -292,10 +292,12 @@ import {
 import {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
   dataRouterRequestContract as OriginalDataRouterRequestContract,
+  runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import {
   dataRouterHistoryContract,
   dataRouterRequestContract,
+  runDataRouterRequestContract,
 } from "./data-router";
 import { debugMorningBriefContract as OriginalDebugMorningBriefContract } from "../contracts/debug-morning-brief";
 import { debugMorningBriefContract } from "./debug-morning-brief";
@@ -740,6 +742,7 @@ import {
   webhookGoogleFormsContract as OriginalWebhookGoogleFormsContract,
   webhookGoogleWorkspaceEventsContract as OriginalWebhookGoogleWorkspaceEventsContract,
   webhookHeartbeatContract as OriginalWebhookHeartbeatContract,
+  webhookMemoryArchiveContract as OriginalWebhookMemoryArchiveContract,
   webhookNotionContract as OriginalWebhookNotionContract,
   webhookSessionOutputContract as OriginalWebhookSessionOutputContract,
   webhookStoragesCommitContract as OriginalWebhookStoragesCommitContract,
@@ -763,6 +766,7 @@ import {
   webhookGoogleFormsContract,
   webhookGoogleWorkspaceEventsContract,
   webhookHeartbeatContract,
+  webhookMemoryArchiveContract,
   webhookNotionContract,
   webhookSessionOutputContract,
   webhookStoragesCommitContract,
@@ -1017,6 +1021,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [customConnectorsContract, OriginalCustomConnectorsContract],
   [dataRouterHistoryContract, OriginalDataRouterHistoryContract],
   [dataRouterRequestContract, OriginalDataRouterRequestContract],
+  [runDataRouterRequestContract, OriginalRunDataRouterRequestContract],
   [debugMorningBriefContract, OriginalDebugMorningBriefContract],
   [
     desktopShellAuthorizationContract,
@@ -1350,6 +1355,7 @@ export const clientDescriptorContracts: readonly (readonly [
     OriginalWebhookGoogleWorkspaceEventsContract,
   ],
   [webhookHeartbeatContract, OriginalWebhookHeartbeatContract],
+  [webhookMemoryArchiveContract, OriginalWebhookMemoryArchiveContract],
   [webhookNotionContract, OriginalWebhookNotionContract],
   [webhookSessionOutputContract, OriginalWebhookSessionOutputContract],
   [webhookStoragesCommitContract, OriginalWebhookStoragesCommitContract],

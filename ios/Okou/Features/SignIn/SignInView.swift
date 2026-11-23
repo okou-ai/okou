@@ -18,7 +18,7 @@ struct SignInView: View {
           if authentication.isLoading {
             ProgressView("Restoring your session…")
           } else if authentication.needsWorkspaceSelection {
-            WorkspaceSignInView(authentication: authentication, webURL: webURL)
+            WorkspaceSignInView(authentication: authentication)
           } else {
             unavailableView
           }
@@ -64,17 +64,14 @@ struct SignInView: View {
   }
 }
 
-/// Clerk's organization task also offers organization creation. This restricted
-/// selection view keeps workspace setup on the web while using native SDK sessions.
 private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
-  let webURL: URL
 
   var body: some View {
     if let resources = authentication.membershipResources {
       StoreProvider(resources.store) {
         WorkspaceSignInContent(
-          authentication: authentication, webURL: webURL, scopeID: resources.scopeID,
+          authentication: authentication, setup: resources.setup, scopeID: resources.scopeID,
           memberships: resources.value)
       }
       .id(resources.scopeID)
@@ -86,18 +83,18 @@ private struct WorkspaceSignInView: View {
 
 private struct WorkspaceSignInContent: View {
   let authentication: AuthenticationService
-  let webURL: URL
+  let setup: FirstWorkspaceSetup
   private let scopeID: String
   @LoadableValue private var memberships: Loadable<[WorkspacePresentation]>
   @State private var actionError: String?
   @State private var confirmsSignOut = false
 
   init(
-    authentication: AuthenticationService, webURL: URL, scopeID: String,
+    authentication: AuthenticationService, setup: FirstWorkspaceSetup, scopeID: String,
     memberships: Signal<Task<[WorkspacePresentation], Error>>
   ) {
     self.authentication = authentication
-    self.webURL = webURL
+    self.setup = setup
     self.scopeID = scopeID
     _memberships = LoadableValue(task: memberships)
   }
@@ -121,19 +118,32 @@ private struct WorkspaceSignInContent: View {
         .foregroundStyle(OkouColor.mutedForeground)
       if memberships.state == .loading && authentication.workspaces.isEmpty {
         OkouLoadingRow("Loading workspaces…")
-      } else if authentication.workspaces.isEmpty && memberships.error == nil
-        && authentication.errorMessage == nil
+      } else if authentication.workspaces.isEmpty && setup.invitations.isEmpty
+        && memberships.error == nil && authentication.errorMessage == nil
       {
         VStack(alignment: .leading, spacing: OkouSpace.lg) {
-          Text("Finish setting up your workspace on the web, then return here.")
+          Text("You need a workspace invitation to continue.")
             .foregroundStyle(OkouColor.mutedForeground)
-          Link("Open Okou on the web", destination: webURL)
-            .buttonStyle(OkouButtonStyle(isPrimary: false))
           Button("Refresh workspaces") { Task { await authentication.refresh() } }
             .buttonStyle(OkouButtonStyle(isPrimary: false))
         }
       } else {
         VStack(spacing: OkouSpace.md) {
+          ForEach(setup.invitations) { invitation in
+            Button("Join \(invitation.publicOrganizationData.name)") {
+              Task {
+                do {
+                  try await authentication.acceptInvitation(invitation)
+                } catch {
+                  guard !Task.isCancelled, authentication.membershipResources?.scopeID == scopeID
+                  else { return }
+                  actionError = error.localizedDescription
+                }
+              }
+            }
+            .buttonStyle(OkouProviderButtonStyle())
+            .disabled(setup.acceptingInvitation || authentication.isSwitchingWorkspace)
+          }
           ForEach(authentication.workspaces) { workspace in
             Button {
               Task {
@@ -163,7 +173,7 @@ private struct WorkspaceSignInContent: View {
               .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(OkouProviderButtonStyle())
-            .disabled(authentication.isSwitchingWorkspace)
+            .disabled(setup.acceptingInvitation || authentication.isSwitchingWorkspace)
           }
         }
       }

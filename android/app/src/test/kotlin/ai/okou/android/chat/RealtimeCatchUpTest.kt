@@ -82,7 +82,7 @@ class RealtimeCatchUpTest {
                     val fresh =
                         (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < 30
                     jsonResponse(
-                        """{"events":[${if (fresh) chatEventWire(seq = 30, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "External title") else ""}],"hasMore":false}"""
+                        """{"events":[${if (fresh) chatEventWire(seq = 30, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "External title") else ""}],"hasMore":false}""",
                     )
                 }
                 model.updates.foreground(true)
@@ -97,7 +97,7 @@ class RealtimeCatchUpTest {
                             it < 41
                         } != false
                     jsonResponse(
-                        """{"events":[${if (fresh) chatEventWire(seq = 41, id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", kind = "renamed", title = "Trailing title") else ""}],"hasMore":false}"""
+                        """{"events":[${if (fresh) chatEventWire(seq = 41, id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", kind = "renamed", title = "Trailing title") else ""}],"hasMore":false}""",
                     )
                 }
                 val added = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
@@ -116,7 +116,7 @@ class RealtimeCatchUpTest {
                             run = null,
                         )
                     jsonResponse(
-                        """{"rows":[${if (fresh) input else ""}],"cursor":{"lastEventId":"$added","lastSeqId":41},"hasMore":false}"""
+                        """{"rows":[${if (fresh) input else ""}],"cursor":{"lastEventId":"$added","lastSeqId":41},"hasMore":false}""",
                     )
                 }
                 repeat(50) { external.invalidate() }
