@@ -1895,6 +1895,8 @@
         "slideCountAuto": "자동",
         "slideCountRange": "{{range}}장"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "채팅 또는 프로젝트 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
@@ -1936,6 +1938,7 @@
       "temporarilySwitchTo": "임시로 전환할 모델",
       "threadSuggestions": "채팅 스레드",
       "useForFutureChats": "향후 채팅에도 사용",
+      "useSuggestion": "이 제안 사용",
       "workflows": {
         "loading": "워크플로 로딩 중...",
         "manage": "워크플로 관리",

@@ -1895,6 +1895,8 @@
         "slideCountAuto": "Otomatis",
         "slideCountRange": "{{range}} slide"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "Cari obrolan atau proyek…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
@@ -1936,6 +1938,7 @@
       "temporarilySwitchTo": "Beralih sementara ke",
       "threadSuggestions": "Thread chat",
       "useForFutureChats": "Gunakan ini untuk chat berikutnya",
+      "useSuggestion": "Gunakan saran ini",
       "workflows": {
         "loading": "Memuat alur kerja...",
         "manage": "Kelola alur kerja",

@@ -1,6 +1,8 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, fill } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   projectMenuItem,
@@ -125,4 +127,31 @@ test("projects-029 Messages composed on the optimistic project home can be sent 
     ).toBeEnabled();
   });
   await confirmSent(ws, id, text);
+});
+
+test("An empty Project composer stays blank in creation mode with the follow-up switch on", async () => {
+  const launch = project("Launch");
+  context.mocks.api(projectsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      projects: [launch],
+      latestEventId: null,
+      latestSeqId: 1,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/projects/${launch.id}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  const cards = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  const create = within(cards).getByRole("region", { name: "Create" });
+  click(await findFastControl("button", "Presentation", create));
+  await expect(
+    screen.findByRole("radiogroup", { name: "Create" }),
+  ).resolves.toBeInTheDocument();
+  expect(editor).toHaveAttribute("placeholder", "");
+  expect(screen.queryByText("What is your presentation about?")).toBeNull();
 });

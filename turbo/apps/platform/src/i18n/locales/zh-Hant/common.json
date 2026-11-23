@@ -1895,6 +1895,8 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}} 頁"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "搜尋聊天或專案…",
       "message": "訊息",
       "modelForThisChat": "本次對話使用的模型",
@@ -1936,6 +1938,7 @@
       "temporarilySwitchTo": "臨時切換到",
       "threadSuggestions": "聊天會話",
       "useForFutureChats": "以後的對話都用這個",
+      "useSuggestion": "使用這項建議",
       "workflows": {
         "loading": "正在載入工作流…",
         "manage": "管理工作流",

@@ -1,3 +1,9 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import userEvent from "@testing-library/user-event";
+import {
+  findComposer,
+  findFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -175,3 +181,156 @@ test.each([
     }
   },
 );
+
+const PRESENTATION_PROMPT = "Create a presentation outline";
+const HANDOFF_PROMPT = "Summarize the handoff";
+
+function installPlaceholderChats(currentFollowupInitiallyPresent: boolean) {
+  const current = answered(
+    "The outline is ready",
+    currentFollowupInitiallyPresent
+      ? [{ kind: "talk", prompt: PRESENTATION_PROMPT }]
+      : [],
+  );
+  mockSplitAttachmentChats(
+    context,
+    { threadId: ATTACHMENT_THREAD_ID, title: "Outline", events: current },
+    {
+      threadId: SECOND_ATTACHMENT_THREAD_ID,
+      title: "Handoff response",
+      events: answered(
+        "The handoff is ready",
+        [{ kind: "talk", prompt: HANDOFF_PROMPT }],
+        checklistRun,
+      ),
+    },
+  );
+  return () => {
+    current.push({
+      role: "assistant",
+      content: null,
+      runId: launchRun,
+      createdAt: time,
+      followups: [{ kind: "talk", prompt: PRESENTATION_PROMPT }],
+    });
+    createChatEvent(ATTACHMENT_THREAD_ID);
+  };
+}
+
+test.each([false, true])(
+  "The placeholder button and Tab both accept the first follow-up (touch: %s)",
+  async (touch) => {
+    context.mocks.browser.matchMedia((query) => {
+      return touch && query === "(pointer: coarse)";
+    });
+    mockAttachmentChat(context, {
+      chatEvents: answered("The outline is ready", [
+        { kind: "talk", prompt: PRESENTATION_PROMPT },
+        { kind: "talk", prompt: "Review the next step" },
+      ]),
+    });
+    await setupPage({
+      context,
+      path: `/chats/${ATTACHMENT_THREAD_ID}`,
+      featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+    });
+    const user = userEvent.setup({ delay: null });
+    const editor = await findComposer();
+    await waitFor(() => {
+      expect(editor).toHaveAttribute("aria-placeholder", PRESENTATION_PROMPT);
+    });
+    expect(screen.getByText(PRESENTATION_PROMPT)).toBeVisible();
+    expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
+    const accept = await findFastControl("button", "Use this suggestion");
+    expect(accept).toHaveTextContent(touch ? "OK" : "Tab");
+    await user.click(accept);
+    expect(editor).toHaveFocus();
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(accept).not.toBeInTheDocument();
+    await fill(editor, "");
+    await user.click(editor);
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    await expect(
+      findFastControl("button", "Use this suggestion"),
+    ).resolves.toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(editor).toHaveFocus();
+    await fill(editor, "");
+    expect(editor.textContent).toBe("");
+    await user.click(editor);
+    editor.addEventListener(
+      "keydown",
+      (event) => {
+        event.preventDefault();
+      },
+      {
+        capture: true,
+        once: true,
+      },
+    );
+    await user.keyboard("{Tab}");
+    expect(editor.textContent).toBe("");
+    await user.keyboard("{Tab}");
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(editor).toHaveFocus();
+    await user.keyboard(" please");
+    expect(editor.textContent).toBe(`${PRESENTATION_PROMPT} please`);
+    await user.keyboard("{Tab}");
+    expect(editor).not.toHaveFocus();
+  },
+);
+
+test("An empty new chat has no fallback placeholder with follow-up placeholders enabled", async () => {
+  mockAttachmentChat(context);
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await findComposer();
+  await waitFor(() => {
+    expect(editor).toHaveAttribute("placeholder", "");
+  });
+  expect(editor).toHaveAccessibleName("Message");
+  expect(
+    screen.queryByText("Ask me to automate workflows, manage tasks..."),
+  ).toBeNull();
+});
+
+test("A late follow-up preserves the current draft and appears when cleared", async () => {
+  const deliverCurrentFollowup = installPlaceholderChats(false);
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  const editor = await findComposer();
+  await fill(editor, "Review the estimates");
+  deliverCurrentFollowup();
+  await waitFor(() => {
+    expect(editor).toHaveAttribute("aria-placeholder", PRESENTATION_PROMPT);
+  });
+  expect(editor.textContent).toBe("Review the estimates");
+  expect(screen.queryByText(PRESENTATION_PROMPT)).toBeNull();
+  await fill(editor, "");
+  await expect(screen.findByText(PRESENTATION_PROMPT)).resolves.toBeVisible();
+});
+
+test("Switching threads uses the destination's first follow-up for Tab", async () => {
+  installPlaceholderChats(true);
+  await setupPage({
+    context,
+    path: `/chats/${ATTACHMENT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.FollowupPlaceholder]: true },
+  });
+  await expect(screen.findByText(PRESENTATION_PROMPT)).resolves.toBeVisible();
+  click(await findFastControl("link", "Handoff response"));
+  const suggestion = await screen.findByText(HANDOFF_PROMPT);
+  expect(suggestion).toBeVisible();
+  const editor = await screen.findByPlaceholderText(HANDOFF_PROMPT);
+  const user = userEvent.setup({ delay: null });
+  await user.click(editor);
+  await user.keyboard("{Tab}");
+  expect(editor.textContent).toBe(HANDOFF_PROMPT);
+});

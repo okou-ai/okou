@@ -191,6 +191,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Lead the composer's slash menu with chat actions, and open Workflows and Templates as second-level lists.",
     enabled: false,
   },
+  [FeatureSwitchKey.FollowupPlaceholder]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Follow-up placeholder",
+    description:
+      "Show the first follow-up in the empty composer and press Tab to accept it.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",

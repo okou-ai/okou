@@ -1,8 +1,5 @@
 import { isChatRunReference } from "@okouai/api-contracts/contracts/chat-run-reference";
-import {
-  userMessageDocumentSchema,
-  resolveChatEventRecommendedFollowups,
-} from "@okouai/api-contracts/validators/chat-threads";
+import { userMessageDocumentSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { artifactCatalogRevision$ } from "../artifact-deletion.ts";
 import { readSuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
@@ -188,7 +185,6 @@ import type {
   EventImageGroupProjection,
   MessageListSignals,
   QueueMessageOptions,
-  RecommendedFollowupSource,
   SendMessageOptions,
   ThinkingIndicators,
 } from "./chat-panel-signals.ts";
@@ -1261,58 +1257,6 @@ function defaultThinkingIndicators(): ThinkingIndicators {
   return { kind: "thinking", runId: null, messages: [] };
 }
 
-function latestRecommendedFollowupsFromGroups(
-  groups: SemanticChatGroups,
-): RecommendedFollowupSource | null {
-  const { activeGroups } = groups;
-  for (
-    let groupIndex = activeGroups.length - 1;
-    groupIndex >= 0;
-    groupIndex--
-  ) {
-    const group = activeGroups[groupIndex];
-    if (!group) {
-      continue;
-    }
-    if (group.role !== "assistant") {
-      return null;
-    }
-    for (
-      let eventIndex = group.events.length - 1;
-      eventIndex >= 0;
-      eventIndex--
-    ) {
-      const event = group.events[eventIndex]?.event;
-      if (
-        !event ||
-        chatEventCompatibilityRole(event.eventType) !== "assistant"
-      ) {
-        continue;
-      }
-      if (event.eventType === "output.followups") {
-        // Video generation is retired, so an older run's video suggestion is
-        // not offered as a next step.
-        const followups = resolveChatEventRecommendedFollowups(event).filter(
-          (followup) => {
-            return followup.generationType !== "video";
-          },
-        );
-        if (followups.length > 0) {
-          return { eventId: event.id, followups };
-        }
-        return null;
-      }
-      if (
-        isChatEventContentTextType(event.eventType) &&
-        event.content?.trim()
-      ) {
-        return null;
-      }
-    }
-  }
-  return null;
-}
-
 function createEventSemanticSignals(
   semanticGroups$: ChatEventSignals["semanticGroups$"],
   {
@@ -1354,13 +1298,6 @@ function createEventSemanticSignals(
       !get(runActive$) && runFinishedFromGroups(get(semanticGroups$)),
     );
   });
-  const recommendedFollowupSource$ = computed(
-    (get): Promise<RecommendedFollowupSource | null> => {
-      return Promise.resolve(
-        latestRecommendedFollowupsFromGroups(get(semanticGroups$)),
-      );
-    },
-  );
   const donePhrase$ = computed((get): Promise<string> => {
     get(locale$);
     const lastEvent = get(semanticGroups$)
@@ -1372,7 +1309,6 @@ function createEventSemanticSignals(
     thinkingIndicators$,
     thinkingIndicatorsShown$,
     runFinished$,
-    recommendedFollowupSource$,
     donePhrase$,
   };
 }
@@ -3627,7 +3563,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     thinkingIndicators$: events.thinkingIndicators$,
     thinkingIndicatorsShown$: events.thinkingIndicatorsShown$,
     runFinished$: events.runFinished$,
-    recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
     loadEarlierGroupsAfterScroll$: events.loadEarlierGroupsAfterScroll$,
   };

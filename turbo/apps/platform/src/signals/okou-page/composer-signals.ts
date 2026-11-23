@@ -260,6 +260,7 @@ interface ComposerTemplateSignals
 }
 
 export interface ComposerSignals {
+  readonly recommendedFollowupSource$: ChatEventProjectionSignals["recommendedFollowupSource$"];
   readonly setup$: Command<void, [AbortSignal]>;
   readonly paidToolHints$: Computed<readonly AvailablePaidToolId[]>;
   readonly create: ComposerCreateSignals;
@@ -312,7 +313,11 @@ interface CreateComposerSignalsOptions {
   };
   readonly eventSignals: Pick<
     ChatEventProjectionSignals,
-    "sending$" | "hasEvents$" | "queuedEvents$" | "runningModelSelection$"
+    | "recommendedFollowupSource$"
+    | "sending$"
+    | "hasEvents$"
+    | "queuedEvents$"
+    | "runningModelSelection$"
   >;
   readonly threadId?: string;
   readonly project?: ComposerProjectSignals;
@@ -594,6 +599,7 @@ export function createComposerSignals(
   const connectorCompletion = createComposerConnectorCompletion(connector);
   return {
     threadId: options.threadId,
+    recommendedFollowupSource$: options.eventSignals.recommendedFollowupSource$,
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
       set(voice.setup$, signal);

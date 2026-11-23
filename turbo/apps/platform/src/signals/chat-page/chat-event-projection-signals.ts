@@ -4,6 +4,7 @@ import {
   isUsageEvent,
   semanticChatEventsFromChatEvents,
   type SemanticChatEventState,
+  type SemanticChatGroups,
 } from "@okouai/api-contracts/contracts/chat-event-semantics";
 import type { ChatEvent } from "./chat-event-types.ts";
 import {
@@ -17,6 +18,70 @@ import {
   queuedEventsFromSemanticEvents,
   type ChatRunModelSelection,
 } from "./chat-event-state.ts";
+
+import { resolveChatEventRecommendedFollowups } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  chatEventCompatibilityRole,
+  isChatEventContentTextType,
+} from "@okouai/api-contracts/contracts/chat-events";
+import type { ChatRecommendedFollowup } from "@okouai/api-contracts/contracts/chat-threads";
+
+export interface RecommendedFollowupSource {
+  readonly eventId: string;
+  readonly followups: readonly ChatRecommendedFollowup[];
+}
+
+function latestRecommendedFollowupsFromGroups(
+  groups: SemanticChatGroups<SemanticChatEventState>,
+): RecommendedFollowupSource | null {
+  const { activeGroups } = groups;
+  for (
+    let groupIndex = activeGroups.length - 1;
+    groupIndex >= 0;
+    groupIndex--
+  ) {
+    const group = activeGroups[groupIndex];
+    if (!group) {
+      continue;
+    }
+    if (group.role !== "assistant") {
+      return null;
+    }
+    for (
+      let eventIndex = group.events.length - 1;
+      eventIndex >= 0;
+      eventIndex--
+    ) {
+      const event = group.events[eventIndex]?.event;
+      if (
+        !event ||
+        chatEventCompatibilityRole(event.eventType) !== "assistant"
+      ) {
+        continue;
+      }
+      if (event.eventType === "output.followups") {
+        // Video generation is retired, so an older run's video suggestion is
+        // not offered as a next step.
+        const followups = resolveChatEventRecommendedFollowups(event).filter(
+          (followup) => {
+            return followup.generationType !== "video";
+          },
+        );
+        if (followups.length > 0) {
+          return { eventId: event.id, followups };
+        }
+        return null;
+      }
+      if (
+        isChatEventContentTextType(event.eventType) &&
+        event.content?.trim()
+      ) {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 
 /** Shared event projections owned by one thread's signal graph. */
 export function createChatEventProjectionSignals(
@@ -73,6 +138,9 @@ export function createChatEventProjectionSignals(
   });
 
   return {
+    recommendedFollowupSource$: computed((get) => {
+      return latestRecommendedFollowupsFromGroups(get(semanticGroups$));
+    }),
     semanticEvents$,
     semanticGroups$,
     hasEvents$,
