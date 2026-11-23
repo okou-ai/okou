@@ -1,6 +1,7 @@
 use std::io::{self, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use guest_contracts::stdout_framing::MEMORY_PUBLISHED_MARKER;
 use sandbox::ProcessOutputReceiver;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
@@ -40,6 +41,7 @@ pub(in crate::executor) struct StdoutDrainReport {
     pub(in crate::executor) bytes_written: u64,
     pub(in crate::executor) chunk_truncated: bool,
     pub(in crate::executor) stream_incomplete: bool,
+    pub(in crate::executor) memory_published: bool,
 }
 
 /// Drain stdout chunks from the process receiver and write them to a host file.
@@ -56,6 +58,8 @@ pub(in crate::executor) async fn drain_stdout_to_file(
         }
     };
     let mut report = StdoutDrainReport::default();
+    // Retain only enough bytes for the terminal hint, including across chunks.
+    let mut tail = [0; MEMORY_PUBLISHED_MARKER.len()];
     loop {
         let chunk = if report.stream_incomplete {
             rx.recv().await
@@ -80,6 +84,17 @@ pub(in crate::executor) async fn drain_stdout_to_file(
             report.chunk_truncated = true;
             warn!(path = %path.display(), "stdout stream chunk was truncated before host log write");
         }
+        if let Some(suffix) = chunk
+            .bytes
+            .last_chunk::<{ MEMORY_PUBLISHED_MARKER.len() }>()
+        {
+            tail = *suffix;
+        } else {
+            tail.rotate_left(chunk.bytes.len());
+            for (retained, byte) in tail.iter_mut().rev().zip(chunk.bytes.iter().rev()) {
+                *retained = *byte;
+            }
+        }
         if let Err(e) = file.write_all(&chunk.bytes).await {
             return Err(StdoutDrainError::Write { path, source: e });
         }
@@ -90,6 +105,9 @@ pub(in crate::executor) async fn drain_stdout_to_file(
     if let Err(e) = file.flush().await {
         return Err(StdoutDrainError::Flush { path, source: e });
     }
+    report.memory_published = !report.stream_incomplete
+        && !report.chunk_truncated
+        && tail == MEMORY_PUBLISHED_MARKER.as_bytes();
     Ok(report)
 }
 

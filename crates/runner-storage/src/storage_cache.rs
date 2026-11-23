@@ -2552,6 +2552,39 @@ async fn process_group_background_fill(
     process_one_background_fill(target, group.archive_size, http, home).await
 }
 
+async fn warm_committed_memory_archive(
+    group: &CacheTargetGroup,
+    http: &Client,
+    home: &HomePaths,
+) -> RunnerResult<BackgroundFillOutcome> {
+    let target = &group.representative;
+    let cache_dir = home.storage_cache_dir(&target.name, &target.version);
+    let archive_path = cache_dir.join("archive.tar.gz");
+    if fs::try_exists(&archive_path).await? {
+        return Ok(BackgroundFillOutcome::Skipped);
+    }
+
+    // An imminent successor keeps its normal foreground admission while the
+    // optional HTTP download runs. Acquire a writer only for publication.
+    let bytes = match fetch_cache_target(target, group.archive_size, http).await? {
+        CacheFetchOutcome::Downloaded(bytes) => bytes,
+        CacheFetchOutcome::Unavailable => return Ok(BackgroundFillOutcome::Unavailable),
+        CacheFetchOutcome::Skipped => return Ok(BackgroundFillOutcome::Skipped),
+    };
+    let lock_path = home.storage_lock(&target.name, &target.version);
+    let _writer = match lock::try_acquire_or_busy(lock_path).await? {
+        lock::TryLock::Acquired(lock) => lock,
+        lock::TryLock::Busy => return Ok(BackgroundFillOutcome::Busy),
+    };
+    if fs::try_exists(&archive_path).await? {
+        return Ok(BackgroundFillOutcome::Skipped);
+    }
+    write_to_cache(&cache_dir, &bytes).await?;
+    Ok(BackgroundFillOutcome::Filled {
+        size: bytes.len() as u64,
+    })
+}
+
 async fn process_group_hit_or_passthrough(
     group: &CacheTargetGroup,
     home: &HomePaths,

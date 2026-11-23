@@ -474,6 +474,8 @@ pub struct ExecuteOutcome {
     /// is absent.
     pub discovered_cli_agent_session_id: Option<String>,
     pub restored_session_identity: Option<RestoredSessionIdentity>,
+    /// The Guest signaled a successful Memory publication. The API validates it.
+    pub memory_published: bool,
 }
 
 impl ExecuteOutcome {
@@ -490,6 +492,7 @@ impl ExecuteOutcome {
             startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
+            memory_published: false,
         }
     }
 
@@ -511,6 +514,7 @@ impl ExecuteOutcome {
             startup_report: None,
             discovered_cli_agent_session_id: None,
             restored_session_identity: None,
+            memory_published: false,
         }
     }
 

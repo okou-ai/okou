@@ -3,6 +3,7 @@ use super::*;
 mod archive_retries;
 mod batch_limits;
 mod cache_publication;
+mod committed_memory;
 mod compression;
 mod decoded_observation;
 mod fresh_staging;

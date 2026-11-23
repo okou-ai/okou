@@ -3,6 +3,7 @@ mod activation_custody;
 mod activation_progress;
 mod blank_preemption;
 mod blank_status_publication;
+mod committed_memory;
 mod direct_dispatch;
 mod drain_resume;
 mod heartbeat;
