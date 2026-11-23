@@ -421,6 +421,7 @@ class ChatListModel(
         val rejected: Boolean = false,
         val connectionFailed: Boolean = false,
         val alreadySatisfied: Boolean = false,
+        var unconfirmedInverse: ChatReadIntent? = null,
     ) {
         var observedUnread = false
     }
@@ -695,33 +696,25 @@ class ChatListModel(
         var alreadySatisfied = false
         suspend fun writeRead(): Boolean {
             requireCurrent()
-            return if (intent.action == ChatRowAction.MarkUnread) {
-                service.markUnread(threadId).lastReadAt == null
-            } else {
-                service.markRead(threadId).lastReadAt?.let { intent.covers(it) } == true
-            }
+            val receipt =
+                if (intent.action == ChatRowAction.MarkUnread) service.markUnread(threadId)
+                else service.markRead(threadId)
+            return intent.matchesReadCursor(receipt.lastReadAt)
         }
         val received =
             try {
                 if (reportFailure) {
                     ChatWriteRetries().run { retrying ->
-                        if (retrying) {
-                            val earlier = readConfirmations[threadId]
-                            // The server can still show the old value while an inverse is
-                            // unconfirmed.
-                            if (
-                                earlier == null ||
-                                    earlier.receiptCoversIntent ||
-                                    earlier.intent.action == intent.action
-                            ) {
-                                requireCurrent()
-                                alreadySatisfied =
-                                    if (intent.action == ChatRowAction.MarkUnread) {
-                                        readThreadForConfirmation(threadId)?.let {
-                                            it.lastReadAt == null
-                                        } == true
-                                    } else confirmedReadWatermark(threadId, intent) != null
-                            }
+                        // The server can still show the old value while an inverse is unconfirmed.
+                        if (
+                            retrying &&
+                                readConfirmations[threadId].unconfirmedInverseOf(intent) == null
+                        ) {
+                            requireCurrent()
+                            alreadySatisfied =
+                                readThreadForConfirmation(threadId)?.let {
+                                    intent.matchesReadCursor(it.lastReadAt)
+                                } == true
                         }
                         // Preflight can stop the retry. The subsequent indicator read owns the
                         // display.
@@ -774,12 +767,16 @@ class ChatListModel(
         val publish = received && publishOnReceipt
         // A write awaiting confirmation can leave an earlier projection visible until readback.
         val projectedIntent = if (publish) intent else state.readIntents[threadId]
+        val unconfirmedInverse =
+            if (reportFailure && !received) readConfirmations[threadId].unconfirmedInverseOf(intent)
+            else null
         return ReadConfirmation(
                 intent,
                 received,
                 reportFailure,
                 projectedIntent,
                 alreadySatisfied = alreadySatisfied,
+                unconfirmedInverse = unconfirmedInverse,
             )
             .also {
                 val previous = readConfirmations.put(threadId, it)
@@ -799,19 +796,15 @@ class ChatListModel(
             }
     }
 
-    private fun ChatReadIntent.covers(lastReadAt: String): Boolean =
-        covers(chatTimestamp(lastReadAt))
+    private fun ReadConfirmation?.unconfirmedInverseOf(intent: ChatReadIntent): ChatReadIntent? =
+        this?.takeUnless { it.receiptCoversIntent || it.intent.action == intent.action }?.intent
+
+    private fun ChatReadIntent.matchesReadCursor(lastReadAt: String?): Boolean =
+        if (action == ChatRowAction.MarkUnread) lastReadAt == null
+        else lastReadAt?.let { covers(chatTimestamp(it)) } == true
 
     private fun ChatReadIntent.covers(watermark: ChatTimestamp): Boolean =
         through?.let { watermark >= chatTimestamp(it) } ?: true
-
-    private suspend fun confirmedReadWatermark(
-        threadId: String,
-        intent: ChatReadIntent,
-    ): ChatTimestamp? =
-        readThreadForConfirmation(threadId)?.lastReadAt?.let(::chatTimestamp)?.takeIf {
-            intent.covers(it)
-        }
 
     private suspend fun readThreadForConfirmation(threadId: String): ThreadDetail? =
         try {
@@ -828,6 +821,7 @@ class ChatListModel(
 
     private var undoSequence = 0L
     private var latestOfferedUndo = 0L
+    private var listUndoClearedThrough = 0L
 
     internal fun undoRowAction(undo: ChatRowUndo) {
         val state = mutable.value
@@ -895,10 +889,10 @@ class ChatListModel(
         }
     }
 
-    internal fun clearRowUndo() {
+    internal fun clearListRowUndo() {
         // Commands from the previous list visit may still finish.
-        latestOfferedUndo = undoSequence
-        mutable.value.rowUndo?.let(::dismissRowUndo)
+        listUndoClearedThrough = undoSequence
+        mutable.value.rowUndo?.takeUnless { it.fromConversation }?.let(::dismissRowUndo)
     }
 
     private fun ChatListUiState.undoTarget(undo: ChatRowUndo): ConfirmedChat? =
@@ -919,6 +913,7 @@ class ChatListModel(
         if (
             candidate != null &&
                 candidate.sequence > latestOfferedUndo &&
+                (candidate.fromConversation || candidate.sequence > listUndoClearedThrough) &&
                 state.undoTarget(candidate) != null
         ) {
             latestOfferedUndo = candidate.sequence
@@ -1308,6 +1303,11 @@ class ChatListModel(
         val undoEvent = mutable.value.rowUndo?.checkEvent?.eventId
         val events = projection.retryEvents()
         requestListRead(if (undoEvent == null) events else events - undoEvent, userRequested = true)
+    }
+
+    internal fun checkRowActionFailure(failure: ChatRowActionFailure) {
+        if (!current() || mutable.value.failedRowAction !== failure || failure.rejected) return
+        if (failure.action.updatesChat) reloadAfterRowActionFailure() else retryIndicators()
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
@@ -1804,56 +1804,68 @@ class ChatListModel(
                     val eligible = readConfirmations.toMap()
                     val result = service.indicators()
                     requireCurrent()
-                    var checkedWatermarks: MutableMap<String, ChatTimestamp>? = null
+                    var checkedCursors: MutableMap<String, ThreadDetail>? = null
                     if (verifyPendingRead != null) {
                         for ((id, confirmation) in eligible) {
                             if (
                                 !confirmation.reportFailure ||
                                     confirmation.receiptCoversIntent ||
-                                    confirmation.intent.action != ChatRowAction.MarkRead ||
                                     !verifyPendingRead(id) ||
                                     readConfirmations[id] !== confirmation
                             )
                                 continue
-                            val watermark =
-                                confirmedReadWatermark(id, confirmation.intent) ?: continue
-                            if (readConfirmations[id] !== confirmation) continue
-                            val watermarks =
-                                checkedWatermarks
-                                    ?: mutableMapOf<String, ChatTimestamp>().also {
-                                        checkedWatermarks = it
+                            if (
+                                confirmation.intent.action == ChatRowAction.MarkUnread &&
+                                    confirmation.unconfirmedInverse == null &&
+                                    id in result.unreadAt
+                            )
+                                continue
+                            val detail = readThreadForConfirmation(id) ?: continue
+                            val cursors =
+                                checkedCursors
+                                    ?: mutableMapOf<String, ThreadDetail>().also {
+                                        checkedCursors = it
                                     }
-                            watermarks[id] = watermark
+                            cursors[id] = detail
                         }
                     }
                     val unreadConfirmedAt = wallMillis()
-                    val reconciled =
-                        indicatorReadReceipts.entries
-                            .fold(result) { status, (id, watermark) ->
-                                status.acknowledgeUnread(id, watermark)
-                            }
-                            .let { current ->
-                                checkedWatermarks.orEmpty().entries.fold(current) {
-                                    status,
-                                    (id, watermark) ->
-                                    if (readConfirmations[id] === eligible[id])
-                                        status.acknowledgeUnread(id, watermark)
-                                    else status
-                                }
-                            }
+                    var reconciled =
+                        indicatorReadReceipts.entries.fold(result) { status, (id, watermark) ->
+                            status.acknowledgeUnread(id, watermark)
+                        }
                     val state = mutable.value
                     val settledVisible = mutableSetOf<String>()
                     var failed = state.failedRowAction
                     for ((id, confirmation) in eligible) {
                         if (readConfirmations[id] !== confirmation) continue
-                        // The unread list is bounded, so absence cannot prove a read write.
+                        val inverse = confirmation.unconfirmedInverse
                         confirmation.observedUnread =
                             confirmation.intent.action == ChatRowAction.MarkUnread &&
+                                inverse == null &&
                                 id in result.unreadAt
+                        // A bounded indicator result can miss a chat. Read the cursor itself when
+                        // needed, but wait for different evidence if an inverse may still be
+                        // pending.
+                        val cursorConfirmed =
+                            checkedCursors?.get(id)?.let { detail ->
+                                val cursor = detail.lastReadAt
+                                if (inverse == null) {
+                                    val matches = confirmation.intent.matchesReadCursor(cursor)
+                                    if (matches && cursor != null)
+                                        reconciled =
+                                            reconciled.acknowledgeUnread(id, chatTimestamp(cursor))
+                                    matches
+                                } else {
+                                    if (inverse.matchesReadCursor(cursor))
+                                        confirmation.unconfirmedInverse = null
+                                    false
+                                }
+                            } == true
                         val confirmed =
                             confirmation.receiptCoversIntent ||
                                 confirmation.observedUnread ||
-                                checkedWatermarks?.containsKey(id) == true ||
+                                cursorConfirmed ||
                                 (confirmation.intent.action == ChatRowAction.MarkRead &&
                                     indicatorReadReceipts[id]?.let {
                                         confirmation.intent.covers(it)

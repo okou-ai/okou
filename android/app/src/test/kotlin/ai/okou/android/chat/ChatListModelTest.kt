@@ -1636,6 +1636,94 @@ class ChatListModelTest {
     }
 
     @Test
+    fun lostUnreadResponseCanBeConfirmedOutsideTheUnreadIndicatorWindow() = runTest {
+        var lastReadAt: String? = CHAT_DATE
+        var writes = 0
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        writes++
+                        throw ApiFailure.Network(IOException("Response lost"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String) =
+                        ThreadDetail(lastReadAt, false)
+                }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            val pending = model.uiState.value
+            assertTrue(pending.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, pending.failedRowAction?.action)
+
+            lastReadAt = null
+            model.checkRowActionFailure(checkNotNull(pending.failedRowAction))
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.readIntents.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertNull(confirmed.rowUndo)
+            assertEquals(1, writes)
+        }
+    }
+
+    @Test
+    fun anOldUnreadSnapshotCannotConfirmTheInverseOfAnUnconfirmedRead() = runTest {
+        var lastReadAt: String? = null
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Read response lost"))
+
+                    override suspend fun markUnread(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Unread response lost"))
+
+                    override suspend fun threadDetail(threadId: String) =
+                        ThreadDetail(lastReadAt, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            val pending = checkNotNull(model.uiState.value.failedRowAction)
+            assertEquals(ChatRowAction.MarkUnread, pending.action)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            // The first write appears after the indicator snapshot was taken.
+            lastReadAt = CHAT_DATE
+            model.checkRowActionFailure(pending)
+            runCurrent()
+            assertSame(pending, model.uiState.value.failedRowAction)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            lastReadAt = null
+            model.checkRowActionFailure(pending)
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.isUnread(CHAT_PERSONAL))
+            assertTrue(confirmed.readIntents.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertNull(confirmed.rowUndo)
+        }
+    }
+
+    @Test
     fun aConfirmedUnreadWriteRetiresTheEarlierUnknownReadFeedback() = runTest {
         val source =
             object : Service() {

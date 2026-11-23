@@ -89,6 +89,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.model.MultipleFailureException
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -2518,7 +2519,7 @@ class ChatListRootTest {
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun splitConversationShowsArchiveFailureAndUndoInTheConversationPane() {
+    fun splitConversationKeepsArchiveFeedbackWithTheInitiatingConversation() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
         val events = fixture.rowEventTail()
@@ -2555,6 +2556,67 @@ class ChatListRootTest {
         archiveFromConversation()
         assertConversationFeedback("Undo")
         row.assertDoesNotExist()
+
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        try {
+            RuntimeEnvironment.setQualifiers("en-rUS-w400dp-h800dp")
+            compose.activityRule.scenario.recreate()
+            compose.activityRule.scenario.onActivity {
+                assertEquals(400, it.resources.configuration.screenWidthDp)
+            }
+            compose.onNodeWithTag("chat_list").assertDoesNotExist()
+            assertConversationFeedback("Undo")
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            compose.onNodeWithTag("chat_list").assertIsDisplayed()
+            compose.onNodeWithText("Undo").assertDoesNotExist()
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun aQueuedConversationFailureDoesNotMoveTheVisibleListFeedback() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/projects/$CHAT_PROJECT" ->
+                    if (request.method == "DELETE") MockResponse().setResponseCode(503) else null
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> MockResponse().setResponseCode(400)
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        compose.onNodeWithText("Research").performMouseInput {
+            click(button = MouseButton.Secondary)
+        }
+        compose.onNodeWithText("Delete Project").performClick()
+        compose.onNodeWithText("Delete Project").performClick()
+
+        val listNotice = "Could not confirm Project deletion."
+        compose.waitUntilExactlyOneExists(
+            hasText(listNotice) and hasAnyAncestor(isDialog()),
+            10_000,
+        )
+        compose.onNodeWithText("Cancel").performClick()
+        val inList = hasAnyAncestor(hasTestTag("chat_list_feedback"))
+        val inConversation = hasAnyAncestor(hasTestTag("conversation_feedback"))
+        compose.waitUntilExactlyOneExists(hasText(listNotice) and inList, 10_000)
+
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        compose.waitUntil(10_000) {
+            currentList()?.failedRowAction?.action == ChatRowAction.Archive
+        }
+        compose.onNode(hasText(listNotice) and inList).assertIsDisplayed()
+        compose.onNodeWithTag("conversation_feedback").assertDoesNotExist()
+        compose.onNode(hasContentDescription("Dismiss") and inList).performClick()
+        val conversationNotice = hasText("Could not complete “Archive chat”.")
+        compose.waitUntilExactlyOneExists(conversationNotice and inConversation, 10_000)
     }
 
     @Test
@@ -2879,12 +2941,10 @@ class ChatListRootTest {
             compose.onNodeWithText("Move up").assertDoesNotExist()
             compose.onNodeWithText("Move down").performClick()
         }
+        val awaitingConfirmation = "Could not confirm the chat change."
         moveDown()
         compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Could not confirm the chat change.")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+            compose.onAllNodesWithText(awaitingConfirmation).fetchSemanticsNodes().isNotEmpty()
         }
         assertTrue(
             target.fetchSemanticsNode().boundsInRoot.top <
@@ -2897,6 +2957,8 @@ class ChatListRootTest {
             readbacks.get() > readsBeforeRefresh &&
                 currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Ready
         }
+        compose.onNodeWithText(awaitingConfirmation).assertIsDisplayed()
+        compose.onNodeWithText("Refresh chats").assertIsEnabled()
         assertTrue(
             target.fetchSemanticsNode().boundsInRoot.top <
                 first.fetchSemanticsNode().boundsInRoot.top
@@ -2916,6 +2978,7 @@ class ChatListRootTest {
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.single { it.id == CHAT_PERSONAL }?.pinOrder == "a2"
         }
+        compose.onNodeWithText(awaitingConfirmation).assertDoesNotExist()
         rejectMoved.set(false)
         first.performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("Move up").performClick()

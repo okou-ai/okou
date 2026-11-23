@@ -472,25 +472,22 @@ internal fun OkouApp(
         navigation = navigation.copy(target = WorkspaceTarget.List, search = search)
     }
 
-    val feedbackConversationId by
-        remember(listState) {
-            derivedStateOf {
-                val state = listState.value
-                val undo = state.rowUndo
-                if (undo == null) state.failedRowAction?.conversationId
-                else undo.threadId.takeIf { undo.fromConversation }
-            }
+    val visibleConversationId =
+        thread?.id?.takeIf {
+            settings == null &&
+                !showWorkflows &&
+                !showingConnectors &&
+                !showArtifacts &&
+                resourcesId == null &&
+                inlineArtifactLink == null &&
+                !showingFind &&
+                (listWidth != null || !searchActive)
         }
+    val feedbackConversationId by
+        remember(snackbar) { derivedStateOf { snackbar.chatFeedbackConversationId } }
     val showConversationFeedback =
-        settings == null &&
-            !showWorkflows &&
-            !showingConnectors &&
-            thread != null &&
-            (!showChatList ||
-                feedbackConversationId == thread.id &&
-                    resourcesId == null &&
-                    inlineArtifactLink == null &&
-                    !showingFind)
+        visibleConversationId != null &&
+            (!showChatList || feedbackConversationId == visibleConversationId)
     val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
@@ -500,6 +497,7 @@ internal fun OkouApp(
             listState,
             snackbar,
             showChatList,
+            visibleConversationId,
             showRowFeedback,
             showRowActionFailure = showRowFeedback || showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
