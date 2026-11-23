@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Chats werden synchronisiert…</string>
     <string name="workspace_workflows">Workflows</string>
     <string name="workspace_connectors">Integrationen</string>
     <string name="workspace_artifacts">Artefakte</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">Chat aus dem Archiv geholt</string>
     <string name="chat_undo_marked_read">Chat als gelesen markiert</string>
     <string name="chat_undo">Rückgängig</string>
-    <string name="chat_undo_connection_failed">Die Änderung konnte nicht rückgängig gemacht werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_action_connection_failed">Verbindung fehlgeschlagen. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="chat_undo_checking">Ergebnis wird geprüft …</string>
     <string name="chat_undo_failed">Die Änderung konnte nicht rückgängig gemacht werden.</string>
@@ -72,6 +72,7 @@
     <string name="chat_rename_confirm">Umbenennen</string>
     <string name="chat_rename_cancel">Abbrechen</string>
     <string name="chat_delete">Chat löschen</string>
+    <string name="chat_delete_rejected">Der Chat konnte nicht gelöscht werden.</string>
     <string name="chat_delete_title">Chat löschen?</string>
     <string name="chat_delete_description">Nachrichten und Entwürfe in „%1$s“ werden dauerhaft gelöscht. Laufende Aufgaben werden gestoppt und verknüpfte Automatisierungen pausiert.</string>
     <string name="chat_delete_confirm">Löschen</string>
@@ -94,4 +95,6 @@
     <string name="chat_project_deleted">Das Projekt wurde gelöscht und seine Chats wurden aus den Projekten verschoben.</string>
     <string name="chat_project_delete_rejected">Das Projekt konnte nicht gelöscht werden.</string>
     <string name="chat_project_delete_unconfirmed">Das Löschen des Projekts konnte nicht bestätigt werden.</string>
+    <string name="chat_row_action_rejected_named">„%1$s“ konnte nicht abgeschlossen werden.</string>
+    <string name="chat_row_action_offline_named">„%1$s“ konnte nicht abgeschlossen werden. Prüfe deine Verbindung und versuche es erneut.</string>
 </resources>

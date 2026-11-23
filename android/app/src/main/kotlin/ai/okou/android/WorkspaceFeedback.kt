@@ -9,6 +9,8 @@ import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.canDeleteProject
+import ai.okou.android.chat.label
+import ai.okou.android.chat.recoversInBackground
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -55,16 +57,19 @@ import kotlinx.coroutines.delay
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
 
-private data class UndoContent(
-    val undo: ChatRowUndo,
+private data class ChatFeedbackContent(
     val message: String,
     val actionLabel: String?,
     val enabled: Boolean,
     val showDismiss: Boolean,
 )
 
-private class ChatUndoSnackbar(val content: State<UndoContent>, val onAction: () -> Unit) :
-    SnackbarVisuals {
+private class ChatFeedbackSnackbar(
+    val content: State<ChatFeedbackContent>,
+    val conversationId: String?,
+    override val duration: SnackbarDuration = SnackbarDuration.Indefinite,
+    val onAction: (() -> Unit)? = null,
+) : SnackbarVisuals {
     override val message
         get() = content.value.message
 
@@ -73,17 +78,18 @@ private class ChatUndoSnackbar(val content: State<UndoContent>, val onAction: ()
 
     override val withDismissAction
         get() = content.value.showDismiss
-
-    override val duration = SnackbarDuration.Indefinite
 }
 
+internal val SnackbarHostState.chatFeedbackConversationId: String?
+    get() = (currentSnackbarData?.visuals as? ChatFeedbackSnackbar)?.conversationId
+
 @Composable
-internal fun ChatUndoFeedback(
+private fun ChatUndoFeedback(
     chats: ChatListModel,
-    list: ChatListUiState,
+    undo: ChatRowUndo,
+    actionPending: Boolean,
     snackbar: SnackbarHostState,
 ) {
-    val undo = list.rowUndo ?: return
     val persistent = undo.phase != ChatUndoPhase.Failed
     val message =
         when (undo.phase) {
@@ -96,7 +102,6 @@ internal fun ChatUndoFeedback(
                     },
                 )
             ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
-            ChatUndoPhase.ConnectionFailed -> stringResource(R.string.chat_undo_connection_failed)
             ChatUndoPhase.Failed -> stringResource(R.string.chat_undo_failed)
             ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
@@ -107,22 +112,24 @@ internal fun ChatUndoFeedback(
             else -> null
         }
     key(chats, undo.sequence) {
+        val currentUndo = rememberUpdatedState(undo)
         val content =
             rememberUpdatedState(
-                UndoContent(
-                    undo,
+                ChatFeedbackContent(
                     message,
                     action,
-                    undo.phase != ChatUndoPhase.Checking &&
-                        undo.threadId !in list.pendingRowActions,
+                    undo.phase != ChatUndoPhase.Checking && !actionPending,
                     persistent,
                 ),
             )
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
             snackbar.showSnackbar(
-                ChatUndoSnackbar(content) {
-                    val current = content.value.undo
+                ChatFeedbackSnackbar(
+                    content,
+                    conversationId = undo.threadId.takeIf { undo.fromConversation },
+                ) {
+                    val current = currentUndo.value
                     if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
                     else chats.undoRowAction(current)
                 },
@@ -138,6 +145,7 @@ internal fun WorkspaceChatFeedback(
     listState: State<ChatListUiState>,
     snackbar: SnackbarHostState,
     showChatList: Boolean,
+    visibleConversationId: String?,
     showRowFeedback: Boolean,
     showRowActionFailure: Boolean,
     confirmingProjectDelete: String?,
@@ -170,9 +178,18 @@ internal fun WorkspaceChatFeedback(
     } else if (confirmingProjectDelete != null && list.projectsPhase == ChatReadPhase.Ready) {
         LaunchedEffect(confirmingProjectDelete) { dismissProjectDelete() }
     }
-    LaunchedEffect(chats, showChatList) { if (!showChatList) chats.clearRowUndo() }
-    if (showRowFeedback) ChatUndoFeedback(chats, list, snackbar)
-    if (showRowFeedback && list.rowUndo == null) {
+    val undo =
+        list.rowUndo?.takeIf {
+            if (it.fromConversation) it.threadId == visibleConversationId else showChatList
+        }
+    LaunchedEffect(chats, showChatList) { if (!showChatList) chats.clearListRowUndo() }
+    val hiddenConversationUndo = list.rowUndo?.takeIf { it.fromConversation && it !== undo }
+    LaunchedEffect(chats, hiddenConversationUndo) {
+        hiddenConversationUndo?.let(chats::dismissRowUndo)
+    }
+    if (undo != null)
+        ChatUndoFeedback(chats, undo, undo.threadId in list.pendingRowActions, snackbar)
+    if (showRowFeedback && undo == null) {
         list.chatMoveNotice?.let { notice ->
             val message =
                 notice.projectName?.let { stringResource(R.string.chat_project_moved_named, it) }
@@ -183,7 +200,7 @@ internal fun WorkspaceChatFeedback(
             }
         }
         deleteFeedback
-            ?.takeUnless { it.projectId == deleteProject?.id }
+            ?.takeIf { showChatList && it.projectId != deleteProject?.id }
             ?.let { feedback ->
                 val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
                 val message =
@@ -215,40 +232,17 @@ internal fun WorkspaceChatFeedback(
                 }
             }
     }
-    list.failedRowAction
-        ?.takeIf { list.rowUndo == null }
-        ?.let { failure ->
-            val action = failure.action
-            val message =
-                stringResource(
-                    when {
-                        failure.connectionFailed -> R.string.chat_action_connection_failed
-                        failure.rejected -> R.string.chat_row_action_rejected
-                        action.updatesChat -> R.string.chat_row_action_failed
-                        else -> R.string.chat_read_action_failed
-                    },
-                )
-            val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, failure, message, showRowActionFailure) {
-                if (
-                    showRowActionFailure &&
-                        snackbar.showSnackbar(
-                            message,
-                            actionLabel = refreshLabel,
-                            withDismissAction = !failure.rejected,
-                            duration =
-                                if (failure.rejected) SnackbarDuration.Short
-                                else SnackbarDuration.Indefinite,
-                        ) == SnackbarResult.ActionPerformed
-                ) {
-                    if (action.updatesChat) chats.reloadAfterRowActionFailure()
-                    else chats.retryIndicators()
-                }
-                chats.dismissRowActionFailure(failure)
-            }
-        }
+    if (undo == null)
+        ChatRowFailureFeedback(
+            chats,
+            list,
+            snackbar,
+            showChatList,
+            visibleConversationId,
+            showRowActionFailure,
+        )
     list.markAllReadResult
-        ?.takeIf { list.rowUndo == null }
+        ?.takeIf { undo == null }
         ?.let { result ->
             val message =
                 when {
@@ -275,6 +269,85 @@ internal fun WorkspaceChatFeedback(
                 chats.dismissMarkAllReadResult(result)
             }
         }
+}
+
+@Composable
+private fun ChatRowFailureFeedback(
+    chats: ChatListModel,
+    list: ChatListUiState,
+    snackbar: SnackbarHostState,
+    showChatList: Boolean,
+    visibleConversationId: String?,
+    showRowActionFailure: Boolean,
+) {
+    val failure = list.failedRowAction ?: return
+    val action = failure.action
+    if (action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow) {
+        val message = stringResource(R.string.chat_delete_rejected)
+        LaunchedEffect(chats, snackbar, failure, showChatList) {
+            if (!showChatList) return@LaunchedEffect
+            try {
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Short)
+            } finally {
+                chats.dismissRowActionFailure(failure)
+            }
+        }
+        return
+    }
+    val visible =
+        if (action.recoversInBackground) {
+            val origin = failure.conversationId
+            if (origin == null) showChatList else origin == visibleConversationId
+        } else showRowActionFailure
+    val message =
+        if (failure.rejected && action.recoversInBackground) {
+            stringResource(
+                if (failure.connectionFailed) R.string.chat_row_action_offline_named
+                else R.string.chat_row_action_rejected_named,
+                stringResource(action.label()),
+            )
+        } else {
+            stringResource(
+                when {
+                    failure.connectionFailed -> R.string.chat_action_connection_failed
+                    failure.rejected -> R.string.chat_row_action_rejected
+                    action.updatesChat || failure.readIntent != null ->
+                        R.string.chat_row_action_failed
+                    else -> R.string.chat_read_action_failed
+                },
+            )
+        }
+    val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
+    val retainOnRefresh = !failure.rejected && action.recoversInBackground
+    val readPhase = if (action.updatesChat) list.listPhase else list.indicatorsPhase
+    val content =
+        rememberUpdatedState(
+            ChatFeedbackContent(
+                message,
+                refreshLabel,
+                enabled = !retainOnRefresh || readPhase != ChatReadPhase.Loading,
+                showDismiss = !failure.rejected,
+            ),
+        )
+    LaunchedEffect(chats, snackbar, failure, visible) {
+        if (!visible && retainOnRefresh) return@LaunchedEffect
+        if (visible) {
+            val check = { chats.checkRowActionFailure(failure) }
+            val result =
+                snackbar.showSnackbar(
+                    ChatFeedbackSnackbar(
+                        content,
+                        conversationId = failure.conversationId,
+                        duration =
+                            if (failure.rejected) SnackbarDuration.Short
+                            else SnackbarDuration.Indefinite,
+                        onAction = check.takeIf { retainOnRefresh },
+                    ),
+                )
+            if (result == SnackbarResult.ActionPerformed) check()
+        }
+        chats.dismissRowActionFailure(failure)
+    }
 }
 
 @Composable
@@ -319,7 +392,7 @@ internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier)
 @Composable
 private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
     val visuals = data.visuals
-    val undo = visuals as? ChatUndoSnackbar
+    val action = visuals as? ChatFeedbackSnackbar
     val label = visuals.actionLabel
     val dismissible = visuals.withDismissAction
     if (label == null && !dismissible) return
@@ -329,11 +402,11 @@ private fun FeedbackActions(data: SnackbarData, style: TextStyle) {
     ) {
         if (label != null) {
             TextButton(
-                onClick = { if (undo != null) undo.onAction() else data.performAction() },
+                onClick = { action?.onAction?.invoke() ?: data.performAction() },
                 modifier =
                     Modifier.weight(1f, fill = false)
                         .sizeIn(minWidth = feedbackTouchTarget, minHeight = feedbackTouchTarget),
-                enabled = undo?.content?.value?.enabled ?: true,
+                enabled = action?.content?.value?.enabled ?: true,
                 contentPadding = PaddingValues(horizontal = 8.dp),
                 colors =
                     ButtonDefaults.textButtonColors(

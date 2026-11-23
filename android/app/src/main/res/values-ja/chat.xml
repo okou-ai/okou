@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">チャットを同期中…</string>
     <string name="workspace_workflows">ワークフロー</string>
     <string name="workspace_connectors">コネクター</string>
     <string name="workspace_artifacts">アーティファクト</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">チャットのアーカイブを解除しました</string>
     <string name="chat_undo_marked_read">チャットを既読にしました</string>
     <string name="chat_undo">元に戻す</string>
-    <string name="chat_undo_connection_failed">変更を元に戻せませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_action_connection_failed">接続できませんでした。接続を確認してから、もう一度お試しください。</string>
     <string name="chat_undo_checking">元に戻せたか確認しています…</string>
     <string name="chat_undo_failed">元に戻せませんでした</string>
@@ -70,6 +70,7 @@
     <string name="chat_rename_confirm">名前の変更</string>
     <string name="chat_rename_cancel">キャンセル</string>
     <string name="chat_delete">チャットを削除する</string>
+    <string name="chat_delete_rejected">チャットを削除できませんでした。</string>
     <string name="chat_delete_title">チャットを削除しますか?</string>
     <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
     <string name="chat_delete_confirm">削除</string>
@@ -92,4 +93,6 @@
     <string name="chat_project_deleted">プロジェクトを削除し、チャットをプロジェクト外に移動しました。</string>
     <string name="chat_project_delete_rejected">プロジェクトを削除できませんでした。</string>
     <string name="chat_project_delete_unconfirmed">プロジェクトの削除を確認できませんでした。</string>
+    <string name="chat_row_action_rejected_named">「%1$s」を完了できませんでした。</string>
+    <string name="chat_row_action_offline_named">「%1$s」を完了できませんでした。接続を確認してから、もう一度お試しください。</string>
 </resources>
