@@ -40,6 +40,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,6 +70,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -355,9 +357,11 @@ internal fun SettingsModal(
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
+        val handleHeight = 4.dp
+        val handleTopPadding = 14.dp
+        val handleBottomPadding = if (window.height < 480) 12.dp else 20.dp
         ModalBottomSheet(
             onDismissRequest = onDismiss,
-            modifier = panelHeight,
             sheetState =
                 rememberBottomSheetState(
                     initialValue = SheetValue.Hidden,
@@ -370,11 +374,8 @@ internal fun SettingsModal(
             containerColor = MaterialTheme.colorScheme.surface,
             dragHandle = {
                 Box(
-                    Modifier.padding(
-                            top = 14.dp,
-                            bottom = if (window.height < 480) 12.dp else 20.dp,
-                        )
-                        .size(width = 32.dp, height = 4.dp)
+                    Modifier.padding(top = handleTopPadding, bottom = handleBottomPadding)
+                        .size(width = 32.dp, height = handleHeight)
                         .background(
                             MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                             RoundedCornerShape(2.dp),
@@ -387,7 +388,15 @@ internal fun SettingsModal(
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
-            content(false)
+            if (maxHeight.isSpecified) {
+                val bodyHeight =
+                    (maxHeight - handleHeight - handleTopPadding - handleBottomPadding)
+                        .coerceAtLeast(0.dp)
+                // The sheet needs the full window constraints to calculate its bottom anchor.
+                Box(Modifier.heightIn(max = bodyHeight)) { content(false) }
+            } else {
+                content(false)
+            }
         }
     }
 }
@@ -596,6 +605,8 @@ internal fun <T> SettingsRadioOptions(
     }
 }
 
+private val settingsChoiceRipple = ripple(enableFocusIndication = false)
+
 @Composable
 internal fun SettingsChoiceRow(
     label: String,
@@ -615,7 +626,14 @@ internal fun SettingsChoiceRow(
             .clip(shape)
             .updateFocusOutline(shape, LocalActivityStatusColor.current)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
-            .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
+            .selectable(
+                selected,
+                interactionSource = null,
+                indication = settingsChoiceRipple,
+                enabled = enabled,
+                role = Role.RadioButton,
+                onClick = onClick,
+            )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,

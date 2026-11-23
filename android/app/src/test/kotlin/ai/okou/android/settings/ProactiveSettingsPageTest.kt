@@ -97,7 +97,10 @@ class ProactiveSettingsPageTest {
             entry.performKeyInput { pressKey(Key.Enter) }
             compose.onNodeWithText(title).assertIsDisplayed()
             compose.onNodeWithText("These settings apply in “Workspace A”.").assertIsDisplayed()
-            compose.waitUntil(10_000) { "morning-brief" in fixture.reads }
+            compose.waitUntil(10_000) {
+                // Drain Android's main queue while the cache read hands off to the HTTP request.
+                compose.runOnIdle { "morning-brief" in fixture.reads }
+            }
             compose.onNodeWithText("Morning Brief").assertDoesNotExist()
 
             release.countDown()
