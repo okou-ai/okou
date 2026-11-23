@@ -217,7 +217,13 @@ test("A report without a public source opens its downloaded file from the resour
   const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
-  const report = getButtonByName("report.pdf", panel);
+  const filename = await within(panel).findByText("report.pdf", {
+    exact: true,
+  });
+  const report = filename.closest("button");
+  if (!report) {
+    throw new Error("The report filename has no open action");
+  }
   await userEvent.hover(report);
   expect(report).toHaveTextContent("report.pdf");
   expect(within(panel).queryByRole("tablist")).toBeNull();
