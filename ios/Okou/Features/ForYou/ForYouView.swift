@@ -6,7 +6,8 @@ import SwiftUI
 ///
 /// The cards lie in a deck. A sideways swipe anywhere on the page carries the front card with
 /// the finger, the next one rises out of the deck behind it, and the cover drifts far more
-/// slowly than either, so the page reads in depth.
+/// slowly than either, so the page reads in depth. Under Reduce Motion the cards simply page
+/// side by side and the cover holds still.
 struct ForYouView: View {
   let workspace: WorkspaceStore
   let showChat: () -> Void
@@ -118,7 +119,7 @@ struct ForYouView: View {
 
   private var cover: some View {
     let aspect = Self.coverAspect
-    let drift = max(pagePosition, 0) * Self.coverDrift
+    let drift = reduceMotion ? 0 : max(pagePosition, 0) * Self.coverDrift
     return VStack(spacing: 0) {
       GeometryReader { geometry in
         let width = max(geometry.size.width, geometry.size.height * aspect)
@@ -319,6 +320,7 @@ struct ForYouView: View {
     let layerDrop = Self.layerDrop
     let layerInset = Self.layerInset
     let leaveTilt = Self.leaveTilt
+    let depth = !reduceMotion
     return ScrollView {
       surface(placementOf: card.id) {
         cardView(card).disabled(store.busy)
@@ -337,9 +339,10 @@ struct ForYouView: View {
       let width = max(proxy.size.width, 1)
       let distance = proxy.frame(in: .scrollView(axis: .horizontal)).minX
       // 0 in front. A card still to come waits in the deck (up to 1) instead of beside the
-      // front one; a leaving card (down to -1) goes with the finger, tilting away.
-      let rising = isFirst ? 0 : min(max(distance / width, 0), 1)
-      let leaving = min(max(-distance / width, 0), 1)
+      // front one; a leaving card (down to -1) goes with the finger, tilting away. Without
+      // depth both stay 0, so the cards page side by side.
+      let rising = depth && !isFirst ? min(max(distance / width, 0), 1) : 0
+      let leaving = depth ? min(max(-distance / width, 0), 1) : 0
       return
         content
         .offset(
