@@ -233,6 +233,73 @@ async function setSyncInLab(enabled: boolean) {
   return await findComposerEditor();
 }
 
+test("Disabling sync after initialization keeps the same history and local-only uses", async () => {
+  const id = installWorkflows();
+  mockCache({ "okou_recent-workflows": [id("delta")] });
+  mockRemote([id("echo")]);
+  let editor = await openPage(firstPage, true, true);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("echo"));
+
+  editor = await setSyncInLab(false);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("echo"));
+  await sendWorkflow(editor, "zulu");
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
+
+  editor = await setSyncInLab(true);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
+  disposeFirstPage();
+
+  // Browser-only uses are not replayed when synchronization is enabled again.
+  editor = await openPage(nextPage);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("echo"));
+});
+
+test("A fresh browser-only page reads only the current workspace's saved history", async () => {
+  const id = installWorkflows();
+  mockCache({
+    "okou_recent-workflows:org_default:test-user-123": [id("echo")],
+    "okou_recent-workflows:another-workspace:test-user-123": [id("zulu")],
+  });
+  const editor = await openPage(context, false);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("echo"));
+  act(() => {
+    context.mocks.clerk().organization({
+      activeOrg: { id: "another-workspace", name: "Another Workspace" },
+      memberships: [{ id: "another-workspace" }],
+    });
+    context.mocks.clerk().stateChanged();
+  });
+  await fill(editor, "Next draft");
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+});
+
+test("Re-enabling sync cannot apply an older read over an accepted browser-only use", async () => {
+  installWorkflows();
+  mockCache({});
+  const reading = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(workflowsCollectionContract.recent, async ({ respond }) => {
+    reading.resolve();
+    await response.promise;
+    return respond(200, { workflowIds: [] });
+  });
+  await openPage(context, true, true);
+  await reading.promise;
+  let editor = await setSyncInLab(false);
+  await sendWorkflow(editor, "zulu");
+  editor = await setSyncInLab(true);
+  response.resolve();
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+});
+
 test("Disabling sync in Lab preserves browser-only history when an earlier read finishes", async () => {
   const id = installWorkflows();
   mockCache({ "okou_recent-workflows": [id("zulu")] });
@@ -277,7 +344,7 @@ test("Disabling sync in Lab preserves new browser-only uses when an earlier writ
     await response.promise;
   });
   await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+  expect(workflowNames()).toStrictEqual(ordered("zulu", "delta", "echo"));
 });
 
 test("Enabling sync in Lab keeps the first accepted use ahead of its initial baseline when persistence fails", async () => {
@@ -361,16 +428,15 @@ test("A null history imports normalized legacy IDs and displays the canonical im
       return respond(200, { workflowIds: [id("echo")] });
     },
   );
-  const editor = await openPage(firstPage);
+  const editor = await openPage(context, true, true);
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("echo"));
   expect(imports).toStrictEqual([[id("zulu"), id("echo")]]);
-  disposeFirstPage();
 
-  // Successful synchronization retires the unscoped compatibility history.
-  const offlineEditor = await openPage(nextPage, false);
+  // Disabling remote synchronization keeps this identity's canonical cache.
+  const offlineEditor = await setSyncInLab(false);
   await openMenu(offlineEditor);
-  expect(workflowNames()).toStrictEqual(ordered());
+  expect(workflowNames()).toStrictEqual(ordered("echo"));
 });
 
 test("A fresh empty browser leaves null available for a later legacy import", async () => {

@@ -202,22 +202,20 @@ export function createRecentWorkflowIds(
     if (!range) {
       return [];
     }
-    const owner = await get(enabledRecentWorkflowOwner$);
-    if (owner) {
+    const [owner, enabledOwner] = await Promise.all([
+      get(recentWorkflowOwner$),
+      get(enabledRecentWorkflowOwner$),
+    ]);
+    if (enabledOwner === owner) {
       // Optional sync errors retain the browser cache, not an invented empty
       // server result. Bootstrap owns and reports the original rejection.
       await Promise.allSettled([get(owner.readiness$)]);
-      owner.assertCurrent();
     }
+    owner.assertCurrent();
     // Each query owns a read-only snapshot. Fresh storage signals deliberately
     // do not subscribe to writes, so an open query/IME never changes its order.
-    const storage = localStorageSignals(
-      owner?.storageKey ?? "recent-workflows",
-    );
+    const storage = localStorageSignals(owner.storageKey);
     const value = get(storage.get$);
-    if (!owner) {
-      return readRecentWorkflowIds(value);
-    }
     const legacy = localStorageSignals("recent-workflows");
     return normalizeWorkflowIds(
       readRecentWorkflowIds(value ?? get(legacy.get$)),
@@ -308,7 +306,10 @@ export const recordRecentWorkflowUse$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
-    const owner = await get(enabledRecentWorkflowOwner$);
+    const [owner, enabledOwner] = await Promise.all([
+      get(recentWorkflowOwner$),
+      get(enabledRecentWorkflowOwner$),
+    ]);
     signal.throwIfAborted();
     if (
       use.sessionKey !== get(authenticatedSessionKey$) ||
@@ -317,16 +318,11 @@ export const recordRecentWorkflowUse$ = command(
       throw new DOMException("Workflow recency owner changed", "AbortError");
     }
     const { workflowIds } = use;
-    if (!owner) {
-      const previous = readRecentWorkflowIds(
-        set(recentWorkflowStorage.readFresh$),
-      );
-      const ids = [...new Set([...workflowIds, ...previous])];
-      set(recentWorkflowStorage.set$, JSON.stringify(ids));
-      return;
-    }
     owner.assertCurrent();
-    const readiness = set(initializeRecentWorkflows$, owner, signal);
+    const readiness =
+      enabledOwner === owner
+        ? set(initializeRecentWorkflows$, owner, signal)
+        : undefined;
     const revision = get(owner.revision$) + 1;
     set(owner.revision$, revision);
     set(
@@ -338,6 +334,10 @@ export const recordRecentWorkflowUse$ = command(
         ]),
       ]),
     );
+    set(recentWorkflowStorage.clear$);
+    if (!readiness) {
+      return;
+    }
     const write = set(
       persistRecentWorkflowUse$,
       owner,
