@@ -118,8 +118,10 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     defer { conversation.close() }
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.canStop, true)
+    let (completions, completion) = AsyncStream<Void>.makeStream()
+    defer { completion.finish() }
     let host = UIHostingController(
-      rootView: ChatDetailView(conversation: conversation)
+      rootView: ChatDetailView(conversation: conversation, didSend: { completion.yield() })
         .environment(\.composerPreferences, preferences))
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
@@ -130,12 +132,21 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     // Both key events arrive before the scheduled submission can clear the editor.
     input.insertText("\n")
     input.insertText("\n")
-    try await waitForBusinessResult(
-      message: repeatedSendStatus(conversation, fixture: fixture, input: input)
-    ) {
-      !conversation.isSending && !conversation.isStopping
-        && conversation.pending.contains { $0.needsRetry }
+    // Each key event queued its submission on the main queue. Queue the test behind both: by
+    // then the first has started the only send and the second has decided not to stop.
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      DispatchQueue.main.async { continuation.resume() }
     }
+    let submitted = repeatedSendStatus(conversation, fixture: fixture, input: input)
+    XCTAssertEqual(conversation.pending.count, 1, submitted)
+    XCTAssertFalse(conversation.isStopping, submitted)
+    // Await the send's own completion instead of observing it within a deadline. The first
+    // frame of the conversation builds a render pipeline here, which can take seconds on CI.
+    for await _ in completions { break }
+    let settled = repeatedSendStatus(conversation, fixture: fixture, input: input)
+    XCTAssertFalse(conversation.isSending, settled)
+    XCTAssertFalse(conversation.isStopping, settled)
+    XCTAssertTrue(conversation.pending.contains { $0.needsRetry }, settled)
     let writes = try fixture.requests.sentMessages.withLock {
       try $0.map { try JSONDecoder().decode([String: MessageJSON].self, from: $0) }
     }
@@ -150,7 +161,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     let pending = conversation.pending.map { "\($0.id):retry=\($0.needsRetry)" }
     let requests = fixture.requests.values.withLock { $0 }
     let writes = fixture.requests.sentMessages.withLock { $0.count }
-    return "Repeated keyboard send after waiter join: "
+    return "Repeated keyboard send: "
       + "sending=\(conversation.isSending); stopping=\(conversation.isStopping); "
       + "pending=\(pending); writes=\(writes); requests=\(requests); "
       + "draft=\(String(reflecting: conversation.draft)); "
