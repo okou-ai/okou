@@ -25,10 +25,6 @@ private final class StravaAuthorizationFixture: Sendable {
 
   func response(_ request: URLRequest) throws -> ChatHTTPResponse {
     let path = request.url!.path
-    if path == "/api/feature-switches" {
-      return ChatHTTPResponse(
-        body: "{\"effectiveSwitches\":{\"iosConnectorAppAuthorization\":true}}")
-    }
     if path == "/api/connectors/strava/oauth/start" {
       struct Body: Decodable {
         struct Account: Decodable { let intent: String }
@@ -47,7 +43,10 @@ private final class StravaAuthorizationFixture: Sendable {
           """)
     }
     if path.contains("oauth-completions") {
-      XCTAssertEqual(connectorQuery("connectorSlug", in: request), "strava")
+      XCTAssertEqual(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+          $0.name == "connectorSlug"
+        }?.value, "strava")
       return completed.withLock { $0 }
         ? ChatHTTPResponse(body: "{\"connectionId\":\"\(FixtureData.accountID)\"}")
         : ChatHTTPResponse(status: 404, body: "{\"error\":{\"message\":\"Pending\"}}")
