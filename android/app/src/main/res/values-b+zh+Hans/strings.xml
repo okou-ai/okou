@@ -113,9 +113,8 @@
     <string name="updates_check">检查更新</string>
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">下载更新</string>
-    <string name="updates_retry_download">重试下载</string>
     <string name="updates_download_failed">下载失败</string>
-    <string name="updates_retry_check">重试检查</string>
+    <string name="updates_check_compatible">检查可用版本</string>
     <string name="updates_required_short">需要更新</string>
     <string name="updates_ready">继续安装</string>
     <string name="updates_later">稍后</string>
@@ -151,6 +150,7 @@
     <string name="settings_sign_out_title">退出登录？</string>
     <string name="settings_sign_out_body">在这台设备上继续使用 Okou 时需要重新登录。草稿会保留在当前账户下。</string>
     <string name="updates_waiting_to_check">等待检查</string>
+    <string name="updates_waiting_to_install">等待安装</string>
     <string name="updates_waiting_to_download">等待下载</string>
     <string name="instructions_placeholder">填写你希望 Okou 遵循的回复偏好</string>
     <string name="instructions_save_when_online">联网后可保存，修改已保留。</string>

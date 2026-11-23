@@ -113,9 +113,8 @@
     <string name="updates_check">更新を確認</string>
     <string name="updates_toolbar">更新</string>
     <string name="updates_download">アップデートをダウンロード</string>
-    <string name="updates_retry_download">ダウンロードを再試行</string>
     <string name="updates_download_failed">ダウンロードに失敗</string>
-    <string name="updates_retry_check">再確認</string>
+    <string name="updates_check_compatible">対応バージョンを確認</string>
     <string name="updates_required_short">アップデートが必要</string>
     <string name="updates_ready">インストールを続ける</string>
     <string name="updates_later">後で</string>
@@ -151,6 +150,7 @@
     <string name="settings_sign_out_title">ログアウトしますか？</string>
     <string name="settings_sign_out_body">この端末で Okou を使用するには、再度ログインしてください。下書きはこのアカウントに保持されます。</string>
     <string name="updates_waiting_to_check">確認待ち</string>
+    <string name="updates_waiting_to_install">インストール待ち</string>
     <string name="updates_waiting_to_download">ダウンロード待ち</string>
     <string name="instructions_placeholder">Okou に覚えておいてほしいことはありますか？</string>
     <string name="instructions_save_when_online">接続すると変更を保存できます。</string>

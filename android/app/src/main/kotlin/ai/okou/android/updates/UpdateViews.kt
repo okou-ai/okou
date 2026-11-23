@@ -9,7 +9,6 @@ import ai.okou.android.api.generated.AndroidUpdatesRelease
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
-import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -92,7 +91,6 @@ import java.text.NumberFormat
 internal data class UpdateToolbarAction(
     val label: String,
     val activate: (() -> Unit)?,
-    @DrawableRes val icon: Int = R.drawable.ic_download,
     val progress: String? = null,
     val installsPackage: Boolean = false,
 )
@@ -119,6 +117,9 @@ private val UpdateUiState.interrupted
 private val UpdateUiState.installFailed
     get() = problem == UpdateProblem.Install
 
+private val UpdateUiState.requiresNewerAndroid
+    get() = displayedRelease?.let { (available || required) && it.minimumSdk > sdk } == true
+
 @Composable
 internal fun updateToolbarAction(
     state: UpdateUiState,
@@ -142,15 +143,14 @@ internal fun updateToolbarAction(
             UpdateToolbarAction(
                 stringResource(installProgress ?: R.string.updates_ready),
                 if (installProgress == null) ({ install(transfer.release) }) else null,
-                R.drawable.ic_refresh,
                 installsPackage = true,
             )
+        state.interrupted || transfer is UpdateTransfer.Waiting ->
+            UpdateToolbarAction(stringResource(R.string.updates_download_failed), openDetails)
         state.canDownload -> {
             val release = checkNotNull(state.candidate)
-            val label =
-                if (state.interrupted) R.string.updates_retry_download else R.string.updates_toolbar
             UpdateToolbarAction(
-                stringResource(label),
+                stringResource(R.string.updates_toolbar),
                 if (state.offline) openDetails else ({ download(release) }),
             )
         }
@@ -189,7 +189,11 @@ internal fun UpdateToolbarButton(action: UpdateToolbarAction) {
             ),
     ) {
         if (action.progress == null) {
-            Icon(painterResource(action.icon), contentDescription = null, Modifier.size(24.dp))
+            Icon(
+                painterResource(R.drawable.ic_update),
+                contentDescription = null,
+                Modifier.size(24.dp),
+            )
         } else {
             Text(
                 action.progress,
@@ -280,6 +284,7 @@ internal fun AppUpdateSettings(
                 state.available -> stringResource(R.string.updates_download_failed)
             transfer is UpdateTransfer.Interrupted && state.available ->
                 stringResource(R.string.updates_interrupted)
+            state.requiresNewerAndroid -> stringResource(R.string.updates_android_unsupported)
             newVersion -> stringResource(R.string.updates_new_version)
             state.offline && !state.available ->
                 stringResource(R.string.updates_waiting_for_connection)
@@ -302,15 +307,14 @@ internal fun AppUpdateSettings(
     }
     SettingsRow(
         stringResource(R.string.updates_title),
-        leading = {
-            SettingsIcon(if (state.canInstall) R.drawable.ic_refresh else R.drawable.ic_download)
-        },
+        leading = { SettingsIcon(R.drawable.ic_update) },
         modifier =
             Modifier.focusRequester(focus)
                 .onFocusChanged { focused = it.isFocused }
                 .updateFocusOutline(RoundedCornerShape(12.dp), LocalActivityStatusColor.current),
         value = summary,
         valueMaxLines = 1,
+        reserveValueSpace = true,
         onClick = {
             restoreFocus = focused
             open()
@@ -531,12 +535,10 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
     val offline =
         state.offline && !state.canInstall && state.transfer !is UpdateTransfer.Downloading
     val availability =
-        state.displayedRelease
-            ?.takeIf { (state.available || state.required) && !state.isEligible(it) }
-            ?.let {
-                if (it.minimumSdk > state.sdk) R.string.updates_android_unsupported
-                else R.string.updates_unavailable
-            }
+        state.required ||
+            state.displayedRelease?.let {
+                state.available && !state.isEligible(it)
+            } == true
     val latestProblem =
         when (state.problem) {
             UpdateProblem.Check -> R.string.updates_error_check
@@ -548,6 +550,14 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
             UpdateProblem.Install -> R.string.updates_error_install
             null -> null
         }
+    if (state.requiresNewerAndroid) {
+        Text(
+            stringResource(R.string.updates_android_unsupported),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
     val message =
         when {
             offline && (state.canDownload || state.transfer is UpdateTransfer.Waiting) ->
@@ -558,12 +568,23 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
                 !state.canDownload &&
                 !state.canInstall &&
                 state.transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
-            else -> availability ?: return
+            availability &&
+                !state.requiresNewerAndroid &&
+                state.check != UpdateCheck.Checking &&
+                !state.canDownload &&
+                !state.canInstall -> R.string.updates_unavailable
+            else -> return
         }
     Text(
         stringResource(message),
         color =
-            if (offline) MaterialTheme.colorScheme.onSurfaceVariant
+            if (
+                offline ||
+                    state.check == UpdateCheck.Waiting ||
+                    state.transfer is UpdateTransfer.Waiting ||
+                    state.problem == UpdateProblem.Check
+            )
+                MaterialTheme.colorScheme.onSurfaceVariant
             else MaterialTheme.colorScheme.error,
         style = MaterialTheme.typography.bodyMedium,
         modifier = modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -647,11 +668,10 @@ private fun UpdateAction(
                 R.string.updates_ready to { install(transfer.release) }
             transfer is UpdateTransfer.Waiting -> R.string.updates_waiting_to_download to {}
             state.canDownload ->
-                (if (state.interrupted) R.string.updates_retry_download
-                else R.string.updates_download) to ({ download(checkNotNull(state.candidate)) })
-            state.check == UpdateCheck.Failed -> R.string.updates_retry_check to check
+                R.string.updates_download to { download(checkNotNull(state.candidate)) }
             state.check == UpdateCheck.Waiting || state.offline ->
                 R.string.updates_waiting_to_check to {}
+            state.requiresNewerAndroid -> R.string.updates_check_compatible to check
             else -> R.string.updates_check to check
         }
     Button(
@@ -751,14 +771,20 @@ private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
     val mainLabels =
         listOf(
             stringResource(R.string.updates_download),
-            stringResource(R.string.updates_retry_download),
             stringResource(R.string.updates_check),
+            stringResource(R.string.updates_check_compatible),
             stringResource(R.string.updates_waiting_to_check),
             stringResource(R.string.updates_waiting_to_download),
-            stringResource(R.string.updates_retry_check),
             stringResource(R.string.updates_ready),
         )
-    val progressLabels = listOf(downloadLabel(null), downloadLabel(1f))
+    val progressLabels =
+        listOf(
+            downloadLabel(null),
+            downloadLabel(1f),
+            stringResource(R.string.updates_check_in_progress),
+            stringResource(R.string.updates_installing),
+            stringResource(R.string.updates_waiting_to_install),
+        )
     val labelStyle = updateActionLabelStyle()
     val progressStyle = updateProgressStyle()
     return with(LocalDensity.current) {

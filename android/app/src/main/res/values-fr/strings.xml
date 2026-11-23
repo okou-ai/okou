@@ -113,9 +113,8 @@
     <string name="updates_check">Rechercher des mises à jour</string>
     <string name="updates_toolbar">Mettre à jour</string>
     <string name="updates_download">Télécharger la mise à jour</string>
-    <string name="updates_retry_download">Relancer le téléchargement</string>
     <string name="updates_download_failed">Échec du téléchargement</string>
-    <string name="updates_retry_check">Relancer la vérification</string>
+    <string name="updates_check_compatible">Rechercher des versions compatibles</string>
     <string name="updates_required_short">Mise à jour requise</string>
     <string name="updates_ready">Reprendre l’installation</string>
     <string name="updates_later">Plus tard</string>
@@ -151,6 +150,7 @@
     <string name="settings_sign_out_title">Se déconnecter ?</string>
     <string name="settings_sign_out_body">Pour utiliser à nouveau Okou sur cet appareil, reconnectez-vous. Les brouillons restent associés à ce compte.</string>
     <string name="updates_waiting_to_check">Vérification en attente</string>
+    <string name="updates_waiting_to_install">En attente d’installation</string>
     <string name="updates_waiting_to_download">Téléchargement en attente</string>
     <string name="instructions_placeholder">Que souhaitez-vous qu’Okou garde à l’esprit ?</string>
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>

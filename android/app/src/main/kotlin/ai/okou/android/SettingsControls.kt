@@ -115,6 +115,7 @@ internal fun SettingsRow(
     valueLeading: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
     valueMaxWidth: Dp = 144.dp,
+    reserveValueSpace: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
@@ -168,8 +169,9 @@ internal fun SettingsRow(
         }
         if (!expandedText && value != null) {
             Row(
+                modifier = if (reserveValueSpace) Modifier.weight(0.8f) else Modifier,
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
             ) {
                 valueLeading?.invoke()
                 Text(

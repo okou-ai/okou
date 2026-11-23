@@ -177,7 +177,7 @@ class NativeUpdateTest {
             gate.complete(Unit)
             exists(R.string.updates_error_check)
             captureState("details-check-failed")
-            click(R.string.updates_retry_check)
+            click(R.string.updates_check)
             exists(R.string.updates_current)
             captureState("details-up-to-date")
             candidate.set(release)
@@ -252,6 +252,8 @@ class NativeUpdateTest {
             click(R.string.settings)
             revealSettingsUpdate(app.getString(R.string.updates_new_version))
             exists(R.string.updates_new_version)
+            val settingsUpdate = By.pkg(app.packageName).text(app.getString(R.string.updates_title))
+            val settingsTitleBounds = button(settingsUpdate).visibleBounds
             captureState("settings-available")
             click(R.string.updates_title)
             assertNotNull(text(updateTarget))
@@ -287,6 +289,9 @@ class NativeUpdateTest {
             click(R.string.settings)
             revealSettingsUpdate(progressLabel)
             assertNotNull(text(progressLabel))
+            val progressTitleBounds = button(settingsUpdate).visibleBounds
+            assertEquals(settingsTitleBounds.width(), progressTitleBounds.width())
+            assertEquals(settingsTitleBounds.height(), progressTitleBounds.height())
             captureState("settings-progress")
             backToChatList()
 
@@ -318,9 +323,13 @@ class NativeUpdateTest {
 
             val activeLocale = app.resources.configuration.locales.toLanguageTags()
             download.set(CompletableDeferred())
-            candidate.set(release.copy(version = "99.1.0"))
+            candidate.set(release.copy(version = "99.1.0", minimumSdk = 36))
             owner.requireUpdate(RequiredUpdate("99.1.0"))
             exists(R.string.updates_required)
+            exists(R.string.updates_android_unsupported)
+            captureState("required-incompatible")
+            candidate.set(release.copy(version = "99.1.0"))
+            click(R.string.updates_check_compatible)
             exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()
