@@ -33,6 +33,7 @@ const c = initContract();
  * Onboarding status response schema
  */
 export const onboardingStatusResponseSchema = object({
+  nativeOnboardingEnabled: boolean().optional(),
   needsOnboarding: boolean(),
   onboardingComplete: boolean(),
   isAdmin: boolean(),

@@ -202,6 +202,7 @@ final class WorkspaceLifecycle {
   private let lifecycleTasks = LifecycleTasks()
   let data: NotificationWorkspace
   let store: WorkspaceStore
+  let onboarding: OnboardingStore
   private let authentication: AuthenticationService
   private let notifications: NotificationService
   private var phase = ScenePhase.inactive
@@ -225,7 +226,7 @@ final class WorkspaceLifecycle {
     self.notifications = notifications
     let cacheScope = ChatCacheScope(
       apiBaseURL: configuration.apiURL, userID: data.userID, workspaceID: data.workspaceID)
-    store = WorkspaceStore(
+    let workspaceStore = WorkspaceStore(
       client: data.client, webURL: configuration.webURL, sharedSync: data.sync,
       draftStorage: ChatDraftStorage(scope: cacheScope),
       projectDisclosure: ProjectDisclosureStorage(scope: cacheScope),
@@ -234,6 +235,19 @@ final class WorkspaceLifecycle {
       projectBootstrap: WorkspaceReadBootstrap(),
       indicatorsBootstrap: WorkspaceReadBootstrap(),
       didRefreshReadState: { notifications.requestNotificationStateRefresh() })
+    store = workspaceStore
+    onboarding = OnboardingStore(
+      client: data.client, webURL: configuration.webURL,
+      didFail: { [weak workspaceStore] in workspaceStore?.reportWorkspaceFailure($0) },
+      didComplete: { [weak workspaceStore] prompt in
+        guard let workspaceStore, !workspaceStore.isClosed else { throw CancellationError() }
+        if let prompt {
+          await workspaceStore.prepareWorkspaceComposer()
+          try Task.checkCancellation()
+          workspaceStore.startNewChat()
+          workspaceStore.newChatDraft = prompt
+        }
+      })
   }
 
   func start() async {
@@ -302,6 +316,7 @@ final class WorkspaceLifecycle {
     navigation = nil
     memoryTask?.cancel()
     memoryTask = nil
+    onboarding.close()
     return lifecycleTasks.close(after: [store.close()])
   }
 }

@@ -37,7 +37,14 @@ also supports muting. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the saved
 model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
-Workspace setup remains on the web. Settings shows the profile, workspace,
+The server's `nativeOnboarding` rollout enables native workspace creation and
+source-first setup: industry, service connections, personal subscriptions, optional
+skill import, chat channels, tool preferences and a first-task draft. Progress uses
+the same revisioned member draft and completion contracts as Web. Chat-channel
+installation opens Works in the system Safari sheet; connector and subscription
+account authorization reuse the existing native sheets. Existing completed members
+enter chat directly. Older APIs and disabled rollouts retain Web workspace setup.
+Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
 Account deletion is available only on the web.
 

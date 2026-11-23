@@ -1,4 +1,13 @@
 import { array } from "zod";
+import {
+  onboardingStatusContract,
+  onboardingDraftContract,
+  onboardingSourcesContract,
+  onboardingCompleteContract,
+  onboardingRecommendationContract,
+} from "../contracts/onboarding";
+import { skillImportSessionsContract } from "../contracts/skill-import";
+import { paidToolsContract } from "../contracts/paid-tools";
 import { composerDraftContract } from "../contracts/composer-draft";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
@@ -115,6 +124,41 @@ export const iosClientContracts: readonly {
     readonly responses: Readonly<Record<number, unknown>>;
   };
 }[] = [
+  {
+    id: "ios.onboardingStatusContract.getStatus",
+    route: onboardingStatusContract.getStatus,
+  },
+  { id: "ios.onboardingDraftContract.get", route: onboardingDraftContract.get },
+  {
+    id: "ios.onboardingDraftContract.save",
+    route: onboardingDraftContract.save,
+  },
+  {
+    id: "ios.onboardingSourcesContract.list",
+    route: onboardingSourcesContract.list,
+  },
+  {
+    id: "ios.onboardingCompleteContract.complete",
+    route: onboardingCompleteContract.complete,
+  },
+  {
+    id: "ios.onboardingRecommendationContract.start",
+    route: onboardingRecommendationContract.start,
+  },
+  {
+    id: "ios.onboardingRecommendationContract.get",
+    route: onboardingRecommendationContract.get,
+  },
+  {
+    id: "ios.skillImportSessionsContract.create",
+    route: skillImportSessionsContract.create,
+  },
+  {
+    id: "ios.skillImportSessionsContract.listSkills",
+    route: skillImportSessionsContract.listSkills,
+  },
+  { id: "ios.paidToolsContract.get", route: paidToolsContract.get },
+  { id: "ios.paidToolsContract.update", route: paidToolsContract.update },
   { id: "ios.instructionsContract.get", route: instructionsContract.get },
   { id: "ios.instructionsContract.update", route: instructionsContract.update },
   { id: "ios.composerDraftContract.get", route: composerDraftContract.get },

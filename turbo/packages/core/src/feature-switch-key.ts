@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  NativeOnboarding = "nativeOnboarding",
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
   VoiceMessages = "voiceMessages",
   PhoneUse = "_phoneUse",

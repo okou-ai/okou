@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { featureSwitchesRoutes } from "../feature-switches";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
@@ -196,6 +199,39 @@ describe("Onboarding draft", () => {
 });
 
 describe("GET /api/onboarding/status", () => {
+  it("returns the server's native rollout decision and honors member overrides", async () => {
+    const actor = orgActor();
+    mocks.clerk.session(actor.userId, actor.orgId, actor.role);
+    const headers = { ...authHeaders(), "X-Client-Type": "iOS" };
+    const initial = await accept(
+      onboardingStatusClient().getStatus({ headers }),
+      [200],
+    );
+    expect(initial.body).toMatchObject({
+      nativeOnboardingEnabled: false,
+      needsOnboarding: true,
+    });
+    const switches = setupApp({ context, routes: featureSwitchesRoutes })(
+      featureSwitchesContract,
+    );
+    await accept(
+      switches.update({
+        headers,
+        body: { switches: { [FeatureSwitchKey.NativeOnboarding]: true } },
+      }),
+      [200],
+    );
+    const enabled = await accept(
+      onboardingStatusClient().getStatus({ headers }),
+      [200],
+    );
+    expect(enabled.body).toMatchObject({
+      nativeOnboardingEnabled: true,
+      needsOnboarding: true,
+    });
+    await switches.delete({ headers });
+  });
+
   it("returns 401 when the request is unauthenticated", async () => {
     const response = await accept(
       onboardingStatusClient().getStatus({ headers: {} }),

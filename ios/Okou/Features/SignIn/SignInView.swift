@@ -6,7 +6,8 @@ import SwiftUI
 
 struct SignInView: View {
   let authentication: AuthenticationService
-  let webURL: URL
+  let configuration: AppConfiguration
+  private var webURL: URL { configuration.webURL }
   var body: some View {
     Group {
       if let clerk = authentication.clerk, !authentication.isLoading,
@@ -18,7 +19,7 @@ struct SignInView: View {
           if authentication.isLoading {
             ProgressView("Restoring your session…")
           } else if authentication.needsWorkspaceSelection {
-            WorkspaceSignInView(authentication: authentication, webURL: webURL)
+            WorkspaceSignInView(authentication: authentication, configuration: configuration)
           } else {
             unavailableView
           }
@@ -68,13 +69,13 @@ struct SignInView: View {
 /// selection view keeps workspace setup on the web while using native SDK sessions.
 private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
-  let webURL: URL
+  let configuration: AppConfiguration
 
   var body: some View {
     if let resources = authentication.membershipResources {
       StoreProvider(resources.store) {
         WorkspaceSignInContent(
-          authentication: authentication, webURL: webURL, scopeID: resources.scopeID,
+          authentication: authentication, configuration: configuration, scopeID: resources.scopeID,
           memberships: resources.value)
       }
       .id(resources.scopeID)
@@ -86,18 +87,19 @@ private struct WorkspaceSignInView: View {
 
 private struct WorkspaceSignInContent: View {
   let authentication: AuthenticationService
-  let webURL: URL
+  let configuration: AppConfiguration
+  private var webURL: URL { configuration.webURL }
   private let scopeID: String
   @LoadableValue private var memberships: Loadable<[WorkspacePresentation]>
   @State private var actionError: String?
   @State private var confirmsSignOut = false
 
   init(
-    authentication: AuthenticationService, webURL: URL, scopeID: String,
+    authentication: AuthenticationService, configuration: AppConfiguration, scopeID: String,
     memberships: Signal<Task<[WorkspacePresentation], Error>>
   ) {
     self.authentication = authentication
-    self.webURL = webURL
+    self.configuration = configuration
     self.scopeID = scopeID
     _memberships = LoadableValue(task: memberships)
   }
@@ -124,14 +126,8 @@ private struct WorkspaceSignInContent: View {
       } else if authentication.workspaces.isEmpty && memberships.error == nil
         && authentication.errorMessage == nil
       {
-        VStack(alignment: .leading, spacing: OkouSpace.lg) {
-          Text("Finish setting up your workspace on the web, then return here.")
-            .foregroundStyle(OkouColor.mutedForeground)
-          Link("Open Okou on the web", destination: webURL)
-            .buttonStyle(OkouButtonStyle(isPrimary: false))
-          Button("Refresh workspaces") { Task { await authentication.refresh() } }
-            .buttonStyle(OkouButtonStyle(isPrimary: false))
-        }
+        NativeWorkspaceSetup(authentication: authentication, configuration: configuration)
+          .id(scopeID)
       } else {
         VStack(spacing: OkouSpace.md) {
           ForEach(authentication.workspaces) { workspace in

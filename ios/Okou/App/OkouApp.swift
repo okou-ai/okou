@@ -161,17 +161,18 @@ struct AppRootView: View {
         if let workspace = lifecycle.workspace, workspace.data.scopeID == scopeID,
           scenePhase != .background || lifecycle.presentedScopeID == scopeID
         {
-          WorkspaceRootView(
-            authentication: authentication,
-            workspaceID: workspaceID, userID: userID,
-            accountError: $accountError, lifecycle: workspace, notifications: notifications
-          )
+          OnboardingGate(store: workspace.onboarding, needsUpgrade: workspace.store.needsUpgrade) {
+            WorkspaceRootView(
+              authentication: authentication,
+              workspaceID: workspaceID, userID: userID,
+              accountError: $accountError, lifecycle: workspace, notifications: notifications)
+          }
           .id(scopeID)
         } else {
           OkouColor.background.ignoresSafeArea()
         }
       } else {
-        SignInView(authentication: authentication, webURL: configuration.webURL)
+        SignInView(authentication: authentication, configuration: configuration)
       }
     }
     .task(id: authentication.presentationScopeID) { await lifecycle.updateScope() }

@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.NativeOnboarding]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Native onboarding",
+    description:
+      "Complete workspace setup and source-first onboarding in the iOS app.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.VoiceMessages]: {
     maintainer: "ethan@okou.ai",
     description:

@@ -285,6 +285,12 @@ final class AuthenticationHTTPFixture: Sendable {
     case "/v1/client":
       await clientReads.enter()
       return try json(ClientEnvelope(response: client()))
+    case "/v1/organizations" where request.httpMethod == "POST":
+      var organization = Organization.mock
+      organization.id = "org_created_native"
+      organization.name = "Native workspace"
+      state.withLock { $0.workspaceIDs.append(organization.id) }
+      return try json(ResponseEnvelope(response: organization))
     case "/v1/me/organization_memberships":
       let snapshot = state.withLock { $0 }
       await memberships.enter()

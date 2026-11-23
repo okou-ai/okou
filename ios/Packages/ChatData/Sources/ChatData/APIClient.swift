@@ -149,6 +149,37 @@ public struct APIClient: Sendable {
     return try await execute(request)
   }
 
+  /// Public Router discovery is stateless and never receives the member's API identity.
+  public static func publicToolCatalogPage(
+    at url: URL, cursor: String?, session: URLSession = .shared
+  ) async throws -> Data {
+    guard isStorageURL(url) else { throw APIClientError.invalidURL }
+    var params: [String: Any] = [
+      "_meta": [
+        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities": [String: String]()
+      ]
+    ]
+    if let cursor { params["cursor"] = cursor }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpShouldHandleCookies = false
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("2026-07-28", forHTTPHeaderField: "MCP-Protocol-Version")
+    request.setValue("tools/list", forHTTPHeaderField: "Mcp-Method")
+    request.httpBody = try JSONSerialization.data(withJSONObject: [
+      "jsonrpc": "2.0", "id": UUID().uuidString, "method": "tools/list", "params": params
+    ])
+    let (data, response) = try await session.data(for: request)
+    try Task.checkCancellation()
+    guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode)
+    else {
+      throw APIClientError.invalidResponse
+    }
+    return data
+  }
+
   /// Snapshot URLs are signed separately. Never forward the user's bearer token or client headers.
   public func downloadSnapshot(_ url: URL) async throws -> Data {
     guard
