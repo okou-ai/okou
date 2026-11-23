@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.18...runner-executor-v0.23.19) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
 ## [0.23.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.17...runner-executor-v0.23.18) (2026-11-23)
 
 ## [0.23.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.16...runner-executor-v0.23.17) (2026-11-22)
