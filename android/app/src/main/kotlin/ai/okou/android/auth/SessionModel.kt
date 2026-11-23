@@ -227,12 +227,22 @@ class SessionModel(
         if (requiredUpdate) return
         // SDK token refreshes do not replace a stable identity or its presentation owner.
         if (!force && observed == snapshot) return
+        val session = snapshot.session
+        val selection = entrySelection?.takeIf { it.matches(session) }
+        val awaitingSelection = entrySelection != null && selection == null
+        if (
+            !force &&
+                (workspaceSetupReturn != null || awaitingSelection) &&
+                observed?.copy(membershipAccess = snapshot.membershipAccess) == snapshot
+        ) {
+            // Keep the entry action pending while Clerk publishes membership metadata.
+            observed = snapshot
+            return
+        }
         val checkingFrom =
             mutable.value.takeIf {
                 it.checkingWorkspace && observed?.session == snapshot.session
             }
-        val session = snapshot.session
-        val selection = entrySelection?.takeIf { it.matches(session) }
         observed = snapshot
         retire()
         when {
@@ -747,11 +757,11 @@ class SessionModel(
         foreground.value = active
         mutable.value.ready?.settings?.defaultModel?.foreground(active)
         if (!active) return
-        val state = mutable.value
-        if (workspaceSetupReturn == state.generation) {
-            workspaceSetupReturn = null
-            retry(state.generation)
+        if (workspaceSetupReturn != null) {
+            reconcile(authentication.state.value)
+            workspaceSetupReturn?.let(::retry)
         }
+        val state = mutable.value
         state.ready?.preferences?.refreshFromForeground()
         (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
         if (state.ready != null) observed?.let { loadRemainingMemberships(state.generation, it) }
@@ -789,6 +799,7 @@ class SessionModel(
                 (state.stage == SessionStage.ChooseWorkspace ||
                     state.stage == SessionStage.AccessRemoved)
         ) {
+            workspaceSetupReturn = null
             prepare(snapshot, state)
             return
         }
@@ -805,11 +816,11 @@ class SessionModel(
         reconcile(authentication.state.value, force = true)
     }
 
-    fun workspaceSetupResult(expectedGeneration: Long, opened: Boolean) {
+    fun openWorkspaceSetup(expectedGeneration: Long, launchBrowser: () -> Boolean) {
         if (!acceptsAction(expectedGeneration)) return
         val state = mutable.value
         if (state.stage != SessionStage.ChooseWorkspace || state.memberships.isNotEmpty()) return
-        if (opened) {
+        if (launchBrowser()) {
             // A read started before web setup cannot confirm changes made in the browser.
             if (state.checkingWorkspace) retire()
             workspaceSetupReturn = generation
@@ -862,6 +873,9 @@ class SessionModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
+                if (selection != null && ticket == generation) {
+                    reconcile(authentication.state.value)
+                }
                 if (acceptsAction(ticket)) {
                     if (selection != null) restoreEntryPicker(selection.picker)
                     else mutable.value = SessionUiState(ticket, SessionStage.Unavailable)

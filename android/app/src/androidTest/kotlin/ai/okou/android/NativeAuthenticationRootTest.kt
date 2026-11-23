@@ -15,7 +15,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class NativeAuthenticationRootTest {
     @Test
-    fun pendingAuthenticationDisplaysNativeLoginBeforeAndAfterActivityRecreation() {
+    fun pendingAuthenticationShowsBrandWithoutWorkspaceContentAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val authentication = app.authentication as TestAuthentication

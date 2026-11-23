@@ -231,7 +231,7 @@ class SessionModelTest {
                 checks++
                 response.await()
             }
-            model.workspaceSetupResult(empty.generation, opened = true)
+            model.openWorkspaceSetup(empty.generation) { true }
             model.foregroundChanged(false)
             model.foregroundChanged(true)
             runCurrent()
@@ -246,6 +246,76 @@ class SessionModelTest {
             assertTrue(recovered.memberships.isEmpty())
             assertFalse(recovered.checkingWorkspace)
             assertEquals(SessionEntryFailure.Check, recovered.entryFailure)
+        }
+    }
+
+    @Test
+    fun webSetupWaitsForReturnAcrossMembershipUpdatesForTheSameSession() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val available = auth.available
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            model.foregroundChanged(true)
+            runCurrent()
+            val empty = model.uiState.value
+            val response = CompletableDeferred<List<WorkspaceMembership>>()
+            var checks = 0
+            auth.membershipsAction = {
+                checks++
+                response.await()
+            }
+            model.openWorkspaceSetup(empty.generation) { true }
+            model.foregroundChanged(false)
+
+            val access = MembershipAccess("org-a", "org:member", null)
+            auth.state.value = auth.state.value.copy(membershipAccess = listOf(access))
+            runCurrent()
+            assertEquals(empty, model.uiState.value)
+            assertEquals(0, checks)
+
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(access.copy(permissions = emptyList())),
+                )
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(empty.copy(checkingWorkspace = true), model.uiState.value)
+            assertEquals(1, checks)
+
+            response.complete(available)
+            runCurrent()
+            model.foregroundChanged(false)
+            model.foregroundChanged(true)
+            runCurrent()
+            assertEquals(available, model.uiState.value.memberships)
+            assertFalse(model.uiState.value.checkingWorkspace)
+            assertEquals(1, checks)
+        }
+    }
+
+    @Test
+    fun workspaceSetupOnlyLaunchesFromTheCurrentEmptyPicker() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val available = auth.available
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            runCurrent()
+            val empty = model.uiState.value
+            model.openWorkspaceSetup(empty.generation) { false }
+            assertEquals(
+                empty.copy(entryFailure = SessionEntryFailure.Browser),
+                model.uiState.value,
+            )
+
+            auth.available = available
+            model.retry(empty.generation)
+            runCurrent()
+            val picker = model.uiState.value
+            assertEquals(available, picker.memberships)
+            model.openWorkspaceSetup(empty.generation) {
+                error("The stale action opened a browser")
+            }
+            assertEquals(picker, model.uiState.value)
         }
     }
 
@@ -342,6 +412,36 @@ class SessionModelTest {
             assertEquals(SessionStage.ChooseWorkspace, afterSignOut.stage)
             assertEquals(picker.memberships, afterSignOut.memberships)
             assertEquals(SessionEntryFailure.SignOut, afterSignOut.entryFailure)
+        }
+    }
+
+    @Test
+    fun firstSelectionRecoversItsPickerAfterMembershipUpdatesForTheSameSession() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        val activation = CompletableDeferred<Unit>()
+        auth.selectAction = { _, _ -> activation.await() }
+        check(auth) { model, _ ->
+            runCurrent()
+            val picker = model.uiState.value
+            model.chooseWorkspace(picker.memberships.first().id, picker.generation)
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+
+            val access = MembershipAccess("org-a", "org:member", null)
+            auth.state.value = auth.state.value.copy(membershipAccess = listOf(access))
+            runCurrent()
+            assertEquals(SessionStage.LoadingWorkspace, model.uiState.value.stage)
+
+            activation.completeExceptionally(IllegalStateException("selection rejected"))
+            auth.state.value =
+                auth.state.value.copy(
+                    membershipAccess = listOf(access.copy(permissions = emptyList())),
+                )
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertEquals(picker.memberships, recovered.memberships)
+            assertEquals(SessionEntryFailure.Selection, recovered.entryFailure)
         }
     }
 

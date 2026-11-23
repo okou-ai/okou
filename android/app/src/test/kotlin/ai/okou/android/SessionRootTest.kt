@@ -16,9 +16,8 @@ class SessionRootTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test
-    fun initialNativeLoginPresentationDoesNotWaitForAuthentication() {
+    fun pendingAuthenticationShowsBrandWithoutWorkspaceContentAcrossRecreation() {
         compose.onNodeWithText("Okou").assertExists()
-        compose.onNodeWithText("Restoring your session…").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
