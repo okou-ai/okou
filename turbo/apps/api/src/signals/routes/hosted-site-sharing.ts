@@ -1,0 +1,131 @@
+import { command } from "ccstate";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import { badRequestMessage, notFound } from "../../lib/error";
+import { organizationAuthContext$ } from "../auth/auth-context";
+import { authRoute } from "../auth/auth-route";
+import { setResHeader$ } from "../context/hono";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
+import { getHostedSiteVisibility$ } from "../services/hosted-site-access.service";
+import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
+import {
+  hostedSiteSharingReads,
+  removeHostedSiteShare$,
+  shareHostedSite$,
+} from "../services/hosted-site-sharing.service";
+import { sendEmailOutboxItem$ } from "../services/email-common.service";
+import type { RouteEntry } from "../route-entry";
+
+const owner$ = command(
+  async ({ get, set }, siteId: string, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    const auth = get(organizationAuthContext$);
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    if (!isFeatureEnabled(FeatureSwitchKey.HostedSiteEmailSharing, context)) {
+      return null;
+    }
+    const owner = { ...auth, siteId };
+    return (await set(getHostedSiteVisibility$, owner, signal)) ? owner : null;
+  },
+);
+
+const list$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { siteId } = get(pathParamsOf(hostedSiteSharingContract.list));
+  if (!(await set(owner$, siteId, signal))) {
+    return notFound("Published website not found");
+  }
+  const shares = await get(hostedSiteSharingReads(siteId).shares$);
+  signal.throwIfAborted();
+  return { status: 200 as const, body: { shares } };
+});
+
+const search$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { siteId } = get(pathParamsOf(hostedSiteSharingContract.search));
+  const owner = await set(owner$, siteId, signal);
+  if (!owner) {
+    return notFound("Published website not found");
+  }
+  const { query } = get(queryOf(hostedSiteSharingContract.search));
+  const accounts = await get(hostedSiteSharingReads(siteId, query).accounts$);
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      accounts: accounts.filter((account) => {
+        return account.userId !== owner.userId;
+      }),
+    },
+  };
+});
+
+const share$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const { siteId } = get(pathParamsOf(hostedSiteSharingContract.share));
+  const owner = await set(owner$, siteId, signal);
+  if (!owner) {
+    return notFound("Published website not found");
+  }
+  const input = await get(bodyResultOf(hostedSiteSharingContract.share));
+  signal.throwIfAborted();
+  if (!input.ok) {
+    return input.response;
+  }
+  const result = await set(
+    shareHostedSite$,
+    { ...owner, ...input.data },
+    signal,
+  );
+  if (result.status === "self") {
+    return badRequestMessage("You already own this website");
+  }
+  if (result.status === "not_found") {
+    return notFound("Published website not found");
+  }
+  if (result.outboxId) {
+    waitUntil(set(sendEmailOutboxItem$, result.outboxId, signal));
+  }
+  return {
+    status: 200 as const,
+    body: { share: result.share, outcome: result.outcome },
+  };
+});
+
+const remove$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const params = get(pathParamsOf(hostedSiteSharingContract.remove));
+  const owner = await set(owner$, params.siteId, signal);
+  if (!owner) {
+    return notFound("Published website not found");
+  }
+  const removed = await set(
+    removeHostedSiteShare$,
+    { ...owner, shareId: params.shareId },
+    signal,
+  );
+  return removed
+    ? { status: 200 as const, body: { removed: removed.id } }
+    : notFound("Website share not found");
+});
+
+const auth = {
+  requiredCapability: "host:write",
+  requireOrganization: true,
+  missingOrganizationStatus: 401,
+} as const;
+export const hostedSiteSharingRoutes: readonly RouteEntry[] = [
+  { route: hostedSiteSharingContract.list, handler: authRoute(auth, list$) },
+  {
+    route: hostedSiteSharingContract.search,
+    handler: authRoute(auth, search$),
+  },
+  { route: hostedSiteSharingContract.share, handler: authRoute(auth, share$) },
+  {
+    route: hostedSiteSharingContract.remove,
+    handler: authRoute(auth, remove$),
+  },
+];

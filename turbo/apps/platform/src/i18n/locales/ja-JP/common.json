@@ -575,6 +575,25 @@
       "generated": "{{date}} が生成されました",
       "updated": "{{date}} に更新"
     },
+    "people": {
+      "accounts": "一致するアカウント",
+      "canView": "閲覧可能",
+      "generalAccess": "ユーザーを削除しても一般的なアクセス設定は変わりません。",
+      "hint": "未登録のユーザーには招待メールが届きます。",
+      "invitationQueued": "{{email}} への招待メールを送信待ちにしました",
+      "invited": "招待済み",
+      "label": "ユーザーに共有",
+      "noAccounts": "一致するアカウントがありません。メールアドレスを入力して招待できます。",
+      "placeholder": "名前またはメールで検索",
+      "remove": "{{email}} のアクセス権を削除",
+      "removed": "アクセス権を削除しました",
+      "restricted": "招待されたユーザーのみ",
+      "restrictedDescription": "あなたと招待したユーザー",
+      "searching": "アカウントを検索中…",
+      "share": "共有",
+      "shared": "{{email}} にアクセス権を付与しました",
+      "viewers": "アクセスできるユーザー"
+    },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",
       "badge": "プレビュー",

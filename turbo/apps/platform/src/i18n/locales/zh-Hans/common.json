@@ -575,6 +575,25 @@
       "generated": "生成于 {{date}}",
       "updated": "更新于 {{date}}"
     },
+    "people": {
+      "accounts": "匹配的账号",
+      "canView": "可查看",
+      "generalAccess": "移除用户不会更改通用访问权限。",
+      "hint": "未注册的用户将收到邮件邀请。",
+      "invitationQueued": "已将发给 {{email}} 的邀请加入发送队列",
+      "invited": "已邀请",
+      "label": "分享给指定用户",
+      "noAccounts": "未找到匹配账号，可输入完整邮箱邀请。",
+      "placeholder": "搜索姓名或邮箱",
+      "remove": "移除 {{email}} 的访问权限",
+      "removed": "已移除访问权限",
+      "restricted": "仅受邀用户",
+      "restrictedDescription": "你和你邀请的用户",
+      "searching": "正在搜索账号…",
+      "share": "分享",
+      "shared": "已向 {{email}} 授予访问权限",
+      "viewers": "有权访问的用户"
+    },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",
       "badge": "预览",

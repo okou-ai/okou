@@ -208,6 +208,7 @@ export interface ClerkUsersApi {
   ): Promise<ClerkUser>;
   getUserList(
     params?: {
+      query?: string;
       userId?: string[];
       emailAddress?: string[];
       externalId?: string[];

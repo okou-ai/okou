@@ -575,6 +575,25 @@
       "generated": "생성됨 {{date}}",
       "updated": "업데이트됨 {{date}}"
     },
+    "people": {
+      "accounts": "일치하는 계정",
+      "canView": "보기 가능",
+      "generalAccess": "사용자를 삭제해도 일반 액세스 설정은 변경되지 않습니다.",
+      "hint": "미가입 사용자는 이메일 초대를 받습니다.",
+      "invitationQueued": "{{email}} 초대 이메일이 전송 대기 중입니다",
+      "invited": "초대됨",
+      "label": "사용자와 공유",
+      "noAccounts": "일치하는 계정이 없습니다. 전체 이메일을 입력하여 초대하세요.",
+      "placeholder": "이름 또는 이메일로 검색",
+      "remove": "{{email}}의 액세스 권한 삭제",
+      "removed": "액세스 권한을 삭제했습니다",
+      "restricted": "초대된 사용자만",
+      "restrictedDescription": "나와 내가 초대한 사용자",
+      "searching": "계정 검색 중…",
+      "share": "공유",
+      "shared": "{{email}}에게 액세스 권한을 부여했습니다",
+      "viewers": "액세스 권한이 있는 사용자"
+    },
     "preview": {
       "audioLabel": "{{filename}} 오디오 미리보기",
       "badge": "미리보기",

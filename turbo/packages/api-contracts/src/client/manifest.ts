@@ -355,6 +355,10 @@ export const clientDescriptorManifest = [
     contracts: ["hostContract"],
   },
   {
+    module: "hosted-site-sharing",
+    contracts: ["hostedSiteSharingContract"],
+  },
+  {
     module: "image-io-generate",
     contracts: ["imageIoGenerateContract"],
   },

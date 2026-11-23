@@ -1,6 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -54,6 +55,7 @@ async function openSite({
   sidebar = false,
   shareRows = false,
   groupedActions = false,
+  emailSharing = false,
 } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
@@ -84,6 +86,7 @@ async function openSite({
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
+      [FeatureSwitchKey.HostedSiteEmailSharing]: emailSharing,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -1277,4 +1280,128 @@ test("rapid permission choices settle on the latest audience using the refreshed
   await waitFor(() => {
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
+});
+
+test("owners search accounts in Share, grant access, and remove a named viewer", async () => {
+  const shareId = "00000000-0000-4000-8000-000000000009";
+  const account = {
+    userId: "user_viewer",
+    name: "Taylor Viewer",
+    email: "taylor@example.com",
+  };
+  let shared = false;
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, {
+      shares: shared
+        ? [{ id: shareId, email: account.email, userId: account.userId }]
+        : [],
+    });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+    expect(query.query.toLowerCase()).toContain("ta");
+    return respond(200, { accounts: [account] });
+  });
+  context.mocks.api(
+    hostedSiteSharingContract.share,
+    ({ body, params, respond }) => {
+      expect(params.siteId).toBe(siteId);
+      expect(body.email).toBe(account.email);
+      shared = true;
+      return respond(200, {
+        share: { id: shareId, email: account.email, userId: account.userId },
+        outcome: "shared",
+      });
+    },
+  );
+  context.mocks.api(hostedSiteSharingContract.remove, ({ params, respond }) => {
+    expect(params.shareId).toBe(shareId);
+    shared = false;
+    return respond(200, { removed: shareId });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "Ta");
+  expect(getButtonByName("Share", menu)).toBeDisabled();
+  click(await screen.findByRole("option", { name: /Taylor Viewer/ }));
+  await waitFor(() => {
+    return expect(input).toHaveValue(account.email);
+  });
+  click(getButtonByName("Share", menu));
+  await waitFor(() => {
+    expect(
+      queryButtonByName(`Remove access for ${account.email}`, menu),
+    ).toBeDefined();
+  });
+  const remove = getButtonByName(`Remove access for ${account.email}`, menu);
+  expect(input).toHaveValue("");
+  await expect(
+    screen.findByText("Access granted to taylor@example.com"),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).getByText("Can view")).toBeInTheDocument();
+  expect(
+    within(menu).getByText("Removing a person does not change general access."),
+  ).toBeInTheDocument();
+  click(remove);
+  await waitFor(() => {
+    return expect(
+      within(menu).queryByText("taylor@example.com"),
+    ).not.toBeInTheDocument();
+  });
+});
+
+test("a complete email can be invited without a matching account and private access includes invitees", async () => {
+  const email = "new-person@example.com";
+  const shareId = "00000000-0000-4000-8000-000000000010";
+  let invited = false;
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+    return respond(200, { accounts: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, {
+      shares: invited ? [{ id: shareId, email, userId: null }] : [],
+    });
+  });
+  context.mocks.api(hostedSiteSharingContract.share, ({ body, respond }) => {
+    expect(body.email).toBe(email);
+    invited = true;
+    return respond(200, {
+      share: { id: shareId, email, userId: null },
+      outcome: "invited",
+    });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share" });
+  expect(
+    within(menu).getByRole("radio", { name: "Only people invited" }),
+  ).toBeChecked();
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, email);
+  await screen.findByText(
+    "No matching accounts. Enter a full email to invite.",
+  );
+  click(getButtonByName("Share", menu));
+  await expect(
+    screen.findByText(`Invitation queued for ${email}`),
+  ).resolves.toBeInTheDocument();
+  await expect(within(menu).findByText("Invited")).resolves.toBeInTheDocument();
+  expect(within(menu).getByText(email)).toBeInTheDocument();
+});
+
+test("email sharing stays hidden until its feature switch is enabled", async () => {
+  await openSite();
+  await openShare();
+  expect(
+    screen.queryByRole("combobox", { name: "Share with people" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "Only me" })).toBeInTheDocument();
 });

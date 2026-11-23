@@ -22,6 +22,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
+import { HostedSitePeople } from "./hosted-site-people.tsx";
 import { ProBadge } from "./components/model-provider-picker.tsx";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
 import { captureArtifactAction } from "../../lib/posthog.ts";
@@ -136,6 +137,10 @@ function HostedSitePermissions({
   const loadable = useLoadable(session.visibility$);
   const [operation, change] = useLoadableSet(session.changeVisibility$);
   const organization = useLastResolved(currentOrgInfo$);
+  const emailSharing =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.HostedSiteEmailSharing
+    ];
   const signal = useGet(session.signal$);
   if (!signal || (loadable.state === "hasData" && !loadable.data)) {
     return null;
@@ -155,6 +160,18 @@ function HostedSitePermissions({
       ) : (
         <>
           <SharePermissionChoices
+            privateAudience={
+              emailSharing
+                ? {
+                    label: t(($) => {
+                      return $.artifacts.people.restricted;
+                    }),
+                    description: t(($) => {
+                      return $.artifacts.people.restrictedDescription;
+                    }),
+                  }
+                : undefined
+            }
             selected={
               loadable.state === "hasData"
                 ? loadable.data?.visibility
@@ -599,17 +616,20 @@ function HostedSiteShareUrl({
 function HostedSiteShareBody({
   session,
   permissions,
+  people,
   banner,
   children,
 }: {
   readonly session: HostedSiteShareSession;
   readonly permissions: ReactNode;
   readonly banner: ReactNode;
+  readonly people?: ReactNode;
   readonly children: ReactNode;
 }) {
   const editing = useGet(session.editing$);
   return (
     <div className={editing ? "p-4" : "p-1.5"}>
+      {!editing && people}
       {!editing && permissions}
       <div className={cn(!editing && "px-2")}>
         {!editing && banner}
@@ -692,6 +712,8 @@ function HostedSiteShareSessionMenu({
 }) {
   const signal = useGet(session.signal$);
   const [saving, save] = useLoadableSet(session.save$);
+  const [sharing, share] = useLoadableSet(session.people.share$);
+  const [removing, remove] = useLoadableSet(session.people.remove$);
   if (!signal) {
     return null;
   }
@@ -699,7 +721,11 @@ function HostedSiteShareSessionMenu({
   return (
     <HostedSiteSharePopover
       session={session}
-      saving={saving.state === "loading"}
+      saving={
+        saving.state === "loading" ||
+        sharing.state === "loading" ||
+        removing.state === "loading"
+      }
       {...props}
     >
       <PopoverContent
@@ -709,6 +735,18 @@ function HostedSiteShareSessionMenu({
       >
         <HostedSiteShareBody
           session={session}
+          people={
+            <HostedSitePeople
+              session={session}
+              busy={sharing.state === "loading" || removing.state === "loading"}
+              onShare={(email) => {
+                detach(share(email, signal), Reason.DomCallback);
+              }}
+              onRemove={(id) => {
+                detach(remove(id, signal), Reason.DomCallback);
+              }}
+            />
+          }
           permissions={permissions}
           banner={banner}
         >

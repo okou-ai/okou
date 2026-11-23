@@ -575,6 +575,25 @@
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"
     },
+    "people": {
+      "accounts": "Akun yang cocok",
+      "canView": "Dapat melihat",
+      "generalAccess": "Menghapus seseorang tidak mengubah akses umum.",
+      "hint": "Pengguna yang belum terdaftar akan menerima undangan email.",
+      "invitationQueued": "Undangan untuk {{email}} dalam antrean",
+      "invited": "Diundang",
+      "label": "Bagikan dengan orang",
+      "noAccounts": "Tidak ada akun yang cocok. Masukkan email lengkap untuk mengundang.",
+      "placeholder": "Cari nama atau email",
+      "remove": "Hapus akses {{email}}",
+      "removed": "Akses dihapus",
+      "restricted": "Hanya orang yang diundang",
+      "restrictedDescription": "Anda dan orang yang Anda undang",
+      "searching": "Mencari akun…",
+      "share": "Bagikan",
+      "shared": "Akses diberikan kepada {{email}}",
+      "viewers": "Orang dengan akses"
+    },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",
       "badge": "Pratinjau",

@@ -576,6 +576,25 @@
       "generated": "Generated {{date}}",
       "updated": "Updated at {{date}}"
     },
+    "people": {
+      "accounts": "Matching accounts",
+      "canView": "Can view",
+      "generalAccess": "Removing a person does not change general access.",
+      "hint": "Unregistered recipients receive an email invitation.",
+      "invitationQueued": "Invitation queued for {{email}}",
+      "invited": "Invited",
+      "label": "Share with people",
+      "noAccounts": "No matching accounts. Enter a full email to invite.",
+      "placeholder": "Search by name or email",
+      "remove": "Remove access for {{email}}",
+      "removed": "Access removed",
+      "restricted": "Only people invited",
+      "restrictedDescription": "You and people you invite",
+      "searching": "Searching accounts…",
+      "share": "Share",
+      "shared": "Access granted to {{email}}",
+      "viewers": "People with access"
+    },
     "preview": {
       "audioLabel": "Audio preview for {{filename}}",
       "badge": "Preview",

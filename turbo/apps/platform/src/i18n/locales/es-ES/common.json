@@ -592,6 +592,25 @@
       "generated": "Generado el {{date}}",
       "updated": "Actualizado el {{date}}"
     },
+    "people": {
+      "accounts": "Cuentas coincidentes",
+      "canView": "Puede ver",
+      "generalAccess": "Quitar a una persona no cambia el acceso general.",
+      "hint": "Las personas no registradas recibirán una invitación por correo.",
+      "invitationQueued": "Invitación a {{email}} en cola",
+      "invited": "Invitado",
+      "label": "Compartir con personas",
+      "noAccounts": "No hay cuentas coincidentes. Introduce un correo completo para invitar.",
+      "placeholder": "Buscar por nombre o correo",
+      "remove": "Quitar acceso a {{email}}",
+      "removed": "Acceso eliminado",
+      "restricted": "Solo personas invitadas",
+      "restrictedDescription": "Tú y las personas que invites",
+      "searching": "Buscando cuentas…",
+      "share": "Compartir",
+      "shared": "Acceso concedido a {{email}}",
+      "viewers": "Personas con acceso"
+    },
     "preview": {
       "audioLabel": "Vista previa de audio para {{filename}}",
       "badge": "Vista previa",

@@ -970,6 +970,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "hosted-site-sharing",
+    contracts: ["hostedSiteSharingContract"],
+    bindings: [],
+  },
+  {
     module: "image-io-generate",
     contracts: ["imageIoGenerateContract"],
     bindings: [],

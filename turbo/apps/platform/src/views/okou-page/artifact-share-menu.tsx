@@ -72,12 +72,17 @@ export function SharePermissionChoices({
   organizationName,
   saving,
   unavailable = false,
+  privateAudience,
   onChange,
 }: {
   readonly selected: ArtifactShareStatus["audience"] | undefined;
   readonly organizationName: string | null;
   readonly saving: boolean;
   readonly unavailable?: boolean;
+  readonly privateAudience?: {
+    readonly label: string;
+    readonly description: string;
+  };
   readonly onChange: (audience: ArtifactShareStatus["audience"]) => void;
 }) {
   const { t } = useTranslation();
@@ -89,12 +94,16 @@ export function SharePermissionChoices({
     {
       audience: "private",
       Icon: LockKeyhole,
-      label: t(($) => {
-        return $.artifacts.sharing.onlyMeOption;
-      }),
-      description: t(($) => {
-        return $.artifacts.sharing.onlyMeDescription;
-      }),
+      label:
+        privateAudience?.label ??
+        t(($) => {
+          return $.artifacts.sharing.onlyMeOption;
+        }),
+      description:
+        privateAudience?.description ??
+        t(($) => {
+          return $.artifacts.sharing.onlyMeDescription;
+        }),
     },
     {
       audience: "organization",
