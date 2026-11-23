@@ -81,6 +81,8 @@ open class TestChatService : ChatListService {
 
     override suspend fun indicators() = Indicators(emptyMap(), emptyMap())
 
+    override suspend fun draftThreadIds() = emptyList<String>()
+
     override suspend fun projectSnapshot() =
         Json.decodeFromString<ProjectSnapshot>(
             """{"projects":[],"latestEventId":null,"latestSeqId":0}""",

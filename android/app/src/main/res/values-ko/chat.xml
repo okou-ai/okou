@@ -34,6 +34,7 @@
     <string name="chat_back_to_inbox">받은편지함으로 돌아가기</string>
     <string name="chat_more_actions">추가 작업</string>
     <string name="chat_unread">읽지 않음</string>
+    <string name="chat_has_draft">초안 있음</string>
     <string name="chat_archived">보관됨</string>
     <string name="chat_muted">음소거됨</string>
     <string name="chat_project_empty">이 프로젝트에 채팅이 없습니다.</string>

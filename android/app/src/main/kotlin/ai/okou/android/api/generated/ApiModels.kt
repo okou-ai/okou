@@ -16078,6 +16078,11 @@ data class Indicators(
     val `unreadAt`: Map<String, String>,
 )
 
+@Serializable
+data class ChatDraftIndex(
+    val `draftThreadIds`: List<String>,
+)
+
 @Serializable(with = ProjectSnapshotSerializer::class) sealed interface ProjectSnapshot
 
 @Serializable
