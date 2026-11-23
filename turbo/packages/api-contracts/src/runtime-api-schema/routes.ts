@@ -8,6 +8,7 @@ import {
 import {
   runWebhookContract,
   webhookFirewallAuthContract,
+  webhookMemoryArchiveContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -106,6 +107,11 @@ const runtimeServiceRouteBindings = [
     id: "webhooks.run.storages.commit",
     owner: "guest-agent",
     route: runWebhookContract.storageCommit,
+  },
+  {
+    id: "webhooks.run.storages.memoryArchive",
+    owner: "runner",
+    route: webhookMemoryArchiveContract.read,
   },
   {
     id: "webhooks.agent.telemetry",
