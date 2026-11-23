@@ -5,6 +5,7 @@ import ai.okou.android.MainActivity
 import ai.okou.android.ProactiveSettingsApiFixture
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.preferences.timezoneOptions
 import ai.okou.android.testPreferences
 import android.icu.util.TimeZone
@@ -14,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -177,6 +179,89 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
+    fun confirmingTimezoneReturnsFocusToSuggestionsWhenOnlySuggestionsNeededIt() {
+        val fixture = app.proactive
+        fixture.suggestionsEnabled = true
+        fixture.cardsEnabled = true
+        fixture.suggestionsNeedsTimezone = true
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            openOverview()
+            compose.onNodeWithText(title).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasText("Time zone"), 10_000)
+            val trigger = compose.onNodeWithText("Time zone")
+            trigger.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            trigger.performKeyInput { pressKey(Key.Enter) }
+            val choice = compose.onNode(hasText("Shanghai (UTC+8)") and isSelectable())
+            fixture.suggestionsNeedsTimezone = false
+            choice.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntilDoesNotExist(hasText("Time zone"), 10_000)
+            compose.onNode(hasText("Suggestions") and nativeSwitch).assertIsFocused()
+        } finally {
+            instrumentation.setInTouchMode(true)
+        }
+    }
+
+    @Test
+    fun rejectedTimezoneRestoresTheRowAndShowsOneSnackbar() {
+        app.preferenceWrite = { update, save ->
+            if (update.timezone == TimeZone.getCanonicalID("Asia/Kathmandu")) {
+                throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
+            }
+            save().also { app.proactive.morningNeedsTimezone = false }
+        }
+        openProactiveWithMissingTimezone()
+        chooseKathmandu()
+
+        val notice = hasText(app.getString(R.string.settings_timezone_save_rejected))
+        compose.waitUntilExactlyOneExists(notice, 10_000)
+        val trigger = compose.onNode(hasText("Time zone") and hasText("Shanghai (UTC+8)"))
+        trigger.assertIsDisplayed().assertIsEnabled().performClick()
+        compose.onNode(hasText("Shanghai (UTC+8)") and isSelectable()).assertIsSelected()
+        compose.onNode(hasText("Shanghai (UTC+8)") and isSelectable()).performClick()
+        compose.waitUntilExactlyOneExists(
+            hasText("Morning Brief") and nativeSwitch and isEnabled(),
+            10_000,
+        )
+        compose.waitUntilDoesNotExist(notice, 10_000)
+    }
+
+    @Test
+    fun savedTimezoneKeepsScheduleRetryAfterThePickerDisappears() {
+        var failedSchedule = false
+        app.preferenceWrite = { _, save ->
+            save().also {
+                app.proactive.morningNeedsTimezone = false
+                if (!failedSchedule) {
+                    failedSchedule = true
+                    throw ApiFailure.Http(409, "CONFLICT", null, null)
+                }
+            }
+        }
+        openProactiveWithMissingTimezone()
+        chooseKathmandu()
+
+        compose.waitUntilExactlyOneExists(
+            hasText("Morning Brief") and nativeSwitch and isEnabled(),
+            10_000,
+        )
+        compose.onNodeWithText("Time zone").assertDoesNotExist()
+        val notice = hasText(app.getString(R.string.settings_timezone_schedule_update_failed))
+        compose.onNode(notice).assertIsDisplayed()
+        compose.onNodeWithText(app.getString(R.string.retry)).performClick()
+        compose.waitUntilDoesNotExist(notice, 10_000)
+        compose.runOnIdle {
+            assertTrue(
+                app.snapshotApiPreferences().values.any {
+                    it.timezone == TimeZone.getCanonicalID("Asia/Kathmandu")
+                },
+            )
+        }
+    }
+
+    @Test
     fun timezoneOrderAccountsForDaylightSavingAndSortsEqualOffsetsByCity() {
         val utcName = app.getString(R.string.settings_timezone_utc)
         val winter =
@@ -240,5 +325,20 @@ class ProactiveSettingsPageTest {
         compose.waitUntilExactlyOneExists(hasContentDescription("Settings"), 10_000)
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.waitUntilExactlyOneExists(hasText(title), 10_000)
+    }
+
+    private fun openProactiveWithMissingTimezone() {
+        app.proactive.morningNeedsTimezone = true
+        openOverview()
+        compose.onNodeWithText(title).performScrollTo().performClick()
+        compose.waitUntilExactlyOneExists(hasText("Morning Brief") and nativeSwitch, 10_000)
+    }
+
+    private fun chooseKathmandu() {
+        compose.onNodeWithText("Time zone").performClick()
+        compose
+            .onNode(hasScrollToIndexAction())
+            .performScrollToKey(TimeZone.getCanonicalID("Asia/Kathmandu"))
+        compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable()).performClick()
     }
 }

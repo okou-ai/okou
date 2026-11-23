@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -59,6 +62,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 internal fun MemberPreferencesSettings(
@@ -207,6 +212,19 @@ internal fun TimezonePicker(
 }
 
 @Composable
+internal fun TimezoneSaveFeedback(model: MemberPreferencesModel, snackbar: SnackbarHostState) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val message by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
+    LaunchedEffect(model, snackbar, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            model.timezoneRejections.collectLatest {
+                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            }
+        }
+    }
+}
+
+@Composable
 internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit) {
     if (state.recovering) return
     val message =
@@ -214,7 +232,13 @@ internal fun PreferenceFeedback(state: MemberPreferencesState, retry: () -> Unit
             PreferenceStatus.Ready,
             PreferenceStatus.Saving,
             PreferenceStatus.Refreshing -> return
-            PreferenceStatus.SaveFailed -> R.string.preference_save_failed
+            PreferenceStatus.SaveFailed ->
+                when {
+                    state.timezoneScheduleUpdatePending ->
+                        R.string.settings_timezone_schedule_update_failed
+                    state.pending?.timezone != null -> R.string.settings_proactive_save_unconfirmed
+                    else -> R.string.preference_save_failed
+                }
             PreferenceStatus.RefreshFailed -> R.string.preference_refresh_failed
         }
     val colors = MaterialTheme.colorScheme

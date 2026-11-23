@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">同時開啟</string>
     <string name="settings_suggestions_disable_both">同時關閉</string>
     <string name="settings_suggestions_save_failed">無法儲存建議設定，已還原原值。</string>
+    <string name="settings_timezone_save_rejected">無法儲存時區，已還原原值。</string>
+    <string name="settings_timezone_schedule_update_failed">時區已儲存，無法更新晨報時間。</string>
 </resources>

@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -104,12 +105,22 @@ internal fun ProactiveSettingsPage(
 
     val morning by model.morningBrief.state.collectAsStateWithLifecycle()
     val suggestions by model.suggestions.state.collectAsStateWithLifecycle()
-    val needsTimezone =
-        morning.confirmed?.needsTimezone == true || suggestions.confirmed?.needsTimezone == true
-    val morningFocus = remember { FocusRequester() }
-    val current =
-        if (needsTimezone) preferences.uiState.collectAsStateWithLifecycle().value else null
-    val canSelect = current != null && morning.online && current.pending?.timezoneToWrite == null
+    val morningNeedsTimezone = morning.confirmed?.needsTimezone == true
+    val needsTimezone = morningNeedsTimezone || suggestions.confirmed?.needsTimezone == true
+    val relatedFocus = remember { FocusRequester() }
+    var timezoneSetting by remember { mutableStateOf(ProactiveSetting.MorningBrief) }
+    // Keep the last related row as the settings refresh and the timezone entry disappears.
+    SideEffect {
+        if (needsTimezone) {
+            timezoneSetting =
+                if (morningNeedsTimezone) ProactiveSetting.MorningBrief
+                else ProactiveSetting.Suggestions
+        }
+    }
+    fun focusFor(setting: ProactiveSetting) =
+        if (timezoneSetting == setting) Modifier.focusRequester(relatedFocus) else Modifier
+    val current by preferences.uiState.collectAsStateWithLifecycle()
+    val canSelect = needsTimezone && morning.online && current.pending?.timezoneToWrite == null
     val select: (String) -> Unit = { preferences.selectTimezone(it, missingOnServer = true) }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ProactiveDetail(stringResource(R.string.settings_proactive_scope, workspace))
@@ -119,21 +130,29 @@ internal fun ProactiveSettingsPage(
                 MorningBriefRow(
                     morning,
                     model.morningBrief::choose,
-                    Modifier.focusRequester(morningFocus),
+                    focusFor(ProactiveSetting.MorningBrief),
                 )
             if (!suggestions.hidden && (suggestions.confirmed != null || suggestions.loading)) {
                 HorizontalDivider()
                 if (suggestions.loading) ProactiveSettingPlaceholder()
-                else SuggestionsRow(suggestions, model.suggestions::choose)
+                else {
+                    SuggestionsRow(
+                        suggestions,
+                        model.suggestions::choose,
+                        focusFor(ProactiveSetting.Suggestions),
+                    )
+                }
             }
             if (needsTimezone) HorizontalDivider()
             TimezonePicker(
-                current?.timezone,
+                current.timezone.takeIf { needsTimezone },
                 select.takeIf { canSelect },
                 visible = needsTimezone,
-                fallbackFocus = morningFocus,
+                fallbackFocus = relatedFocus,
             )
-            if (current != null) PreferenceFeedback(current, preferences::retry)
+            if (needsTimezone || current.timezoneScheduleUpdatePending) {
+                PreferenceFeedback(current, preferences::retry)
+            }
         }
         if (suggestions.readFailed && suggestions.confirmed == null) {
             ProactiveDetail(stringResource(R.string.settings_proactive_read_failed))
@@ -162,7 +181,11 @@ private fun MorningBriefRow(
 }
 
 @Composable
-private fun SuggestionsRow(state: ProactiveSettingState, select: (Boolean) -> Unit) {
+private fun SuggestionsRow(
+    state: ProactiveSettingState,
+    select: (Boolean) -> Unit,
+    modifier: Modifier,
+) {
     val title = stringResource(R.string.settings_suggestions)
     val partial = state.confirmed?.takeIf { it.partial && state.pending == null }
     SettingsTrigger(
@@ -200,12 +223,12 @@ private fun SuggestionsRow(state: ProactiveSettingState, select: (Boolean) -> Un
                 LaunchedEffect(first) { first.requestFocus() }
             }
         },
-    ) { modifier, open ->
+    ) { triggerModifier, open ->
         if (partial != null) {
             SettingsRow(
                 title,
                 leading = { SettingsIcon(R.drawable.ic_lightbulb) },
-                modifier = modifier,
+                modifier = modifier.then(triggerModifier),
                 value = stringResource(R.string.settings_suggestions_partial),
                 enabled = state.canChoose,
                 onClick = open,
@@ -216,7 +239,7 @@ private fun SuggestionsRow(state: ProactiveSettingState, select: (Boolean) -> Un
                 leading = { SettingsIcon(R.drawable.ic_lightbulb) },
                 checked = state.enabled,
                 onCheckedChange = select.takeIf { state.canChoose },
-                modifier = modifier,
+                modifier = modifier.then(triggerModifier),
                 supportingText = stringResource(state.detail(R.string.settings_suggestions_detail)),
             )
         }

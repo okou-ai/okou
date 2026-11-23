@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">दोनों चालू करें</string>
     <string name="settings_suggestions_disable_both">दोनों बंद करें</string>
     <string name="settings_suggestions_save_failed">सुझाव की सेटिंग सेव नहीं हुई। पिछली सेटिंग बहाल कर दी गई है।</string>
+    <string name="settings_timezone_save_rejected">समय क्षेत्र सेव नहीं हो सका। पिछला समय क्षेत्र बहाल कर दिया गया है।</string>
+    <string name="settings_timezone_schedule_update_failed">समय क्षेत्र सेव हो गया। सुबह के सारांश का समय अपडेट नहीं हो सका।</string>
 </resources>

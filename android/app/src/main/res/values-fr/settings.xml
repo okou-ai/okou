@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">Activer les deux</string>
     <string name="settings_suggestions_disable_both">Désactiver les deux</string>
     <string name="settings_suggestions_save_failed">Impossible d’enregistrer les suggestions. Le paramètre précédent a été rétabli.</string>
+    <string name="settings_timezone_save_rejected">Impossible d’enregistrer le fuseau horaire. Le fuseau précédent a été rétabli.</string>
+    <string name="settings_timezone_schedule_update_failed">Le fuseau horaire a été enregistré. Impossible de mettre à jour l’horaire du résumé matinal.</string>
 </resources>

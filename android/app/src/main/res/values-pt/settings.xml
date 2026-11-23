@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">Ativar as duas opções</string>
     <string name="settings_suggestions_disable_both">Desativar as duas opções</string>
     <string name="settings_suggestions_save_failed">Não foi possível salvar as sugestões. A configuração anterior foi restaurada.</string>
+    <string name="settings_timezone_save_rejected">Não foi possível salvar o fuso horário. O fuso anterior foi restaurado.</string>
+    <string name="settings_timezone_schedule_update_failed">Fuso horário salvo. Não foi possível atualizar o horário do resumo matinal.</string>
 </resources>

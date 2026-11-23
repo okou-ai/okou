@@ -105,4 +105,6 @@
     <string name="settings_suggestions_enable_both">Turn both on</string>
     <string name="settings_suggestions_disable_both">Turn both off</string>
     <string name="settings_suggestions_save_failed">Couldn’t save Suggestions. Restored the previous setting.</string>
+    <string name="settings_timezone_save_rejected">Couldn’t save the time zone. Restored the previous time zone.</string>
+    <string name="settings_timezone_schedule_update_failed">Time zone saved. Couldn’t update the Morning Brief schedule.</string>
 </resources>

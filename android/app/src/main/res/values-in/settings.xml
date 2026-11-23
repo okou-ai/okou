@@ -104,4 +104,6 @@
     <string name="settings_suggestions_enable_both">Aktifkan keduanya</string>
     <string name="settings_suggestions_disable_both">Nonaktifkan keduanya</string>
     <string name="settings_suggestions_save_failed">Saran tidak dapat disimpan. Setelan sebelumnya dipulihkan.</string>
+    <string name="settings_timezone_save_rejected">Zona waktu tidak dapat disimpan. Zona waktu sebelumnya dipulihkan.</string>
+    <string name="settings_timezone_schedule_update_failed">Zona waktu disimpan. Jadwal ringkasan pagi tidak dapat diperbarui.</string>
 </resources>

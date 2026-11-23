@@ -217,6 +217,90 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun rejectedTimezoneRestoresTheConfirmedValueAndAllowsAnotherSelection() =
+        check { model, api, _ ->
+            val confirmed = model.uiState.value.timezone
+            val save = api.write
+            api.write = { throw ApiFailure.Http(400, "BAD_REQUEST", null, null) }
+            model.selectTimezone("Asia/Tokyo")
+            assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+            runCurrent()
+
+            assertEquals(PreferenceStatus.Ready, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.timezone)
+            assertNull(model.uiState.value.pending)
+            assertEquals(listOf("Asia/Tokyo"), api.requests.map { it.timezone })
+
+            api.write = save
+            model.selectTimezone("Asia/Shanghai")
+            runCurrent()
+            assertEquals("Asia/Shanghai", api.stored.timezone)
+            assertNull(model.uiState.value.pending)
+        }
+
+    @Test
+    fun rejectionOfAnOlderTimezonePreservesNewerChoicesAndSendsThem() = check { model, api, _ ->
+        val release = CompletableDeferred<Unit>()
+        val save = api.write
+        api.write = { update ->
+            if (update.timezone == "Asia/Tokyo") {
+                release.await()
+                throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.selectTimezone("Asia/Shanghai")
+        model.selectTheme(UserPreferencesTheme.DARK)
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            listOf(
+                UpdatePreferencesRequest(timezone = "Asia/Tokyo"),
+                UpdatePreferencesRequest(
+                    timezone = "Asia/Shanghai",
+                    theme = UpdatePreferencesRequestTheme.DARK,
+                ),
+            ),
+            api.requests,
+        )
+        assertEquals("Asia/Shanghai", api.stored.timezone)
+        assertEquals(UserPreferencesTheme.DARK, api.stored.theme)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
+    fun rejectedTimezonePreservesThePreviousScheduleRepair() = check { model, api, _ ->
+        val save = api.write
+        api.write = { update ->
+            save(update)
+            throw ApiFailure.Http(409, "CONFLICT", null, null)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        assertEquals("Asia/Tokyo", model.uiState.value.confirmed.timezone)
+        assertEquals(PreferenceStatus.SaveFailed, model.uiState.value.status)
+
+        api.write = { update ->
+            if (update.timezone == "Asia/Shanghai") {
+                throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Shanghai")
+        runCurrent()
+
+        assertEquals(
+            listOf("Asia/Tokyo", "Asia/Shanghai", "Asia/Tokyo"),
+            api.requests.map { it.timezone },
+        )
+        assertEquals("Asia/Tokyo", model.uiState.value.timezone)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
     fun heldSaveKeepsTheLatestChoicesAndSerializesTheNextPatch() {
         val gate = CompletableDeferred<Unit>()
         val service =
