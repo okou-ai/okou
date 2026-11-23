@@ -166,6 +166,18 @@ describe("Chat connector execution", () => {
     await connectors.updateFeatureSwitches(value.actor, {
       [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
     });
+    const otherMember = { ...value.actor, userId: `user_${randomUUID()}` };
+    await connectors.updateFeatureSwitches(otherMember, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    session(otherMember);
+    await accept(policy(), [404]);
+    const otherPolicies = await accept(
+      access().accountPolicies({ headers: sessionHeaders, query: builtin }),
+      [200],
+    );
+    expect(otherPolicies.body).toStrictEqual([]);
+
     session(value.actor);
     const expiry = now();
     mockNow(expiry - 3_600_000);
@@ -203,6 +215,24 @@ describe("Chat connector execution", () => {
     const run = await start(value);
     expect(run.execution.connectorRuntimeTargets).toContainEqual(
       expect.objectContaining({ ...builtin, sourceId: fallback.id }),
+    );
+    const inventory = await accept(
+      client().list({ headers: run.headers }),
+      [200],
+    );
+    expect(inventory.body.accounts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          connectionId: selected.id,
+          enabled: false,
+          isCurrent: false,
+        }),
+        expect.objectContaining({
+          connectionId: fallback.id,
+          enabled: true,
+          isCurrent: true,
+        }),
+      ]),
     );
     session(value.actor);
     await accept(

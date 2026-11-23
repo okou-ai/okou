@@ -5,7 +5,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, sql } from "drizzle-orm";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
-import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
+import { nowDateSql } from "../../lib/time";
 
 interface MemberIdentity {
   readonly orgId: string;
@@ -39,19 +39,23 @@ export function memberConnectorAccountAllowed(
   );
 }
 
-function memberConnectorAccountAllowedSql(at: Date) {
+function memberConnectorAccountAllowedSql() {
+  const at = nowDateSql(sql`(statement_timestamp() AT TIME ZONE 'UTC')`);
   return sql`coalesce(${connectors.memberAccessAllowed}, ${connectors.defaultEnabledForChats})
     AND (${connectors.memberAccessExpiresAt} IS NULL
-      OR ${connectors.memberAccessExpiresAt} > ${timestampWithoutTimeZone(at)}::timestamp)`;
+      OR ${connectors.memberAccessExpiresAt} > ${at})`;
 }
 
-export function connectorAccountAllowedSql(
-  owner: MemberIdentity,
-  at = nowDate(),
-) {
+export function legacyChatConnectorAccountAllowedSql() {
+  return sql`coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})`.mapWith(
+    pgBooleanDecoder,
+  );
+}
+
+export function connectorAccountAllowedSql(owner: MemberIdentity) {
   return sql`CASE WHEN ${memberConnectorAccountAccessEnabledSql(owner)}
-    THEN ${memberConnectorAccountAllowedSql(at)}
-    ELSE coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
+    THEN ${memberConnectorAccountAllowedSql()}
+    ELSE ${legacyChatConnectorAccountAllowedSql()}
     END`.mapWith(pgBooleanDecoder);
 }
 
@@ -65,7 +69,7 @@ export function workflowEventConnectorAllowedSql(
         eq(connectors.id, connectionId),
         eq(connectors.orgId, owner.orgId),
         eq(connectors.userId, owner.userId),
-        memberConnectorAccountAllowedSql(nowDate()),
+        memberConnectorAccountAllowedSql(),
       )})
     ELSE TRUE END`;
 }

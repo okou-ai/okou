@@ -733,7 +733,7 @@ async function completeRunThroughSandbox(
 }
 
 describe("POST /api/webhooks/gmail", () => {
-  it("skips events from a listener account whose member access has expired", async () => {
+  it("skips a listener event when member access expires before queue admission", async () => {
     configureGmailEnv();
     configureGmailWatchMock();
     await runsApi.configureRunnerGroup();
@@ -771,8 +771,13 @@ describe("POST /api/webhooks/gmail", () => {
       }),
       [201],
     );
-    configureGmailMessageMocks(email, "gmail-access-token");
-    mockNow(expiresAt);
+    let messageRead = false;
+    configureGmailMessageMocks(email, "gmail-access-token", () => {
+      messageRead = true;
+      mockNow(expiresAt);
+      return Promise.resolve();
+    });
+    mockNow(expiresAt - 1);
     const response = await postGmailWebhook(
       gmailPushBody({
         emailAddress: email,
@@ -781,6 +786,7 @@ describe("POST /api/webhooks/gmail", () => {
       }),
     );
     expectResponseStatus(response, 200);
+    expect(messageRead).toBeTruthy();
     expect(response.body).toMatchObject({ dispatched: 0 });
     await expect(
       readAutomation(actor, automation.body.id),

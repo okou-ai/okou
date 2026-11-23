@@ -12,10 +12,9 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import {
-  nullableDriverValueDecoder,
-  pgBooleanDecoder,
-} from "../../lib/db-structured-result";
-import { connectorAccountAllowedSql } from "./member-connector-account-access";
+  connectorAccountAllowedSql,
+  legacyChatConnectorAccountAllowedSql,
+} from "./member-connector-account-access";
 
 export type ChatConnectorExecutionOwner = {
   readonly orgId: string;
@@ -25,11 +24,11 @@ export type ChatConnectorExecutionOwner = {
   | { readonly kind: "chat"; readonly chatThreadId: string }
 );
 
-/** Account metadata, access, and selection for an owned Chat. */
+/** New Chat choices use live eligibility. Active Run account resolution keeps its current path until #50168. */
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,
-  readLiveEligibility = false,
+  readLiveEligibility = owner.kind === "chat",
 ) {
   return new QueryBuilder()
     .select({
@@ -43,14 +42,10 @@ export function chatConnectorExecutionReadPlan(
       customConnectorId: connectors.customConnectorId,
       displayName: connectors.displayName,
       isDefault: connectors.isDefault,
-      defaultEnabled: connectors.defaultEnabledForChats,
-      overrideEnabled: chatThreadConnectorAccessOverrides.enabled,
-      liveEnabled: (readLiveEligibility
+      enabled: (readLiveEligibility
         ? connectorAccountAllowedSql(owner)
-        : sql`NULL::boolean`.mapWith(
-            nullableDriverValueDecoder(pgBooleanDecoder),
-          )
-      ).as("live_enabled"),
+        : legacyChatConnectorAccountAllowedSql()
+      ).as("enabled"),
       selectedConnectionId: chatThreadConnectorSelections.connectorId,
     })
     .from(chatThreads)
@@ -120,9 +115,7 @@ export function chatConnectorExecutionFromRows(
     readonly customConnectorId: string | null;
     readonly displayName: string | null;
     readonly isDefault: boolean;
-    readonly defaultEnabled: boolean;
-    readonly overrideEnabled: boolean | null;
-    readonly liveEnabled: boolean | null;
+    readonly enabled: boolean;
     readonly selectedConnectionId: string | null;
   }[],
 ) {
@@ -141,7 +134,6 @@ export function chatConnectorExecutionFromRows(
     return {
       ...row,
       target,
-      enabled: row.liveEnabled ?? row.overrideEnabled ?? row.defaultEnabled,
     };
   });
   const current = new Map<string, (typeof accounts)[number]>();
