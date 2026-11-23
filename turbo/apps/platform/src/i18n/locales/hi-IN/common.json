@@ -6385,8 +6385,8 @@
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "chats": "चैट",
-      "messages": "संदेश"
+      "messages": "संदेश",
+      "threads": "थ्रेड"
     }
   },
   "ssh": {

@@ -6360,8 +6360,8 @@
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "chats": "チャット",
-      "messages": "メッセージ"
+      "messages": "メッセージ",
+      "threads": "スレッド"
     }
   },
   "ssh": {

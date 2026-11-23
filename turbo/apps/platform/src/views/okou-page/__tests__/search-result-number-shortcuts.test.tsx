@@ -93,13 +93,13 @@ test("Group matching chats before messages and open the first message with its s
     name: "Messages",
   });
   expect(queryAllByRoleFast("option", messageOnly)).toHaveLength(25);
-  expect(within(dialog).queryByRole("group", { name: "Chats" })).toBeNull();
+  expect(within(dialog).queryByRole("group", { name: "Threads" })).toBeNull();
 
   await fill(search, "budget");
   const messages = await within(dialog).findByRole("group", {
     name: "Messages",
   });
-  const chats = within(dialog).getByRole("group", { name: "Chats" });
+  const chats = within(dialog).getByRole("group", { name: "Threads" });
   expect(searchResultTitles(chats)).toStrictEqual([
     "Budget 4",
     "Budget 3",

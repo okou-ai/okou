@@ -6383,8 +6383,8 @@
     "searching": "Searching...",
     "searchWorkspace": "Search workspace...",
     "sections": {
-      "chats": "Chats",
-      "messages": "Messages"
+      "messages": "Messages",
+      "threads": "Threads"
     }
   },
   "ssh": {

@@ -940,7 +940,7 @@ test("Find archived chats in workspace search results", async () => {
     "archived context",
   );
 
-  const chats = await within(dialog).findByRole("group", { name: "Chats" });
+  const chats = await within(dialog).findByRole("group", { name: "Threads" });
   expect(within(chats).getByText("Archived context")).toBeInTheDocument();
 });
 

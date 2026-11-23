@@ -134,7 +134,7 @@ test("Show running and unread chat states in workspace search results", async ()
 
 test("Navigate from a matching chat in workspace search", async () => {
   const dialog = await setupWorkspaceSearch();
-  const chats = await within(dialog).findByRole("group", { name: "Chats" });
+  const chats = await within(dialog).findByRole("group", { name: "Threads" });
   click(within(chats).getByText("Deployment notes"));
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${RESEARCH_THREAD_ID}`);

@@ -6385,8 +6385,8 @@
     "searching": "Suche...",
     "searchWorkspace": "Arbeitsbereich durchsuchen...",
     "sections": {
-      "chats": "Chats",
-      "messages": "Nachrichten"
+      "messages": "Nachrichten",
+      "threads": "Threads"
     }
   },
   "ssh": {

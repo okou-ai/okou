@@ -6360,8 +6360,8 @@
     "searching": "搜尋中…",
     "searchWorkspace": "搜尋工作區…",
     "sections": {
-      "chats": "聊天",
-      "messages": "訊息"
+      "messages": "訊息",
+      "threads": "對話串"
     }
   },
   "ssh": {

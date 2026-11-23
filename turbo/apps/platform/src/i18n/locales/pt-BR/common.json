@@ -6457,8 +6457,8 @@
     "searching": "Pesquisando...",
     "searchWorkspace": "Pesquisar no espaço de trabalho...",
     "sections": {
-      "chats": "Conversas",
-      "messages": "Mensagens"
+      "messages": "Mensagens",
+      "threads": "Threads"
     }
   },
   "ssh": {

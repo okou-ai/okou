@@ -6360,8 +6360,8 @@
     "searching": "Mencari...",
     "searchWorkspace": "Cari di ruang kerja...",
     "sections": {
-      "chats": "Chat",
-      "messages": "Pesan"
+      "messages": "Pesan",
+      "threads": "Utas"
     }
   },
   "ssh": {

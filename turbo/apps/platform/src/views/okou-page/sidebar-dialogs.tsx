@@ -370,7 +370,7 @@ function SpotlightSearchResults({
       {threads.length > 0 && (
         <CommandGroup
           heading={t(($) => {
-            return $.sidebar.sections.chats;
+            return $.sidebar.sections.threads;
           })}
         >
           {threads.map((thread, index) => {
