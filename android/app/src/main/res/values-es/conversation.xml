@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_run_queued">Esperando para empezar</string>
     <string name="conversation_welcome">¿En qué te gustaría trabajar?</string>
     <string name="conversation_welcome_detail">Cuéntale a Okou qué quieres hacer.</string>
     <string name="conversation_jump_latest">Ir al final</string>
@@ -16,13 +17,8 @@
     <string name="conversation_queue">Cola</string>
     <string name="conversation_queue_automation">Automatización de flujo de trabajo</string>
     <string name="conversation_skip_automation">Omitir esta automatización</string>
-    <string name="conversation_withdrawing">Retirando…</string>
-    <string name="conversation_skipping">Omitiendo…</string>
-    <string name="conversation_withdraw_unknown">Resultado de la retirada sin confirmar</string>
-    <string name="conversation_skip_unknown">Resultado de la omisión sin confirmar</string>
-    <string name="conversation_withdraw_failed">No se pudo retirar</string>
-    <string name="conversation_skip_failed">No se pudo omitir</string>
-    <string name="conversation_stop">Detener</string>
+    <string name="conversation_withdraw_failed">No se pudo retirar el mensaje.</string>
+    <string name="conversation_skip_failed">No se pudo omitir la automatización.</string>
     <string name="conversation_find">Buscar mensajes</string>
     <string name="conversation_find_turns">Explorar turnos</string>
     <string name="conversation_find_empty">No hay mensajes para buscar</string>

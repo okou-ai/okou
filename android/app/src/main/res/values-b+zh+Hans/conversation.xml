@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_run_queued">排队中</string>
     <string name="conversation_welcome">今天想推进什么？</string>
     <string name="conversation_welcome_detail">把想做的事告诉 Okou。</string>
     <string name="conversation_jump_latest">回到最新</string>
@@ -16,13 +17,8 @@
     <string name="conversation_queue">队列</string>
     <string name="conversation_queue_automation">工作流自动化</string>
     <string name="conversation_skip_automation">跳过本次自动化</string>
-    <string name="conversation_withdrawing">正在撤回</string>
-    <string name="conversation_skipping">正在跳过</string>
-    <string name="conversation_withdraw_unknown">撤回结果待核对</string>
-    <string name="conversation_skip_unknown">跳过结果待核对</string>
-    <string name="conversation_withdraw_failed">撤回失败</string>
-    <string name="conversation_skip_failed">跳过失败</string>
-    <string name="conversation_stop">停止</string>
+    <string name="conversation_withdraw_failed">未能撤回消息</string>
+    <string name="conversation_skip_failed">未能跳过自动化</string>
     <string name="conversation_find">查找消息</string>
     <string name="conversation_find_turns">按轮次浏览</string>
     <string name="conversation_find_empty">暂无可查找的消息</string>

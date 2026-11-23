@@ -247,6 +247,7 @@ internal class RunControlsOwner(
             journal.copy(pending = journal.pending + fresh),
             state.copy(
                 phases = state.phases + fresh.associate { it.id to RunControlPhase.Preparing },
+                optimistic = state.optimistic + fresh.map { it.id },
             ),
         )
         fresh.forEach { launch(connection, it, false) }
@@ -261,7 +262,16 @@ internal class RunControlsOwner(
     fun retry(connection: Connection, id: String) {
         if (!current(connection) || mutable.value.phases[id] != RunControlPhase.Retryable) return
         val intent = mutable.value.journal?.pending?.singleOrNull { it.id == id } ?: return
+        val state = mutable.value
+        mutable.value = state.copy(optimistic = state.optimistic + id)
         launch(connection, intent, true)
+    }
+
+    fun consumeActionFailure(connection: Connection, intent: RunControlIntent): Boolean {
+        val state = mutable.value
+        if (!current(connection) || state.actionFailures.none { it === intent }) return false
+        mutable.value = state.copy(actionFailures = state.actionFailures - intent)
+        return true
     }
 
     private fun launch(connection: Connection, intent: RunControlIntent, retry: Boolean) {
@@ -271,35 +281,8 @@ internal class RunControlsOwner(
         op.job =
             connection.scope.launch {
                 try {
-                    if (retry) {
-                        phase(op, RunControlPhase.Checking)
-                        val checkpoint =
-                            connection.sync.synchronize(
-                                intent.threadId,
-                                connection.history.checkpoint(intent.threadId),
-                            )
-                        requireCurrent(op)
-                        if (controlEvidence(intent, checkpoint) != RunControlEvidence.Eligible) {
-                            reconcile(connection, checkpoint, setOf(intent.id))
-                            return@launch
-                        }
-                    }
-                    val saved = store.load(identity)
-                    requireCurrent(op)
-                    if (!saved.durable || intent !in saved.journal.pending)
-                        throw IOException("Exact control intent is not durable")
-                    // Any peer's current canonical checkpoint can settle the original target.
-                    for (peer in connections.toList()) peer.history
-                        .checkpoint(intent.threadId)
-                        ?.let { reconcile(peer, it) }
-                    requireCurrent(op)
-                    phase(op, RunControlPhase.Sending)
-                    val accepted = connection.service.sendControl(intent.request())
-                    requireCurrent(op)
-                    if (accepted.threadId != intent.threadId)
-                        throw ApiFailure.IncompatibleResponse()
-                    phase(op, RunControlPhase.Accepted)
-                    invalidate(intent.threadId)
+                    if (retry && !verifyTarget(op)) return@launch
+                    submitWithRetry(op)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
@@ -315,6 +298,77 @@ internal class RunControlsOwner(
                     }
                 }
             }
+    }
+
+    private suspend fun send(op: Operation) {
+        val intent = op.intent
+        val saved = store.load(identity)
+        requireCurrent(op)
+        if (!saved.durable || intent !in saved.journal.pending)
+            throw IOException("Exact control intent is not durable")
+        // Any peer's current canonical checkpoint can settle the original target.
+        for (peer in connections.toList()) peer.history.checkpoint(intent.threadId)?.let {
+            reconcile(peer, it)
+        }
+        requireCurrent(op)
+        phase(op, RunControlPhase.Sending)
+        val accepted = op.connection.service.sendControl(intent.request())
+        requireCurrent(op)
+        if (accepted.threadId != intent.threadId) throw ApiFailure.IncompatibleResponse()
+        phase(op, RunControlPhase.Accepted)
+        invalidate(intent.threadId)
+    }
+
+    private suspend fun verifyTarget(op: Operation): Boolean {
+        requireCurrent(op)
+        phase(op, RunControlPhase.Checking)
+        val connection = op.connection
+        val intent = op.intent
+        suspend fun read() =
+            connection.sync.synchronize(
+                intent.threadId,
+                connection.history.checkpoint(intent.threadId),
+            )
+        val checkpoint = ChatDependencyRetry().read(online = { current(op) }, fetch = ::read)
+        requireCurrent(op)
+        if (controlEvidence(intent, checkpoint) == RunControlEvidence.Eligible) return true
+        reconcile(connection, checkpoint, setOf(intent.id))
+        invalidate(intent.threadId)
+        return false
+    }
+
+    private suspend fun submitWithRetry(op: Operation) {
+        var remaining = ChatDependencyRetryCount
+        while (true) {
+            try {
+                send(op)
+                return
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(op)
+                report(op.connection, error)
+                requireCurrent(op)
+                phase(op, RunControlPhase.Unknown)
+                invalidate(op.intent.threadId)
+                val delayMillis = dependencyRetryAfterMillis(error).takeIf { remaining > 0 }
+                if (delayMillis != null) delay(maxOf(ChatDependencyRetryDelayMillis, delayMillis))
+                // Only an authoritative observation of the exact original target permits a resend.
+                if (!verifyTarget(op)) return
+                if (delayMillis == null) {
+                    val state = mutable.value
+                    mutable.value =
+                        state.copy(
+                            phases = state.phases + (op.intent.id to RunControlPhase.Retryable),
+                            actionFailures =
+                                state.actionFailures.filterNot { it.id == op.intent.id } +
+                                    op.intent,
+                        )
+                    return
+                }
+                remaining--
+            }
+        }
     }
 
     fun hasPending(threadId: String) =
@@ -460,6 +514,8 @@ internal class RunControlsOwner(
             state.copy(
                 phases = phases,
                 notice = notice ?: state.notice,
+                optimistic = state.optimistic - ids,
+                actionFailures = state.actionFailures.filterNot { it.id in ids },
                 settledQueueInputs =
                     if (settledQueue.isEmpty()) state.settledQueueInputs - threadId
                     else state.settledQueueInputs + (threadId to settledQueue),

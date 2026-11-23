@@ -321,29 +321,27 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun unknownOutcomeRetryRechecksAndKeepsTheEntireOriginalRequest() = runTest {
+    fun transientStopFailureRetriesTwiceWithTheSameRequestAndOffersOneFailureNotice() = runTest {
         withControls { f ->
             f.remote.write = {
                 jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown after write"}}""")
                     .setResponseCode(503)
             }
             f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
-            val unknown =
-                f.controls.uiState.first {
-                    it.phases.values.singleOrNull() == RunControlPhase.Unknown
-                }
-            val intent = unknown.journal!!.pending.single()
-            f.refresh()
-            f.controls.check(CHAT_PERSONAL)
-            f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Retryable }
-            assertEquals(1, f.remote.posts.size)
+            val failed = f.controls.uiState.first { it.actionFailures.isNotEmpty() }
+            val intent = failed.actionFailures.single()
+            assertEquals(RunControlPhase.Retryable, failed.phases[intent.id])
+            assertEquals(3, f.remote.posts.size)
+            assertEquals(1, f.remote.posts.distinct().size)
+            assertTrue(f.controls.consumeActionFailure(intent))
+            assertFalse(f.controls.consumeActionFailure(intent))
             f.remote.write = {
                 jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
             }
             f.controls.retry(intent.id)
             f.controls.retry(intent.id)
             f.controls.uiState.first { it.phases[intent.id] == RunControlPhase.Accepted }
-            assertEquals(2, f.remote.posts.size)
+            assertEquals(4, f.remote.posts.size)
             assertEquals(f.remote.posts.first(), f.remote.posts.last())
         }
     }
@@ -493,30 +491,35 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun checkingOneWithdrawalLeavesTheOtherQueueEntryAtItsOwnPhase() = runTest {
+    fun checkingOneRestoredWithdrawalLeavesTheOtherQueueEntryUnresolved() = runTest {
         val manual = eventId("queued manual message")
+        val manualIntent =
+            RunControlIntent(
+                eventId("manual withdrawal"),
+                CHAT_PERSONAL,
+                RunControlKind.Revoke,
+                manual,
+            )
+        val automationIntent =
+            RunControlIntent(
+                eventId("automation withdrawal"),
+                CHAT_PERSONAL,
+                RunControlKind.Revoke,
+                automation,
+            )
         withControls(
+            saved = RunControlJournal(pending = listOf(manualIntent, automationIntent)),
             initial =
                 listOf(
                     input(manual, 1, run = null),
                     input(automation, 2, run = null, type = "input.automation"),
                 ),
         ) { f ->
-            f.remote.write = { MockResponse().setResponseCode(503) }
-            f.controls.skip(CHAT_PERSONAL, manual)
-            f.controls.skip(CHAT_PERSONAL, automation)
-            val unknown =
-                f.controls.uiState.first { state ->
-                    state.phases.values.count { it == RunControlPhase.Unknown } == 2
-                }
-            val intents = checkNotNull(unknown.journal).pending.associateBy { it.targetId }
-            val manualAttempt = intents.getValue(manual).id
-            val automationAttempt = intents.getValue(automation).id
-            f.controls.checkIntent(CHAT_PERSONAL, manualAttempt)
+            f.controls.checkIntent(CHAT_PERSONAL, manualIntent.id)
             val checked =
-                f.controls.uiState.first { it.phases[manualAttempt] == RunControlPhase.Retryable }
-            assertEquals(RunControlPhase.Unknown, checked.phases[automationAttempt])
-            assertEquals(2, f.remote.posts.size)
+                f.controls.uiState.first { it.phases[manualIntent.id] == RunControlPhase.Retryable }
+            assertEquals(RunControlPhase.Unknown, checked.phases[automationIntent.id])
+            assertTrue(f.remote.posts.isEmpty())
         }
     }
 
@@ -957,16 +960,12 @@ internal class RunControlsModelTest : RunControlsModelTestFixture() {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
     @Test
-    fun currentControllersPreserveBothUnknownCommandsAfterFreshStoreRestoration() = runTest {
+    fun currentControllersRestoreBothUnresolvedCommandsWithoutResending() = runTest {
         val directory = temporary.newFolder()
         withControls(
             directory = directory,
             initial = listOf(input("first", 1), input("second", 2, secondRun)),
         ) { f ->
-            f.remote.write = {
-                jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown outcome"}}""")
-                    .setResponseCode(503)
-            }
             val expected = mutableListOf<RunControlIntent>()
             withPeer(f) { peer ->
                 assertTrue(f.controls.uiState.value.journal!!.pending.isEmpty())
@@ -976,7 +975,7 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     f.controls.uiState
                         .first {
                             it.persistence == RunControlPersistence.Durable &&
-                                it.phases.values.singleOrNull() == RunControlPhase.Unknown
+                                it.phases.values.singleOrNull() == RunControlPhase.Accepted
                         }
                         .journal!!
                         .pending
@@ -988,7 +987,7 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     peer.controls.uiState.first {
                         it.journal?.pending?.size == 2 &&
                             it.persistence == RunControlPersistence.Durable &&
-                            it.phases.values.all { phase -> phase == RunControlPhase.Unknown }
+                            it.phases.values.all { phase -> phase == RunControlPhase.Accepted }
                     }
                 expected += shared.journal!!.pending.single { it.targetId == secondRun }
                 assertEquals(expected, shared.journal.pending)
@@ -1086,17 +1085,13 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
     }
 
     @Test
-    fun oneControllersCanonicalSettlementPreservesThePeersUnknownIntent() = runTest {
+    fun oneControllersCanonicalSettlementPreservesThePeersUnresolvedIntent() = runTest {
         withControls(initial = listOf(input("first", 1), input("second", 2, secondRun))) { f ->
             withPeer(f) { peer ->
-                f.remote.write = {
-                    jsonResponse("""{"error":{"code":"UNAVAILABLE","message":"Unknown outcome"}}""")
-                        .setResponseCode(503)
-                }
                 f.controls.stop(CHAT_PERSONAL, listOf(HISTORY_RUN))
                 val a =
                     f.controls.uiState
-                        .first { it.phases.values.singleOrNull() == RunControlPhase.Unknown }
+                        .first { it.phases.values.singleOrNull() == RunControlPhase.Accepted }
                         .journal!!
                         .pending
                         .single()
@@ -1105,7 +1100,7 @@ internal class RunControlsPeerModelTest : RunControlsModelTestFixture() {
                     peer.controls.uiState
                         .first {
                             it.journal?.pending?.size == 2 &&
-                                it.phases.values.all { p -> p == RunControlPhase.Unknown }
+                                it.phases.values.all { p -> p == RunControlPhase.Accepted }
                         }
                         .journal!!
                         .pending

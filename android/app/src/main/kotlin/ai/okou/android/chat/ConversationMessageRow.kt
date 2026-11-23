@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -38,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.LongState
 import androidx.compose.runtime.getValue
@@ -59,6 +61,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -66,9 +69,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -133,14 +134,10 @@ internal fun QueuedMessageCard(
     val message = entry.message
     val workflow = message.queuedWorkflow
     val revoke = controls?.revoke(message.id, entry.preview)
-    val phase = controls?.withdrawalPhase(message.id)
-    val check = controls?.checkWithdrawal(message.id)
     val colors = MaterialTheme.colorScheme
     val queued = stringResource(R.string.history_queued)
     val status =
-        if (phase != null && phase != RunControlPhase.Retryable)
-            stringResource(withdrawalStatus(phase, automation = workflow != null))
-        else if (workflow == null) queued
+        if (workflow == null) queued
         else
             "${workflow.triggerBrief ?: stringResource(R.string.conversation_queue_automation)} · $queued"
     Surface(
@@ -155,31 +152,7 @@ internal fun QueuedMessageCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                val polite = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                if (phase == RunControlPhase.Unknown) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        ConversationMeta(status, modifier = polite.weight(1f))
-                        ControlTextAction(
-                            R.string.controls_check,
-                            check?.let { action ->
-                                {
-                                    beforeAction()
-                                    action()
-                                }
-                            },
-                        )
-                    }
-                } else {
-                    Column(polite) {
-                        ConversationMeta(status)
-                        if (phase == RunControlPhase.Retryable)
-                            ConversationMeta(
-                                stringResource(
-                                    withdrawalStatus(phase, automation = workflow != null),
-                                ),
-                            )
-                    }
-                }
+                ConversationMeta(status)
                 if (workflow?.name != null)
                     Text(workflow.name, style = MaterialTheme.typography.bodyMedium)
                 else MessageBody(message, compact = true)
@@ -422,19 +395,43 @@ internal fun ConversationActivity(
     @StringRes label: Int,
     modifier: Modifier = Modifier,
     runningFrame: LongState? = null,
+    controls: ConversationRunControls? = null,
+    stopPlacement: ConversationStopPlacement? = null,
 ) {
     val color = LocalActivityStatusColor.current
     Row(
-        modifier.heightIn(min = 24.dp),
+        modifier.fillMaxWidth().heightIn(min = ConversationStopTouchSize),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (label == R.string.conversation_processing && runningFrame != null) {
+        if (label == R.string.conversation_run_queued) {
+            Icon(painterResource(R.drawable.ic_schedule), null, Modifier.size(16.dp), tint = color)
+        } else if (runningFrame != null) {
             Canvas(Modifier.size(14.dp)) { drawRunningWave(color, runningFrame.longValue, row = 0) }
         } else {
             Box(Modifier.size(8.dp).background(color, CircleShape))
         }
-        ConversationMeta(stringResource(label), maxLines = 1)
+        ConversationMeta(stringResource(label), Modifier.weight(1f), maxLines = 1)
+        if (controls?.currentRunId != null && stopPlacement != null) {
+            DisposableEffect(stopPlacement) {
+                onDispose { stopPlacement.reportInlineSlot(null) }
+            }
+            Box(
+                Modifier.size(ConversationStopTouchSize).onGloballyPositioned { slot ->
+                    val bounds = slot.boundsInRoot()
+                    stopPlacement.reportInlineSlot(
+                        bounds.bottom.takeIf {
+                            bounds.width >= slot.size.width - 0.5f &&
+                                bounds.height >= slot.size.height - 0.5f
+                        },
+                    )
+                },
+            ) {
+                if (stopPlacement.inline) ConversationStopButton(controls, stopPlacement, true)
+            }
+        } else {
+            Spacer(Modifier.size(ConversationStopTouchSize))
+        }
     }
 }
 
