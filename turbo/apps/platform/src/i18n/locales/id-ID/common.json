@@ -2128,6 +2128,12 @@
         },
         "inReview": "Sedang ditinjau",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} kredit",
+            "confirm": "Kembali bekerja",
+            "description": "Kredit membayar pekerjaannya sendiri: setiap jalannya, setiap hasil, setiap alur kerja yang berjalan sesuai jadwal.",
+            "title": "Bagian hari ini selesai"
+          },
           "connector": {
             "confirm": "Lihat semua konektor",
             "connected": "Terhubung",
