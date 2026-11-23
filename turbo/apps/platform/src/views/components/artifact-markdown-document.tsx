@@ -23,7 +23,7 @@ export function ArtifactMarkdownDocument({
 }) {
   const typographyEnabled =
     useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.MarkdownDocumentTypography
+      FeatureSwitchKey.MarkdownFirstOutput
     ] === true;
 
   return (

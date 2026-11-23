@@ -295,29 +295,38 @@ internal fun ChatListScreen(
     val largeCompact = widthDp >= 600
     val listInset = if (wide) 12.dp else if (largeCompact) 24.dp else 16.dp
     val outline = MaterialTheme.colorScheme.outline
-    val status =
-        when {
-            state.offline -> ChatListStatus.Offline
-            state.confirmedAt != null && state.sustainedRefreshFailure ->
-                ChatListStatus.RefreshFailed
-            else -> null
-        }
     val missingUnread =
         state.confirmedAt != null &&
             state.filter == ChatListFilter.Unread &&
             unreadAt == null &&
             groups.all { it.threads.isEmpty() }
-    val firstLoadFailure =
-        if (missingUnread)
-            ChatListReadFailure.NeedsRetry.takeIf { state.indicatorsPhase == ChatReadPhase.Failed }
-        else state.listReadFailure
+    val firstLoadFailed =
+        !state.offline &&
+            if (missingUnread) state.indicatorsPhase == ChatReadPhase.Failed
+            else state.listReadFailure == ChatListReadFailure.NeedsRetry
     val awaitingFirstList =
         (state.confirmedAt == null || missingUnread) &&
             pendingByProject.isEmpty() &&
-            !state.offline &&
-            firstLoadFailure == null &&
+            !(missingUnread && state.offline) &&
+            !firstLoadFailed &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList)
+    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
+    val syncConfirmation =
+        state.confirmedAt?.takeIf {
+            !missingUnread && !state.offline && state.listPhase == ChatReadPhase.Loading
+        }
+    val syncDelay =
+        remember(syncConfirmation) {
+            syncConfirmation?.let {
+                val age = (System.currentTimeMillis() - it).coerceAtLeast(0)
+                (ChatListSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
+            }
+        }
+    // Keep the timer's composition in place as reads start and finish.
+    val syncDelayReached =
+        rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+    val syncVisible =
+        !missingUnread && (state.listRetryProgressVisible || syncDelay == 0L || syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {
@@ -332,7 +341,7 @@ internal fun ChatListScreen(
         Modifier.fillMaxSize(),
         listState,
         contentChangeKey = lastContentKey to knownProjects,
-        status = status,
+        syncing = syncVisible,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },
         feedback = feedback,
@@ -372,18 +381,15 @@ internal fun ChatListScreen(
                 }
                 if (state.confirmedAt == null || missingUnread) {
                     when {
-                        state.offline ->
+                        missingUnread && state.offline ->
                             row("list_offline") {
                                 ChatContentLoadNotice(R.string.chat_list_load_when_online)
                             }
-                        firstLoadFailure != null ->
+                        firstLoadFailed ->
                             row("list_first_load_failure") {
                                 ChatContentLoadNotice(
                                     R.string.chat_list_first_load_failed,
-                                    retry =
-                                        (if (missingUnread) retryIndicators else retryList).takeIf {
-                                            firstLoadFailure == ChatListReadFailure.NeedsRetry
-                                        },
+                                    retry = if (missingUnread) retryIndicators else retryList,
                                     retryEnabled =
                                         missingUnread || state.listPhase != ChatReadPhase.Loading,
                                 )

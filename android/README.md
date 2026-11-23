@@ -84,11 +84,10 @@ limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
 transactions with their synchronization position. Changed chat lists await the
 write transaction before publication and read back from disk if it kept a newer
-checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
-reuses the confirmed chat rows without another disk transaction when the cache is
-current. A storage
-failure leaves the network result usable with a visible cache warning, and a later
-refresh retries unsaved data.
+checkpoint. Changed Projects await persistence and readback. An unchanged
+catch-up reuses the confirmed chat rows and renews the cached confirmation time
+asynchronously. A failed data write leaves the network result usable with a
+visible cache warning, and a later refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 chat and Project data keep the scoped list usable after a process restart while
@@ -120,11 +119,25 @@ store described above.
 
 Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their
-local edits immediately, including any unsent reorder steps. Canonical event
-IDs settle submitted changes, including events observed before a snapshot
-rebase. Transient list reads retry in the background while the list is visible
-in the foreground. If an outcome stays unconfirmed, Refresh chats reads back
-the list and clears the unresolved projection once that read succeeds.
+local edits immediately, including any unsent reorder steps. A rejected chat
+deletion restores the row and shows one Snackbar in the chat list. Deleting a
+linked chat from a workflow run returns feedback to the run history.
+Canonical event IDs settle submitted changes, including events observed before
+a snapshot rebase. Chat list reads retry while the foreground needs the list,
+after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
+the wait.
+Known loss of connectivity pauses reads. Reconnecting retries immediately,
+subject to a server `Retry-After` deadline. A first read with no available list
+shows the skeleton after 250 ms. Failures keep the available list or skeleton
+in place. With a confirmed list, the progress bar appears during an active
+read once the last confirmation is more than ten minutes old, or immediately
+after three consecutive read failures. It stays visible through retry gaps
+until success or a terminal failure. If a write stays unconfirmed, Refresh
+chats reads back the list and clears the unresolved projection once that
+read succeeds.
+
+A definitively failed Undo keeps the confirmed row state and closes its offer.
+An uncertain Undo keeps its receipt check available.
 
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an

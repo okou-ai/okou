@@ -1,7 +1,6 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -29,15 +29,12 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.SubcomposeLayout
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -52,18 +49,15 @@ import kotlinx.coroutines.flow.first
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+internal const val ChatListSkeletonDelayMillis = 250L
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
-
-internal enum class ChatListStatus {
-    Offline,
-    RefreshFailed,
-}
 
 private enum class ListLayer {
     Controls,
     Feedback,
     Rows,
+    Sync,
 }
 
 @Composable
@@ -71,7 +65,7 @@ internal fun ChatListViewport(
     modifier: Modifier,
     listState: LazyListState,
     contentChangeKey: Any?,
-    status: ChatListStatus?,
+    syncing: Boolean,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
     feedback: @Composable () -> Unit,
@@ -87,20 +81,16 @@ internal fun ChatListViewport(
             subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
                 .single()
                 .measure(loose)
-        val visibleStatus = status.takeUnless {
-            it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0
-        }
         val floating =
             if (short) null
             else
                 subcompose(ListLayer.Controls) {
-                        ListControls(
+                        Box(
                             Modifier.zIndex(1f).fillMaxWidth().padding(horizontal = 16.dp),
-                            visibleStatus,
-                            newChatEnabled,
-                            newChat,
-                            inline = false,
-                        )
+                            contentAlignment = Alignment.CenterEnd,
+                        ) {
+                            NewChatAction(newChatEnabled, newChat)
+                        }
                     }
                     .single()
                     .measure(loose)
@@ -117,13 +107,12 @@ internal fun ChatListViewport(
         val inline: (@Composable () -> Unit)? =
             if (short) {
                 {
-                    ListControls(
+                    Box(
                         Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                        visibleStatus,
-                        newChatEnabled,
-                        newChat,
-                        inline = true,
-                    )
+                        contentAlignment = Alignment.CenterEnd,
+                    ) {
+                        NewChatAction(newChatEnabled, newChat)
+                    }
                 }
             } else null
         val rows =
@@ -133,8 +122,25 @@ internal fun ChatListViewport(
                 }
                 .single()
                 .measure(loose)
+        val progress =
+            if (syncing) {
+                subcompose(ListLayer.Sync) {
+                        val label = stringResource(R.string.chat_syncing)
+                        val colors = MaterialTheme.colorScheme
+                        LinearProgressIndicator(
+                            Modifier.fillMaxWidth().semantics { contentDescription = label },
+                            color = colors.primary,
+                            trackColor =
+                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+                        )
+                    }
+                    .single()
+                    .measure(loose.copy(maxWidth = rows.width))
+            } else null
         layout(bounds.maxWidth, bounds.maxHeight) {
-            rows.placeRelative((bounds.maxWidth - rows.width) / 2, 0)
+            val rowsLeft = (bounds.maxWidth - rows.width) / 2
+            rows.placeRelative(rowsLeft, 0)
+            progress?.placeRelative(rowsLeft, 0)
             floating?.placeRelative(0, actionTop)
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
@@ -159,40 +165,6 @@ internal fun KeepLazyListEndInView(
         }
         val index = lastItemIndex ?: (listState.layoutInfo.totalItemsCount - 1)
         if (!listState.isScrollInProgress && index >= 0) listState.requestScrollToItem(index)
-    }
-}
-
-@Composable
-private fun ListControls(
-    modifier: Modifier,
-    status: ChatListStatus?,
-    newChatEnabled: Boolean,
-    newChat: () -> Unit,
-    inline: Boolean,
-) {
-    Layout(
-        modifier = modifier,
-        content = {
-            NewChatAction(newChatEnabled, newChat)
-            if (status != null) ListStatus(status)
-        },
-    ) { measurables, constraints ->
-        val loose = constraints.copy(minWidth = 0, minHeight = 0)
-        val action = measurables[0].measure(loose)
-        val notice = measurables.getOrNull(1)?.measure(loose)
-        val gap = 8.dp.roundToPx()
-        val stacked = notice != null && action.width + notice.width + gap > constraints.maxWidth
-        val height =
-            if (stacked) action.height + gap + checkNotNull(notice).height
-            else maxOf(action.height, notice?.height ?: 0)
-        layout(constraints.maxWidth, height) {
-            notice?.placeRelative(0, if (stacked && !inline) 0 else height - notice.height)
-            action.placeRelative(
-                constraints.maxWidth - action.width,
-                if (stacked && inline) 0 else height - action.height,
-                zIndex = 1f,
-            )
-        }
     }
 }
 
@@ -223,42 +195,6 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
                         letterSpacing = 0.sp,
                     ),
                 fontWeight = FontWeight(550),
-            )
-        }
-    }
-}
-
-@Composable
-private fun ListStatus(status: ChatListStatus) {
-    val colors = MaterialTheme.colorScheme
-    val (label, icon) =
-        when (status) {
-            ChatListStatus.Offline -> R.string.chat_list_offline to R.drawable.ic_wifi_off
-            ChatListStatus.RefreshFailed -> R.string.chat_list_refresh_failed to R.drawable.ic_info
-        }
-    Surface(
-        modifier = Modifier.testTag("chat_list_bottom_status"),
-        shape = RoundedCornerShape(12.dp),
-        color = colors.surface,
-        contentColor = colors.onSurfaceVariant,
-        border = BorderStroke(1.dp, colors.outline),
-        shadowElevation = 2.dp,
-    ) {
-        Row(
-            Modifier.heightIn(min = 40.dp).padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(painterResource(icon), null, Modifier.size(16.dp))
-            Text(
-                stringResource(label),
-                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                style =
-                    MaterialTheme.typography.labelMedium.copy(
-                        fontSize = 13.sp,
-                        lineHeight = 20.sp,
-                        letterSpacing = 0.sp,
-                    ),
             )
         }
     }

@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">चैट सिंक हो रही हैं…</string>
     <string name="workspace_workflows">वर्कफ़्लो</string>
     <string name="workspace_connectors">कनेक्टर्स</string>
     <string name="workspace_artifacts">आर्टिफ़ैक्ट</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
-    <string name="chat_undo_connection_failed">बदलाव पूर्ववत नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_action_connection_failed">कनेक्ट नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
@@ -72,6 +72,7 @@
     <string name="chat_rename_confirm">नाम बदलें</string>
     <string name="chat_rename_cancel">रद्द करें</string>
     <string name="chat_delete">चैट हटाएं</string>
+    <string name="chat_delete_rejected">चैट हटाई नहीं जा सकी।</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
     <string name="chat_delete_confirm">हटाएँ</string>
@@ -94,4 +95,6 @@
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>
     <string name="chat_project_delete_rejected">प्रोजेक्ट हटाया नहीं जा सका।</string>
     <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_row_action_rejected_named">“%1$s” पूरा नहीं किया जा सका।</string>
+    <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
 </resources>

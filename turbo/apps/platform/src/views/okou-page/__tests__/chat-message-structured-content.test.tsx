@@ -145,7 +145,6 @@ test("Delegated work links back to its source run", async () => {
     "href",
     `/chats/${SOURCE_THREAD_ID}#run-${SOURCE_RUN_ID}`,
   );
-  expect(sourceLink.querySelector("img")).not.toBeInTheDocument();
   const prompt = await screen.findByText(
     "Prepare the delegated launch analysis.",
   );

@@ -191,14 +191,13 @@ internal fun ChatTitleSearch(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        val failure = state.listReadFailure
         val retryFailedRead = retry.takeIf {
-            !state.offline && failure == ChatListReadFailure.NeedsRetry
+            !state.offline && state.listReadFailure == ChatListReadFailure.NeedsRetry
         }
         val retryEnabled = state.listPhase != ChatReadPhase.Loading
         val awaitingResults =
-            displayedState.confirmedAt == null && !state.offline && failure == null
-        val showSkeleton = rememberChatWaitIndicator(awaitingResults)
+            displayedState.confirmedAt == null && !state.offline && retryFailedRead == null
+        val showSkeleton = rememberChatWaitIndicator(awaitingResults, ChatListSkeletonDelayMillis)
         val resultsWidth = contentWidth.weight(1f).padding(horizontal = 16.dp)
         if (displayedState.confirmedAt == null) {
             // Let the restored list position apply to the result rows once data is available.
@@ -206,7 +205,7 @@ internal fun ChatTitleSearch(
                 when {
                     state.offline ->
                         item { ChatContentLoadNotice(R.string.chat_list_load_when_online) }
-                    failure != null ->
+                    retryFailedRead != null ->
                         item {
                             ChatContentLoadNotice(
                                 R.string.chat_list_first_load_failed,
@@ -231,8 +230,7 @@ internal fun ChatTitleSearch(
         val status =
             when {
                 state.offline -> R.string.chat_list_offline
-                state.sustainedRefreshFailure || retryFailedRead != null ->
-                    R.string.chat_list_refresh_failed
+                retryFailedRead != null -> R.string.chat_list_refresh_failed
                 else -> null
             }
         BoxWithConstraints(resultsWidth) {
