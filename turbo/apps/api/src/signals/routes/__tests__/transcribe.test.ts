@@ -197,8 +197,14 @@ test("ordered private recordings share one Vertex request and one credit settlem
     }),
   };
   const mcp = createMcpWebApi(context);
+  const attachment = {
+    type: "file" as const,
+    fileId,
+    filenameSnapshot: clip.filename,
+    contentType: clip.contentType,
+  };
   const sent = await mcp.call(authorize(), "send_chat_message", {
-    userMessage: { version: 1, parts: [voice] },
+    userMessage: { version: 1, parts: [voice, attachment] },
   });
   expect(sent.isError, JSON.stringify(sent.content)).not.toBeTruthy();
   const accepted = mcpSendChatMessageOutputSchema.parse(sent.structuredContent);
@@ -215,6 +221,7 @@ test("ordered private recordings share one Vertex request and one credit settlem
     throw new Error("Expected the MCP voice message to launch a run");
   }
   expect(launched.userMessage?.parts).toContainEqual(voice);
+  expect(launched.userMessage?.parts).toContainEqual(attachment);
   await runs.heartbeatRunner(group);
   const execution = await runs.executionInput(launched.runId);
   const token = execution.platformEnvironment.OKOU_TOKEN;
