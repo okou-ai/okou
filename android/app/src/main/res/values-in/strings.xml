@@ -141,7 +141,7 @@
     <string name="realtime_unavailable">Pembaruan langsung tidak tersedia. Anda tetap dapat menyegarkan secara manual.</string>
     <string name="settings_account">Akun</string>
     <string name="chat_project_expansion_read_failed">Status buka atau tutup proyek tidak dapat dimuat di perangkat ini.</string>
-    <string name="chat_project_expansion_save_failed">Status buka atau tutup proyek tidak dapat disimpan di perangkat ini.</string>
+    <string name="chat_project_expansion_save_failed">Status buka atau tutup proyek tidak dapat disimpan untuk lain kali.</string>
     <string name="settings_cancel">Batal</string>
     <string name="settings_saving">Menyimpan…</string>
     <string name="settings_sign_out_title">Keluar?</string>
