@@ -5,7 +5,7 @@ import {
 } from "./chat-event-publication.service";
 import { addFeishuThinkingReaction$ } from "./feishu-thinking-indicator.service";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import type { FeishuPlatform } from "@okouai/api-contracts/contracts/feishu-platform";
 import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";

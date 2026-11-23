@@ -1,20 +1,11 @@
-import { and, eq } from "drizzle-orm";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
-import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import type { PreparedCustomConnectorSkill } from "./custom-connector-skill-bundle.service";
-
-export function customConnectorSkillPublicationJoin() {
-  return and(
-    eq(orgCustomConnectorSkillPublications.id, orgCustomConnectors.id),
-    eq(orgCustomConnectorSkillPublications.orgId, orgCustomConnectors.orgId),
-  );
-}
 
 export function customConnectorSkillBundleSelection() {
   return {
-    skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
+    skillContentBundle: orgCustomConnectors.skillContentBundle,
     skillContentBundleSourceVersionId:
-      orgCustomConnectorSkillPublications.skillContentBundleSourceVersionId,
+      orgCustomConnectors.skillContentBundleSourceVersionId,
   } as const;
 }
 

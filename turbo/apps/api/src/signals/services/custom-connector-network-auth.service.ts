@@ -4,7 +4,7 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { CustomConnectorNetworkIntent } from "@okouai/api-contracts/validators/custom-connector-network";
 import type { ConnectorRuntimeSyncResult } from "@okouai/api-contracts/contracts/runners";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 
 import { matchFirewallRequestDecision } from "@okouai/connectors/firewall-rule-matcher";
 import { badRequestMessage, resourceUnavailable } from "../../lib/error";

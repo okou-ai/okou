@@ -54,7 +54,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { customConnectorAccountOauthBindings } from "@okouai/db/schema/custom-connector-account-oauth-binding";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorDcrRegistrations } from "@okouai/db/schema/org-custom-connector-dcr-registration";
 import { secrets } from "@okouai/db/schema/secret";
 
