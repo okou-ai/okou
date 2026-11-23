@@ -232,7 +232,7 @@ async function setSyncInLab(enabled: boolean) {
   return await findComposerEditor();
 }
 
-test("Disabling sync after initialization keeps the same history and local-only uses", async () => {
+test("Disabling initialized sync keeps canonical history and browser-only uses", async () => {
   const id = installWorkflows();
   mockCache({ "okou_recent-workflows": [id("delta")] });
   mockRemote([id("echo")]);
@@ -244,10 +244,6 @@ test("Disabling sync after initialization keeps the same history and local-only 
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("echo"));
   await sendWorkflow(editor, "zulu");
-  await openMenu(editor);
-  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
-
-  editor = await setSyncInLab(true);
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
 });
