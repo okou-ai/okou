@@ -42,6 +42,39 @@ def wire(value, response=False, state="Resumed"):
     return hashlib.sha256(raw).hexdigest()
 
 
+def validate_accepted_response(accepted, capture_event, acceptance_event, *, repark):
+    """Require the original successful HTTP response held while the public operation waits."""
+    observed = batch.clock(
+        accepted.get("backend_response_observed_ns"),
+        capture_event["monotonic_ns"],
+        acceptance_event["monotonic_ns"],
+    )
+    response_sha = wire(accepted.get("response_raw"), response=True)
+    if repark:
+        pending_key = "public_park_polled_pending"
+        failure = "native pause lacked actual success with public API wait still pending"
+    else:
+        pending_key = "public_unpark_polled_pending"
+        failure = "native resume lacked actual success with public API wait still pending"
+    exact(
+        accepted,
+        {
+            "backend_response_observed_ns": observed,
+            "backend_status": 204,
+            "response_raw": accepted["response_raw"],
+            "response_sha256": response_sha,
+            pending_key: True,
+            "response_delivery_withheld": True,
+            "restore_callback_reached": repark,
+            "internal_vmm_inflight_claimed": False,
+            "original_full_lease_active": True,
+            "original_exit_polled_pending": True,
+            "allocated": [2, 4096, 1],
+        },
+        failure,
+    )
+
+
 def validate_preparation_loss(lost, previous_event, current_event, *, observer_unwound):
     """Require the original uncertain owner after the preparation observer drops."""
     requested = batch.clock(
