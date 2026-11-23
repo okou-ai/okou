@@ -6482,11 +6482,6 @@ function PagedUserGroup({
   stackFirstOnPrevious?: boolean;
   dateDividers: ReadonlyMap<string, ChatDateDivider>;
 }) {
-  const scrollRoomEnabled =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ChatLatestTurnScrollRoom
-    ];
-  const latestUserTurnId = useGet(thread.locator.latestUserTurnId$);
   return (
     <>
       {group.events.map((event, index) => {
@@ -6507,17 +6502,7 @@ function PagedUserGroup({
             ? rendersUserBubble(previousEvent)
             : stackFirstOnPrevious);
         return (
-          <div
-            key={chatEventRenderKey(event)}
-            className={cn(
-              "contents",
-              // The first rendered box can be a date or model divider. Extend
-              // its scrollable overflow without changing row or page height.
-              scrollRoomEnabled &&
-                latestUserTurnId === event.id &&
-                "*:first:relative *:first:after:pointer-events-none *:first:after:absolute *:first:after:top-0 *:first:after:start-0 *:first:after:h-[calc(100cqb-1rem)] *:first:after:w-px",
-            )}
-          >
+          <div key={chatEventRenderKey(event)} className="contents">
             {dateDivider ? (
               <ChatThreadDateDivider divider={dateDivider} />
             ) : null}
@@ -7605,9 +7590,11 @@ function UserMessageTextActions({
 function WorkflowUserMessage({
   event,
   thread,
+  scrollRoomClass,
 }: {
   event: EnrichedChatEvent & ChatInputEvent;
   thread: ChatPanelSignals;
+  scrollRoomClass: string | undefined;
 }) {
   const turnOnRef = useSet(thread.locator.turnOnRef$);
   const nameLine =
@@ -7634,7 +7621,7 @@ function WorkflowUserMessage({
       data-role="user"
       data-chat-scroll-anchor-event-id={event.id}
       data-turn-created-at={event.createdAt}
-      className="relative group/user-message"
+      className={cn("relative group/user-message", scrollRoomClass)}
       ref={turnOnRef}
     >
       <ChatConversationLandingHighlight thread={thread} eventId={event.id} />
@@ -7725,6 +7712,22 @@ function OptimisticSpinner({ eventId }: { eventId: string }) {
   );
 }
 
+function useLatestTurnScrollRoomClass(
+  thread: ChatPanelSignals,
+  eventId: string,
+) {
+  const enabled =
+    useLastResolved(featureSwitches$)?.[
+      FeatureSwitchKey.ChatLatestTurnScrollRoom
+    ];
+  const latestUserTurnId = useGet(thread.locator.latestUserTurnId$);
+  // Extend scrollable overflow from the prompt without changing the height
+  // of its row or virtual page. The inset matches the transcript's py-4.
+  return enabled && latestUserTurnId === eventId
+    ? "after:pointer-events-none after:absolute after:top-0 after:start-0 after:h-[calc(100cqb-1rem)] after:w-px"
+    : undefined;
+}
+
 function PagedUserMessage({
   event,
   thread,
@@ -7763,6 +7766,7 @@ function PagedUserMessage({
   const nameLine =
     useLastResolved(featureSwitches$)?.[FeatureSwitchKey.ChatReplyNameLine] ===
     true;
+  const scrollRoomClass = useLatestTurnScrollRoomClass(thread, event.id);
   // Under `chatReplyNameLine` a selected group is tinted, so sharing drops the
   // empty copy row together with the pull measured against it.
   const collapseForSharing = nameLine && sharingPhase !== "idle";
@@ -7784,7 +7788,13 @@ function PagedUserMessage({
   };
 
   if (isWorkflowUserMessage(event)) {
-    return <WorkflowUserMessage event={event} thread={thread} />;
+    return (
+      <WorkflowUserMessage
+        event={event}
+        thread={thread}
+        scrollRoomClass={scrollRoomClass}
+      />
+    );
   }
 
   const nonContentRenderPart = userMessageAnnotationRenderPart(renderDocument);
@@ -7801,6 +7811,7 @@ function PagedUserMessage({
       data-chat-user-message-stacked={pulled || undefined}
       className={cn(
         "relative group/user-message",
+        scrollRoomClass,
         pulled && CHAT_THREAD_MESSAGE_STACK_PULL_CLASS,
       )}
     >
