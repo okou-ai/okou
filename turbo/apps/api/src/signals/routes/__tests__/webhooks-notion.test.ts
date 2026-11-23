@@ -2,6 +2,7 @@ import { createHmac, randomUUID } from "node:crypto";
 
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { webhookNotionContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
@@ -10,6 +11,8 @@ import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -19,9 +22,11 @@ import {
   createWorkflowsBddApi,
   mockNotionConnectorOAuth,
 } from "./helpers/api-bdd-workflows";
+import { chatEventDisplayText } from "./helpers/chat-event";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
+import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
 import { runConnectorAccountRoutes } from "../run-connector-accounts";
 import { webhooksNotionRoutes } from "../webhooks-notion";
 import { workflowAutomationsRoutes } from "../workflow-automations";
@@ -288,6 +293,7 @@ function notionPageEvent(args: {
   readonly type: string;
   readonly timestamp: string;
   readonly pageId?: string;
+  readonly accessibleBy?: readonly string[];
   readonly parent?: {
     readonly id?: string;
     readonly type?: string;
@@ -306,6 +312,9 @@ function notionPageEvent(args: {
       integration_id: NOTION_INTEGRATION_ID,
       type: args.type,
       authors: [{ id: NOTION_AUTHOR_ID, type: "person" }],
+      accessible_by: args.accessibleBy?.map((id) => {
+        return { id, type: "person" };
+      }),
       attempt_number: 1,
       entity: {
         id: args.pageId ?? args.entities.childPageId,
@@ -1229,6 +1238,253 @@ describe("POST /api/webhooks/notion", () => {
     );
     expect(changed.body.currentConnectionId).toBe(secondAccount.id);
     await expectAutomationConnector(secondAccount.id);
+  });
+
+  it("repairs the Notion binding when the selected account's timed access expires", async () => {
+    const app = await setupApp({
+      context,
+      routes: webhooksNotionRoutes,
+      isolatePg: true,
+    });
+    const webhook = app(webhookNotionContract);
+    await verifyNotionWebhook(webhook);
+    const {
+      actor,
+      entities,
+      firstAccount,
+      secondAccount,
+      selectAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    await selectAccount(secondAccount.id);
+
+    const expiresAt = now();
+    mockNow(expiresAt - 3_600_000);
+    await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).updateAccountPolicy({
+        headers: authHeaders(),
+        params: { connectionId: secondAccount.id },
+        body: {
+          target: { kind: "builtin", connectorSlug: "notion" },
+          policy: "allow-1h",
+        },
+      }),
+      [200],
+    );
+    async function deliver(owner: string, pageId: string) {
+      const { rawBody } = notionPageEvent({
+        entities,
+        type: "page.created",
+        timestamp: new Date(now()).toISOString(),
+        accessibleBy: [owner],
+        pageId,
+      });
+      return await postNotionWebhook(
+        { rawBody, signature: notionSignature(rawBody) },
+        webhook,
+      );
+    }
+
+    mockNow(expiresAt - 1);
+    await expect(
+      deliver("notion-user-2", entities.childPageId),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 1 },
+    });
+    await expectAutomationConnector(secondAccount.id);
+
+    mockNow(expiresAt);
+    await expect(deliver("notion-user-2", randomUUID())).resolves.toMatchObject(
+      {
+        status: 200,
+        body: { pending: 0 },
+      },
+    );
+    await expectAutomationConnector(firstAccount.id);
+    await expect(deliver("notion-user-1", randomUUID())).resolves.toMatchObject(
+      {
+        status: 200,
+        body: { pending: 1 },
+      },
+    );
+  });
+
+  it("repairs a denied Notion binding only when the replacement can access the resource", async () => {
+    const cronSecret = "notion-listener-cron-secret";
+    mockEnv("CRON_SECRET", cronSecret);
+    const webhook = (
+      await setupApp({
+        context,
+        routes: webhooksNotionRoutes,
+        isolatePg: true,
+      })
+    )(webhookNotionContract);
+    await verifyNotionWebhook(webhook);
+    const {
+      actor,
+      entities,
+      threadId,
+      firstAccount,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const target = { kind: "builtin", connectorSlug: "notion" } as const;
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: secondAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    await accept(
+      access.setThreadOverride({
+        headers: authHeaders(),
+        params: { threadId, connectionId: firstAccount.id },
+        body: { target, enabled: false },
+      }),
+      [200],
+    );
+    // The account is a valid member default and is denied in this Workflow Chat.
+    await connectorsApi.setDefaultBuiltinConnectorAccount(
+      actor,
+      "notion",
+      secondAccount.id,
+    );
+
+    async function deliver(
+      owner: string | undefined,
+      type: "page.created" | "page.properties_updated" = "page.created",
+    ) {
+      const { rawBody } = notionPageEvent({
+        entities,
+        type,
+        timestamp: "2026-07-06T12:00:00.000Z",
+        accessibleBy: owner === undefined ? undefined : [owner],
+      });
+      return await postNotionWebhook(
+        { rawBody, signature: notionSignature(rawBody) },
+        webhook,
+      );
+    }
+    await expect(deliver("notion-user-2")).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 0 },
+    });
+
+    const replacementOwner = "notion-replacement-user";
+    const replacementToken = "notion-replacement-token";
+    mockNotionConnectorOAuth({
+      ownerId: replacementOwner,
+      accessToken: replacementToken,
+    });
+    const oauth = await connectorsApi.startOauth(actor, "notion", "oauth", {
+      intent: "add",
+      displayName: "Notion Replacement",
+    });
+    const state = new URL(oauth.authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected replacement Notion account OAuth state");
+    }
+    await connectorsApi.completeOauthCallback("notion", {
+      code: "notion-replacement-code",
+      state,
+    });
+    const replacement = (
+      await connectorsApi.listBuiltinConnectorAccounts(actor, "notion")
+    ).find((account) => {
+      return account.externalId === replacementOwner;
+    });
+    if (!replacement) {
+      throw new Error("Expected the replacement Notion account");
+    }
+    server.use(
+      http.get(
+        `https://api.notion.com/v1/pages/${entities.parentPageId}`,
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            `Bearer ${replacementToken}`,
+          );
+          return HttpResponse.json(
+            { code: "object_not_found" },
+            { status: 404 },
+          );
+        },
+      ),
+    );
+    await expect(deliver("notion-user-2")).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 0 },
+    });
+    await expect(deliver(replacementOwner)).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 0 },
+    });
+
+    configureNotionParentPageMock(entities, replacementToken);
+    await expect(deliver(undefined)).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 0 },
+    });
+    await expectAutomationConnector(replacement.id);
+    await expect(deliver("notion-user-2")).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 0 },
+    });
+    await expect(deliver(replacementOwner)).resolves.toMatchObject({
+      status: 200,
+      body: { pending: 1 },
+    });
+    await expect(
+      deliver("notion-user-2", "page.properties_updated"),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { refreshed: 0 },
+    });
+    await expect(
+      deliver(replacementOwner, "page.properties_updated"),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { refreshed: 1 },
+    });
+
+    configureNotionChildPageMock(entities, undefined, {
+      accessToken: replacementToken,
+    });
+    runsApi.acceptStorageDownloads();
+    runsApi.acceptTelemetryIngest();
+    const cron = setupApp({
+      context,
+      routes: cronExecuteWorkflowAutomationsRoutes,
+    })(cronExecuteWorkflowAutomationsContract);
+    const executed = await accept(
+      cron.execute({ headers: { authorization: `Bearer ${cronSecret}` } }),
+      [200],
+    );
+    expect(executed.body).toStrictEqual({
+      success: true,
+      executed: 1,
+      skipped: 0,
+    });
+    const events = await wf.readThreadEvents(threadId);
+    const inputs = events.filter((event) => {
+      return (
+        event.eventType === "input.automation" ||
+        event.eventType === "input.prompt"
+      );
+    });
+    expect(inputs.map(chatEventDisplayText)).toStrictEqual([
+      'Notion page "Launch notes" was created under the configured parent page.',
+    ]);
   });
 
   it.each(["selected", "default"] as const)(

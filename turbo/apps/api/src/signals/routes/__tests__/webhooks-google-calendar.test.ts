@@ -2,7 +2,9 @@ import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/cont
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
+import { cronRenewGoogleCalendarWatchesContract } from "@okouai/api-contracts/contracts/cron";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { expect, describe, beforeEach, it } from "vitest";
 
@@ -26,6 +28,7 @@ import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 import { chatThreadRoutes } from "../chat-threads";
 import { connectorAccountRoutes } from "../connector-accounts";
+import { cronRenewGoogleCalendarWatchesRoutes } from "../cron-renew-google-calendar-watches";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { webhooksGoogleCalendarRoutes } from "../webhooks-google-calendar";
 
@@ -198,6 +201,7 @@ function configureGoogleCalendarApiMock(args: {
 interface AccountAwareGoogleCalendarRecorder {
   readonly channels: (GoogleCalendarWatchChannel & {
     readonly accessToken: string;
+    readonly calendarId: string;
   })[];
   readonly baselineAccessTokens: string[];
   readonly incrementalAccessTokens: string[];
@@ -242,6 +246,7 @@ function configureAccountAwareGoogleCalendarApiMock(args: {
           channelToken: body.token,
           resourceId,
           accessToken,
+          calendarId: params.calendarId,
         });
         return HttpResponse.json({
           id: body.id,
@@ -412,6 +417,23 @@ function webhookHeaders(
     "x-goog-resource-state": "exists",
     "x-goog-message-number": "2",
     ...overrides,
+  };
+}
+
+async function setupCalendarRenewal() {
+  const cronSecret = "calendar-renewal-secret";
+  mockEnv("CRON_SECRET", cronSecret);
+  const app = await setupApp({
+    context,
+    routes: cronRenewGoogleCalendarWatchesRoutes,
+    isolatePg: true,
+  });
+  const cron = app(cronRenewGoogleCalendarWatchesContract);
+  return async () => {
+    return await accept(
+      cron.renew({ headers: { authorization: `Bearer ${cronSecret}` } }),
+      [200],
+    );
   };
 }
 
@@ -1272,6 +1294,284 @@ describe("POST /api/webhooks/google-calendar", () => {
         "google-calendar",
       ),
     ).resolves.toStrictEqual([]);
+  });
+
+  it("repairs denied bindings and only retires unconsumed Calendar watches during renewal", async () => {
+    const renew = await setupCalendarRenewal();
+    mockEnv("ABLY_API_KEY", "test.key:secret");
+    const firstToken = "calendar-renewal-first-token";
+    const secondToken = "calendar-renewal-second-token";
+    const sharedCalendar = "primary";
+    const movedCalendar = "team-calendar@example.com";
+    const blockedCalendar = "blocked-calendar@example.com";
+    const calendar = configureAccountAwareGoogleCalendarApiMock({
+      resourcePrefix: "calendar-renewal",
+    });
+    const scenario = await setupFixture();
+    const { actor, runnerGroup, workflowId } = scenario;
+    mockGoogleCalendarConnectorOAuth({
+      accessToken: firstToken,
+      email: "renewal-first@example.com",
+      subject: "renewal-first",
+    });
+    await wf.connectConnector(actor, "google-calendar");
+    const first = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "google-calendar",
+    );
+    const second = await addGoogleCalendarAccount(scenario, {
+      accessToken: secondToken,
+      email: "renewal-second@example.com",
+      subject: "renewal-second",
+    });
+    const sharedWorkflowId = await wf.createWorkflow(actor, {
+      name: "calendar-renewal-shared",
+    });
+    const blockedWorkflowId = await wf.createWorkflow(actor, {
+      name: "calendar-renewal-blocked",
+    });
+
+    async function subscribe(workflowId: string, calendarId: string) {
+      const { body } = await accept(
+        automationsClient().create({
+          headers: authHeaders(),
+          params: { workflowId },
+          body: {
+            kind: "event",
+            eventType: "google-calendar-event-created",
+            eventConfig: {
+              provider: "google-calendar",
+              event: "event_created",
+              calendarId,
+            },
+          },
+        }),
+        [201],
+      );
+      if (!body.chatThreadId) {
+        throw new Error("Expected the Calendar Workflow Chat");
+      }
+      return body.chatThreadId;
+    }
+    const originalThreadId = await subscribe(workflowId, sharedCalendar);
+    await subscribe(sharedWorkflowId, sharedCalendar);
+    await subscribe(sharedWorkflowId, movedCalendar);
+    const blockedThreadId = await subscribe(blockedWorkflowId, blockedCalendar);
+
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const target = {
+      kind: "builtin",
+      connectorSlug: "google-calendar",
+    } as const;
+    async function disallow(threadId: string, connectionId: string) {
+      await accept(
+        access.setThreadOverride({
+          headers: authHeaders(),
+          params: { threadId, connectionId },
+          body: { target, enabled: false },
+        }),
+        [200],
+      );
+    }
+    await disallow(originalThreadId, second);
+    await disallow(blockedThreadId, second);
+    await disallow(blockedThreadId, first.id);
+
+    const readChannel = (accessToken: string, calendarId: string) => {
+      const channel = calendar.channels.find((candidate) => {
+        return (
+          candidate.accessToken === accessToken &&
+          candidate.calendarId === calendarId
+        );
+      });
+      if (!channel) {
+        throw new Error(`Expected a watch on ${calendarId}`);
+      }
+      return channel;
+    };
+    const sharedWatch = readChannel(firstToken, sharedCalendar);
+    const movedWatch = readChannel(firstToken, movedCalendar);
+    const run = await runsApi.createThreadRun(actor, {
+      prompt: "Observe Calendar account changes",
+      model: "claude-fable-5-1",
+    });
+    await runsApi.heartbeatRunner(runnerGroup);
+    const execution = await runsApi.executionInput(run.runId);
+
+    // Interrupt the account request at its post-commit provider notification,
+    // before its best-effort Calendar reconciliation.
+    const request = new AbortController();
+    context.mocks.ably.batchPublish.mockImplementationOnce((batch) => {
+      const error = new Error(
+        "Default change request cancelled during notification",
+      );
+      error.name = "AbortError";
+      request.abort(error);
+      return Promise.resolve({
+        results: [
+          {
+            channel: `runner-group:${runnerGroup}`,
+            messageId: "calendar-default-change",
+            serials: batch.messages.map(() => {
+              return null;
+            }),
+          },
+        ],
+        successCount: 1,
+        failureCount: 0,
+      });
+    });
+    const accounts = setupApp({
+      context,
+      routes: connectorAccountRoutes,
+      signal: request.signal,
+    })(connectorAccountsContract);
+    await expect(
+      accounts.setDefault({
+        headers: authHeaders(),
+        params: { connectionId: second },
+        body: { target },
+      }),
+    ).rejects.toThrow("Unknown response status 500");
+    await expect(
+      connectorsApi.readDefaultBuiltinAccount(actor, "google-calendar"),
+    ).resolves.toMatchObject({ id: second });
+    await completeRunThroughSandbox(execution.sandboxToken, run.runId);
+
+    const stoppedBeforeRenewal = calendar.stoppedAccessTokens.length;
+    const renewal = await renew();
+    expect(renewal.body).toMatchObject({ success: true, failed: 0 });
+    expect(
+      calendar.stoppedAccessTokens.slice(stoppedBeforeRenewal),
+    ).toStrictEqual([firstToken]);
+    expect(
+      calendar.channels
+        .filter((channel) => {
+          return channel.accessToken === secondToken;
+        })
+        .map((channel) => {
+          return channel.calendarId;
+        })
+        .sort(),
+    ).toStrictEqual([sharedCalendar, movedCalendar].sort());
+    await expect(
+      postGoogleCalendarWebhook(webhookHeaders(sharedWatch)),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(calendar.incrementalAccessTokens).toContain(firstToken);
+    await expect(
+      postGoogleCalendarWebhook(webhookHeaders(movedWatch)),
+    ).resolves.toMatchObject({ status: 401 });
+    await expect(
+      postGoogleCalendarWebhook(
+        webhookHeaders(readChannel(secondToken, movedCalendar)),
+      ),
+    ).resolves.toMatchObject({ status: 200 });
+    expect(calendar.incrementalAccessTokens).toContain(secondToken);
+    const selections = await accept(
+      chatThreadConnectorSelectionsClient().get({
+        headers: authHeaders(),
+        params: { id: originalThreadId },
+      }),
+      [200],
+    );
+    expect(selections.body.selections).toStrictEqual([
+      { target, connectionId: first.id },
+    ]);
+  });
+
+  it("moves the Calendar watch at account access expiry and keeps the saved Chat choice", async () => {
+    const renew = await setupCalendarRenewal();
+    const firstToken = "calendar-expiring-token";
+    const secondToken = "calendar-eligible-replacement-token";
+    const calendar = configureAccountAwareGoogleCalendarApiMock({
+      resourcePrefix: "calendar-expiry",
+    });
+    const scenario = await setupFixture();
+    const { actor, workflowId } = scenario;
+    mockGoogleCalendarConnectorOAuth({
+      accessToken: firstToken,
+      email: "renewal-first@example.com",
+      subject: "renewal-first",
+    });
+    await wf.connectConnector(actor, "google-calendar");
+    const first = await connectorsApi.readDefaultBuiltinAccount(
+      actor,
+      "google-calendar",
+    );
+    await addGoogleCalendarAccount(scenario, {
+      accessToken: secondToken,
+      email: "renewal-second@example.com",
+      subject: "renewal-second",
+    });
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+
+    const created = await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: { kind: "event", eventType: "google-calendar-event-created" },
+      }),
+      [201],
+    );
+    const firstWatch = calendar.channels[0];
+    const threadId = created.body.chatThreadId;
+    if (!firstWatch || !threadId) {
+      throw new Error("Expected a watch and its Workflow Chat");
+    }
+    const target = {
+      kind: "builtin",
+      connectorSlug: "google-calendar",
+    } as const;
+    await accept(
+      chatThreadConnectorSelectionsClient().update({
+        headers: authHeaders(),
+        params: { id: threadId },
+        body: { target, connectionId: first.id },
+      }),
+      [200],
+    );
+
+    const expiresAt = now();
+    mockNow(expiresAt - 3_600_000);
+    await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).updateAccountPolicy({
+        headers: authHeaders(),
+        params: { connectionId: first.id },
+        body: { target, policy: "allow-1h" },
+      }),
+      [200],
+    );
+    mockNow(expiresAt - 1);
+    await renew();
+    expect(calendar.channels).toHaveLength(1);
+
+    mockNow(expiresAt);
+    expect((await renew()).body).toMatchObject({ failed: 0 });
+    const secondWatch = calendar.channels[1];
+    expect(secondWatch).toMatchObject({
+      accessToken: secondToken,
+      calendarId: "primary",
+    });
+    expect(calendar.stoppedAccessTokens).toStrictEqual([firstToken]);
+    await expect(
+      postGoogleCalendarWebhook(webhookHeaders(firstWatch)),
+    ).resolves.toMatchObject({ status: 401 });
+    const selections = await accept(
+      chatThreadConnectorSelectionsClient().get({
+        headers: authHeaders(),
+        params: { id: threadId },
+      }),
+      [200],
+    );
+    expect(selections.body.selections).toStrictEqual([
+      { target, connectionId: first.id },
+    ]);
   });
 
   it("ignores updated and cancelled calendar events", async () => {
