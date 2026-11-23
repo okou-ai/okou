@@ -6,8 +6,10 @@ import ai.okou.android.CHAT_PROJECT
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.AcceptedInput
+import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.CreatedThread
+import ai.okou.android.api.generated.CreatedThreadServiceTier
 import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.auth.WorkspaceIdentity
 import androidx.lifecycle.ViewModelProvider
@@ -110,7 +112,9 @@ class ChatComposerModelTest {
         blockedDisk: Boolean = false,
         action:
             suspend TestScope.(
-                Service, ComposerJournalStore, (Boolean, WorkspaceIdentity) -> ChatComposerModel,
+                Service,
+                ComposerJournalStore,
+                (Boolean, WorkspaceIdentity) -> ChatComposerModel,
             ) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -272,7 +276,7 @@ class ChatComposerModelTest {
         assertTrue(store.load(identity).journal.drafts[existing.key]!!.dirty)
         service.draftRead = {
             kotlinx.serialization.json.Json.parseToJsonElement(
-                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}"""
+                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}""",
                 )
                 .let { it as kotlinx.serialization.json.JsonObject }
         }
@@ -319,7 +323,7 @@ class ChatComposerModelTest {
                         mapOf(
                             a.key to ComposerEntry(text = "A"),
                             b.key to ComposerEntry(text = "B"),
-                        )
+                        ),
                 ),
             )
             .await()
@@ -464,8 +468,8 @@ class ChatComposerModelTest {
                     request.projectId,
                     null,
                     CHAT_DATE,
-                    null,
-                    null,
+                    "workspace-default",
+                    CreatedThreadServiceTier.PRIORITY,
                 )
             }
             service.write = { request ->
@@ -481,6 +485,12 @@ class ChatComposerModelTest {
             runCurrent()
             assertEquals(1, service.creates.size)
             assertEquals(1, service.requests.size)
+            val creation = service.creates.single()
+            assertEquals(CanonicalOptional.Absent, creation.model)
+            assertEquals(CanonicalOptional.Absent, creation.serviceTier)
+            assertNull(creation.reasoningEffort)
+            assertEquals(CanonicalOptional.Absent, service.requests.single().model)
+            assertNull(service.requests.single().runOptions)
             assertEquals("原始 **text** 👋\nsecond line", service.requests.single().prompt)
             gate.complete(Unit)
             runCurrent()
@@ -728,7 +738,7 @@ class ChatComposerModelTest {
                     mapOf(
                         existing.key to ComposerEntry("saved existing"),
                         "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
-                    )
+                    ),
             )
         store.persist(identity, journal)
         runCurrent()

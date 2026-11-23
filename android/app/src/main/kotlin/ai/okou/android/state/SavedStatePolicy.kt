@@ -24,5 +24,5 @@ internal class SavedStateBudgetExceeded(val bytes: Int) :
     IllegalStateException(
         "Activity saved state is $bytes bytes; budget is less than " +
             "${SavedStatePolicy.ACTIVITY_BYTES} bytes. " +
-            "Keep documents in their data owner and bound presentation history."
+            "Keep documents in their data owner and bound presentation history.",
     )

@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.RecoveryBilling
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItem
 import ai.okou.android.api.generated.RecoverySubscriptionsSubscriptionsItemType
 import ai.okou.android.api.generated.UsagePackCredits
+import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
 import androidx.lifecycle.ViewModel
@@ -51,6 +52,8 @@ internal data class WorkspaceSettingsState(
 class WorkspaceSettingsModel
 internal constructor(
     private val service: WorkspaceSession,
+    identity: WorkspaceIdentity,
+    defaultModelStore: DefaultModelStore,
     internal val showWorkspaceCredits: Boolean,
     private val authorized: () -> Boolean,
     private val onSessionFailure: (Exception) -> Unit,
@@ -58,6 +61,10 @@ internal constructor(
 ) : ViewModel() {
     private val mutable = MutableStateFlow(WorkspaceSettingsState())
     internal val uiState = mutable.asStateFlow()
+    internal val defaultModel =
+        DefaultModelSettings(viewModelScope, service, identity, defaultModelStore, authorized) {
+            reportSessionFailure(it)
+        }
 
     private var visible: SettingsDestination? = null
     private var accountsRead: Job? = null
@@ -68,6 +75,7 @@ internal constructor(
     init {
         viewModelScope.launch {
             connectivity.collect { online ->
+                defaultModel.online(online)
                 val changed = mutable.value.offline == online
                 mutable.update { it.copy(offline = !online) }
                 if (changed) {
@@ -99,20 +107,18 @@ internal constructor(
         refreshAccounts()
         if (visible == SettingsDestination.CreditBalance) {
             if (usagePackRead?.isActive != true) {
-                usagePackRead =
-                    viewModelScope.launch {
-                        read(service::usagePackCredits, { mutable.value.usagePack }) { data ->
-                            mutable.update { it.copy(usagePack = data) }
-                        }
+                usagePackRead = viewModelScope.launch {
+                    read(service::usagePackCredits, { mutable.value.usagePack }) { data ->
+                        mutable.update { it.copy(usagePack = data) }
                     }
+                }
             }
             if (showWorkspaceCredits && workspaceCreditsRead?.isActive != true) {
-                workspaceCreditsRead =
-                    viewModelScope.launch {
-                        read(service::recoveryBilling, { mutable.value.workspaceCredits }) { data ->
-                            mutable.update { it.copy(workspaceCredits = data) }
-                        }
+                workspaceCreditsRead = viewModelScope.launch {
+                    read(service::recoveryBilling, { mutable.value.workspaceCredits }) { data ->
+                        mutable.update { it.copy(workspaceCredits = data) }
                     }
+                }
             }
         }
     }
@@ -121,41 +127,40 @@ internal constructor(
         if (visible != SettingsDestination.ModelAccounts && verifying.isEmpty()) return
         if (mutable.value.switching.keys.any { it !in verifying }) return
         if (accountsRead?.isActive == true) return
-        accountsRead =
-            viewModelScope.launch {
-                read(
-                    {
-                        service.recoverySubscriptions().subscriptions.filter { it.provider != null }
-                    },
-                    { mutable.value.accounts },
-                ) { result ->
-                    val state = mutable.value
-                    val incoming = result.value
-                    if (result.unavailable || incoming == null) {
-                        mutable.update { it.copy(accounts = result) }
-                    } else {
-                        val previousOrder =
-                            state.accounts.value
-                                .orEmpty()
-                                .mapIndexed { index, item -> item.id to index }
-                                .toMap()
-                        val ordered = incoming.sortedBy { previousOrder[it.id] ?: Int.MAX_VALUE }
-                        val rejected =
-                            verifying.filterTo(mutableSetOf()) { provider ->
-                                incoming.none {
-                                    it.id == state.switching[provider] && it.isActive == true
-                                }
+        accountsRead = viewModelScope.launch {
+            read(
+                {
+                    service.recoverySubscriptions().subscriptions.filter { it.provider != null }
+                },
+                { mutable.value.accounts },
+            ) { result ->
+                val state = mutable.value
+                val incoming = result.value
+                if (result.unavailable || incoming == null) {
+                    mutable.update { it.copy(accounts = result) }
+                } else {
+                    val previousOrder =
+                        state.accounts.value
+                            .orEmpty()
+                            .mapIndexed { index, item -> item.id to index }
+                            .toMap()
+                    val ordered = incoming.sortedBy { previousOrder[it.id] ?: Int.MAX_VALUE }
+                    val rejected =
+                        verifying.filterTo(mutableSetOf()) { provider ->
+                            incoming.none {
+                                it.id == state.switching[provider] && it.isActive == true
                             }
-                        mutable.value =
-                            state.copy(
-                                accounts = SettingsRead(ordered),
-                                switching = state.switching - verifying,
-                                switchFailures = state.switchFailures + rejected,
-                            )
-                        verifying.clear()
-                    }
+                        }
+                    mutable.value =
+                        state.copy(
+                            accounts = SettingsRead(ordered),
+                            switching = state.switching - verifying,
+                            switchFailures = state.switchFailures + rejected,
+                        )
+                    verifying.clear()
                 }
             }
+        }
     }
 
     internal fun activate(accountId: String) {
@@ -194,7 +199,7 @@ internal constructor(
                                             if (it.provider == provider)
                                                 it.copy(isActive = it.id == accountId)
                                             else it
-                                        }
+                                        },
                                 ),
                             switching = latest.switching - provider,
                         )

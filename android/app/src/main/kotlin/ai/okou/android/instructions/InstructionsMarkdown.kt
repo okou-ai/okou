@@ -83,6 +83,6 @@ internal fun styleInstructionsMarkdown(source: String): AnnotatedString = buildA
                     }
                     visitChildren(node)
                 }
-            }
+            },
         )
 }

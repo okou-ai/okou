@@ -120,7 +120,7 @@ class ConnectorAccountFlowTest {
         withDirectory(initiallyOnline = false) { fixture, connectivity ->
             val waiting =
                 compose.onNode(
-                    hasText(LOAD_WHEN_ONLINE) and hasAnyAncestor(hasTestTag("connector-directory"))
+                    hasText(LOAD_WHEN_ONLINE) and hasAnyAncestor(hasTestTag("connector-directory")),
                 )
             val offline = compose.onNodeWithText("Offline")
             val empty = "No accounts connected yet"
@@ -415,7 +415,7 @@ class ConnectorAccountFlowTest {
             compose.waitUntilAtLeastOneExists(hasText("Rename") and isEnabled(), 10_000)
             compose
                 .onNode(
-                    hasText("Meeting calendar") and hasAnyAncestor(hasTestTag("connector-sheet"))
+                    hasText("Meeting calendar") and hasAnyAncestor(hasTestTag("connector-sheet")),
                 )
                 .assertIsDisplayed()
             assertEquals(1, fixture.renameRequests.get())
@@ -456,23 +456,22 @@ class ConnectorAccountFlowTest {
             val store = ViewModelStore()
             val connectivity = MutableStateFlow(initiallyOnline)
             try {
-                val model =
-                    compose.runOnIdle {
-                        ViewModelProvider.create(
-                                store,
-                                viewModelFactory {
-                                    initializer {
-                                        ConnectorModel(fixture.service, connectivity, { true }) {
-                                            error ->
-                                            throw AssertionError(
-                                                "Unexpected session failure",
-                                                error,
-                                            )
-                                        }
+                val model = compose.runOnIdle {
+                    ViewModelProvider.create(
+                            store,
+                            viewModelFactory {
+                                initializer {
+                                    ConnectorModel(fixture.service, connectivity, { true }) { error
+                                        ->
+                                        throw AssertionError(
+                                            "Unexpected session failure",
+                                            error,
+                                        )
                                     }
-                                },
-                            )[ConnectorModel::class]
-                    }
+                                }
+                            },
+                        )[ConnectorModel::class]
+                }
                 compose.setContent { OkouTheme(false) { ConnectorsPage(model, null) {} } }
                 exercise(fixture, connectivity)
             } finally {

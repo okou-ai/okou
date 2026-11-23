@@ -55,4 +55,19 @@
     <string name="settings_credit_top_up">チャージしたクレジット</string>
     <string name="settings_credit_unit">クレジット</string>
     <string name="settings_credit_web">Web でクレジットの明細を確認</string>
+    <string name="settings_default_model">既定のモデル</string>
+    <string name="settings_auto_model_detail">Okou が利用可能なモデルを選択</string>
+    <string name="settings_model_plan_restricted">別のプランが必要</string>
+    <string name="settings_model_fast">高速モード</string>
+    <string name="settings_model_fast_usage">サブスクリプション使用量は約 %1$s 倍</string>
+    <string name="settings_model_load_when_online">オンラインに戻るとコンテンツが読み込まれます。</string>
+    <string name="settings_model_save_rolled_back">既定のモデルを保存できなかったため、以前の設定に戻しました。</string>
+    <string name="settings_model_save_unconfirmed">既定のモデルが保存されたかどうかはまだ確認できていません。</string>
+    <string name="settings_model_effort">推論強度</string>
+    <string name="settings_model_effort_low">低</string>
+    <string name="settings_model_effort_medium">中</string>
+    <string name="settings_model_effort_high">高</string>
+    <string name="settings_model_effort_extra">非常に高い</string>
+    <string name="settings_model_effort_max">最大</string>
+    <string name="settings_model_effort_ultra">ウルトラ</string>
 </resources>

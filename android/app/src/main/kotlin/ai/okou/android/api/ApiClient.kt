@@ -33,6 +33,7 @@ import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
+import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -145,7 +146,7 @@ class ApiClient(
                     check(
                         request.url.scheme == origin.scheme &&
                             request.url.host == origin.host &&
-                            request.url.port == origin.port
+                            request.url.port == origin.port,
                     ) {
                         "API request escaped its origin"
                     }
@@ -157,7 +158,7 @@ class ApiClient(
                             .header(ApiHeaders.SESSION_HEADER, sessionId)
                             .header(ApiHeaders.REQUEST_HEADER, UUID.randomUUID().toString())
                             .header("Accept", "application/json")
-                            .build()
+                            .build(),
                     )
                 }
                 .build()
@@ -189,10 +190,11 @@ class ApiClient(
 
     suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
 
-    suspend fun workflowConnections() =
-        execute { reads.connectedConnectors(it) }
-            .builtinConnectors
-            .mapTo(mutableSetOf()) { it.slug }
+    suspend fun workflowConnections() = execute {
+        reads.connectedConnectors(it)
+    }
+        .builtinConnectors
+        .mapTo(mutableSetOf()) { it.slug }
 
     suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = execute {
         api.updateWorkflow(it, id, body)
@@ -396,6 +398,14 @@ class ApiClient(
     }
 
     suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
+
+    suspend fun defaultModelPreference() = execute { reads.defaultModelPreference(it) }
+
+    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
+        api.updateDefaultModelPreference(it, update)
+    }
+
+    suspend fun featureSwitches() = execute { reads.featureSwitches(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {

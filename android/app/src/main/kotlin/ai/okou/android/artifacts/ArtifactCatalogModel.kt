@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+internal const val ArtifactRetryDelayMillis = 3_000L
+private const val ArtifactRetryLimit = 2
+
 internal enum class ArtifactProblem {
     Denied,
     Missing,
@@ -39,6 +42,9 @@ internal data class ArtifactPreviewState(
         get() =
             info?.resource !is ArtifactResource.File &&
                 (item?.kind == ArtifactKind.Website || item?.kind == ArtifactKind.Presentation)
+
+    val hasReadableContent: Boolean
+        get() = content is ArtifactContent.Text || content is ArtifactContent.Image
 }
 
 internal enum class ArtifactSaveResult {
@@ -149,14 +155,13 @@ internal constructor(
     internal fun select(id: String?, item: ArtifactItem? = null) {
         if (mutable.value.preview?.id == id) return
         previewJob?.cancel()
-        val initial =
-            id?.let {
-                previews[it]
-                    ?: run {
-                        val info = if (item == null) knownMessageSiteInfo(it) else null
-                        ArtifactPreviewState(it, item ?: info?.item, info = info)
-                    }
-            }
+        val initial = id?.let {
+            previews[it]
+                ?: run {
+                    val info = if (item == null) knownMessageSiteInfo(it) else null
+                    ArtifactPreviewState(it, item ?: info?.item, info = info)
+                }
+        }
         mutable.update {
             it.copy(
                 preview = initial,
@@ -186,19 +191,26 @@ internal constructor(
         val cached = current.preview?.takeIf { it.id == id }?.access?.save
         mutable.update { it.copy(saveResult = id to ArtifactSaveResult.Saving) }
         viewModelScope.launch {
+            var destinationStarted = false
             val result =
                 try {
-                    val file =
-                        cached
-                            ?: service.info(id).let { info ->
-                                (info.resource as? ArtifactResource.File)?.let {
-                                    (info.resolvedAccess ?: service.fileAccess(it)).save
+                    retryArtifactOperation(canRetry = { !destinationStarted }) {
+                        val file =
+                            cached
+                                ?: service.info(id).let { info ->
+                                    (info.resource as? ArtifactResource.File)?.let {
+                                        (info.resolvedAccess ?: service.fileAccess(it)).save
+                                    }
                                 }
+                        if (file == null) ArtifactSaveResult.Denied
+                        else {
+                            service.save(file) {
+                                // The provider may have changed the file even if opening it fails.
+                                destinationStarted = true
+                                destination()
                             }
-                    if (file == null) ArtifactSaveResult.Denied
-                    else {
-                        service.save(file, destination)
-                        ArtifactSaveResult.Saved
+                            ArtifactSaveResult.Saved
+                        }
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -236,68 +248,67 @@ internal constructor(
                 reading = if (append) ArtifactCatalogRead.More else ArtifactCatalogRead.Refreshing,
             )
         }
-        catalogJob =
-            viewModelScope.launch {
-                if (debounce) delay(250)
-                retryRead { attempt ->
-                    try {
-                        val targetSize = if (append) 0 else current.page?.items?.size ?: 0
-                        val fresh = loadPages(query, cursor, targetSize)
-                        val merged =
-                            if (append) {
-                                val existing = checkNotNull(current.page)
-                                ArtifactPage(
-                                    (existing.items + fresh.items).distinctBy { it.id },
-                                    fresh.nextCursor,
-                                )
-                            } else fresh
-                        currentCoroutineContext().ensureActive()
-                        catalogs.remember(query, merged, 8)
-                        mutable.update { it.copy(page = merged, problem = null, reading = null) }
-                        false
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        val problem = problem(error)
-                        currentCoroutineContext().ensureActive()
-                        val denied = problem == ArtifactProblem.Denied
-                        if (denied || problem == ArtifactProblem.Missing) {
-                            catalogs.clear()
-                        }
-                        if (denied) {
-                            previewJob?.cancel()
-                            previews.clear()
-                            thumbnails.evictAll()
-                        }
-                        mutable.update {
-                            it.copy(
-                                page = if (catalogs.isEmpty()) null else it.page,
-                                preview =
-                                    if (denied)
-                                        it.preview?.let { preview ->
-                                            ArtifactPreviewState(
-                                                preview.id,
-                                                preview.item,
-                                                problem = problem,
-                                            )
-                                        }
-                                    else it.preview,
-                                problem =
-                                    problem.takeIf {
-                                        it != ArtifactProblem.Temporary ||
-                                            current.page == null ||
-                                            attempt > 0
-                                    },
-                                reading =
-                                    if (problem == ArtifactProblem.Temporary)
-                                        ArtifactCatalogRead.Refreshing
-                                    else null,
+        catalogJob = viewModelScope.launch {
+            if (debounce) delay(250)
+            retryRead { attempt ->
+                try {
+                    val targetSize = if (append) 0 else current.page?.items?.size ?: 0
+                    val fresh = loadPages(query, cursor, targetSize)
+                    val merged =
+                        if (append) {
+                            val existing = checkNotNull(current.page)
+                            ArtifactPage(
+                                (existing.items + fresh.items).distinctBy { it.id },
+                                fresh.nextCursor,
                             )
-                        }
-                        problem == ArtifactProblem.Temporary
+                        } else fresh
+                    currentCoroutineContext().ensureActive()
+                    catalogs.remember(query, merged, 8)
+                    mutable.update { it.copy(page = merged, problem = null, reading = null) }
+                    false
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    val problem = problem(error)
+                    currentCoroutineContext().ensureActive()
+                    val denied = problem == ArtifactProblem.Denied
+                    if (denied || problem == ArtifactProblem.Missing) {
+                        catalogs.clear()
                     }
+                    if (denied) {
+                        previewJob?.cancel()
+                        previews.clear()
+                        thumbnails.evictAll()
+                    }
+                    mutable.update {
+                        it.copy(
+                            page = if (catalogs.isEmpty()) null else it.page,
+                            preview =
+                                if (denied)
+                                    it.preview?.let { preview ->
+                                        ArtifactPreviewState(
+                                            preview.id,
+                                            preview.item,
+                                            problem = problem,
+                                        )
+                                    }
+                                else it.preview,
+                            problem =
+                                problem.takeIf {
+                                    it != ArtifactProblem.Temporary ||
+                                        current.page == null ||
+                                        attempt > 0
+                                },
+                            reading =
+                                if (problem == ArtifactProblem.Temporary)
+                                    ArtifactCatalogRead.Refreshing
+                                else null,
+                        )
+                    }
+                    problem == ArtifactProblem.Temporary
                 }
             }
+        }
     }
 
     private fun cachedResults(query: ArtifactQuery): ArtifactPage? {
@@ -313,7 +324,7 @@ internal constructor(
                             it.title.contains(query.keyword, ignoreCase = true))
                 }
                 .sortedWith(
-                    compareByDescending<ArtifactItem> { it.createdAt }.thenByDescending { it.id }
+                    compareByDescending<ArtifactItem> { it.createdAt }.thenByDescending { it.id },
                 )
         return ArtifactPage(matching, null)
     }
@@ -338,66 +349,73 @@ internal constructor(
     private fun readPreview(id: String) {
         if (!active || mutable.value.offline) return
         previewJob?.cancel()
-        previewJob =
-            viewModelScope.launch {
-                retryRead {
-                    var detailAuthorized = false
-                    try {
-                        val info = service.info(id)
-                        detailAuthorized = true
-                        updatePreview(id) { copy(item = info.item, info = info, problem = null) }
-                        val content =
-                            when (val resource = info.resource) {
-                                is ArtifactResource.File -> {
-                                    val access = info.resolvedAccess ?: service.fileAccess(resource)
-                                    updatePreview(id) { copy(access = access) }
-                                    service.fileContent(resource, access)
-                                }
-                                is ArtifactResource.Site -> service.siteContent(resource)
-                                is ArtifactResource.ResolvedHtml ->
-                                    ArtifactContent.Website(resource.url)
-                                ArtifactResource.Unsupported -> ArtifactContent.Unsupported
+        previewJob = viewModelScope.launch {
+            var detailAuthorized = false
+            var fileAccessAuthorized = false
+            try {
+                updatePreview(id) { copy(problem = null) }
+                retryArtifactOperation { remainingRetries ->
+                    detailAuthorized = false
+                    fileAccessAuthorized = false
+                    val info = service.info(id)
+                    detailAuthorized = true
+                    updatePreview(id) {
+                        copy(
+                            item = info.item,
+                            info = info,
+                            access = access.takeIf { this.info?.resource == info.resource },
+                        )
+                    }
+                    val content =
+                        when (val resource = info.resource) {
+                            is ArtifactResource.File -> {
+                                val access = info.resolvedAccess ?: service.fileAccess(resource)
+                                fileAccessAuthorized = true
+                                updatePreview(id) { copy(access = access) }
+                                service.fileContent(resource, access)
                             }
-                        updatePreview(id) {
-                            val browser = (info.resource as? ArtifactResource.Site)?.url
-                            copy(
-                                    info = info.copy(browserUrl = browser ?: info.browserUrl),
-                                    content = content,
-                                    problem = null,
+                            is ArtifactResource.Site ->
+                                ArtifactContent.Website(
+                                    service.sitePreviewUrl(resource),
+                                    remainingRetries,
                                 )
-                                .also {
-                                    if (
-                                        content is ArtifactContent.Text ||
-                                            content is ArtifactContent.Image
-                                    ) {
-                                        previews.remember(id, it, 3)
-                                    }
-                                }
+                            is ArtifactResource.ResolvedHtml ->
+                                ArtifactContent.Website(resource.url, remainingRetries)
+                            ArtifactResource.Unsupported -> ArtifactContent.Unsupported
                         }
-                        false
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        val errorType = problem(error)
-                        val revoked =
-                            errorType == ArtifactProblem.Denied ||
-                                errorType == ArtifactProblem.Missing
-                        updatePreview(id) {
-                            if (revoked) previews.remove(id)
-                            val hosted = detailAuthorized && info?.resource is ArtifactResource.Site
-                            copy(
-                                info = if (revoked && !hosted) null else info,
-                                content =
-                                    if (revoked || errorType == ArtifactProblem.Unsupported) null
-                                    else content,
-                                access = if (revoked) null else access,
-                                problem = errorType,
+                    updatePreview(id) {
+                        val browser = (info.resource as? ArtifactResource.Site)?.url
+                        copy(
+                                info = info.copy(browserUrl = browser ?: info.browserUrl),
+                                content = content,
+                                problem = null,
                             )
-                        }
-                        errorType == ArtifactProblem.Temporary
+                            .also {
+                                if (it.hasReadableContent) previews.remember(id, it, 3)
+                                else previews.remove(id)
+                            }
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                val errorType = problem(error)
+                val revoked =
+                    errorType == ArtifactProblem.Denied || errorType == ArtifactProblem.Missing
+                val discardContent = revoked || errorType == ArtifactProblem.Unsupported
+                updatePreview(id) {
+                    if (discardContent) previews.remove(id)
+                    copy(
+                        info = info.takeUnless { revoked && !detailAuthorized },
+                        content = content.takeIf { hasReadableContent && !discardContent },
+                        access = access.takeUnless { revoked && !fileAccessAuthorized },
+                        problem =
+                            if (revoked && fileAccessAuthorized) ArtifactProblem.Unavailable
+                            else errorType,
+                    )
+                }
             }
+        }
     }
 
     private suspend fun updatePreview(
@@ -412,30 +430,56 @@ internal constructor(
 
     private fun problem(error: Exception): ArtifactProblem {
         handleSessionFailure(error)
-        return when (error) {
-            is ApiFailure.Http ->
-                when (error.status) {
-                    401,
-                    402,
-                    403 -> ArtifactProblem.Denied
-                    404,
-                    410 -> ArtifactProblem.Missing
-                    408,
-                    429,
-                    in 500..599 -> ArtifactProblem.Temporary
-                    else -> ArtifactProblem.Unavailable
-                }
-            is ResponseLimitExceeded -> ArtifactProblem.Unsupported
-            is ApiFailure.Network,
-            is IOException -> ArtifactProblem.Temporary
-            else -> ArtifactProblem.Unavailable
-        }
+        return artifactProblem(error)
     }
 
     private fun handleSessionFailure(error: Exception) {
         if (error is ApiFailure.Unauthenticated || error is ApiFailure.UpdateRequired)
             sessionFailure(error)
     }
+}
+
+private fun artifactProblem(error: Exception): ArtifactProblem =
+    when (error) {
+        is ApiFailure.Http ->
+            when (error.status) {
+                401,
+                402,
+                403 -> ArtifactProblem.Denied
+                404,
+                410 -> ArtifactProblem.Missing
+                else ->
+                    if (isTemporaryArtifactHttpStatus(error.status)) ArtifactProblem.Temporary
+                    else ArtifactProblem.Unavailable
+            }
+        is ResponseLimitExceeded -> ArtifactProblem.Unsupported
+        is ApiFailure.Network,
+        is IOException -> ArtifactProblem.Temporary
+        else -> ArtifactProblem.Unavailable
+    }
+
+internal fun isTemporaryArtifactHttpStatus(status: Int): Boolean =
+    status == 408 || status == 429 || status in 500..599
+
+private suspend fun <T> retryArtifactOperation(
+    canRetry: () -> Boolean = { true },
+    operation: suspend (remainingRetries: Int) -> T,
+): T {
+    repeat(ArtifactRetryLimit) { usedRetries ->
+        try {
+            return operation(ArtifactRetryLimit - usedRetries)
+        } catch (error: Exception) {
+            if (
+                error is CancellationException ||
+                    !canRetry() ||
+                    artifactProblem(error) != ArtifactProblem.Temporary
+            ) {
+                throw error
+            }
+            delay(ArtifactRetryDelayMillis)
+        }
+    }
+    return operation(0)
 }
 
 private fun ArtifactPreviewState.withoutSave(): ArtifactPreviewState =

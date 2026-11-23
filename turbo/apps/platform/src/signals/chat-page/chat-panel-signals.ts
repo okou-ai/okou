@@ -5,7 +5,6 @@ import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-threa
 import type { Root } from "hast";
 import type { Command, Computed } from "ccstate";
 import type {
-  ChatRecommendedFollowup,
   GenerationTemplateRequest,
   ChatThreadArtifactRun,
   ChatThreadDraft,
@@ -37,13 +36,6 @@ import type { ChatConversationLocatorSignals } from "./chat-conversation-locator
 import type { ChatResourceSignals } from "./chat-resources.ts";
 import type { ThreadMailSignals } from "./thread-mail.ts";
 import type { ChatThreadRowSignals } from "./chat-thread-rows.ts";
-
-type RecommendedFollowup = ChatRecommendedFollowup;
-
-export interface RecommendedFollowupSource {
-  readonly eventId: string;
-  readonly followups: readonly RecommendedFollowup[];
-}
 
 /**
  * What the status row of the latest assistant turn shows while the thread is
@@ -101,9 +93,6 @@ export interface MessageListSignals {
   readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
   readonly thinkingIndicatorsShown$: Computed<Promise<boolean>>;
   readonly runFinished$: Computed<Promise<boolean>>;
-  readonly recommendedFollowupSource$: Computed<
-    Promise<RecommendedFollowupSource | null>
-  >;
   readonly donePhrase$: Computed<Promise<string>>;
   /** Call on every transcript scroll; loads once scrolling settles near the top. */
   readonly loadEarlierGroupsAfterScroll$: Command<
@@ -221,9 +210,6 @@ export interface ChatPanelSignals {
   readonly thinkingIndicators$: Computed<Promise<ThinkingIndicators | null>>;
   readonly thinkingIndicatorsShown$: Computed<Promise<boolean>>;
   readonly runFinished$: Computed<Promise<boolean>>;
-  readonly recommendedFollowupSource$: Computed<
-    Promise<RecommendedFollowupSource | null>
-  >;
   /** Call on every transcript scroll; loads once scrolling settles near the top. */
   readonly loadEarlierGroupsAfterScroll$: Command<
     Promise<boolean>,

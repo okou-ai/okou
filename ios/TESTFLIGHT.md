@@ -33,11 +33,11 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    separate **App Store Connect** distribution profiles for `ai.okou.ios`,
    `ai.okou.ios.notifications` and `ai.okou.ios.widgets`. Register both
    extensions as explicit iOS App IDs. Enable the App Group `group.ai.okou.ios`
-   on all three identifiers and profiles; retain production Push Notifications
-   on the main app. The app and the notification extension request the
-   existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
-   sessions; the widget extension only reads the App Group and requests no
-   Keychain group. Neither extension needs a separate APNs key or push topic.
+   on all three identifiers and profiles. The main app also requires production
+   Push Notifications and Sign in with Apple. The app and the notification
+   extension request the existing Keychain group `C5UWSXYB67.ai.okou.ios` to
+   preserve installed sessions. The widget extension reads the App Group and
+   requests no Keychain group. Neither extension needs a separate APNs key or push topic.
    The Desktop Developer ID Application certificate is not suitable for iOS.
    Store the following secrets in GitHub's existing `production` environment
    and retain recoverable copies in the Production vault:
@@ -46,7 +46,7 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | ------------------------------------------- | --------------------------------------------------------------------------------- |
    | `IOS_DISTRIBUTION_P12_BASE64`               | Base64 of the distribution identity exported as PKCS#12                           |
    | `IOS_DISTRIBUTION_P12_PASSWORD`             | Password protecting that export                                                   |
-   | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app distribution profile with the shared App Group             |
+   | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app profile with App Group, production APNs, and Apple sign-in |
    | `IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64` | Base64 of the notification extension distribution profile with the same App Group |
    | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the same App Group       |
 

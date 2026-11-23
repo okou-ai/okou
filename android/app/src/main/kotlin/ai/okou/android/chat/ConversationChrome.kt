@@ -110,7 +110,7 @@ internal fun ConversationToolbarActions(
                                         menu = false
                                         it(restoreFocus)
                                     }
-                                }
+                                },
                             ) +
                             actions.map { action ->
                                 WorkspaceMenuItem(
@@ -118,7 +118,7 @@ internal fun ConversationToolbarActions(
                                         projectMoveLabel(
                                             state
                                                 .projectDestinations(checkNotNull(thread))
-                                                .singleOrNull()
+                                                .singleOrNull(),
                                         )
                                     else stringResource(action.label()),
                                     action.icon(),

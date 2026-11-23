@@ -39,7 +39,7 @@ internal object ChatPinOrder {
                 .filter { it.pinnedAt != null }
                 .map { ChatPinOrderUpdate(it.id, it.effectivePinOrder()) }
                 .sortedWith(
-                    compareBy<ChatPinOrderUpdate> { it.pinOrder }.thenByDescending { it.threadId }
+                    compareBy<ChatPinOrderUpdate> { it.pinOrder }.thenByDescending { it.threadId },
                 )
                 .toMutableList()
         val original = ranked.indexOfFirst { it.threadId == threadId }

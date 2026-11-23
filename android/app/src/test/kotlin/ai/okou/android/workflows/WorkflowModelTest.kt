@@ -207,7 +207,9 @@ class WorkflowModelTest {
                 if (cursor == null)
                     page.copy(
                         runs =
-                            listOf(recentRun.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED))
+                            listOf(
+                                recentRun.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED),
+                            ),
                     )
                 else page
             }
@@ -493,7 +495,7 @@ class WorkflowModelTest {
         assertEquals(listOf(active), model.state.value.rules?.get(service.summary.id))
 
         olderDetail.complete(
-            service.detail.copy(automations = listOf(active.copy(enabled = false)))
+            service.detail.copy(automations = listOf(active.copy(enabled = false))),
         )
         runCurrent()
         assertEquals(latestSummary.displayName, model.state.value.detail?.displayName)

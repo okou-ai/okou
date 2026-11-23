@@ -21,7 +21,7 @@ class DistributionProfileTests(unittest.TestCase):
         self.work = Path(self.directory.name)
 
     def profile(self, bundle="ai.okou.ios"):
-        return {
+        profile = {
             "UUID": str(uuid.uuid4()),
             "TeamIdentifier": [TEAM],
             "ApplicationIdentifierPrefix": [TEAM],
@@ -37,6 +37,9 @@ class DistributionProfileTests(unittest.TestCase):
                 "keychain-access-groups": [f"{TEAM}.*"],
             },
         }
+        if bundle == "ai.okou.ios":
+            profile["Entitlements"]["com.apple.developer.applesignin"] = ["Default"]
+        return profile
 
     def invoke(self, profile, bundle="ai.okou.ios"):
         source = self.work / "profile.plist"
@@ -71,6 +74,16 @@ class DistributionProfileTests(unittest.TestCase):
             )
             if bundle == "ai.okou.ios":
                 self.assertEqual(entitlements["aps-environment"], "production")
+                self.assertEqual(
+                    entitlements.get("com.apple.developer.applesignin"), ["Default"]
+                )
+
+    def test_rejects_main_app_profile_without_sign_in_with_apple(self):
+        profile = self.profile()
+        del profile["Entitlements"]["com.apple.developer.applesignin"]
+        result, output = self.invoke(profile)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(output.exists())
 
     def test_prepares_the_widget_signature_with_only_the_shared_app_group(self):
         profile = self.profile("ai.okou.ios.widgets")

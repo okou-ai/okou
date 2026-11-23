@@ -46,7 +46,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                     if (usagePackStatus != 200) failed(usagePackStatus)
                     else
                         jsonResponse(
-                            """{"totalCredits":860,"purchasedCredits":800,"bonusCredits":60,"creditGrants":[]}"""
+                            """{"totalCredits":860,"purchasedCredits":800,"bonusCredits":60,"creditGrants":[]}""",
                         )
                 }
                 path == "/api/billing/status" -> {
@@ -57,7 +57,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                             Json.parseToJsonElement(RecoveryApiFixture.billing).jsonObject
                         val breakdown =
                             Json.parseToJsonElement(
-                                """[{"category":"plan","label":"Team","credits":2000,"tier":"team"},{"category":"payAsYouGo","label":"Top-up","credits":400}]"""
+                                """[{"category":"plan","label":"Team","credits":2000,"tier":"team"},{"category":"payAsYouGo","label":"Top-up","credits":400}]""",
                             )
                         jsonResponse(
                             JsonObject(
@@ -65,9 +65,9 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                                         mapOf(
                                             "credits" to JsonPrimitive(2400),
                                             "creditBreakdown" to breakdown,
-                                        )
+                                        ),
                                 )
-                                .toString()
+                                .toString(),
                         )
                     }
                 }
@@ -102,7 +102,7 @@ internal class SettingsApiFixture(api: ChatListApiFixture) {
                 else -> ""
             }
         return Json.parseToJsonElement(
-                """{"id":"$id","type":"$provider","framework":"$framework","isActive":$active,"accountEmail":"$email","planType":"pro","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","needsReconnect":false,"lastRefreshErrorCode":null,"subscriptionUsage":{"fiveHour":$shortWindow,"weekly":$week}$credits}"""
+                """{"id":"$id","type":"$provider","framework":"$framework","isActive":$active,"accountEmail":"$email","planType":"pro","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","needsReconnect":false,"lastRefreshErrorCode":null,"subscriptionUsage":{"fiveHour":$shortWindow,"weekly":$week}$credits}""",
             )
             .jsonObject
     }

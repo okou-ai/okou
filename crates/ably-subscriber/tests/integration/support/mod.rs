@@ -23,7 +23,7 @@ pub(crate) use protocol::{
     assert_attach_resume, expect_protocol_msg, now_ms, send_message,
     send_message_with_channel_serial,
 };
-pub(crate) use server::{HandshakeOptions, MockAblyServer, WsStream};
+pub(crate) use server::{HandshakeOptions, MockAblyServer, WsStream, send_connected};
 pub(crate) use token::{RawTokenServer, mock_token_endpoint};
 pub(crate) use websocket::{
     expect_websocket_close_frame, expect_websocket_close_frame_while_ignoring_attach,

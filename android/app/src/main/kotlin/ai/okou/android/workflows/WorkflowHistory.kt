@@ -51,7 +51,7 @@ internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?) {
                 WorkflowReadFailure.Offline -> R.string.workflow_history_offline
                 WorkflowReadFailure.CouldNotLoad,
                 WorkflowReadFailure.RefreshFailed -> R.string.workflow_history_failed
-            }
+            },
         )
     } else if (rememberChatWaitIndicator(true)) {
         val label = stringResource(R.string.workflow_history_loading)
@@ -59,7 +59,7 @@ internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?) {
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {
                 contentDescription = label
                 progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
-            }
+            },
         ) {
             repeat(3) {
                 Row(
@@ -119,7 +119,7 @@ internal fun WorkflowHistoryRow(
                             onClickLabel = openChatLabel,
                             role = Role.Button,
                             onClick = { onOpenChat(run.id, source) },
-                        )
+                        ),
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),

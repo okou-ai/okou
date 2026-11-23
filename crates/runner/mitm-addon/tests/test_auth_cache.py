@@ -71,7 +71,7 @@ class TestFirewallHeaderCache:
                 await asyncio.gather(*tasks, return_exceptions=True)
 
         assert endpoint.request_count == 1
-        assert endpoint.requests[0].path == "/api/webhooks/agent/firewall/auth"
+        assert endpoint.requests[0].path == "/api/webhooks/run/firewall/auth"
         for result in results:
             assert result["headers"] == {"Authorization": "Bearer token"}
             assert "cache_hit" in result

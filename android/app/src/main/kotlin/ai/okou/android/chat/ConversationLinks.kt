@@ -178,7 +178,7 @@ internal fun ConversationLinkText(
                         ) {
                             if (chat) focus.saveFocusedChild()
                             latestActions.value.open(link, key)
-                        }
+                        },
                     ) {
                         if (chat) appendInlineContent(ChatLinkIcon, "\u2060")
                         append(text.subSequence(range.start, range.end))
@@ -208,7 +208,7 @@ internal fun ConversationLinkText(
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
-                        }
+                        },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_chat),
@@ -225,7 +225,7 @@ internal fun ConversationLinkText(
                                 16.dp.toSp(),
                                 PlaceholderVerticalAlign.TextCenter,
                             )
-                        }
+                        },
                     ) {},
             )
         }

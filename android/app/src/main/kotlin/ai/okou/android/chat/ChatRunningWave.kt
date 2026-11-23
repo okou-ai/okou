@@ -40,11 +40,11 @@ internal fun rememberRunningWaveFrame(
             // Android starts its scale observer on first access, before snapshotFlow can read it.
             motion?.scaleFactor
             snapshotFlow {
-                    val active = keys.value
-                    motion?.scaleFactor != 0f &&
-                        active.isNotEmpty() &&
-                        listState.layoutInfo.visibleItemsInfo.any { it.key in active }
-                }
+                val active = keys.value
+                motion?.scaleFactor != 0f &&
+                    active.isNotEmpty() &&
+                    listState.layoutInfo.visibleItemsInfo.any { it.key in active }
+            }
                 .collectLatest { animate ->
                     if (animate) {
                         try {

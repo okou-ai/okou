@@ -93,7 +93,7 @@ internal fun ChatUndoFeedback(
                         ChatRowAction.Archive -> R.string.chat_undo_archived
                         ChatRowAction.Unarchive -> R.string.chat_undo_unarchived
                         else -> R.string.chat_undo_marked_read
-                    }
+                    },
                 )
             ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
             ChatUndoPhase.ConnectionFailed -> stringResource(R.string.chat_undo_connection_failed)
@@ -116,7 +116,7 @@ internal fun ChatUndoFeedback(
                     undo.phase != ChatUndoPhase.Checking &&
                         undo.threadId !in list.pendingRowActions,
                     persistent,
-                )
+                ),
             )
         LaunchedEffect(snackbar) {
             snackbar.currentSnackbarData?.dismiss()
@@ -125,7 +125,7 @@ internal fun ChatUndoFeedback(
                     val current = content.value.undo
                     if (current.phase == ChatUndoPhase.Unconfirmed) chats.checkRowUndo(current)
                     else chats.undoRowAction(current)
-                }
+                },
             )
             chats.dismissRowUndo(undo)
         }
@@ -195,7 +195,7 @@ internal fun WorkspaceChatFeedback(
                                 R.string.chat_action_connection_failed
                             ProjectDeleteStatus.Unconfirmed ->
                                 R.string.chat_project_delete_unconfirmed
-                        }
+                        },
                     )
                 val retry =
                     if (unconfirmed && list.canDeleteProject) stringResource(R.string.retry)
@@ -226,7 +226,7 @@ internal fun WorkspaceChatFeedback(
                         failure.rejected -> R.string.chat_row_action_rejected
                         action.updatesChat -> R.string.chat_row_action_failed
                         else -> R.string.chat_read_action_failed
-                    }
+                    },
                 )
             val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
             LaunchedEffect(chats, failure, message, showRowActionFailure) {
@@ -384,7 +384,7 @@ private fun FeedbackLayout(
                 loose.copy(
                     maxWidth = if (inline) maxTextWidth else width,
                     maxHeight = (bounds.maxHeight - stackedHeight).coerceAtLeast(0),
-                )
+                ),
             )
         val height =
             bounds.constrainHeight(maxOf(text.height + stackedHeight, buttons?.height ?: 0))

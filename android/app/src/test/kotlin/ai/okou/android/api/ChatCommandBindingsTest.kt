@@ -90,7 +90,7 @@ class ChatCommandBindingsTest {
         assertEquals(fresh.prompt, existing.prompt)
         assertTrue(json.decodeFromJsonElement<SendRequest>(wire("revoke")) is SendRequestVariant2)
         assertTrue(
-            json.decodeFromJsonElement<SendRequest>(wire("interrupt")) is SendRequestVariant3
+            json.decodeFromJsonElement<SendRequest>(wire("interrupt")) is SendRequestVariant3,
         )
     }
 
@@ -100,7 +100,9 @@ class ChatCommandBindingsTest {
         val document = input.getValue("userMessage").jsonObject
         for (version in listOf(JsonPrimitive(2), JsonPrimitive("1"), JsonNull)) {
             assertDecodeFails<SendRequest>(
-                JsonObject(input + ("userMessage" to JsonObject(document + ("version" to version))))
+                JsonObject(
+                    input + ("userMessage" to JsonObject(document + ("version" to version))),
+                ),
             )
         }
         val privateValue = "private-command-text"
@@ -110,7 +112,7 @@ class ChatCommandBindingsTest {
                     mapOf(
                         "prompt" to JsonPrimitive(privateValue),
                         "interruptsRunId" to JsonPrimitive("77777777-7777-4777-8777-777777777777"),
-                    )
+                    ),
             )
         val error = assertDecodeFails<SendRequest>(overlap)
         assertFalse(error.message.orEmpty().contains(privateValue))
@@ -120,7 +122,7 @@ class ChatCommandBindingsTest {
                     "type" to JsonPrimitive("source"),
                     "kind" to JsonPrimitive("unknown"),
                     "clientId" to JsonPrimitive("fixture-client"),
-                )
+                ),
             )
         val badSource = JsonObject(document + ("parts" to JsonArray(listOf(source))))
         assertDecodeFails<SendRequest>(JsonObject(input + ("userMessage" to badSource)))
@@ -137,13 +139,13 @@ class ChatCommandBindingsTest {
                         .baseUrl(server.url("/"))
                         .client(http)
                         .addConverterFactory(
-                            json.asConverterFactory("application/json".toMediaType())
+                            json.asConverterFactory("application/json".toMediaType()),
                         )
                         .build()
                         .create(CommandApi::class.java)
                 val create = json.decodeFromJsonElement<CreateThreadRequest>(wire("createAuto"))
                 server.enqueue(
-                    MockResponse().setResponseCode(201).setBody(wire("created").toString())
+                    MockResponse().setResponseCode(201).setBody(wire("created").toString()),
                 )
                 val created = api.createThread("Bearer fixture", create)
                 assertEquals(201, created.code())
@@ -159,7 +161,7 @@ class ChatCommandBindingsTest {
 
                 for (name in listOf("newInput", "existingInput", "explicitInput")) {
                     server.enqueue(
-                        MockResponse().setResponseCode(201).setBody(wire("accepted").toString())
+                        MockResponse().setResponseCode(201).setBody(wire("accepted").toString()),
                     )
                     val input = json.decodeFromJsonElement<SendRequest>(wire(name))
                     val accepted = api.send("Bearer fixture", input)
@@ -177,7 +179,7 @@ class ChatCommandBindingsTest {
                 server.enqueue(
                     MockResponse()
                         .setResponseCode(503)
-                        .setBody("""{"error":{"code":"UNAVAILABLE","message":"retry later"}}""")
+                        .setBody("""{"error":{"code":"UNAVAILABLE","message":"retry later"}}"""),
                 )
                 val unavailable =
                     api.send(

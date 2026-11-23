@@ -28,6 +28,30 @@ impl Default for HandshakeOptions {
     }
 }
 
+/// Send the standard CONNECTED frame without exchanging channel messages.
+pub(crate) async fn send_connected(
+    ws: &mut WsStream,
+    connection_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let connection_key = format!("{connection_id}!key");
+    let opts = HandshakeOptions::default();
+    let connected = ProtocolMessage {
+        action: action::CONNECTED,
+        connection_id: Some(connection_id.into()),
+        connection_key: Some(connection_key.clone()),
+        connection_details: Some(ConnectionDetails {
+            connection_key: Some(connection_key),
+            connection_state_ttl: Some(opts.connection_state_ttl_ms),
+            max_idle_interval: Some(opts.max_idle_interval_ms),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    ws.send(tungstenite::Message::Binary(encode_msg(&connected)?.into()))
+        .await?;
+    Ok(())
+}
+
 impl MockAblyServer {
     pub(crate) async fn start() -> std::io::Result<Self> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;

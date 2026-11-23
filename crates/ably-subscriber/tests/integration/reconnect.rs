@@ -1,7 +1,5 @@
 use crate::support::*;
-use ably_subscriber::protocol::{
-    ConnectionDetails, ErrorInfo, ProtocolMessage, action, encode_msg,
-};
+use ably_subscriber::protocol::{ErrorInfo, ProtocolMessage, action, encode_msg};
 use ably_subscriber::{Event, SubscribeConfig, TimingConfig, subscribe};
 use futures_util::{SinkExt, StreamExt};
 use httpmock::prelude::*;
@@ -103,21 +101,7 @@ async fn complete_reconnect_handshake(
     channel: &str,
     connection_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let connection_key = format!("{connection_id}!key");
-    let connected = ProtocolMessage {
-        action: action::CONNECTED,
-        connection_id: Some(connection_id.into()),
-        connection_key: Some(connection_key.clone()),
-        connection_details: Some(ConnectionDetails {
-            connection_key: Some(connection_key),
-            connection_state_ttl: Some(120_000),
-            max_idle_interval: Some(15_000),
-            ..Default::default()
-        }),
-        ..Default::default()
-    };
-    conn.send(tungstenite::Message::Binary(encode_msg(&connected)?.into()))
-        .await?;
+    send_connected(conn, connection_id).await?;
 
     let attach = expect_protocol_msg(conn, "ATTACH after reconnect").await?;
     assert_eq!(attach.action, action::ATTACH);
@@ -1014,22 +998,7 @@ async fn rejected_reconnect_tokens_are_replaced() {
         drop(committed_rejected);
 
         let mut pending_rejected = accept_reconnect(&ws, uri_tx.clone()).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        pending_rejected
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
+        send_connected(&mut pending_rejected, "conn-2")
             .await
             .unwrap();
         let attach = expect_protocol_msg(&mut pending_rejected, "ATTACH with rejected token")
@@ -1333,24 +1302,7 @@ async fn suspended_retry_reconnect_attach_uses_resume_without_serial() {
         })
         .await
         .expect("timed out waiting for post-suspended reconnect");
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "suspended retry ATTACH")
             .await
@@ -1567,24 +1519,7 @@ async fn resumed_connection_reattaches_channel() {
         let mut ws_stream = tokio_tungstenite::accept_async(tcp).await.unwrap();
 
         // Send CONNECTED with the same connection_id → client sees this as resume
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-1".into()),
-            connection_key: Some("conn-1!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-1!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        ws_stream
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut ws_stream, "conn-1").await.unwrap();
 
         // Client should send ATTACH even though connection was resumed.
         let msg = expect_protocol_msg(&mut ws_stream, "ATTACH after resumed CONNECTED")

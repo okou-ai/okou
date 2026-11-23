@@ -180,7 +180,7 @@ internal fun WorkflowScreen(
         Modifier.fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .imePadding()
+            .imePadding(),
     ) {
         if (wide || route.id == null) {
             WorkflowDirectory(
@@ -417,7 +417,7 @@ private fun WorkflowDirectory(
                 modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
                 colors =
                     ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onBackground
+                        contentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
             ) {
@@ -450,7 +450,7 @@ private fun WorkflowDirectory(
                             .clip(RoundedCornerShape(12.dp))
                             .background(
                                 if (selected) MaterialTheme.colorScheme.secondaryContainer
-                                else MaterialTheme.colorScheme.background
+                                else MaterialTheme.colorScheme.background,
                             )
                             .selectable(
                                 selected,
@@ -498,7 +498,7 @@ private fun WorkflowDirectory(
             WorkflowReadFeedback(
                 state.catalogFailure.cachedReadFeedback()
                     ?: state.rulesFailure.cachedReadFeedback()
-                    ?: state.connectionReadFeedback()
+                    ?: state.connectionReadFeedback(),
             )
         }
     }
@@ -574,7 +574,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
                             query.reset()
                             requester.requestFocus()
                             keyboard?.show()
-                        }
+                        },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_close),
@@ -631,7 +631,7 @@ private fun WorkflowRow(
     val scope =
         stringResource(
             if (item.visibility == WorkflowSummaryVisibility.PRIVATE) R.string.workflow_private
-            else R.string.workflow_shared
+            else R.string.workflow_shared,
         )
     val trigger =
         when {
@@ -828,8 +828,8 @@ private fun WorkflowDetailPane(
                                     stringResource(
                                         if (state.historyRead == WorkflowHistoryRead.Earlier)
                                             R.string.workflow_history_loading
-                                        else R.string.workflow_history_earlier
-                                    )
+                                        else R.string.workflow_history_earlier,
+                                    ),
                                 )
                             }
                         }
@@ -849,7 +849,7 @@ private fun WorkflowDetailPane(
                 tab == WorkflowTab.History && state.history != null
             }
         WorkflowReadFeedback(
-            state.detailFailure.cachedReadFeedback() ?: historyFeedback ?: connectionFeedback
+            state.detailFailure.cachedReadFeedback() ?: historyFeedback ?: connectionFeedback,
         )
         WorkflowUseBar(
             wide = wide,
@@ -939,7 +939,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
                             R.string.workflow_private
                         detail.canManage -> R.string.workflow_shared_manageable
                         else -> R.string.workflow_shared_usable
-                    }
+                    },
                 ),
                 small = true,
             )
@@ -1005,7 +1005,7 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                                 WorkflowTab.Instructions -> R.string.workflow_instructions
                                 WorkflowTab.Automations -> R.string.workflow_automations
                                 WorkflowTab.History -> R.string.workflow_history
-                            }
+                            },
                         ),
                         Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                         style =
@@ -1130,7 +1130,7 @@ private fun WorkflowSkeleton(directory: Boolean) {
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
                 contentDescription = label
                 progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
-            }
+            },
         ) {
             if (directory) {
                 repeat(5) {

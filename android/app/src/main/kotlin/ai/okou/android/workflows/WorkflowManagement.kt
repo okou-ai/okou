@@ -90,7 +90,7 @@ internal fun WorkflowRuleRow(
     val connectionRequired = rule.needsConnection(state.connections)
     val status =
         stringResource(
-            if (rule.enabled) R.string.workflow_enabled else R.string.workflow_rule_paused
+            if (rule.enabled) R.string.workflow_enabled else R.string.workflow_rule_paused,
         )
     val badge =
         if (connectionRequired) stringResource(R.string.workflow_status_connection, status)
@@ -181,7 +181,7 @@ internal fun WorkflowRuleRow(
                             rule.enabled -> R.string.workflow_pause
                             needsRecovery -> R.string.workflow_view_connection
                             else -> R.string.workflow_enable
-                        }
+                        },
                     ),
                     {
                         if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
@@ -191,7 +191,7 @@ internal fun WorkflowRuleRow(
                         Modifier.focusRequester(toggleFocus)
                             .then(
                                 if (needsRecovery) Modifier
-                                else Modifier.testTag("workflow_toggle_${rule.id}")
+                                else Modifier.testTag("workflow_toggle_${rule.id}"),
                             ),
                 )
                 if (editable != null)
@@ -512,7 +512,7 @@ private fun WorkflowRuleFields(
     WorkflowSecondary(
         stringResource(
             if (editor.enabled) R.string.workflow_rule_stays_enabled
-            else R.string.workflow_rule_stays_paused
+            else R.string.workflow_rule_stays_paused,
         ),
         small = true,
     )

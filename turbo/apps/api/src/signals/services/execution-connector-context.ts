@@ -1,3 +1,4 @@
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { computed, type Computed } from "ccstate";
 import {
   type ConnectorMember,
@@ -13,13 +14,12 @@ import {
   customConnectorExecutionOAuthSelection,
 } from "./custom-connector-definition-selection";
 import { customConnectorNetworkMetadataSchema } from "@okouai/api-contracts/validators/custom-connector-network";
-import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
 
 const { networkBinding: _networkBinding, ...connectorDefinitionColumns } =
   customConnectorExecutionDefinitionSelection();
 const connectorColumns = Object.freeze({
   ...connectorDefinitionColumns,
-  skillContentBundle: orgCustomConnectorSkillPublications.skillContentBundle,
+  skillContentBundle: orgCustomConnectors.skillContentBundle,
 });
 const oauthColumns = customConnectorExecutionOAuthSelection();
 const connectorSlugRow = object({ connectorSlug: string() });

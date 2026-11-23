@@ -118,7 +118,8 @@ internal constructor(
                     historyFailure =
                         current.historyFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     historyRead = mutable.value.historyRead,
-                    issue = current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
+                    issue =
+                        current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
                 )
             val now = monotonicMillis()
             refresh(
@@ -148,7 +149,7 @@ internal constructor(
                             current.historyFailure.canRecheckOnReconnect()
                     )
                         add(WorkflowReadScope.History)
-                }
+                },
             )
         }
     }
@@ -234,7 +235,7 @@ internal constructor(
                         setOf(WorkflowReadScope.Detail, WorkflowReadScope.Connections)
                     WorkflowTab.History ->
                         setOf(WorkflowReadScope.Detail, WorkflowReadScope.History)
-                }
+                },
             )
         }
     }
@@ -245,8 +246,9 @@ internal constructor(
         val catalog = current.catalog.takeIf { catalogRead.readAt.isFresh(now) }
         val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
         val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
-        val detail =
-            selected?.let { details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail }
+        val detail = selected?.let {
+            details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail
+        }
         val history =
             selected
                 ?.let(histories::get)
@@ -344,34 +346,33 @@ internal constructor(
         failure: (WorkflowReadFailure) -> Unit,
     ) {
         if (range.job?.isActive == true) return
-        range.job =
-            viewModelScope.launch {
-                retryReads(failure) {
-                    val attempt = WorkflowRangeAttempt(++readSequence)
-                    range.pending = attempt
-                    val result =
-                        try {
-                            read(fetch)
-                        } finally {
-                            if (range.pending === attempt) range.pending = null
-                        }
-                    if (!authorized()) return@retryReads null
-                    val error = result.exceptionOrNull()
-                    when {
-                        error.denied() -> {
-                            range.receipt = null
-                            denied()
-                            null
-                        }
-                        error != null -> error
-                        else -> {
-                            range.receipt = WorkflowReadReceipt(attempt.sequence, monotonicMillis())
-                            receive(result.getOrThrow(), attempt.updates)
-                            null
-                        }
+        range.job = viewModelScope.launch {
+            retryReads(failure) {
+                val attempt = WorkflowRangeAttempt(++readSequence)
+                range.pending = attempt
+                val result =
+                    try {
+                        read(fetch)
+                    } finally {
+                        if (range.pending === attempt) range.pending = null
+                    }
+                if (!authorized()) return@retryReads null
+                val error = result.exceptionOrNull()
+                when {
+                    error.denied() -> {
+                        range.receipt = null
+                        denied()
+                        null
+                    }
+                    error != null -> error
+                    else -> {
+                        range.receipt = WorkflowReadReceipt(attempt.sequence, monotonicMillis())
+                        receive(result.getOrThrow(), attempt.updates)
+                        null
                     }
                 }
             }
+        }
     }
 
     private fun publishCatalog(
@@ -469,50 +470,49 @@ internal constructor(
     private fun loadDetail(id: String) {
         if (detailLoad?.isActive == true) return
         val restoringAccess = mutable.value.detailFailure == WorkflowReadFailure.Unavailable
-        detailLoad =
-            viewModelScope.launch {
-                retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
-                    val sequence = ++readSequence
-                    val response = read {
-                        service.workflow(id).also {
-                            if (it.id != id) throw ApiFailure.IncompatibleResponse()
-                        }
-                    }
-                    if (!authorized() || selected != id) return@retryReads null
-                    val detail = response.getOrNull()
-                    val error = response.exceptionOrNull()
-                    when {
-                        error.denied() ||
-                            (error as? ApiFailure.Http)?.status == 404 ||
-                            detail?.official != null -> {
-                            recordDetailUpdate(id, null, sequence)
-                            details.remove(id)
-                            histories.remove(id)
-                            cancelHistoryRead()
-                            val current = mutable.value
-                            mutable.value =
-                                current.copy(
-                                    catalog = current.catalog?.filterNot { it.id == id },
-                                    rules = current.rules?.minus(id),
-                                    detail = null,
-                                    history = null,
-                                    historyFailure = null,
-                                    detailFailure = WorkflowReadFailure.Unavailable,
-                                    editor = null,
-                                    issue = null,
-                                )
-                            null
-                        }
-                        detail != null -> {
-                            publishDetail(detail, sequence)
-                            if (restoringAccess && mutable.value.history == null)
-                                refresh(setOf(WorkflowReadScope.History))
-                            null
-                        }
-                        else -> error
+        detailLoad = viewModelScope.launch {
+            retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
+                val sequence = ++readSequence
+                val response = read {
+                    service.workflow(id).also {
+                        if (it.id != id) throw ApiFailure.IncompatibleResponse()
                     }
                 }
+                if (!authorized() || selected != id) return@retryReads null
+                val detail = response.getOrNull()
+                val error = response.exceptionOrNull()
+                when {
+                    error.denied() ||
+                        (error as? ApiFailure.Http)?.status == 404 ||
+                        detail?.official != null -> {
+                        recordDetailUpdate(id, null, sequence)
+                        details.remove(id)
+                        histories.remove(id)
+                        cancelHistoryRead()
+                        val current = mutable.value
+                        mutable.value =
+                            current.copy(
+                                catalog = current.catalog?.filterNot { it.id == id },
+                                rules = current.rules?.minus(id),
+                                detail = null,
+                                history = null,
+                                historyFailure = null,
+                                detailFailure = WorkflowReadFailure.Unavailable,
+                                editor = null,
+                                issue = null,
+                            )
+                        null
+                    }
+                    detail != null -> {
+                        publishDetail(detail, sequence)
+                        if (restoringAccess && mutable.value.history == null)
+                            refresh(setOf(WorkflowReadScope.History))
+                        null
+                    }
+                    else -> error
+                }
             }
+        }
     }
 
     internal fun loadEarlierRuns() {
@@ -532,64 +532,60 @@ internal constructor(
         mutable.value =
             mutable.value.copy(
                 historyRead =
-                    if (cursor == null) WorkflowHistoryRead.Latest else WorkflowHistoryRead.Earlier
+                    if (cursor == null) WorkflowHistoryRead.Latest else WorkflowHistoryRead.Earlier,
             )
-        historyLoad =
-            viewModelScope.launch {
-                try {
-                    retryReads({ mutable.value = mutable.value.copy(historyFailure = it) }) {
-                        val response = read {
-                            // Revalidate through the previous oldest row. Newer runs can push that
-                            // row past the previous page boundary while the user's position
-                            // remains.
-                            val previous = if (cursor == null) cached?.page else null
-                            fetchHistory(id, cursor, previous)
-                        }
-                        if (!authorized() || selected != id || tab != WorkflowTab.History)
-                            return@retryReads null
-                        val error = response.exceptionOrNull()
-                        if (error.denied() || (error as? ApiFailure.Http)?.status == 404) {
-                            histories.remove(id)
-                            mutable.value =
-                                mutable.value.copy(
-                                    history = null,
-                                    historyFailure = WorkflowReadFailure.Unavailable,
-                                )
-                            return@retryReads null
-                        }
-                        if (error != null) return@retryReads error
-                        val page = response.getOrThrow()
-                        val entry =
-                            if (cursor == null || cached == null) {
-                                CachedWorkflowHistory(page, monotonicMillis())
-                            } else {
-                                cached.copy(
-                                    page =
-                                        page.copy(
-                                            runs =
-                                                (cached.page.runs + page.runs).distinctBy { it.id }
-                                        )
-                                )
-                            }
-                        histories[id] = entry
-                        if (histories.size > WORKFLOW_DETAIL_CACHE_CAPACITY)
-                            histories.remove(histories.keys.first())
+        historyLoad = viewModelScope.launch {
+            try {
+                retryReads({ mutable.value = mutable.value.copy(historyFailure = it) }) {
+                    val response = read {
+                        // Revalidate through the previous oldest row. Newer runs can push that
+                        // row past the previous page boundary while the user's position
+                        // remains.
+                        val previous = if (cursor == null) cached?.page else null
+                        fetchHistory(id, cursor, previous)
+                    }
+                    if (!authorized() || selected != id || tab != WorkflowTab.History)
+                        return@retryReads null
+                    val error = response.exceptionOrNull()
+                    if (error.denied() || (error as? ApiFailure.Http)?.status == 404) {
+                        histories.remove(id)
                         mutable.value =
-                            mutable.value.copy(history = entry.page, historyFailure = null)
-                        null
+                            mutable.value.copy(
+                                history = null,
+                                historyFailure = WorkflowReadFailure.Unavailable,
+                            )
+                        return@retryReads null
                     }
-                } finally {
-                    if (isActive) {
-                        val current = mutable.value
-                        val paused =
-                            WorkflowHistoryRead.EarlierPaused.takeIf {
-                                cursor != null &&
-                                    current.historyFailure == WorkflowReadFailure.Offline
-                            }
-                        mutable.value = current.copy(historyRead = paused)
-                    }
+                    if (error != null) return@retryReads error
+                    val page = response.getOrThrow()
+                    val entry =
+                        if (cursor == null || cached == null) {
+                            CachedWorkflowHistory(page, monotonicMillis())
+                        } else {
+                            cached.copy(
+                                page =
+                                    page.copy(
+                                        runs = (cached.page.runs + page.runs).distinctBy { it.id },
+                                    ),
+                            )
+                        }
+                    histories[id] = entry
+                    if (histories.size > WORKFLOW_DETAIL_CACHE_CAPACITY)
+                        histories.remove(histories.keys.first())
+                    mutable.value = mutable.value.copy(history = entry.page, historyFailure = null)
+                    null
+                }
+            } finally {
+                if (isActive) {
+                    val current = mutable.value
+                    val paused =
+                        WorkflowHistoryRead.EarlierPaused.takeIf {
+                            cursor != null && current.historyFailure == WorkflowReadFailure.Offline
+                        }
+                    mutable.value = current.copy(historyRead = paused)
                 }
             }
+        }
     }
 
     private suspend fun fetchHistory(
@@ -956,7 +952,7 @@ private fun WorkflowDetail.withRules(rules: List<WorkflowAutomation>): WorkflowD
     if (automations == rules) this else copy(automations = rules)
 
 private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
-    updates: Map<String, WorkflowDirectoryUpdate?>
+    updates: Map<String, WorkflowDirectoryUpdate?>,
 ): Map<String, List<WorkflowAutomation>> {
     if (updates.all { (id, update) -> this[id].orEmpty() == update?.automations.orEmpty() })
         return this

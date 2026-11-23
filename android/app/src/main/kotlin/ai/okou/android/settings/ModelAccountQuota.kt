@@ -19,8 +19,9 @@ internal data class ModelAccountQuota(
 private fun remaining(available: Double?, used: Double?): Double? =
     (available ?: used?.let { 100 - it })?.takeIf { it.isFinite() }?.coerceIn(0.0, 100.0)
 
-private fun parseReset(value: String?): Instant? =
-    value?.let { runCatching { Instant.parse(it) }.getOrNull() }
+private fun parseReset(value: String?): Instant? = value?.let {
+    runCatching { Instant.parse(it) }.getOrNull()
+}
 
 internal fun RecoverySubscriptionsSubscriptionsItem.quotas(): List<ModelAccountQuota> {
     val week = subscriptionUsage?.weekly
@@ -38,7 +39,7 @@ internal fun RecoverySubscriptionsSubscriptionsItem.quotas(): List<ModelAccountQ
                         if (weekRemaining == 0.0) 0.0 else remaining,
                         reset,
                         short.windowSeconds,
-                    )
+                    ),
                 )
             }
         }
@@ -55,6 +56,6 @@ internal fun RecoverySubscriptionsSubscriptionsItem.quotas(): List<ModelAccountQ
             "hourly" -> ModelAccountQuota(QuotaPeriod.Short, null, reset, 3_600.0)
             "daily" -> ModelAccountQuota(QuotaPeriod.Short, null, reset, 86_400.0)
             else -> ModelAccountQuota(QuotaPeriod.Unknown, null, reset)
-        }
+        },
     )
 }

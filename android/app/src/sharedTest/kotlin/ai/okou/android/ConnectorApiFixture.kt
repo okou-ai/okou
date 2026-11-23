@@ -41,6 +41,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
+    @Volatile var denyDefaultDiscovery = false
     @Volatile var failAccountReads = false
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
@@ -62,7 +63,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 "查看日程、查找空闲时间和创建会议。",
                 "meetings-scheduling",
                 0,
-            )
+            ),
         )
         if (includeGrantExamples) {
             add(
@@ -73,7 +74,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     "engineering-team-execution",
                     null,
                     grantKind = "device-auth",
-                )
+                ),
             )
             add(
                 CatalogEntry(
@@ -83,7 +84,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     "engineering-team-execution",
                     null,
                     grantKind = "manual",
-                )
+                ),
             )
         }
         add(CatalogEntry("gmail", "Gmail", "查找邮件、整理往来记录和起草回复。", "email", 1))
@@ -95,7 +96,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 "找到文件并阅读已有资料。",
                 "docs-files-knowledge",
                 null,
-            )
+            ),
         )
         listOf("meetings-scheduling", "email", "communication-collaboration").forEachIndexed {
             categoryIndex,
@@ -108,7 +109,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         "A related service.",
                         category,
                         10 + categoryIndex * 3 + rank,
-                    )
+                    ),
                 )
             }
         }
@@ -141,18 +142,19 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (failDiscovery) return rejected(503)
                         val keyword = url.queryParameter("keyword")
                         val category = url.queryParameter("category")
+                        if (denyDefaultDiscovery && keyword == null && category == null)
+                            return rejected(403)
                         val unavailable = unavailableCatalogSlugs
                         val available = entries.filterNot { it.slug in unavailable }
-                        val matched =
-                            available.filter {
-                                (category == null || it.category == category) &&
-                                    (keyword == null ||
-                                        it.name.contains(keyword, true) ||
-                                        it.slug.contains(keyword, true)) &&
-                                    (keyword != null ||
-                                        category != null ||
-                                        it.slug !in omittedFromDefaultBrowse)
-                            }
+                        val matched = available.filter {
+                            (category == null || it.category == category) &&
+                                (keyword == null ||
+                                    it.name.contains(keyword, true) ||
+                                    it.slug.contains(keyword, true)) &&
+                                (keyword != null ||
+                                    category != null ||
+                                    it.slug !in omittedFromDefaultBrowse)
+                        }
                         return json(
                             buildJsonObject {
                                 put("connectors", JsonArray(matched.map(CatalogEntry::body)))
@@ -166,7 +168,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                         )
                                     },
                                 )
-                            }
+                            },
                         )
                     }
                     val response = synchronized(accounts) { respond(request) }
@@ -263,12 +265,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                                     )
                                                     put("enabled", account.enabled)
                                                 }
-                                            }
+                                            },
                                         ),
                                     )
                                 }
-                            }
-                    )
+                            },
+                    ),
                 )
             parts.getOrNull(1) == "connector-catalog" -> {
                 val slug = parts.getOrNull(2)
@@ -278,7 +280,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
                 } else json(buildJsonObject { put("connector", entry.body()) })
             }
@@ -317,12 +319,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                             buildJsonObject {
                                                 put("kind", "available")
                                                 put("connectionId", id)
-                                            }
+                                            },
                                     )
-                                }
+                                },
                             ),
                         )
-                    }
+                    },
                 )
             }
             path == "/api/connector-accounts/connections" -> {
@@ -341,12 +343,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             JsonArray(
                                 accounts
                                     .filterValues { it.slug == querySlug }
-                                    .map { (id, account) -> account.row(id) }
+                                    .map { (id, account) -> account.row(id) },
                             ),
                         )
                         put("nextCursor", Json.parseToJsonElement("null"))
                         put("defaultConnection", Json.parseToJsonElement("null"))
-                    }
+                    },
                 )
             }
             path == "/api/connector-account-access/defaults" ->
@@ -354,8 +356,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     JsonArray(
                         accounts
                             .filterValues { it.slug == querySlug }
-                            .map { (id, account) -> account.defaults(id) }
-                    )
+                            .map { (id, account) -> account.defaults(id) },
+                    ),
                 )
             parts.getOrNull(1) == "connector-account-access" &&
                 parts.getOrNull(3) == "default-enabled" -> {
@@ -387,7 +389,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 )
                     return rejected(400)
                 jsonResponse(
-                    """{"authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","oauthAttemptId":"$CONNECTOR_OAUTH_ATTEMPT"}"""
+                    """{"authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","oauthAttemptId":"$CONNECTOR_OAUTH_ATTEMPT"}""",
                 )
             }
             path == "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions" &&
@@ -395,7 +397,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
                     return rejected(400)
                 jsonResponse(
-                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}"""
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}""",
                 )
             }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
@@ -430,7 +432,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (querySlug != account.slug) return rejected(404)
                         if (parts.last() == "deletion-impact") {
                             jsonResponse(
-                                """{"connectionId":"$id","explicitSelectionCount":2,"hasSibling":true}"""
+                                """{"connectionId":"$id","explicitSelectionCount":2,"hasSibling":true}""",
                             )
                         } else json(account.row(id))
                     }
@@ -450,7 +452,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (body(request)["target"] != target(account.slug)) return rejected(400)
                         accounts.remove(id)
                         jsonResponse(
-                            """{"deletedConnectionId":"$id","resolvedSelectionCount":2,"promotedDefaultConnectionId":null}"""
+                            """{"deletedConnectionId":"$id","resolvedSelectionCount":2,"promotedDefaultConnectionId":null}""",
                         )
                     }
                     else -> rejected(405)
@@ -498,7 +500,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         .joinToString(",", "[", "]")
                 } else "[]"
             return Json.parseToJsonElement(
-                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}"""
+                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
                 )
                 .jsonObject
         }
@@ -553,7 +555,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 .setResponseCode(code)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """{"error":{"code":"TEST_REJECTED","message":"Fixture request rejected"}}"""
+                    """{"error":{"code":"TEST_REJECTED","message":"Fixture request rejected"}}""",
                 )
 
         private fun json(value: kotlinx.serialization.json.JsonElement) =

@@ -36,7 +36,7 @@ class ChatComposerApiTest {
                 )
             }
             assertTrue(
-                fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor()).rows.isNotEmpty()
+                fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor()).rows.isNotEmpty(),
             )
         }
     }
@@ -59,7 +59,7 @@ class ChatComposerApiTest {
                 val wire = Json.parseToJsonElement(patch.body.clone().readUtf8())
                 assertEquals(
                     Json.parseToJsonElement(
-                        """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"draftAttachments":null}"""
+                        """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"draftAttachments":null}""",
                     ),
                     wire,
                 )
@@ -72,7 +72,7 @@ class ChatComposerApiTest {
                     fixture.service.saveComposerDraft(target, blank)
                     assertEquals(
                         Json.parseToJsonElement(
-                            """{"draftUserMessage":null,"draftAttachments":null}"""
+                            """{"draftUserMessage":null,"draftAttachments":null}""",
                         ),
                         JsonObject(fixture.service.composerDraft(target)),
                     )
@@ -84,8 +84,8 @@ class ChatComposerApiTest {
     private fun input(thread: String, text: String = "你好 👋\n**verbatim**") =
         Json.decodeFromJsonElement<SendRequestVariant1>(
             Json.parseToJsonElement(
-                """{"threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}"""
-            )
+                """{"threadId":"$thread","clientEventId":"${UUID.randomUUID()}","chatThreadSortEventId":"${UUID.randomUUID()}","prompt":${JsonPrimitive(text)},"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(text)}}]},"hasTextContent":true}""",
+            ),
         )
 
     @Test
@@ -97,7 +97,7 @@ class ChatComposerApiTest {
                         CreateThreadRequest(
                             clientThreadId = UUID.randomUUID().toString(),
                             eventId = UUID.randomUUID().toString(),
-                        )
+                        ),
                     )
                     .id
             val cold =
@@ -131,13 +131,12 @@ class ChatComposerApiTest {
                 ),
                 batch.events.mapValues { (_, rows) -> rows.map { it.id } },
             )
-            val tails =
-                cursors.mapValues { (id, cursor) ->
-                    val page = fixture.service.historyRows(id, cursor)
-                    assertEquals(batch.events.getValue(id), page.rows)
-                    assertFalse(page.hasMore)
-                    page.cursor
-                }
+            val tails = cursors.mapValues { (id, cursor) ->
+                val page = fixture.service.historyRows(id, cursor)
+                assertEquals(batch.events.getValue(id), page.rows)
+                assertFalse(page.hasMore)
+                page.cursor
+            }
             val full = fixture.service.historyRows(CHAT_PERSONAL, HistoryCursor())
             assertEquals(listOf(first.clientEventId, second.clientEventId), full.rows.map { it.id })
             for ((request, row) in
@@ -172,25 +171,26 @@ class ChatComposerApiTest {
                         projectId = CHAT_PROJECT,
                         clientThreadId = thread,
                         eventId = UUID.randomUUID().toString(),
-                    )
+                    ),
                 )
             assertEquals(thread, created.id)
             assertEquals(CHAT_PROJECT, created.projectId)
             val create = fixture.created.single()
-            assertFalse(create.containsKey("model"))
-            assertFalse(create.containsKey("serviceTier"))
+            for (key in listOf("model", "serviceTier", "reasoningEffort")) {
+                assertFalse(create.containsKey(key))
+            }
             val send = input(thread)
             assertEquals(thread, fixture.service.sendInput(send).threadId)
             val wire = fixture.inputs.values.single()
-            for (key in listOf("model", "computerUseHostId", "cloudBrowserEnabled")) assertFalse(
-                wire.containsKey(key)
-            )
+            for (key in listOf("model", "runOptions", "computerUseHostId", "cloudBrowserEnabled")) {
+                assertFalse(wire.containsKey(key))
+            }
             assertEquals(send.prompt, wire.getValue("prompt").jsonPrimitive.content)
             val observed = fixture.service.observeInput(thread, checkNotNull(send.clientEventId))
             assertEquals(TextDisposition.Queued, observed.disposition)
             assertEquals(send.clientEventId, observed.eventId)
             assertTrue(
-                fixture.requests.all { it.getHeader("Authorization") == "Bearer fixture-token" }
+                fixture.requests.all { it.getHeader("Authorization") == "Bearer fixture-token" },
             )
         }
     }
@@ -226,7 +226,7 @@ class ChatComposerApiTest {
             assertNull(
                 fixture.service
                     .observeInput(CHAT_PERSONAL, checkNotNull(request.clientEventId))
-                    .disposition
+                    .disposition,
             )
             fixture.service.sendInput(request)
             fixture.inputDisposition = "rejected"

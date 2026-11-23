@@ -4,6 +4,7 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ConnectorDetailConnectorAuthMethodsItemGrantKind
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import java.util.Locale
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeMark
@@ -21,13 +22,15 @@ import okhttp3.HttpUrl
 internal const val CONNECTOR_ACCOUNT_NAME_LIMIT = 255
 private const val RECENT_READ_LIMIT = 8
 private const val ACCOUNT_READBACK_LIMIT = 3
+private val CONNECTOR_READ_LIFETIME = 10.minutes
 
 internal data class ConnectorBrowseFilter(val keyword: String?, val category: String?) {
     companion object {
         fun of(query: String, category: String?): ConnectorBrowseFilter? =
             when {
                 category != null -> ConnectorBrowseFilter(null, category)
-                query.isNotBlank() -> ConnectorBrowseFilter(query.trim(), null)
+                query.isNotBlank() ->
+                    ConnectorBrowseFilter(query.trim().lowercase(Locale.ROOT), null)
                 else -> null
             }
     }
@@ -77,7 +80,7 @@ internal data class ConnectorUiState(
     val slug: String? = null,
     val detail: ConnectorRead<ConnectorServiceDetail> = ConnectorRead(),
     val accounts: ConnectorRead<List<ConnectorSavedAccount>> = ConnectorRead(),
-    val cachedAccounts: List<ConnectorSavedAccount>? = null,
+    val cachedAccounts: ConnectorRead<List<ConnectorSavedAccount>>? = null,
     val permissions: ConnectorRead<List<ConnectorPermission>> = ConnectorRead(),
     val impact: ConnectorImpact? = null,
     val action: ConnectorAction? = null,
@@ -87,9 +90,11 @@ internal data class ConnectorUiState(
 
     fun accountsFor(slug: String): List<ConnectorSavedAccount> {
         if (this.slug == slug && accounts.data != null) return accounts.data
+        if (this.slug == slug && accounts.failure == ConnectorReadFailure.Unavailable)
+            return emptyList()
         val overview = connected.data
         if (overview != null) return overview[slug]?.accounts.orEmpty()
-        return cachedAccounts.takeIf { this.slug == slug }.orEmpty()
+        return cachedAccounts.takeIf { this.slug == slug }?.data.orEmpty()
     }
 }
 
@@ -103,6 +108,7 @@ class ConnectorModel(
     private val service: ConnectorService,
     connectivity: Flow<Boolean>,
     private val authorized: () -> Boolean,
+    private val readClock: TimeSource = TimeSource.Monotonic,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
@@ -129,6 +135,7 @@ class ConnectorModel(
     private var verificationFailures = 0
     private var permissionsRequested = false
     private var open = false
+    private var foreground = true
     private var filter: ConnectorBrowseFilter? = null
     private var authorizationDeadline: TimeMark? = null
     private var pendingChange: PendingChange? = null
@@ -164,22 +171,60 @@ class ConnectorModel(
     }
 
     internal fun setOpen(open: Boolean) {
+        if (this.open == open) return
         this.open = open
         if (open) {
+            mutableState.update { state ->
+                val accounts = state.accounts.confirmed().retaining(state.cachedAccounts).forEntry()
+                state.copy(
+                    browse = state.browse.forEntry(),
+                    connected = state.connected.forEntry(),
+                    matches = state.matches?.let { it.copy(entries = it.entries.forEntry()) },
+                    detail = state.detail.forEntry(),
+                    accounts =
+                        ConnectorRead(failure = accounts.failure, expiresAt = accounts.expiresAt),
+                    cachedAccounts = accounts.takeIf { it.data != null },
+                    permissions = state.permissions.forEntry(),
+                )
+            }
             refreshVisible()
         } else {
-            cancelReads()
-            impactJob?.cancel()
-            verificationJob?.cancel()
+            hidePermissions()
+            clearImpact()
+            pauseReads()
         }
     }
 
+    internal fun pause() {
+        foreground = false
+        pauseReads()
+    }
+
+    private fun pauseReads() {
+        cancelReads()
+        impactJob?.cancel()
+        verificationJob?.cancel()
+    }
+
     internal fun resume() {
+        foreground = true
         if (open) refreshVisible()
     }
 
+    internal fun enterDirectoryTab(connected: Boolean) {
+        mutableState.update { state ->
+            val matches = state.matches?.let { it.copy(entries = it.entries.forEntry()) }
+            if (connected) state.copy(connected = state.connected.forEntry(), matches = matches)
+            else state.copy(browse = state.browse.forEntry(), matches = matches)
+        }
+        if (open && foreground && !mutableState.value.offline) {
+            refreshDirectory(browse = !connected, accounts = connected)
+            refreshMatches()
+        }
+    }
+
     private fun refreshVisible() {
-        if (mutableState.value.offline) return
+        if (!foreground || mutableState.value.offline) return
         refreshDirectory()
         refreshMatches()
         refreshDetail()
@@ -189,60 +234,64 @@ class ConnectorModel(
         reconcilePendingChange()
     }
 
-    private fun refreshDirectory() {
-        if (browseJob?.isActive != true) {
-            browseJob =
-                viewModelScope.launch {
-                    load({ service.discover(null, null) }) { read ->
-                        mutableState.update { state ->
-                            state.copy(browse = read.retaining(state.browse))
-                        }
+    private fun refreshDirectory(browse: Boolean = true, accounts: Boolean = true) {
+        if (browse && browseJob?.isActive != true) {
+            browseJob = viewModelScope.launch {
+                load({ service.discover(null, null) }) { read ->
+                    val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                    if (unavailable) {
+                        matchesJob?.cancel()
+                        recentMatches.clear()
+                    }
+                    mutableState.update { state ->
+                        state.copy(
+                            browse = read.retaining(state.browse),
+                            matches =
+                                if (unavailable) state.matches?.copy(entries = read)
+                                else state.matches,
+                        )
                     }
                 }
+            }
         }
-        if (connectedJob?.isActive != true) {
-            connectedJob =
-                viewModelScope.launch {
-                    load(service::connected) { read ->
-                        val value = read.data
-                        mutableState.update { state ->
-                            val connected =
-                                value?.mapValues { (slug, service) ->
-                                    val statuses =
-                                        state.connected.data
-                                            ?.get(slug)
-                                            ?.accounts
-                                            .orEmpty()
-                                            .associate { it.id to it.status }
-                                    service.withStatuses(statuses)
+        if (accounts && connectedJob?.isActive != true) {
+            connectedJob = viewModelScope.launch {
+                load(service::connected) { read ->
+                    val value = read.data
+                    mutableState.update { state ->
+                        val connected = value?.mapValues { (slug, service) ->
+                            val statuses =
+                                state.connected.data?.get(slug)?.accounts.orEmpty().associate {
+                                    it.id to it.status
                                 }
-                            state.copy(
-                                connected = read.copy(data = connected).retaining(state.connected)
-                            )
+                            service.withStatuses(statuses)
                         }
-                        if (value != null) inspectConnected(value)
+                        state.copy(
+                            connected = read.copy(data = connected).retaining(state.connected),
+                        )
                     }
+                    if (value != null) inspectConnected(value)
                 }
+            }
         }
     }
 
     private fun inspectConnected(connected: Map<String, ConnectedService>) {
         inspectionJob?.cancel()
-        inspectionJob =
-            viewModelScope.launch {
-                load({ service.inspect(connected) }) { read ->
-                    val statuses = read.data
-                    if (statuses != null) {
-                        mutableState.update { state ->
-                            val data =
-                                state.connected.data?.mapValues { (_, service) ->
-                                    service.withStatuses(statuses, preserveScopeMismatch = true)
-                                }
-                            state.copy(connected = state.connected.copy(data = data))
-                        }
+        inspectionJob = viewModelScope.launch {
+            load({ service.inspect(connected) }) { read ->
+                val statuses = read.data
+                if (statuses != null) {
+                    mutableState.update { state ->
+                        val data =
+                            state.connected.data?.mapValues { (_, service) ->
+                                service.withStatuses(statuses, preserveScopeMismatch = true)
+                            }
+                        state.copy(connected = state.connected.copy(data = data))
                     }
                 }
             }
+        }
     }
 
     internal fun setFilter(next: ConnectorBrowseFilter?) {
@@ -251,31 +300,30 @@ class ConnectorModel(
         matchesJob?.cancel()
         matchesJob = null
         if (next != null) {
-            val cached = recentMatches[next]
+            val cached = recentMatches[next]?.forEntry()
             mutableState.update {
                 it.copy(matches = ConnectorMatches(next, cached ?: ConnectorRead()))
             }
-            refreshMatches()
+            if (cached?.data == null) refreshMatches()
         }
     }
 
     private fun refreshMatches() {
         val selected = filter ?: return
         if (matchesJob?.isActive == true) return
-        matchesJob =
-            viewModelScope.launch {
-                if (selected.keyword != null) delay(250)
-                load({ service.discover(selected.keyword, selected.category) }) { read ->
-                    if (filter != selected) return@load
-                    if (read.isConfirmed) recentMatches.rememberRead(selected, read)
-                    mutableState.update { state ->
-                        val previous = state.matches?.takeIf { it.filter == selected }
-                        state.copy(
-                            matches = ConnectorMatches(selected, read.retaining(previous?.entries))
-                        )
-                    }
+        matchesJob = viewModelScope.launch {
+            if (selected.keyword != null) delay(250)
+            load({ service.discover(selected.keyword, selected.category) }) { read ->
+                if (filter != selected) return@load
+                if (read.isConfirmed) recentMatches.rememberRead(selected, read)
+                mutableState.update { state ->
+                    val previous = state.matches?.takeIf { it.filter == selected }
+                    state.copy(
+                        matches = ConnectorMatches(selected, read.retaining(previous?.entries)),
+                    )
                 }
             }
+        }
     }
 
     internal fun select(slug: String?) {
@@ -285,7 +333,7 @@ class ConnectorModel(
             val snapshot =
                 ServiceReadSnapshot(
                     previous.detail.confirmed(),
-                    previous.accounts.confirmed().retaining(ConnectorRead(previous.cachedAccounts)),
+                    previous.accounts.confirmed().retaining(previous.cachedAccounts),
                     previous.permissions.confirmed(),
                 )
             if (
@@ -301,13 +349,15 @@ class ConnectorModel(
         impactJob?.cancel()
         impactJob = null
         val cached = slug?.let(recentServices::get)
+        val accounts = cached?.accounts?.forEntry()
         mutableState.update {
             it.copy(
                 slug = slug,
-                detail = cached?.detail ?: ConnectorRead(),
-                accounts = ConnectorRead(failure = cached?.accounts?.failure),
-                cachedAccounts = cached?.accounts?.data,
-                permissions = cached?.permissions ?: ConnectorRead(),
+                detail = cached?.detail?.forEntry() ?: ConnectorRead(),
+                accounts =
+                    ConnectorRead(failure = accounts?.failure, expiresAt = accounts?.expiresAt),
+                cachedAccounts = accounts?.takeIf { it.data != null },
+                permissions = cached?.permissions?.forEntry() ?: ConnectorRead(),
                 impact = null,
             )
         }
@@ -317,46 +367,55 @@ class ConnectorModel(
     private fun refreshDetail() {
         val slug = mutableState.value.slug ?: return
         if (detailJob?.isActive != true) {
-            detailJob =
-                viewModelScope.launch {
-                    load({ service.detail(slug) }) { read ->
-                        val unavailable = read.failure == ConnectorReadFailure.Unavailable
-                        if (unavailable) {
-                            permissionJob?.cancel()
-                            permissionJob = null
-                        }
-                        mutableState.update { state ->
-                            state.copy(
-                                detail = read.retaining(state.detail),
-                                permissions =
-                                    if (unavailable) ConnectorRead(failure = read.failure)
-                                    else state.permissions,
-                            )
-                        }
+            detailJob = viewModelScope.launch {
+                load({ service.detail(slug) }) { read ->
+                    val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                    if (unavailable) {
+                        permissionJob?.cancel()
+                        permissionJob = null
+                    }
+                    mutableState.update { state ->
+                        state.copy(
+                            detail = read.retaining(state.detail),
+                            permissions =
+                                if (unavailable)
+                                    ConnectorRead(
+                                        failure = read.failure,
+                                        expiresAt = read.expiresAt,
+                                    )
+                                else state.permissions,
+                        )
                     }
                 }
+            }
         }
         if (accountsJob?.isActive != true) {
-            accountsJob =
-                viewModelScope.launch {
-                    load({ service.accounts(slug) }) { read ->
-                        if (read.data != null) publishAccounts(slug, read.data)
-                        else
-                            mutableState.update { state ->
-                                state.copy(
-                                    accounts = read.retaining(state.accounts),
-                                    cachedAccounts =
-                                        state.cachedAccounts.takeUnless {
-                                            read.failure == ConnectorReadFailure.Unavailable
-                                        },
-                                )
-                            }
-                    }
+            accountsJob = viewModelScope.launch {
+                load({ service.accounts(slug) }) { read ->
+                    if (read.data != null) publishAccounts(slug, read.data)
+                    else
+                        mutableState.update { state ->
+                            val unavailable = read.failure == ConnectorReadFailure.Unavailable
+                            state.copy(
+                                accounts = read.retaining(state.accounts),
+                                cachedAccounts = state.cachedAccounts.takeUnless { unavailable },
+                                connected =
+                                    if (unavailable)
+                                        state.connected.copy(
+                                            data = state.connected.data?.minus(slug),
+                                        )
+                                    else state.connected,
+                            )
+                        }
                 }
+            }
         }
     }
 
     internal fun showPermissions() {
+        if (!permissionsRequested) {
+            mutableState.update { it.copy(permissions = it.permissions.forEntry()) }
+        }
         permissionsRequested = true
         refreshPermissions()
     }
@@ -370,14 +429,13 @@ class ConnectorModel(
     private fun refreshPermissions() {
         val slug = mutableState.value.slug ?: return
         if (permissionJob?.isActive == true) return
-        permissionJob =
-            viewModelScope.launch {
-                load({ service.permissions(slug) }) { read ->
-                    mutableState.update { state ->
-                        state.copy(permissions = read.retaining(state.permissions))
-                    }
+        permissionJob = viewModelScope.launch {
+            load({ service.permissions(slug) }) { read ->
+                mutableState.update { state ->
+                    state.copy(permissions = read.retaining(state.permissions))
                 }
             }
+        }
     }
 
     internal fun prepareDisconnect(id: String) {
@@ -397,22 +455,21 @@ class ConnectorModel(
     private fun refreshImpact(id: String) {
         val slug = mutableState.value.slug ?: return
         if (impactJob?.isActive == true) return
-        impactJob =
-            viewModelScope.launch {
-                retryConnectorRead(
-                    read = { service.impact(slug, id) },
-                    canRead = { authorized() && open },
-                    onError = ::reportSessionFailure,
-                    publish = { read ->
-                        mutableState.update { state ->
-                            state.copy(
-                                impact = ConnectorImpact(id, read.retaining(state.impact?.read))
-                            )
-                        }
-                    },
-                    canRetry = { !mutableState.value.offline },
-                )
-            }
+        impactJob = viewModelScope.launch {
+            retryConnectorRead(
+                read = { service.impact(slug, id) },
+                canRead = { authorized() && open && foreground },
+                onError = ::reportSessionFailure,
+                publish = { read ->
+                    mutableState.update { state ->
+                        state.copy(
+                            impact = ConnectorImpact(id, read.retaining(state.impact?.read)),
+                        )
+                    }
+                },
+                canRetry = { !mutableState.value.offline },
+            )
+        }
     }
 
     internal fun rename(id: String, name: String) {
@@ -422,7 +479,7 @@ class ConnectorModel(
         change(
             PendingChange(target, ConnectorResult.Renamed) { account ->
                 account?.displayName == label
-            }
+            },
         ) {
             val saved = service.rename(target.slug, id, label)
             replaceAccount(target, id) { it.copy(displayName = saved) }
@@ -588,39 +645,38 @@ class ConnectorModel(
         step: ConnectorAuthorization.Device,
     ) {
         if (deviceJob?.isActive == true) return
-        deviceJob =
-            viewModelScope.launch {
-                var interval = step.interval
-                while (!authorizationExpired()) {
-                    delay(interval.coerceAtLeast(1.seconds))
-                    if (authorizationExpired()) break
-                    if (mutableState.value.offline) continue
-                    try {
-                        when (val result = service.pollDevice(target.slug, step)) {
-                            is ConnectorDeviceResult.Waiting -> interval = result.interval
-                            is ConnectorDeviceResult.Complete -> {
-                                val action = mutableState.value.action ?: return@launch
-                                runAction(action) {
-                                    finishAuthorization(target, result.connectionId)
-                                }
-                                return@launch
+        deviceJob = viewModelScope.launch {
+            var interval = step.interval
+            while (!authorizationExpired()) {
+                delay(interval.coerceAtLeast(1.seconds))
+                if (authorizationExpired()) break
+                if (mutableState.value.offline) continue
+                try {
+                    when (val result = service.pollDevice(target.slug, step)) {
+                        is ConnectorDeviceResult.Waiting -> interval = result.interval
+                        is ConnectorDeviceResult.Complete -> {
+                            val action = mutableState.value.action ?: return@launch
+                            runAction(action) {
+                                finishAuthorization(target, result.connectionId)
                             }
-                            ConnectorDeviceResult.Rejected -> break
+                            return@launch
                         }
-                    } catch (error: Exception) {
-                        if (error is CancellationException) throw error
-                        reportSessionFailure(error)
-                        if (!error.hasUncertainResponse()) break
-                        interval = maxOf(interval, 5.seconds)
+                        ConnectorDeviceResult.Rejected -> break
                     }
-                }
-                updateAction {
-                    it.copy(
-                        authorization = null,
-                        problem = ConnectorProblem.AuthorizationIncomplete,
-                    )
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    reportSessionFailure(error)
+                    if (!error.hasUncertainResponse()) break
+                    interval = maxOf(interval, 5.seconds)
                 }
             }
+            updateAction {
+                it.copy(
+                    authorization = null,
+                    problem = ConnectorProblem.AuthorizationIncomplete,
+                )
+            }
+        }
     }
 
     internal fun completeExternal(code: String) {
@@ -723,7 +779,11 @@ class ConnectorModel(
     }
 
     private fun canStart(): Boolean =
-        authorized() && open && actionJob?.isActive != true && mutableState.value.canChangeAccounts
+        authorized() &&
+            open &&
+            foreground &&
+            actionJob?.isActive != true &&
+            mutableState.value.canChangeAccounts
 
     private fun invalidateConnectionReads() {
         browseJob?.cancel()
@@ -749,14 +809,15 @@ class ConnectorModel(
         replace: (ConnectorSavedAccount) -> ConnectorSavedAccount?,
     ) {
         val slug = target.slug
-        fun update(accounts: List<ConnectorSavedAccount>) =
-            accounts.mapNotNull { if (it.id == id) replace(it) else it }
+        fun update(accounts: List<ConnectorSavedAccount>) = accounts.mapNotNull {
+            if (it.id == id) replace(it) else it
+        }
 
         invalidateConnectionReads()
         recentServices[slug]?.let { cached ->
             recentServices[slug] =
                 cached.copy(
-                    accounts = cached.accounts.copy(data = cached.accounts.data?.let(::update))
+                    accounts = cached.accounts.copy(data = cached.accounts.data?.let(::update)),
                 )
         }
         mutableState.update { state ->
@@ -776,15 +837,18 @@ class ConnectorModel(
                         state.accounts.copy(data = state.accounts.data?.let(::update))
                     else state.accounts,
                 cachedAccounts =
-                    if (state.slug == slug) state.cachedAccounts?.let(::update)
+                    if (state.slug == slug)
+                        state.cachedAccounts?.let { it.copy(data = it.data?.let(::update)) }
                     else state.cachedAccounts,
             )
         }
     }
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
+        val confirmed =
+            ConnectorRead(accounts, expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
         val cached = recentServices[slug]
-        if (cached != null) recentServices[slug] = cached.copy(accounts = ConnectorRead(accounts))
+        if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
             val knownServices = state.connected.data
             val label =
@@ -800,7 +864,8 @@ class ConnectorModel(
                 }
             state.copy(
                 connected = state.connected.copy(data = services),
-                accounts = if (state.slug == slug) ConnectorRead(accounts) else state.accounts,
+                accounts = if (state.slug == slug) confirmed else state.accounts,
+                cachedAccounts = if (state.slug == slug) null else state.cachedAccounts,
             )
         }
     }
@@ -812,67 +877,65 @@ class ConnectorModel(
     ) {
         if (!authorized() || actionJob?.isActive == true) return
         mutableState.update { it.copy(action = action.copy(busy = true, problem = null)) }
-        actionJob =
-            viewModelScope.launch {
-                try {
-                    block()
-                } catch (error: Exception) {
-                    if (error is CancellationException) throw error
-                    reportSessionFailure(error)
-                    val definitive =
-                        error is ApiFailure.Http &&
-                            error.status in 400..499 &&
-                            error.status != 408 &&
-                            error.status != 429
-                    val canRetryBrowserReceipt =
-                        error.hasUncertainResponse() && !authorizationExpired()
-                    if (definitive) pendingChange = null
-                    updateAction {
-                        val verifying =
-                            !definitive &&
-                                (it.reconciling ||
-                                    it.awaitingBrowserReceipt && canRetryBrowserReceipt)
-                        it.copy(
-                            reconciling = it.reconciling && !definitive,
-                            authorization =
-                                if (definitive && it.reconciling) null else it.authorization,
-                            problem =
-                                when {
-                                    verifying && error.connectionFailed() ->
-                                        ConnectorProblem.VerificationNetwork
-                                    verifying -> ConnectorProblem.VerificationPending
-                                    error.connectionFailed() -> ConnectorProblem.Network
-                                    mayAuthorize && error.hasUncertainResponse() ->
-                                        ConnectorProblem.AuthorizationUnconfirmed
-                                    else -> ConnectorProblem.Failed
-                                },
-                        )
-                    }
-                    if (
-                        mutableState.value.action?.problem ==
-                            ConnectorProblem.AuthorizationUnconfirmed
-                    ) {
-                        // The user can inspect the saved accounts after closing the form.
-                        // A read started before the attempt cannot establish that list.
-                        invalidateConnectionReads()
-                        mutableState.update { state ->
-                            if (state.slug != action.target.slug) state
-                            else
-                                state.copy(
-                                    accounts = ConnectorRead(),
-                                    cachedAccounts = state.accounts.data ?: state.cachedAccounts,
-                                )
-                        }
-                    }
-                    if (open) {
-                        refreshDirectory()
-                        refreshDetail()
-                    }
-                } finally {
-                    updateAction { it.copy(busy = false) }
-                    scheduleVerification()
+        actionJob = viewModelScope.launch {
+            try {
+                block()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                reportSessionFailure(error)
+                val definitive =
+                    error is ApiFailure.Http &&
+                        error.status in 400..499 &&
+                        error.status != 408 &&
+                        error.status != 429
+                val canRetryBrowserReceipt = error.hasUncertainResponse() && !authorizationExpired()
+                if (definitive) pendingChange = null
+                updateAction {
+                    val verifying =
+                        !definitive &&
+                            (it.reconciling || it.awaitingBrowserReceipt && canRetryBrowserReceipt)
+                    it.copy(
+                        reconciling = it.reconciling && !definitive,
+                        authorization =
+                            if (definitive && it.reconciling) null else it.authorization,
+                        problem =
+                            when {
+                                verifying && error.connectionFailed() ->
+                                    ConnectorProblem.VerificationNetwork
+                                verifying -> ConnectorProblem.VerificationPending
+                                error.connectionFailed() -> ConnectorProblem.Network
+                                mayAuthorize && error.hasUncertainResponse() ->
+                                    ConnectorProblem.AuthorizationUnconfirmed
+                                else -> ConnectorProblem.Failed
+                            },
+                    )
                 }
+                if (
+                    mutableState.value.action?.problem == ConnectorProblem.AuthorizationUnconfirmed
+                ) {
+                    // The user can inspect the saved accounts after closing the form.
+                    // A read started before the attempt cannot establish that list.
+                    invalidateConnectionReads()
+                    mutableState.update { state ->
+                        if (state.slug != action.target.slug) state
+                        else
+                            state.copy(
+                                accounts = ConnectorRead(),
+                                cachedAccounts =
+                                    state.accounts.takeIf { it.data != null }
+                                        ?: state.cachedAccounts,
+                            )
+                    }
+                }
+                if (open) {
+                    refreshDirectory()
+                    refreshDetail()
+                }
+            } finally {
+                updateAction { it.copy(busy = false) }
+                scheduleVerification()
             }
+        }
     }
 
     private fun scheduleVerification() {
@@ -886,6 +949,7 @@ class ConnectorModel(
                 } == true
         if (
             !open ||
+                !foreground ||
                 !authorized() ||
                 mutableState.value.offline ||
                 verificationJob?.isActive == true ||
@@ -898,15 +962,14 @@ class ConnectorModel(
                 1 -> 8.seconds
                 else -> 30.seconds
             }
-        verificationJob =
-            viewModelScope.launch {
-                delay(wait)
-                verificationJob = null
-                if (open && !mutableState.value.offline) {
-                    checkAuthorization()
-                    reconcilePendingChange()
-                }
+        verificationJob = viewModelScope.launch {
+            delay(wait)
+            verificationJob = null
+            if (open && foreground && !mutableState.value.offline) {
+                checkAuthorization()
+                reconcilePendingChange()
             }
+        }
     }
 
     private fun complete(target: ConnectorAccountTarget, result: ConnectorResult?) {
@@ -932,9 +995,15 @@ class ConnectorModel(
     private suspend fun <T : Any> load(read: suspend () -> T, publish: (ConnectorRead<T>) -> Unit) =
         retryConnectorRead(
             read,
-            canRead = { authorized() && open && !mutableState.value.offline },
+            canRead = { authorized() && open && foreground && !mutableState.value.offline },
             onError = ::reportSessionFailure,
-            publish = publish,
+            publish = {
+                publish(
+                    if (it.isConfirmed)
+                        it.copy(expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
+                    else it,
+                )
+            },
         )
 
     private class PendingChange(
@@ -974,7 +1043,7 @@ private fun ConnectedService.withStatuses(
                 )
                     account
                 else account.copy(status = status)
-            }
+            },
     )
 
 internal fun recommendedConnectors(entries: List<ConnectorEntry>): List<ConnectorEntry> =

@@ -13,6 +13,7 @@ import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
+import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
@@ -59,11 +60,20 @@ open class OkouApplication : Application() {
         ProjectExpansionStore(
             PreferenceDataStoreFactory.create {
                 noBackupFilesDir.resolve("project-expansion.preferences_pb")
-            }
+            },
         )
     }
     val memberAppearanceCache by lazy {
         MemberAppearanceCache({ noBackupFilesDir.resolve("member-appearance") })
+    }
+    internal val defaultModelStore by lazy {
+        val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        DefaultModelStore(
+            PreferenceDataStoreFactory.create(scope = storageScope) {
+                noBackupFilesDir.resolve("default-model.preferences_pb")
+            },
+            storageScope,
+        )
     }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
     open val composerJournal by lazy { ComposerJournalStore(this) }
