@@ -173,6 +173,23 @@ internal interface ChatCacheDao {
 
     @Upsert suspend fun putScope(value: ChatScopeRecord)
 
+    @Query(
+        """
+        UPDATE chat_scopes SET confirmedAt = :confirmedAt
+        WHERE scope = :scope AND authorization = :authorization AND confirmedAt < :confirmedAt
+          AND snapshotEventId IS :snapshotEventId AND snapshotSeqId = :snapshotSeqId
+          AND COALESCE((SELECT MAX(seqId) FROM chat_thread_events WHERE scope = :scope), snapshotSeqId) = :seqId
+        """
+    )
+    suspend fun renewChatConfirmation(
+        scope: String,
+        authorization: String,
+        snapshotEventId: String?,
+        snapshotSeqId: Long,
+        seqId: Long,
+        confirmedAt: Long,
+    ): Int
+
     @Query("DELETE FROM chat_scopes WHERE scope = :scope") suspend fun deleteScope(scope: String)
 
     @Query("SELECT * FROM chat_thread_snapshot WHERE scope = :scope ORDER BY position")

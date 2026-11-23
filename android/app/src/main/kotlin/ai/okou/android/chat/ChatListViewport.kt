@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,6 +65,7 @@ private enum class ListLayer {
     Controls,
     Feedback,
     Rows,
+    Sync,
 }
 
 @Composable
@@ -72,6 +74,7 @@ internal fun ChatListViewport(
     listState: LazyListState,
     contentChangeKey: Any?,
     status: ChatListStatus?,
+    syncing: Boolean,
     newChatEnabled: Boolean,
     newChat: () -> Unit,
     feedback: @Composable () -> Unit,
@@ -132,8 +135,21 @@ internal fun ChatListViewport(
                 }
                 .single()
                 .measure(loose)
+        val progress =
+            if (syncing) {
+                subcompose(ListLayer.Sync) {
+                        val label = stringResource(R.string.chat_syncing)
+                        LinearProgressIndicator(
+                            Modifier.fillMaxWidth().semantics { contentDescription = label }
+                        )
+                    }
+                    .single()
+                    .measure(loose.copy(maxWidth = rows.width))
+            } else null
         layout(bounds.maxWidth, bounds.maxHeight) {
-            rows.placeRelative((bounds.maxWidth - rows.width) / 2, 0)
+            val rowsLeft = (bounds.maxWidth - rows.width) / 2
+            rows.placeRelative(rowsLeft, 0)
+            progress?.placeRelative(rowsLeft, 0)
             floating?.placeRelative(0, actionTop)
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }

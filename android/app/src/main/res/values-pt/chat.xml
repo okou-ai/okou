@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Sincronizando conversas…</string>
     <string name="workspace_workflows">Fluxos de trabalho</string>
     <string name="workspace_connectors">Conectores</string>
     <string name="workspace_artifacts">Artefatos</string>

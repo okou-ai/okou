@@ -84,11 +84,10 @@ limit. Chat threads and Projects have independent snapshots, event tails and
 cursors. Snapshots are stored per entity, and confirmed tail events append through
 transactions with their synchronization position. Changed chat lists await the
 write transaction before publication and read back from disk if it kept a newer
-checkpoint. Changed Projects await persistence and readback. Unchanged catch-up
-reuses the confirmed chat rows without another disk transaction when the cache is
-current. A storage
-failure leaves the network result usable with a visible cache warning, and a later
-refresh retries unsaved data.
+checkpoint. Changed Projects await persistence and readback. An unchanged
+catch-up reuses the confirmed chat rows and renews the cached confirmation time
+asynchronously. A failed data write leaves the network result usable with a
+visible cache warning, and a later refresh retries unsaved data.
 Data is scoped to API origin/user/workspace and the current authorization snapshot;
 an older synchronization cannot replace a newer persisted tail. Last-confirmed
 chat and Project data keep the scoped list usable after a process restart while

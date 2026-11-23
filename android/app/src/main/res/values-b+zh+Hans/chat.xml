@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">正在同步聊天…</string>
     <string name="workspace_workflows">工作流</string>
     <string name="workspace_connectors">连接器</string>
     <string name="workspace_artifacts">成果</string>

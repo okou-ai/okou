@@ -99,6 +99,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 
 private const val ProjectMotionMillis = 250
+private const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
@@ -318,6 +319,21 @@ internal fun ChatListScreen(
             firstLoadFailure == null &&
             (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
     val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList)
+    val syncConfirmation =
+        state.confirmedAt?.takeIf {
+            !missingUnread && !state.offline && state.listPhase == ChatReadPhase.Loading
+        }
+    val syncDelay =
+        remember(syncConfirmation) {
+            syncConfirmation?.let {
+                val age = (System.currentTimeMillis() - it).coerceAtLeast(0)
+                (ChatListSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
+            }
+        }
+    // Keep the timer's composition in place as reads start and finish.
+    val syncDelayReached =
+        rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+    val syncVisible = syncDelay == 0L || syncDelayReached
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {
@@ -333,6 +349,7 @@ internal fun ChatListScreen(
         listState,
         contentChangeKey = lastContentKey to knownProjects,
         status = status,
+        syncing = syncVisible,
         newChatEnabled = newChatEnabled,
         newChat = { newChat(null) },
         feedback = feedback,

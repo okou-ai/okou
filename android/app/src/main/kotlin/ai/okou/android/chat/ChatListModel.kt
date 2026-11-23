@@ -456,6 +456,7 @@ class ChatListModel(
     private val listReadRequests = Channel<Unit>(Channel.CONFLATED)
     private val indicatorInvalidations = Channel<Unit>(Channel.CONFLATED)
     private val unreadCacheWrites = Channel<CachedUnread>(Channel.CONFLATED)
+    private val chatConfirmationWrites = Channel<CachedChats>(Channel.CONFLATED)
     private var immediateIndicators = false
     private var readCursorChanged = false
     private var indicatorsStartedAt: Long? = null
@@ -536,6 +537,9 @@ class ChatListModel(
             }
         }
         viewModelScope.launch { for (ignored in listReadRequests) readPendingListBatch() }
+        viewModelScope.launch {
+            for (saved in chatConfirmationWrites) cache.renewChatConfirmation(saved)
+        }
         viewModelScope.launch {
             var saved: CachedUnread? = null
             for (snapshot in unreadCacheWrites) {
@@ -1700,13 +1704,14 @@ class ChatListModel(
                 ?: if (checkpoint === previous?.checkpoint) projection.confirmedRows
                 else withContext(dispatcher) { replayChatList(checkpoint) }
         requireCurrent()
+        val refreshed = CachedChats(checkpoint, wallMillis())
         val saved =
-            if (!result.changed && previous != null && !mutable.value.cacheUnavailable) previous
-            else {
-                val confirmedAt =
-                    previous?.confirmedAt?.takeUnless { result.changed }
-                        ?: System.currentTimeMillis()
-                confirmed = CachedChats(checkpoint, confirmedAt)
+            if (!result.changed && previous != null && !mutable.value.cacheUnavailable) {
+                refreshed.also {
+                    if (it.confirmedAt != previous.confirmedAt) chatConfirmationWrites.trySend(it)
+                }
+            } else {
+                confirmed = refreshed
                 checkNotNull(persistChats(adoptNewerCheckpoint = true))
             }
         val rows =
@@ -1919,6 +1924,7 @@ class ChatListModel(
         projectOwner.close()
         indicatorInvalidations.close()
         unreadCacheWrites.close()
+        chatConfirmationWrites.close()
         history.close()
         cache.close()
     }

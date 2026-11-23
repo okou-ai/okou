@@ -3122,12 +3122,13 @@ class ChatListModelTest {
     }
 
     @Test
-    fun unchangedRefreshAvoidsDiskWritesAndAnUnsavedUpdateRetriesPersistence() = runTest {
+    fun unchangedRefreshRenewsTimeAndRetriesUnsavedRows() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
         val root = temporary.newFolder()
         val cache = cache(root, dispatcher)
         val store = ViewModelStore()
+        var confirmedAt = 10_000L
         try {
             val service = Service()
             val model =
@@ -3135,7 +3136,15 @@ class ChatListModelTest {
                     store,
                     viewModelFactory {
                         initializer {
-                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                            ChatListModel(
+                                service,
+                                cache,
+                                identity,
+                                { true },
+                                {},
+                                dispatcher,
+                                wallMillis = { confirmedAt },
+                            )
                         }
                     },
                 )[ChatListModel::class.java]
@@ -3148,13 +3157,17 @@ class ChatListModelTest {
                 root,
                 "CREATE TRIGGER fail_chat_write BEFORE INSERT ON chat_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
             )
+            confirmedAt += 1_000L
             model.refresh()
             advanceUntilIdle()
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertFalse(model.uiState.value.cacheUnavailable)
-            assertEquals(initial.confirmedAt, model.uiState.value.confirmedAt)
+            assertEquals(confirmedAt, model.uiState.value.confirmedAt)
             assertSame(initial.threads, model.uiState.value.threads)
             assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
+            cache(root, dispatcher)
+                .open(identity) { true }
+                .use { assertEquals(confirmedAt, it.load()?.confirmedAt) }
             service.listRead = {
                 json.decodeFromString<ChatEvents>(
                     """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}"""
@@ -3166,10 +3179,11 @@ class ChatListModelTest {
             assertEquals("Updated", unsaved.threads.single().title)
             assertTrue(unsaved.cacheUnavailable)
             execute(root, "DROP TRIGGER fail_chat_write")
+            confirmedAt += 1_000L
             model.refreshList()
             advanceUntilIdle()
             assertSame(unsaved.threads, model.uiState.value.threads)
-            assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
+            assertEquals(confirmedAt, model.uiState.value.confirmedAt)
             assertFalse(model.uiState.value.cacheUnavailable)
             model.refreshMetadata()
             advanceUntilIdle()

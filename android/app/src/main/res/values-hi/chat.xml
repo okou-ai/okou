@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">चैट सिंक हो रही हैं…</string>
     <string name="workspace_workflows">वर्कफ़्लो</string>
     <string name="workspace_connectors">कनेक्टर्स</string>
     <string name="workspace_artifacts">आर्टिफ़ैक्ट</string>

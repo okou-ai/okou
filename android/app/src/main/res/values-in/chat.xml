@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Menyinkronkan chat…</string>
     <string name="workspace_workflows">Alur kerja</string>
     <string name="workspace_connectors">Konektor</string>
     <string name="workspace_artifacts">Artefak</string>

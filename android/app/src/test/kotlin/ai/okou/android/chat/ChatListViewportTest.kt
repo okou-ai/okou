@@ -2,22 +2,28 @@ package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -37,6 +43,8 @@ class ChatListViewportTest {
         val height = mutableStateOf(480.dp)
         val projectCount = mutableStateOf(0)
         val rowCount = mutableStateOf(30)
+        val syncing = mutableStateOf(false)
+        var clickedChat: Int? = null
         compose.setContent {
             OkouTheme {
                 val listState = rememberLazyListState()
@@ -45,12 +53,13 @@ class ChatListViewportTest {
                     listState,
                     contentChangeKey = projectCount.value to "chat_${rowCount.value - 1}",
                     status = ChatListStatus.Offline,
+                    syncing = syncing.value,
                     newChatEnabled = true,
                     newChat = {},
                     feedback = {},
                 ) { bottomSpace, _ ->
                     LazyColumn(
-                        Modifier.testTag("rows"),
+                        Modifier.widthIn(max = 280.dp).fillMaxWidth().testTag("rows"),
                         state = listState,
                         contentPadding = PaddingValues(bottom = bottomSpace),
                     ) {
@@ -58,7 +67,12 @@ class ChatListViewportTest {
                             Box(Modifier.fillMaxWidth().height(52.dp)) { Text("Project $index") }
                         }
                         items(rowCount.value, key = { it }) { index ->
-                            Box(Modifier.fillMaxWidth().height(52.dp).testTag("chat_$index")) {
+                            Box(
+                                Modifier.fillMaxWidth()
+                                    .height(52.dp)
+                                    .clickable { clickedChat = index }
+                                    .testTag("chat_$index")
+                            ) {
                                 Text("Chat $index")
                             }
                         }
@@ -87,6 +101,22 @@ class ChatListViewportTest {
         rows.performScrollToIndex(projectCount.value + 8)
         val visibleRow = compose.onNodeWithTag("chat_8")
         val position = visibleRow.getUnclippedBoundsInRoot().top
+        val progress = compose.onNodeWithContentDescription("Syncing chats…")
+        progress.assertDoesNotExist()
+
+        compose.runOnIdle { syncing.value = true }
+        val progressBounds = progress.assertIsDisplayed().getUnclippedBoundsInRoot()
+        val listBounds = rows.getUnclippedBoundsInRoot()
+        assertTrue(listBounds.left > 0.dp)
+        assertTrue(progressBounds.top <= listBounds.top && progressBounds.bottom > listBounds.top)
+        assertEquals(listBounds.left, progressBounds.left)
+        assertEquals(listBounds.right, progressBounds.right)
+        assertEquals(position, visibleRow.getUnclippedBoundsInRoot().top)
+        visibleRow.performTouchInput { click(Offset(center.x, 1.dp.toPx())) }
+        compose.runOnIdle { assertEquals(8, clickedChat) }
+
+        compose.runOnIdle { syncing.value = false }
+        progress.assertDoesNotExist()
 
         compose.runOnIdle { rowCount.value = 33 }
 

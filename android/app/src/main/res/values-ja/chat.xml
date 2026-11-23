@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">チャットを同期中…</string>
     <string name="workspace_workflows">ワークフロー</string>
     <string name="workspace_connectors">コネクター</string>
     <string name="workspace_artifacts">アーティファクト</string>
