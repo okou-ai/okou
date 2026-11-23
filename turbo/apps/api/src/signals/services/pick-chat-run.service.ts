@@ -3,7 +3,6 @@ import { deliverMarketingRewardEvents$ } from "./marketing-reward-event-delivery
 import { computed, command, state, type Computed } from "ccstate";
 import {
   count,
-  sql,
   eq,
   or,
   and,
@@ -36,7 +35,6 @@ import {
 } from "./direct-run-dispatch.service";
 import { publishDirectRunCache$ } from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
-import { pgInt8ToSafeIntegerDecoder } from "../../lib/db-structured-result";
 import {
   CHAT_THREAD_LEASE_MS,
   type PublishedChatThreadLease,
@@ -118,16 +116,14 @@ interface PickInput {
   readonly orgId: string;
   readonly chatThreadId?: string;
   readonly after?: OrgPickCursor | null;
-  readonly captureScanBudget?: boolean;
   readonly context?: AgentRunContextSignals;
   readonly requestInput?: EnqueuedChatInputFacts;
   readonly publishedLease?: PublishedChatThreadLease;
 }
 
-interface PickIteration {
+export interface PickIteration {
   readonly result: PickResult;
   readonly cursor: OrgPickCursor | null;
-  readonly scanBudget: number;
 }
 
 function captureThreadClaim(
@@ -148,9 +144,11 @@ function captureThreadClaim(
 
 function nextOrgThread(
   database: ReturnType<(typeof writeDb$)["write"]>,
-  after: OrgPickCursor | null,
-  eligible: SQL | undefined,
+  input: PickInput,
+  at: Date,
 ) {
+  const { orgId } = input;
+  const after = input.after ?? null;
   return database
     .select({
       chatThreadId: queuedChatThreads.chatThreadId,
@@ -159,7 +157,11 @@ function nextOrgThread(
     .from(queuedChatThreads)
     .where(
       and(
-        eligible,
+        eq(queuedChatThreads.orgId, orgId),
+        or(
+          isNull(queuedChatThreads.claimExpiresAt),
+          lte(queuedChatThreads.claimExpiresAt, at),
+        ),
         after === null
           ? undefined
           : or(
@@ -174,6 +176,14 @@ function nextOrgThread(
           : notInArray(queuedChatThreads.chatThreadId, [
               ...after.visitedThreadIds,
             ]),
+        notExists(
+          database
+            .select({ runId: activeAgentRuns.runId })
+            .from(activeAgentRuns)
+            .where(
+              eq(activeAgentRuns.chatThreadId, queuedChatThreads.chatThreadId),
+            ),
+        ),
       ),
     )
     .orderBy(
@@ -191,22 +201,6 @@ async function leaseQueuedThread(
 ) {
   const { orgId } = input;
   let cursor = input.after ?? null;
-  let scanBudget = 0;
-  const eligible = and(
-    eq(queuedChatThreads.orgId, orgId),
-    or(
-      isNull(queuedChatThreads.claimExpiresAt),
-      lte(queuedChatThreads.claimExpiresAt, at),
-    ),
-    notExists(
-      database
-        .select({ runId: activeAgentRuns.runId })
-        .from(activeAgentRuns)
-        .where(
-          eq(activeAgentRuns.chatThreadId, queuedChatThreads.chatThreadId),
-        ),
-    ),
-  );
   const update = (threadIdCondition: SQL) => {
     return database
       .update(queuedChatThreads)
@@ -219,8 +213,23 @@ async function leaseQueuedThread(
         and(
           eq(chatThreads.id, queuedChatThreads.chatThreadId),
           eq(chatThreads.orgId, orgId),
-          eligible,
+          eq(queuedChatThreads.orgId, orgId),
           threadIdCondition,
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, at),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
         ),
       )
       .returning({
@@ -238,7 +247,7 @@ async function leaseQueuedThread(
   } else {
     const candidate = database
       .$with("queue_candidate")
-      .as(nextOrgThread(database, cursor, eligible));
+      .as(nextOrgThread(database, input, at));
     const leased = database
       .$with("leased_candidate")
       .as(
@@ -249,10 +258,6 @@ async function leaseQueuedThread(
           ),
         ),
       );
-    // The separate aggregate leaves the FIFO lookup free to stop at one row.
-    const budget = input.captureScanBudget
-      ? sql`(${database.select({ count: count() }).from(queuedChatThreads).where(eligible)})`
-      : sql`0::bigint`;
     // Keep the selected cursor even if a competing claim wins the update.
     const [result] = await database
       .with(candidate, leased)
@@ -261,7 +266,6 @@ async function leaseQueuedThread(
           chatThreadId: candidate.chatThreadId,
           queuedAt: candidate.queuedAt,
         },
-        scanBudget: budget.mapWith(pgInt8ToSafeIntegerDecoder),
         lease: {
           chatThreadId: leased.chatThreadId,
           queuedAt: leased.queuedAt,
@@ -272,7 +276,6 @@ async function leaseQueuedThread(
       .leftJoin(leased, eq(leased.chatThreadId, candidate.chatThreadId));
     if (result) {
       row = result.lease;
-      scanBudget = result.scanBudget;
       cursor = {
         ...result.candidate,
         visitedThreadIds: [
@@ -282,7 +285,7 @@ async function leaseQueuedThread(
       };
     }
   }
-  return { row, cursor, scanBudget };
+  return { row, cursor };
 }
 
 function createPickObjects() {
@@ -330,11 +333,11 @@ function createPickObjects() {
           return [...previous, claim];
         });
         signal.throwIfAborted();
-        return { claim, cursor: input.after ?? null, scanBudget: 0 };
+        return { claim, cursor: input.after ?? null };
       }
       const claimId = randomUUID();
       // eslint-disable-next-line api/signal-check-await -- Keep the committed lease receipt before propagating cancellation.
-      const { row, cursor, scanBudget } = await leaseQueuedThread(
+      const { row, cursor } = await leaseQueuedThread(
         set(writeDb$),
         input,
         nowDate(),
@@ -359,7 +362,7 @@ function createPickObjects() {
         });
       }
       signal.throwIfAborted();
-      return { claim, cursor, scanBudget };
+      return { claim, cursor };
     },
   );
 
@@ -578,11 +581,10 @@ function createPickObjects() {
       signal: AbortSignal,
     ): Promise<PickIteration> => {
       signal.throwIfAborted();
-      const { claim, cursor, scanBudget } = await set(claim$, input, signal);
+      const { claim, cursor } = await set(claim$, input, signal);
       return {
         result: claim ? await set(pickClaim$, claim, signal) : { kind: "none" },
         cursor,
-        scanBudget,
       };
     },
   );
@@ -593,8 +595,9 @@ function createPickObjects() {
 export const pickChatThread$ = createPickObjects().pick$;
 
 /**
- * The first claim captures the maximum work for this pass. Stop on exhausted
- * candidates or full capacity. Enqueue, slot release and cron own later passes.
+ * A finite organization pass visits at most the queued-thread count captured
+ * at entry. Active or leased threads are skipped; only full org capacity stops
+ * the pass early. Enqueue, slot release and cron own subsequent passes.
  */
 export const pickOrgQueuedChatThreads$ = command(
   async (
@@ -602,24 +605,48 @@ export const pickOrgQueuedChatThreads$ = command(
     input: { readonly orgId: string },
     signal: AbortSignal,
   ): Promise<number> => {
+    const database = set(writeDb$);
+    const [snapshot] = await database
+      .select({ count: count() })
+      .from(queuedChatThreads)
+      .where(
+        and(
+          eq(queuedChatThreads.orgId, input.orgId),
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, nowDate()),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!snapshot) {
+      throw new Error("Queued chat thread count returned no row");
+    }
     let cursor: OrgPickCursor | null = null;
     let launched = 0;
-    let scanBudget = 1;
-    for (let visited = 0; visited < scanBudget; visited++) {
-      const iteration: PickIteration = await set(
+    for (let visited = 0; visited < snapshot.count; visited++) {
+      const { result: picked, cursor: nextCursor }: PickIteration = await set(
         pickChatThread$,
-        { orgId: input.orgId, after: cursor, captureScanBudget: visited === 0 },
+        { orgId: input.orgId, after: cursor },
         signal,
       );
+      cursor = nextCursor;
       signal.throwIfAborted();
-      if (iteration.result.kind === "org-full" || iteration.cursor === cursor) {
+      if (picked.kind === "org-full") {
         return launched;
       }
-      cursor = iteration.cursor;
-      if (visited === 0) {
-        scanBudget = iteration.scanBudget;
-      }
-      if (iteration.result.kind === "launched") {
+      if (picked.kind === "launched") {
         launched += 1;
       }
     }
