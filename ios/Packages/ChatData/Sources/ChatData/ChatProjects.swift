@@ -61,7 +61,8 @@ public struct ChatProjects: Sendable {
       body: JSONEncoder().encode(RenameProject(eventId: eventID, name: name)))
   }
 
-  public func setArchived(_ id: String, archived: Bool, eventID: String) async throws -> ChatProject {
+  public func setArchived(_ id: String, archived: Bool, eventID: String) async throws -> ChatProject
+  {
     try await client.request(
       "/api/projects/\(id)", method: "PATCH",
       body: JSONEncoder().encode(ArchiveProject(eventId: eventID, archived: archived)))

@@ -1,4 +1,3 @@
-import ChatData
 import ChatDomain
 import Foundation
 
@@ -9,12 +8,8 @@ extension ThreadListStore {
     var error: String?
   }
 
-  func hasUnreadThreads(projects: [ChatProject]) -> Bool {
-    let byID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
-    return threads.contains { thread in
-      !thread.isMuted && !thread.isArchived && thread.indicator == .unread
-        && ChatListContents.projectAllowsUnread(thread, thread.projectId.flatMap { byID[$0] })
-    }
+  var hasUnreadThreads: Bool {
+    threads.contains { !$0.isMuted && !$0.isArchived && $0.indicator == .unread }
   }
 
   var error: String? { actionError ?? syncError }

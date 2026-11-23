@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
@@ -10,7 +11,32 @@ struct ChatWorkspaceHeader: View {
   let openSidebar: () -> Void
 
   var body: some View {
-    let hasUnread = store.list.hasUnreadThreads(projects: store.projects.projects)
+    StoreProvider(store.sidebar.stateStore) {
+      ChatWorkspaceHeaderContent(store: store, height: height, openSidebar: openSidebar)
+        .id(ObjectIdentifier(store))
+    }
+  }
+}
+
+private struct ChatWorkspaceHeaderContent: View {
+  let store: WorkspaceStore
+  let height: CGFloat
+  let openSidebar: () -> Void
+  @LoadableValue private var unreadThreads: Loadable<Bool>
+
+  init(store: WorkspaceStore, height: CGFloat, openSidebar: @escaping () -> Void) {
+    self.store = store
+    self.height = height
+    self.openSidebar = openSidebar
+    _unreadThreads = LoadableValue(store.sidebar.hasUnreadThreads)
+  }
+
+  private var hasUnread: Bool {
+    if case .hasData(true) = unreadThreads { return true }
+    return false
+  }
+
+  var body: some View {
     HStack(spacing: OkouSpace.sm) {
       if let sharing = store.selectedConversation?.sharing, sharing.isSelecting {
         Text("\(sharing.selectedCount) selected").font(.okou(.headline))
