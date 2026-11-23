@@ -13,7 +13,6 @@
     <string name="chat_undo_unconfirmed">復原結果尚未確認</string>
     <string name="chat_feedback_dismiss">關閉提示</string>
     <string name="chat_list_offline">離線</string>
-    <string name="chat_list_refresh_failed">列表重新整理失敗</string>
     <string name="chat_list_first_load_failed">暫時無法載入</string>
     <string name="chat_list_load_when_online">連線後載入聊天。</string>
     <string name="chat_list_title">聊天</string>
