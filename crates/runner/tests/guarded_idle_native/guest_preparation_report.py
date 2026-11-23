@@ -162,8 +162,8 @@ def validate(directory, contract):
                       "full_original_prefix_verified":True,"preparation_observed_by_native_process":True,
                       "original_full_lease_witness":True}.items():
         exact(previous.get(key),value,"original native Executor evidence disagrees")
-    payload = (history.encode()*2048)[:65536]
-    exact(durable, {"history_run_id":history,"payload_sha256":hashlib.sha256(payload).hexdigest(),"payload_bytes":65536,
+    payload = report.history_payload(history)
+    exact(durable, {"history_run_id":history,"payload_sha256":hashlib.sha256(payload).hexdigest(),"payload_bytes":report.HISTORY_PAYLOAD_BYTES,
                     "original_private_and_home_verified":True,"guest_sync_completed":True}, "required data was not durable before fixed loss")
     operation = later.identifier(captured.get("operation_run_id"))
     if operation in {*identity,history,thread}:
