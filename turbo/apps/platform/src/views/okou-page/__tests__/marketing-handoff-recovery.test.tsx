@@ -1,12 +1,19 @@
+import type { OnboardingDraftPayload } from "@okouai/api-contracts/validators/onboarding";
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  onboardingDraftContract,
+  onboardingStatusContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { setupPage, fill } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
   textContinuityDraft,
@@ -174,4 +181,59 @@ test("marketing-handoff-recovery-018 receiving a task places the exact report an
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(new URL(location.href).searchParams.has("handoff")).toBeFalsy();
   });
+});
+
+test("marketing-handoff-recovery-012 the next app opens an unavailable task with the request saved by the first app", async () => {
+  const first = createTestRuntime(context);
+  const next = createTestRuntime(context);
+  context.mocks.data.onboardingStatus({
+    needsOnboarding: true,
+    onboardingComplete: false,
+    isAdmin: true,
+  });
+  let draft: OnboardingDraftPayload = {
+    step: "ready",
+    answers: {
+      industry: "marketing",
+      experienced: false,
+      provider: null,
+      startingPromptDraft: "Review the first task",
+      startingPromptKey: "edited",
+      startingPromptOutput: null,
+      recommendationJobId: null,
+      recommendationStartedAt: null,
+    },
+  };
+  let rev = crypto.randomUUID();
+  const saved = context.mocks.deferred<void>();
+  context.mocks.api(onboardingDraftContract.get, ({ respond }) => {
+    return respond(200, { draft: { ...draft, revision: rev } });
+  });
+  context.mocks.api(onboardingDraftContract.save, ({ body, respond }) => {
+    draft = { step: body.step, answers: body.answers };
+    rev = crypto.randomUUID();
+    if (draft.answers.startingPromptDraft === "Keep my onboarding draft") {
+      saved.resolve();
+    }
+    return respond(200, { revision: rev });
+  });
+  unavailable();
+  await setupPage({ context: first, path: "/onboarding/ready" });
+  await fill(
+    await screen.findByLabelText("Your first task"),
+    "Keep my onboarding draft",
+  );
+  await waitFor(() => {
+    return expect(saved.settled()).toBeTruthy();
+  });
+  cleanup();
+  first.dispose();
+
+  await setupPage({ context: next, path: "/onboarding?handoff=" + hash });
+  await screen.findByText(notice);
+  expect(screen.getAllByText(notice)).toHaveLength(1);
+  expect(location.pathname).toBe("/onboarding/ready");
+  await expect(screen.findByLabelText("Your first task")).resolves.toHaveValue(
+    "Keep my onboarding draft",
+  );
 });

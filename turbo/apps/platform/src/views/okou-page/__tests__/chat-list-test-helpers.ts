@@ -114,6 +114,7 @@ interface ChatListStreamOptions {
   readonly snapshot: readonly ChatThreadSnapshotProjection[];
   readonly events?: readonly ChatThreadEvent[];
   readonly remoteGate?: Promise<void>;
+  readonly onRemoteRead?: () => void;
 }
 
 export function installChatListStream(
@@ -124,6 +125,7 @@ export function installChatListStream(
 } {
   let currentEvents = [...(options.events ?? [])];
   context.mocks.api(chatThreadsContract.snapshot, async ({ respond }) => {
+    options.onRemoteRead?.();
     await options.remoteGate;
     return respond(
       200,
@@ -135,6 +137,7 @@ export function installChatListStream(
     );
   });
   context.mocks.api(chatThreadsContract.events, async ({ query, respond }) => {
+    options.onRemoteRead?.();
     await options.remoteGate;
     const sinceSeqId = query.sinceSeqId ?? 0;
     const events = currentEvents.filter((event) => {

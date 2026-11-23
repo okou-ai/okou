@@ -1,3 +1,4 @@
+import { createCanvas } from "@napi-rs/canvas";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -133,4 +134,85 @@ test("browser-display-regression-006 A resize supersedes the held calibration of
   await observation.release();
   await fitted(cdp);
   expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+});
+
+async function resizeWithPendingFrame() {
+  const { cdp, openPage } = workstation();
+  const sentry = context.mocks.sentry();
+  const backing = createCanvas(900, 600);
+  const paint = backing.getContext("2d");
+  const graphics = document.createElement("canvas").getContext("2d")!;
+  vi.spyOn(graphics, "drawImage").mockImplementation(() => {
+    paint.fillStyle = "#ac310f";
+    paint.fillRect(0, 0, backing.width, backing.height);
+  });
+  vi.spyOn(graphics, "clearRect").mockImplementation((x, y, w, h) => {
+    return paint.clearRect(x, y, w, h);
+  });
+  const sample = () => {
+    return Array.from(paint.getImageData(32, 32, 1, 1).data);
+  };
+  await openPage();
+  await expectStreamingAt(home);
+  await fitted(cdp);
+  const ack = cdp.holdNext("Page.screencastFrameAck");
+  cdp.frame("AAAA", cdp.pageSession("reading"));
+  await ack.received;
+  await ack.release();
+  const picture = screen.getByRole("img", { name: "Live browser view" });
+  await waitFor(() => {
+    return expect(sample()).toStrictEqual([172, 49, 15, 255]);
+  });
+  expect(picture).toHaveAttribute("width", "900");
+  const frame = cdp.holdTargetFrames("reading");
+  vi.spyOn(
+    HTMLCanvasElement.prototype,
+    "getBoundingClientRect",
+  ).mockReturnValue(new DOMRect(0, 0, 720, 480));
+  const start = cdp.requests.length;
+  window.dispatchEvent(new Event("resize"));
+  await frame.received;
+
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByRole("img", { name: "Live browser view" }),
+  ).toHaveAttribute("width", "900");
+  expect(sample()).toStrictEqual([172, 49, 15, 255]);
+  expect(picture).toBeVisible();
+  expect(screen.queryByRole("alert")).toBeNull();
+  const expectHealthy = () => {
+    expect(sentry.reports).toStrictEqual([]);
+    expect(
+      cdp.requests.slice(start).map(({ method }) => {
+        return method;
+      }),
+    ).not.toContain("Browser.setWindowBounds");
+  };
+  return { cdp, frame, expectHealthy };
+}
+test("browser-display-regression-015 the accepted image survives resize until a 720 by 480 frame enables input", async () => {
+  const { cdp, frame, expectHealthy } = await resizeWithPendingFrame();
+  frame.release();
+  await waitFor(() => {
+    return expect(cdp.viewport).toStrictEqual({ width: 720, height: 480 });
+  });
+  await expectStreamingAt(home);
+  const visible = screen.getByRole("img", { name: "Live browser view" });
+  await waitFor(() => {
+    return expect(visible).toHaveAttribute("width", "720");
+  });
+  expect(visible).toHaveAttribute("height", "480");
+  expectHealthy();
+});
+test("browser-display-regression-015 withholding the replacement leaves the earlier picture on screen", async () => {
+  const { frame, expectHealthy } = await resizeWithPendingFrame();
+  try {
+    expect(
+      screen.getByRole("img", { name: "Live browser view" }),
+    ).toHaveAttribute("height", "600");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expectHealthy();
+  } finally {
+    frame.release();
+  }
 });

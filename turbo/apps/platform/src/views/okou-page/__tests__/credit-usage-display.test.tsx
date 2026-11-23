@@ -1,8 +1,16 @@
-import type { ChatEventUsagePayload } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  mockChatGeometry,
+  messageAnchor,
+  requiredElement,
+} from "./chat-conversation-locator-test-helpers.ts";
+import {
+  chatThreadUsageContract,
+  type ChatEventUsagePayload,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { modelCatalogContract } from "@okouai/api-contracts/contracts/model-catalog";
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { setupPage, click } from "../../../__tests__/page-helper.ts";
+import { fill, setupPage, click } from "../../../__tests__/page-helper.ts";
 import { createMockModelCatalog } from "../../../mocks/handlers/api-model-catalog.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -183,4 +191,140 @@ test("credit-usage-display-011 an ambiguous route stays identifiable and retired
   await expect(amount(unknown, 2)).resolves.toBeVisible();
   await expect(amount("Claude Opus 4.8", 7)).resolves.toBeVisible();
   expect(details.queryByText("Claude Opus 5.5")).toBeNull();
+});
+
+test("credit-usage-display-010 the English receipt rolls historical provider aliases into their user-facing charges", async () => {
+  const models = usageLine(
+    "model",
+    ["auto", 1],
+    ["okou-1.0", 2],
+    ["@preset/okou-1-0", 3],
+    ["@preset/okou-1-0-dsf", 4],
+    ["@preset/closed-research", 5],
+    ["openai/gpt-6-luna", 6],
+    ["gpt-6-luna", 7],
+    ["anthropic/claude-sonnet-4.6", 8],
+    ["claude-sonnet-4-6", 9],
+    ["claude-sonnet-4.6", 10],
+    ["okou-1.0-pro", 11],
+    ["okou-1.0-max", 12],
+  );
+  await openAnswer(
+    "The historical receipt is attached.",
+    settled(99, [
+      models,
+      usageLine("social", ["news-index", 4]),
+      usageLine("commerce", ["catalog", 17]),
+    ]),
+    [usageHint()],
+  );
+  const { amount, details } = await inspectCredits(99);
+  for (const [label, charge] of [
+    ["Auto", 15],
+    ["GPT 6 Luna", 13],
+    ["Claude Sonnet 4.6", 27],
+    ["Data Search", 21],
+    ["Okou 1.0 Max", 12],
+    ["Okou 1.0 Pro", 11],
+  ] as const) {
+    await expect(amount(label, charge)).resolves.toBeInTheDocument();
+  }
+  expect(document.documentElement.lang).toBe("en-US");
+  expect(details.queryByText(/@preset\//)).toBeNull();
+});
+
+test("credit-usage-display-008 an unavailable settlement leaves the chat answer usable without billing its hint", async () => {
+  const reached = context.mocks.deferred<void>();
+  const answer = "The field team can read this answer.";
+  mockChatLifecycle(context, {
+    threadId: context.resourceId,
+    historyEvents: [
+      { createdAt, runId, role: "user", content: "What did the team find?" },
+      { createdAt, runId, role: "assistant", content: answer },
+      { createdAt, runId, runLifecycleEvent: "completed", content: null },
+      usageHint(),
+    ],
+  });
+  context.mocks.api(chatThreadUsageContract.read, ({ respond }) => {
+    reached.resolve();
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Settlement missing" },
+    });
+  });
+  await setupPage({ context, path: "/chats/" + context.resourceId });
+  await reached.promise;
+  await expect(screen.findByText(answer)).resolves.toBeVisible();
+  const draft = await screen.findByRole("textbox", { name: /message/i });
+  await fill(draft, "Can you elaborate?");
+  expect(draft).toHaveTextContent("Can you elaborate?");
+  expect(screen.queryByLabelText("Credit usage 999")).toBeNull();
+});
+
+test("credit-usage-display-001 scrolling to the first answer reveals its own settled receipt", async () => {
+  const history: MockChatEventInput[] = [];
+  const ledger: Record<string, ChatEventUsagePayload> = {};
+  for (let turn = 1; turn <= 7; turn++) {
+    const id = crypto.randomUUID();
+    const stamp = new Date(Date.parse(createdAt) + turn * 60_000).toISOString();
+    history.push(
+      {
+        runId: id,
+        createdAt: stamp,
+        role: "user",
+        content: "Survey question " + turn,
+      },
+      {
+        runId: id,
+        createdAt: stamp,
+        role: "assistant",
+        content: "Survey answer " + turn,
+      },
+      {
+        runId: id,
+        createdAt: stamp,
+        runLifecycleEvent: "completed",
+        content: null,
+      },
+    );
+    if (turn === 1 || turn === 7) {
+      history.push({ ...usageHint(), runId: id, createdAt: stamp });
+      ledger[id] = settled(60 + turn, [
+        usageLine("model", ["gpt-6-luna", 60 + turn]),
+      ]);
+    }
+  }
+  mockChatGeometry(() => {
+    return 600;
+  }, 100);
+  mockChatLifecycle(context, {
+    threadId: context.resourceId,
+    historyEvents: history,
+    runUsage: ledger,
+  });
+  await setupPage({ context, path: "/chats/" + context.resourceId });
+  const pane = requiredElement("[data-scroll-container]");
+  await within(pane).findByText("Survey answer 7");
+  await within(pane).findByLabelText("Credit usage 67");
+  expect(screen.queryByText("Survey answer 1")).toBeNull();
+  expect(screen.queryByLabelText("Credit usage 61")).toBeNull();
+  fireEvent.wheel(pane, { deltaY: -pane.scrollHeight });
+  pane.scrollTop = 0;
+  fireEvent.scroll(pane);
+  fireEvent(pane, new Event("scrollend"));
+  await within(pane).findByText("Survey answer 1");
+  fireEvent.wheel(pane, { deltaY: -pane.scrollHeight });
+  pane.scrollTop = 0;
+  fireEvent.scroll(pane);
+  await waitFor(() => {
+    const first = messageAnchor(
+      "Survey answer 1",
+      pane,
+    ).getBoundingClientRect();
+    expect(first.bottom).toBeGreaterThan(0);
+    expect(first.top).toBeLessThan(pane.clientHeight);
+    expect(screen.getAllByText("Survey answer 1")).toHaveLength(1);
+  });
+  const { details } = await inspectCredits(61);
+  expect(details.queryByText("999")).toBeNull();
+  expect(screen.getByLabelText("Credit usage 67")).toBeInTheDocument();
 });

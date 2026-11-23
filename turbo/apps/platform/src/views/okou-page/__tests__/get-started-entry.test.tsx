@@ -1,3 +1,5 @@
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import jsQR from "jsqr";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import {
@@ -552,4 +554,87 @@ test("get-started-entry-022 selecting Gmail starts its authorization on the loca
   expect(editor.textContent).toBe("Keep the release checklist");
   expect(screen.queryByRole("dialog", { name: "Gmail" })).toBeNull();
   auth.popup.close();
+});
+
+test("get-started-entry-001 copying the invitation keeps the reward terms and returns keyboard focus on dismissal", async () => {
+  const release = context.mocks.deferred<void>();
+  serve(rewards([]));
+  referral(() => {
+    return true;
+  }, release.promise);
+  await home();
+  const entry = await findFastControl("button", "Invite your friends");
+  entry.focus();
+  click(entry);
+  const dialog = await screen.findByRole("dialog", { name: /invite friends/i });
+  await expect(
+    within(dialog).findByText(/buys a usage pack/i),
+  ).resolves.toBeVisible();
+  expect(
+    within(dialog).getByRole("status", { name: /getting.*invitation link/i }),
+  ).toBeVisible();
+  expect(dialog).toHaveTextContent(/\$20/i);
+
+  expect(dialog).toHaveTextContent(/expire 1 month/i);
+  release.resolve();
+  const keyboard = userEvent.setup();
+  const copy = await findFastControl("button", "Copy invite link", dialog);
+  click(copy);
+  await waitFor(async () => {
+    return await expect(navigator.clipboard.readText()).resolves.toBe(
+      new URL("/sign-up?friend_referral=a7k2p9", location.origin).href,
+    );
+  });
+  await keyboard.keyboard("{Escape}");
+  expect(dialog).not.toBeInTheDocument();
+  expect(entry).toHaveFocus();
+});
+test("get-started-entry-006 the fully claimed connector reward explains completion without an action", async () => {
+  const data = rewards(["connector", "workflow"]);
+  Object.assign(record(data, "connector"), {
+    claimedCount: 10,
+    limit: 10,
+    canEarnMore: false,
+  });
+  serve(data);
+  await home();
+  await open();
+  const row = await quest("connector");
+  expect(row).toHaveTextContent(/10\s*\/\s*10/);
+  expect(within(row).getByText(/^Connect a connector$/i)).toBeVisible();
+  expect(row).not.toHaveAttribute("role", "menuitem");
+  expect(within(row).queryByText("Connect", { exact: true })).toBeNull();
+});
+
+test("get-started-entry-010 the member phone quest offers the earned credits, scannable SMS instructions and both copy controls", async () => {
+  const { number, code } = phone({ linked: false });
+  serve(rewards(["imessage", "workflow"]));
+  await home(false);
+  await open();
+  const dialog = await intro("imessage");
+  const content = within(dialog);
+  const qr = await content.findByTestId("agentphone-link-qr");
+  const image = await loadImage(
+    Buffer.from(new XMLSerializer().serializeToString(qr)),
+  );
+  const canvas = createCanvas(408, 408);
+  const paint = canvas.getContext("2d");
+  paint.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = paint.getImageData(0, 0, canvas.width, canvas.height);
+  const sms = jsQR(pixels.data, pixels.width, pixels.height);
+  expect(sms?.data).toBe("sms:" + number + "?body=" + code);
+  expect(qr).toBeVisible();
+  expect(dialog).toHaveTextContent(/1,000/);
+  expect(dialog).toHaveTextContent(/camera/i);
+  expect(dialog).toHaveTextContent(/text/i);
+
+  await expect(
+    findFastControl("button", /copy.*code/i, dialog),
+  ).resolves.toBeEnabled();
+  await expect(
+    findFastControl("button", /copy.*202.*555.*0163/i, dialog),
+  ).resolves.toBeEnabled();
+  await expect(
+    findFastControl("button", /close/i, dialog),
+  ).resolves.toBeEnabled();
 });

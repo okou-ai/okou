@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import {
   projectsContract,
   type Project,
@@ -181,4 +182,76 @@ test("project-order-006 filtering to Unread prevents Research from moving out of
     "aria-keyshortcuts",
     "Alt+Shift+ArrowUp",
   );
+});
+
+test("project-order-002 project and pin shortcuts keep their own ordering and keyboard focus", async () => {
+  const chat = await start("pin");
+  const pin = (name: string) => {
+    return waitFor(() => {
+      const link = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-sidebar-chat-thread-id]"),
+      ).find((el) => {
+        return el.textContent?.includes(name);
+      });
+      expect(link).toBeDefined();
+      return link;
+    });
+  };
+  const first = await pin("First pin");
+  const current = await pin("Current pin");
+  if (!first || !current) {
+    throw new Error("Pinned navigation target missing");
+  }
+  function before(a: Element, b: Element) {
+    return Boolean(
+      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  }
+  expect(before(first, current)).toBeTruthy();
+  const target = await project();
+  target.focus();
+  shortcut(target, "ArrowUp");
+  await check(reordered);
+  expect(target).toHaveFocus();
+  expect(location.pathname).toBe(chat);
+  expect(before(first, current)).toBeTruthy();
+  const trigger = await menu();
+  click(trigger);
+  const down = await within(await screen.findByRole("menu")).findByText(
+    "Move down",
+  );
+  const item = down.closest<HTMLElement>('[role="menuitem"]');
+  if (!item) {
+    throw new Error("Move down item missing");
+  }
+  item.focus();
+  shortcut(item, "ArrowDown");
+  await check(canon);
+  await waitFor(() => {
+    return expect(trigger).toHaveFocus();
+  });
+  await userEvent.keyboard("{Escape}");
+  const pinnedLink = await findFastControl("link", /current pin/i);
+  pinnedLink.focus();
+  expect(pinnedLink).toHaveFocus();
+  await userEvent.keyboard("{Alt>}{Shift>}{ArrowUp}{/Shift}{/Alt}");
+  await waitFor(() => {
+    return expect(
+      Array.from(
+        document.querySelectorAll("[data-sidebar-chat-thread-id]"),
+        (el) => {
+          return el.textContent;
+        },
+      )
+        .filter((txt) => {
+          return txt?.includes("pin");
+        })
+        .slice(0, 2),
+    ).toStrictEqual([
+      expect.stringContaining("Current pin"),
+      expect.stringContaining("First pin"),
+    ]);
+  });
+  await check(canon);
+  expect(location.pathname).toBe(chat);
 });

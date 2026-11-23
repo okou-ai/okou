@@ -1,4 +1,5 @@
 import {
+  customConnectorsContract,
   customConnectorByIdContract,
   type UpdateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -9,6 +10,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import {
   customConnector,
+  mcpCustomConnector,
+  mockSavedConnectorAccounts,
   getConnectorCard,
   mockCustomConnectorStory,
   customConnectorAccount,
@@ -134,4 +137,59 @@ test("connectors-custom-024 the unconnected API separates card activation from d
   expect(within(menu).getByText("Edit")).toBeInTheDocument();
   expect(within(menu).getByText("Delete")).toBeInTheDocument();
   expect(within(menu).queryByText("Connect")).not.toBeInTheDocument();
+});
+
+test("connectors-custom-017 connected filters retain a service whose nondefault OAuth accounts are healthy", async () => {
+  const configured = mcpCustomConnector();
+  const empty = mcpCustomConnector({
+    id: crypto.randomUUID(),
+    slug: "_empty",
+    displayName: "Empty MCP",
+  });
+  const primary = customConnectorAccount(configured.id, {
+    authMethod: "oauth",
+    displayName: "Original default",
+    connectionStatus: "reconnect-required",
+    reconnectReason: "authorization_expired_or_revoked",
+  });
+  mockCustomConnectorStory(context, []);
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: [configured, empty] });
+  });
+  const accounts = [
+    primary,
+    ...["Work", "Personal"].map((displayName) => {
+      return customConnectorAccount(configured.id, {
+        authMethod: "oauth",
+        displayName,
+        isDefault: false,
+      });
+    }),
+  ];
+  mockSavedConnectorAccounts(context, () => {
+    return accounts;
+  });
+  await setupPage({ context, path });
+  await screen.findByText("Empty MCP");
+  const unused = getConnectorCard("Empty MCP");
+  expect(unused).toHaveTextContent("No accounts");
+  await expect(
+    findFastControl("button", "Connect Empty MCP", unused),
+  ).resolves.toBeEnabled();
+  expect(getConnectorCard("Acme MCP")).toHaveTextContent("Connected");
+  click(await findFastControl("radio", /^Connected/));
+  await waitFor(() => {
+    return expect(screen.queryByText("Empty MCP")).toBeNull();
+  });
+  const service = getConnectorCard("Acme MCP");
+  click(await findFastControl("button", /manage.*accounts/i, service));
+  const dialog = within(await screen.findByRole("dialog"));
+  const row = await dialog.findByRole("group", { name: "Original default" });
+  expect(row).toHaveTextContent(/default/i);
+  await expect(
+    findFastControl("button", "Reconnect", row),
+  ).resolves.toBeEnabled();
+  for (const name of ["Work", "Personal"]) {
+    expect(dialog.getByText(name)).toBeInTheDocument();
+  }
 });

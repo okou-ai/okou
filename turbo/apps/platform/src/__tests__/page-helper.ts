@@ -434,7 +434,8 @@ function createPushStateMock(signal: AbortSignal, initialUrl: URL): void {
   const entries: HistoryEntry[] = [{ data: null, url: initialUrl }];
   let currentEntryIndex = 0;
   let currentUrl = initialUrl;
-  const replaceBrowserUrl = window.history.replaceState.bind(window.history);
+  // A replacement Router may inherit the previous test history spy on this instance.
+  const replaceBrowserUrl = History.prototype.replaceState.bind(window.history);
 
   const resolveUrl = (url?: string | URL | null) => {
     return url === undefined || url === null

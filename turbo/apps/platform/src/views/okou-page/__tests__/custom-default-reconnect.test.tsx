@@ -1,10 +1,11 @@
+import { DetachedBrowserContext } from "happy-dom";
 import {
   customConnectorOAuth2Contract,
   customConnectorValuesContract,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { screen, waitFor, within } from "@testing-library/react";
 
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   click,
   setupPage,
@@ -20,6 +21,7 @@ import {
   customConnector,
   customConnectorAccount,
   mockCustomConnectorStory,
+  mockOAuthCompletions,
   mockSavedConnectorAccounts,
   getConnectorCard,
 } from "./connector-page-test-helpers.ts";
@@ -168,4 +170,84 @@ test("custom-default-reconnect-009 a saved account without a default explains wh
   expect(popup.closed).toBeTruthy();
   expect(popup.location.href).toBe("about:blank");
   expect(changed.has(definition.id)).toBeFalsy();
+});
+
+test("custom-default-reconnect-006 closing the provider tab releases the first-account consent action", async () => {
+  const service = providerSetup();
+  mockCustomConnectorStory(context, [{ connector: service }]);
+  mockSavedConnectorAccounts(context, () => {
+    return [];
+  });
+  mockOAuthCompletions(context);
+  context.mocks.http.get(provider, () => {
+    return new Response("<title>Provider consent</title>", {
+      headers: { "Content-Type": "text/html" },
+    });
+  });
+  const intent = context.mocks.deferred<unknown>();
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ body, respond }) => {
+      intent.resolve(body.account);
+      return respond(200, {
+        result: "authorization",
+        authorizationUrl: provider,
+        oauthAttemptId: crypto.randomUUID(),
+      });
+    },
+  );
+  await setupPage({ context, path: oauthPath });
+  const prompt = await connect();
+  const proceed = await findFastControl("button", "Continue", prompt);
+  const pages = vi.spyOn(DetachedBrowserContext.prototype, "newPage");
+  const nativeOpen = window.open.bind(window);
+  vi.spyOn(window, "open").mockImplementation((url, target, features) => {
+    const child = nativeOpen(url, target, features);
+    // Happy DOM exposes opener as getter-only. Browsers allow removing it.
+    const page = pages.mock.results.at(-1)?.value;
+    if (child && page) {
+      Object.defineProperty(child, "opener", {
+        value: child.opener,
+        writable: true,
+        configurable: true,
+      });
+      // The WindowProxy stays open across document replacement until its page closes.
+      return new Proxy(child, {
+        get(documentWindow, property) {
+          if (property === "closed") {
+            return page.closed;
+          }
+          if (property === "close") {
+            return documentWindow.close.bind(documentWindow);
+          }
+          return Reflect.get(documentWindow, property, documentWindow);
+        },
+      });
+    }
+    return child;
+  });
+  click(proceed);
+  await waitFor(() => {
+    return expect(intent.settled()).toBeTruthy();
+  });
+  await expect(intent.promise).resolves.toMatchObject({ intent: "add" });
+  const tab = pages.mock.results.at(-1)?.value;
+  if (!tab) {
+    throw new Error("Authorization did not open a browser tab");
+  }
+  try {
+    await waitFor(() => {
+      return expect(tab.url).toBe(provider);
+    });
+    await waitFor(() => {
+      return expect(
+        within(prompt).getByText(/connecting/i, { selector: "button" }),
+      ).toBeDisabled();
+    });
+  } finally {
+    await tab.close();
+  }
+  await expect(
+    findFastControl("button", "Continue", prompt),
+  ).resolves.toBeEnabled();
 });

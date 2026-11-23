@@ -1,3 +1,8 @@
+import {
+  setupAddAccountPage,
+  openAccountMenu,
+} from "./sidebar-account-test-helpers.ts";
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { DetachedBrowserContext } from "happy-dom";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -45,4 +50,37 @@ test("sidebar-account-menu-006 Help offers the public documentation in a separat
     name: "Keyboard Shortcuts",
   });
   expect(within(reference).getByText("Show shortcuts")).toBeInTheDocument();
+});
+
+test("sidebar-account-menu-004 adding another account uses a dark-theme hosted sign-in with a return to home", async () => {
+  context.mocks.data.userPreferences({
+    theme: "dark",
+    colorTheme: "blue-horizon",
+  });
+  const sdk = context.mocks.clerk();
+  await setupAddAccountPage(context);
+  await openAccountMenu();
+  click(await screen.findByText("Add account"));
+  await waitFor(() => {
+    return expect(mockedClerk.openSignIn).toHaveBeenCalledWith();
+  });
+  const [options] = mockedClerk.openSignIn.mock.lastCall ?? [];
+  expect(options).toMatchObject({
+    fallbackRedirectUrl: "/",
+    forceRedirectUrl: "/",
+    appearance: {
+      theme: "simple",
+      options: {
+        logoImageUrl: expect.stringMatching(/okou-logo-wordmark-light.*svg$/),
+        logoLinkUrl: "/",
+      },
+      elements: {
+        formButtonPrimary: expect.stringContaining("bg-primary"),
+        formFieldInput: expect.stringContaining("bg-input"),
+      },
+    },
+  });
+  expect(sdk.uiRequests).toContain(
+    "https://app.example.test/assets/clerk-ui-test.js",
+  );
 });

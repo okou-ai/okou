@@ -8,7 +8,10 @@ import {
   artifactSummary,
   fileArtifactDetail,
 } from "./chat-navigation-artifact-test-helpers.ts";
-import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
+import {
+  mockOAuthCompletions,
+  mockSavedConnectorAccounts,
+} from "./connector-page-test-helpers.ts";
 import { HttpResponse } from "msw";
 import { strFromU8, unzipSync } from "fflate";
 import { findAction } from "./connector-integrations-test-helpers.ts";
@@ -517,4 +520,21 @@ test("markdown-table-export-021 alternating destinations preserves each table's 
   click(buttons[0]);
   await expect(screen.findByRole("menu")).resolves.toBeVisible();
   expect(buttons[1]).toBeEnabled();
+});
+
+test("markdown-table-export-015 a ready Google destination serves each export with its selected account without opening authorization", async () => {
+  const { account, destination, receipts } = spreadsheetBoundary();
+  mockSavedConnectorAccounts(context, () => {
+    return [];
+  });
+  const opened = context.mocks.browser.open();
+  await table("| Region | Units |\n|---|---|\n| Port | 86 |");
+  for (const mode of ["original", "google"] as const) {
+    const receipt = "https://workspace.example.test/" + account + "/" + mode;
+    destination.url = receipt;
+    await saveTo(mode);
+    await savedLink(mode, receipt);
+  }
+  expect(receipts).toStrictEqual(["original", "google"]);
+  expect(opened.calls).toStrictEqual([]);
 });
