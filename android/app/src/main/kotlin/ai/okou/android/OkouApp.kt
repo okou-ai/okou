@@ -120,6 +120,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -572,6 +573,13 @@ internal fun OkouApp(
 
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
+    // Restore the form only while the same owner can reconcile its pending write.
+    var renameTarget by
+        key(chats) {
+            rememberSaveable(stateSaver = WorkspaceRenameTarget.Saver) {
+                mutableStateOf<WorkspaceRenameTarget?>(null)
+            }
+        }
     if (chats != null) {
         WorkspaceChatFeedback(
             chats,
@@ -583,6 +591,8 @@ internal fun OkouApp(
             showRowActionFailure = showRowFeedback || showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
+            renameTarget = renameTarget,
+            dismissRename = { renameTarget = null },
         )
     }
 
@@ -1224,7 +1234,11 @@ internal fun OkouApp(
                 thread = thread,
                 onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
-                onRename = { id, title -> chats?.renameThread(id, title, fromConversation = true) },
+                onRename = { id -> renameTarget = WorkspaceRenameTarget.Chat(id, true) },
+                renameOpen =
+                    (renameTarget as? WorkspaceRenameTarget.Chat)?.let {
+                        it.fromConversation && it.id == thread?.id
+                    } == true,
                 openResources =
                     thread
                         ?.id
@@ -1596,8 +1610,12 @@ internal fun OkouApp(
                                     onMoveFocusFinished = { request ->
                                         if (moveFocus == request) moveFocus = null
                                     },
-                                    { id, title -> chats?.renameThread(id, title) },
-                                    { id, name -> chats?.renameProject(id, name) },
+                                    { id -> renameTarget = WorkspaceRenameTarget.Chat(id, false) },
+                                    { id -> renameTarget = WorkspaceRenameTarget.Project(id) },
+                                    (renameTarget as? WorkspaceRenameTarget.Chat)
+                                        ?.takeUnless { it.fromConversation }
+                                        ?.id,
+                                    (renameTarget as? WorkspaceRenameTarget.Project)?.id,
                                     { id -> confirmingProjectDelete = id },
                                     confirmingProjectDelete,
                                     { id -> chats?.retryProjectRename(id) },

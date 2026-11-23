@@ -43,7 +43,8 @@ internal fun ConversationToolbarActions(
     thread: ConfirmedChat?,
     onRowAction: (String, ChatRowAction) -> Unit,
     onMove: (String) -> Unit,
-    onRename: (String, String) -> Unit,
+    onRename: (String) -> Unit,
+    renameOpen: Boolean,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
     openResources: ((restoreFocus: Boolean) -> Unit)? = null,
     settingsFocus: FocusRequester? = null,
@@ -53,7 +54,6 @@ internal fun ConversationToolbarActions(
     if (actions.isEmpty() && openSettings == null && openResources == null && onFind == null) return
     key(thread?.id) {
         var menu by remember { mutableStateOf(false) }
-        var rename by remember { mutableStateOf(false) }
         var delete by remember { mutableStateOf(false) }
         val focus = settingsFocus ?: remember { FocusRequester() }
         var keyboardFocused by remember { mutableStateOf(false) }
@@ -127,7 +127,7 @@ internal fun ConversationToolbarActions(
                                 ) {
                                     menu = false
                                     when (action) {
-                                        ChatRowAction.Rename -> rename = true
+                                        ChatRowAction.Rename -> onRename(checkNotNull(thread).id)
                                         ChatRowAction.Delete -> delete = true
                                         ChatRowAction.MoveProject -> onMove(checkNotNull(thread).id)
                                         else -> onRowAction(checkNotNull(thread).id, action)
@@ -139,18 +139,6 @@ internal fun ConversationToolbarActions(
                 )
             }
         }
-        if (rename && thread != null)
-            RenameListItemDialog(
-                currentName = thread.title.orEmpty(),
-                titleRes = R.string.chat_rename,
-                labelRes = R.string.chat_title_field,
-                enabled = !busy && ChatRowAction.Rename in actions,
-                dismiss = { rename = false },
-                save = { title ->
-                    onRename(thread.id, title)
-                    rename = false
-                },
-            )
         if (delete && thread != null)
             DeleteChatDialog(
                 chatName = thread.title,
@@ -161,8 +149,8 @@ internal fun ConversationToolbarActions(
                     onRowAction(thread.id, ChatRowAction.Delete)
                 },
             )
-        LaunchedEffect(menu, rename, delete) {
-            if (!menu && !rename && !delete && restoreFocus) {
+        LaunchedEffect(menu, renameOpen, delete) {
+            if (!menu && !renameOpen && !delete && restoreFocus) {
                 restoreFocus = false
                 focus.requestFocus()
             }
