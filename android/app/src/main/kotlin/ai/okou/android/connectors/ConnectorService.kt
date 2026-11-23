@@ -2,6 +2,14 @@ package ai.okou.android.connectors
 
 import ai.okou.android.api.ApiClient
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.ChatConnectorAccess
+import ai.okou.android.api.generated.ChatConnectorAccessAccountsItem
+import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1
+import ai.okou.android.api.generated.ChatConnectorAccessQueryVariant1Kind
+import ai.okou.android.api.generated.ChatConnectorAccessTargetVariant1
+import ai.okou.android.api.generated.ChatConnectorOverrideRequest
+import ai.okou.android.api.generated.ChatConnectorOverrideRequestTargetVariant1
+import ai.okou.android.api.generated.ChatConnectorOverrideRequestTargetVariant1Kind
 import ai.okou.android.api.generated.ConnectorAccountConnectionStatus
 import ai.okou.android.api.generated.ConnectorAccountDefaultRequest
 import ai.okou.android.api.generated.ConnectorAccountDefaultRequestTargetVariant1
@@ -80,7 +88,9 @@ import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant1
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant1Intent
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2
 import ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccountVariant2Intent
+import ai.okou.android.api.generated.ConnectorOverviewItem
 import ai.okou.android.api.generated.ConnectorOverviewItemTargetVariant1
+import ai.okou.android.api.generated.chatConnectorAccess
 import ai.okou.android.api.generated.connectorAccount
 import ai.okou.android.api.generated.connectorAccountDefaults
 import ai.okou.android.api.generated.connectorAccountImpact
@@ -88,6 +98,9 @@ import ai.okou.android.api.generated.connectorAccounts
 import ai.okou.android.api.generated.connectorOauthCompletion
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
@@ -187,14 +200,7 @@ class ConnectorService(private val api: ApiClient) {
                 if (target == null || entry.accounts.isEmpty()) return@mapNotNull null
                 target.connectorSlug to
                     ConnectedService(
-                        ConnectorEntry(
-                            target.connectorSlug,
-                            entry.label,
-                            "",
-                            null,
-                            null,
-                            entry.icon?.let { brandIcon(it.url, it.invertInDarkMode, it.scale) },
-                        ),
+                        entry.directoryEntry(target.connectorSlug),
                         entry.accounts.map { account ->
                             ConnectorSavedAccount(
                                 account.connectionId,
@@ -212,6 +218,95 @@ class ConnectorService(private val api: ApiClient) {
                     )
             }
             .toMap()
+
+    internal suspend fun chatAccounts(threadId: String?): List<ChatConnectorGroup> {
+        val overview = api.read { connectorOverview(it, threadId) }
+        val builtIns = overview.filter {
+            it.target is ConnectorOverviewItemTargetVariant1 && it.accounts.isNotEmpty()
+        }
+        // The overview has the current allowance, while the account list reports scope mismatch.
+        return builtIns.chunked(4).flatMap { entries ->
+            coroutineScope {
+                entries
+                    .map { entry ->
+                        async {
+                            val slug =
+                                (entry.target as ConnectorOverviewItemTargetVariant1).connectorSlug
+                            val byId = entry.accounts.associateBy { it.connectionId }
+                            val accounts =
+                                accounts(slug, byId.mapValues { it.value.defaultEnabled })
+                            ChatConnectorGroup(
+                                entry.directoryEntry(slug),
+                                accounts.mapNotNull { account ->
+                                    byId[account.id]?.let {
+                                        ChatConnectorAccount(account, it.overrideEnabled)
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    .awaitAll()
+                    .filter { it.accounts.isNotEmpty() }
+            }
+        }
+    }
+
+    private suspend fun chatAccess(
+        threadId: String,
+        slug: String,
+    ): List<ChatConnectorAccessAccountsItem> =
+        api.read {
+                chatConnectorAccess(
+                    it,
+                    threadId,
+                    ChatConnectorAccessQueryVariant1(
+                        ChatConnectorAccessQueryVariant1Kind.BUILTIN,
+                        slug,
+                    ),
+                )
+            }
+            .accountsFor(slug)
+
+    internal suspend fun setChatOverride(
+        threadId: String,
+        choice: ChatConnectorOverride,
+        canReadBack: () -> Boolean,
+        onChecking: () -> Unit = {},
+    ): List<ChatConnectorAccessAccountsItem> =
+        try {
+            api.write {
+                    chatConnectorOverride(
+                        it,
+                        threadId,
+                        choice.connectionId,
+                        ChatConnectorOverrideRequest(
+                            ChatConnectorOverrideRequestTargetVariant1(
+                                ChatConnectorOverrideRequestTargetVariant1Kind.BUILTIN,
+                                choice.slug,
+                            ),
+                            choice.enabled,
+                        ),
+                    )
+                }
+                .accountsFor(choice.slug)
+                .also { if (!it.confirms(choice)) throw ApiFailure.IncompatibleResponse() }
+        } catch (error: ApiFailure) {
+            val missingReset =
+                choice.enabled == null && error is ApiFailure.Http && error.status == 404
+            if (!missingReset && (error.connectionFailed() || !error.hasUncertainResponse()))
+                throw error
+            if (!canReadBack()) throw error
+
+            if (!missingReset) onChecking()
+            chatAccess(threadId, choice.slug).also { accounts ->
+                // A reset of a removed account is complete when the account is absent from the
+                // chat.
+                val confirmed =
+                    if (missingReset) accounts.none { it.connectionId == choice.connectionId }
+                    else accounts.confirms(choice)
+                if (!confirmed) throw error
+            }
+        }
 
     internal suspend fun inspect(
         connected: Map<String, ConnectedService>,
@@ -301,6 +396,13 @@ class ConnectorService(private val api: ApiClient) {
                     )
                 }
                 .associate { it.connectionId to it.defaultEnabled }
+        return accounts(slug, defaults)
+    }
+
+    private suspend fun accounts(
+        slug: String,
+        defaults: Map<String, Boolean>,
+    ): List<ConnectorSavedAccount> {
         return buildList {
             var cursor: String? = null
             val visited = mutableSetOf<String>()
@@ -664,6 +766,28 @@ class ConnectorService(private val api: ApiClient) {
             }
             .connectionId
 }
+
+private fun ChatConnectorAccess.accountsFor(slug: String): List<ChatConnectorAccessAccountsItem> {
+    if (
+        (target as? ChatConnectorAccessTargetVariant1)?.connectorSlug != slug ||
+            accounts.distinctBy { it.connectionId }.size != accounts.size
+    )
+        throw ApiFailure.IncompatibleResponse()
+    return accounts
+}
+
+private fun List<ChatConnectorAccessAccountsItem>.confirms(choice: ChatConnectorOverride) =
+    firstOrNull { it.connectionId == choice.connectionId }?.overrideEnabled == choice.enabled
+
+private fun ConnectorOverviewItem.directoryEntry(slug: String) =
+    ConnectorEntry(
+        slug,
+        label,
+        "",
+        null,
+        null,
+        icon?.let { brandIcon(it.url, it.invertInDarkMode, it.scale) },
+    )
 
 private fun ConnectorDiscoveryConnectorsItem.entry() =
     ConnectorEntry(
