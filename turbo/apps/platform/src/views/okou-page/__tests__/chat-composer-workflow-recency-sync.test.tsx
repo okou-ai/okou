@@ -207,15 +207,14 @@ async function setSyncInLab(enabled: boolean) {
     switches = { ...switches, ...body.switches };
     return respond(200, { switches, effectiveSwitches: switches });
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(button("Test User"));
+  click(button("Test User"));
   const lab = queryAllByRoleFast("menuitem").find((item) => {
     return item.textContent?.trim() === "Lab";
   });
   if (!lab) {
     throw new Error("Lab menu item not found");
   }
-  await user.click(lab);
+  click(lab);
   await screen.findByRole("heading", { name: "Lab" });
   const row = screen.getByText("Workflow recency sync").closest("li");
   if (!(row instanceof HTMLElement)) {
@@ -223,7 +222,7 @@ async function setSyncInLab(enabled: boolean) {
   }
   const control = within(row).getByRole("switch");
   expect(control).toHaveAttribute("aria-checked", String(!enabled));
-  await user.click(control);
+  click(control);
   await waitFor(() => {
     expect(control).toHaveAttribute("aria-checked", String(enabled));
   });
@@ -251,9 +250,24 @@ test("Disabling sync after initialization keeps the same history and local-only 
   editor = await setSyncInLab(true);
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
+});
+
+test("Enabling sync does not replay browser-only uses to the server", async () => {
+  const id = installWorkflows();
+  mockCache({
+    "okou_recent-workflows:org_default:test-user-123": [id("echo")],
+  });
+  mockRemote([id("echo")]);
+  let editor = await openPage(firstPage, false, true);
+  await sendWorkflow(editor, "zulu");
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
+
+  editor = await setSyncInLab(true);
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu", "echo"));
   disposeFirstPage();
 
-  // Browser-only uses are not replayed when synchronization is enabled again.
   editor = await openPage(nextPage);
   await openMenu(editor);
   expect(workflowNames()).toStrictEqual(ordered("echo"));
