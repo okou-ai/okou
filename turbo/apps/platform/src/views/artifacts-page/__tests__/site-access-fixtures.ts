@@ -23,7 +23,6 @@ export async function openSharing(
   context: ReturnType<typeof testContext>,
   options: {
     audience?: HostedSiteVisibility;
-    sidebar?: boolean;
     free?: boolean;
     denyBanner?: boolean;
     denyVisibility?: boolean;

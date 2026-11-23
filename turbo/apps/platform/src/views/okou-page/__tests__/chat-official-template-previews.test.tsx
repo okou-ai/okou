@@ -87,7 +87,9 @@ test("chat-official-template-previews-001 the saved launch deck shows its origin
     );
     expect(image).toBeVisible();
     const link = image?.closest("a");
-    if (!link) throw new Error("The launch deck cover has no preview link");
+    if (!link) {
+      throw new Error("The launch deck cover has no preview link");
+    }
     return link;
   });
   expect(document.querySelector("iframe")).toBeNull();

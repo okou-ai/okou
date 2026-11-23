@@ -11,7 +11,7 @@ const confirmed = {
   name: "artifact_action_clicked",
   properties: {
     action: "banner_share",
-    surface: "dialog",
+    surface: "sidebar",
     target: "hosted_site",
     show_banner: true,
   },

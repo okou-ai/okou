@@ -594,11 +594,19 @@ test.each([
     cdp.duplicate(first.targetId);
     await readmission.received;
     const recheck = cdp.holdNext("Page.getFrameTree", first.targetId);
+    const changedUrl = new URL("#section", first.url).href;
+    const originalTab = cdp.targets.find((tab) => {
+      return tab.targetId === first.targetId;
+    });
+    if (!originalTab) {
+      throw new Error("The original browser tab is missing");
+    }
+    originalTab.url = changedUrl;
     cdp.event(
       "Page.navigatedWithinDocument",
       {
         frameId: "example-frame",
-        url: first.url + "/#section",
+        url: changedUrl,
         navigationType: "fragment",
       },
       cdp.pageSession(first.targetId),

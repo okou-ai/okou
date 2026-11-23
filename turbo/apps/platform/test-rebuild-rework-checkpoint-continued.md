@@ -3092,3 +3092,13 @@ The registered-tab credential failure starts after the reader has opened the unr
 The earlier search decision at `090b0c51ba` remains in force. The retired clear/Escape ID stays in the inventory. The five-value search and attachment playback scenarios have dedicated final-SHA coverage. The applied main revisions include the For you cover preference, chat startup reads, Markdown export billing and Runner ingress latency.
 
 [Fixed intake](https://app.okou.ai/artifacts/70kp54n369.md) · [46 original IDs, observations and handoff entries](https://app.okou.ai/artifacts/duevxtflxm.tsv) · [30 file outcomes](https://app.okou.ai/artifacts/bx8xrf7749.tsv) · [Shared queue](test-rebuild-first-pass.tsv)
+
+## Batch 85 concentrated revisit
+
+The fixed selection contains 41 distinct frozen IDs across 30 owners. 9 have their first complete executable evidence, 22 retain partial evidence, 1 still lack the required observation and 9 have a sourced upstream disposition. All 485 files retain their historical first pass. Closing 8 whole dossiers moves the shared revisit queue from 153 to 145. The remaining selected owners keep their complete BDD and the missing Then.
+
+The opening commit was `f3b41d461bd544deaf34016cc4baa1725d7a3848`. The branch includes `main@717a564f4d`. The search test sends five successive values before yielding and observes the final request and its rendered result. The separate retired search ID stays in the inventory. The cancellable Vitest delay and production interval are preserved. The attachment suite verifies media ordering, pause, resume and continuation in one player. The rollout of the default artifact sidebar, batch permissions and Okou rail in #50074 required updating the existing entry points. Retired parameter variants and their original GWT are recorded separately.
+
+Acme OAuth confirms the named custom account in its actual provider window. The old agent grant was removed in #48841 and #49268. Its former recipient has no current equivalent on the chat continuation path. A browser-backed Discord guide probe records the modifier-opened child and the guide in its original tab. The maintained Vitest row verifies the normal navigation. Exact request counts that the testing guidelines preclude remain open.
+
+[Fixed selection](https://app.okou.ai/artifacts/28ndmunhsz.md) · [41 frozen IDs, evidence and next entries](https://app.okou.ai/artifacts/384ovrvdoe.tsv) · [30 file dispositions](https://app.okou.ai/artifacts/ry7udpviak.tsv) · [Shared queue](./test-rebuild-first-pass.tsv) · [Upstream changes outside the fixed selection](./test-rebuild-batch-85-main-sync.tsv)

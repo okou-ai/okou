@@ -13,37 +13,29 @@ async function preview(url: string) {
     return expect(document.querySelector("iframe")?.src).toBe(url);
   });
 }
-const layouts = [
-  { id: "hosted-site-sharing-025", layout: "dialog", sidebar: false },
-  { id: "hosted-site-sharing-026", layout: "sidebar", sidebar: true },
-] as const;
-test.each(layouts)(
-  "$id The $layout preview follows audience changes and copies the permanent site address",
-  async ({ sidebar }) => {
-    const { button, menu, clipboard } = await openSharing(context, {
-      audience: "private",
-      sidebar,
+test("hosted-site-sharing-026 The sidebar preview follows audience changes and copies the permanent site address", async () => {
+  const { button, menu, clipboard } = await openSharing(context, {
+    audience: "private",
+  });
+  await preview(temporary);
+  for (const [name, url] of [
+    [orgChoice, temporary],
+    [publicChoice, stable],
+    [privateChoice, temporary],
+  ] as const) {
+    const radio = await menu.findByRole("radio", { name });
+    click(radio);
+    await waitFor(() => {
+      return expect(radio).toBeChecked();
     });
-    await preview(temporary);
-    for (const [name, url] of [
-      [orgChoice, temporary],
-      [publicChoice, stable],
-      [privateChoice, temporary],
-    ] as const) {
-      const radio = await menu.findByRole("radio", { name });
-      click(radio);
-      await waitFor(() => {
-        return expect(radio).toBeChecked();
-      });
-      await preview(url);
-    }
-    const copy = await button("Copy link");
-    expect(copy).toBeEnabled();
-    click(copy);
-    await button("Copied");
-    expect(clipboard.writes).toStrictEqual([stable]);
-  },
-);
+    await preview(url);
+  }
+  const copy = await button("Copy link");
+  expect(copy).toBeEnabled();
+  click(copy);
+  await button("Copied");
+  expect(clipboard.writes).toStrictEqual([stable]);
+});
 test("hosted-site-sharing-027 Share and Copy remain usable throughout a held preview refresh", async () => {
   const refreshing = context.mocks.deferred<void>(),
     release = context.mocks.deferred<void>();

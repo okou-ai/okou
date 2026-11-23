@@ -91,14 +91,14 @@ async function openSite(
     featureSwitches: { [FeatureSwitchKey.HostedSiteShareRows]: true },
   });
   click(await findArtifactAction("Planning board"));
-  click(await findFastControl("button", "Share"));
+  click(await findFastControl("button", "Share artifact"));
   return clipboard;
 }
 const shareDialog = () => {
-  return screen.getByRole("dialog", { name: "Share" });
+  return screen.getByRole("dialog", { name: "Share artifact" });
 };
 const menu = () => {
-  return within(screen.getByRole("dialog", { name: "Share" }));
+  return within(screen.getByRole("dialog", { name: "Share artifact" }));
 };
 const button = (name: string) => {
   return getButtonByName(name, shareDialog());
@@ -211,8 +211,8 @@ test("hosted-site-sharing-015 The dialog allows copying while banner preferences
   const gate = context.mocks.deferred<void>();
   const clip = await openSite({ bannerGate: gate.promise });
   await currentAddressRow();
-  expect(getButtonByName("Close")).toBeVisible();
-  expect(getButtonByName("Share")).toBeVisible();
+  expect(getButtonByName("Close artifact")).toBeVisible();
+  expect(getButtonByName("Share artifact")).toBeVisible();
   expect(menu().queryByRole("status", { name: /loading/i })).toBeNull();
   await verifyCopy(clip.writes, link("planning-board"));
   gate.resolve();
