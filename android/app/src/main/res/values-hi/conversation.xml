@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">कतार (%1$d)</string>
+    <string name="conversation_queue_empty">कतार में कोई आइटम नहीं</string>
+    <string name="conversation_queue_message">संदेश</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">संदेश · %d अटैचमेंट</item>
+        <item quantity="other">संदेश · %d अटैचमेंट</item>
+    </plurals>
     <string name="conversation_run_queued">शुरू होने की प्रतीक्षा में</string>
     <string name="conversation_welcome">आज आप किस काम पर आगे बढ़ना चाहते हैं?</string>
     <string name="conversation_welcome_detail">Okou को बताएँ कि आप क्या करना चाहते हैं।</string>

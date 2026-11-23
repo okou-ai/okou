@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Warteschlange (%1$d)</string>
+    <string name="conversation_queue_empty">Keine Einträge in der Warteschlange</string>
+    <string name="conversation_queue_message">Nachricht</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="one">Nachricht · %d Anhang</item>
+        <item quantity="other">Nachricht · %d Anhänge</item>
+    </plurals>
     <string name="conversation_run_queued">Wartet auf den Start</string>
     <string name="conversation_welcome">Was möchtest du heute erledigen?</string>
     <string name="conversation_welcome_detail">Sag Okou, was du tun möchtest.</string>

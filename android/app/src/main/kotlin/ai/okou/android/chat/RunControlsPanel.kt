@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,16 +50,8 @@ internal class ConversationRunControls(
     displayedRunId: String?,
     val pending: List<RunControlIntent>,
     val offline: Boolean,
+    val presentation: ConversationContent,
 ) {
-    val hiddenQueueInputs =
-        state.settledQueueInputs[threadId].orEmpty() +
-            pending
-                .filter { intent ->
-                    intent.kind == RunControlKind.Revoke &&
-                        intent.id in state.optimistic &&
-                        phase(intent) != RunControlPhase.Retryable
-                }
-                .map { it.targetId }
     val currentRunId = displayedRunId.takeUnless { it in state.settledRuns[threadId].orEmpty() }
     private val stopIntent = pending.lastOrNull {
         it.kind == RunControlKind.Interrupt && it.targetId == currentRunId
@@ -79,7 +72,7 @@ internal class ConversationRunControls(
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
         if (
             !available ||
-                eventId in hiddenQueueInputs ||
+                eventId in state.settledQueueInputs[threadId].orEmpty() ||
                 !confirmed.canWithdrawInput(threadId, eventId, preview)
         )
             return null
@@ -104,11 +97,37 @@ internal fun conversationRunControls(
     history: ConversationHistoryModel,
     threadId: String,
     offline: Boolean,
+    composer: ChatComposerModel?,
 ): ConversationRunControls {
     val state by model.uiState.collectAsStateWithLifecycle()
     val historyState by history.uiState.collectAsStateWithLifecycle()
     val output by history.output.state.collectAsStateWithLifecycle()
+    val input = composer?.uiState?.collectAsStateWithLifecycle()
+    val previews by
+        remember(input, threadId) {
+            derivedStateOf { input?.value?.messagesFor(threadId).orEmpty() }
+        }
     val confirmed = historyState.takeIf { it.thread?.id == threadId }
+    val pending = state.journal?.pending.orEmpty().filter { it.threadId == threadId }
+    val hiddenQueueInputs =
+        state.settledQueueInputs[threadId].orEmpty() +
+            pending
+                .filter {
+                    it.kind == RunControlKind.Revoke &&
+                        it.id in state.optimistic &&
+                        state.phases[it.id] != RunControlPhase.Retryable
+                }
+                .map { it.targetId }
+    val presentation =
+        remember(confirmed?.transcript, output, threadId, previews, hiddenQueueInputs) {
+            conversationContent(
+                confirmed?.transcript,
+                output,
+                threadId,
+                previews,
+                hiddenQueueInputs,
+            )
+        }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, lifecycle, threadId) {
         val observer = LifecycleEventObserver { _, event ->
@@ -124,8 +143,9 @@ internal fun conversationRunControls(
         state,
         confirmed,
         confirmed?.controlRunIds(output)?.lastOrNull(),
-        state.journal?.pending.orEmpty().filter { it.threadId == threadId },
+        pending,
         offline,
+        presentation,
     )
 }
 

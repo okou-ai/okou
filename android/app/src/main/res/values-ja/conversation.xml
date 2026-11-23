@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">キュー（%1$d）</string>
+    <string name="conversation_queue_empty">キューに項目はありません</string>
+    <string name="conversation_queue_message">メッセージ</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">メッセージ · 添付ファイル %d 件</item>
+    </plurals>
     <string name="conversation_run_queued">開始待ち</string>
     <string name="conversation_welcome">今日は何を進めますか？</string>
     <string name="conversation_welcome_detail">やりたいことを Okou に伝えましょう。</string>

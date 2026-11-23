@@ -1,14 +1,29 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.SettingsModal
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,15 +32,24 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 internal data class ConversationContent(
     val messages: List<ConversationMessage>,
@@ -98,10 +122,98 @@ internal fun conversationContent(
 }
 
 @Composable
-internal fun ConversationQueue(
+internal fun ConversationQueueButton(
+    count: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = stringResource(R.string.conversation_queue_count, count)
+    val badge = if (count > 99) "99+" else count.toString()
+    IconButton(
+        onClick,
+        modifier
+            .size(48.dp)
+            .semantics { contentDescription = label }
+            .testTag("open_conversation_queue"),
+    ) {
+        BadgedBox(
+            badge = {
+                Badge(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    Text(badge, Modifier.semantics { hideFromAccessibility() })
+                }
+            },
+        ) {
+            Icon(painterResource(R.drawable.ic_schedule), null, Modifier.size(24.dp))
+        }
+    }
+}
+
+@Composable
+internal fun ConversationQueueModal(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
-    timelineFocus: FocusRequester,
+    snackbar: SnackbarHostState,
+    onDismiss: () -> Unit,
+) {
+    val height = currentWindowSizeDp().height
+    val fullScreen = height < 480
+    val dismissFocus = remember { FocusRequester() }
+    SettingsModal(onDismiss, fullScreen = fullScreen) { centered ->
+        Box(
+            if (fullScreen) Modifier.fillMaxWidth().fillMaxHeight()
+            else Modifier.fillMaxWidth().heightIn(max = height.dp * 0.85f),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onDismiss, Modifier.size(48.dp).focusRequester(dismissFocus)) {
+                        Icon(
+                            painterResource(R.drawable.ic_arrow_back),
+                            stringResource(R.string.back),
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.conversation_queue_count, entries.size),
+                        Modifier.weight(1f).semantics { heading() },
+                        style =
+                            if (fullScreen)
+                                MaterialTheme.typography.titleMedium.copy(
+                                    fontSize = 16.sp,
+                                    lineHeight = 24.sp,
+                                )
+                            else
+                                MaterialTheme.typography.titleLarge.copy(
+                                    fontSize = 22.sp,
+                                    lineHeight = 28.sp,
+                                ),
+                    )
+                }
+                if (entries.isEmpty()) {
+                    Text(
+                        stringResource(R.string.conversation_queue_empty),
+                        Modifier.padding(horizontal = 12.dp, vertical = 20.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                ConversationQueue(entries, controls, dismissFocus)
+            }
+            Box(Modifier.align(Alignment.BottomCenter)) {
+                WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationQueue(
+    entries: List<ConversationMessage>,
+    controls: ConversationRunControls?,
+    dismissFocus: FocusRequester,
 ) {
     var focused by remember { mutableStateOf<QueueFocus?>(null) }
     val latestEntries by rememberUpdatedState(entries)
@@ -115,23 +227,14 @@ internal fun ConversationQueue(
         }
         focused = null
         val nextId = entries.getOrNull(previous.index)?.message?.id
-        if (requesters[nextId]?.requestFocus() != true) timelineFocus.requestFocus()
+        if (requesters[nextId]?.requestFocus() != true) dismissFocus.requestFocus()
     }
     if (entries.isEmpty()) return
-    val window = currentWindowSizeDp()
     val label = stringResource(R.string.conversation_queue)
     LazyColumn(
-        Modifier.fillMaxWidth()
-            .padding(
-                start = composerHorizontalInset(window),
-                end = composerHorizontalInset(window),
-                // The composer's 4 dp top inset completes the 8 dp gap.
-                bottom = 4.dp,
-            )
-            .heightIn(max = minOf(200.dp, window.height.dp * 0.22f))
-            .testTag("conversation_queue")
-            .semantics { contentDescription = label },
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().testTag("conversation_queue").semantics {
+            contentDescription = label
+        },
     ) {
         itemsIndexed(entries, key = { _, entry -> entry.message.id }) { index, entry ->
             val id = entry.message.id
@@ -140,7 +243,8 @@ internal fun ConversationQueue(
                 requesters[id] = focus
                 onDispose { requesters.remove(id, focus) }
             }
-            QueuedMessageCard(
+            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            QueueRow(
                 entry,
                 controls,
                 modifier =
@@ -153,6 +257,103 @@ internal fun ConversationQueue(
                         .focusable(),
                 beforeAction = { if (focused?.id == id) focus.requestFocus() },
             )
+        }
+    }
+}
+
+@Composable
+private fun QueueRow(
+    entry: ConversationMessage,
+    controls: ConversationRunControls?,
+    modifier: Modifier,
+    beforeAction: () -> Unit,
+) {
+    val message = entry.message
+    val workflow = message.queuedWorkflow
+    val revoke = controls?.revoke(message.id, entry.preview)
+    val summary =
+        remember(message) {
+            workflow?.name
+                ?: message.blocks
+                    .mapNotNull {
+                        when (it.kind) {
+                            HistoryBlockKind.Text -> it.text
+                            HistoryBlockKind.Reference -> it.title
+                            else -> null
+                        }
+                    }
+                    .joinToString("\n")
+        }
+    val attachments =
+        remember(message.blocks) {
+            message.blocks.count {
+                it.kind == HistoryBlockKind.Reference &&
+                    Json.parseToJsonElement(it.text).jsonObject.text("type") in
+                        setOf("attachment", "file", "image")
+            }
+        }
+    val metadata =
+        when {
+            workflow != null -> stringResource(R.string.conversation_queue_automation)
+            attachments > 0 ->
+                pluralStringResource(
+                    R.plurals.conversation_queue_attachments,
+                    attachments,
+                    attachments,
+                )
+            else -> stringResource(R.string.conversation_queue_message)
+        }
+    val action =
+        stringResource(
+            if (workflow == null) R.string.conversation_revoke
+            else R.string.conversation_skip_automation,
+        )
+    Row(
+        modifier
+            .fillMaxWidth()
+            .heightIn(min = 72.dp)
+            .testTag("message_${message.id}")
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(
+                if (workflow == null) R.drawable.ic_chat_bubble else R.drawable.ic_schedule,
+            ),
+            null,
+            Modifier.size(24.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                summary.ifBlank { metadata },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style =
+                    MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
+            )
+            if (summary.isNotBlank()) {
+                Text(
+                    metadata,
+                    style =
+                        MaterialTheme.typography.bodyMedium.copy(
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                        ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        IconButton(
+            onClick = {
+                beforeAction()
+                revoke?.invoke()
+            },
+            enabled = revoke != null,
+            modifier = Modifier.size(48.dp).semantics { contentDescription = action },
+        ) {
+            Icon(painterResource(R.drawable.ic_close), null, Modifier.size(24.dp))
         }
     }
 }

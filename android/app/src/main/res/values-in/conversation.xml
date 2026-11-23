@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Antrean (%1$d)</string>
+    <string name="conversation_queue_empty">Tidak ada item dalam antrean</string>
+    <string name="conversation_queue_message">Pesan</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">Pesan · %d lampiran</item>
+    </plurals>
     <string name="conversation_run_queued">Menunggu untuk dimulai</string>
     <string name="conversation_welcome">Apa yang ingin Anda kerjakan?</string>
     <string name="conversation_welcome_detail">Beri tahu Okou apa yang ingin Anda lakukan.</string>
