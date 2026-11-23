@@ -92,7 +92,7 @@ describe("/api/feature-switches", () => {
     expect(optedIn.body.effectiveSwitches).toMatchObject({ [key]: true });
   });
 
-  it("defaults three-point timing on only for its owner and retains personal opt-out and opt-in", async () => {
+  it("keeps three-point timing available to its owner across workspaces with personal opt-out and opt-in", async () => {
     const api = client();
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
@@ -137,12 +137,42 @@ describe("/api/feature-switches", () => {
     expect(enabled.body.effectiveSwitches).toMatchObject({ [key]: true });
   });
 
-  it("cannot grant three-point timing to an unrelated same-staff-org admin through a stored opt-in", async () => {
+  it("enables three-point timing for staff members with personal opt-out overrides", async () => {
+    const api = client();
+    const clerk = createRouteMocks(context).clerk;
+    const headers = { authorization: "Bearer clerk-session" };
+    const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const userId = `user_${randomUUID()}`;
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+
+    clerk.session(userId, orgId, "org:member");
+    const initial = await accept(api.get({ headers }), [200]);
+    expect(initial.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    const optedOut = await accept(
+      api.update({ headers, body: { switches: { [key]: false } } }),
+      [200],
+    );
+    expect(optedOut.body.effectiveSwitches).toMatchObject({ [key]: false });
+    const retained = await accept(api.get({ headers }), [200]);
+    expect(retained.body.effectiveSwitches).toMatchObject({ [key]: false });
+
+    clerk.session(`user_${randomUUID()}`, orgId, "org:member");
+    const peer = await accept(api.get({ headers }), [200]);
+    expect(peer.body.effectiveSwitches).toMatchObject({ [key]: true });
+
+    clerk.session(userId, orgId, "org:member");
+    await accept(api.delete({ headers }), [200]);
+    const reset = await accept(api.get({ headers }), [200]);
+    expect(reset.body.effectiveSwitches).toMatchObject({ [key]: true });
+  });
+
+  it("cannot grant three-point timing to an external admin through a stored opt-in", async () => {
     const api = client();
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const ownerId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
-    const orgId = "org_3ANttyrbWYJk6JKRSTRLEsbsDLe";
+    const orgId = `org_${randomUUID()}`;
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
 
     clerk.session(ownerId, orgId, "org:member");

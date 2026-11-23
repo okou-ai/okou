@@ -66,23 +66,32 @@ async function fixture(
 }
 
 describe("current Run phase timing", () => {
-  it("gives the allowlisted owner three-point guidance and accepts legal raw observations", async () => {
-    const f = await fixture();
-    expect(f.execution.appendSystemPrompt).toContain(
-      "the only AI phase marks are research-start and generation-start",
-    );
-    expect(f.execution.appendSystemPrompt).toContain(
-      "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
-    );
-    for (const mark of [
-      { phase: "generation-start", kind: "report", skipResearch: false },
-      { phase: "research-start" },
-      { phase: "generation-start", kind: "image", skipResearch: true },
-      { phase: "research-start" },
-    ] satisfies readonly RunPhaseMark[]) {
-      await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
-    }
-  });
+  it.each([
+    ["allowlisted owner", { userId: timingOwnerId }],
+    [
+      "staff workspace member",
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe", orgRole: "org:member" },
+    ],
+  ] as const)(
+    "gives the %s three-point guidance and accepts legal raw observations",
+    async (_audience, identity) => {
+      const f = await fixture({ actor: createBddApi(context).user(identity) });
+      expect(f.execution.appendSystemPrompt).toContain(
+        "the only AI phase marks are research-start and generation-start",
+      );
+      expect(f.execution.appendSystemPrompt).toContain(
+        "The authenticated successful Agent completion callback automatically supplies the third mark, `completion-callback`",
+      );
+      for (const mark of [
+        { phase: "generation-start", kind: "report", skipResearch: false },
+        { phase: "research-start" },
+        { phase: "generation-start", kind: "image", skipResearch: true },
+        { phase: "research-start" },
+      ] satisfies readonly RunPhaseMark[]) {
+        await expect(f.mark(mark)).resolves.toStrictEqual(receipt);
+      }
+    },
+  );
 
   it.each([
     { scenario: "default", threePointEnabled: undefined },
