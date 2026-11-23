@@ -163,6 +163,7 @@ class ChatListModelTest {
         connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
         authorized: () -> Boolean = { true },
         chatCache: ChatCacheStore? = null,
+        wallMillis: () -> Long = System::currentTimeMillis,
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -182,6 +183,7 @@ class ChatListModelTest {
                                 {},
                                 dispatcher,
                                 realtime,
+                                wallMillis = wallMillis,
                                 monotonicMillis = { testScheduler.currentTime },
                                 connectivity = connectivity,
                             )
@@ -2105,6 +2107,74 @@ class ChatListModelTest {
             runCurrent()
             assertEquals(2, subsequentAttempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+        }
+    }
+
+    @Test
+    fun aStaleConfirmedEmptyListKeepsProgressAfterTheFirstFailure() = runTest {
+        var now = 1_000L
+        val firstAttempt = CompletableDeferred<ChatEvents>()
+        val recovery = CompletableDeferred<ChatEvents>()
+        val service = Service().apply { listRead = { page(emptyList()) } }
+        withCatchUpModel(service, wallMillis = { now }) { model ->
+            model.refresh()
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertEquals(now, confirmed.confirmedAt)
+            assertTrue(confirmed.threads.isEmpty())
+            now += 600_000L
+
+            service.listRead = { firstAttempt.await() }
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+
+            now++
+            service.listRead = { recovery.await() }
+            firstAttempt.completeExceptionally(ApiFailure.Http(503, null, null, null))
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            assertTrue(model.uiState.value.threads.isEmpty())
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+
+            recovery.complete(page(emptyList()))
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(now, model.uiState.value.confirmedAt)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+        }
+    }
+
+    @Test
+    fun aColdListKeepsRetryingWithoutShowingRefreshProgress() = runTest {
+        var attempts = 0
+        val service =
+            Service().apply {
+                listRead = {
+                    if (++attempts <= 3) throw ApiFailure.Http(503, null, null, null)
+                    page()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+            assertNull(model.uiState.value.confirmedAt)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(4, attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.threads.isNotEmpty())
         }
     }
 

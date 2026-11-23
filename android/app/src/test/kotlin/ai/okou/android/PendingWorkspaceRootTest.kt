@@ -425,11 +425,19 @@ class PendingWorkspaceRootTest {
                 app.listResponse.complete(Unit)
                 app.authorizationResponse.complete(Unit)
             }
-            compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
+            compose.waitUntil(10_000) {
+                val state = listState()
+                state?.source == ChatListSource.Network &&
+                    state.projectsPhase == ChatReadPhase.Ready
+            }
+            val empty = compose.activity.getString(R.string.chat_empty)
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                skeleton.assertDoesNotExist()
+                compose.onAllNodesWithText(empty).fetchSemanticsNodes().isNotEmpty()
+            }
             compose.mainClock.advanceTimeBy(160)
-            compose
-                .onNodeWithText(compose.activity.getString(R.string.chat_empty))
-                .assertIsDisplayed()
+            compose.onNodeWithText(empty).assertIsDisplayed()
             skeleton.assertDoesNotExist()
         } finally {
             compose.mainClock.autoAdvance = true

@@ -31,6 +31,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
+internal const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private val listRefreshRetryDelays = listOf(3_000L, 3_000L, 6_000L, 12_000L, 24_000L, 48_000L)
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
@@ -527,9 +528,15 @@ class ChatListModel(
     init {
         viewModelScope.launch {
             connectivity.collect { online ->
-                if (!current() || online == !mutable.value.offline) return@collect
+                val state = mutable.value
+                if (!current() || online == !state.offline) return@collect
                 connectivityGeneration++
-                mutable.value = mutable.value.copy(offline = !online)
+                mutable.value =
+                    state.copy(
+                        offline = !online,
+                        listRetryProgressVisible =
+                            state.listRetryProgressVisible || (!online && staleListRead(state)),
+                    )
                 refreshOnReconnect = online
                 updateListRetryVisibility()
             }
@@ -1611,12 +1618,20 @@ class ChatListModel(
                     recordListReadFailure(retryAfter)
                     failed.copy(
                         listReadFailure = ChatListReadFailure.Retrying,
-                        listRetryProgressVisible = listFailures >= listRetryProgressThreshold,
+                        listRetryProgressVisible =
+                            state.confirmedAt != null &&
+                                (state.listRetryProgressVisible ||
+                                    listFailures >= listRetryProgressThreshold ||
+                                    staleListRead(state)),
                     )
                 }
             }
         }
     }
+
+    private fun staleListRead(state: ChatListUiState): Boolean =
+        state.listPhase == ChatReadPhase.Loading &&
+            state.confirmedAt?.let { wallMillis() - it > ChatListSyncNoticeAgeMillis } == true
 
     private fun resetListReadFailures() {
         listRetry?.cancel()

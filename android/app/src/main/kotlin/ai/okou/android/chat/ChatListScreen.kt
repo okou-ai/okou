@@ -99,7 +99,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.text.NumberFormat
 
 private const val ProjectMotionMillis = 250
-private const val ChatListSyncNoticeAgeMillis = 10 * 60 * 1_000L
 internal val ChatListMotionEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val projectPlacement = tween<IntOffset>(ProjectMotionMillis, easing = ChatListMotionEasing)
 private val projectChildFade = tween<Float>(ProjectMotionMillis, easing = ChatListMotionEasing)
@@ -326,7 +325,8 @@ internal fun ChatListScreen(
     // Keep the timer's composition in place as reads start and finish.
     val syncDelayReached =
         rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
-    val syncVisible = state.listRetryProgressVisible || syncDelay == 0L || syncDelayReached
+    val syncVisible =
+        !missingUnread && (state.listRetryProgressVisible || syncDelay == 0L || syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =
         remember(groups, pendingByProject) {

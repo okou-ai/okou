@@ -126,11 +126,12 @@ rebase. Chat list reads retry while the foreground needs the list, after 3, 3,
 Known loss of connectivity pauses reads. Reconnecting retries immediately,
 subject to a server `Retry-After` deadline. A first read with no available list
 shows the skeleton after 250 ms. Failures keep the available list or skeleton
-in place. An active read shows progress when the last confirmation is more
-than ten minutes old.
-After three consecutive read failures, the same progress bar stays visible
-through retry gaps until success. If a write stays unconfirmed, Refresh chats
-reads back the list and clears the unresolved projection once that read succeeds.
+in place. With a confirmed list, the progress bar appears during an active
+read once the last confirmation is more than ten minutes old, or immediately
+after three consecutive read failures. It stays visible through retry gaps
+until success or a terminal failure. If a write stays unconfirmed, Refresh
+chats reads back the list and clears the unresolved projection once that
+read succeeds.
 
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an
