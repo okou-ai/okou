@@ -19,6 +19,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 const LOCAL_CONCURRENT: usize = 4;
+const LARGE_LOCAL_ARTIFACT_BYTES: u64 = 256 * 1024;
 const BASE_REMOTE_CONCURRENT: usize = 16;
 const MEDIUM_REMOTE_MAX_CONCURRENT: usize = 20;
 const LARGE_REMOTE_BATCH: usize = 64;
@@ -151,6 +152,10 @@ impl<'input> PendingDownload<'input> {
             estimated_work: 0,
         }
     }
+
+    fn is_large_local_artifact(&self) -> bool {
+        self.estimated_work >= LARGE_LOCAL_ARTIFACT_BYTES && self.task.task.telemetry.is_artifact()
+    }
 }
 
 struct StartedDownload<'input> {
@@ -251,6 +256,13 @@ enum AttemptOutcome {
     Panicked(String),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DownloadSelection {
+    Fifo,
+    Largest,
+    LargeArtifact,
+}
+
 struct DownloadScheduler<'input> {
     pending: VecDeque<PendingDownload<'input>>,
     reservations: Vec<DownloadReservation>,
@@ -258,11 +270,19 @@ struct DownloadScheduler<'input> {
     concurrency: usize,
     all_success: bool,
     prioritize_large: bool,
+    prioritize_artifact: bool,
 }
 
 impl<'input> DownloadScheduler<'input> {
-    fn new(pending: VecDeque<PendingDownload<'input>>, concurrency: usize) -> Self {
+    fn new(
+        pending: VecDeque<PendingDownload<'input>>,
+        concurrency: usize,
+        allow_artifact_priority: bool,
+    ) -> Self {
         let prioritize_large = pending.iter().any(|download| download.estimated_work > 0);
+        let prioritize_artifact = allow_artifact_priority
+            && pending.len() > concurrency
+            && pending.iter().any(PendingDownload::is_large_local_artifact);
         Self {
             pending,
             reservations: Vec::new(),
@@ -270,6 +290,7 @@ impl<'input> DownloadScheduler<'input> {
             concurrency,
             all_success: true,
             prioritize_large,
+            prioritize_artifact,
         }
     }
 
@@ -287,10 +308,17 @@ impl<'input> DownloadScheduler<'input> {
         telemetry: &mut DownloadRunTelemetry,
     ) -> bool {
         while self.active_attempts < self.concurrency {
+            let selection = if self.prioritize_large {
+                DownloadSelection::Largest
+            } else if std::mem::take(&mut self.prioritize_artifact) {
+                DownloadSelection::LargeArtifact
+            } else {
+                DownloadSelection::Fifo
+            };
             let Some((index, _)) = find_startable_download(
                 &self.pending,
                 &self.reservations,
-                self.prioritize_large,
+                selection,
                 &mut |pending_id, pending_path, active_id, active_path| {
                     telemetry.record_conflict(pending_id, pending_path, active_id, active_path);
                 },
@@ -301,10 +329,13 @@ impl<'input> DownloadScheduler<'input> {
                 log_error!(LOG_TAG, "Download scheduler selected a missing task");
                 return false;
             };
-            // Front-load one long ready archive, then retain FIFO so subsequent
-            // CPU-heavy work does not crowd that task throughout its execution.
-            if download.estimated_work > 0 {
+            // Compressed size can underestimate dense Artifacts. Give one a
+            // slot alongside the largest archive before returning to FIFO.
+            if self.prioritize_large && download.estimated_work > 0 {
                 self.prioritize_large = false;
+                if download.is_large_local_artifact() {
+                    self.prioritize_artifact = false;
+                }
             }
             let download = StartedDownload::new(download, self.concurrency);
             self.reservations.push(DownloadReservation::new(&download));
@@ -405,6 +436,7 @@ fn download_with_readiness(
     // Local archives compete for CPU. Prefer longer ready work without changing
     // the original pending order used to enforce logical and physical ownership.
     let local_only = remote_count == 0;
+    let allow_artifact_priority = local_only && readiness.is_none();
     let pending = tasks
         .into_iter()
         .enumerate()
@@ -499,7 +531,7 @@ fn download_with_readiness(
         drop(work_rx);
         drop(completion_tx);
         drop(event_tx);
-        let mut scheduler = DownloadScheduler::new(pending, concurrency);
+        let mut scheduler = DownloadScheduler::new(pending, concurrency, allow_artifact_priority);
 
         while scheduler.has_work() {
             if !scheduler.start_ready_attempts(&work_tx, &mut telemetry) {
@@ -546,18 +578,25 @@ fn download_with_readiness(
 fn find_startable_download(
     pending: &VecDeque<PendingDownload<'_>>,
     reservations: &[DownloadReservation],
-    prioritize_large: bool,
+    selection: DownloadSelection,
     on_conflict: &mut impl FnMut(usize, &Path, usize, &Path),
 ) -> Option<(usize, usize)> {
     // Independent tasks may bypass blocked work, but conflicting tasks must
     // retain their order even when the earlier task has not started yet.
     let mut selected: Option<(usize, usize, u64)> = None;
     for (index, download) in pending.iter().enumerate() {
+        let work = match selection {
+            DownloadSelection::Largest => download.estimated_work,
+            DownloadSelection::LargeArtifact if download.is_large_local_artifact() => {
+                download.estimated_work
+            }
+            _ => 0,
+        };
         // Ties retain FIFO. Unknown/decoded work cannot trigger repeated path
         // scans once a startable choice with an equal or larger hint exists.
         if selected
             .as_ref()
-            .is_some_and(|(_, _, work)| download.estimated_work <= *work)
+            .is_some_and(|(_, _, selected_work)| work <= *selected_work)
         {
             continue;
         }
@@ -594,10 +633,10 @@ fn find_startable_download(
             continue;
         }
 
-        if !prioritize_large {
+        if selection == DownloadSelection::Fifo {
             return Some((index, download.id));
         }
-        selected = Some((index, download.id, download.estimated_work));
+        selected = Some((index, download.id, work));
     }
 
     selected.map(|(index, id, _)| (index, id))

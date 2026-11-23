@@ -113,6 +113,9 @@ open class TestOkouApplication : OkouApplication() {
         get() = journalStore ?: super.composerJournal
 
     var instructionsService: PersonalInstructionsService? = null
+    internal var proactivePreferencesService:
+        ai.okou.android.settings.ProactivePreferencesService? =
+        null
     var instructionsStore: PersonalInstructionsDraftStore? = null
     override val instructionsDrafts
         get() = instructionsStore ?: super.instructionsDrafts
@@ -148,6 +151,7 @@ open class TestOkouApplication : OkouApplication() {
             override val artifacts = (fixture ?: canonical.value).artifacts
             override val workflowService = workflows
             override val connectors = connectorService
+            override val proactivePreferences = proactivePreferencesService
 
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()

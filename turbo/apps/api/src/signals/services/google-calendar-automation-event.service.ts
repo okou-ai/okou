@@ -25,7 +25,11 @@ import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
 import type { AutomationRow } from "./workflow-automation-enqueue.service";
 import { runWorkflowAutomationNow$ } from "./workflow-automation-run.service";
 import { GoogleCalendarSourceTransitionChangedError } from "./workflow-google-calendar-queue.service";
-import { GOOGLE_CALENDAR_EVENT_TYPES } from "./google-calendar-automation-account.service";
+import {
+  GOOGLE_CALENDAR_EVENT_TYPES,
+  googleCalendarAccountProjectionStatement,
+} from "./google-calendar-automation-account.service";
+import { workflowAutomationBoundConnectorEligibleSql } from "./workflow-automation-account.service";
 import { workflowAutomationCanFire$ } from "./workflow-automation-access.service";
 import type { WorkflowAutomationContext } from "./workflow-automation-context.service";
 import { ensureWorkflowUserAutomationThread$ } from "./workflow-user-automation-thread.service";
@@ -46,7 +50,6 @@ import {
   hasEnabledGoogleCalendarConsumer$,
   ensureGoogleCalendarWatchForUser$,
   reconcileGoogleCalendarWatchState$,
-  repairAndEnsureGoogleCalendarWatchesForOwner$,
   repairGoogleCalendarAutomationProjections$,
   parseGoogleCalendarEventAutomationConfig,
 } from "./google-calendar-automation-watch.service";
@@ -570,6 +573,7 @@ const loadGoogleCalendarEventAutomations$ = command(
           eq(workflowAutomations.eventConnectorId, args.state.connectorId),
           eq(workflowAutomations.enabled, true),
           eq(workflowAutomations.kind, "event"),
+          workflowAutomationBoundConnectorEligibleSql("google-calendar"),
           inArray(workflowAutomations.eventType, [
             "google-calendar-event-created",
             "google-calendar-event-updated",
@@ -1321,41 +1325,10 @@ export const renewGoogleCalendarWatches$ = command(
     const renewBefore = new Date(
       currentTime.getTime() + WATCH_RENEWAL_WINDOW_MS,
     );
-    const automationOwners = await db
-      .selectDistinct({
-        orgId: workflowAutomations.orgId,
-        userId: workflowAutomations.ownerUserId,
-      })
-      .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.enabled, true),
-          eq(workflowAutomations.kind, "event"),
-          isNull(workflowAutomations.eventConnectorId),
-          inArray(workflowAutomations.eventType, [
-            ...GOOGLE_CALENDAR_EVENT_TYPES,
-          ]),
-        ),
-      );
+    await db.execute(googleCalendarAccountProjectionStatement());
     signal.throwIfAborted();
 
     let failed = 0;
-    for (const owner of automationOwners) {
-      const prepared = await set(
-        repairAndEnsureGoogleCalendarWatchesForOwner$,
-        { ...owner, ensureRefreshRequired: false },
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!prepared) {
-        failed += 1;
-        log.warn("Google Calendar watch repair failed", {
-          provider: "google_calendar",
-          action: "repair",
-          result: "provider_error",
-        });
-      }
-    }
     const missingTargets = await set(loadMissingGoogleCalendarWatchTargets$);
     signal.throwIfAborted();
     for (const target of missingTargets) {

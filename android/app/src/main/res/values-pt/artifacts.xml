@@ -29,11 +29,12 @@
     <string name="artifact_empty_type">Nenhum artefato deste tipo</string>
     <string name="artifact_no_matches">Nenhum artefato encontrado</string>
     <string name="artifact_show_all">Mostrar tudo</string>
-    <string name="artifact_offline_cached">Mostrando resultados salvos offline</string>
-    <string name="artifact_offline_catalog">Conecte-se para ver os artefatos</string>
+    <string name="artifact_catalog_load_failed">Não é possível carregar os artefatos no momento</string>
+    <string name="artifact_catalog_refresh_failed">Não é possível atualizar no momento. Os artefatos carregados são exibidos.</string>
+    <string name="artifact_catalog_page_failed">Não é possível carregar mais artefatos no momento</string>
+    <string name="chat_resources_load_failed">Não é possível carregar os recursos da conversa no momento</string>
+    <string name="chat_resources_syncing">Sincronizando recursos da conversa</string>
     <string name="artifact_access_denied">Você não tem acesso a este artefato</string>
-    <string name="artifact_missing">Este artefato não está mais disponível</string>
-    <string name="artifact_unavailable">Temporariamente indisponível</string>
     <string name="artifact_preview_unsupported">Não há prévia para este arquivo</string>
     <string name="artifact_preview_unavailable">Não foi possível carregar a prévia no momento</string>
     <string name="artifact_preview_source_unavailable">Fonte indisponível</string>
@@ -48,4 +49,6 @@
     <string name="artifact_open_website">Abrir no navegador</string>
     <string name="artifact_browser_unavailable">Não foi possível abrir o navegador</string>
     <string name="artifact_play_media">Reprodução de mídia</string>
+    <string name="artifact_catalog_access_denied">Você não tem acesso a este catálogo de artefatos</string>
+    <string name="artifact_catalog_missing">Este catálogo de artefatos não está mais disponível</string>
 </resources>

@@ -41,7 +41,8 @@ const postNotionWebhook$ = command(
       case "bad_request": {
         return jsonError(result.message, 400);
       }
-      case "config_error": {
+      case "config_error":
+      case "provider_unavailable": {
         return jsonError(result.message, 503);
       }
     }

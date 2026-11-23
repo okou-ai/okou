@@ -36,6 +36,9 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { feedContract } from "../contracts/feed";
+import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
+import { proactiveSuggestionsContract } from "../contracts/proactive-suggestions";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import {
   billingStatusContract,
@@ -421,6 +424,33 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "featureSwitches",
     response: "FeatureSwitches",
     route: featureSwitchesContract.get,
+  },
+  {
+    name: "morningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.get,
+  },
+  {
+    name: "updateMorningBriefPreference",
+    request: "SetMorningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.update,
+  },
+  {
+    name: "proactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.get,
+  },
+  {
+    name: "updateProactiveSuggestionsWithFeed",
+    request: "SetProactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.updateWithFeed,
+  },
+  {
+    name: "suggestionFeedSources",
+    response: "SuggestionFeedSources",
+    route: feedContract.sources,
   },
   {
     name: "recoverySubscriptions",
@@ -833,6 +863,32 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     readSchema: featureSwitchesContract.get.responses[200].pick({
       effectiveSwitches: true,
     }),
+    direction: "output",
+  },
+  {
+    name: "MorningBriefPreference",
+    schema: morningBriefPreferenceContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetMorningBriefPreference",
+    schema: morningBriefPreferenceContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "ProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.updateWithFeed.body,
+    direction: "input",
+  },
+  {
+    name: "SuggestionFeedSources",
+    schema: feedContract.sources.responses[200],
+    readSchema: feedContract.sources.responses[200].pick({ suggestions: true }),
     direction: "output",
   },
   {

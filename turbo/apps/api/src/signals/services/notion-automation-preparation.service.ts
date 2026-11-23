@@ -250,6 +250,12 @@ export function pageIsUsable(page: NotionPageResponse): boolean {
   return page.archived !== true && page.in_trash !== true;
 }
 
+export function notionPageParentDataSourceId(page: NotionPageResponse) {
+  return page.parent.type === "data_source_id"
+    ? page.parent.data_source_id
+    : null;
+}
+
 export const resolveNotionCredentialAccess$ = command(
   async (
     { set },
@@ -771,6 +777,35 @@ export const prepareNotionPageContentUpdatedEventConfigForPersist$ = command(
   },
 );
 
+const NOTION_RESOURCE_VALIDATION_UNAVAILABLE = {
+  kind: "provider-unavailable",
+  message: "Failed to validate the Notion automation resource",
+} as const;
+
+const NOTION_WEBHOOK_OUTSIDE_DATA_SOURCE = {
+  kind: "scope-mismatch",
+  message: "Notion could not confirm that the page belongs to the data source",
+} as const;
+
+async function validateNotionEventPageDataSource(
+  args: {
+    readonly accessToken: string;
+    readonly pageId: string;
+    readonly dataSourceId: string;
+  },
+  signal: AbortSignal,
+) {
+  const page = await retrieveNotionPage(args, signal);
+  signal.throwIfAborted();
+  if (page.kind === "transient_error") {
+    return NOTION_RESOURCE_VALIDATION_UNAVAILABLE;
+  }
+  return page.kind === "ok" &&
+    notionPageParentDataSourceId(page.value) === args.dataSourceId
+    ? null
+    : NOTION_WEBHOOK_OUTSIDE_DATA_SOURCE;
+}
+
 export const validateNotionEventConfigForConnector$ = command(
   async (
     { set },
@@ -780,25 +815,28 @@ export const validateNotionEventConfigForConnector$ = command(
       readonly connectorId: string;
       readonly eventType: NotionAutomationEventType;
       readonly eventConfig: unknown;
+      readonly dataSourcePageId?: string;
     },
     signal: AbortSignal,
   ): Promise<
     | { readonly kind: "ok" }
     | { readonly kind: "bad-request"; readonly message: string }
+    | typeof NOTION_RESOURCE_VALIDATION_UNAVAILABLE
+    | typeof NOTION_WEBHOOK_OUTSIDE_DATA_SOURCE
   > => {
+    const { orgId, userId, connectorId } = args;
     const accessResult = await set(
       resolveNotionCredentialAccess$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        connectorId: args.connectorId,
-      },
+      { orgId, userId, connectorId },
       signal,
     );
     signal.throwIfAborted();
     if (accessResult.kind !== "ok") {
-      return { kind: "bad-request", message: accessResult.message };
+      return args.dataSourcePageId === undefined
+        ? { kind: "bad-request", message: accessResult.message }
+        : NOTION_WEBHOOK_OUTSIDE_DATA_SOURCE;
     }
+    const { accessToken } = accessResult.access;
 
     let resourceResult: NotionFetchResult<
       NotionPageResponse | NotionDataSourceResponse
@@ -807,7 +845,7 @@ export const validateNotionEventConfigForConnector$ = command(
       const config = notionChildPageCreatedEventConfigSchema.safeParse(
         args.eventConfig,
       );
-      if (!config.success || config.data.connectorId !== args.connectorId) {
+      if (!config.success || config.data.connectorId !== connectorId) {
         return {
           kind: "bad-request",
           message: "Notion automation account projection is out of date",
@@ -815,7 +853,7 @@ export const validateNotionEventConfigForConnector$ = command(
       }
       resourceResult = await retrieveNotionPage(
         {
-          accessToken: accessResult.access.accessToken,
+          accessToken,
           pageId: config.data.parentPage.id,
         },
         signal,
@@ -824,7 +862,7 @@ export const validateNotionEventConfigForConnector$ = command(
       const config = notionDatabaseItemCreatedEventConfigSchema.safeParse(
         args.eventConfig,
       );
-      if (!config.success || config.data.connectorId !== args.connectorId) {
+      if (!config.success || config.data.connectorId !== connectorId) {
         return {
           kind: "bad-request",
           message: "Notion automation account projection is out of date",
@@ -832,7 +870,7 @@ export const validateNotionEventConfigForConnector$ = command(
       }
       resourceResult = await retrieveNotionDataSource(
         {
-          accessToken: accessResult.access.accessToken,
+          accessToken,
           dataSourceId: config.data.dataSource.id,
         },
         signal,
@@ -841,24 +879,40 @@ export const validateNotionEventConfigForConnector$ = command(
       const config = notionPageContentUpdatedEventConfigSchema.safeParse(
         args.eventConfig,
       );
-      if (!config.success || config.data.connectorId !== args.connectorId) {
+      if (!config.success || config.data.connectorId !== connectorId) {
         return {
           kind: "bad-request",
           message: "Notion automation account projection is out of date",
         };
       }
+      if (
+        config.data.scope.type === "data_source" &&
+        args.dataSourcePageId !== undefined
+      ) {
+        const mismatch = await validateNotionEventPageDataSource(
+          {
+            accessToken,
+            pageId: args.dataSourcePageId,
+            dataSourceId: config.data.scope.dataSource.id,
+          },
+          signal,
+        );
+        if (mismatch !== null) {
+          return mismatch;
+        }
+      }
       resourceResult =
         config.data.scope.type === "page"
           ? await retrieveNotionPage(
               {
-                accessToken: accessResult.access.accessToken,
+                accessToken,
                 pageId: config.data.scope.page.id,
               },
               signal,
             )
           : await retrieveNotionDataSource(
               {
-                accessToken: accessResult.access.accessToken,
+                accessToken,
                 dataSourceId: config.data.scope.dataSource.id,
               },
               signal,
@@ -872,12 +926,13 @@ export const validateNotionEventConfigForConnector$ = command(
     ) {
       return { kind: "ok" };
     }
+    if (resourceResult.kind === "transient_error") {
+      return NOTION_RESOURCE_VALIDATION_UNAVAILABLE;
+    }
     return {
       kind: "bad-request",
       message:
-        resourceResult.kind === "transient_error"
-          ? "Failed to validate the Notion automation resource"
-          : "The selected Notion account cannot access the automation resource",
+        "The selected Notion account cannot access the automation resource",
     };
   },
 );

@@ -6,7 +6,7 @@ import {
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, sql } from "drizzle-orm";
-import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
+import { workflowAutomationBoundConnectorEligibleSql } from "./workflow-automation-account.service";
 
 export interface NotionQueueSource {
   readonly automationId: string;
@@ -79,12 +79,15 @@ function notionQueueAdmissionSql(args: {
   readonly eventType: string | null;
   readonly eventConfig: unknown;
 }) {
-  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(args.source, args.connectorId)} AND EXISTS (
+  return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${workflowAutomations}
       WHERE ${and(
         eq(workflowAutomations.id, args.source.automationId),
+        eq(workflowAutomations.orgId, args.source.orgId),
+        eq(workflowAutomations.ownerUserId, args.source.userId),
         eq(workflowAutomations.enabled, true),
         eq(workflowAutomations.eventConnectorId, args.connectorId),
+        workflowAutomationBoundConnectorEligibleSql("notion"),
         sql`${workflowAutomations.eventType} IS NOT DISTINCT FROM ${args.eventType}`,
         sql`${workflowAutomations.eventConfig} IS NOT DISTINCT FROM ${JSON.stringify(args.eventConfig ?? null)}::jsonb`,
       )}

@@ -83,4 +83,25 @@
     <string name="settings_model_effort_ultra">极高</string>
     <string name="settings_refreshing_model_accounts">正在刷新模型账号</string>
     <string name="settings_refreshing_credit_balance">正在刷新积分余额</string>
+    <string name="settings_proactive_services">主动服务</string>
+    <string name="settings_proactive_scope">设置在「%1$s」内生效。</string>
+    <string name="settings_proactive_loading">正在加载主动服务</string>
+    <string name="settings_proactive_offline">已离线，联网后可修改。</string>
+    <string name="settings_proactive_needs_timezone">请先选择时区以安排发送。</string>
+    <string name="settings_proactive_read_failed">暂时无法加载此设置。</string>
+    <string name="settings_proactive_refresh_failed">同步失败，正在显示上次确认的设置。</string>
+    <string name="settings_proactive_preparing">正在准备排程…</string>
+    <string name="settings_proactive_schedule_failed">设置已保存，排程需要处理。</string>
+    <string name="settings_proactive_save_unconfirmed">保存结果尚未确认。</string>
+    <string name="settings_morning_brief">晨报</string>
+    <string name="settings_morning_brief_detail">每天早上 7:00 前按所选时区送达</string>
+    <string name="settings_morning_brief_save_failed">未能保存晨报设置，已恢复原值。</string>
+    <string name="settings_suggestions">建议</string>
+    <string name="settings_suggestions_detail">检查连接内容，更新画像并给出建议</string>
+    <string name="settings_suggestions_partial">部分开启</string>
+    <string name="settings_suggestions_hourly_only">目前仅检查信息及更新画像。</string>
+    <string name="settings_suggestions_cards_only">目前仅接收建议卡片。</string>
+    <string name="settings_suggestions_enable_both">同时开启</string>
+    <string name="settings_suggestions_disable_both">同时关闭</string>
+    <string name="settings_suggestions_save_failed">未能保存建议设置，已恢复原值。</string>
 </resources>

@@ -33,6 +33,8 @@ import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
+import ai.okou.android.api.generated.SetMorningBriefPreference
+import ai.okou.android.api.generated.SetProactiveSuggestionsPreference
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateEmailSubscriptionRequest
 import ai.okou.android.api.generated.UpdateInstructionsRequest
@@ -413,6 +415,22 @@ class ApiClient(
     }
 
     suspend fun featureSwitches() = read { featureSwitches(it) }
+
+    internal suspend fun morningBriefPreference() = read { morningBriefPreference(it) }
+
+    internal suspend fun setMorningBriefPreference(enabled: Boolean) = write {
+        updateMorningBriefPreference(it, SetMorningBriefPreference(enabled))
+    }
+
+    internal suspend fun proactiveSuggestionsPreference() = read {
+        proactiveSuggestionsPreference(it)
+    }
+
+    internal suspend fun setProactiveSuggestionsWithFeed(enabled: Boolean) = write {
+        updateProactiveSuggestionsWithFeed(it, SetProactiveSuggestionsPreference(enabled))
+    }
+
+    internal suspend fun suggestionFeedSources() = read { suggestionFeedSources(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences = write {
         initializePreferences(it, body)

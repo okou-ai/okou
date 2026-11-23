@@ -1,9 +1,10 @@
 import { command } from "ccstate";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, not, sql } from "drizzle-orm";
 
 import {
   readWorkflowAutomationConnectorAccount$,
+  workflowAutomationBoundConnectorEligibleSql,
   workflowAutomationConnectorSelectionSql,
 } from "./workflow-automation-account.service";
 
@@ -40,29 +41,47 @@ export function googleCalendarAutomationProjectionCondition(args: {
  * read from the statement snapshot and the conditional UPDATE re-checks the
  * current target row, so a concurrent reprojection leaves nothing to change.
  */
-export function googleCalendarAccountProjectionStatement(args: {
+export function googleCalendarAccountProjectionStatement(owner?: {
   readonly orgId: string;
   readonly userId: string;
 }) {
-  const eventTypes = inArray(workflowAutomations.eventType, [
-    ...GOOGLE_CALENDAR_EVENT_TYPES,
-  ]);
+  const eventScope = and(
+    eq(workflowAutomations.kind, "event"),
+    inArray(workflowAutomations.eventType, [...GOOGLE_CALENDAR_EVENT_TYPES]),
+    owner === undefined
+      ? eq(workflowAutomations.enabled, true)
+      : and(
+          eq(workflowAutomations.orgId, owner.orgId),
+          eq(workflowAutomations.ownerUserId, owner.userId),
+        ),
+  );
+  const repairScope =
+    owner === undefined
+      ? and(
+          eventScope,
+          not(workflowAutomationBoundConnectorEligibleSql("google-calendar")),
+        )
+      : eventScope;
+  const selection = workflowAutomationConnectorSelectionSql({
+    orgId: owner?.orgId ?? sql`${workflowAutomations.orgId}`,
+    userId: owner?.userId ?? sql`${workflowAutomations.ownerUserId}`,
+    workflowId: sql`${workflowAutomations.workflowId}`,
+    connectorSlug: "google-calendar",
+  });
   return sql`
-    WITH desired AS (
+    WITH desired AS MATERIALIZED (
       SELECT ${workflowAutomations.id} AS id,
-        (${workflowAutomationConnectorSelectionSql({ ...args, workflowId: sql`${workflowAutomations.workflowId}`, connectorSlug: "google-calendar" })}) AS connector_id
+        ${workflowAutomations.eventConnectorId} AS observed_connector_id,
+        (${selection}) AS connector_id
       FROM ${workflowAutomations}
-      WHERE ${workflowAutomations.orgId} = ${args.orgId}
-        AND ${workflowAutomations.ownerUserId} = ${args.userId}
-        AND ${workflowAutomations.kind} = 'event'
-        AND ${eventTypes}
+      WHERE ${repairScope}
     )
     UPDATE ${workflowAutomations}
     SET event_connector_id = desired.connector_id
     FROM desired
     WHERE ${workflowAutomations.id} = desired.id
-      AND ${workflowAutomations.kind} = 'event'
-      AND ${eventTypes}
+      AND ${eventScope}
+      AND ${workflowAutomations.eventConnectorId} IS NOT DISTINCT FROM desired.observed_connector_id
       AND ${workflowAutomations.eventConnectorId} IS DISTINCT FROM desired.connector_id
   `;
 }

@@ -6567,7 +6567,7 @@ const prepareEnabledAutomationAccountProjection$ = command(
     signal.throwIfAborted();
     return validation.kind === "ok"
       ? { kind: "ok", eventConnectorId }
-      : validation;
+      : { kind: "bad-request", message: validation.message };
   },
 );
 

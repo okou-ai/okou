@@ -1,7 +1,12 @@
 package ai.okou.android
 
+import ai.okou.android.artifacts.ArtifactItem
+import ai.okou.android.artifacts.ArtifactKind
+import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ArtifactSaveResult
+import ai.okou.android.artifacts.ConfirmedArtifactCatalog
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.chat.ChatChanges
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -12,7 +17,11 @@ import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -39,7 +48,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,7 +59,9 @@ import java.io.IOException
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -67,15 +80,14 @@ internal abstract class ArtifactCatalogRootTestFixture {
     protected val app
         get() = compose.activity.application as ChatListApplication
 
-    protected val artifactModel
+    protected val ready
         get() =
             checkNotNull(
-                    ViewModelProvider(compose.activity)[SessionModel::class.java]
-                        .uiState
-                        .value
-                        .ready,
-                )
-                .artifacts
+                ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready,
+            )
+
+    protected val artifactModel
+        get() = ready.artifacts
 
     @After
     fun close() {
@@ -168,6 +180,246 @@ internal abstract class ArtifactCatalogRootTestFixture {
         compose.onNodeWithText(title).performClick()
         awaitText("Save file")
         compose.onNodeWithText("Save file").assertIsEnabled()
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
+internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
+    @Test
+    fun firstCatalogReadRetriesWhileConnectivityIsUnavailableAndUsesTerminalErrorMeasurements() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val release = CountDownLatch(1)
+        val attempts = CopyOnWriteArrayList<Long>()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog") {
+                attempts.add(SystemClock.uptimeMillis())
+                if (attempts.size == 1) {
+                    release.await()
+                    MockResponse().setResponseCode(503).setHeader("Retry-After", "4")
+                } else MockResponse().setResponseCode(503)
+            } else respond(request)
+        }
+        compose.runOnIdle { app.connectivity.value = false }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        val failureText = "Temporarily unable to load artifacts"
+        try {
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+            compose.waitUntil(10_000) {
+                attempts.size == 1 &&
+                    compose
+                        .onAllNodes(hasTestTag("artifact_row_skeleton"))
+                        .fetchSemanticsNodes()
+                        .isNotEmpty()
+            }
+            compose.onNodeWithText(failureText).assertDoesNotExist()
+        } finally {
+            release.countDown()
+        }
+        val mainLooper = shadowOf(Looper.getMainLooper())
+        compose.waitUntil(10_000) {
+            mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
+            compose.onAllNodesWithText(failureText).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithContentDescription("Search artifacts").assertIsDisplayed()
+        assertTrue(
+            compose.onAllNodes(hasTestTag("artifact_row_skeleton")).fetchSemanticsNodes().isEmpty(),
+        )
+        assertEquals(3, attempts.size)
+        assertTrue(attempts[1] - attempts[0] >= 4_000)
+        assertTrue(attempts[2] - attempts[1] >= 3_000)
+        assertInitialReadFeedback(failureText)
+        mainLooper.idleFor(12, TimeUnit.SECONDS)
+        assertEquals(3, attempts.size)
+        app.fixture.commandResponse = respond
+        compose.runOnIdle { app.connectivity.value = true }
+        awaitText(fixture.summary.title)
+    }
+
+    @Test
+    fun staleChatResourcesRestoreWhileSyncingAndRefreshFailureKeepsRows() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        val item = ArtifactItem(fixture.summary.id, fixture.summary.title, ArtifactKind.File, 1_000)
+        seedChatCatalog(listOf(item), ageMinutes = 11)
+        val cache = ready.chats.cache
+        val release = CountDownLatch(1)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog") {
+                release.await()
+                MockResponse().setResponseCode(400)
+            } else respond(request)
+        }
+        val refreshing = compose.onNodeWithContentDescription("Syncing chat resources")
+        val resource = compose.onNodeWithText(item.title)
+        try {
+            openChatResources(fixture.sourceTitle)
+            awaitText(item.title)
+            refreshing.assertIsDisplayed()
+            val progress = refreshing.getUnclippedBoundsInRoot()
+            assertTrue(progress.bottom <= resource.getUnclippedBoundsInRoot().top)
+        } finally {
+            release.countDown()
+        }
+        val failure = "Temporarily unable to update. Showing loaded artifacts."
+        awaitText(failure)
+        resource.assertIsDisplayed()
+        refreshing.assertDoesNotExist()
+        assertEquals(
+            item,
+            runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL)?.page?.items?.single() },
+        )
+    }
+
+    @Test
+    fun recentlyConfirmedEmptyChatCatalogRemainsVisibleDuringSilentRefresh() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val release = CountDownLatch(1)
+        fixture.beforeCatalog = { release.await() }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        seedChatCatalog(emptyList(), ageMinutes = 9)
+        try {
+            openChatResources(fixture.sourceTitle)
+            awaitText("No artifacts yet")
+            compose.onNodeWithContentDescription("Syncing chat resources").assertDoesNotExist()
+            assertTrue(
+                compose
+                    .onAllNodes(hasTestTag("artifact_row_skeleton"))
+                    .fetchSemanticsNodes()
+                    .isEmpty(),
+            )
+        } finally {
+            release.countDown()
+        }
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText("No artifacts yet").assertDoesNotExist()
+    }
+
+    @Test
+    fun chatResourcesResumesTheSameFailedPageAndEvictsOnConfirmedRevocation() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.pageSize = 2
+        fixture.install()
+        val realtime = app.realtimeService as TestRealtimeService
+        val refuseAppend = AtomicBoolean(true)
+        val deny = AtomicBoolean(false)
+        val appendRequests = AtomicInteger()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            val url = request.requestUrl
+            if (url?.encodedPath == "/api/artifacts/catalog" && deny.get()) {
+                MockResponse().setResponseCode(403)
+            } else if (
+                url?.encodedPath == "/api/artifacts/catalog" && url.queryParameter("cursor") == "2"
+            ) {
+                appendRequests.incrementAndGet()
+                if (refuseAppend.get()) MockResponse().setResponseCode(400) else respond(request)
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        openChatResources(fixture.sourceTitle)
+        val notice = "Temporarily unable to load more artifacts"
+        awaitText(notice)
+        val previousRow = compose.onNodeWithText(fixture.summary.title).getUnclippedBoundsInRoot()
+        assertTrue(
+            compose.onNodeWithText(notice).getUnclippedBoundsInRoot().top > previousRow.bottom,
+        )
+        assertEquals(1, appendRequests.get())
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { ready.chatArtifacts.state.value.offline }
+        refuseAppend.set(false)
+        compose.runOnIdle { app.connectivity.value = true }
+        awaitText(fixture.slides.title)
+        assertEquals(2, appendRequests.get())
+
+        deny.set(true)
+        realtime.invalidate(ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)))
+        val firstReadError = "You don’t have access to this artifact catalog"
+        awaitText(firstReadError)
+        assertInitialReadFeedback(firstReadError)
+        compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
+        val cache = ready.chats.cache
+        compose.waitUntil(10_000) {
+            runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL) == null }
+        }
+    }
+
+    @Test
+    fun chatResourcesRechecksAnOpenCatalogAfterRealtimeResync() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val removed = AtomicBoolean(false)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog" && removed.get()) {
+                jsonResponse("""{"artifacts":[],"nextCursor":null}""")
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        openChatResources(fixture.sourceTitle)
+        awaitText(fixture.summary.title)
+
+        removed.set(true)
+        (app.realtimeService as TestRealtimeService).invalidate()
+
+        awaitText("No artifacts yet")
+        compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
+    }
+
+    private fun openChatResources(chat: String) {
+        awaitText(chat)
+        compose.onNodeWithText(chat).performClick()
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Chat resources").performClick()
+    }
+
+    private fun seedChatCatalog(items: List<ArtifactItem>, ageMinutes: Int) {
+        compose.waitUntil(10_000) {
+            ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value.ready !=
+                null
+        }
+        val cache = ready.chats.cache
+        runBlocking {
+            cache.saveArtifactCatalog(
+                CHAT_PERSONAL,
+                ConfirmedArtifactCatalog(
+                    ArtifactPage(items, null),
+                    System.currentTimeMillis() - ageMinutes * 60_000L,
+                ),
+                appendedTo = null,
+            )
+        }
+    }
+
+    private fun assertInitialReadFeedback(text: String) {
+        val feedback =
+            compose
+                .onNodeWithText(text)
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+        val label = feedback.getUnclippedBoundsInRoot()
+        val area = compose.onNodeWithTag("artifact_read_error_area").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, label.left - area.left)
+        assertEquals(12.dp, area.right - label.right)
+        assertEquals(24.dp, label.top - area.top)
+        val layouts = mutableListOf<TextLayoutResult>()
+        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
     }
 }
 
@@ -468,13 +720,15 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
         val onlinePages = fixture.catalogScopes.size
         compose.runOnIdle { app.connectivity.value = false }
-        compose.onNodeWithContentDescription("Chat actions").performClick()
-        compose.onNodeWithText("Chat resources").performClick()
-        awaitText("Showing saved results offline")
-        compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
-        assertEquals(onlinePages, fixture.catalogScopes.size)
-
-        compose.runOnIdle { app.connectivity.value = true }
+        val reopened = CountDownLatch(1)
+        fixture.beforeCatalog = { reopened.await() }
+        try {
+            compose.onNodeWithContentDescription("Chat actions").performClick()
+            compose.onNodeWithText("Chat resources").performClick()
+            compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
+        } finally {
+            reopened.countDown()
+        }
         compose.waitUntil(10_000) { fixture.catalogScopes.size > onlinePages }
         compose.onNodeWithText(fixture.slides.title).assertIsDisplayed()
     }
@@ -670,6 +924,20 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun uncachedDocumentResolvesItsAccessWhileConnectivityIsReportedUnavailable() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        compose.runOnIdle { app.connectivity.value = false }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        awaitText("Positioning: help teams move ongoing work forward", partial = true)
+        assertTrue(fixture.requestedReferences.isNotEmpty())
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun unreadableImageShowsAnUnsupportedPreview() {
         val fixture =
@@ -705,7 +973,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         backToCatalog.performClick()
 
         compose.runOnIdle { app.connectivity.value = false }
-        awaitText("Showing saved results offline")
+        compose.waitUntil(10_000) { artifactModel.state.value.offline }
         compose.onNodeWithText(fixture.image.title).performClick()
         compose.onNodeWithContentDescription(fixture.image.title).assertIsDisplayed()
         backToCatalog.performClick()
@@ -1014,9 +1282,13 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(width.value * 9f / 16f, height.value, 1f)
         compose.onNodeWithTag("artifact_preview_title").assertTextContains("fixture.okou.app")
         browser.assertDoesNotExist()
-        assertTrue(fixture.requestedSiteGrants.isEmpty())
+        assertEquals(1, fixture.requestedSiteGrants.size)
 
         compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) {
+            fixture.requestedSiteGrants.size == 2 &&
+                loadedWebsiteUrl() == fixture.requestedSiteGrants.last()
+        }
         awaitText("Open in browser")
         assertEquals(initialBounds, surface.getUnclippedBoundsInRoot())
         assertTrue(browser.getUnclippedBoundsInRoot().bottom <= initialBounds.top)
@@ -1033,7 +1305,7 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
             fixture.beforeSitePreview = { releaseGrant.await() }
             compose.runOnIdle { app.connectivity.value = true }
             compose.waitUntilExactlyOneExists(hasTestTag("artifact_preview_loading"), 10_000)
-            compose.waitUntil(10_000) { fixture.requestedSiteGrants.size == 2 }
+            compose.waitUntil(10_000) { fixture.requestedSiteGrants.size == 3 }
             browser.assertDoesNotExist()
             assertEquals(readingBounds, surface.getUnclippedBoundsInRoot())
         } finally {

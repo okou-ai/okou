@@ -40,6 +40,7 @@ internal enum class SettingsDestination {
     ModelAccounts,
     CreditBalance,
     Account,
+    ProactiveServices,
 }
 
 internal enum class SearchRoute {
@@ -228,6 +229,12 @@ internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSavea
 
 @Composable
 internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberWorkflowEditorReturnFocus(
+    workflowId: String?,
+    tab: WorkflowTab,
+): MutableState<String?> = rememberSaveable(workflowId, tab) { mutableStateOf(null) }
 
 @Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
