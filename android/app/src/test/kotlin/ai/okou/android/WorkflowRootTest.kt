@@ -17,8 +17,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -37,6 +39,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
@@ -146,6 +149,11 @@ internal abstract class WorkflowRootTestFixture {
             instrumentation.resetInTouchMode()
         }
     }
+
+    protected fun SemanticsNodeInteraction.pressEnter() =
+        performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused().performKeyInput {
+            pressKey(Key.Enter)
+        }
 
     protected fun selectScope(label: String) =
         compose
@@ -304,7 +312,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         waitFor("Enabled")
         compose.onNodeWithText(" · Shanghai (UTC+8)", substring = true).assertIsDisplayed()
         assertTrue(app.fixture.active.get())
-        compose.onNodeWithTag("workflow_use").performClick()
+        compose.onNodeWithTag("workflow_use").performTouchInput { click() }
         waitForTag("message_input")
         compose
             .onNodeWithTag("message_input")
@@ -317,6 +325,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
         )
         back()
         compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+        compose.onNodeWithTag("workflow_use").assertIsNotFocused()
         compose.onNodeWithText("Enabled").assertIsDisplayed()
         back()
         compose.onNodeWithTag("workflow_query").assertTextContains("/release-review")
@@ -344,10 +353,13 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun returningFromWorkflowCreationRechecksTheFreshDirectory() {
+    fun returningFromWorkflowCreationRechecksTheFreshDirectory() = withHardwareKeyboard {
         compose.onNodeWithContentDescription("Workflows").performClick()
         app.gate.countDown()
         waitFor("Release checklist")
+        selectScope("Workspace shared")
+        val query = compose.onNodeWithTag("workflow_query")
+        query.performTextInput("follow-up")
 
         fun catalogReads() =
             app.fixture.requests.count {
@@ -355,15 +367,65 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
             }
 
         assertEquals(1, catalogReads())
-        compose.onNodeWithTag("workflow_create").performClick()
+        val create = compose.onNodeWithTag("workflow_create")
+        create.pressEnter()
         waitForTag("message_input")
         compose
             .onNodeWithTag("message_input")
             .assertTextContains("Help me create a private workflow.", substring = true)
 
         back()
-        waitFor("Release checklist")
+        waitFor("Release follow-up")
+        create.assertIsFocused()
+        query.assertTextContains("follow-up")
+        compose.onNodeWithText("Release checklist").assertDoesNotExist()
         compose.waitUntil(10_000) { catalogReads() == 2 }
+    }
+
+    @Test
+    fun keyboardUseReturnsToTheSameDetailTabAndFooter() = withHardwareKeyboard {
+        openWorkflowDetail()
+        val history = compose.onNodeWithTag("workflow_tab_history")
+        history.performClick()
+        waitForTag("workflow_run_$WORKFLOW_SOURCE_RUN")
+        val use = compose.onNodeWithTag("workflow_use")
+        val before = use.getUnclippedBoundsInRoot()
+        val instructions = compose.onNodeWithTag("workflow_tab_instructions")
+        assertEquals(instructions.getUnclippedBoundsInRoot().left, before.left)
+        assertEquals(history.getUnclippedBoundsInRoot().right, before.right)
+        use.pressEnter()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+
+        back()
+        history.assertIsSelected()
+        assertEquals(before, use.assertIsFocused().getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun workflowCreationReturnsToTheDirectoryAfterTheWindowNarrows() = withHardwareKeyboard {
+        val originalQualifiers = RuntimeEnvironment.getQualifiers()
+        try {
+            openWorkflowDetail()
+            compose.onNodeWithTag("workflow_tab_automations").performClick()
+            val create = compose.onNodeWithTag("workflow_create").assertIsDisplayed()
+            create.pressEnter()
+            waitForTag("message_input")
+
+            RuntimeEnvironment.setQualifiers("en-rUS-w412dp-h892dp")
+            compose.activityRule.scenario.recreate()
+            waitForTag("message_input")
+            back()
+
+            compose.onNodeWithTag("workflow_directory").assertIsDisplayed()
+            compose.onNodeWithTag("workflow_detail").assertDoesNotExist()
+            create.assertIsFocused()
+        } finally {
+            RuntimeEnvironment.setQualifiers(originalQualifiers)
+        }
     }
 
     @Test
@@ -494,11 +556,6 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     application = WorkflowRootApplication::class,
 )
 internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
-    private fun SemanticsNodeInteraction.pressEnter() =
-        performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused().performKeyInput {
-            pressKey(Key.Enter)
-        }
-
     @Test
     fun closingInstructionsEditorReturnsKeyboardFocusToItsAction() = withHardwareKeyboard {
         openWorkflowDetail()
@@ -704,10 +761,11 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         waitFor("Weekdays at 10:00")
         edit.assertIsFocused()
         val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
-        toggle.assertIsEnabled().performClick()
+        toggle.assertIsEnabled().pressEnter()
         waitFor("Enabled")
-        toggle.assertIsEnabled().performClick()
+        toggle.assertIsFocused().assertIsEnabled().performKeyInput { pressKey(Key.Enter) }
         waitFor("Paused")
+        toggle.assertIsFocused()
         compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
     }
 

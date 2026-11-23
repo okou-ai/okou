@@ -59,6 +59,8 @@ import ai.okou.android.state.ConversationLinkReturn
 import ai.okou.android.state.SearchRoute
 import ai.okou.android.state.SettingsDestination
 import ai.okou.android.state.WorkflowConnectorVisit
+import ai.okou.android.state.WorkflowDraftAction
+import ai.okou.android.state.WorkflowDraftReturn
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsMode
 import ai.okou.android.state.WorkflowsRoute
@@ -516,7 +518,16 @@ internal fun OkouApp(
     fun returnToWorkflows() {
         clearConversationLinks()
         navigation = workflowOrigin
-        changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Directory))
+        val draftReturn = workflowRoute.draftReturn
+        val showDirectory = draftReturn?.action == WorkflowDraftAction.Create && listWidth == null
+        changeWorkflowRoute(
+            workflowRoute.copy(
+                mode = WorkflowsMode.Directory,
+                id = workflowRoute.id.takeUnless { showDirectory },
+                tab = if (showDirectory) WorkflowTab.Instructions else workflowRoute.tab,
+                draftReturn = draftReturn?.takeIf { it.restoreFocus },
+            ),
+        )
     }
 
     fun openArtifacts(searchResultId: String? = null) {
@@ -737,7 +748,12 @@ internal fun OkouApp(
             )
     }
 
-    fun workflowDraft(prefix: String, workflowId: String? = null, fromSearch: Boolean = false) {
+    fun workflowDraft(
+        prefix: String,
+        workflowId: String? = null,
+        fromSearch: Boolean = false,
+        draftReturn: WorkflowDraftReturn? = null,
+    ) {
         val activeComposer = composer ?: return
         if (handoffPending) return
         handoffPending = true
@@ -767,8 +783,14 @@ internal fun OkouApp(
                                 search = nextSearch,
                                 messageSequence = null,
                             )
-                        if (!fromSearch)
-                            changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
+                        if (!fromSearch) {
+                            changeWorkflowRoute(
+                                workflowRoute.copy(
+                                    mode = WorkflowsMode.Chat,
+                                    draftReturn = draftReturn,
+                                ),
+                            )
+                        }
                     }
                     ComposerPrefillResult.NetworkFailed -> {
                         if (fromSearch) workflowHandoffFailed = true
@@ -986,7 +1008,7 @@ internal fun OkouApp(
                 changeRoute = {
                     if (it.id != workflowRoute.id && workflowDraftError?.workflowId != null)
                         workflowDraftError = null
-                    changeWorkflowRoute(it)
+                    changeWorkflowRoute(it.copy(draftReturn = null))
                 },
                 query = workflowQuery,
                 positions = workflowPositions,
@@ -999,8 +1021,20 @@ internal fun OkouApp(
                 feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
                 onClose = ::closeWorkflows,
                 fromSearch = workflowOrigin.search.isOpen,
-                onCreate = { workflowDraft("$creation\n\n") },
-                onUse = { workflowDraft("/${it.name} ", it.id) },
+                onCreate = { focused ->
+                    workflowDraft(
+                        "$creation\n\n",
+                        draftReturn = WorkflowDraftReturn(WorkflowDraftAction.Create, focused),
+                    )
+                },
+                onUse = { detail, focused ->
+                    workflowDraft(
+                        "/${detail.name} ",
+                        detail.id,
+                        draftReturn = WorkflowDraftReturn(WorkflowDraftAction.Use, focused),
+                    )
+                },
+                onDraftFocusRestored = { workflowRoute = workflowRoute.copy(draftReturn = null) },
                 onViewConnection =
                     if (canOpenConnectors) {
                         { slug, ruleId ->

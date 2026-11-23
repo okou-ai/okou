@@ -614,11 +614,19 @@ internal enum class WorkflowScope {
     Shared,
 }
 
+internal enum class WorkflowDraftAction {
+    Create,
+    Use,
+}
+
+internal data class WorkflowDraftReturn(val action: WorkflowDraftAction, val restoreFocus: Boolean)
+
 internal data class WorkflowsRoute(
     val mode: WorkflowsMode = WorkflowsMode.Closed,
     val id: String? = null,
     val tab: WorkflowTab = WorkflowTab.Instructions,
     val scope: WorkflowScope = WorkflowScope.All,
+    val draftReturn: WorkflowDraftReturn? = null,
 )
 
 @Composable
@@ -626,13 +634,29 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
     rememberSaveable(
         stateSaver =
             listSaver<WorkflowsRoute, String>(
-                save = { listOf(it.mode.name, it.id.orEmpty(), it.tab.name, it.scope.name) },
-                restore = { (mode, id, tab, scope) ->
+                save = {
+                    listOf(
+                        it.mode.name,
+                        it.id.orEmpty(),
+                        it.tab.name,
+                        it.scope.name,
+                        it.draftReturn?.action?.name.orEmpty(),
+                        (it.draftReturn?.restoreFocus == true).toString(),
+                    )
+                },
+                restore = { saved ->
+                    val (mode, id, tab, scope) = saved
                     WorkflowsRoute(
                         WorkflowsMode.valueOf(mode),
                         id.ifEmpty { null },
                         WorkflowTab.valueOf(tab),
                         WorkflowScope.valueOf(scope),
+                        saved.getOrNull(4)?.takeIf(String::isNotEmpty)?.let { action ->
+                            WorkflowDraftReturn(
+                                WorkflowDraftAction.valueOf(action),
+                                saved.getOrNull(5).toBoolean(),
+                            )
+                        },
                     )
                 },
             ),

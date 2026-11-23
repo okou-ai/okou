@@ -12,6 +12,7 @@ import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.state.WorkflowConnectorVisit
+import ai.okou.android.state.WorkflowDraftAction
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
@@ -88,6 +89,8 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -95,6 +98,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -138,8 +142,9 @@ internal fun WorkflowScreen(
     useError: Int?,
     feedback: @Composable () -> Unit,
     onClose: () -> Unit,
-    onCreate: () -> Unit,
-    onUse: (WorkflowDetail) -> Unit,
+    onCreate: (Boolean) -> Unit,
+    onUse: (WorkflowDetail, Boolean) -> Unit,
+    onDraftFocusRestored: () -> Unit,
     onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
     connectionReturn: WorkflowConnectorVisit?,
     onConnectionFocusRestored: () -> Unit,
@@ -200,6 +205,8 @@ internal fun WorkflowScreen(
                     else Modifier.weight(1f).fillMaxHeight(),
                 onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
                 onCreate = onCreate,
+                restoreCreateFocus = route.draftReturn?.action == WorkflowDraftAction.Create,
+                onCreateFocusRestored = onDraftFocusRestored,
                 canNavigate = editor == null && !state.writing && !handoffPending,
                 createError = createError,
                 onScope = {
@@ -267,7 +274,9 @@ internal fun WorkflowScreen(
                             onConnectionFocusRestored = onConnectionFocusRestored,
                             handoffPending = handoffPending,
                             useError = useError,
-                            onUse = { onUse(detail) },
+                            onUse = { focused -> onUse(detail, focused) },
+                            restoreUseFocus = route.draftReturn?.action == WorkflowDraftAction.Use,
+                            onUseFocusRestored = onDraftFocusRestored,
                             sourceChatAvailable = sourceChatAvailable,
                             restoreHistoryRunId = restoreHistoryRunId,
                             onHistoryFocusRestored = onHistoryFocusRestored,
@@ -395,7 +404,9 @@ private fun WorkflowDirectory(
     canNavigate: Boolean,
     createError: Int?,
     onBack: () -> Unit,
-    onCreate: () -> Unit,
+    onCreate: (Boolean) -> Unit,
+    restoreCreateFocus: Boolean,
+    onCreateFocusRestored: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
     onSelect: (String) -> Unit,
     restoreRow: String?,
@@ -436,10 +447,19 @@ private fun WorkflowDirectory(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         WorkflowToolbar(stringResource(R.string.workspace_workflows), onBack) {
+            val enabled = canNavigate && state.catalogFailure != WorkflowReadFailure.Unavailable
+            val actionFocus =
+                rememberWorkflowReturnFocus(restoreCreateFocus, enabled, onCreateFocusRestored)
+            val shape = RoundedCornerShape(12.dp)
             TextButton(
-                onClick = onCreate,
-                enabled = canNavigate && state.catalogFailure != WorkflowReadFailure.Unavailable,
-                modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
+                onClick = { onCreate(actionFocus.keyboardFocused) },
+                enabled = enabled,
+                modifier =
+                    actionFocus.modifier
+                        .heightIn(min = 48.dp)
+                        .updateFocusOutline(shape, LocalActivityStatusColor.current)
+                        .testTag("workflow_create"),
+                shape = shape,
                 colors =
                     ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.onBackground,
@@ -756,7 +776,9 @@ private fun WorkflowDetailPane(
     onConnectionFocusRestored: () -> Unit,
     handoffPending: Boolean,
     useError: Int?,
-    onUse: () -> Unit,
+    onUse: (Boolean) -> Unit,
+    restoreUseFocus: Boolean,
+    onUseFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
@@ -909,6 +931,8 @@ private fun WorkflowDetailPane(
             enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
             notice = if (detail.shadowedBy != null) R.string.workflow_shadowed else useError,
             onUse = onUse,
+            restoreFocus = restoreUseFocus,
+            onFocusRestored = onUseFocusRestored,
         )
     }
 }
@@ -933,7 +957,9 @@ private fun WorkflowUseBar(
     wide: Boolean,
     enabled: Boolean,
     notice: Int? = null,
-    onUse: () -> Unit,
+    restoreFocus: Boolean = false,
+    onFocusRestored: () -> Unit = {},
+    onUse: (Boolean) -> Unit,
 ) {
     WorkflowDivider()
     Column(
@@ -944,12 +970,16 @@ private fun WorkflowUseBar(
         horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
     ) {
         if (notice != null) WorkflowNotice(notice, PaddingValues(bottom = 8.dp))
+        val actionFocus = rememberWorkflowReturnFocus(restoreFocus, enabled, onFocusRestored)
         WorkflowAction(
             stringResource(R.string.workflow_use_in_chat),
-            onUse,
+            { onUse(actionFocus.keyboardFocused) },
             enabled = enabled,
             primary = true,
-            modifier = (if (wide) Modifier else Modifier.fillMaxWidth()).testTag("workflow_use"),
+            modifier =
+                actionFocus.modifier
+                    .then(if (wide) Modifier else Modifier.fillMaxWidth())
+                    .testTag("workflow_use"),
         )
     }
 }
@@ -1097,6 +1127,34 @@ private fun WorkflowSectionHeader(
     }
 }
 
+internal class WorkflowActionFocus(private val inputMode: InputModeManager) {
+    val requester = FocusRequester()
+    private var focused = false
+    val modifier = Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused }
+    val keyboardFocused: Boolean
+        get() = focused && inputMode.inputMode == InputMode.Keyboard
+}
+
+@Composable
+internal fun rememberWorkflowReturnFocus(
+    restoreFocus: Boolean,
+    enabled: Boolean,
+    onFocusRestored: () -> Unit,
+): WorkflowActionFocus {
+    val input = LocalInputModeManager.current
+    val focus = remember(input) { WorkflowActionFocus(input) }
+    LaunchedEffect(restoreFocus, enabled) {
+        if (
+            restoreFocus &&
+                enabled &&
+                (input.inputMode != InputMode.Keyboard || focus.requester.requestFocus())
+        ) {
+            onFocusRestored()
+        }
+    }
+    return focus
+}
+
 @Composable
 internal fun WorkflowAction(
     label: String,
@@ -1104,7 +1162,6 @@ internal fun WorkflowAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
-    keyboardFocused: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
@@ -1112,7 +1169,7 @@ internal fun WorkflowAction(
     if (primary) {
         Button(
             onClick,
-            modifier.heightIn(min = 48.dp),
+            modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.background),
             enabled = enabled,
             shape = shape,
             colors =
@@ -1130,14 +1187,17 @@ internal fun WorkflowAction(
             )
         }
     } else {
+        var focused by remember { mutableStateOf(false) }
+        val keyboardFocused =
+            focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
         OutlinedButton(
             onClick,
-            modifier.heightIn(min = 48.dp),
+            modifier.heightIn(min = 48.dp).onFocusChanged { focused = it.isFocused },
             enabled = enabled,
             shape = shape,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
             border =
-                if (keyboardFocused) BorderStroke(2.dp, colors.onSurfaceVariant)
+                if (keyboardFocused) BorderStroke(2.dp, LocalActivityStatusColor.current)
                 else BorderStroke(1.dp, colors.outline),
             contentPadding = padding,
         ) {
