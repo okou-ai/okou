@@ -28,6 +28,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -51,12 +52,14 @@ class ScreenshotScenario {
         val previousAnimationScale =
             device.executeShellCommand("settings get global animator_duration_scale").trim()
         val interruptArchive = AtomicBoolean(true)
+        val archiveRequests = AtomicInteger()
         val failRows = AtomicBoolean(false)
         var owner: Job? = null
         ChatListApiFixture().use { fixture ->
+            val archivedInputId = "12121212-1212-4121-8121-121212121212"
             val archiveBody =
                 historyEventWire(
-                    "input",
+                    archivedInputId,
                     17,
                     type = "input.prompt",
                     payload = """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Hello history"}]}}""",
@@ -64,10 +67,11 @@ class ScreenshotScenario {
             fixture.historySnapshot = {
                 val url = fixture.server.url("/history-archive")
                 jsonResponse(
-                    """{"url":"$url","expiresInSeconds":60,"lastEventId":"input","lastSeqId":17}""",
+                    """{"url":"$url","expiresInSeconds":60,"lastEventId":"$archivedInputId","lastSeqId":17}""",
                 )
             }
             fixture.historyArchive = {
+                archiveRequests.incrementAndGet()
                 MockResponse().setBody(archiveBody).apply {
                     if (interruptArchive.get())
                         setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
@@ -103,7 +107,9 @@ class ScreenshotScenario {
                     val bar = By.desc(app.getString(R.string.history_syncing))
                     val message = By.text("Hello history")
                     awaitState("the interrupted archive with the skeleton visible") {
-                        history.uiState.value.consecutiveReadFailures > 0 && device.hasObject(skeleton)
+                        archiveRequests.get() > 0 &&
+                            history.uiState.value.consecutiveReadFailures > 0 &&
+                            device.hasObject(skeleton)
                     }
                     check(!device.hasObject(By.text(app.getString(R.string.chat_list_first_load_failed))))
                     ScreenshotCapture.capture("01-first-read-retrying.png")
