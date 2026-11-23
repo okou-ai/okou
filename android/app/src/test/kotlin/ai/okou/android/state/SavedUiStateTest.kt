@@ -36,6 +36,8 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -119,12 +121,22 @@ class SavedUiStateTest {
     }
 
     @Test
-    fun offlineSearchWithoutCachedChatsShowsOneNotice() {
+    fun searchReportsReadFailuresAndShowsConfirmedEmptyResultsWithAnOfflineSignal() {
         val search = ChatSearchState(TextFieldValue("Release"))
+        val savedChat = searchResult("release", "Release notes")
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Failed),
+            )
         compose.setContent {
             OkouTheme(false) {
                 WorkspaceSearchScreen(
-                    state = ChatListUiState(offline = true),
+                    state =
+                        ChatListUiState(
+                            offline = true,
+                            confirmedAt = 1L,
+                            threadsByRecency = listOf(savedChat),
+                        ),
                     search = search,
                     widthDp = 400,
                     listWidth = null,
@@ -134,11 +146,32 @@ class SavedUiStateTest {
                     onClose = {},
                     onOpen = {},
                     retry = {},
+                    remote = remote,
                 )
             }
         }
-        compose.onNodeWithText("Chats will load when you’re back online.").assertIsDisplayed()
-        compose.onNodeWithText("Offline. Searching saved chat titles only.").assertDoesNotExist()
+        compose.onNodeWithText("Release notes").assertIsDisplayed()
+        compose
+            .onNodeWithText("Some results couldn’t load. Showing saved chats only.")
+            .assertIsDisplayed()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithText("Couldn’t search messages").assertIsDisplayed()
+        compose.onNodeWithText("No matching messages").assertDoesNotExist()
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Retrying) }
+        compose.waitUntil(5_000) {
+            compose
+                .onAllNodesWithContentDescription("Searching…")
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
+        compose.onNodeWithText("No matching messages").assertIsDisplayed()
+        compose.onNodeWithText("Search all types").assertIsDisplayed()
+        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
     }
 
     @Test
