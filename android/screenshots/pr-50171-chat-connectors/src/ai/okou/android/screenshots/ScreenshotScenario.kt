@@ -39,7 +39,7 @@ class ScreenshotScenario {
             action("新对话").click()
             val draft = "为发布会检查日历"
             input(draft)
-            val options = description("聊天选项")
+            val options = generateSequence(description("聊天选项")) { it.parent }.first { it.isClickable }
             assertTrue(options.visibleBounds.height() >= 48 && options.visibleBounds.width() >= 48)
             options.click()
             assertTrue(action("连接器").visibleBounds.height() >= 56)
