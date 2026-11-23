@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
@@ -271,7 +272,7 @@ test("workflows-page-012 a deep link centers the Gmail automation and only its s
   );
 });
 
-test("workflows-page-025 running the weekday schedule opens its chat and promotes Sales Research in the composer", async () => {
+function prepareWeekdayRun() {
   createChatRunFixtures(context).installRunChat();
   const { base, sales } = directory();
   const schedule = weekday();
@@ -294,6 +295,11 @@ test("workflows-page-025 running the weekday schedule opens its chat and promote
       chatThreadId: RUN_THREAD_ID,
     });
   });
+  return { base, sales };
+}
+
+test("workflows-page-025 running the weekday schedule opens its chat and promotes Sales Research in the composer", async () => {
+  const { base } = prepareWeekdayRun();
   await setupPage({ context, path: base + "/automations" });
   click(await findAction("button", "Run now"));
   const editor = await screen.findByLabelText("Message");
@@ -306,6 +312,52 @@ test("workflows-page-025 running the weekday schedule opens its chat and promote
     }),
   ).toStrictEqual(["/sales-research", "/alpha"]);
 });
+
+test.each([false, true])(
+  "Run now navigates and keeps local recency while optional persistence fails=%s",
+  async (failPersistence) => {
+    const { base, sales } = prepareWeekdayRun();
+    const submitted = context.mocks.deferred<string[]>();
+    const finish = context.mocks.deferred<void>();
+    context.mocks.api(workflowsCollectionContract.recent, ({ respond }) => {
+      return respond(200, { workflowIds: [] });
+    });
+    context.mocks.api(
+      workflowsCollectionContract.recordRecentUse,
+      async ({ body, respond }) => {
+        submitted.resolve(body.workflowIds);
+        await finish.promise;
+        return failPersistence
+          ? respond(500, {
+              error: {
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Recency unavailable",
+              },
+            })
+          : respond(200, { workflowIds: [sales.id] });
+      },
+    );
+    await setupPage({
+      context,
+      path: base + "/automations",
+      featureSwitches: { [FeatureSwitchKey.WorkflowRecencySync]: true },
+    });
+    click(await findAction("button", "Run now"));
+    const editor = await screen.findByLabelText("Message");
+    expect(location.pathname).toBe("/chats/" + RUN_THREAD_ID);
+    await expect(submitted.promise).resolves.toStrictEqual([sales.id]);
+    await fill(editor, "Draft /");
+    await slashChoice("sales-research");
+    expect(
+      slashRows().map((row) => {
+        return row.textContent;
+      }),
+    ).toStrictEqual(["/sales-research", "/alpha"]);
+    finish.resolve();
+    await fill(editor, "A new draft after running the workflow");
+    await expect(findAction("button", "Send")).resolves.toBeEnabled();
+  },
+);
 
 async function chooseAutomation(category: string, choice: string) {
   click(await findAction("button", "Add automation"));
