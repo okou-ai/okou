@@ -668,14 +668,7 @@ const bootstrapVariablesDecoder = zodDriverValueDecoder(
 const bootstrapConnectorVariablesDecoder = zodDriverValueDecoder(
   record(string(), string()),
 );
-const bootstrapCredentialsDecoder = zodDriverValueDecoder(
-  array(
-    object({
-      id: string(),
-      name: string(),
-    }),
-  ),
-);
+const bootstrapCredentialNamesDecoder = zodDriverValueDecoder(array(string()));
 
 const bootstrapConnectorAccountColumns = Object.freeze({
   id: connectors.id,
@@ -692,8 +685,6 @@ const bootstrapConnectorAccountColumns = Object.freeze({
   storageVersion: connectors.storageVersion,
   tokenExpiresAt: connectors.tokenExpiresAt,
   updatedAt: connectors.updatedAt,
-  orgId: connectors.orgId,
-  userId: connectors.userId,
 });
 
 type BootstrapEnvironmentSnapshot =
@@ -710,7 +701,7 @@ const bootstrapAccountRowsDecoder = zodDriverValueDecoder(
         }),
       ),
       connectorVariables: record(string(), string()).nullable(),
-      credentials: array(object({ id: string(), name: string() })).nullable(),
+      credentialNames: array(string()).nullable(),
       automaticOAuthBindingId: string().nullable(),
     }),
   ),
@@ -731,7 +722,7 @@ function bootstrapConnectorAccountRows(
           'connectorStateRevision', (EXTRACT(EPOCH FROM ${connectors.updatedAt}) * 1000000)::bigint::text
         ),
         'connectorVariables', ${connectorVariableSnapshot.values},
-        'credentials', ${credentialSnapshot.values},
+        'credentialNames', ${credentialSnapshot.values},
         'automaticOAuthBindingId', ${customConnectorAccountOauthBindings.connectorAccountId}
       )`
         .mapWith(zodDriverValueDecoder(zUnknown()))
@@ -819,6 +810,8 @@ function createAgentEnvironment(
       accounts: rows.map((row) => {
         return {
           ...row.account,
+          orgId,
+          userId,
           automaticOAuthBindingId: row.automaticOAuthBindingId,
         };
       }),
@@ -831,8 +824,8 @@ function createAgentEnvironment(
           );
         }),
         credentials: rows.flatMap((row) => {
-          return (row.credentials ?? []).map((credential) => {
-            return { ...credential, sourceId: row.account.id };
+          return (row.credentialNames ?? []).map((name) => {
+            return { name, sourceId: row.account.id };
           });
         }),
       },
@@ -931,11 +924,9 @@ function bootstrapCredentialSnapshot(userId: string, orgId: string) {
     db
       .select({
         connectorId: secrets.connectorId,
-        values: sql`jsonb_agg(jsonb_build_object(
-          'id', ${secrets.id}, 'name', ${secrets.name}
-        ))`
-          .mapWith(nullableDriverValueDecoder(bootstrapCredentialsDecoder))
-          .as("credential_values"),
+        values: sql`jsonb_agg(${secrets.name})`
+          .mapWith(nullableDriverValueDecoder(bootstrapCredentialNamesDecoder))
+          .as("credential_names"),
       })
       .from(secrets)
       .where(
