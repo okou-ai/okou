@@ -87,7 +87,7 @@ export function createHostedSitePeopleSignals(
       if (!site) {
         return;
       }
-      const result = await accept(
+      await accept(
         get(apiClient$)(hostedSiteSharingContract).share({
           params: { siteId: site.siteId },
           body: { email },
@@ -101,19 +101,9 @@ export function createHostedSitePeopleSignals(
         return value + 1;
       });
       toast.success(
-        result.body.outcome === "invited"
-          ? i18n.t(
-              ($) => {
-                return $.artifacts.people.invitationQueued;
-              },
-              { email },
-            )
-          : i18n.t(
-              ($) => {
-                return $.artifacts.people.shared;
-              },
-              { email },
-            ),
+        i18n.t(($) => {
+          return $.artifacts.people.invitationProcessed;
+        }),
       );
     }),
     0,

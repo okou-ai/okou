@@ -16,6 +16,10 @@ import {
   shareHostedSite$,
 } from "../services/hosted-site-sharing.service";
 import { sendEmailOutboxItem$ } from "../services/email-common.service";
+import {
+  consumeHostedSiteSharingQuota$,
+  type SharingQuotaRequest,
+} from "../services/hosted-site-sharing-quota.service";
 import type { RouteEntry } from "../route-entry";
 
 const owner$ = command(
@@ -36,12 +40,32 @@ const owner$ = command(
   },
 );
 
+const admission$ = command(
+  async ({ set }, args: SharingQuotaRequest, signal: AbortSignal) => {
+    const retryAfter = await set(consumeHostedSiteSharingQuota$, args, signal);
+    if (retryAfter === null) {
+      return null;
+    }
+    set(setResHeader$, "Retry-After", String(retryAfter));
+    return {
+      status: 429 as const,
+      body: {
+        error: {
+          code: "RATE_LIMITED",
+          message: "Too many website sharing requests. Try again later.",
+        },
+      },
+    };
+  },
+);
+
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   const { siteId } = get(pathParamsOf(hostedSiteSharingContract.list));
-  if (!(await set(owner$, siteId, signal))) {
+  const owner = await set(owner$, siteId, signal);
+  if (!owner) {
     return notFound("Published website not found");
   }
-  const shares = await get(hostedSiteSharingReads(siteId).shares$);
+  const shares = await get(hostedSiteSharingReads(siteId, owner.orgId).shares$);
   signal.throwIfAborted();
   return { status: 200 as const, body: { shares } };
 });
@@ -53,7 +77,13 @@ const search$ = command(async ({ get, set }, signal: AbortSignal) => {
     return notFound("Published website not found");
   }
   const { query } = get(queryOf(hostedSiteSharingContract.search));
-  const accounts = await get(hostedSiteSharingReads(siteId, query).accounts$);
+  const limited = await set(admission$, { ...owner, kind: "search" }, signal);
+  if (limited) {
+    return limited;
+  }
+  const accounts = await get(
+    hostedSiteSharingReads(siteId, owner.orgId, query).accounts$,
+  );
   signal.throwIfAborted();
   return {
     status: 200 as const,
@@ -76,6 +106,14 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!input.ok) {
     return input.response;
   }
+  const limited = await set(
+    admission$,
+    { ...owner, kind: "share", email: input.data.email },
+    signal,
+  );
+  if (limited) {
+    return limited;
+  }
   const result = await set(
     shareHostedSite$,
     { ...owner, ...input.data },
@@ -92,7 +130,7 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   return {
     status: 200 as const,
-    body: { share: result.share, outcome: result.outcome },
+    body: { share: result.share },
   };
 });
 

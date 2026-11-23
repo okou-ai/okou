@@ -19,6 +19,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 interface PeopleProps {
   readonly session: HostedSiteShareSession;
   readonly busy: boolean;
+  readonly failed: boolean;
   readonly onShare: (email: string) => void;
   readonly onRemove: (id: string) => void;
 }
@@ -26,11 +27,13 @@ interface PeopleProps {
 function AccountSuggestions({
   accounts,
   loading,
+  failed,
   busy,
   onChoose,
 }: {
   readonly accounts: readonly HostedSiteShareAccount[] | undefined;
   readonly loading: boolean;
+  readonly failed: boolean;
   readonly busy: boolean;
   readonly onChoose: (email: string) => void;
 }) {
@@ -42,7 +45,13 @@ function AccountSuggestions({
         return $.artifacts.people.accounts;
       })}
     >
-      {loading ? (
+      {failed ? (
+        <p className="px-2 py-2 text-xs text-muted-foreground" role="alert">
+          {t(($) => {
+            return $.artifacts.people.searchUnavailable;
+          })}
+        </p>
+      ) : loading ? (
         <div
           className="flex items-center gap-2 px-2 py-3 text-xs text-muted-foreground"
           role="status"
@@ -134,6 +143,7 @@ function AccountSearch({
           <AccountSuggestions
             accounts={accounts.state === "hasData" ? accounts.data : undefined}
             loading={accounts.state === "loading"}
+            failed={accounts.state === "hasError"}
             busy={busy}
             onChoose={choose}
           />
@@ -178,13 +188,9 @@ function PeopleList({
                 {share.email}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">
-                {share.userId
-                  ? t(($) => {
-                      return $.artifacts.people.canView;
-                    })
-                  : t(($) => {
-                      return $.artifacts.people.invited;
-                    })}
+                {t(($) => {
+                  return $.artifacts.people.canView;
+                })}
               </span>
               <Button
                 type="button"
@@ -218,7 +224,7 @@ function PeopleList({
   );
 }
 
-function PeopleForm({ session, busy, onShare, onRemove }: PeopleProps) {
+function PeopleForm({ session, busy, failed, onShare, onRemove }: PeopleProps) {
   const { t } = useTranslation();
   const valid = useGet(session.people.validEmail$);
   const email = useGet(session.people.input$);
@@ -242,6 +248,13 @@ function PeopleForm({ session, busy, onShare, onRemove }: PeopleProps) {
         </label>
         <AccountSearch session={session} busy={busy} />
       </form>
+      {failed && (
+        <p className="mt-2 text-xs text-muted-foreground" role="alert">
+          {t(($) => {
+            return $.artifacts.people.updateUnavailable;
+          })}
+        </p>
+      )}
       <PeopleList session={session} busy={busy} onRemove={onRemove} />
     </div>
   );

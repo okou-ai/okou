@@ -1,11 +1,4 @@
-import {
-  array,
-  object,
-  string,
-  uuid,
-  enum as zEnum,
-  type infer as zInfer,
-} from "zod";
+import { array, object, string, uuid, type infer as zInfer } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { hostedSiteShareEmailSchema } from "../validators/hosted-site-sharing";
@@ -13,7 +6,6 @@ import { hostedSiteShareEmailSchema } from "../validators/hosted-site-sharing";
 export const hostedSiteShareSchema = object({
   id: uuid(),
   email: hostedSiteShareEmailSchema,
-  userId: string().nullable(),
 });
 export const hostedSiteShareAccountSchema = object({
   userId: string(),
@@ -52,9 +44,10 @@ export const hostedSiteSharingContract = c.router({
     responses: {
       200: object({ accounts: array(hostedSiteShareAccountSchema) }),
       400: apiErrorSchema,
+      429: apiErrorSchema,
       ...errors,
     },
-    summary: "Search accounts to share an owned website with",
+    summary: "Search current workspace members to share an owned website with",
   },
   share: {
     method: "POST",
@@ -65,9 +58,9 @@ export const hostedSiteSharingContract = c.router({
     responses: {
       200: object({
         share: hostedSiteShareSchema,
-        outcome: zEnum(["shared", "invited"]),
       }),
       400: apiErrorSchema,
+      429: apiErrorSchema,
       ...errors,
     },
     summary:

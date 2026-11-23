@@ -3795,6 +3795,13 @@
       "when": 1795404625058,
       "tag": "1620_hosted_site_email_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 1621,
+      "version": "7",
+      "when": 1795404695734,
+      "tag": "1621_hosted_site_sharing_quotas",
+      "breakpoints": true
     }
   ]
 }

@@ -1292,9 +1292,7 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
   let shared = false;
   context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
     return respond(200, {
-      shares: shared
-        ? [{ id: shareId, email: account.email, userId: account.userId }]
-        : [],
+      shares: shared ? [{ id: shareId, email: account.email }] : [],
     });
   });
   context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
@@ -1308,8 +1306,7 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
       expect(body.email).toBe(account.email);
       shared = true;
       return respond(200, {
-        share: { id: shareId, email: account.email, userId: account.userId },
-        outcome: "shared",
+        share: { id: shareId, email: account.email },
       });
     },
   );
@@ -1339,7 +1336,7 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
   const remove = getButtonByName(`Remove access for ${account.email}`, menu);
   expect(input).toHaveValue("");
   await expect(
-    screen.findByText("Access granted to taylor@example.com"),
+    screen.findByText("Sharing invitation processed"),
   ).resolves.toBeInTheDocument();
   expect(within(menu).getByText("Can view")).toBeInTheDocument();
   expect(
@@ -1365,15 +1362,14 @@ test("a complete email can be invited without a matching account and private acc
   });
   context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
     return respond(200, {
-      shares: invited ? [{ id: shareId, email, userId: null }] : [],
+      shares: invited ? [{ id: shareId, email }] : [],
     });
   });
   context.mocks.api(hostedSiteSharingContract.share, ({ body, respond }) => {
     expect(body.email).toBe(email);
     invited = true;
     return respond(200, {
-      share: { id: shareId, email, userId: null },
-      outcome: "invited",
+      share: { id: shareId, email },
     });
   });
   await openSite({ emailSharing: true });
@@ -1387,13 +1383,16 @@ test("a complete email can be invited without a matching account and private acc
   });
   await fill(input, email);
   await screen.findByText(
-    "No matching accounts. Enter a full email to invite.",
+    "No matching workspace members. Enter a full email address to invite someone.",
   );
   click(getButtonByName("Share", menu));
   await expect(
-    screen.findByText(`Invitation queued for ${email}`),
+    screen.findByText("Sharing invitation processed"),
   ).resolves.toBeInTheDocument();
-  await expect(within(menu).findByText("Invited")).resolves.toBeInTheDocument();
+  await expect(
+    within(menu).findByText("Can view"),
+  ).resolves.toBeInTheDocument();
+  expect(within(menu).queryByText("Invited")).not.toBeInTheDocument();
   expect(within(menu).getByText(email)).toBeInTheDocument();
 });
 
@@ -1404,4 +1403,73 @@ test("email sharing stays hidden until its feature switch is enabled", async () 
     screen.queryByRole("combobox", { name: "Share with people" }),
   ).not.toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "Only me" })).toBeInTheDocument();
+});
+
+test("a limited member search shows a recoverable message while complete email sharing remains available", async () => {
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, { shares: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+    return query.query === "Taylor"
+      ? respond(429, {
+          error: {
+            code: "RATE_LIMITED",
+            message: "Too many website sharing requests. Try again later.",
+          },
+        })
+      : respond(200, { accounts: [] });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "Taylor");
+  await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
+    "Member search is temporarily unavailable. Try again shortly.",
+  );
+  expect(getButtonByName("Share", menu)).toBeDisabled();
+  await fill(input, "taylor@external.example");
+  await within(menu).findByText(
+    "No matching workspace members. Enter a full email address to invite someone.",
+  );
+  expect(within(menu).queryByRole("alert")).not.toBeInTheDocument();
+  expect(getButtonByName("Share", menu)).toBeEnabled();
+});
+
+test("a limited invitation keeps its email draft and shows no success confirmation", async () => {
+  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+    return respond(200, { shares: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+    return respond(200, { accounts: [] });
+  });
+  context.mocks.api(hostedSiteSharingContract.share, ({ respond }) => {
+    return respond(429, {
+      error: {
+        code: "RATE_LIMITED",
+        message: "Too many website sharing requests. Try again later.",
+      },
+    });
+  });
+  await openSite({ emailSharing: true });
+  await openShare();
+  const menu = await screen.findByRole("dialog", { name: "Share" });
+  const input = within(menu).getByRole("combobox", {
+    name: "Share with people",
+  });
+  await fill(input, "taylor@external.example");
+  click(getButtonByName("Share", menu));
+  await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
+    "Could not update sharing. Try again shortly.",
+  );
+  expect(input).toHaveValue("taylor@external.example");
+  expect(
+    screen.queryByText("Sharing invitation processed"),
+  ).not.toBeInTheDocument();
+  expect(
+    queryButtonByName("Remove access for taylor@external.example", menu),
+  ).toBeUndefined();
+  expect(getButtonByName("Share", menu)).toBeEnabled();
 });

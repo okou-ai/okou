@@ -739,6 +739,9 @@ function HostedSiteShareSessionMenu({
             <HostedSitePeople
               session={session}
               busy={sharing.state === "loading" || removing.state === "loading"}
+              failed={
+                sharing.state === "hasError" || removing.state === "hasError"
+              }
               onShare={(email) => {
                 detach(share(email, signal), Reason.DomCallback);
               }}

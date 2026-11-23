@@ -3,13 +3,13 @@ import { and, asc, eq, exists, isNull } from "drizzle-orm";
 import { hostedSiteShares } from "@okouai/db/schema/hosted-site-share";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
-import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { db$, writeDb$ } from "../external/db";
-import { clerk$, type ClerkUser } from "../external/clerk";
+import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { buildTeamFromAddress } from "./email-common.service";
+import { hostedSiteWorkspaceAccounts } from "./hosted-site-share-directory.service";
 
 interface Owner {
   readonly siteId: string;
@@ -27,53 +27,23 @@ function ownedSite(owner: Owner) {
   );
 }
 
-function account(
-  user: ClerkUser,
-  requestedEmail?: string,
-): HostedSiteShareAccount | null {
-  if (user.banned) {
-    return null;
-  }
-  const address = user.emailAddresses.find((entry) => {
-    return (
-      entry.verification?.status === "verified" &&
-      (requestedEmail === undefined
-        ? entry.id === user.primaryEmailAddressId
-        : entry.emailAddress.trim().toLowerCase() === requestedEmail)
-    );
-  });
-  return address
-    ? {
-        userId: user.id,
-        email: address.emailAddress.trim().toLowerCase(),
-        name: [user.firstName, user.lastName].filter(Boolean).join(" ") || null,
-      }
-    : null;
-}
-
 /** The route checks current ownership before reading either directory. */
-export function hostedSiteSharingReads(siteId: string, query?: string) {
+export function hostedSiteSharingReads(
+  siteId: string,
+  orgId: string,
+  query?: string,
+) {
   const shares$ = computed(async (get) => {
     return await get(db$)
       .select({
         id: hostedSiteShares.id,
         email: hostedSiteShares.email,
-        userId: hostedSiteShares.userId,
       })
       .from(hostedSiteShares)
       .where(eq(hostedSiteShares.siteId, siteId))
       .orderBy(asc(hostedSiteShares.createdAt), asc(hostedSiteShares.id));
   });
-  const accounts$ = computed(async (get) => {
-    if (query === undefined) {
-      return [];
-    }
-    const users = await get(clerk$).users.getUserList({ query, limit: 10 });
-    return users.data.flatMap((user) => {
-      const candidate = account(user);
-      return candidate ? [candidate] : [];
-    });
-  });
+  const accounts$ = hostedSiteWorkspaceAccounts(orgId, { query });
   return { shares$, accounts$ };
 }
 
@@ -83,15 +53,11 @@ export const shareHostedSite$ = command(
     args: Owner & { readonly email: string },
     signal: AbortSignal,
   ) => {
-    const users = await get(clerk$).users.getUserList(
-      { emailAddress: [args.email], limit: 10 },
-      undefined,
-      signal,
+    const recipients = await get(
+      hostedSiteWorkspaceAccounts(args.orgId, { emailAddress: [args.email] }),
     );
-    const recipient = users.data.flatMap((user) => {
-      const candidate = account(user, args.email);
-      return candidate ? [candidate] : [];
-    })[0];
+    signal.throwIfAborted();
+    const recipient = recipients[0];
     if (recipient?.userId === args.userId) {
       return { status: "self" as const };
     }
@@ -132,8 +98,7 @@ export const shareHostedSite$ = command(
     if (share.userId !== null) {
       return {
         status: "ok" as const,
-        share,
-        outcome: "shared" as const,
+        share: { id: share.id, email: share.email },
         outboxId: null,
       };
     }
@@ -163,8 +128,7 @@ export const shareHostedSite$ = command(
     signal.throwIfAborted();
     return {
       status: "ok" as const,
-      share,
-      outcome: "invited" as const,
+      share: { id: share.id, email: share.email },
       outboxId: share.id,
     };
   },

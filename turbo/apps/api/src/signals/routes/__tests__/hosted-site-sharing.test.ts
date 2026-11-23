@@ -1,13 +1,13 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
-import { array, object, record, string } from "zod";
+import { array, number, object, record, string } from "zod";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { now } from "../../../lib/time";
+import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { hostRoutes } from "../host";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createHostBddApi } from "./helpers/api-bdd-host";
@@ -54,6 +54,7 @@ function profile(user: ApiTestUser, verified = true) {
     id: user.userId,
     firstName: "Website",
     lastName: "Viewer",
+    username: `nickname_${user.userId}`,
     banned: false,
     primaryEmailAddressId: `email_${user.userId}`,
     emailAddresses: [
@@ -66,31 +67,73 @@ function profile(user: ApiTestUser, verified = true) {
   };
 }
 
-function directory(profiles: readonly ReturnType<typeof profile>[]) {
+function directory(
+  profiles: readonly ReturnType<typeof profile>[],
+  members: readonly ApiTestUser[] = [],
+) {
   mockClerkUsers(context, profiles);
   context.mocks.clerk.users.getUserList.mockImplementation((input) => {
     const params = object({
-      emailAddress: array(string()).optional(),
-      query: string().optional(),
-    }).parse(input);
+      userId: array(string()),
+      limit: number().optional(),
+    })
+      .strict()
+      .parse(input);
     const data = profiles.filter((user) => {
-      return params.emailAddress
-        ? user.emailAddresses.some((address) => {
-            return params.emailAddress?.includes(
-              address.emailAddress.toLowerCase(),
-            );
-          })
-        : `${user.firstName} ${user.lastName} ${user.emailAddresses[0]?.emailAddress}`
-            .toLowerCase()
-            .includes(params.query?.toLowerCase() ?? "");
+      return params.userId.includes(user.id);
     });
     return Promise.resolve({ data });
   });
+  context.mocks.clerk.organizations.getOrganizationMembershipList.mockImplementation(
+    (input) => {
+      const params = object({
+        organizationId: string(),
+        userId: array(string()).optional(),
+        emailAddress: array(string()).optional(),
+        query: string().optional(),
+      }).parse(input);
+      const data = members
+        .filter((member) => {
+          const user = profiles.find((entry) => {
+            return entry.id === member.userId;
+          });
+          return (
+            member.orgId === params.organizationId &&
+            (!params.userId || params.userId.includes(member.userId)) &&
+            (!params.emailAddress ||
+              params.emailAddress.includes(member.email)) &&
+            (!params.query ||
+              `${user?.firstName} ${user?.lastName} ${user?.username} ${member.email}`
+                .toLowerCase()
+                .includes(params.query.toLowerCase()))
+          );
+        })
+        .map((member) => {
+          return {
+            id: `membership_${member.userId}_${member.orgId}`,
+            role: "org:member",
+            createdAt: now(),
+            organization: {
+              id: member.orgId,
+              name: "Sharing workspace",
+              slug: "sharing",
+              imageUrl: "",
+              hasImage: false,
+            },
+            publicUserData: { userId: member.userId },
+          };
+        });
+      return Promise.resolve({ data });
+    },
+  );
 }
 
-async function publish(enabled = true) {
-  const orgId = `org_${randomUUID()}`;
-  const owner = { ...createBddApi(context).user({ orgId }), orgId };
+async function publish(enabled = true, existingOwner?: ApiTestUser) {
+  const orgId = existingOwner?.orgId ?? `org_${randomUUID()}`;
+  const owner = {
+    ...(existingOwner ?? createBddApi(context).user({ orgId })),
+    orgId,
+  };
   if (enabled) {
     await updateFeatureSwitchesForUser(context, owner, {
       [FeatureSwitchKey.HostedSiteEmailSharing]: true,
@@ -159,11 +202,17 @@ async function browserSession(
 
 test("an owner searches verified accounts, shares privately, and revokes an existing browser session", async () => {
   const { owner, site, params } = await publish();
-  const viewer = createBddApi(context).user({ email: "viewer@example.com" });
+  const viewer = createBddApi(context).user({
+    email: "viewer@example.com",
+    orgId: owner.orgId,
+  });
   const stranger = createBddApi(context).user({
     email: "stranger@example.com",
   });
-  directory([profile(owner), profile(viewer), profile(stranger, false)]);
+  directory(
+    [profile(owner), profile(viewer), profile(stranger, false)],
+    [owner, viewer],
+  );
   const results = await accept(
     app(owner)(hostedSiteSharingContract).search({
       headers,
@@ -183,8 +232,9 @@ test("an owner searches verified accounts, shares privately, and revokes an exis
     }),
     [200],
   );
-  expect(shared.body.outcome).toBe("shared");
-  expect(shared.body.share.userId).toBe(viewer.userId);
+  expect(shared.body).toStrictEqual({
+    share: { id: shared.body.share.id, email: viewer.email },
+  });
   const sessionHeaders = await browserSession(viewer, site);
   const access = () => {
     return app(viewer)(hostContract).siteAccess({
@@ -234,7 +284,9 @@ test("an email invitation uses the Resend template once and can only be claimed 
     [200],
   );
   await flushWaitUntilForTest();
-  expect(first.body.outcome).toBe("invited");
+  expect(first.body).toStrictEqual({
+    share: { id: first.body.share.id, email: invitee.email },
+  });
   const duplicate = await accept(
     app(owner)(hostedSiteSharingContract).share({
       headers,
@@ -281,9 +333,7 @@ test("an email invitation uses the Resend template once and can only be claimed 
     app(owner)(hostedSiteSharingContract).list({ headers, params }),
     [200],
   );
-  expect(listing.body.shares).toStrictEqual([
-    { ...first.body.share, userId: invitee.userId },
-  ]);
+  expect(listing.body.shares).toStrictEqual([first.body.share]);
 });
 
 test("sharing management is owner-only and disabled features cannot search or grant access", async () => {
@@ -322,7 +372,7 @@ test("sharing management is owner-only and disabled features cannot search or gr
     }),
     [404],
   );
-  directory([profile(owner), profile(peer)]);
+  directory([profile(owner), profile(peer)], [owner, peer]);
   const shared = await accept(
     app(owner)(hostedSiteSharingContract).share({
       headers,
@@ -380,4 +430,350 @@ test("revoking a pending invitation prevents a later verified sign-up from claim
     status: 403,
     body: { error: { code: "FORBIDDEN" } },
   });
+});
+
+test("account lookup returns only verified current workspace members for names, nicknames, and full emails", async () => {
+  const { owner, params } = await publish();
+  const member = createBddApi(context).user({
+    orgId: owner.orgId,
+    email: "member@example.com",
+  });
+  const external = createBddApi(context).user({
+    email: "external@example.com",
+  });
+  const unverified = createBddApi(context).user({
+    orgId: owner.orgId,
+    email: "unverified@example.com",
+  });
+  const banned = createBddApi(context).user({
+    orgId: owner.orgId,
+    email: "banned@example.com",
+  });
+  directory(
+    [
+      profile(owner),
+      profile(member),
+      profile(external),
+      profile(unverified, false),
+      { ...profile(banned), banned: true },
+    ],
+    [owner, member, external, unverified, banned],
+  );
+  const search = (query: string) => {
+    return app(owner)(hostedSiteSharingContract).search({
+      headers,
+      params,
+      query: { query },
+    });
+  };
+  for (const query of [
+    "Website Viewer",
+    `nickname_${member.userId}`,
+    member.email,
+  ]) {
+    const result = await accept(search(query), [200]);
+    expect(result.body.accounts).toStrictEqual([
+      { userId: member.userId, email: member.email, name: "Website Viewer" },
+    ]);
+  }
+  for (const query of [
+    external.email,
+    `nickname_${external.userId}`,
+    "external",
+  ]) {
+    expect((await accept(search(query), [200])).body.accounts).toStrictEqual(
+      [],
+    );
+  }
+});
+
+test("external registered and unregistered emails have the same invitation response and list representation", async () => {
+  const { owner, site, params } = await publish();
+  const registered = createBddApi(context).user({
+    email: "registered@external.example",
+  });
+  const unregistered = createBddApi(context).user({
+    email: "unregistered@external.example",
+    orgId: null,
+  });
+  directory([profile(owner), profile(registered)], [owner]);
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: "external-invitation" },
+    error: null,
+  });
+  for (const recipient of [registered, unregistered]) {
+    const result = await accept(
+      app(owner)(hostedSiteSharingContract).share({
+        headers,
+        params,
+        body: { email: recipient.email },
+      }),
+      [200],
+    );
+    expect(result.body).toStrictEqual({
+      share: { id: expect.any(String), email: recipient.email },
+    });
+    await flushWaitUntilForTest();
+  }
+  const sentTo = context.mocks.resend.send.mock.calls.map((call) => {
+    return object({ to: string() }).parse(call[0]).to;
+  });
+  expect(sentTo.sort()).toStrictEqual(
+    [registered.email, unregistered.email].sort(),
+  );
+  const before = await accept(
+    app(owner)(hostedSiteSharingContract).list({ headers, params }),
+    [200],
+  );
+  await accept(authorization(registered, site), [200]);
+  await accept(authorization(unregistered, site), [403]);
+  directory(
+    [profile(owner), profile(registered), profile(unregistered)],
+    [owner],
+  );
+  await accept(authorization(unregistered, site), [200]);
+  const after = await accept(
+    app(owner)(hostedSiteSharingContract).list({ headers, params }),
+    [200],
+  );
+  expect(after.body).toStrictEqual(before.body);
+});
+
+test("search admission is atomic across concurrent requests and shared across owned websites", async () => {
+  await withMockNowForTest(new Date("2026-11-23T00:00:00Z"), async () => {
+    const first = await publish();
+    const second = await publish(true, first.owner);
+    directory([profile(first.owner)], [first.owner]);
+    const search = (params: { siteId: string }) => {
+      return app(first.owner)(hostedSiteSharingContract).search({
+        headers,
+        params,
+        query: { query: "nobody" },
+      });
+    };
+    const results = await Promise.all(
+      Array.from({ length: 31 }, (_, index) => {
+        return search(index % 2 === 0 ? first.params : second.params);
+      }),
+    );
+    expect(
+      results.filter((result) => {
+        return result.status === 200;
+      }),
+    ).toHaveLength(30);
+    expect(
+      results.filter((result) => {
+        return result.status === 429;
+      }),
+    ).toHaveLength(1);
+    const limited = await accept(search(second.params), [429]);
+    expect(limited.body.error.code).toBe("RATE_LIMITED");
+    mockNow(now() + 60_000);
+    await accept(search(second.params), [200]);
+  });
+});
+
+test("sharing attempts are limited per user before creating another invitation", async () => {
+  await withMockNowForTest(new Date("2026-11-23T00:00:00Z"), async () => {
+    const { owner, params } = await publish();
+    directory([profile(owner)], [owner]);
+    context.mocks.resend.send.mockResolvedValue({
+      data: { id: "limited-invitation" },
+      error: null,
+    });
+    const share = (email: string) => {
+      return app(owner)(hostedSiteSharingContract).share({
+        headers,
+        params,
+        body: { email },
+      });
+    };
+    for (let index = 0; index < 10; index++) {
+      await accept(share(`recipient-${index}@example.com`), [200]);
+    }
+    await accept(share("blocked@example.com"), [429]);
+    expect(
+      (
+        await accept(
+          app(owner)(hostedSiteSharingContract).list({ headers, params }),
+          [200],
+        )
+      ).body.shares,
+    ).toHaveLength(10);
+    mockNow(now() + 60_000);
+    await accept(share("after-reset@example.com"), [200]);
+  });
+});
+
+test("recipient quotas survive revocation and switching websites", async () => {
+  const first = await publish();
+  const second = await publish(true, first.owner);
+  directory([profile(first.owner)], [first.owner]);
+  context.mocks.resend.send.mockResolvedValue({
+    data: { id: "recipient-limited-invitation" },
+    error: null,
+  });
+  const email = "recipient@example.com";
+  const share = (params: { siteId: string }) => {
+    return app(first.owner)(hostedSiteSharingContract).share({
+      headers,
+      params,
+      body: { email },
+    });
+  };
+  for (let index = 0; index < 3; index++) {
+    const params = index % 2 === 0 ? first.params : second.params;
+    const result = await accept(share(params), [200]);
+    await accept(
+      app(first.owner)(hostedSiteSharingContract).remove({
+        headers,
+        params: { ...params, shareId: result.body.share.id },
+      }),
+      [200],
+    );
+  }
+  await accept(
+    app(first.owner)(hostedSiteSharingContract).share({
+      headers,
+      params: second.params,
+      body: { email: " RECIPIENT@EXAMPLE.COM " },
+    }),
+    [429],
+  );
+  expect(
+    (
+      await accept(
+        app(first.owner)(hostedSiteSharingContract).list({
+          headers,
+          params: second.params,
+        }),
+        [200],
+      )
+    ).body.shares,
+  ).toStrictEqual([]);
+});
+
+test("workspace search quotas cannot be bypassed by using another owner", async () => {
+  const first = await publish();
+  const owners = [first];
+  for (let index = 0; index < 4; index++) {
+    owners.push(
+      await publish(
+        true,
+        createBddApi(context).user({ orgId: first.owner.orgId }),
+      ),
+    );
+  }
+  directory(
+    owners.map(({ owner }) => {
+      return profile(owner);
+    }),
+    owners.map(({ owner }) => {
+      return owner;
+    }),
+  );
+  for (const { owner, params } of owners.slice(0, 4)) {
+    for (let index = 0; index < 30; index++) {
+      await accept(
+        app(owner)(hostedSiteSharingContract).search({
+          headers,
+          params,
+          query: { query: "nobody" },
+        }),
+        [200],
+      );
+    }
+  }
+  const last = owners[4]!;
+  const limited = await accept(
+    app(last.owner)(hostedSiteSharingContract).search({
+      headers,
+      params: last.params,
+      query: { query: "nobody" },
+    }),
+    [429],
+  );
+  expect(limited.body.error.code).toBe("RATE_LIMITED");
+});
+
+test("workspace sharing quotas apply across owners and do not create a grant when exhausted", async () => {
+  const first = await publish();
+  const owners = [first];
+  for (let index = 0; index < 6; index++) {
+    owners.push(
+      await publish(
+        true,
+        createBddApi(context).user({ orgId: first.owner.orgId }),
+      ),
+    );
+  }
+  const recipients = Array.from({ length: 60 }, (_, index) => {
+    return createBddApi(context).user({
+      orgId: first.owner.orgId,
+      email: `member-${index}@example.com`,
+    });
+  });
+  const members = [
+    ...owners.map(({ owner }) => {
+      return owner;
+    }),
+    ...recipients,
+  ];
+  directory(
+    members.map((member) => {
+      return profile(member);
+    }),
+    members,
+  );
+  for (const [index, recipient] of recipients.entries()) {
+    const { owner, params } = owners[Math.floor(index / 10)]!;
+    await accept(
+      app(owner)(hostedSiteSharingContract).share({
+        headers,
+        params,
+        body: { email: recipient.email },
+      }),
+      [200],
+    );
+  }
+  const last = owners[6]!;
+  await accept(
+    app(last.owner)(hostedSiteSharingContract).share({
+      headers,
+      params: last.params,
+      body: { email: "blocked@example.com" },
+    }),
+    [429],
+  );
+  expect(
+    (
+      await accept(
+        app(last.owner)(hostedSiteSharingContract).list({
+          headers,
+          params: last.params,
+        }),
+        [200],
+      )
+    ).body.shares,
+  ).toStrictEqual([]);
+});
+
+test("a partial name cannot be submitted as an external invitation address", async () => {
+  const { owner, params } = await publish();
+  await accept(
+    app(owner)(hostedSiteSharingContract).share({
+      headers,
+      params,
+      body: { email: "External Viewer" },
+    }),
+    [400],
+  );
+  expect(
+    (
+      await accept(
+        app(owner)(hostedSiteSharingContract).list({ headers, params }),
+        [200],
+      )
+    ).body.shares,
+  ).toStrictEqual([]);
 });

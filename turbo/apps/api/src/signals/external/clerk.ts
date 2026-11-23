@@ -208,7 +208,6 @@ export interface ClerkUsersApi {
   ): Promise<ClerkUser>;
   getUserList(
     params?: {
-      query?: string;
       userId?: string[];
       emailAddress?: string[];
       externalId?: string[];
@@ -250,6 +249,8 @@ export interface ClerkOrganizationsApi {
   getOrganizationMembershipList(
     params: {
       organizationId: string;
+      query?: string;
+      emailAddress?: string[];
       userId?: string[];
       limit?: number;
       offset?: number;

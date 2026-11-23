@@ -26,6 +26,7 @@ export const hostedSiteSharingContract: ClientDescriptor<
       401: true,
       403: true,
       404: true,
+      429: true,
     },
   },
   share: {
@@ -37,6 +38,7 @@ export const hostedSiteSharingContract: ClientDescriptor<
       401: true,
       403: true,
       404: true,
+      429: true,
     },
   },
   remove: {
