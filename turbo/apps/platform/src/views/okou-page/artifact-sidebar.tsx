@@ -24,6 +24,7 @@ import {
   useLastLoadable,
   useLastResolved,
   useLoadable,
+  useResolved,
   useSet,
 } from "ccstate-react";
 import {
@@ -265,9 +266,8 @@ export function ArtifactSidebarContent({
   const fullscreen = fullscreenState.active;
   const splitView = useMediaQuery(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY);
   const markdownQuoteEnabled =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.MarkdownArtifactQuote
-    ] === true;
+    useResolved(featureSwitches$)?.[FeatureSwitchKey.MarkdownArtifactQuote] ===
+    true;
   const toggleFullscreen = fullscreenState.toggle;
   const resource = useLastLoadable(
     artifactRef.kind === "image"
