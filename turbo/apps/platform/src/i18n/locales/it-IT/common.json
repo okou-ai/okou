@@ -1931,6 +1931,8 @@
         "slideCountAuto": "Automatico",
         "slideCountRange": "{{range}} diapositive"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "Cerca chat o progetti…",
       "message": "Messaggio",
       "modelForThisChat": "Modello per questa chat",
@@ -1972,6 +1974,7 @@
       "temporarilySwitchTo": "Passa temporaneamente a",
       "threadSuggestions": "Thread di chat",
       "useForFutureChats": "Usa questo modello per le chat future",
+      "useSuggestion": "Usa questo suggerimento",
       "workflows": {
         "loading": "Caricamento flussi di lavoro...",
         "manage": "Gestisci flussi di lavoro",
