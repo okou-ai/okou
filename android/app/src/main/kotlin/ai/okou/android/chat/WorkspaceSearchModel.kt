@@ -1,10 +1,11 @@
 package ai.okou.android.chat
 
 import ai.okou.android.api.ApiFailure
-import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.workflows.WorkflowReadFailure
+import ai.okou.android.workflows.WorkflowState
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.io.IOException
@@ -59,11 +60,23 @@ data class SearchWorkflowHit(
             description?.contains(keyword, ignoreCase = true) == true
 }
 
-internal fun WorkflowSummary.toSearchHit() =
+private fun WorkflowSummary.toSearchHit() =
     SearchWorkflowHit(id, name, displayName, description, shadowedBy == null)
 
-internal fun WorkflowDetail.toSearchHit() =
-    SearchWorkflowHit(id, name, displayName, description, shadowedBy == null)
+internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWorkflowHit> {
+    val rows =
+        catalog
+            ?: return when (catalogFailure) {
+                null -> SearchRead.Loading
+                WorkflowReadFailure.CouldNotLoad -> SearchRead.Retrying
+                WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
+                else -> SearchRead.Failed
+            }
+    return SearchRead.Ready(
+        rows.mapNotNull { it.toSearchHit().takeIf { hit -> hit.matches(keyword) } },
+        refreshFailed = catalogFailure != null,
+    )
+}
 
 data class SearchArtifactHit(val id: String, val title: String, val kind: ArtifactKind)
 
@@ -71,8 +84,6 @@ data class SearchArtifactPage(val hits: List<SearchArtifactHit>, val nextCursor:
 
 interface WorkspaceSearchService {
     suspend fun searchMessages(keyword: String): List<SearchMessageHit>
-
-    suspend fun searchableWorkflows(): List<SearchWorkflowHit>
 
     suspend fun searchArtifacts(keyword: String, cursor: String?): SearchArtifactPage
 }
@@ -84,13 +95,33 @@ internal sealed interface SearchRead<out T> {
 
     data object Failed : SearchRead<Nothing>
 
-    data class Ready<T>(val rows: List<T>, val nextCursor: String? = null) : SearchRead<T>
+    data object AccessLost : SearchRead<Nothing>
+
+    data class Ready<T>(
+        val rows: List<T>,
+        val nextCursor: String? = null,
+        val refreshFailed: Boolean = false,
+    ) : SearchRead<T>
 }
+
+internal val SearchRead<*>?.hasFailure: Boolean
+    get() =
+        when (this) {
+            SearchRead.Retrying,
+            SearchRead.Failed,
+            SearchRead.AccessLost -> true
+            is SearchRead.Ready -> refreshFailed
+            else -> false
+        }
+
+private fun <T> SearchRead<T>.updated(read: SearchRead<T>): SearchRead<T> =
+    if (this is SearchRead.Ready && read.hasFailure && read != SearchRead.AccessLost)
+        copy(refreshFailed = true)
+    else read
 
 internal data class WorkspaceSearchResults(
     val keyword: String = "",
     val messages: SearchRead<SearchMessageHit> = SearchRead.Loading,
-    val workflows: SearchRead<SearchWorkflowHit> = SearchRead.Loading,
     val artifacts: SearchRead<SearchArtifactHit> = SearchRead.Loading,
     val moreArtifactsFailed: Boolean = false,
 )
@@ -112,7 +143,6 @@ internal constructor(
     private val searches = mutableMapOf<WorkspaceSearchType, Job>()
     private val visibleType = MutableStateFlow<WorkspaceSearchType?>(null)
     private var artifactPageJob: Job? = null
-    private var workflowCatalog: List<SearchWorkflowHit>? = null
     private var online = false
 
     internal fun opened(chat: ConfirmedChat) {
@@ -131,23 +161,25 @@ internal constructor(
         keyword: String,
         type: WorkspaceSearchType,
         connected: Boolean,
-        workflowsAvailable: Boolean = false,
         artifactsAvailable: Boolean = false,
         visible: Boolean = true,
     ) {
         if (!authorized()) return
-        if (online != connected || keyword.isEmpty() || !workflowsAvailable) workflowCatalog = null
-        if (mutable.value.keyword != keyword || online != connected) {
+        val previous = mutable.value
+        if (previous.keyword != keyword || online != connected) {
             online = connected
             artifactPageJob?.cancel()
             artifactPageJob = null
             searches.values.forEach { it.cancel() }
             searches.clear()
-            mutable.value = WorkspaceSearchResults(keyword)
-        }
-        if (!workflowsAvailable) {
-            searches.remove(WorkspaceSearchType.Workflows)?.cancel()
-            mutable.value = mutable.value.copy(workflows = SearchRead.Loading)
+            mutable.value =
+                if (previous.keyword != keyword) WorkspaceSearchResults(keyword)
+                else
+                    previous.copy(
+                        messages = previous.messages as? SearchRead.Ready ?: SearchRead.Loading,
+                        artifacts = previous.artifacts as? SearchRead.Ready ?: SearchRead.Loading,
+                        moreArtifactsFailed = false,
+                    )
         }
         if (!artifactsAvailable) {
             searches.remove(WorkspaceSearchType.Artifacts)?.cancel()
@@ -163,58 +195,18 @@ internal constructor(
                 WorkspaceSearchType.Messages,
                 { SearchRead.Ready(service.searchMessages(keyword)) },
             ) { state, read ->
-                state.copy(messages = read)
+                state.copy(messages = state.messages.updated(read))
             }
-        }
-        if (
-            workflowsAvailable &&
-                type.includes(WorkspaceSearchType.Workflows) &&
-                mutable.value.workflows !is SearchRead.Ready
-        ) {
-            requestWorkflows(keyword)
         }
         if (artifactsAvailable && type.includes(WorkspaceSearchType.Artifacts)) {
             request(WorkspaceSearchType.Artifacts, { artifactPage(keyword, null) }) { state, read ->
-                state.copy(artifacts = read)
+                state.copy(artifacts = state.artifacts.updated(read))
             }
         }
     }
 
     internal fun pauseReads() {
         visibleType.value = null
-    }
-
-    internal fun refreshWorkflows(
-        catalog: List<SearchWorkflowHit>?,
-        detail: SearchWorkflowHit?,
-        retainConfirmed: Boolean,
-    ) {
-        val state = mutable.value
-        if (!authorized() || !online || state.keyword.isEmpty()) return
-        searches.remove(WorkspaceSearchType.Workflows)?.cancel()
-        workflowCatalog = catalog
-        if (catalog == null) {
-            val previous = state.workflows
-            val retained =
-                when {
-                    !retainConfirmed -> SearchRead.Loading
-                    detail != null && previous is SearchRead.Ready ->
-                        SearchRead.Ready(
-                            previous.rows.mapNotNull { hit ->
-                                if (hit.id == detail.id) detail.takeIf { it.matches(state.keyword) }
-                                else hit
-                            }
-                        )
-                    else -> previous
-                }
-            mutable.value = state.copy(workflows = retained)
-            requestWorkflows(state.keyword)
-        } else {
-            mutable.value =
-                state.copy(
-                    workflows = SearchRead.Ready(catalog.filter { it.matches(state.keyword) })
-                )
-        }
     }
 
     internal fun nextArtifacts(keyword: String, cursor: String) {
@@ -225,12 +217,16 @@ internal constructor(
                 !online ||
                 current.keyword != keyword ||
                 loaded.nextCursor != cursor ||
+                loaded.refreshFailed ||
                 current.moreArtifactsFailed ||
                 artifactPageJob?.isActive == true
         )
             return
         artifactPageJob =
             viewModelScope.launch {
+                searches[WorkspaceSearchType.Artifacts]?.join()
+                val currentPage = mutable.value.artifacts as? SearchRead.Ready ?: return@launch
+                if (currentPage.nextCursor != cursor || currentPage.refreshFailed) return@launch
                 readSearch(
                     { it == WorkspaceSearchType.Artifacts },
                     { artifactPage(keyword, cursor) },
@@ -238,12 +234,14 @@ internal constructor(
                     val latest = mutable.value
                     val merged =
                         (next as? SearchRead.Ready)?.let { page ->
-                            val rows = (loaded.rows + page.rows).distinctBy { it.id }
-                            if (rows.size == loaded.rows.size && page.nextCursor != null) null
+                            val rows = (currentPage.rows + page.rows).distinctBy { it.id }
+                            if (rows.size == currentPage.rows.size && page.nextCursor != null) null
                             else SearchRead.Ready(rows, page.nextCursor)
                         }
                     mutable.value =
-                        if (merged == null) latest.copy(moreArtifactsFailed = true)
+                        if (next == SearchRead.AccessLost)
+                            latest.copy(artifacts = next, moreArtifactsFailed = false)
+                        else if (merged == null) latest.copy(moreArtifactsFailed = true)
                         else latest.copy(artifacts = merged, moreArtifactsFailed = false)
                 }
             }
@@ -255,24 +253,6 @@ internal constructor(
     ): SearchRead.Ready<SearchArtifactHit> {
         val page = service.searchArtifacts(keyword, cursor)
         return SearchRead.Ready(page.hits.distinctBy { it.id }, page.nextCursor)
-    }
-
-    private fun requestWorkflows(keyword: String) =
-        request(WorkspaceSearchType.Workflows, { SearchRead.Ready(findWorkflows(keyword)) }) {
-            state,
-            read ->
-            if (read == SearchRead.Retrying && state.workflows is SearchRead.Ready) state
-            else state.copy(workflows = read)
-        }
-
-    private suspend fun findWorkflows(keyword: String): List<SearchWorkflowHit> {
-        val catalog =
-            workflowCatalog
-                ?: service.searchableWorkflows().also {
-                    currentCoroutineContext().ensureActive()
-                    if (authorized()) workflowCatalog = it
-                }
-        return catalog.filter { it.matches(keyword) }
     }
 
     private fun <T> request(
@@ -317,8 +297,18 @@ internal constructor(
                         onFailure(error)
                     }
                     val retryAfter = workspaceReadRetryAfterMillis(error)
-                    if (authorized())
-                        publish(if (retryAfter == null) SearchRead.Failed else SearchRead.Retrying)
+                    if (authorized()) {
+                        publish(
+                            when {
+                                error is ApiFailure.Unauthenticated ||
+                                    error is ApiFailure.UpdateRequired ||
+                                    error is ApiFailure.Http && error.status in setOf(401, 403) ->
+                                    SearchRead.AccessLost
+                                retryAfter == null -> SearchRead.Failed
+                                else -> SearchRead.Retrying
+                            }
+                        )
+                    }
                     if (retryAfter == null) return
                     delay(maxOf(retryAfter, workspaceReadRetryDelays[failures]))
                     failures = (failures + 1).coerceAtMost(workspaceReadRetryDelays.lastIndex)
