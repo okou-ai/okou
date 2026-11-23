@@ -20,11 +20,22 @@ assert review['permissions'] == {'contents': 'read', 'actions': 'read', 'statuse
 assert 'ios-app-review.mjs' not in json.dumps(workflow)
 job = workflow['jobs']['publish-ios-testflight']
 condition = job['if'].removeprefix('${{').removesuffix('}}').strip()
-for value, expected in [('true', True), ('false', False), ('', False)]:
-    expression = condition.replace('needs.release-please.outputs.ios_release_created', repr(value))
-    assert eval(expression, {'__builtins__': {}}, {}) is expected
+for value in ['true', 'false', '']:
+    for app_required in ['true', 'false']:
+        for app_result in ['success', 'skipped', 'failure', 'cancelled']:
+            for cancelled in [False, True]:
+                expression = (condition
+                    .replace('needs.release-please.outputs.ios_release_created', repr(value))
+                    .replace('needs.release-please.outputs.app_deploy_required', repr(app_required))
+                    .replace('needs.promote-app-worker-production.result', repr(app_result))
+                    .replace('always()', 'True')
+                    .replace('!cancelled()', repr(not cancelled))
+                    .replace('&&', 'and').replace('||', 'or'))
+                expected = (not cancelled and value == 'true' and
+                    (app_required != 'true' or app_result == 'success'))
+                assert eval(expression, {'__builtins__': {}}, {}) is expected
 assert job['environment'] == 'production'
-assert job['needs'] == 'release-please'
+assert set(job['needs']) == {'release-please', 'promote-app-worker-production'}
 assert job['permissions'] == {'contents': 'read', 'actions': 'read'}
 steps = job['steps']
 assert next(step for step in steps if 'uses' in step and step['uses'].startswith('actions/checkout'))['with']['ref'] == '${{ needs.release-please.outputs.release_target }}'
