@@ -182,6 +182,12 @@ private fun <T : Any, E : Any> ClerkResult<T, E>.required(): T =
         is ClerkResult.Success -> value
         is ClerkResult.Failure -> {
             if (code == 401 || code == 403) throw ApiFailure.Unauthenticated()
+            val cause = throwable
+            if (cause is java.io.IOException) throw ApiFailure.Network(cause)
+            val status = code
+            if (status == 408 || status == 429 || (status != null && status in 500..599)) {
+                throw ApiFailure.Http(checkNotNull(status), null, null, null)
+            }
             // Provider diagnostics may contain identifiers; the UI uses localized generic recovery.
             throw IllegalStateException("Authentication request failed")
         }

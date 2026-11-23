@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Verifica degli spazi di lavoro…</string>
+    <string name="auth_check_failed">Impossibile verificare l’accesso.</string>
+    <string name="auth_selection_failed">Impossibile aprire questo spazio di lavoro.</string>
+    <string name="auth_sign_out_failed">Impossibile uscire.</string>
     <string name="composer_sync_loading">Caricamento bozza salvata…</string>
     <string name="composer_sync_saving">Sincronizzazione bozza…</string>
     <string name="composer_sync_failed">Sincronizzazione non riuscita. Il testo rimane su questo dispositivo.</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">Scuro</string>
     <string name="on_this_device">Su questo dispositivo</string>
     <string name="retry">Riprova</string>
-    <string name="auth_restoring">Ripristino della sessione…</string>
     <string name="auth_preparing_workspace">Preparazione dello spazio di lavoro…</string>
     <string name="auth_choose_workspace">Scegli lo spazio di lavoro</string>
     <string name="auth_no_workspace">Nessuno spazio di lavoro accessibile</string>

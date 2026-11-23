@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Vérification des espaces de travail…</string>
+    <string name="auth_check_failed">Impossible de vérifier l’accès.</string>
+    <string name="auth_selection_failed">Impossible d’ouvrir cet espace de travail.</string>
+    <string name="auth_sign_out_failed">Impossible de se déconnecter.</string>
     <string name="composer_sync_loading">Chargement du brouillon enregistré…</string>
     <string name="composer_sync_saving">Synchronisation du brouillon…</string>
     <string name="composer_sync_failed">La synchronisation a échoué. Votre texte reste sur cet appareil.</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">Sombre</string>
     <string name="on_this_device">Sur cet appareil</string>
     <string name="retry">Réessayer</string>
-    <string name="auth_restoring">Restauration de votre session…</string>
     <string name="auth_preparing_workspace">Préparation de votre espace de travail…</string>
     <string name="auth_choose_workspace">Choisissez votre espace de travail</string>
     <string name="auth_no_workspace">Aucun espace de travail accessible pour le moment</string>

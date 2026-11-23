@@ -88,7 +88,7 @@ class UpdateRootTest {
 
     @Test
     fun optionalDiscoveryLeavesTheRestoringRootInPlaceAcrossRecreation() {
-        val restoring = compose.onNodeWithText(app.getString(R.string.auth_restoring))
+        val restoring = compose.onNodeWithText(app.getString(R.string.app_name))
         val startupBounds = restoring.assertIsDisplayed().getUnclippedBoundsInRoot()
         assertFalse(app.updates.state.value.required)
         app.fixture.heldCheck!!.complete(Unit)
@@ -228,9 +228,7 @@ class UpdateRootTest {
         try {
             compose.activityRule.scenario.onActivity { locales.applicationLocales = applied }
             compose.activityRule.scenario.recreate()
-            compose
-                .onNodeWithText(compose.activity.getString(R.string.auth_restoring))
-                .assertExists()
+            compose.onNodeWithText(compose.activity.getString(R.string.app_name)).assertExists()
             app.fixture.response = AndroidUpdates("99.0.0", updateRelease("99.0.0"))
             gate.complete(Unit)
             compose.waitUntil(10_000) { app.updates.state.value.required }

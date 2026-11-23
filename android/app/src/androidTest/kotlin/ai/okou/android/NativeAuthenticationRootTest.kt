@@ -27,7 +27,7 @@ class NativeAuthenticationRootTest {
                 fun verify() {
                     assertNotNull(
                         device.wait(
-                            Until.findObject(By.text(app.getString(R.string.auth_restoring))),
+                            Until.findObject(By.text(app.getString(R.string.app_name))),
                             10_000,
                         ),
                     )

@@ -18,11 +18,11 @@ class SessionRootTest {
     @Test
     fun initialNativeLoginPresentationDoesNotWaitForAuthentication() {
         compose.onNodeWithText("Okou").assertExists()
-        compose.onNodeWithText("Restoring your session…").assertExists()
+        compose.onNodeWithText("Restoring your session…").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
         compose.onNodeWithContentDescription("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
-        compose.onNodeWithText("Restoring your session…").assertExists()
+        compose.onNodeWithText("Okou").assertExists()
         compose.onNodeWithTag("chat_list").assertDoesNotExist()
     }
 }

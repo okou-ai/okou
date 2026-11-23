@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">Memeriksa ruang kerja…</string>
+    <string name="auth_check_failed">Akses ruang kerja tidak dapat diperiksa.</string>
+    <string name="auth_selection_failed">Ruang kerja ini tidak dapat dibuka.</string>
+    <string name="auth_sign_out_failed">Tidak dapat keluar.</string>
     <string name="composer_sync_loading">Memuat draf tersimpan…</string>
     <string name="composer_sync_saving">Menyinkronkan draf…</string>
     <string name="composer_sync_failed">Sinkronisasi draf gagal. Teks Anda tetap tersimpan di perangkat ini.</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">Gelap</string>
     <string name="on_this_device">Di perangkat ini</string>
     <string name="retry">Coba lagi</string>
-    <string name="auth_restoring">Memulihkan sesi Anda…</string>
     <string name="auth_preparing_workspace">Menyiapkan ruang kerja Anda…</string>
     <string name="auth_choose_workspace">Pilih ruang kerja</string>
     <string name="auth_no_workspace">Belum ada ruang kerja yang dapat diakses</string>

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">कार्यक्षेत्र जाँचे जा रहे हैं…</string>
+    <string name="auth_check_failed">कार्यक्षेत्र का ऐक्सेस नहीं जाँचा जा सका।</string>
+    <string name="auth_selection_failed">यह कार्यक्षेत्र नहीं खोला जा सका।</string>
+    <string name="auth_sign_out_failed">साइन आउट नहीं हो सका।</string>
     <string name="composer_sync_loading">सहेजा गया ड्राफ़्ट लोड हो रहा है…</string>
     <string name="composer_sync_saving">ड्राफ़्ट सिंक हो रहा है…</string>
     <string name="composer_sync_failed">ड्राफ़्ट सिंक नहीं हुआ। आपका लिखा पाठ इस डिवाइस पर सुरक्षित है।</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">गहरा</string>
     <string name="on_this_device">इस डिवाइस पर</string>
     <string name="retry">फिर से कोशिश करें</string>
-    <string name="auth_restoring">आपका सत्र बहाल हो रहा है…</string>
     <string name="auth_preparing_workspace">आपका कार्यक्षेत्र तैयार हो रहा है…</string>
     <string name="auth_choose_workspace">अपना कार्यक्षेत्र चुनें</string>
     <string name="auth_no_workspace">अभी कोई सुलभ कार्यक्षेत्र नहीं है</string>

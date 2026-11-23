@@ -108,7 +108,17 @@ data class SessionUiState(
     val working: Boolean = false,
     val cachedAppearance: MemberAppearance? = null,
     val opening: OpeningWorkspace? = null,
+    val checkingWorkspace: Boolean = false,
+    val entryFailure: SessionEntryFailure? = null,
+    val entryReadFailed: Boolean = false,
 )
+
+enum class SessionEntryFailure {
+    Check,
+    Selection,
+    Browser,
+    SignOut,
+}
 
 /** One owner for authorization, pending work and the currently permitted workspace resource. */
 class SessionModel(
@@ -139,6 +149,7 @@ class SessionModel(
     private var workspace: WorkspaceSession? = null
     private var presentation: ViewModelStore? = null
     private var requiredUpdate = false
+    private var workspaceSetupReturn: Long? = null
     private val foreground = MutableStateFlow(false)
     private val connected = MutableStateFlow(true)
     private val canRetryPreparation =
@@ -170,6 +181,7 @@ class SessionModel(
             }
         }
         generation++
+        workspaceSetupReturn = null
         operation?.cancel()
         operation = null
         membershipLoad?.cancel()
@@ -201,6 +213,10 @@ class SessionModel(
         if (requiredUpdate) return
         // SDK token refreshes do not replace a stable identity or its presentation owner.
         if (!force && observed == snapshot) return
+        val checkingFrom =
+            mutable.value.takeIf {
+                it.checkingWorkspace && observed?.session == snapshot.session
+            }
         observed = snapshot
         retire()
         val session = snapshot.session
@@ -210,11 +226,15 @@ class SessionModel(
             session == null -> mutable.value = SessionUiState(generation, SessionStage.SignIn)
             !snapshot.complete && !session.choosingWorkspace ->
                 mutable.value = SessionUiState(generation, SessionStage.SignIn)
-            else -> prepare(snapshot)
+            else ->
+                prepare(
+                    snapshot,
+                    checkingFrom?.copy(generation = generation, checkingWorkspace = false),
+                )
         }
     }
 
-    private fun prepare(snapshot: AuthenticationState) {
+    private fun prepare(snapshot: AuthenticationState, checkingFrom: SessionUiState? = null) {
         val session = checkNotNull(snapshot.session)
         val ticket = generation
         val initialIdentity =
@@ -222,12 +242,13 @@ class SessionModel(
                 ?.takeIf { snapshot.complete && session.active }
                 ?.let { WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it) }
         mutable.value =
-            SessionUiState(
-                ticket,
-                SessionStage.LoadingWorkspace,
-                working = true,
-                opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
-            )
+            checkingFrom?.copy(checkingWorkspace = true, entryFailure = null)
+                ?: SessionUiState(
+                    ticket,
+                    SessionStage.LoadingWorkspace,
+                    working = true,
+                    opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                )
         operation = viewModelScope.launch {
             val observedIdentity = initialIdentity?.let { identity ->
                 snapshot.membershipAccess
@@ -263,13 +284,18 @@ class SessionModel(
                         }
                     }
             try {
-                val refreshedAccess = authentication.refresh(session)
+                val initialEntry = initialIdentity == null && checkingFrom == null
+                val refreshedAccess = if (initialEntry) null else authentication.refresh(session)
                 requireCurrent(ticket, snapshot)
                 val fastAccess = refreshedAccess?.takeIf {
                     it.workspaceId == initialIdentity?.workspaceId && it.permissions != null
                 }
                 val memberships =
-                    if (fastAccess == null) authentication.memberships(session) else emptyList()
+                    when {
+                        initialEntry -> readEntryMemberships(ticket, snapshot, session)
+                        fastAccess == null -> authentication.memberships(session)
+                        else -> emptyList()
+                    }
                 requireCurrent(ticket, snapshot)
                 membershipsComplete = fastAccess == null
                 val membership = initialIdentity?.let { identity ->
@@ -377,7 +403,14 @@ class SessionModel(
                             }
                         },
                     )
-                mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
+                mutable.value =
+                    mutable.value.copy(
+                        stage = SessionStage.LoadingWorkspace,
+                        working = true,
+                        memberships = memberships,
+                        opening = opened,
+                        checkingWorkspace = false,
+                    )
                 preparation?.let(chats::restoreStartupCache)
                 // The list owns restoration after handoff, including during bootstrap retries.
                 preparation = null
@@ -387,7 +420,21 @@ class SessionModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                if (current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)) {
+                if (
+                    current(ticket, snapshot) &&
+                        checkingFrom != null &&
+                        mutable.value.checkingWorkspace &&
+                        error !is ApiFailure.UpdateRequired
+                ) {
+                    retire()
+                    mutable.value =
+                        checkingFrom.copy(
+                            generation = generation,
+                            entryFailure = SessionEntryFailure.Check,
+                        )
+                } else if (
+                    current(ticket, snapshot) && !workspaceFailure(ticket, snapshot, error)
+                ) {
                     val state = mutable.value
                     retire()
                     mutable.value =
@@ -396,12 +443,45 @@ class SessionModel(
                             SessionStage.Unavailable,
                             cachedAppearance = state.cachedAppearance,
                             opening = initialIdentity?.let { OpeningWorkspace.CheckingAccess(it) },
+                            entryReadFailed = initialIdentity == null,
                         )
                 }
             } finally {
                 appearanceRead?.cancel()
                 cacheWarm?.cancel()
                 preparation?.cancel()
+            }
+        }
+    }
+
+    private suspend fun readEntryMemberships(
+        ticket: Long,
+        snapshot: AuthenticationState,
+        session: NativeSession,
+    ): List<WorkspaceMembership> {
+        var backoff = 3_000L
+        var firstRetry = true
+        while (true) {
+            requireCurrent(ticket, snapshot)
+            try {
+                authentication.refresh(session)
+                requireCurrent(ticket, snapshot)
+                return authentication.memberships(session)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                requireCurrent(ticket, snapshot)
+                val retryAfter = error.bootstrapRetryAfterMillis() ?: throw error
+                mutable.value =
+                    mutable.value.copy(
+                        stage = SessionStage.Unavailable,
+                        working = false,
+                        entryReadFailed = true,
+                    )
+                delay(maxOf(backoff, retryAfter))
+                canRetryPreparation.first { it }
+                if (!firstRetry) backoff = (backoff * 2).coerceAtMost(48_000L)
+                firstRetry = false
             }
         }
     }
@@ -628,6 +708,10 @@ class SessionModel(
         mutable.value.ready?.settings?.defaultModel?.foreground(active)
         if (!active) return
         val state = mutable.value
+        if (workspaceSetupReturn == state.generation) {
+            workspaceSetupReturn = null
+            retry(state.generation)
+        }
         state.ready?.preferences?.refreshFromForeground()
         (state.ready?.chats ?: (state.opening as? OpeningWorkspace.Authorized)?.chats)?.refresh()
         if (state.ready != null) observed?.let { loadRemainingMemberships(state.generation, it) }
@@ -658,10 +742,19 @@ class SessionModel(
     fun retry(expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return
         val state = mutable.value
+        if (state.checkingWorkspace) return
+        val snapshot = checkNotNull(observed)
+        if (
+            snapshot.session != null &&
+                (state.stage == SessionStage.ChooseWorkspace ||
+                    state.stage == SessionStage.AccessRemoved)
+        ) {
+            prepare(snapshot, state)
+            return
+        }
         val opened = state.opening as? OpeningWorkspace.Authorized
         if (opened != null) {
             if (state.working) return
-            val snapshot = checkNotNull(observed)
             mutable.value = state.copy(stage = SessionStage.LoadingWorkspace, working = true)
             operation = viewModelScope.launch {
                 finishPreparation(expectedGeneration, snapshot, opened)
@@ -672,11 +765,33 @@ class SessionModel(
         reconcile(authentication.state.value, force = true)
     }
 
+    fun workspaceSetupResult(expectedGeneration: Long, opened: Boolean) {
+        if (!acceptsAction(expectedGeneration)) return
+        val state = mutable.value
+        if (state.stage != SessionStage.ChooseWorkspace || state.memberships.isNotEmpty()) return
+        if (opened) {
+            // A read started before web setup cannot confirm changes made in the browser.
+            if (state.checkingWorkspace) retire()
+            workspaceSetupReturn = generation
+            if (state.checkingWorkspace || state.entryFailure == SessionEntryFailure.Browser) {
+                mutable.value =
+                    state.copy(
+                        generation = generation,
+                        checkingWorkspace = false,
+                        entryFailure = null,
+                    )
+            }
+        } else {
+            mutable.value = state.copy(entryFailure = SessionEntryFailure.Browser)
+        }
+    }
+
     fun chooseWorkspace(id: String, expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return
         val snapshot = authentication.state.value
         val session = snapshot.session ?: return
-        if (mutable.value.working || mutable.value.memberships.none { it.id == id }) return
+        val previous = mutable.value
+        if (previous.working || previous.memberships.none { it.id == id }) return
         if (mutable.value.ready?.identity?.workspaceId == id) return
         retire()
         val ticket = generation
@@ -689,15 +804,27 @@ class SessionModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (generation == ticket)
-                    mutable.value = SessionUiState(generation, SessionStage.Unavailable)
+                if (acceptsAction(ticket)) {
+                    mutable.value =
+                        if (
+                            previous.stage == SessionStage.ChooseWorkspace &&
+                                previous.opening == null
+                        )
+                            previous.copy(
+                                generation = ticket,
+                                checkingWorkspace = false,
+                                entryFailure = SessionEntryFailure.Selection,
+                            )
+                        else SessionUiState(ticket, SessionStage.Unavailable)
+                }
             }
         }
     }
 
     fun signOut(expectedGeneration: Long) {
         if (!acceptsAction(expectedGeneration)) return
-        if (mutable.value.stage == SessionStage.SigningOut) return
+        val previous = mutable.value
+        if (previous.stage == SessionStage.SigningOut) return
         retire()
         val ticket = generation
         mutable.value = SessionUiState(generation, SessionStage.SigningOut, working = true)
@@ -709,8 +836,17 @@ class SessionModel(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
-                if (generation == ticket)
-                    mutable.value = SessionUiState(generation, SessionStage.Unavailable)
+                if (acceptsAction(ticket)) {
+                    mutable.value =
+                        if (previous.ready == null && previous.opening == null && !previous.working)
+                            previous.copy(
+                                generation = ticket,
+                                checkingWorkspace = false,
+                                entryReadFailed = false,
+                                entryFailure = SessionEntryFailure.SignOut,
+                            )
+                        else SessionUiState(ticket, SessionStage.Unavailable)
+                }
             }
         }
     }
