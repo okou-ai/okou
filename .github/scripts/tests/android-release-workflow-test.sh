@@ -126,7 +126,7 @@ native_results, = (
     step['with'] for step in android['instrumentation']['steps']
     if step.get('with', {}).get('name', '').startswith('android-native-results-')
 )
-assert native_results['retention-days'] >= 30
+assert native_results['retention-days'] == 1
 assert native_results['overwrite'] is True
 retrace = android['retrace-failure']
 assert retrace['needs'] == 'release-smoke'

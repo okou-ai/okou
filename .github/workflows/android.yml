@@ -212,8 +212,7 @@ jobs:
             android/app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35/test-result-exit-code.txt
           if-no-files-found: error
           overwrite: true
-          # Successful shards supply these reports when only failed jobs are rerun.
-          retention-days: 30
+          retention-days: 1
 
       - name: Save shared Android Gradle dependencies
         if: matrix.shard == 0 && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'
