@@ -18,7 +18,6 @@ const { recentWorkflowIds$, saveRecentWorkflowIds$ } = createWorkflowRecency(
 
 const requireWorkflowRecency$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    set(setResHeader$, "Cache-Control", "private, no-store");
     const auth = get(organizationAuthContext$);
     const context = await set(
       loadUserFeatureSwitchContext$,
@@ -26,9 +25,11 @@ const requireWorkflowRecency$ = command(
       auth.userId,
       signal,
     );
-    return isFeatureEnabled(FeatureSwitchKey.WorkflowRecencySync, context)
-      ? null
-      : resourceUnavailable("Workflow recency sync is not enabled");
+    if (!isFeatureEnabled(FeatureSwitchKey.WorkflowRecencySync, context)) {
+      return resourceUnavailable("Workflow recency sync is not enabled");
+    }
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    return null;
   },
 );
 

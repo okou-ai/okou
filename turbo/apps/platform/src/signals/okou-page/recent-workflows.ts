@@ -83,18 +83,34 @@ const recentWorkflowOwner$ = computed(async (get) => {
 
 // Reloading unrelated switches must not reset the session's readiness or queue.
 const enabledRecentWorkflowOwner$ = computed(async (get) => {
-  return (await get(featureSwitches$))[FeatureSwitchKey.WorkflowRecencySync]
-    ? await get(recentWorkflowOwner$)
-    : null;
+  const switches = await get(featureSwitches$);
+  if (!switches[FeatureSwitchKey.WorkflowRecencySync]) {
+    return null;
+  }
+  return await get(recentWorkflowOwner$);
 });
 
 type RecentWorkflowOwner = Awaited<
   ReturnType<typeof recentWorkflowOwner$.read>
 >;
 
+const isActiveRecentWorkflowOwner$ = command(
+  async (
+    { get },
+    owner: RecentWorkflowOwner,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    signal.throwIfAborted();
+    owner.assertCurrent();
+    const current = await get(enabledRecentWorkflowOwner$);
+    signal.throwIfAborted();
+    owner.assertCurrent();
+    return current === owner;
+  },
+);
+
 interface RecentWorkflowUse {
   readonly workflowIds: readonly string[];
-  readonly owner: RecentWorkflowOwner | null;
   readonly sessionKey: string | null;
   readonly rootVersion: number;
 }
@@ -115,8 +131,9 @@ const synchronizeRecentWorkflows$ = command(
     owner: RecentWorkflowOwner,
     signal: AbortSignal,
   ): Promise<void> => {
-    signal.throwIfAborted();
-    owner.assertCurrent();
+    if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
+      return;
+    }
     const revision = get(owner.revision$);
     const localIds = set(readLocalRecentWorkflows$, owner);
     const response = await accept(
@@ -125,28 +142,29 @@ const synchronizeRecentWorkflows$ = command(
       signal,
       { showErrorToast: false },
     );
-    signal.throwIfAborted();
-    owner.assertCurrent();
+    if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
+      return;
+    }
     // A failed read never authorizes import. Only an explicit null does; [] is
     // already initialized and must replace even a nonempty browser history.
-    const canonical =
-      response.body.workflowIds === null && localIds.length > 0
-        ? (
-            await accept(
-              owner.client.importRecent({
-                body: { workflowIds: localIds },
-                fetchOptions: { signal },
-              }),
-              [200],
-              signal,
-              { showErrorToast: false },
-            )
-          ).body.workflowIds
-        : (response.body.workflowIds ?? []);
-    signal.throwIfAborted();
-    owner.assertCurrent();
+    let canonical = response.body.workflowIds;
+    if (canonical === null && localIds.length > 0) {
+      const imported = await accept(
+        owner.client.importRecent({
+          body: { workflowIds: localIds },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+      if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
+        return;
+      }
+      canonical = imported.body.workflowIds;
+    }
     if (revision === get(owner.revision$)) {
-      set(owner.storage.set$, JSON.stringify(canonical));
+      set(owner.storage.set$, JSON.stringify(canonical ?? []));
     }
     set(recentWorkflowStorage.clear$);
   },
@@ -207,16 +225,17 @@ export function createRecentWorkflowIds(
 }
 
 export const prepareRecentWorkflowIds$ = command(
-  async (
+  (
     { get },
     workflowIds: readonly string[],
     signal: AbortSignal,
-  ): Promise<RecentWorkflowUse> => {
-    const sessionKey = get(authenticatedSessionKey$);
-    const rootVersion = get(rootVersion$);
-    const owner = await get(enabledRecentWorkflowOwner$);
+  ): RecentWorkflowUse => {
     signal.throwIfAborted();
-    return { workflowIds, owner, sessionKey, rootVersion };
+    return {
+      workflowIds,
+      sessionKey: get(authenticatedSessionKey$),
+      rootVersion: get(rootVersion$),
+    };
   },
 );
 
@@ -242,7 +261,7 @@ export const prepareRecentWorkflowUse$ = command(
     if (workflowIds.length === 0) {
       return null;
     }
-    return await set(prepareRecentWorkflowIds$, workflowIds, signal);
+    return set(prepareRecentWorkflowIds$, workflowIds, signal);
   },
 );
 
@@ -258,7 +277,9 @@ const persistRecentWorkflowUse$ = command(
     // uses. The next use still merges against the server's authoritative value.
     await Promise.allSettled([previous]);
     signal.throwIfAborted();
-    owner.assertCurrent();
+    if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
+      return;
+    }
     const response = await accept(
       owner.client.recordRecentUse({
         body: { workflowIds: use.workflowIds },
@@ -268,8 +289,9 @@ const persistRecentWorkflowUse$ = command(
       signal,
       { showErrorToast: false },
     );
-    signal.throwIfAborted();
-    owner.assertCurrent();
+    if (!(await set(isActiveRecentWorkflowOwner$, owner, signal))) {
+      return;
+    }
     // An earlier canonical response must not erase a newer local promotion.
     if (use.revision === get(owner.revision$)) {
       set(owner.storage.set$, JSON.stringify(response.body.workflowIds));
@@ -285,13 +307,15 @@ export const recordRecentWorkflowUse$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
+    const owner = await get(enabledRecentWorkflowOwner$);
+    signal.throwIfAborted();
     if (
       use.sessionKey !== get(authenticatedSessionKey$) ||
       use.rootVersion !== get(rootVersion$)
     ) {
       throw new DOMException("Workflow recency owner changed", "AbortError");
     }
-    const { owner, workflowIds } = use;
+    const { workflowIds } = use;
     if (!owner) {
       const previous = readRecentWorkflowIds(
         set(recentWorkflowStorage.readFresh$),

@@ -1551,7 +1551,7 @@ export const runWorkflowAutomationNow$ = command(
   ): Promise<{ chatThreadId: string; runId: string | null }> => {
     const workflowId = get(currentWorkflowId$);
     const workflowUse = workflowId
-      ? await set(prepareRecentWorkflowIds$, [workflowId], signal)
+      ? set(prepareRecentWorkflowIds$, [workflowId], signal)
       : null;
     signal.throwIfAborted();
     const recencySignal = get(rootSignal$);

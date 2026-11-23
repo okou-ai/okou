@@ -1,3 +1,4 @@
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -6,6 +7,7 @@ import {
   fireEvent,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -154,11 +156,18 @@ async function openMenu(editor: HTMLElement) {
   });
 }
 
-async function openPage(page: TestContext = context, enabled = true) {
+async function openPage(
+  page: TestContext = context,
+  enabled = true,
+  labEnabled = false,
+) {
   await setupPage({
     context: page,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.WorkflowRecencySync]: enabled },
+    featureSwitches: {
+      [FeatureSwitchKey.WorkflowRecencySync]: enabled,
+      [FeatureSwitchKey.Lab]: labEnabled,
+    },
   });
   return await findComposerEditor();
 }
@@ -185,6 +194,91 @@ async function sendWorkflow(editor: HTMLElement, name: string) {
     expect(button("Send")).toBeEnabled();
   });
 }
+
+async function disableSyncInLab() {
+  let switches: Record<string, boolean> = {
+    [FeatureSwitchKey.Lab]: true,
+    [FeatureSwitchKey.WorkflowRecencySync]: true,
+  };
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    switches = { ...switches, ...body.switches };
+    return respond(200, { switches, effectiveSwitches: switches });
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(button("Test User"));
+  const lab = queryAllByRoleFast("menuitem").find((item) => {
+    return item.textContent?.trim() === "Lab";
+  });
+  if (!lab) {
+    throw new Error("Lab menu item not found");
+  }
+  await user.click(lab);
+  await screen.findByRole("heading", { name: "Lab" });
+  const row = screen.getByText("Workflow recency sync").closest("li");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Workflow recency switch row not found");
+  }
+  const control = within(row).getByRole("switch");
+  expect(control).toHaveAttribute("aria-checked", "true");
+  await user.click(control);
+  await waitFor(() => {
+    expect(control).toHaveAttribute("aria-checked", "false");
+  });
+  act(() => {
+    window.history.back();
+  });
+  return await findComposerEditor();
+}
+
+test("Disabling sync in Lab preserves browser-only history when an earlier read finishes", async () => {
+  const id = installWorkflows();
+  mockCache({ "okou_recent-workflows": [id("zulu")] });
+  const reading = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(workflowsCollectionContract.recent, async ({ respond }) => {
+    reading.resolve();
+    await response.promise;
+    return respond(200, { workflowIds: [] });
+  });
+  await openPage(context, true, true);
+  await reading.promise;
+  const editor = await disableSyncInLab();
+  await act(async () => {
+    response.resolve();
+    await response.promise;
+  });
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+});
+
+test("Disabling sync in Lab preserves new browser-only uses when an earlier write finishes", async () => {
+  const id = installWorkflows();
+  mockRemote([id("echo")]);
+  const writing = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(
+    workflowsCollectionContract.recordRecentUse,
+    async ({ body, respond }) => {
+      writing.resolve();
+      await response.promise;
+      return respond(200, { workflowIds: [...body.workflowIds, id("echo")] });
+    },
+  );
+  let editor = await openPage(context, true, true);
+  await sendWorkflow(editor, "delta");
+  await writing.promise;
+  editor = await disableSyncInLab();
+  await sendWorkflow(editor, "zulu");
+  await act(async () => {
+    response.resolve();
+    await response.promise;
+  });
+  await openMenu(editor);
+  expect(workflowNames()).toStrictEqual(ordered("zulu"));
+});
 
 test.each([
   { remote: ["zulu", "echo"], expected: ["zulu", "echo"] },

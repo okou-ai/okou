@@ -260,15 +260,22 @@ describe("workspace member workflow recency", () => {
     await accept(api.recent({ headers: headers(actor) }), [403]);
     const request = setupRawAppRequest({ context, routes: workflowsRoutes });
     for (const operation of ["use", "import"]) {
-      const response = await request(`/api/workflows/recent/${operation}`, {
-        method: "POST",
-        headers: { ...headers(actor), "Content-Type": "application/json" },
-        body: JSON.stringify({ workflowIds: ["invalid"] }),
-      });
-      expect(response.status).toBe(403);
+      for (const body of ["{", JSON.stringify({ workflowIds: ["invalid"] })]) {
+        const response = await request(`/api/workflows/recent/${operation}`, {
+          method: "POST",
+          headers: { ...headers(actor), "Content-Type": "application/json" },
+          body,
+        });
+        expect(response.status).toBe(403);
+      }
     }
     await enable(actor);
-    await expect(read(actor)).resolves.toBeNull();
+    const initial = await accept(
+      api.recent({ headers: headers(actor) }),
+      [200],
+    );
+    expect(initial.body.workflowIds).toBeNull();
+    expect(initial.headers.get("cache-control")).toBe("private, no-store");
     await enable(actor, false);
     await accept(
       api.recordRecentUse({
