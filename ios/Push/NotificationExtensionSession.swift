@@ -45,10 +45,11 @@ final class NotificationExtensionSession {
     else { throw SessionError.scopeUnavailable }
     let client = APIClient(
       baseURL: apiURL, clientVersion: version, session: session,
-      distribution: { await InstallationDistribution.shared.current() }
-    ) { [self] in
-      try await token(destination: destination, sessionID: identity.id)
-    }
+      distribution: { await InstallationDistribution.shared.current() },
+      bearerToken: { [self] in
+        try await token(destination: destination, sessionID: identity.id)
+      }
+    )
     let cache = ChatCache(
       scope: ChatCacheScope(
         apiBaseURL: apiURL,

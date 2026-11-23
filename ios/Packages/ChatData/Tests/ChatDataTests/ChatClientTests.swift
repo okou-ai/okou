@@ -31,8 +31,8 @@ final class ChatClientTests: XCTestCase {
       }
       let client = APIClient(
         baseURL: fixture.baseURL, clientVersion: "1.0.0", session: fixture.session,
-        distribution: { channel }
-      ) { "test-token" }
+        distribution: { channel }, bearerToken: { "test-token" }
+      )
       _ = try await client.data("/api/feature-switches")
     }
   }

@@ -297,8 +297,8 @@ private struct WorkspaceRootView: View {
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
       RequiredUpdateView()
-      .background(OkouColor.background)
-      .interactiveDismissDisabled()
+        .background(OkouColor.background)
+        .interactiveDismissDisabled()
     }
   }
 
