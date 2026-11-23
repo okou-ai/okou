@@ -7,7 +7,7 @@ struct ForYouView: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var phase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var sheet: Sheet?
+  @State private var presentedSheet: Sheet?
   @State private var action: Task<Void, Never>?
   private enum Sheet: Identifiable {
     case feedback(ForYouCard)
@@ -86,15 +86,15 @@ struct ForYouView: View {
     .safeAreaInset(edge: .bottom, spacing: 0) { status }
     .task { await store.load() }
     .task(id: readingID) { if let id = readingID { await store.read(id) } }
-    .sheet(item: $sheet) { item in
+    .sheet(item: $presentedSheet) { item in
       switch item {
       case .feedback(let card):
         ForYouFeedbackSheet { reason in
-          sheet = nil
+          presentedSheet = nil
           run { await store.respond(card, reason: reason) }
         }
       case .direction(let card):
-        ForYouDirectionSheet(card: card, store: store) { sheet = nil }
+        ForYouDirectionSheet(card: card, store: store, close: closeSheet)
       }
     }
     .interactiveDismissDisabled(store.busy)
@@ -102,7 +102,7 @@ struct ForYouView: View {
   }
 
   private var readingID: String? {
-    phase == .active && sheet == nil ? store.current?.id : nil
+    phase == .active && presentedSheet == nil ? store.current?.id : nil
   }
 
   private func header(width: CGFloat) -> some View {
@@ -143,7 +143,7 @@ struct ForYouView: View {
         artwork: ["ForYouReader", "ForYouBridge", "ForYouWay"][store.position % 3],
         openSource: { id in run { if await store.open(id) { showChat() } } },
         choose: { option in run { if await store.choose(card, option: option) { showChat() } } },
-        direction: { sheet = .direction(card) }, feedback: { sheet = .feedback(card) },
+        direction: { showDirection(card) }, feedback: { showFeedback(card) },
         ignore: { run { await store.respond(card, reason: nil) } }
       ).disabled(store.busy)
     case .automation(let event):
@@ -188,7 +188,7 @@ struct ForYouView: View {
   }
 
   @ViewBuilder private var status: some View {
-    if let error = store.error, store.current != nil, sheet == nil {
+    if let error = store.error, store.current != nil, presentedSheet == nil {
       Text(error).font(.okou(.footnote)).frame(maxWidth: .infinity)
         .padding(OkouSpace.md).background(.regularMaterial)
     } else if let notice = store.notice {
@@ -208,6 +208,10 @@ struct ForYouView: View {
       }.padding(OkouSpace.lg).background(.regularMaterial).disabled(store.busy)
     }
   }
+
+  private func showFeedback(_ card: ForYouCard) { presentedSheet = .feedback(card) }
+  private func showDirection(_ card: ForYouCard) { presentedSheet = .direction(card) }
+  private func closeSheet() { presentedSheet = nil }
 
   private func run(_ operation: @escaping @MainActor () async -> Void) {
     guard !store.busy else { return }

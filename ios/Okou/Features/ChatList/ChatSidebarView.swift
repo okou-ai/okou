@@ -48,6 +48,11 @@ struct ChatSidebarView: View {
   @State private var projectAction: Task<Void, Never>?
   @State private var deletingThreadID: String?
   @State private var showsForYou = false
+  private func openForYou() { showsForYou = true }
+  private func showForYouChat() {
+    showsForYou = false
+    close()
+  }
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -81,7 +86,8 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
-      forYouRow
+      ForYouSidebarRow(
+        summary: forYouSummary, rowInset: rowInset, statusColumn: statusColumn, open: openForYou)
       if listRead.state == .loading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
@@ -200,8 +206,7 @@ struct ChatSidebarView: View {
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
     .fullScreenCover(isPresented: $showsForYou) {
       ForYouView(store: store.forYou) {
-        showsForYou = false
-        close()
+        showForYouChat()
       }
     }
     .sheet(
@@ -553,29 +558,6 @@ struct ChatSidebarView: View {
     .labelStyle(.iconOnly)
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAllRead)
   }
-  private var forYouRow: some View {
-    Button {
-      showsForYou = true
-    } label: {
-      HStack(spacing: OkouSpace.ten) {
-        OkouIcon("hand-heart").frame(width: statusColumn)
-        Text("For you").font(.okou(.body))
-        Spacer()
-        if case .hasData(true) = forYouSummary {
-          Circle().fill(OkouStatusColor.running)
-            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
-            .accessibilityLabel("Unread")
-        }
-      }
-      .frame(minHeight: OkouControl.listRow).contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .listRowInsets(.horizontal, rowInset)
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
-    .accessibilityIdentifier("for-you-sidebar")
-  }
-
   private var footer: some View {
     ChatSidebarFooter(
       store: store, authentication: authentication, notifications: notifications,
@@ -609,4 +591,34 @@ private struct ChatSidebarThreadLabel: View {
     }
     .task { await workspace.activateDrafts() }
   }
+}
+
+private struct ForYouSidebarRow: View {
+  let summary: Loadable<Bool>
+  let rowInset: CGFloat
+  let statusColumn: CGFloat
+  let open: () -> Void
+  var body: some View {
+    Button {
+      showsForYou = true
+    } label: {
+      HStack(spacing: OkouSpace.ten) {
+        OkouIcon("hand-heart").frame(width: statusColumn)
+        Text("For you").font(.okou(.body))
+        Spacer()
+        if case .hasData(true) = summary {
+          Circle().fill(OkouStatusColor.running)
+            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+            .accessibilityLabel("Unread")
+        }
+      }
+      .frame(minHeight: OkouControl.listRow).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowInsets(.horizontal, rowInset)
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
+    .accessibilityIdentifier("for-you-sidebar")
+  }
+
 }

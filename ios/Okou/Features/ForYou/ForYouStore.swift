@@ -33,8 +33,13 @@ final class ForYouStore {
   private let feed: ForYouFeed
   private let commands: ChatCommands
   private var readIDs: Set<String> = []
-  private var selection: Selection?
-  private var feedbackID: (card: String, reason: ForYouFeedback?, id: String)?
+  private var selections: [String: Selection] = [:]
+  private struct ResponseID {
+    let card: String
+    let reason: ForYouFeedback?
+    let id = UUID().uuidString
+  }
+  private var feedbackID: ResponseID?
   private(set) var cards: [ForYouCard] = []
   private(set) var position = 0
   private(set) var loaded = false
@@ -90,12 +95,13 @@ final class ForYouStore {
   func respond(_ card: ForYouCard, reason: ForYouFeedback?) async {
     await perform {
       if feedbackID?.card != card.id || feedbackID?.reason != reason {
-        feedbackID = (card.id, reason, UUID().uuidString)
+        feedbackID = ResponseID(card: card.id, reason: reason)
       }
       guard let id = feedbackID?.id else { return }
-      do { try await feed.feedback(card, reason: reason, id: id) } catch let failure
-        as APIClientError where failure.statusCode == 409
-      {
+      do {
+        try await feed.feedback(card, reason: reason, id: id)
+      } catch let failure as APIClientError {
+        guard failure.statusCode == 409 else { throw failure }
         remove(card)
         notice = Notice(text: String(localized: "This suggestion was already handled."))
         return
@@ -148,21 +154,22 @@ final class ForYouStore {
         else { throw ChatError.composerUnavailable }
         if !attempt.prepared {
           try await composer.prependSuggestion(option.draft)
-          selection?.prepared = true
+          selections[card.id]?.prepared = true
         }
         openChat = true
       } else if !attempt.prepared {
         try await send(option.draft, target: nil, attempt: attempt)
-        selection?.prepared = true
+        selections[card.id]?.prepared = true
       }
-      do { try await feed.consume(card, optionID: option.id) } catch let failure as APIClientError
-        where failure.statusCode == 409
-      {
+      do {
+        try await feed.consume(card, optionID: option.id)
+      } catch let failure as APIClientError {
+        guard failure.statusCode == 409 else { throw failure }
         // The local draft or sent message is already durable even if another device consumed the card.
       }
       if !openChat {
         notice = Notice(
-          text: String(localized: "Sent to a new chat"), threadID: selection?.threadID)
+          text: String(localized: "Sent to a new chat"), threadID: selections[card.id]?.threadID)
       }
       remove(card)
     }
@@ -175,7 +182,8 @@ final class ForYouStore {
       let draft = try card.directionDraft(note: note)
       let attempt = try beginSelection(card, optionID: "custom", note: note)
       try await send(draft, target: suggestion.customOption.threadId, attempt: attempt)
-      notice = Notice(text: String(localized: "Direction sent"), threadID: selection?.threadID)
+      notice = Notice(
+        text: String(localized: "Direction sent"), threadID: selections[card.id]?.threadID)
       directionNotes[card.id] = nil
       // Accepting the annotated chat event atomically consumes the custom direction.
       remove(card)
@@ -193,7 +201,7 @@ final class ForYouStore {
   private func beginSelection(_ card: ForYouCard, optionID: String, note: String = "") throws
     -> Selection
   {
-    if let selection {
+    if let selection = selections[card.id] {
       guard selection.cardID == card.id && selection.optionID == optionID && selection.note == note
       else {
         throw ChatError.invalidContract(
@@ -202,7 +210,7 @@ final class ForYouStore {
       return selection
     }
     let attempt = Selection(cardID: card.id, optionID: optionID, note: note)
-    selection = attempt
+    selections[card.id] = attempt
     return attempt
   }
 
@@ -212,11 +220,13 @@ final class ForYouStore {
     else {
       throw ChatError.composerUnavailable
     }
-    var destination = selection?.threadID ?? target
-    if let target, selection?.threadID == nil {
-      do { try await feed.checkThread(target) } catch let failure as APIClientError
-        where failure.statusCode == 404
-      { destination = nil }
+    var destination = selections[attempt.cardID]?.threadID ?? target
+    if let target, selections[attempt.cardID]?.threadID == nil {
+      do {
+        try await feed.checkThread(target)
+      } catch APIClientError.http(404, _, _, _) {
+        destination = nil
+      }
     }
     if destination == nil {
       let thread = try await commands.createThread(clientThreadID: attempt.newThreadID)
@@ -225,7 +235,7 @@ final class ForYouStore {
       destination = thread.id
     }
     guard let destination else { throw ChatError.composerUnavailable }
-    selection?.threadID = destination
+    selections[attempt.cardID]?.threadID = destination
     _ = try await commands.send(
       threadID: destination, text: document.text,
       attachments: (draft.draftAttachments ?? []).map(\.attachment),
@@ -236,7 +246,7 @@ final class ForYouStore {
   private func remove(_ card: ForYouCard) {
     cards.removeAll { $0.id == card.id }
     position = min(position, max(0, cards.count - 1))
-    if selection?.cardID == card.id { selection = nil }
+    selections[card.id] = nil
     workspace?.requestRefresh(.forYou)
   }
 
@@ -245,7 +255,9 @@ final class ForYouStore {
     busy = true
     error = nil
     defer { busy = false }
-    do { try await operation() } catch is CancellationError {} catch {
+    do {
+      try await operation()
+    } catch is CancellationError {} catch {
       self.error = error.localizedDescription
     }
   }

@@ -79,9 +79,10 @@ public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {
       "contextVersion": .string(customContextVersion),
       "attachmentIds": .array(files.map { .string($0.id) })
     ])
-    let text =
-      "Okou suggestion context v1:\n"
-      + String(decoding: try JSONEncoder().encode(context), as: UTF8.self)
+    guard let serialized = String(data: try JSONEncoder().encode(context), encoding: .utf8) else {
+      throw APIClientError.incompatibleData
+    }
+    let text = "Okou suggestion context v1:\n" + serialized
     feedback["note"] = .array([.object(["type": .string("text"), "text": .string(note)])])
     let parts: [MessageJSON] = [
       .object(["type": .string("additional_info"), "text": .string(text)]), .object(feedback)
@@ -120,9 +121,9 @@ public struct ForYouFeed: Sendable {
   }
 
   public func markRead(_ id: String) async throws {
-    do { try await client.data("/api/feed/items/\(id)/read", method: "POST") } catch let error
-      as APIClientError where error.statusCode == 404
-    { return }
+    do {
+      try await client.data("/api/feed/items/\(id)/read", method: "POST")
+    } catch APIClientError.http(404, _, _, _) { return }
   }
 
   public func consume(_ card: ForYouCard, optionID: String) async throws {
@@ -157,12 +158,15 @@ public struct ForYouFeed: Sendable {
   public func resolve(_ event: ForYouAutomation, cardID: String, enable: Bool) async throws {
     if enable {
       struct Automation: Decodable { let enabled: Bool }
-      let path = "/api/workflow-automations/\(event.automationId)"
-      let automation: Automation = try await client.request(path)
-      if !automation.enabled { try await client.data(path + "/enable", method: "POST") }
+      let automation: Automation = try await client.request(
+        "/api/workflow-automations/\(event.automationId)")
+      if !automation.enabled {
+        try await client.data(
+          "/api/workflow-automations/\(event.automationId)/enable", method: "POST")
+      }
     }
-    do { try await client.data("/api/feed/items/\(cardID)/dismiss", method: "POST") } catch let
-      error as APIClientError where error.statusCode == 404
-    { return }
+    do {
+      try await client.data("/api/feed/items/\(cardID)/dismiss", method: "POST")
+    } catch APIClientError.http(404, _, _, _) { return }
   }
 }
