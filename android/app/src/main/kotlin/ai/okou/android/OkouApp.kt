@@ -16,6 +16,7 @@ import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
@@ -42,6 +43,7 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowIntro
+import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
 import ai.okou.android.chat.conversationRunControls
@@ -120,7 +122,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
@@ -177,6 +178,7 @@ internal fun OkouApp(
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
+    renamePresentation: ChatRenamePresentation? = null,
     settingsProgress: @Composable (SettingsDestination) -> Unit = {},
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
@@ -573,13 +575,8 @@ internal fun OkouApp(
 
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
-    // Restore the form only while the same owner can reconcile its pending write.
-    var renameTarget by
-        key(chats) {
-            rememberSaveable(stateSaver = WorkspaceRenameTarget.Saver) {
-                mutableStateOf<WorkspaceRenameTarget?>(null)
-            }
-        }
+    val renameEditor = renamePresentation?.editor
+    val renameTarget = renameEditor?.target
     if (chats != null) {
         WorkspaceChatFeedback(
             chats,
@@ -591,8 +588,8 @@ internal fun OkouApp(
             showRowActionFailure = showRowFeedback || showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
-            renameTarget = renameTarget,
-            dismissRename = { renameTarget = null },
+            renameEditor = renameEditor,
+            dismissRename = { renamePresentation?.dismiss(it) },
         )
     }
 
@@ -1234,7 +1231,13 @@ internal fun OkouApp(
                 thread = thread,
                 onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
-                onRename = { id -> renameTarget = WorkspaceRenameTarget.Chat(id, true) },
+                onRename = { id ->
+                    renamePresentation?.openChat(
+                        id,
+                        fromConversation = true,
+                        list = listState.value,
+                    )
+                },
                 renameOpen =
                     (renameTarget as? WorkspaceRenameTarget.Chat)?.let {
                         it.fromConversation && it.id == thread?.id
@@ -1610,8 +1613,14 @@ internal fun OkouApp(
                                     onMoveFocusFinished = { request ->
                                         if (moveFocus == request) moveFocus = null
                                     },
-                                    { id -> renameTarget = WorkspaceRenameTarget.Chat(id, false) },
-                                    { id -> renameTarget = WorkspaceRenameTarget.Project(id) },
+                                    { id ->
+                                        renamePresentation?.openChat(
+                                            id,
+                                            fromConversation = false,
+                                            list = listState.value,
+                                        )
+                                    },
+                                    { id -> renamePresentation?.openProject(id, listState.value) },
                                     (renameTarget as? WorkspaceRenameTarget.Chat)
                                         ?.takeUnless { it.fromConversation }
                                         ?.id,

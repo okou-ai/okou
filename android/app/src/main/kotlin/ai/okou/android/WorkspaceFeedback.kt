@@ -3,6 +3,7 @@ package ai.okou.android
 import ai.okou.android.chat.ChatListModel
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatRenameEditor
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ChatRowUndo
 import ai.okou.android.chat.ChatUndoPhase
@@ -11,6 +12,7 @@ import ai.okou.android.chat.ProjectDeleteStatus
 import ai.okou.android.chat.ProjectNameLimit
 import ai.okou.android.chat.RenameListItemSheet
 import ai.okou.android.chat.RenameStatus
+import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.canDeleteProject
 import ai.okou.android.chat.canRenameProject
 import ai.okou.android.chat.label
@@ -45,7 +47,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
@@ -61,34 +62,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
-internal sealed interface WorkspaceRenameTarget {
-    val id: String
-
-    data class Chat(override val id: String, val fromConversation: Boolean) : WorkspaceRenameTarget
-
-    data class Project(override val id: String) : WorkspaceRenameTarget
-
-    companion object {
-        val Saver =
-            listSaver<WorkspaceRenameTarget?, String>(
-                save = { target ->
-                    when (target) {
-                        is Chat ->
-                            listOf(
-                                target.id,
-                                if (target.fromConversation) "conversation" else "chat",
-                            )
-                        is Project -> listOf(target.id, "project")
-                        null -> emptyList()
-                    }
-                },
-                restore = { (id, kind) ->
-                    if (kind == "project") Project(id) else Chat(id, kind == "conversation")
-                },
-            )
-    }
-}
 
 private val feedbackActionGap = 4.dp
 private val feedbackTouchTarget = 48.dp
@@ -186,22 +159,22 @@ internal fun WorkspaceChatFeedback(
     showRowActionFailure: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
-    renameTarget: WorkspaceRenameTarget?,
-    dismissRename: () -> Unit,
+    renameEditor: ChatRenameEditor?,
+    dismissRename: (ChatRenameEditor) -> Unit,
 ) {
     val list = listState.value
     val scope = rememberCoroutineScope()
-    if (renameTarget != null)
-        key(chats, renameTarget) {
-            val chat = renameTarget as? WorkspaceRenameTarget.Chat
+    if (renameEditor != null)
+        key(renameEditor) {
+            val chat = renameEditor.target as? WorkspaceRenameTarget.Chat
             val message =
                 stringResource(
                     if (chat == null) R.string.chat_project_name_saved
                     else R.string.chat_title_saved,
                 )
             val feedback = rememberUpdatedState(ChatFeedbackContent(message, null, false, false))
-            WorkspaceRenameForm(chats, list, renameTarget, dismissRename) {
-                dismissRename()
+            WorkspaceRenameForm(chats, list, renameEditor, { dismissRename(renameEditor) }) {
+                dismissRename(renameEditor)
                 if (snackbar.currentSnackbarData == null && list.rowUndo == null) {
                     scope.launch {
                         snackbar.showSnackbar(
@@ -303,7 +276,7 @@ internal fun WorkspaceChatFeedback(
             showChatList,
             visibleConversationId,
             showRowActionFailure,
-            (renameTarget as? WorkspaceRenameTarget.Chat)?.id,
+            (renameEditor?.target as? WorkspaceRenameTarget.Chat)?.id,
         )
     list.markAllReadResult
         ?.takeIf { undo == null }
@@ -339,10 +312,11 @@ internal fun WorkspaceChatFeedback(
 private fun WorkspaceRenameForm(
     chats: ChatListModel,
     list: ChatListUiState,
-    target: WorkspaceRenameTarget,
+    editor: ChatRenameEditor,
     dismiss: () -> Unit,
     saved: () -> Unit,
 ) {
+    val target = editor.target
     val id = target.id
     when (target) {
         is WorkspaceRenameTarget.Chat -> {
@@ -362,6 +336,7 @@ private fun WorkspaceRenameForm(
                     else -> RenameStatus.Editing
                 }
             RenameListItemSheet(
+                editor = editor,
                 confirmedName = thread.title.orEmpty(),
                 titleRes = R.string.chat_rename,
                 labelRes = R.string.chat_title_field,
@@ -398,6 +373,7 @@ private fun WorkspaceRenameForm(
                     else -> RenameStatus.Editing
                 }
             RenameListItemSheet(
+                editor = editor,
                 confirmedName = project.name,
                 titleRes = R.string.chat_rename_project,
                 labelRes = R.string.chat_project_name,
