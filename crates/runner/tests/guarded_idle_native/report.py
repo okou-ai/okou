@@ -43,6 +43,14 @@ def regular(
 PREFIX = "NATIVE_TERMINAL_RECEIPT "
 NATIVE_PROFILE = {"vcpu": 2, "memory_mib": 4096, "home_mib": 24576}
 NATIVE_HOME_BYTES = NATIVE_PROFILE["home_mib"] * 1024**2
+HISTORY_PAYLOAD_BYTES = 64 * 1024
+
+
+def history_payload(run_id):
+    """Reconstruct the fixture's home payload from an already validated run ID."""
+    seed = run_id.encode()
+    repeats = (HISTORY_PAYLOAD_BYTES + len(seed) - 1) // len(seed)
+    return (seed * repeats)[:HISTORY_PAYLOAD_BYTES]
 SCOPES = (
     "Batch(Exact)", "Batch(All)", "CallerOwned", "SpeculativeGuestFailure",
     "FinalizingParked", "FinalizingRunning",
@@ -406,7 +414,7 @@ def _validate_receipts(directory, cases, phases, collector):
         if any(complete.get(k) is not True for k in (
                 "original_home_restored", "private_runtime_removed",
                 "required_cleanup_joined", "full_lease_released_after_cleanup")) \
-                or complete.get("home_payload_bytes") != 65536:
+                or complete.get("home_payload_bytes") != HISTORY_PAYLOAD_BYTES:
             raise ValueError("native original data/cleanup/lease proof is incomplete")
         results[case] = {
             "sandbox_id": identity[0], "backing_generation": identity[1],
