@@ -58,7 +58,11 @@ struct ChatFeedbackSurface: View {
     .frame(maxWidth: .infinity, minHeight: OkouControl.listRow, alignment: .leading)
     .glassEffect(.regular, in: RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
     .contentShape(RoundedRectangle(cornerRadius: OkouRadius.card, style: .continuous))
-    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { cardWidth = $0 }
+    .onGeometryChange(for: CGFloat.self) {
+      $0.size.width
+    } action: {
+      cardWidth = $0
+    }
     .offset(x: reduceMotion ? 0 : (exitOffset ?? dragOffset))
     .opacity(reduceMotion && exitOffset != nil ? 0 : 1)
     .allowsHitTesting(exitOffset == nil)
