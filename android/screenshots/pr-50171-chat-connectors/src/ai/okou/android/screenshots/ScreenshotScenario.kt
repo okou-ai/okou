@@ -62,8 +62,9 @@ class ScreenshotScenario {
             device.pressBack()
             assertTrue(!action("工作日历").isChecked)
             action("管理连接器").click()
-            action("发现")
-            action("Google Calendar")
+            text("发现")
+            text("推荐")
+            awaitCalendarArtwork(inset = 42)
             capture("phone-directory.png")
             device.pressBack()
             assertTrue(!action("工作日历").isChecked)
@@ -151,7 +152,7 @@ class ScreenshotScenario {
             text("用于当前对话。初始采用工作区的默认启用账号。")
         }
 
-        fun awaitCalendarArtwork() {
+        fun awaitCalendarArtwork(inset: Int = 28) {
             assertTrue("Calendar brand mark has loaded", device.wait(object : Condition<UiDevice, Boolean> {
                 override fun apply(device: UiDevice): Boolean {
                     val label = device.findObject(By.pkg(app.packageName).text("Google Calendar"))
@@ -159,7 +160,7 @@ class ScreenshotScenario {
                     val bounds = label.visibleBounds
                     val screenshot = takeScreenshot()
                     try {
-                        val x = bounds.left - 28
+                        val x = bounds.left - inset
                         val y = bounds.centerY() - 10
                         if (x < 0 || y < 0 || x + 20 > screenshot.width || y + 20 > screenshot.height)
                             return false
