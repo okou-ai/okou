@@ -9596,7 +9596,8 @@ data class ChatMessageSearchResponse(
 @Serializable
 data class RenameProjectRequest(
     val `eventId`: String,
-    val `name`: String,
+    val `name`: String? = null,
+    val `archived`: Boolean? = null,
 )
 
 @Serializable
@@ -9606,6 +9607,8 @@ data class RenamedProject(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable
@@ -16149,6 +16152,8 @@ data class ProjectSnapshotVariant1ProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable
@@ -16212,6 +16217,8 @@ data class ProjectEventsEventsItem(
     val `kind`: ProjectEventsEventsItemKind,
     val `name`: String?,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
     val `createdAt`: String,
 )
 
@@ -16547,6 +16554,8 @@ data class ProjectArchiveProjectsItem(
     val `createdAt`: String,
     val `updatedAt`: String,
     val `sortOrder`: String? = null,
+    val `archived`: Boolean? = null,
+    val `lastArchivedAt`: String? = null,
 )
 
 @Serializable

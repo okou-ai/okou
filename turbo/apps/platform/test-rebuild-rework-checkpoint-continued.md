@@ -3232,3 +3232,7 @@ The former agent-chat URL leads to the recovery page. From member Home, selectin
 Keyboard and pointer cancellation both preserve a concurrent account rename through a fresh account-list read. A control that successfully submits the stale name loses the concurrent label in both rows. Dismissing Image and a configured Presentation sends only the ordinary draft and its uploaded brief. An independently selected inline template has its own control. Replaying an identical image prompt or completing the same private upload twice produces equivalent public business results. Their single-submission requirements remain open.
 
 [Fixed selection](https://app.okou.ai/artifacts/c6qrea27d8.md) · [45 ID dispositions](./test-rebuild-batch-95.tsv) · [485-file inventory](./test-rebuild-first-pass.tsv) · [Original shortcut and sidebar evidence](./test-rebuild-batch-93-main-sync.tsv)
+
+### Project archive synchronization
+
+[Project archiving in the sidebar](https://github.com/okou-ai/okou/pull/50306) reached main after the initial batch checkpoint. The sidebar suite keeps the existing independent rebuild and exercises an archived project and a current project with both live and archived chats. The former projects suite remains split across the rebuilt files. Its editor fixture now distinguishes a rename from an archive update, and the routed editor tests cover a confirmed rename after a rejected draft. Both frozen project inventories remain open. These synchronization regressions leave the batch’s 45 ID decisions and 109-file backlog unchanged.

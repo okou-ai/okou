@@ -21,7 +21,10 @@ import {
   installActiveChatBoundaries,
   installChatListStream,
 } from "./chat-list-test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
 function project(name: string, sortOrder: string): Project {
   return {
@@ -222,4 +225,38 @@ test("project-chat-list-011 folding Launch twice preserves the selected outside 
   });
   expect(current).toHaveAttribute("aria-current", "page");
   expect(location.pathname).toBe("/chats/" + outside.id);
+});
+
+test("The archive shows both chats in a retired project and only the archived chat in a current project", async () => {
+  const retired = { ...project("Harbor maps", "a0"), archived: true };
+  const current = project("Field notes", "a1");
+  const threads = [
+    chatListThread(31, "Harbor survey", { projectId: retired.id }),
+    chatListThread(32, "Older survey", {
+      projectId: retired.id,
+      archived: true,
+    }),
+    chatListThread(33, "Current fieldwork", { projectId: current.id }),
+    chatListThread(34, "Prior fieldwork", {
+      projectId: current.id,
+      archived: true,
+    }),
+  ];
+  await open([retired, current], threads);
+  await handle(current.name);
+  expect(
+    queryFastControl("button", "Show or hide chats in Harbor maps"),
+  ).toBeNull();
+  click(await findFastControl("button", "Open chat list menu"));
+  const filters = within(await screen.findByRole("menu"));
+  click(await filters.findByText("Archived"));
+  click(await handle(retired.name));
+  click(await handle(current.name));
+  await waitFor(() => {
+    expect(titles(retired).sort()).toStrictEqual([
+      "Harbor survey",
+      "Older survey",
+    ]);
+    expect(titles(current)).toStrictEqual(["Prior fieldwork"]);
+  });
 });

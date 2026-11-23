@@ -12,7 +12,7 @@ import {
   sendWechatChatReply$,
   dispatchWechatChatDelivery$,
 } from "./wechat-delivery.service";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle$,
@@ -23,7 +23,10 @@ import {
   insertRecommendedFollowupsEvent$,
   touchChatThreadLastMessageAtIndependently$,
 } from "./chat-event-shared.service";
-import { dispatchConfiguredChatRunFinishedEvent$ } from "./chat-run-finished-event-dispatch.service";
+import {
+  dispatchConfiguredChatRunFinishedEvent$,
+  dispatchProjectRecall$,
+} from "./chat-run-finished-event-dispatch.service";
 import { loadDiscordQueuedDelivery$ } from "./discord-queued-launch-context.service";
 import { scheduleDiscordRunTyping$ } from "./discord-run-typing.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
@@ -512,6 +515,7 @@ interface AssistantErrorEventArgs {
 }
 
 interface TerminalEventProjection {
+  readonly markerCreatedAt: Date;
   readonly markerInserted: boolean;
   readonly deliveryReceipts: RunLifecycleDeliveryCallbacks;
 }
@@ -585,6 +589,20 @@ const insertEmailDeliveryCallback$ = command(
   },
 );
 
+async function readCommittedRunMarker(
+  database: Pick<Db, "select">,
+  runId: string,
+  eventType: Parameters<typeof runLifecycleMarkerReadPlan>[1],
+) {
+  const plan = runLifecycleMarkerReadPlan(runId, eventType);
+  const [marker] = await database
+    .select(plan.columns)
+    .from(chatEvents)
+    .where(plan.condition)
+    .limit(plan.limit);
+  return marker;
+}
+
 const insertAssistantErrorEvent$ = command(
   async (
     { set },
@@ -605,16 +623,11 @@ const insertAssistantErrorEvent$ = command(
           )[0] ?? null;
         const event =
           insertedEvent ??
-          (await (async () => {
-            const runId = input.runId;
-            const eventType = assistantErrorEventType(input.lifecycleEvent);
-            const plan = runLifecycleMarkerReadPlan(runId, eventType);
-            const query = database.select(plan.columns).from(chatEvents);
-            const [marker] = await query
-              .where(plan.condition)
-              .limit(plan.limit);
-            return marker;
-          })());
+          (await readCommittedRunMarker(
+            database,
+            input.runId,
+            assistantErrorEventType(input.lifecycleEvent),
+          ));
         if (!event) {
           return null;
         }
@@ -688,6 +701,7 @@ const insertAssistantErrorEvent$ = command(
           : undefined;
         return {
           markerInserted: insertedEvent !== null,
+          markerCreatedAt: event.createdAt,
           deliveryReceipts: {
             slackDeliveryCallbackId,
             feishuDeliveryCallbackId,
@@ -713,6 +727,7 @@ const insertAssistantErrorEvent$ = command(
       assistantErrorEventTouchOptions(input),
       signal,
     );
+    await set(dispatchProjectRecall$, input, inserted.markerCreatedAt, signal);
     await set(publishAssistantErrorEventSignals$, input, signal);
     signal.throwIfAborted();
     return assistantErrorEventResult(displayErrorMessage, inserted);
@@ -992,24 +1007,19 @@ const insertRunLifecycleMarker$ = command(
               runLifecycleMarkerInsertSql(input, markerCreatedAt),
             ),
           )[0] ?? null;
-        if (
-          !marker &&
-          !(await (async () => {
-            const database = tx;
-            const runId = input.runId;
-            const eventType = runLifecycleMarkerEventType(input.event);
-            const plan = runLifecycleMarkerReadPlan(runId, eventType);
-            const query = database.select(plan.columns).from(chatEvents);
-            const [marker] = await query
-              .where(plan.condition)
-              .limit(plan.limit);
-            return marker;
-          })())
-        ) {
+        const persistedMarker =
+          marker ??
+          (await readCommittedRunMarker(
+            tx,
+            input.runId,
+            runLifecycleMarkerEventType(input.event),
+          ));
+        if (!persistedMarker) {
           return null;
         }
         return {
           markerInserted: marker !== null,
+          markerCreatedAt: persistedMarker.createdAt,
           deliveryReceipts: await set(
             registerRunLifecycleDeliveryCallbacks$,
             input,
@@ -1032,6 +1042,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
+    await set(dispatchProjectRecall$, args, inserted.markerCreatedAt, signal);
     await set(publishRunLifecycleMarkerSignals$, args, signal);
     signal.throwIfAborted();
     return {

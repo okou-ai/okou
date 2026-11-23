@@ -35,7 +35,10 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import { projects$ } from "../../signals/projects/projects.ts";
+import {
+  projects$,
+  setProjectArchived$,
+} from "../../signals/projects/projects.ts";
 import {
   projectReorderEnabled$,
   stepProject$,
@@ -176,6 +179,8 @@ function ProjectMenu({
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
+  const setArchived = useSet(setProjectArchived$);
+  const signal = useGet(pageSignal$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
   return (
@@ -233,6 +238,32 @@ function ProjectMenu({
           {t(($) => {
             return $.projects.rename;
           })}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => {
+            detach(
+              setArchived(project.id, !project.archived, signal),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {project.archived
+            ? t(
+                ($) => {
+                  return $.projects.restoreProject;
+                },
+                {
+                  defaultValue: "Restore project",
+                },
+              )
+            : t(
+                ($) => {
+                  return $.projects.archiveProject;
+                },
+                {
+                  defaultValue: "Archive project",
+                },
+              )}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -403,6 +434,13 @@ function ProjectTrigger({
         <HoverScrollTitle title={projectNameParts(project.name).text} />
       ) : (
         <span className="truncate">{projectNameParts(project.name).text}</span>
+      )}
+      {project.archived && (
+        <span className="ml-1 shrink-0 text-xs text-nav-copy-muted">
+          {t(($) => {
+            return $.chat.sidebar.archived;
+          })}
+        </span>
       )}
       {indicator !== null && (
         <span id={stateId}>

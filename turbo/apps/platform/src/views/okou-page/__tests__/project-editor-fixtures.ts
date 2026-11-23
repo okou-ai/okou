@@ -32,6 +32,7 @@ export async function projectEditor(
     path?: string;
     createGate?: Promise<void>;
     renameGate?: Promise<void>;
+    rejectedName?: string;
     onDelete?: () => Promise<"fail" | "ok">;
     confirmedName?: string;
   } = {},
@@ -104,6 +105,17 @@ export async function projectEditor(
   context.mocks.api(
     projectsContract.update,
     async ({ params, body, respond }) => {
+      if (body.name === undefined) {
+        throw new Error("This fixture handles project renames");
+      }
+      if (body.name === options.rejectedName) {
+        return respond(409, {
+          error: {
+            code: "CONFLICT",
+            message: "The project was edited elsewhere",
+          },
+        });
+      }
       await options.renameGate;
       const item = copied.find((p) => {
         return p.id === params.id;

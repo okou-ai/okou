@@ -366,12 +366,16 @@ object HistoryRowsRowsItemSerializer : KSerializer<HistoryRowsRowsItem> {
 @Serializable(with = HistoryRowsCursorSerializer::class) sealed interface HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant1(val `lastEventId`: JsonNull, val `lastSeqId`: CanonicalZero) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant1(
+    val `lastEventId`: JsonNull,
+    val `lastSeqId`: CanonicalZero,
+) : HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant2(val `lastEventId`: String, val `lastSeqId`: Long) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant2(
+    val `lastEventId`: String,
+    val `lastSeqId`: Long,
+) : HistoryRowsCursor
 
 object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
     override val descriptor =
@@ -438,9 +442,15 @@ data class HistoryRows(
 )
 
 @Serializable
-data class ThreadDetail(val `lastReadAt`: String?, val `cancellationRecoveryPending`: Boolean)
+data class ThreadDetail(
+    val `lastReadAt`: String?,
+    val `cancellationRecoveryPending`: Boolean,
+)
 
-@Serializable data class ReadState(val `lastReadAt`: String?)
+@Serializable
+data class ReadState(
+    val `lastReadAt`: String?,
+)
 
 @Serializable(with = RawHistoryRowSerializer::class) sealed interface RawHistoryRow
 
@@ -653,7 +663,10 @@ object RawHistoryRowSerializer : KSerializer<RawHistoryRow> {
 @Serializable(with = RowsQuerySerializer::class) sealed interface RowsQuery
 
 @Serializable
-data class RowsQueryVariant1(val `sinceSeqId`: CanonicalZero, val `limit`: Double) : RowsQuery
+data class RowsQueryVariant1(
+    val `sinceSeqId`: CanonicalZero,
+    val `limit`: Double,
+) : RowsQuery
 
 @Serializable
 data class RowsQueryVariant2(

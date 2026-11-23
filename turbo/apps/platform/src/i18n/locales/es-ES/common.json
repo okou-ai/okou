@@ -5253,6 +5253,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archivar proyecto",
     "back": "Back",
     "close": "Close",
     "collapse": "Contraer",
@@ -5293,6 +5294,7 @@
     "removeFromNewChat": "Quitar {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurar proyecto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",

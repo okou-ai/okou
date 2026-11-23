@@ -115,6 +115,27 @@ test("projects-049 The optimistic renamed folder appears before its persisted na
   ).toBeNull();
 });
 
+test("A second project rename replaces the rejected draft with the persisted label", async () => {
+  const ws = await projectEditor(context, [project("Atlas")], {
+    path: "chat",
+    rejectedName: "Atlas draft",
+    confirmedName: "Coastal atlas",
+  });
+  await save(await options("Atlas", "Rename"), "Atlas draft");
+  await expect(
+    screen.findByText("The project was edited elsewhere"),
+  ).resolves.toBeVisible();
+  await expect(folder("Atlas draft")).resolves.toBeVisible();
+  const retry = await options("Atlas draft", "Rename");
+  expect(within(retry).getByRole("textbox")).toHaveValue("Atlas draft");
+  await save(retry, "Atlas revised");
+  await expect(folder("Coastal atlas")).resolves.toBeVisible();
+  expect(
+    queryFastControl("button", "Show or hide chats in Atlas draft"),
+  ).toBeNull();
+  expect(location.pathname).toBe("/chats/" + ws.ordinary);
+});
+
 test.each([1, 3, 101])(
   "Deleting a project with %i conversations previews the named threads",
   async (count) => {
