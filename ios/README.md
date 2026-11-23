@@ -37,7 +37,7 @@ also supports muting. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the saved
 model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
-Workspace setup remains on the web. Settings shows the profile, workspace,
+Eligible new accounts get a workspace on iOS and can start chatting. Web onboarding remains available to the workspace creator. Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
 Account deletion is available only on the web.
 
