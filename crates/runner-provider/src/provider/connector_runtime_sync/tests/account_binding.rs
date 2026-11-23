@@ -485,6 +485,28 @@ async fn superseded_switch_cannot_publish_and_other_run_keeps_its_binding() {
     );
     assert_eq!(*other_context.borrow(), other_binding);
     assert!(!other_context.has_changed().unwrap());
+    for (active_run_id, expected) in [(run_id, ACCOUNT_C), (other_run_id, ACCOUNT_A)] {
+        let list = server.mock(|when, then| {
+            when.method(POST)
+                .path(format!("/api/runners/runs/{active_run_id}/mcp-connectors"))
+                .json_body(json!({
+                    "bindings": [{"kind": "builtin", "connectorSlug": "slack", "connectionId": expected}],
+                    "request": {"kind": "list"},
+                }));
+            then.status(200).json_body(json!({"kind": "list", "connectors": []}));
+        });
+        assert_eq!(
+            handle
+                .resolve_published_mcp(
+                    active_run_id,
+                    "Bearer agent-token",
+                    &json!({"kind": "list"})
+                )
+                .await,
+            Some(json!({"status": 200, "body": {"kind": "list", "connectors": []}}))
+        );
+        list.assert_calls(1);
+    }
     other.assert_calls(1);
     older.assert_calls(1);
     newer.assert_calls(1);

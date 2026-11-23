@@ -699,14 +699,15 @@ impl ApiClient {
         targets: &[ConnectorRuntimeTargetRegistration],
         account_switches: &[(ConnectorRuntimeTarget, String)],
     ) -> ApiRequestBuilder {
-        let mut body = serde_json::json!({ "targets": targets });
+        let mut body = serde_json::Map::from_iter([("targets".into(), serde_json::json!(targets))]);
         if !account_switches.is_empty() {
-            body["accountSwitches"] = serde_json::Value::Array(
+            let switches = serde_json::Value::Array(
                 account_switches
                     .iter()
                     .map(|(target, id)| serde_json::json!({ "target": target, "connectionId": id }))
                     .collect(),
             );
+            body.insert("accountSwitches".into(), switches);
         }
         self.http
             .request_resolved_route(
@@ -726,8 +727,11 @@ impl ApiClient {
         request: &serde_json::Value,
     ) -> ProviderResult<serde_json::Value> {
         const LABEL: &str = "resolve published MCP connectors";
-        let authorization = reqwest::header::HeaderValue::from_str(authorization)
-            .map_err(|_| ProviderError::Api("invalid MCP Run authorization header".to_string()))?;
+        let run_token = authorization
+            .strip_prefix("Bearer ")
+            .ok_or_else(|| ProviderError::Api("invalid MCP Run credential".to_string()))?;
+        // Use the standard Authorization header so cross-origin redirects strip both credentials.
+        let credentials = format!("{}~{run_token}", self.token);
         let run_id = run_id.to_string();
         let response = send_api(
             self.http
@@ -737,9 +741,8 @@ impl ApiClient {
                             run_id: &run_id,
                         },
                     ),
-                    &self.token,
+                    &credentials,
                 )
-                .sensitive_header("x-okou-run-authorization", authorization)
                 .json(&serde_json::json!({ "bindings": bindings.targets, "request": request })),
             LABEL,
         )

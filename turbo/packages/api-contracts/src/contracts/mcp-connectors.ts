@@ -25,7 +25,6 @@ import {
 const c = initContract();
 
 export const MCP_RUNNER_BINDING_REQUIRED = "MCP_RUNNER_BINDING_REQUIRED";
-export const MCP_RUN_AUTHORIZATION_HEADER = "x-okou-run-authorization";
 
 export const mcpConnectorSchema = object({
   ...connectorAccountFieldMetadataSchema.shape,
@@ -132,9 +131,7 @@ export const runnerMcpConnectorsContract = c.router({
   resolve: {
     method: "POST",
     path: "/api/runners/runs/:runId/mcp-connectors",
-    headers: authHeadersSchema.extend({
-      [MCP_RUN_AUTHORIZATION_HEADER]: string(),
-    }),
+    headers: authHeadersSchema,
     pathParams: object({ runId: uuid() }),
     body: object({
       bindings: array(publishedMcpBindingSchema),

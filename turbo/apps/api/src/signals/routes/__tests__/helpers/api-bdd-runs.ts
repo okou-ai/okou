@@ -25,10 +25,7 @@ import {
 import type { UpsertModelProviderRequest } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProvidersMainContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
-import {
-  MCP_RUN_AUTHORIZATION_HEADER,
-  runnerMcpConnectorsContract,
-} from "@okouai/api-contracts/contracts/mcp-connectors";
+import { runnerMcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
 import {
   runContextContract,
@@ -1010,8 +1007,7 @@ export function createRunsApi(context: TestContext) {
           runnerMcpConnectorsContract,
         ).resolve({
           headers: {
-            ...runnerHeaders(true),
-            [MCP_RUN_AUTHORIZATION_HEADER]: runAuthorization,
+            authorization: `${OFFICIAL_RUNNER_AUTHORIZATION}~${runAuthorization.slice("Bearer ".length)}`,
           },
           params: { runId },
           body,

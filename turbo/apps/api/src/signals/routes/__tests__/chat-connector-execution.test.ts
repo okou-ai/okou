@@ -608,6 +608,7 @@ describe("Chat connector execution", () => {
       ],
     });
     expect(JSON.stringify(listed)).not.toContain("key-Published");
+    await runs.resolveRunnerMcp(run.runId, "", listRequest, [401]);
     await runs.resolveRunnerMcp(
       run.runId,
       otherRun.headers.authorization,

@@ -1,6 +1,5 @@
 import { command, computed, type Computed } from "ccstate";
 import {
-  MCP_RUN_AUTHORIZATION_HEADER,
   MCP_RUNNER_BINDING_REQUIRED,
   mcpConnectorsContract,
   runnerMcpConnectorsContract,
@@ -17,7 +16,7 @@ import { env } from "../../lib/env";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { authorization$, request$ } from "../context/hono";
+import { authorization$ } from "../context/hono";
 import { runnerAuth$ } from "../auth/runner-auth";
 import { verifyOkouToken } from "../auth/tokens";
 import type { RouteEntry } from "../route-entry";
@@ -292,9 +291,11 @@ const runnerMcpConnectors$ = runMcpConnectorList(runnerMcpScope$);
 const runnerBuiltinMcpConnectors$ = builtinMcpList(runnerMcpScope$);
 const resolveRunnerMcpInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    const auth = await set(runnerAuth$, get(authorization$), signal);
+    const [runnerAuthorization, runToken, extra] =
+      get(authorization$)?.split("~") ?? [];
+    const auth = await set(runnerAuth$, runnerAuthorization, signal);
     signal.throwIfAborted();
-    if (!auth)
+    if (!auth || !runToken || extra !== undefined) {
       return {
         status: 401 as const,
         body: {
@@ -304,6 +305,7 @@ const resolveRunnerMcpInner$ = command(
           },
         },
       };
+    }
     const body = await get(runnerMcpBody$);
     signal.throwIfAborted();
     if (!body.ok) return body.response;
@@ -314,10 +316,7 @@ const resolveRunnerMcpInner$ = command(
       return resourceUnavailable("Run does not belong to user");
     }
     const request = body.data.request;
-    const authorization = get(request$).header(MCP_RUN_AUTHORIZATION_HEADER);
-    const agent = authorization?.startsWith("Bearer ")
-      ? verifyOkouToken(authorization.slice("Bearer ".length))
-      : null;
+    const agent = verifyOkouToken(runToken);
     const capability =
       request.kind === "list" ? "connector:read" : "connector:write";
     if (
