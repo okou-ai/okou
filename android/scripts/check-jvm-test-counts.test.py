@@ -41,6 +41,16 @@ class JvmTestCountsTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("No JVM JUnit cases found", result.stderr)
 
+    def test_reports_with_document_types_fail_the_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "TEST-app.RouteTest.xml").write_text(
+                '<!DOCTYPE testsuite [<!ENTITY suite "app.RouteTest">]>'
+                '<testsuite><testcase classname="&suite;" name="case"/></testsuite>'
+            )
+            result = subprocess.run([sys.executable, CHECK, directory], capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not contain a DTD", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

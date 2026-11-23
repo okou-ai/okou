@@ -4,7 +4,7 @@
 from collections import Counter
 from pathlib import Path
 import sys
-from xml.etree import ElementTree
+from xml.parsers import expat
 
 
 MAX_CASES = 20
@@ -12,11 +12,22 @@ MAX_CASES = 20
 
 def violations(directory):
     counts = Counter()
-    for report in sorted(directory.glob("TEST-*.xml")):
-        for case in ElementTree.parse(report).iter("testcase"):
+
+    def count_case(name, attributes):
+        if name == "testcase":
             # Match the top-level class boundary used by the Gradle shard filter.
-            class_name = case.attrib["classname"].split("$", 1)[0]
+            class_name = attributes["classname"].split("$", 1)[0]
             counts[class_name] += 1
+
+    def reject_doctype(*_):
+        raise ValueError("JVM JUnit reports must not contain a DTD")
+
+    for report in sorted(directory.glob("TEST-*.xml")):
+        parser = expat.ParserCreate()
+        parser.StartElementHandler = count_case
+        parser.StartDoctypeDeclHandler = reject_doctype
+        with report.open("rb") as stream:
+            parser.ParseFile(stream)
 
     if not counts:
         return [f"No JVM JUnit cases found in {directory}"]
