@@ -409,6 +409,26 @@ final class ComposerDraftStore {
     await task.value
   }
 
+  func prependSuggestion(_ suggestion: ComposerDraft) async throws {
+    await synchronize()
+    try Task.checkCancellation()
+    guard canEditVoice, syncWarning == nil, error == nil, attachments.isReady,
+      let incoming = suggestion.draftUserMessage, incoming.isSupported
+    else { throw ChatError.composerUnavailable }
+    let existing = value
+    let suffix = existing.draftUserMessage?.parts ?? []
+    let separator: [MessageJSON] =
+      suffix.isEmpty ? [] : [.object(["type": .string("text"), "text": .string("\n\n")])]
+    let files = existing.draftAttachments ?? []
+    let existingIDs = Set(files.map(\.id))
+    let added = (suggestion.draftAttachments ?? []).filter { !existingIDs.contains($0.id) }
+    apply(
+      ComposerDraft(
+        document: ChatDraftDocument(parts: incoming.parts + separator + suffix),
+        attachments: files + added))
+    changed()
+  }
+
   private func apply(_ remote: ComposerDraft) {
     applying = true
     document = remote.draftUserMessage ?? ChatDraftDocument()

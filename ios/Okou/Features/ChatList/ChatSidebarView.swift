@@ -12,6 +12,7 @@ struct ChatSidebarView: View {
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: () -> Void
+  @LoadableValue private var forYouSummary: Loadable<Bool>
   @LoadableValue private var projectRead: Loadable<[ChatProject]>
   @LoadableValue private var listRead: Loadable<Void>
   @LoadableValue private var presentation: Loadable<ChatSidebarPresentation>
@@ -29,6 +30,7 @@ struct ChatSidebarView: View {
     _accountError = accountError
     self.close = close
     self.newChat = newChat
+    _forYouSummary = LoadableValue(task: store.forYou.summary, keepLast: true)
     _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
     _listRead = LoadableValue(task: store.list.listValue)
     _presentation = LoadableValue(store.sidebar.presentation)
@@ -45,6 +47,7 @@ struct ChatSidebarView: View {
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
   @State private var deletingThreadID: String?
+  @State private var showsForYou = false
   @State private var showsSettings = false
   /// Rows have scrolled under the top bar, so the workspace name gives way to them.
   @State private var isScrolled = false
@@ -78,6 +81,7 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
+      forYouRow
       if listRead.state == .loading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
@@ -194,6 +198,12 @@ struct ChatSidebarView: View {
       )
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
+    .fullScreenCover(isPresented: $showsForYou) {
+      ForYouView(store: store.forYou) {
+        showsForYou = false
+        close()
+      }
+    }
     .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
@@ -543,6 +553,29 @@ struct ChatSidebarView: View {
     .labelStyle(.iconOnly)
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAllRead)
   }
+  private var forYouRow: some View {
+    Button {
+      showsForYou = true
+    } label: {
+      HStack(spacing: OkouSpace.ten) {
+        OkouIcon("hand-heart").frame(width: statusColumn)
+        Text("For you").font(.okou(.body))
+        Spacer()
+        if case .hasData(true) = forYouSummary {
+          Circle().fill(OkouStatusColor.running)
+            .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+            .accessibilityLabel("Unread")
+        }
+      }
+      .frame(minHeight: OkouControl.listRow).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .listRowInsets(.horizontal, rowInset)
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
+    .accessibilityIdentifier("for-you-sidebar")
+  }
+
   private var footer: some View {
     ChatSidebarFooter(
       store: store, authentication: authentication, notifications: notifications,

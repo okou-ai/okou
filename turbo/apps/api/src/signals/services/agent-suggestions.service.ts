@@ -5,7 +5,7 @@ import {
   retainedSuggestion,
   suggestionRow,
 } from "./agent-suggestions-lifecycle";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import { serializeFeedbackNote } from "./chat-user-message.service";
@@ -51,6 +51,7 @@ import {
 } from "./agent-suggestion-read.service";
 import {
   hasValidSuggestionConsumeToken,
+  customSuggestionContextVersion,
   withSuggestionConsumeToken,
 } from "./agent-suggestion-consumption-token";
 import { PROACTIVE_LEARNING_DEFINITION_NAME } from "@okouai/api-contracts/contracts/proactive";
@@ -834,9 +835,7 @@ export const validateSuggestionFollowup$ = command(
             return !submittedFiles.has(file.id);
           },
         ) ||
-        createHash("sha256")
-          .update(JSON.stringify(item.content.customOption.draft))
-          .digest("hex") !== context.contextVersion
+        customSuggestionContextVersion(item) !== context.contextVersion
       ) {
         return conflict(
           "This suggestion background has changed. Select its custom direction again to refresh the context, or remove the quote to continue with your own message. Your draft has been kept.",

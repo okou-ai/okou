@@ -229,6 +229,11 @@ final class WorkspaceSynchronization {
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     // Model catch-up must stay fresh, but it does not gate the chat list or messages.
     async let accessRefresh: Void = refreshComputerAuthorizations(batch)
+    if batch.contains(.forYou)
+      || !batch.isDisjoint(with: [.foregroundResume, .realtimeGap, .reconnected])
+    {
+      do { try resources.refreshForYouSummary() } catch { didFail(error) }
+    }
     async let modelRefresh: Void = refreshModels(batch)
     async let projectRefresh: Void = refreshProjects(batch)
     async let indicatorsRefresh: Void = refreshIndicators(batch)

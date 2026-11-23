@@ -1,6 +1,223 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "For you": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "为你推荐" }
+        }
+      }
+    },
+    "Already done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已经处理了" }
+        }
+      }
+    },
+    "Not planned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂无计划" }
+        }
+      }
+    },
+    "Don’t nudge me": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "别催了" }
+        }
+      }
+    },
+    "Less like this": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "少推荐这类内容" }
+        }
+      }
+    },
+    "Feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "反馈" }
+        }
+      }
+    },
+    "Send in a new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "新建聊天并发送" }
+        }
+      }
+    },
+    "Edit draft in original chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "去原聊天编辑草稿" }
+        }
+      }
+    },
+    "Give your own direction": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "说说你的想法" }
+        }
+      }
+    },
+    "Source chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "来源聊天" }
+        }
+      }
+    },
+    "Send in the original chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "发送到原聊天" }
+        }
+      }
+    },
+    "No new suggestions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂时没有新推荐" }
+        }
+      }
+    },
+    "Previous card": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "上一张" }
+        }
+      }
+    },
+    "Next card": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "下一张" }
+        }
+      }
+    },
+    "Your direction": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "你的想法" }
+        }
+      }
+    },
+    "What would you like Okou to do?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "你想让 Okou 做什么？" }
+        }
+      }
+    },
+    "Feedback saved": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记录反馈" }
+        }
+      }
+    },
+    "Suggestion dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略推荐" }
+        }
+      }
+    },
+    "Sent to a new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送到新聊天" }
+        }
+      }
+    },
+    "Direction sent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送你的想法" }
+        }
+      }
+    },
+    "This suggestion was already handled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条推荐已处理。" }
+        }
+      }
+    },
+    "This suggestion has expired.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条推荐已过期。" }
+        }
+      }
+    },
+    "Couldn’t open this chat.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂时无法打开这个聊天。" }
+        }
+      }
+    },
+    "Retry the previous action to confirm its result.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "请重试上一个操作，确认处理结果。" }
+        }
+      }
+    },
+    "View chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看聊天" }
+        }
+      }
+    },
+    "Dismiss": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "忽略" }
+        }
+      }
+    },
+    "Automation paused": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "自动化已暂停" }
+        }
+      }
+    },
+    "Re-enable automation": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "重新启用自动化" }
+        }
+      }
+    },
+    "Paused after %lld consecutive failures.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "连续失败 %lld 次后已暂停。" }
+        }
+      }
+    },
+    "Automation enabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已启用自动化" }
+        }
+      }
+    },
+    "Event dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略事件" }
+        }
+      }
+    },
     "Chat archived": {
       "localizations": {
         "zh-Hans": {
