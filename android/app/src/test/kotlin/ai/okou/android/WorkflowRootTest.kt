@@ -48,6 +48,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -617,25 +621,65 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
-    fun memberCanPauseEditAndEnableTheirRuleOnASharedWorkflow() {
-        app.fixture.hasSharedSchedule = true
+    fun memberCanCreateEditEnableAndPauseTheirRuleOnASharedWorkflow() {
+        val fixture = app.fixture
+        val releaseCreate = CountDownLatch(1)
+        fixture.beforeSharedScheduleCreate = { releaseCreate.await() }
         openWorkflowDetail(WORKFLOW_SHARED)
         compose.onNodeWithText("Edit instructions").assertDoesNotExist()
+        val useBounds = compose.onNodeWithTag("workflow_use").getUnclippedBoundsInRoot()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
-        waitFor("Weekdays at 09:00")
-        compose.onNodeWithText("Add automation").assertDoesNotExist()
+        compose.onNodeWithText("No automations yet").assertIsDisplayed()
+        val add = compose.onNodeWithText("Add automation").assertIsEnabled()
+        val addBounds = add.getUnclippedBoundsInRoot()
+        assertTrue(addBounds.bottom - addBounds.top >= 48.dp)
+        add.performClick()
 
-        val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
-        toggle.assertIsDisplayed().assertIsEnabled().performClick()
+        val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
+        val saveBounds = save.getUnclippedBoundsInRoot()
+        assertTrue(saveBounds.bottom - saveBounds.top >= 48.dp)
+        assertEquals(useBounds.right, saveBounds.right)
+        val time = compose.onNodeWithContentDescription("Time (HH:mm)")
+        val timeBounds = time.getUnclippedBoundsInRoot()
+        assertTrue(timeBounds.bottom - timeBounds.top >= 56.dp)
+        time.performTextReplacement("09:30")
+        val createPath = "/api/workflows/$WORKFLOW_SHARED/automations"
+        try {
+            save.performClick()
+            compose.waitUntil(10_000) {
+                fixture.requests.any {
+                    it.method == "POST" && it.requestUrl?.encodedPath == createPath
+                }
+            }
+            save.assertIsNotEnabled()
+            time.assertTextContains("09:30")
+        } finally {
+            releaseCreate.countDown()
+        }
+
+        waitFor("Weekdays at 09:30")
         waitFor("Paused")
+        val create =
+            fixture.requests.single {
+                it.method == "POST" && it.requestUrl?.encodedPath == createPath
+            }
+        val body = Json.parseToJsonElement(create.body.clone().readUtf8()).jsonObject
+        assertFalse(body.getValue("enabled").jsonPrimitive.boolean)
+        val schedule = body.getValue("schedule").jsonObject
+        assertEquals("30 9 * * 1-5", schedule.getValue("cronExpression").jsonPrimitive.content)
+        assertEquals("UTC", schedule.getValue("timezone").jsonPrimitive.content)
+
         compose
             .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")))
             .performClick()
         compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
-        compose.onNodeWithTag("workflow_save").assertIsEnabled().performClick()
+        save.assertIsEnabled().performClick()
         waitFor("Weekdays at 10:00")
+        val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
         toggle.assertIsEnabled().performClick()
         waitFor("Enabled")
+        toggle.assertIsEnabled().performClick()
+        waitFor("Paused")
         compose.onNodeWithText("Weekdays at 10:00").assertIsDisplayed()
     }
 
@@ -706,7 +750,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
-    fun connectingAnAccountPreservesTheRuleEditorAndEnablesSave() = withHardwareKeyboard {
+    fun connectingAnAccountPreservesTheSharedRuleEditorAndEnablesSave() = withHardwareKeyboard {
         val releaseConnections = CountDownLatch(1)
         app.fixture.beforeConnectionsRead = { releaseConnections.await() }
         val save = compose.onNodeWithTag("workflow_save")
@@ -714,7 +758,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val subject = compose.onNodeWithContentDescription("Subject contains")
 
         try {
-            openWorkflowDetail()
+            openWorkflowDetail(WORKFLOW_SHARED)
             compose.onNodeWithTag("workflow_tab_automations").performClick()
             compose.onNodeWithText("Add automation").performClick()
             compose.onNodeWithText("Schedule").performClick()

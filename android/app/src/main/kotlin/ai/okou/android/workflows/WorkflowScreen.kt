@@ -796,7 +796,7 @@ private fun WorkflowDetailPane(
                     item {
                         WorkflowSectionHeader(
                             R.string.workflow_trigger_rules,
-                            if (detail.canManage) R.string.workflow_add_automation else null,
+                            if (detail.canAddAutomation) R.string.workflow_add_automation else null,
                             !state.writing && !handoffPending,
                             onNewRule,
                         )
