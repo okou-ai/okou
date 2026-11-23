@@ -104,6 +104,7 @@ class MainActivity : AppCompatActivity() {
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,
+                    searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )
