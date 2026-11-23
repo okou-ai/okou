@@ -73,7 +73,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
             raise ValueError("replacement actual incoming preparation missing")
         new, backing, operation = [later.identifier(prep.get(k)) for k in ("sandbox_id","backing_generation","operation_id")]
         if (len({new,backing,operation}) != 3 or {new,backing,operation} & identities
-                or operation in operations or operation == reuse.removeprefix("thread:native-guarded-")):
+                or operation in operations or operation == reuse.removeprefix(report.GUARDED_IDLE_REUSE_KEY_PREFIX)):
             raise ValueError("replacement reused original/incoming operation or physical identity")
         identities.update((new,backing,operation)); operations.add(operation)
         begin = batch.clock(prep.get("grant_started_ns"),terminal[1]["monotonic_ns"],events[0]["monotonic_ns"])
