@@ -24,7 +24,13 @@ async function workflowsLink() {
 }
 test("link-navigation-001 Both exits from the missing page reach their labeled destinations", async () => {
   await open(unknown);
-  click(await screen.findByText("Browse workflows"));
+  const browse = await screen.findByRole("link", { name: "Browse workflows" });
+  expect(browse).toHaveAttribute("href", "/workflows");
+  expect(screen.getByRole("link", { name: "Back to home" })).toHaveAttribute(
+    "href",
+    "/",
+  );
+  click(browse);
   await expect(
     screen.findByRole("heading", { name: "Workflows" }),
   ).resolves.toBeInTheDocument();

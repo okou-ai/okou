@@ -253,3 +253,48 @@ test("The permission review changes with consecutive Slack grant notifications",
   await expect(findAction("button", "Confirm")).resolves.toBeEnabled();
   expect(screen.queryByText("Already denied")).toBeNull();
 });
+
+test("permission-allow-page-008 a member denies previously allowed Slack analytics through a ref link", async () => {
+  mockPermissionCatalog(context);
+  const grants = mockPermissionGrants(context, {
+    initial: [{ permission: ANALYTICS, action: "allow", expiresAt: null }],
+  });
+  await setupPage({
+    context,
+    path: permissionLink({ ref: "slack", action: "deny" }),
+  });
+
+  await screen.findByText("Read workspace analytics");
+  expect(screen.getByText("Slack")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).toBeNull();
+  const confirm = getAction("button", "Confirm");
+  expect(confirm).toBeEnabled();
+  click(confirm);
+
+  await screen.findByText("Permissions denied");
+  expect(screen.queryByText(/expir/i)).toBeNull();
+  expect(grants.writes).toContainEqual({
+    target: { kind: "builtin", connectorSlug: "slack" },
+    mode: "patch",
+    grants: [{ permission: "admin.analytics:read", action: "deny" }],
+  });
+});
+
+test("An agent-owned Slack ref link opens the recovery page before any grant can be confirmed", async () => {
+  const query = new URLSearchParams({
+    ref: "slack",
+    permission: ANALYTICS,
+    action: "deny",
+  });
+  await setupPage({
+    context,
+    path: `/agents/22334455-e10a-40a3-ae19-dfbef88d2310/permissions?${query}`,
+  });
+
+  await screen.findByText("That page isn't here.");
+  expect(screen.getByText("Back to home").closest("a")).toHaveAttribute(
+    "href",
+    "/",
+  );
+  expect(queryAction("button", "Confirm")).toBeNull();
+});

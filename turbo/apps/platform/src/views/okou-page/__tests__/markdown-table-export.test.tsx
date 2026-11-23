@@ -128,19 +128,17 @@ function spreadsheetBoundary() {
     });
   });
   const destination = {
-    url: null as string | null,
+    links: { original: null, google: null } as Record<SaveMode, string | null>,
     convert: true,
     unavailable: false,
     ready: Promise.resolve(),
     started: context.mocks.deferred<void>(),
   };
-  const receipts: SaveMode[] = [];
   context.mocks.api(
     artifactGoogleDriveContract.uploadFromChat,
     async ({ params, body, respond }) => {
       expect(params.artifactId).toBe(artifactId);
       expect(body.connectionId).toBe(account);
-      receipts.push(body.mode);
       if (!destination.started.settled()) {
         destination.started.resolve();
       }
@@ -156,7 +154,7 @@ function spreadsheetBoundary() {
       return respond(200, {
         id: "weekly-totals",
         name: "Table.xlsx",
-        webViewLink: destination.url,
+        webViewLink: destination.links[body.mode],
         mimeType:
           body.mode === "google" && destination.convert
             ? sheetsType
@@ -164,7 +162,7 @@ function spreadsheetBoundary() {
       });
     },
   );
-  return { destination, receipts, account, access };
+  return { destination, account, access };
 }
 
 async function saveTo(mode: SaveMode, trigger?: HTMLElement) {
@@ -191,15 +189,15 @@ test.each([
 ] as const)(
   "%s a repeated save offers the latest destination link",
   async (_id, mode, label) => {
-    const { destination, receipts } = spreadsheetBoundary();
-    destination.url = "https://docs.example.test/first-copy";
+    const { destination } = spreadsheetBoundary();
+    destination.links[mode] = "https://docs.example.test/first-copy";
     await table(forecast);
     await saveTo(mode);
-    await savedLink(mode, destination.url);
-    destination.url = "https://docs.example.test/second-copy";
+    await savedLink(mode, destination.links[mode]);
+    destination.links[mode] = "https://docs.example.test/second-copy";
     await saveTo(mode);
-    await savedLink(mode, destination.url);
-    expect(receipts).toStrictEqual([mode, mode]);
+    await savedLink(mode, destination.links[mode]);
+
     click(await findFastControl("button", "Export"));
     await expect(
       screen.findByText(label, {
@@ -210,11 +208,11 @@ test.each([
 );
 
 test("markdown-table-export-022 retrying a Sheets conversion produces a confirmed spreadsheet", async () => {
-  const { destination, receipts } = spreadsheetBoundary();
-  destination.url = "https://docs.example.test/original";
+  const { destination } = spreadsheetBoundary();
+  destination.links.original = "https://docs.example.test/original";
   await table(forecast);
   await saveTo("original");
-  await savedLink("original", destination.url);
+  await savedLink("original", destination.links.original);
   destination.convert = false;
   await saveTo("google");
   await expect(
@@ -223,17 +221,16 @@ test("markdown-table-export-022 retrying a Sheets conversion produces a confirme
     ),
   ).resolves.toBeInTheDocument();
   destination.convert = true;
-  destination.url = "https://docs.example.test/converted";
+  destination.links.google = "https://docs.example.test/converted";
   await saveTo("google");
-  await savedLink("google", destination.url);
-  expect(receipts).toStrictEqual(["original", "google", "google"]);
+  await savedLink("google", destination.links.google);
 });
 
 test("markdown-table-export-025 a pending first upload leaves the second table available", async () => {
   const { destination } = spreadsheetBoundary();
   const held = context.mocks.deferred<void>();
   destination.ready = held.promise;
-  destination.url = "https://docs.example.test/quarter";
+  destination.links.original = "https://docs.example.test/quarter";
   await table(
     forecast + "\n\n| Region | Owner |\n|---|---|\n| North | Rivera |",
   );
@@ -252,7 +249,7 @@ test("markdown-table-export-025 a pending first upload leaves the second table a
   expect(second).toBeEnabled();
   expect(second).toHaveAccessibleName("Export");
   held.resolve();
-  await savedLink("original", destination.url);
+  await savedLink("original", destination.links.original);
   expect(first).toBeEnabled();
   expect(first).toHaveAttribute("aria-busy", "false");
 });
@@ -265,9 +262,9 @@ test("markdown-table-export-026 a linkless save remains repeatable and the next 
   );
   expect(notice).toBeVisible();
   expect(notice?.querySelector("a")).toBeNull();
-  destination.url = "https://drive.example.org/second-receipt";
+  destination.links.original = "https://drive.example.org/second-receipt";
   await saveTo("original");
-  await savedLink("original", destination.url);
+  await savedLink("original", destination.links.original);
 });
 
 test.each([
@@ -296,9 +293,9 @@ test.each([
     await screen.findByText(message);
     storageHealthy = true;
     destination.unavailable = false;
-    destination.url = "https://exports.example.test/recovered";
+    destination.links[mode] = "https://exports.example.test/recovered";
     await saveTo(mode);
-    await savedLink(mode, destination.url);
+    await savedLink(mode, destination.links[mode]);
     const actions = telemetry.events.filter((event) => {
       return event.name === "artifact_action_clicked";
     });
@@ -387,7 +384,7 @@ test("markdown-table-export-014 exporting in reverse order produces two independ
   );
 });
 test("markdown-table-export-017 a newly connected Drive account serves both destinations", async () => {
-  const { access, account, destination, receipts } = spreadsheetBoundary();
+  const { access, account, destination } = spreadsheetBoundary();
   access.needsConnection = true;
   const popup = Object.assign(context.mocks.browser.authWindow(), {
     location: { href: "about:blank" },
@@ -422,18 +419,18 @@ test("markdown-table-export-017 a newly connected Drive account serves both dest
     },
   );
   await table(forecast);
-  destination.url = "https://drive.example.org/native-copy";
+  destination.links.original = "https://drive.example.org/native-copy";
   await saveTo("original");
   click(await findAction("button", "Connect"));
   await waitFor(() => {
     return expect(popup.location.href).toBe(auth);
   });
   access.needsConnection = false;
-  await savedLink("original", destination.url);
-  destination.url = "https://sheets.example.org/converted";
+  await savedLink("original", destination.links.original);
+  destination.links.google = "https://sheets.example.org/converted";
   await saveTo("google");
-  await savedLink("google", destination.url);
-  expect(receipts).toStrictEqual(["original", "google"]);
+  await savedLink("google", destination.links.google);
+
   expect(opened.calls).toHaveLength(1);
 });
 
@@ -523,7 +520,7 @@ test("markdown-table-export-021 alternating destinations preserves each table's 
 });
 
 test("markdown-table-export-015 a ready Google destination serves each export with its selected account without opening authorization", async () => {
-  const { account, destination, receipts } = spreadsheetBoundary();
+  const { account, destination } = spreadsheetBoundary();
   mockSavedConnectorAccounts(context, () => {
     return [];
   });
@@ -531,10 +528,10 @@ test("markdown-table-export-015 a ready Google destination serves each export wi
   await table("| Region | Units |\n|---|---|\n| Port | 86 |");
   for (const mode of ["original", "google"] as const) {
     const receipt = "https://workspace.example.test/" + account + "/" + mode;
-    destination.url = receipt;
+    destination.links[mode] = receipt;
     await saveTo(mode);
     await savedLink(mode, receipt);
   }
-  expect(receipts).toStrictEqual(["original", "google"]);
+
   expect(opened.calls).toStrictEqual([]);
 });
