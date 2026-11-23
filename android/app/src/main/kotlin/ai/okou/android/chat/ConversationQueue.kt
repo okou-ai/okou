@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -132,6 +133,7 @@ internal fun ConversationQueueButton(
     IconButton(
         onClick,
         modifier
+            .padding(horizontal = 4.dp)
             .size(48.dp)
             .semantics { contentDescription = label }
             .testTag("open_conversation_queue"),
@@ -142,7 +144,15 @@ internal fun ConversationQueueButton(
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                 ) {
-                    Text(badge, Modifier.semantics { hideFromAccessibility() })
+                    Text(
+                        badge,
+                        Modifier.semantics { hideFromAccessibility() },
+                        style =
+                            MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp,
+                            ),
+                    )
                 }
             },
         ) {
@@ -160,18 +170,21 @@ internal fun ConversationQueueModal(
 ) {
     val height = currentWindowSizeDp().height
     val fullScreen = height < 480
-    val dismissFocus = remember { FocusRequester() }
+    val titleFocus = remember { FocusRequester() }
+    val initialCount = remember { entries.size.coerceAtLeast(1) }
+    val rowsHeight = 72.dp * initialCount + (initialCount - 1).dp
+    val panelHeight = minOf(height.dp * 0.85f, 72.dp + rowsHeight)
     SettingsModal(onDismiss, fullScreen = fullScreen) { centered ->
         Box(
             if (fullScreen) Modifier.fillMaxWidth().fillMaxHeight()
-            else Modifier.fillMaxWidth().heightIn(max = height.dp * 0.85f),
+            else Modifier.fillMaxWidth().height(panelHeight),
         ) {
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onDismiss, Modifier.size(48.dp).focusRequester(dismissFocus)) {
+                    IconButton(onDismiss, Modifier.size(48.dp)) {
                         Icon(
                             painterResource(R.drawable.ic_arrow_back),
                             stringResource(R.string.back),
@@ -179,7 +192,9 @@ internal fun ConversationQueueModal(
                     }
                     Text(
                         stringResource(R.string.conversation_queue_count, entries.size),
-                        Modifier.weight(1f).semantics { heading() },
+                        Modifier.weight(1f).focusRequester(titleFocus).focusable().semantics {
+                            heading()
+                        },
                         style =
                             if (fullScreen)
                                 MaterialTheme.typography.titleMedium.copy(
@@ -198,9 +213,14 @@ internal fun ConversationQueueModal(
                         stringResource(R.string.conversation_queue_empty),
                         Modifier.padding(horizontal = 12.dp, vertical = 20.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style =
+                            MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                            ),
                     )
                 }
-                ConversationQueue(entries, controls, dismissFocus)
+                ConversationQueue(entries, controls, titleFocus)
             }
             Box(Modifier.align(Alignment.BottomCenter)) {
                 WorkspaceFeedbackHost(snackbar, Modifier.padding(bottom = 8.dp))
@@ -213,7 +233,7 @@ internal fun ConversationQueueModal(
 private fun ConversationQueue(
     entries: List<ConversationMessage>,
     controls: ConversationRunControls?,
-    dismissFocus: FocusRequester,
+    titleFocus: FocusRequester,
 ) {
     var focused by remember { mutableStateOf<QueueFocus?>(null) }
     val latestEntries by rememberUpdatedState(entries)
@@ -226,8 +246,8 @@ private fun ConversationQueue(
             return@LaunchedEffect
         }
         focused = null
-        val nextId = entries.getOrNull(previous.index)?.message?.id
-        if (requesters[nextId]?.requestFocus() != true) dismissFocus.requestFocus()
+        val nextId = entries.getOrNull(previous.index.coerceAtMost(entries.lastIndex))?.message?.id
+        if (requesters[nextId]?.requestFocus() != true) titleFocus.requestFocus()
     }
     if (entries.isEmpty()) return
     val label = stringResource(R.string.conversation_queue)
@@ -313,7 +333,7 @@ private fun QueueRow(
             .fillMaxWidth()
             .heightIn(min = 72.dp)
             .testTag("message_${message.id}")
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -351,7 +371,10 @@ private fun QueueRow(
                 revoke?.invoke()
             },
             enabled = revoke != null,
-            modifier = Modifier.size(48.dp).semantics { contentDescription = action },
+            modifier =
+                Modifier.size(48.dp).semantics {
+                    contentDescription = "$action, ${summary.ifBlank { metadata }}"
+                },
         ) {
             Icon(painterResource(R.drawable.ic_close), null, Modifier.size(24.dp))
         }
