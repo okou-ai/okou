@@ -383,11 +383,15 @@ class ConversationRouteTest {
         val bounds = reply.getUnclippedBoundsInRoot()
         val progress = hasContentDescription(syncLabel)
         try {
+            compose.mainClock.autoAdvance = false
             compose.runOnIdle {
-                now += 600_001
+                now += 599_001
                 model.history.refresh()
             }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            compose.mainClock.advanceTimeBy(100)
+            compose.onNode(progress).assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(1_000)
             compose.onNode(progress).assertIsDisplayed()
             val bar = compose.onNodeWithTag("history_sync_progress").getUnclippedBoundsInRoot()
             val viewport = conversation.getUnclippedBoundsInRoot()
@@ -397,6 +401,7 @@ class ConversationRouteTest {
             assertEquals(4.dp, bar.bottom - bar.top)
             assertEquals(bounds, reply.getUnclippedBoundsInRoot())
         } finally {
+            compose.mainClock.autoAdvance = true
             allowRefreshResponse.countDown()
         }
         compose.waitUntilDoesNotExist(progress, 5_000)
@@ -426,7 +431,7 @@ class ConversationRouteTest {
                 model.history.refresh()
             }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
-            assertTrue(model.history.uiState.value.syncingStaleCache)
+            assertEquals(0L, model.history.uiState.value.syncProgressDelayMillis)
             compose.onNode(hasContentDescription(syncLabel)).assertDoesNotExist()
             assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
         } finally {
@@ -494,7 +499,7 @@ class ConversationRouteTest {
                 model.history.refresh()
             }
             compose.waitUntil(5_000) { refreshRequested.count == 0L }
-            assertTrue(model.history.uiState.value.syncingStaleCache)
+            assertEquals(0L, model.history.uiState.value.syncProgressDelayMillis)
             compose
                 .onNode(hasContentDescription(compose.activity.getString(R.string.history_syncing)))
                 .assertDoesNotExist()

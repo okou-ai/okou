@@ -35,7 +35,7 @@ data class ConversationUiState(
     val detailPhase: ChatReadPhase = ChatReadPhase.Idle,
     val detailFailure: Exception? = null,
     val initialReadFailed: Boolean = false,
-    val syncingStaleCache: Boolean = false,
+    val syncProgressDelayMillis: Long? = null,
     val consecutiveReadFailures: Int = 0,
 )
 
@@ -204,7 +204,7 @@ class ConversationHistoryModel(
             mutable.value.copy(
                 phase = HistoryPhase.Loading,
                 confirmation = null,
-                syncingStaleCache = confirmed?.history.isStale(),
+                syncProgressDelayMillis = confirmed?.history?.progressDelayMillis(),
                 consecutiveReadFailures = 0,
                 initialReadFailed = false,
             ),
@@ -230,7 +230,7 @@ class ConversationHistoryModel(
                         transcript = transcript,
                         source = ChatListSource.Cache,
                         initialReadFailed = false,
-                        syncingStaleCache = saved.isStale(),
+                        syncProgressDelayMillis = saved.progressDelayMillis(),
                     ),
                 )
             }
@@ -268,7 +268,7 @@ class ConversationHistoryModel(
                         source = ChatListSource.Network,
                         cacheUnavailable = diskFailed,
                         initialReadFailed = false,
-                        syncingStaleCache = false,
+                        syncProgressDelayMillis = null,
                         consecutiveReadFailures = 0,
                         // Equal rows still complete a new read; StateFlow may conflate phases.
                         confirmation =
@@ -290,7 +290,7 @@ class ConversationHistoryModel(
                             state.copy(
                                 phase = HistoryPhase.Failed,
                                 initialReadFailed = state.transcript == null,
-                                syncingStaleCache = false,
+                                syncProgressDelayMillis = null,
                                 consecutiveReadFailures = 0,
                             ),
                         )
@@ -300,7 +300,8 @@ class ConversationHistoryModel(
         }
     }
 
-    private fun CachedHistory?.isStale() = this != null && wallMillis() - confirmedAt > 600_000L
+    private fun CachedHistory.progressDelayMillis() =
+        chatSyncNoticeDelayMillis(confirmedAt, wallMillis())
 
     private suspend fun readWithRetry(
         threadId: String,
@@ -368,7 +369,7 @@ class ConversationHistoryModel(
                 phase = HistoryPhase.Missing,
                 confirmation = null,
                 initialReadFailed = false,
-                syncingStaleCache = false,
+                syncProgressDelayMillis = null,
                 consecutiveReadFailures = 0,
                 detail = null,
                 detailPhase = ChatReadPhase.Failed,
