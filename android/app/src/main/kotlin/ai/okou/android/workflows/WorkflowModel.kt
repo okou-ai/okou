@@ -96,7 +96,6 @@ internal constructor(
     internal fun connectivityChanged(offline: Boolean) {
         if (this.offline == offline) return
         this.offline = offline
-        if (offline && !visible) catalogRead.cancel()
         if (!offline) {
             val current = mutable.value
             if (current.issue?.failure == WorkflowWriteFailure.Network)
@@ -106,9 +105,9 @@ internal constructor(
             refresh(
                 buildSet {
                     if (
-                        searchingCatalog ||
-                        !catalogRead.readAt.isFresh(now) ||
-                            current.catalogFailure == WorkflowReadFailure.Network
+                        (visible || !searchingCatalog) &&
+                            (!catalogRead.readAt.isFresh(now) ||
+                                current.catalogFailure == WorkflowReadFailure.Network)
                     )
                         add(WorkflowReadScope.Catalog)
                     if (
@@ -265,7 +264,7 @@ internal constructor(
     }
 
     private fun refresh(scopes: Set<WorkflowReadScope> = allReadScopes) {
-        if (!authorized() || !foreground || !visible && (!searchingCatalog || offline)) return
+        if (!authorized() || !foreground || !visible && !searchingCatalog) return
         val activeScopes =
             if (visible) scopes
             else if (WorkflowReadScope.Catalog in scopes) catalogScope else return

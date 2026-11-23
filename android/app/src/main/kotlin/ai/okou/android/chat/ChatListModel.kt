@@ -1505,6 +1505,10 @@ class ChatListModel(
 
     fun refreshList() = requestListRead()
 
+    internal fun refreshSearchMetadata() {
+        if (listRetryAt == null) requestListRead(userRequested = true, resetCompletedActivity = false)
+    }
+
     internal fun retryList() = requestListRead(userRequested = true)
 
     private fun canRefreshList() = !mutable.value.offline && listRetryAt == null

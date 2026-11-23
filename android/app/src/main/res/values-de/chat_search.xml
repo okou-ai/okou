@@ -17,8 +17,6 @@
     <string name="chat_search_no_messages">Keine passenden Nachrichten</string>
     <string name="chat_search_no_workflows">Keine passenden Workflows</string>
     <string name="chat_search_no_artifacts">Keine passenden Artefakte</string>
-    <string name="chat_search_online_only">Für diesen Typ ist eine Verbindung erforderlich</string>
-    <string name="chat_search_offline_titles">Offline werden nur gespeicherte Chat-Titel durchsucht.</string>
     <string name="chat_search_unavailable">Einige Ergebnisse konnten nicht geladen werden</string>
     <string name="chat_search_message_unavailable">Diese Nachricht ist nicht mehr verfügbar</string>
     <string name="chat_search_workflow_add_draft">Zum neuen Chatentwurf hinzufügen</string>
@@ -31,5 +29,8 @@
     <string name="chat_search_saved_chats">Aktualisierung fehlgeschlagen. Gespeicherte Chats werden angezeigt.</string>
     <string name="chat_search_saved_results">Aktualisierung fehlgeschlagen. Vorherige Ergebnisse werden angezeigt.</string>
     <string name="chat_search_messages_failed">Nachrichten konnten nicht durchsucht werden</string>
+    <string name="chat_search_workflows_failed">Workflows konnten nicht durchsucht werden</string>
+    <string name="chat_search_workflows_saved">Das Workflow-Verzeichnis konnte nicht aktualisiert werden. Die Suche verwendet das zuletzt geladene Verzeichnis.</string>
     <string name="chat_search_artifacts_failed">Artefakte konnten nicht durchsucht werden</string>
+    <string name="chat_search_loading">Suche läuft…</string>
 </resources>

@@ -83,6 +83,8 @@ fun interface WorkspaceTokenProvider {
 
 data class RequiredUpdate(val minimumSupportedVersion: String?)
 
+internal val finiteReadRetryDelays = listOf(3_000L, 3_000L)
+
 sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Unauthenticated : ApiFailure("An authenticated workspace session is required")
 
