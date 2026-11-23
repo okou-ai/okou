@@ -261,31 +261,34 @@ struct ForYouView: View {
   }
 
   /// One page per card, each as wide as the screen, so the whole page follows a sideways
-  /// swipe and comes to rest on a card when the finger lets go.
+  /// swipe and comes to rest on a card when the finger lets go. The pages take exactly the
+  /// room between the header and the dock: a horizontal scroll view is as tall as its pages.
   private var pager: some View {
     let cards = store.cards
-    return ScrollView(.horizontal) {
-      HStack(spacing: 0) {
-        ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
-          page(card, isFirst: index == 0)
-            .containerRelativeFrame([.horizontal, .vertical])
-            // An earlier card lies above a later one, so the front card leaves over the
-            // deck and a previous card comes back on top of it.
-            .zIndex(Double(cards.count - index))
-            .accessibilityHidden(card.id != store.current?.id)
+    return GeometryReader { viewport in
+      ScrollView(.horizontal) {
+        HStack(spacing: 0) {
+          ForEach(Array(cards.enumerated()), id: \.element.id) { index, card in
+            page(card, isFirst: index == 0)
+              .frame(width: viewport.size.width, height: viewport.size.height)
+              // An earlier card lies above a later one, so the front card leaves over the
+              // deck and a previous card comes back on top of it.
+              .zIndex(Double(cards.count - index))
+              .accessibilityHidden(card.id != store.current?.id)
+          }
         }
+        .scrollTargetLayout()
       }
-      .scrollTargetLayout()
-    }
-    .scrollTargetBehavior(.paging)
-    .scrollPosition(id: $pageID)
-    .scrollIndicators(.hidden)
-    .scrollDisabled(isComposing || store.busy)
-    .onScrollGeometryChange(for: CGFloat.self) { geometry in
-      geometry.containerSize.width > 0
-        ? geometry.contentOffset.x / geometry.containerSize.width : 0
-    } action: { _, position in
-      pagePosition = position
+      .scrollTargetBehavior(.paging)
+      .scrollPosition(id: $pageID)
+      .scrollIndicators(.hidden)
+      .scrollDisabled(isComposing || store.busy)
+      .onScrollGeometryChange(for: CGFloat.self) { geometry in
+        geometry.containerSize.width > 0
+          ? geometry.contentOffset.x / geometry.containerSize.width : 0
+      } action: { _, position in
+        pagePosition = position
+      }
     }
     .background(alignment: .topLeading) { deck }
     .onGeometryChange(for: CGRect.self) {
