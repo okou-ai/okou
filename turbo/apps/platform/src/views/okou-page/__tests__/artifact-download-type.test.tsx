@@ -20,7 +20,6 @@ import {
   findNamedMenuItem,
 } from "./chat-attachment-test-helpers.ts";
 import { findAction } from "./connector-integrations-test-helpers.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactSummary,
   hostedSiteArtifactDetail,
@@ -53,7 +52,6 @@ test.each([
     await conversation(
       context,
       sidebar ? { chatEvents: [userRow(fileParts([file]))] } : { draft },
-      sidebar,
     );
     click(
       await findAction("button", "Open " + kind + " preview for recording"),
@@ -111,11 +109,10 @@ test("artifact-download-type-001 the catalog site downloads as HTML even when it
     context,
     path: "/artifacts",
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   click(await screen.findByText(summary.title));
-  const panel = await screen.findByTestId("attachment-lightbox");
-  click(await findAction("button", "Download options", panel));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  click(await findAction("button", "Download artifact", panel));
   click(await findNamedMenuItem("Download"));
   await waitFor(() => {
     return expect(browser.downloads[0]?.filename).toBe(
@@ -128,13 +125,13 @@ test("artifact-download-type-001 the catalog site downloads as HTML even when it
       name: "artifact_action_clicked",
       properties: {
         action: "download",
-        surface: "dialog",
+        surface: "page",
         artifact_type: "website",
       },
     }),
   );
 });
-test("artifact-download-type-005 both file actions classify the resolved workbook by its MIME type", async () => {
+test("artifact-download-type-005 the preview download classifies the resolved workbook by its MIME type", async () => {
   const file = attachment(
     "forecast.bin",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -153,9 +150,10 @@ test("artifact-download-type-005 both file actions classify the resolved workboo
     ],
   });
   click(await findAction("link", "forecast.bin"));
-  const panel = await screen.findByTestId("attachment-lightbox");
-  click(await findAction("button", "Download", panel));
+  const panel = await screen.findByTestId("artifact-sidebar");
   const nativeFile = expect.objectContaining({ url: file.url, blob: null });
+  click(await findAction("button", "Download artifact", panel));
+  click(await findNamedMenuItem("Download"));
   await waitFor(() => {
     return expect(browser.downloads[0]).toStrictEqual(nativeFile);
   });
@@ -164,22 +162,7 @@ test("artifact-download-type-005 both file actions classify the resolved workboo
       name: "artifact_action_clicked",
       properties: {
         action: "download",
-        surface: "file_preview",
-        artifact_type: "spreadsheet",
-      },
-    }),
-  );
-  click(await findAction("button", "Download options", panel));
-  click(await findNamedMenuItem("Download"));
-  await waitFor(() => {
-    return expect(browser.downloads[1]).toStrictEqual(nativeFile);
-  });
-  expect(sink.events).toContainEqual(
-    expect.objectContaining({
-      name: "artifact_action_clicked",
-      properties: {
-        action: "download",
-        surface: "dialog",
+        surface: "page",
         artifact_type: "spreadsheet",
       },
     }),

@@ -2,7 +2,6 @@ import {
   artifactCatalogContract,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -67,9 +66,7 @@ async function openReport(): Promise<{
   trigger: HTMLElement;
 }> {
   click(await findArtifactAction("report.txt"));
-  const preview = await screen.findByRole("dialog", {
-    name: "report.txt preview",
-  });
+  const preview = await screen.findByTestId("artifact-sidebar");
   const trigger = await waitFor(() => {
     const found = getButtonByName("Delete", preview);
     expect(found).toBeEnabled();
@@ -89,7 +86,7 @@ async function findConfirmation(): Promise<HTMLElement> {
   return await screen.findByRole("dialog", { name: "Delete report.txt?" });
 }
 
-test("preview cancellation and deletion keep the catalog consistent (sidebar=false)", async () => {
+test("preview cancellation and deletion keep the catalog consistent in the catalog sidebar", async () => {
   const server = serveCatalog([REPORT]);
   serveReportDetail();
   const requested = context.mocks.deferred<void>();
@@ -106,7 +103,6 @@ test("preview cancellation and deletion keep the catalog consistent (sidebar=fal
   await setupPage({
     context,
     path: "/artifacts",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   const { trigger } = await openReport();
   const user = userEvent.setup({ delay: null });
@@ -196,7 +192,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   });
   expect(first.trigger).toHaveFocus();
 
-  click(getButtonByName("Close", first.preview));
+  click(getButtonByName("Close artifact", first.preview));
   await waitFor(() => {
     expect(first.preview).not.toBeInTheDocument();
   });

@@ -131,7 +131,6 @@ struct ChatSettingsView: View {
         }
         StoreProvider(store.settingsResources.store) {
           SettingsModelsSection(models: store.modelStore)
-          SettingsBillingSection(workspace: store)
         }
         Section {
           Link(destination: URL(string: "mailto:\(Self.supportEmail)")!) {
@@ -200,10 +199,9 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
-      .task { await store.loadSettingsBilling() }
       .onChange(of: scenePhase) { _, current in
         if current == .active {
-          Task { await store.refreshSettingsBilling() }
+          store.prepareSettings()
         }
       }
     }

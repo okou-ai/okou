@@ -16,7 +16,6 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -53,9 +52,9 @@ async function openSite() {
     artifacts: [artifact],
   });
   click(await findAction("link", "Open expedition"));
-  return screen.findByTestId("attachment-lightbox");
+  return screen.findByTestId("artifact-sidebar");
 }
-test("chat-attachment-artifact-viewer-001 reopening the private text uses the original grant in both destinations", async () => {
+test("chat-attachment-artifact-viewer-001 reopening the private text uses the original grant across sidebar visits", async () => {
   const f = attachment("notes.txt", "text/plain");
   const renewal = "https://cdn.okou.io/artifacts/review/session/renewed.txt";
   let next = f.url;
@@ -76,21 +75,16 @@ test("chat-attachment-artifact-viewer-001 reopening the private text uses the or
   await conversation(context, { chatEvents: [userRow(fileParts([f]))] });
   const open = await findAction("button", "Open text preview for notes.txt");
   click(open);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await within(dialog).findByText("Original field notes");
   next = renewal;
-  click(await findAction("button", "Close", dialog));
+  click(await findAction("button", "Close artifact", dialog));
   await waitFor(() => {
     return expect(dialog).not.toBeInTheDocument();
   });
   click(open);
-  const again = await screen.findByTestId("attachment-lightbox");
+  const again = await screen.findByTestId("artifact-sidebar");
   await within(again).findByText("Original field notes");
-  click(await findAction("button", "Open in split view", again));
-  const side = await screen.findByTestId("artifact-sidebar");
-  await expect(
-    within(side).findByText("Original field notes"),
-  ).resolves.toBeVisible();
 });
 test("chat-attachment-artifact-viewer-002 reselecting the hosted site and then audio reuses the sidebar", async () => {
   const f = attachment("debrief.mp3", "audio/mpeg");
@@ -105,8 +99,6 @@ test("chat-attachment-artifact-viewer-002 reselecting the hosted site and then a
   });
   const link = await findAction("link", "Expedition");
   click(link);
-  const panel = await screen.findByTestId("attachment-lightbox");
-  click(await findAction("button", "Open in split view", panel));
   const side = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(side.querySelector("iframe")?.src).toContain(site);
@@ -124,7 +116,7 @@ test("chat-attachment-artifact-viewer-002 reselecting the hosted site and then a
   expect(side.querySelector("iframe")).toBeNull();
   expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
 });
-test("chat-attachment-artifact-viewer-003 the public site's title and publication date follow it into split view", async () => {
+test("chat-attachment-artifact-viewer-003 the public site's preview shows its title and publication date", async () => {
   const dialog = await openSite();
   async function header(surface: HTMLElement) {
     const title = await findAction("link", "Expedition brief", surface);
@@ -138,9 +130,6 @@ test("chat-attachment-artifact-viewer-003 the public site's title and publicatio
     );
   }
   await header(dialog);
-  click(await findAction("button", "Open in split view", dialog));
-  const side = await screen.findByTestId("artifact-sidebar");
-  await header(side);
   expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
 });
 test("chat-attachment-artifact-viewer-004 private site metadata shows an unlinked filename and update time", async () => {
@@ -157,7 +146,7 @@ test("chat-attachment-artifact-viewer-004 private site metadata shows an unlinke
     ],
   });
   click(await findAction("link", "Private publication"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   const name = await within(dialog).findByText(f.filename);
   expect(name.closest("a")).toBeNull();
   await expect(
@@ -201,12 +190,11 @@ test("chat-attachment-artifact-viewer-006 each open chat navigates only its own 
       "?sidebar=" +
       SECOND_ATTACHMENT_THREAD_ID,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   async function next(text: string, files: typeof left) {
     const row = (await screen.findByText(text)).closest('[data-role="user"]')!;
     click(await findAction("link", "Preview shared.png", row));
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     await waitFor(() => {
       return expect(dialog.querySelector("img")).toHaveAttribute(
         "src",
@@ -223,12 +211,12 @@ test("chat-attachment-artifact-viewer-006 each open chat navigates only its own 
     return dialog;
   }
   const east = await next("East route", right);
-  click(await findAction("button", "Close", east));
+  click(await findAction("button", "Close artifact", east));
   await waitFor(() => {
     return expect(east).not.toBeInTheDocument();
   });
   const west = await next("West route", left);
-  click(await findAction("button", "Open in split view", west));
+  expect(west).toBeVisible();
   const side = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(
@@ -261,22 +249,22 @@ test("chat-attachment-artifact-viewer-007 only the agent image offers a share ac
   });
   for (const f of files) {
     click(await findAction("link", "Preview " + f.filename));
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     await waitFor(() => {
       return expect(dialog.querySelector("img")).toHaveAttribute("src", f.url);
     });
     await expect(
-      findAction("button", "Download options", dialog),
+      findAction("button", "Download artifact", dialog),
     ).resolves.toBeEnabled();
-    expect(queryAction("button", "Share", dialog)).toBeNull();
-    click(await findAction("button", "Close", dialog));
+    expect(queryAction("button", "Share artifact", dialog)).toBeNull();
+    click(await findAction("button", "Close artifact", dialog));
     await waitFor(() => {
       return expect(dialog).not.toBeInTheDocument();
     });
   }
   click(await screen.findByAltText("Overview"));
-  const agent = await screen.findByTestId("attachment-lightbox");
-  click(await findAction("button", "Share", agent));
+  const agent = await screen.findByTestId("artifact-sidebar");
+  click(await findAction("button", "Share artifact", agent));
   await waitFor(() => {
     return expect(clipboard.writes).toContain(url);
   });
@@ -301,7 +289,6 @@ test("chat-attachment-artifact-viewer-008 the private site card uses its resolve
     context,
     path: "/chats/" + ATTACHMENT_THREAD_ID,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   const photo = await waitFor(() => {
     const img = Array.from(document.querySelectorAll("img")).find((i) => {
@@ -316,7 +303,7 @@ test("chat-attachment-artifact-viewer-008 the private site card uses its resolve
   const card = photo.closest("a,button")!;
   expect(card.querySelector("iframe")).toBeNull();
   click(card);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(dialog.querySelector("iframe")?.src).toContain(f.url);
   });
@@ -338,7 +325,7 @@ test.each([
       chatEvents: [assistantRow("[" + name + "](" + f.path + ")")],
     });
     click(await findAction("link", name));
-    const dialog = await screen.findByTestId("attachment-lightbox");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     await expect(
       within(dialog).findByText(
         /may not exist.*different account or organization/,
@@ -356,7 +343,7 @@ test.each([
 );
 async function downloadSite() {
   const dialog = await openSite();
-  click(await findAction("button", "Download options", dialog));
+  click(await findAction("button", "Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
 }
 function publication(
@@ -460,10 +447,10 @@ test("chat-attachment-artifact-viewer-025 a single-page publication downloads th
     ],
   });
   click(await findAction("link", "Launch publication"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await within(dialog).findByText(/Hosted site.*Updated at/);
   const createObjectUrl = vi.spyOn(URL, "createObjectURL");
-  click(await findAction("button", "Download options", dialog));
+  click(await findAction("button", "Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
   await listed.promise;
   await waitFor(() => {

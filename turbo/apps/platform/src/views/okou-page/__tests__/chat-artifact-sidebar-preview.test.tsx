@@ -18,11 +18,9 @@ import {
 const context = testContext();
 test("chat-artifact-sidebar-preview-001 reopening a PDF directly restores the sidebar document", async () => {
   const url = "https://cdn.okou.io/artifacts/review/session/estimate.pdf";
-  await conversation(
-    context,
-    { chatEvents: [assistantRow("[Estimate](" + url + ")")] },
-    true,
-  );
+  await conversation(context, {
+    chatEvents: [assistantRow("[Estimate](" + url + ")")],
+  });
   const open = await findAction("link", "Estimate");
   expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   click(open);
@@ -47,11 +45,7 @@ test("chat-artifact-sidebar-preview-002 a private uploaded text file opens its c
   context.mocks.http.get(file.url.split("?")[0], () => {
     return HttpResponse.text("Only the expedition team has this file.");
   });
-  await conversation(
-    context,
-    { chatEvents: [userRow(fileParts([file]))] },
-    true,
-  );
+  await conversation(context, { chatEvents: [userRow(fileParts([file]))] });
   click(await findAction("button", "Open text preview for upload.txt"));
   const side = await screen.findByTestId("artifact-sidebar");
   await expect(
@@ -70,11 +64,7 @@ test("chat-artifact-sidebar-preview-003 the CSV sidebar preserves repeated recor
       ["Area,Notes,Quote,Spare", record, record].join("\r\n"),
     );
   });
-  await conversation(
-    context,
-    { chatEvents: [userRow(fileParts([file]))] },
-    true,
-  );
+  await conversation(context, { chatEvents: [userRow(fileParts([file]))] });
   click(await findAction("button", "Open csv preview for observations.csv"));
   const side = await screen.findByTestId("artifact-sidebar");
   const table = await within(side).findByRole("table");

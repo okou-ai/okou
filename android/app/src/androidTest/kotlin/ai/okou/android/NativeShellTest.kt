@@ -189,7 +189,7 @@ class NativeShellTest {
                     override fun apply(device: UiDevice) = findCurrent(target)
                 },
                 WAIT,
-            )
+            ),
         ) {
             "Native preference control not reachable: $value"
         }

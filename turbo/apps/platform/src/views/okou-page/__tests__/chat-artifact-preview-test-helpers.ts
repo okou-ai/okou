@@ -48,12 +48,9 @@ export async function openMessageFile(
     host,
     path: chatPath,
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: false,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
     },
   });
   click(await findNamedLink("Inspect attachment"));
-  return await screen.findByRole("dialog", {
-    name: (file.title ?? file.filename) + " preview",
-  });
+  return await screen.findByTestId("artifact-sidebar");
 }

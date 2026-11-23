@@ -268,7 +268,7 @@ test("agent-suggestions-008 selecting a referenced action keeps the homepage dra
       titleSnapshot: "Wholesale ledger",
     },
   ]);
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   const restored = await screen.findByRole("textbox", { name: /message/i });
   await waitFor(() => {
     return expect(restored).toHaveTextContent("Personal order");
@@ -419,7 +419,7 @@ test("agent-suggestions-019 returning home keeps an unsent inline direction out 
   await waitFor(() => {
     return expect(queryFastControl("button", "Send", inline)).toBeEnabled();
   });
-  const homeLink = await findFastControl("link", "Chat");
+  const homeLink = await findFastControl("link", "Okou");
   expect(homeLink).toHaveAttribute("href", "/");
   click(homeLink);
   const home = await screen.findByRole("textbox", { name: /message/i });

@@ -1,5 +1,4 @@
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -64,7 +63,6 @@ async function preview(filename: string, body: string, totalBytes?: number) {
   await setupPage({
     context,
     path: "/chats/" + ATTACHMENT_THREAD_ID,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   const turn = (await screen.findByText("Inspect export")).closest<HTMLElement>(
     "[data-role=user]",

@@ -250,7 +250,9 @@ test.each([
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(cdp.windowState(77)).toBe("fullscreen");
     expect(
-      cdp.requests.slice(afterMove).map((command) => {return command.method}),
+      cdp.requests.slice(afterMove).map((command) => {
+        return command.method;
+      }),
     ).not.toContain("Emulation.clearDeviceMetricsOverride");
   },
 );

@@ -608,14 +608,20 @@ test("Returning to Works shows the Discord description while the membership refr
   refreshing = true;
   notifyStatusChanged();
   await request.promise;
-  click(await findAction("link", "Chat"));
-  await waitFor(() => {return expect(location.pathname).toBe("/")});
+  click(await findAction("link", "Okou"));
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/");
+  });
   window.history.back();
-  await waitFor(() => {return expect(location.pathname).toBe("/works")});
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/works");
+  });
   const returningCard = await screen.findByText(description);
   expect(returningCard).toBeInTheDocument();
   publish.resolve();
-  await waitFor(() => {return expect(card()).toHaveTextContent(/Connected/u)});
+  await waitFor(() => {
+    return expect(card()).toHaveTextContent(/Connected/u);
+  });
   await expect(findDiscordButton("More options")).resolves.toBeEnabled();
 });
 
@@ -629,8 +635,11 @@ test("A connected Discord callback reads the unverified account before offering 
     await reply.promise;
     return { isAdmin: true, isConnected: false };
   });
-  const completions:unknown[] = [];
-  context.mocks.api(discordOauthContract.complete,({body,respond})=>{completions.push(body);return respond(200,{status:"connected"});});
+  const completions: unknown[] = [];
+  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
+    completions.push(body);
+    return respond(200, { status: "connected" });
+  });
   const pending = await startPage({
     context,
     path: "/works?discord=connected&discord_error=provider-private&state=callback-check&completionToken=discarded-token",
@@ -644,7 +653,7 @@ test("A connected Discord callback reads the unverified account before offering 
     "/settings/discord?status=connected",
   );
   expect(queryAction("link", "Open Discord")).toBeNull();
-  expect(await findAction("button","Connect")).toBeEnabled();
+  await expect(findAction("button", "Connect")).resolves.toBeEnabled();
   expect(screen.queryByText("provider-private")).toBeNull();
   expect(completions).toStrictEqual([]);
 });

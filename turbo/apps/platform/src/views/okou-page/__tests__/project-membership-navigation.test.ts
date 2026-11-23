@@ -236,7 +236,7 @@ test("projects-040 Home and Launch share the new-chat draft, existing threads ke
       "Conversation-only draft",
     );
   });
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });

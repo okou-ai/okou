@@ -61,7 +61,7 @@ class AndroidUpdateClient(
                             .header(ApiHeaders.VERSION_HEADER, version)
                             .header(ApiHeaders.SESSION_HEADER, sessionId)
                             .header(ApiHeaders.REQUEST_HEADER, UUID.randomUUID().toString())
-                            .build()
+                            .build(),
                     )
                 response.newBuilder().body(response.body.bounded(65_536)).build()
             }
@@ -75,7 +75,7 @@ class AndroidUpdateClient(
         require(
             artifactOrigin.encodedPath == "/" &&
                 artifactOrigin.query == null &&
-                artifactOrigin.fragment == null
+                artifactOrigin.fragment == null,
         )
         api =
             Retrofit.Builder()
@@ -116,7 +116,7 @@ class AndroidUpdateClient(
             artifactOrigin
                 .newBuilder()
                 .addPathSegments(
-                    "android-updates/releases/${release.version}/${release.sha256}.apk"
+                    "android-updates/releases/${release.version}/${release.sha256}.apk",
                 )
                 .build()
                 .toString()
@@ -252,7 +252,7 @@ class AndroidUpdateClient(
         return signatures
             ?.map { signature ->
                 MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString(
-                    ""
+                    "",
                 ) {
                     "%02x".format(it)
                 }

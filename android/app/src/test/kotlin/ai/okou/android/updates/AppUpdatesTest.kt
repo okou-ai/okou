@@ -229,7 +229,7 @@ class AppUpdatesTest {
                     "0.12.0",
                     AndroidUpdates(null, updateRelease("0.12.0")),
                     checkedAt = 99_000,
-                )
+                ),
             )
         val connectivity = MutableStateFlow(false)
         AppUpdates(
@@ -314,7 +314,7 @@ class AppUpdatesTest {
                     true,
                     "0.13.0",
                     target = selected,
-                )
+                ),
             )
         AppUpdates(recovery, store, "0.12.0", 35, StandardTestDispatcher(testScheduler)).use { owner
             ->

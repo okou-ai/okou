@@ -133,9 +133,13 @@ test("The owner copies the canonical link while moving access into and out of pu
   ].entries()) {
     const option = menu.getByLabelText(label);
     click(option);
-    await waitFor(() => {return expect(option).toHaveAttribute("aria-checked", "true")});
+    await waitFor(() => {
+      return expect(option).toHaveAttribute("aria-checked", "true");
+    });
     click(getButtonByName("Copy link"));
-    await waitFor(() => {return expect(clipboard.writes[index]).toBe(ownerUrl)});
+    await waitFor(() => {
+      return expect(clipboard.writes[index]).toBe(ownerUrl);
+    });
   }
   expect(amendments).toStrictEqual(["organization", "public", "private"]);
 });

@@ -125,9 +125,9 @@ test.each([
     const pending = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
     const consumed = context.mocks.deferred<void>();
-    serveWallet(context, () =>
-      {return linkStatus(connected ? "connected" : "not-connected")},
-    );
+    serveWallet(context, () => {
+      return linkStatus(connected ? "connected" : "not-connected");
+    });
     context.mocks.api(walletUserContract.disconnect, ({ respond }) => {
       connected = false;
       return respond(200, { disconnected: true });
@@ -177,7 +177,9 @@ test.each([
       release.resolve();
       await consumed.promise;
     }
-    await waitFor(() => {return expect(connect).toBeEnabled()});
+    await waitFor(() => {
+      return expect(connect).toBeEnabled();
+    });
     expect(
       screen.queryByRole("region", { name: "Your cards in Link" }),
     ).toBeNull();

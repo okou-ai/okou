@@ -128,7 +128,7 @@ internal constructor(
                     kind = query.filter.wire,
                     keyword = query.keyword.ifBlank { null },
                     cursor = cursor,
-                )
+                ),
             )
         if (page.nextCursor != null && (page.nextCursor == cursor || page.artifacts.isEmpty())) {
             throw ApiFailure.IncompatibleResponse()

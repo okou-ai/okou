@@ -21,7 +21,7 @@ import {
 const context = testContext();
 
 async function chooseDownload(preview: HTMLElement) {
-  click(await findNamedButton("Download options", preview));
+  click(await findNamedButton("Download artifact", preview));
   click(await findNamedMenuItem("Download"));
 }
 
@@ -62,7 +62,7 @@ test.each([
       Array.from(new Uint8Array(await saved.blob!.arrayBuffer())),
     ).toStrictEqual(bytes);
     expect(location.pathname).toBe(chatPath);
-    click(getNamedButton("Close", viewer));
+    click(getNamedButton("Close artifact", viewer));
     await waitFor(() => {
       return expect(
         screen.queryByRole("dialog", { name: filename + " preview" }),
@@ -133,7 +133,7 @@ test.each([
           name: "artifact_action_clicked",
           properties: {
             action: "download",
-            surface: "dialog",
+            surface: "page",
             artifact_type: type,
           },
         }),

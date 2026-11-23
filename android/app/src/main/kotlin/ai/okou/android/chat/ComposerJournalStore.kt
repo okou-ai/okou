@@ -76,13 +76,12 @@ class ComposerJournalStore(
             latest[key] = write
             scope.launch {
                 try {
-                    val result =
-                        io.withLock {
-                            if (synchronized(guard) { latest[key] === write }) {
-                                withContext(dispatcher) { write(key, journal) }
-                                ComposerCommit.Committed
-                            } else ComposerCommit.Superseded
-                        }
+                    val result = io.withLock {
+                        if (synchronized(guard) { latest[key] === write }) {
+                            withContext(dispatcher) { write(key, journal) }
+                            ComposerCommit.Committed
+                        } else ComposerCommit.Superseded
+                    }
                     synchronized(guard) { if (latest[key] === write) latest.remove(key) }
                     write.done.complete(result)
                 } catch (cancelled: CancellationException) {

@@ -208,8 +208,16 @@ function materializeArtifactRef(
 }
 
 export type ThreadSidebarArtifactSource =
-  | { readonly kind: "catalog"; readonly artifactId: string }
-  | { readonly kind: "attachment"; readonly ref: ArtifactRef };
+  | {
+      readonly kind: "catalog";
+      readonly artifactId: string;
+      readonly ownerSignal: AbortSignal;
+    }
+  | {
+      readonly kind: "attachment";
+      readonly ref: ArtifactRef;
+      readonly ownerSignal: AbortSignal;
+    };
 
 export type ThreadSidebarTarget =
   | { readonly type: "artifacts" }
@@ -237,6 +245,7 @@ interface ThreadAutomationEditor {
 }
 
 export interface ThreadSidebarSignals {
+  readonly readArtifactOwner$: Command<AbortSignal | undefined, []>;
   readonly crossChatArtifact: CrossChatArtifactPreviewSignals;
   readonly target$: Computed<ThreadSidebarTarget | null>;
   readonly open$: Command<void, [ThreadSidebarOpenTarget, AbortSignal]>;
@@ -339,7 +348,16 @@ function createThreadSidebarTargetSignals(
         : undefined;
     }),
   );
-  return { target$, crossChatArtifact };
+  return {
+    readArtifactOwner$: command(({ get }) => {
+      const target = get(internalTarget$);
+      return target?.type === "artifact"
+        ? target.source.ownerSignal
+        : undefined;
+    }),
+    target$,
+    crossChatArtifact,
+  };
 }
 
 function createThreadAutomationEditorSignals() {
@@ -437,7 +455,7 @@ export function createThreadSidebarSignals(
       set(artifactCatalog.selectArtifact$, artifactId);
       set(publishTarget$, {
         type: "artifact",
-        source: { kind: "catalog", artifactId },
+        source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
       });
       await set(
         artifactCatalog.ensureSelectedArtifactPreview$,
@@ -456,6 +474,7 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: {
           kind: "attachment",
+          ownerSignal: sessionSignal,
           ref: materializeArtifactRef(input, previewContext, sessionSignal),
         },
       });

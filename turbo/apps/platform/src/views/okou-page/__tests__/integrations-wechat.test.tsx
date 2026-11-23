@@ -216,8 +216,8 @@ test("integrations-wechat-011 an expired reconnect link keeps the original desti
 
 test("An owner can confirm the workspace on a reconnect link with the keyboard", async () => {
   let restored = false;
-  context.mocks.api(integrationsWechatContract.status, ({ respond }) =>
-    {return respond(200, {
+  context.mocks.api(integrationsWechatContract.status, ({ respond }) => {
+    return respond(200, {
       configured: true,
       status: restored ? "active" : "disconnected",
       binding: restored
@@ -226,12 +226,13 @@ test("An owner can confirm the workspace on a reconnect link with the keyboard",
             accountId: "wechat-owner",
           }
         : null,
-    })},
-  );
+    });
+  });
   context.mocks.api(
     integrationsWechatContract.reconnectStatus,
-    ({ query, respond }) =>
-      {return respond(200, { available: query.token === reconnectToken })},
+    ({ query, respond }) => {
+      return respond(200, { available: query.token === reconnectToken });
+    },
   );
   const acknowledgment = context.mocks.deferred<void>();
   const submitted = context.mocks.deferred<string>();

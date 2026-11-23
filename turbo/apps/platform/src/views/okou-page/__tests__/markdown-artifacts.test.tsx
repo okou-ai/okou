@@ -46,7 +46,9 @@ test("markdown-artifacts-001 five contexts keep their own labels for the same im
   click(await findAction("link", "Key screenshot"));
   await waitFor(() => {
     return expect(
-      document.querySelector('[role="dialog"] img[src="' + url + '"]'),
+      document.querySelector(
+        '[data-testid="artifact-sidebar"] img[src="' + url + '"]',
+      ),
     ).toBeVisible();
   });
 });
@@ -114,7 +116,9 @@ test("markdown-artifacts-006 a bare artifact opens its image while a fenced addr
   click(link);
   await waitFor(() => {
     return expect(
-      document.querySelector('[role="dialog"] img[src="' + url + '"]'),
+      document.querySelector(
+        '[data-testid="artifact-sidebar"] img[src="' + url + '"]',
+      ),
     ).toBeVisible();
   });
 });

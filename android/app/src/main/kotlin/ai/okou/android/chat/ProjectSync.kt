@@ -78,7 +78,7 @@ fun replayProjects(checkpoint: ProjectCheckpoint): List<ConfirmedProject> {
                 val name = event.name
                 requireChatWire(name != null)
                 requireChatWire(
-                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null
+                    event.kind != ProjectEventsEventsItemKind.RENAMED || existing != null,
                 )
                 projects[event.projectId] =
                     ConfirmedProject(

@@ -156,7 +156,7 @@ test("prompt-link-008 A separate composer retains Claude Sonnet 5.5 after the li
     path: "/prompt?" + new URLSearchParams({ model, prompt: link }).toString(),
   });
   await received.promise;
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });

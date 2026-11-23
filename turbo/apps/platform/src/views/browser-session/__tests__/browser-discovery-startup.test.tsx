@@ -565,7 +565,9 @@ test("browser-discovery-startup-003 the readmitted tab accepts typing before its
   expect(input()).toBeDisabled();
   await foreground.release();
   await neighbor.received;
-  await waitFor(() => {return expect(input()).toBeEnabled()});
+  await waitFor(() => {
+    return expect(input()).toBeEnabled();
+  });
   expect(
     screen.queryByLabelText("New tab", { selector: "[role=tab]" }),
   ).toBeNull();
@@ -615,7 +617,9 @@ test.each([
       });
       await observed.promise;
     }
-    expect(screen.getByLabelText(later.title, {selector:"[role=tab]"})).toHaveAttribute("aria-selected","true");
+    expect(
+      screen.getByLabelText(later.title, { selector: "[role=tab]" }),
+    ).toHaveAttribute("aria-selected", "true");
     await textTo(cdp, later.targetId, "read the later document");
   },
 );

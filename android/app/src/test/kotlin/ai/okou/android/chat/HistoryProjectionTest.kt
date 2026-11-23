@@ -48,7 +48,9 @@ class HistoryProjectionTest {
             assertEquals(HistoryExecution.Failed, failed.execution)
             assertEquals("run.failed", failed.messages.single().status)
             assertFalse(
-                failed.messages.flatMap { it.blocks }.any { it.text.contains("private diagnostic") }
+                failed.messages
+                    .flatMap { it.blocks }
+                    .any { it.text.contains("private diagnostic") },
             )
         }
         val output =
@@ -58,7 +60,7 @@ class HistoryProjectionTest {
                     1,
                     "output.error",
                     payload = """{"error":"Ordinary output error"}""",
-                )
+                ),
             )
         assertTrue(output.messages.flatMap { it.blocks }.any { it.text == "Ordinary output error" })
     }
@@ -74,7 +76,8 @@ class HistoryProjectionTest {
         val stillLate = event("still-older-late", 5, "output.message")
         assertEquals(HISTORY_RUN, transcript(old, next, lateOld, terminal, stillLate).activeRunId)
         assertNull(
-            transcript(old, next, terminal, event("older-terminal", 5, "run.completed")).activeRunId
+            transcript(old, next, terminal, event("older-terminal", 5, "run.completed"))
+                .activeRunId,
         )
         assertEquals(
             nextRun,
@@ -92,7 +95,7 @@ class HistoryProjectionTest {
         revoke: String? = null,
     ) =
         HistoryEvent.decode(
-            historyEventWire(id, seq, type = type, run = run, payload = payload, revoke = revoke)
+            historyEventWire(id, seq, type = type, run = run, payload = payload, revoke = revoke),
         )
 
     private fun input(id: String, seq: Long, run: String? = HISTORY_RUN) =
@@ -110,7 +113,7 @@ class HistoryProjectionTest {
                 CHAT_PERSONAL,
                 rows.toList(),
                 HistoryCursor(rows.last().id, rows.last().seqId),
-            )
+            ),
         )
 
     @Test

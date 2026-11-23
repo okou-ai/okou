@@ -66,5 +66,7 @@ test("A failed Mermaid layout leaves its source readable and other diagrams usab
 
   click(expand);
 
-  await expect(screen.findByRole("dialog")).resolves.toBeInTheDocument();
+  await expect(
+    screen.findByTestId("artifact-sidebar"),
+  ).resolves.toBeInTheDocument();
 });

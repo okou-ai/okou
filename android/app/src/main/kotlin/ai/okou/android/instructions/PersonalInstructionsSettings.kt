@@ -186,7 +186,7 @@ internal fun PersonalInstructionsSettings(
                         Text(
                             stringResource(
                                 if (state.canRetrySave) R.string.instructions_retry_save
-                                else R.string.instructions_save
+                                else R.string.instructions_save,
                             ),
                             style =
                                 MaterialTheme.typography.labelLarge.copy(
@@ -276,9 +276,9 @@ internal fun PersonalInstructionsSettings(
                                     MaterialTheme.colorScheme.surfaceVariant,
                                     RoundedCornerShape(12.dp),
                                 )
-                            else Modifier
+                            else Modifier,
                         )
-                        .semantics { contentDescription = label }
+                        .semantics { contentDescription = label },
                 )
             }
             val message =
@@ -351,7 +351,8 @@ private fun InstructionsAction(label: Int, action: () -> Unit, enabled: Boolean)
         modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
         shape = RoundedCornerShape(12.dp),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+        colors =
+            ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
     ) {
         Text(
             stringResource(label),

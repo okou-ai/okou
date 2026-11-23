@@ -115,7 +115,7 @@ internal fun ChatRowSwipe(
                         SwipeReveal(offset, offset != 0f && delta.reachesSwipeThreshold(threshold))
                     if (next.ready && (!reveal.ready || reveal.fromStart != next.fromStart)) {
                         hapticFeedback.performHapticFeedback(
-                            HapticFeedbackType.GestureThresholdActivate
+                            HapticFeedbackType.GestureThresholdActivate,
                         )
                     }
                     reveal = next
@@ -173,7 +173,7 @@ internal fun ChatRowSwipe(
     Box(
         Modifier.clip(ChatListRowShape)
             .onGloballyPositioned { windowX = it.positionInWindow().x }
-            .then(input)
+            .then(input),
     ) {
         val revealed = if (reveal.fromStart) readAction else archiveAction
         if (reveal.offset != 0f && revealed != null) {

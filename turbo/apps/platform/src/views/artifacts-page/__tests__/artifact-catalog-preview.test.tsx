@@ -53,7 +53,7 @@ function serveStoredFile(
 
 async function openPreview(filename: string): Promise<HTMLElement> {
   click(await findArtifactAction(filename));
-  return await screen.findByRole("dialog", { name: `${filename} preview` });
+  return await screen.findByTestId("artifact-sidebar");
 }
 
 test("HTML artifact cards resolve their stored private cover image", async () => {
@@ -103,7 +103,8 @@ test("A binary can be downloaded from its preview", async () => {
   await setupArtifactCatalogPage(context, { path: "/artifacts?tab=file" });
   const preview = await openPreview("release-bundle.zip");
 
-  click(getButtonByName("Download", preview));
+  click(getButtonByName("Download artifact", preview));
+  click(within(await screen.findByRole("menu")).getByText("Download"));
 
   await waitFor(() => {
     expect(
@@ -131,9 +132,9 @@ test("A native PPTX in Presentations keeps its Office preview and original downl
   });
   const preview = await openPreview("quarterly-review.pptx");
   await expect(
-    within(preview).findByTestId("artifact-dialog-body-office"),
+    within(preview).findByTestId("artifact-sidebar-body-office"),
   ).resolves.toBeInTheDocument();
-  click(getButtonByName("Download options", preview));
+  click(getButtonByName("Download artifact", preview));
   const download = await waitFor(() => {
     const item = queryAllByRoleFast("menuitem").find((candidate) => {
       return candidate.textContent?.trim() === "Download";
@@ -153,7 +154,7 @@ test("A native PPTX in Presentations keeps its Office preview and original downl
   });
   const viewer = new URL(
     within(preview)
-      .getByTestId("artifact-dialog-body-office")
+      .getByTestId("artifact-sidebar-body-office")
       .getAttribute("src") ?? "",
   );
   expect(`${viewer.origin}${viewer.pathname}`).toBe(

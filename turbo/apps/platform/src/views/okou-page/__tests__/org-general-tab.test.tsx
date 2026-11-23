@@ -215,21 +215,23 @@ test.each([
       finish.resolve();
       await decoded.promise;
     }
-    await waitFor(() =>
-      {return expect(
+    await waitFor(() => {
+      return expect(
         within(panel).getByRole("img", { name: workspace.name }),
-      ).toHaveAttribute("src", accepted)},
-    );
+      ).toHaveAttribute("src", accepted);
+    });
     expect(within(panel).queryByRole("status", { name: /logo/i })).toBeNull();
     published = "https://assets.example.test/new-published-emblem.png";
     click(await action("Close", panel));
-    await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+    await waitFor(() => {
+      return expect(screen.queryByRole("dialog")).toBeNull();
+    });
     window.history.back();
     const reopened = await screen.findByRole("dialog");
-    await waitFor(() =>
-      {return expect(
+    await waitFor(() => {
+      return expect(
         within(reopened).getByRole("img", { name: workspace.name }),
-      ).toHaveAttribute("src", published)},
-    );
+      ).toHaveAttribute("src", published);
+    });
   },
 );

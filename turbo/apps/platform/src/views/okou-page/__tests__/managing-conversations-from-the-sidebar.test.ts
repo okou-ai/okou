@@ -209,7 +209,7 @@ test("sidebar-chat-history-008 Unread and Archived filters navigate among genuin
 });
 test("sidebar-chat-history-027 The new-chat shortcut and Chat navigation both return to the root composer", async () => {
   await workspace([release], route(release.id));
-  const nav = await findFastControl("link", "Chat");
+  const nav = await findFastControl("link", "Okou");
   expect(nav).toHaveAttribute("href", "/");
   fireEvent.keyDown(document, {
     key: "O",
@@ -238,7 +238,7 @@ test("sidebar-chat-history-025 Starting a new My Okou chat from a retained resea
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });
-  const nav = await findFastControl("link", "Chat");
+  const nav = await findFastControl("link", "Okou");
   expect(nav).toHaveAttribute("href", "/");
   click(nav);
   await waitFor(async () => {
@@ -251,7 +251,7 @@ test("sidebar-chat-history-028 The Chat rail action leaves the archived list and
   await filter("Archived");
   await titles("Archived context");
   await screen.findByText("Archived", { exact: true });
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });

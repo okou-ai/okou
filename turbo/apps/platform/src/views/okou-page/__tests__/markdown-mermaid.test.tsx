@@ -77,14 +77,10 @@ test("markdown-mermaid-001 A finished diagram opens from its inline image and re
     [flow, sequence + "\n```"].join("\n\n"),
   );
   await setupPage({ context, path });
-  await waitFor(() =>
-    {return expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(2)},
-  );
-  click(screen.getAllByLabelText("Expand diagram")[0]!);
-  const preview = await screen.findByRole("dialog", {
-    name: "diagram.svg preview",
+  await waitFor(() => {
+    return expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(2);
   });
-  click(await findFastControl("button", "Open in split view", preview));
+  click(screen.getAllByLabelText("Expand diagram")[0]!);
   const close = await findFastControl("button", "Close artifact");
   const side = screen.getByTestId("artifact-sidebar");
   const image = await within(side).findByRole("img");
@@ -92,7 +88,9 @@ test("markdown-mermaid-001 A finished diagram opens from its inline image and re
   expect(url).toMatch(/^blob:/);
   const revoked = vi.spyOn(URL, "revokeObjectURL");
   click(close);
-  await waitFor(() => {return expect(revoked).toHaveBeenCalledWith(url)});
+  await waitFor(() => {
+    return expect(revoked).toHaveBeenCalledWith(url);
+  });
   expect(side).not.toBeInTheDocument();
   const diagrams = screen.getAllByRole("img", { name: "Diagram" });
   expect(diagrams).toHaveLength(2);

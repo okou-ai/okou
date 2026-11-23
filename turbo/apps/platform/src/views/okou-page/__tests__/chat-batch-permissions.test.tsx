@@ -5,7 +5,6 @@ import {
   type ApplyConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -139,7 +138,6 @@ async function openChatWithAction(link: string): Promise<void> {
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
   await readyChat();
   await expect(screen.findByText(ASSISTANT_TEXT)).resolves.toBeInTheDocument();

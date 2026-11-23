@@ -5,7 +5,6 @@ import {
   queryAction,
 } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -40,7 +39,6 @@ async function openReview(continuation = false) {
   await setupPage({
     context,
     path: "/connectors/permissions/batch?" + query,
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
   return within(screen.getByRole("main"));
 }
@@ -136,7 +134,6 @@ async function openMemberReview(threadId?: string) {
   await setupPage({
     context,
     path: "/connectors/permissions/batch?" + params,
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
 }
 test("Saving both Neon grants for one hour allows the member's originating chat to continue", async () => {

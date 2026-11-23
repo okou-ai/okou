@@ -22,7 +22,7 @@ async function imageCard(name: string) {
   return img;
 }
 async function previewImage(url: string) {
-  const panel = await screen.findByTestId("attachment-lightbox-panel");
+  const panel = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(panel.querySelector("img")).toHaveAttribute("src", url);
   });
@@ -36,7 +36,7 @@ test("chat-private-artifact-previews-004 reopening an image preserves its origin
   const thumb = card.src;
   click(card);
   const panel = await previewImage(file.url);
-  click(await findAction("button", "Close", panel));
+  click(await findAction("button", "Close artifact", panel));
   await waitFor(() => {
     return expect(panel).not.toBeInTheDocument();
   });
@@ -64,28 +64,6 @@ test("chat-private-artifact-previews-006 a private upload keeps its original lin
     ).getByAltText(file.filename),
   ).toHaveAttribute("src", thumb);
 });
-test("chat-private-artifact-previews-008 split view opens the same original as the private image dialog", async () => {
-  const file = attachment("ridge.png", "image/png");
-  serveUploaded(context, [file]);
-  await conversation(context, { chatEvents: [userRow(fileParts([file]))] });
-  const card = await imageCard(file.filename);
-  const thumb = card.src;
-  click(card);
-  const dialog = await previewImage(file.url);
-  click(await findAction("button", "Open in split view", dialog));
-  const side = await screen.findByTestId("artifact-sidebar");
-  await waitFor(() => {
-    return expect(
-      within(side).getByTestId("artifact-sidebar-body-image"),
-    ).toHaveAttribute("src", file.url);
-  });
-  expect(
-    within(
-      document.querySelector<HTMLElement>('[data-role="user"]')!,
-    ).getByAltText(file.filename),
-  ).toHaveAttribute("src", thumb);
-});
-
 test("chat-private-artifact-previews-009 the assistant's two private pictures keep distinct originals while navigating", async () => {
   const first = attachment("map.png", "image/png"),
     second = attachment("survey.png", "image/png");

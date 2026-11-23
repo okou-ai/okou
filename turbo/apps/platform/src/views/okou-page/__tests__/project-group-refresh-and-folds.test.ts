@@ -73,7 +73,7 @@ test("projects-003 An expanded Project and its planning chat remain visible whil
   );
   await begun.promise;
   checkLocation(ws.member.title!, ws.launch.id);
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });

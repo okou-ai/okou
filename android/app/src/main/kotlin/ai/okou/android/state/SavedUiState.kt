@@ -127,7 +127,7 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
                         TextFieldValue(it[3] as String, TextRange(it[4] as Int, it[5] as Int)),
                     )
                 },
-            )
+            ),
     ) {
         ConnectorDirectoryState()
     }
@@ -238,7 +238,7 @@ internal fun rememberChatSearchState(): ChatSearchState =
                             ?.let { SearchResultAnchor(it, offset as Int) },
                     )
                 },
-            )
+            ),
     ) {
         ChatSearchState()
     }
@@ -268,7 +268,7 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
             listSaver<WorkspaceNavigation, Any>(
                 save = { it.savedFields() },
                 restore = ::restoreWorkspaceNavigation,
-            )
+            ),
     ) {
         mutableStateOf(WorkspaceNavigation())
     }
@@ -352,7 +352,7 @@ internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLi
                         )
                     }
                 },
-            )
+            ),
     ) {
         mutableStateOf(emptyList())
     }
@@ -378,10 +378,10 @@ internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPo
                 restore = { (eventId, isRun) ->
                     ConversationLinkPosition(
                         destination =
-                            ConversationFindTarget(eventId as String, null, isRun as Boolean)
+                            ConversationFindTarget(eventId as String, null, isRun as Boolean),
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(null)
     }
@@ -424,7 +424,7 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
                         (pickerArtifactId as String).ifEmpty { null },
                     )
                 },
-            )
+            ),
     ) {
         ArtifactPageState()
     }
@@ -476,7 +476,7 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
                         WorkflowScope.valueOf(scope),
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(WorkflowsRoute())
     }

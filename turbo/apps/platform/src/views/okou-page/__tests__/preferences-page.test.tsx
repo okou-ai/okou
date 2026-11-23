@@ -173,15 +173,17 @@ test.each([
     workspace(persisted, palette);
     await setupPage({ context, path: "/preferences" });
     const selectedPalette = await findAction("button", selected);
-    await waitFor(() =>
-      {return expect(selectedPalette).toHaveAttribute("aria-pressed", "true")},
-    );
+    await waitFor(() => {
+      return expect(selectedPalette).toHaveAttribute("aria-pressed", "true");
+    });
     expect(getAction("button", mode)).toHaveAttribute("aria-pressed", "true");
     const next = mode === "Dark" ? "Light" : "Dark";
     click(getAction("button", next));
-    await waitFor(() =>
-      {return expect(document.documentElement.dataset.theme).toBe(next.toLowerCase())},
-    );
+    await waitFor(() => {
+      return expect(document.documentElement.dataset.theme).toBe(
+        next.toLowerCase(),
+      );
+    });
     expect(selectedPalette).toHaveAttribute("aria-pressed", "true");
   },
 );

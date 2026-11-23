@@ -50,6 +50,10 @@ type ArtifactGoogleDriveSyncResult =
   | { readonly kind: "uploaded"; readonly file: GoogleDriveUploadedFile }
   | { readonly kind: "conversion-unconfirmed" };
 
+export const readNoSidebarOwner$ = command(() => {
+  return undefined;
+});
+
 export const uploadArtifactToGoogleDrive$ = command(
   async (
     { get },

@@ -2,7 +2,6 @@ import { test, expect } from "vitest";
 import { screen, within, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -31,29 +30,21 @@ test.each([
       chatEvents: [assistantRow("[Generated brief](" + url + ")")],
     });
     click(await findAction("link", "Generated brief"));
-    const dialog = await screen.findByTestId("attachment-lightbox");
-    async function check(surface: HTMLElement) {
-      const frame = await within(surface).findByTitle(
-        "brief." + ext + " preview",
-      );
-      expect(frame).toBeVisible();
-      const viewer = new URL(frame.getAttribute("src")!);
-      expect(viewer.origin + viewer.pathname).toBe(
-        "https://view.officeapps.live.com/op/embed.aspx",
-      );
-      expect(viewer.searchParams.get("src")).toBe(url);
-      expect(frame.tagName).toBe("IFRAME");
-      expect(
-        Number(frame.getAttribute("tabindex") ?? "0"),
-      ).toBeGreaterThanOrEqual(0);
-      expect(frame.closest("[inert]")).toBeNull();
-      frame.focus();
-      expect(frame).toHaveFocus();
-    }
-    await check(dialog);
-    click(await findAction("button", "Open in split view", dialog));
-    await check(await screen.findByTestId("artifact-sidebar"));
-    expect(dialog).not.toBeInTheDocument();
+    const dialog = await screen.findByTestId("artifact-sidebar");
+    const frame = await within(dialog).findByTitle("brief." + ext + " preview");
+    expect(frame).toBeVisible();
+    const viewer = new URL(frame.getAttribute("src")!);
+    expect(viewer.origin + viewer.pathname).toBe(
+      "https://view.officeapps.live.com/op/embed.aspx",
+    );
+    expect(viewer.searchParams.get("src")).toBe(url);
+    expect(frame.tagName).toBe("IFRAME");
+    expect(
+      Number(frame.getAttribute("tabindex") ?? "0"),
+    ).toBeGreaterThanOrEqual(0);
+    expect(frame.closest("[inert]")).toBeNull();
+    frame.focus();
+    expect(frame).toHaveFocus();
   },
 );
 test("chat-navigation-artifact-sidebar-007 the embedded thumbnail transforms the public image but opens its original", async () => {
@@ -73,7 +64,7 @@ test("chat-navigation-artifact-sidebar-007 the embedded thumbnail transforms the
   });
   fireEvent.load(img);
   click(img);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(dialog.querySelector("img")).toHaveAttribute("src", url);
   });
@@ -102,7 +93,6 @@ async function loadCatalog(mobile = false) {
   await setupPage({
     context,
     path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
 }
 test("chat-navigation-artifact-sidebar-011 fullscreen and list navigation keep the hosted site address", async () => {
@@ -202,7 +192,6 @@ test("chat-navigation-artifact-sidebar-010 an expanded diagram owns its image wh
   await setupPage({
     context,
     path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   await openResourceArtifact(item.title);
   const side = await screen.findByTestId("artifact-sidebar");

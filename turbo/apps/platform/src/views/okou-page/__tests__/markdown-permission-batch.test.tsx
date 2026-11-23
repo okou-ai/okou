@@ -7,7 +7,6 @@ import {
   connectorPermissionsContract,
   type ConnectorPermissions,
 } from "@okouai/api-contracts/contracts/connector-permissions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -109,7 +108,6 @@ async function showRequest({
   await setupPage({
     context,
     path: chat.path,
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: true },
   });
 }
 

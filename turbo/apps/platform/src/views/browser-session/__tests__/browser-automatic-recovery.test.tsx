@@ -487,10 +487,7 @@ test("An assigned window conflict ends recovery before the member reconnects", a
   answer.resolve();
   interrupted.release("!invalid");
   await screen.findByText("Browser view unavailable");
-  const telemetry = live.errors.reports.map((record) => {return {
-    error: String(record.error),
-    context: record.context,
-  }});
+  const telemetry = [...live.errors.reports];
   expect(telemetry).toContainEqual(
     expect.objectContaining({
       context: expect.objectContaining({
@@ -502,10 +499,5 @@ test("An assigned window conflict ends recovery before the member reconnects", a
   await userEvent.click(screen.getByText("Reconnect", { selector: "button" }));
   await expectStreamingAt(primary.url);
   await write(live, "v");
-  expect(
-    live.errors.reports.map((record) => {return {
-      error: String(record.error),
-      context: record.context,
-    }}),
-  ).toStrictEqual(telemetry);
+  expect(live.errors.reports).toStrictEqual(telemetry);
 });

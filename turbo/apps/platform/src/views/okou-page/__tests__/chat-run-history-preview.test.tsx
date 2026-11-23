@@ -1,5 +1,4 @@
 // @vitest-environment-options {"url":"https://app.okou.ai/","settings":{"disableIframePageLoading":true,"disableCSSFileLoading":true,"handleDisabledFileLoadingAsSuccess":true}}
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { setupPage, click } from "../../../__tests__/page-helper.ts";
@@ -60,7 +59,6 @@ test("chat-run-history-preview-003 completed history renders its formatted findi
   await setupPage({
     context,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
     path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
   });
   click(await findAction("button", "Expand work history"));
@@ -80,7 +78,7 @@ test("chat-run-history-preview-003 completed history renders its formatted findi
   ).resolves.toHaveAttribute("href", reportUrl);
   expect(screen.getByText("The survey is complete")).toBeVisible();
   click(await findAction("link", "Download soundings"));
-  const viewer = await screen.findByTestId("artifact-dialog-document-frame");
+  const viewer = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(viewer.querySelector("iframe")).toHaveAttribute(
       "src",

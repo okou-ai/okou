@@ -272,7 +272,9 @@ test("A directed Acme sign-in links the approved custom account and closes its d
   const attemptId = crypto.randomUUID();
   let accepted = false;
   mockCustomConnectorStory(context, [{ connector }]);
-  mockSavedConnectorAccounts(context, () => {return (accepted ? [account] : [])});
+  mockSavedConnectorAccounts(context, () => {
+    return accepted ? [account] : [];
+  });
   const completions = mockOAuthCompletions(context);
   context.mocks.api(
     connectorAccountsContract.connection,
@@ -293,13 +295,11 @@ test("A directed Acme sign-in links the approved custom account and closes its d
       });
     },
   );
-  context.mocks.http.get(
-    authorizationUrl,
-    () =>
-      {return new Response("<title>Acme consent</title>", {
-        headers: { "content-type": "text/html" },
-      })},
-  );
+  context.mocks.http.get(authorizationUrl, () => {
+    return new Response("<title>Acme consent</title>", {
+      headers: { "content-type": "text/html" },
+    });
+  });
   await setupPage({
     context,
     path: "/connectors/_acme-consent/connect?agentId=" + crypto.randomUUID(),
@@ -308,9 +308,9 @@ test("A directed Acme sign-in links the approved custom account and closes its d
   const pages = captureAuthorizationTabs();
   click(await findFastControl("button", "Continue", dialog));
   const child = await waitFor(() => {
-    const entry = pages.mock.results.find(
-      (result) => {return result.value.url === authorizationUrl},
-    );
+    const entry = pages.mock.results.find((result) => {
+      return result.value.url === authorizationUrl;
+    });
     if (!entry) {
       throw new Error("Waiting for Acme consent in the authorization tab");
     }
@@ -341,7 +341,9 @@ test.each([
     const finish = context.mocks.deferred<void>();
     const delivered = context.mocks.deferred<void>();
     let saving = false;
-    mockSavedConnectorAccounts(context, () => {return []});
+    mockSavedConnectorAccounts(context, () => {
+      return [];
+    });
     const decode = Response.prototype.json;
     vi.spyOn(Response.prototype, "json").mockImplementation(async function (
       this: Response,
@@ -363,7 +365,9 @@ test.each([
     await setupPage({ context, path: oauthPath });
     const dialog = await connect();
     const continueButton = await findFastControl("button", "Continue", dialog);
-    await waitFor(() => {return expect(continueButton).toBeEnabled()});
+    await waitFor(() => {
+      return expect(continueButton).toBeEnabled();
+    });
     const tabs = captureAuthorizationTabs();
     saving = true;
     click(continueButton);
@@ -372,8 +376,12 @@ test.each([
     expect(opened?.url).toBe("about:blank");
     const cancel = await findFastControl("button", "Cancel", dialog);
     click(cancel);
-    await waitFor(() => {return expect(dialog).not.toBeInTheDocument()});
-    await waitFor(() => {return expect(opened?.closed).toBeTruthy()});
+    await waitFor(() => {
+      return expect(dialog).not.toBeInTheDocument();
+    });
+    await waitFor(() => {
+      return expect(opened?.closed).toBeTruthy();
+    });
     if (mode === "deliver") {
       finish.resolve();
       await delivered.promise;

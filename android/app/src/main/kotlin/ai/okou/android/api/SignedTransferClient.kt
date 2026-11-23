@@ -57,7 +57,7 @@ class SignedTransferClient(
                         !name.equals("proxy-authorization", true) &&
                         !name.equals("cookie", true) &&
                         !name.equals("host", true) &&
-                        !name.startsWith("x-client-", true)
+                        !name.startsWith("x-client-", true),
                 ) {
                     "API credentials and client headers do not belong on signed transfers"
                 }

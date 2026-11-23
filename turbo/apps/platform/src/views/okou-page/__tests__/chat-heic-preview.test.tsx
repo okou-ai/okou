@@ -1,7 +1,6 @@
 import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { artifactReferencePath } from "@okouai/api-contracts/validators/artifact-references";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -107,31 +106,29 @@ test("an iPhone photo opens at full resolution and downloads its original (image
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
 
   click(await findNamedLink("Preview photo.HEIC"));
-  const lightbox = await screen.findByTestId("attachment-lightbox");
+  const lightbox = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     expectConvertedOriginal(
-      within(lightbox).getByTestId("attachment-lightbox-image"),
+      within(lightbox).getByTestId("artifact-sidebar-body-image"),
     );
   });
 
   click(await findNamedButton("Next image artifact", lightbox));
   await waitFor(() => {
     expect(
-      within(lightbox).getByTestId("attachment-lightbox-image"),
+      within(lightbox).getByTestId("artifact-sidebar-body-image"),
     ).toHaveAttribute("src", JPEG_SOURCE);
   });
   click(await findNamedButton("Previous image artifact", lightbox));
   await waitFor(() => {
     expectConvertedOriginal(
-      within(lightbox).getByTestId("attachment-lightbox-image"),
+      within(lightbox).getByTestId("artifact-sidebar-body-image"),
     );
   });
 
-  click(await findNamedButton("Open in split view", lightbox));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     expectConvertedOriginal(
@@ -176,7 +173,7 @@ test("an inaccessible HEIC artifact keeps its access error in the image viewer",
 
   click(await findNamedLink("iPhone photo"));
 
-  const viewer = await screen.findByTestId("attachment-lightbox");
+  const viewer = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(viewer).findByRole("heading", {
       name: "You can’t view this artifact",

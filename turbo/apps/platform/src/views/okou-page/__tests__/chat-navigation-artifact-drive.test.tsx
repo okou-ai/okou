@@ -68,17 +68,16 @@ async function preview() {
     path,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: false,
       [FeatureSwitchKey.GoogleSlidesConversion]: true,
     },
   });
   const link = await screen.findByText("Review the file");
   click(link);
-  return screen.findByRole("dialog");
+  return screen.findByTestId("artifact-sidebar");
 }
 
 async function options(dialog: HTMLElement) {
-  click(await findNamedButton("Download options", dialog));
+  click(await findNamedButton("Download artifact", dialog));
   return screen.findByRole("menu");
 }
 const slidesUrl = "https://docs.google.com/presentation/d/cargo-route/edit";
@@ -367,16 +366,16 @@ test("chat-navigation-artifact-drive-010 a dismissed recovery cannot finish the 
     expect(auth.popup.location.href).toBe(providerUrl);
   });
   await auth.waitingForAuthorization;
-  click(await findNamedButton("Close", dialog));
+  click(await findNamedButton("Close artifact", dialog));
   await waitFor(() => {
     expect(auth.popup.closed).toBeTruthy();
   });
   repaired = true;
   auth.complete();
   await auth.receiptReturned;
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   click(await screen.findByText("Review the file"));
-  const menu = await options(await screen.findByRole("dialog"));
+  const menu = await options(await screen.findByTestId("artifact-sidebar"));
   await expect(
     findNamedMenuItem("Reconnect Google Drive", menu),
   ).resolves.toBeInTheDocument();

@@ -27,7 +27,7 @@ const address = (slug: string) => {
   return "https://" + slug + ".okou.app";
 };
 const deployment = address("dpl-8a4d4487-18c0-44cd-a09d-206056d499b0");
-async function publishedReport(sidebar: boolean) {
+async function publishedReport() {
   const siteId = "be311386-caaa-4bfb-a74a-7d694c27c41e";
   let slug = original;
   const site = () => {
@@ -113,79 +113,62 @@ async function publishedReport(sidebar: boolean) {
     path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: false,
     },
   });
   click(await findNamedLink("Read the launch report"));
-  const preview = sidebar
-    ? await screen.findByTestId("artifact-sidebar")
-    : await screen.findByTestId("attachment-lightbox");
+  const preview = await screen.findByTestId("artifact-sidebar");
   await findNamedLink(title, preview);
   return preview;
 }
 
-test.each([
-  { id: "001", sidebar: false },
-  { id: "002", sidebar: true },
-])(
-  "chat-hosted-site-url-$id shows the owner's current banner and public audience in Share",
-  async ({ sidebar }) => {
-    const preview = await publishedReport(sidebar);
-    click(await findNamedButton(sidebar ? "Share artifact" : "Share", preview));
-    const toggle = await screen.findByRole("switch", {
-      name: "Show Okou banner",
-    });
-    const menu = toggle.closest<HTMLElement>('[role="dialog"]')!;
-    expect(toggle).toBeEnabled();
-    expect(toggle).toBeChecked();
-    const audience = within(menu).getByLabelText("Anyone with the link");
-    expect(audience).toBeEnabled();
-    expect(audience).toBeChecked();
-  },
-);
+test("chat-hosted-site-url-002 shows the owner's current banner and public audience in Share", async () => {
+  const preview = await publishedReport();
+  click(await findNamedButton("Share artifact", preview));
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  const menu = toggle.closest<HTMLElement>('[role="dialog"]')!;
+  expect(toggle).toBeEnabled();
+  expect(toggle).toBeChecked();
+  const audience = within(menu).getByLabelText("Anyone with the link");
+  expect(audience).toBeEnabled();
+  expect(audience).toBeChecked();
+});
 
-test.each([
-  { id: "003", sidebar: false },
-  { id: "004", sidebar: true },
-])(
-  "chat-hosted-site-url-$id follows both saved addresses through the preview and Resources",
-  async ({ sidebar }) => {
-    const viewer = await publishedReport(sidebar);
-    const user = userEvent.setup({ delay: null, writeToClipboard: false });
-    for (const [current, next] of [
-      [original, "renamed-site"],
-      ["renamed-site", "final-site"],
-    ] as const) {
-      click(
-        await findNamedButton(sidebar ? "Share artifact" : "Share", viewer),
-      );
-      await screen.findByText(current + ".okou.app");
-      click(getNamedButton("Customize URL"));
-      await fill(await screen.findByLabelText("Website URL"), next);
-      await screen.findByText("Available");
-      click(getNamedButton("Save"));
-      const url = address(next);
-      await waitFor(() => {
-        expect(
-          within(viewer).getByText(title, { selector: "a" }),
-        ).toHaveAttribute("href", url + "/");
-      });
-      const shareCopy = await findNamedButton("Copy link");
-      const clipboard = context.mocks.browser.clipboardWriteText();
-      click(shareCopy);
-      await waitFor(() => {
-        expect(clipboard.writes).toStrictEqual([url]);
-      });
-      await user.keyboard("{Escape}");
-    }
-    click(await findNamedButton(sidebar ? "Close artifact" : "Close", viewer));
-    const resources = await openResources();
-    const row = (await within(resources).findByText(title)).closest("li")!;
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    click(getNamedButton("Copy link", row));
+test("chat-hosted-site-url-004 follows both saved addresses through the preview and Resources", async () => {
+  const viewer = await publishedReport();
+  const user = userEvent.setup({ delay: null, writeToClipboard: false });
+  for (const [current, next] of [
+    [original, "renamed-site"],
+    ["renamed-site", "final-site"],
+  ] as const) {
+    click(await findNamedButton("Share artifact", viewer));
+    await screen.findByText(current + ".okou.app");
+    click(getNamedButton("Customize URL"));
+    await fill(await screen.findByLabelText("Website URL"), next);
+    await screen.findByText("Available");
+    click(getNamedButton("Save"));
+    const url = address(next);
     await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([address("final-site")]);
+      expect(
+        within(viewer).getByText(title, { selector: "a" }),
+      ).toHaveAttribute("href", url + "/");
     });
-  },
-);
+    const shareCopy = await findNamedButton("Copy link");
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    click(shareCopy);
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([url]);
+    });
+    await user.keyboard("{Escape}");
+  }
+  click(await findNamedButton("Close artifact", viewer));
+  const resources = await openResources();
+  const row = (await within(resources).findByText(title)).closest("li")!;
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  click(getNamedButton("Copy link", row));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([address("final-site")]);
+  });
+});

@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -103,13 +102,11 @@ export function serveReference(
 export async function conversation(
   context: TestContext,
   options: NonNullable<Parameters<typeof mockAttachmentChat>[1]>,
-  sidebar = false,
 ) {
   mockAttachmentChat(context, options);
   await setupPage({
     context,
     path: "/chats/" + ATTACHMENT_THREAD_ID,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar },
   });
 }

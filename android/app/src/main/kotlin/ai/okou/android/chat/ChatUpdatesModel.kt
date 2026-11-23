@@ -50,36 +50,35 @@ class ChatUpdatesModel(
         mutable.value = RealtimePhase.Connecting
         output?.transport(RealtimePhase.Connecting)
         invalidate(ChatChanges(resync = true))
-        observation =
-            scope.launch {
-                connection.withLock {
-                    if (!current(ticket)) return@withLock
-                    try {
-                        source.observeRealtime(
-                            output?.target ?: noOutput,
-                            { target, signal ->
-                                if (current(ticket)) output?.receive(target, signal)
-                            },
-                        ) { next ->
-                            if (current(ticket)) {
-                                mutable.value = next.phase
-                                output?.transport(next.phase)
-                                next.failure?.let(onFailure)
-                                if (current(ticket) && next.changes != ChatChanges())
-                                    invalidate(next.changes)
-                            }
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
+        observation = scope.launch {
+            connection.withLock {
+                if (!current(ticket)) return@withLock
+                try {
+                    source.observeRealtime(
+                        output?.target ?: noOutput,
+                        { target, signal ->
+                            if (current(ticket)) output?.receive(target, signal)
+                        },
+                    ) { next ->
                         if (current(ticket)) {
-                            mutable.value = RealtimePhase.Unavailable
-                            output?.transport(RealtimePhase.Unavailable)
-                            onFailure(error)
+                            mutable.value = next.phase
+                            output?.transport(next.phase)
+                            next.failure?.let(onFailure)
+                            if (current(ticket) && next.changes != ChatChanges())
+                                invalidate(next.changes)
                         }
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    if (current(ticket)) {
+                        mutable.value = RealtimePhase.Unavailable
+                        output?.transport(RealtimePhase.Unavailable)
+                        onFailure(error)
                     }
                 }
             }
+        }
     }
 
     private fun current(ticket: Long) =

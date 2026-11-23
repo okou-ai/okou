@@ -127,7 +127,7 @@ internal fun DefaultModelSetting(
     SettingsTrigger(
         content = { dismiss ->
             DefaultModelSheet(title, state, model, snackbar, onFeedbackInOverlay, dismiss)
-        }
+        },
     ) { modifier, open ->
         SettingsRow(
             title,
@@ -146,7 +146,7 @@ private fun DefaultModelUnavailableRow(title: String, value: String?, status: St
         Box(
             Modifier.width(64.dp)
                 .height(12.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)),
         )
     }
     SettingsRow(
@@ -207,7 +207,7 @@ private fun DefaultModelSheet(
                     end = 16.dp,
                     top = if (centered && !fullScreen) 16.dp else 0.dp,
                     bottom = 16.dp,
-                )
+                ),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = dismiss) {
@@ -276,7 +276,7 @@ private fun DefaultModelSheet(
                             choice.fastMultiplier?.let { multiplier ->
                                 val value =
                                     NumberFormat.getNumberInstance(
-                                            LocalLocale.current.platformLocale
+                                            LocalLocale.current.platformLocale,
                                         )
                                         .format(multiplier)
                                 SettingsSwitchRow(
@@ -365,7 +365,7 @@ private fun EffortMenu(
         Box {
             OutlinedCard(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(
-                    role = Role.Button
+                    role = Role.Button,
                 ) {
                     expanded = true
                 },

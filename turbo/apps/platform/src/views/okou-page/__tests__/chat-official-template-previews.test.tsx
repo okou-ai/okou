@@ -81,16 +81,23 @@ test("chat-official-template-previews-001 the saved launch deck shows its origin
     host: "app.okou.ai",
     path: welcomeConversation("![Launch deck](" + url + ")"),
   });
-  await waitFor(() => {
-    const img = document.querySelector(
+  const coverLink = await waitFor(() => {
+    const image = document.querySelector(
       'img[src*="sproutpop-a826bd3d2831.png"]',
     );
-    expect(img).toBeVisible();
+    expect(image).toBeVisible();
+    const link = image?.closest("a");
+    if (!link) throw new Error("The launch deck cover has no preview link");
+    return link;
   });
   expect(document.querySelector("iframe")).toBeNull();
-  const control = await screen.findByText("Launch deck");
-  click(control);
-  await expect(findFrame(url)).resolves.toBeVisible();
+  click(coverLink);
+  const frame = await screen.findByTestId("artifact-sidebar-body-html");
+  await waitFor(() => {
+    return expect(new URL(frame.getAttribute("src")!, location.href).href).toBe(
+      new URL(url).href,
+    );
+  });
 });
 
 test("chat-official-template-previews-005 an isolated deployment opens the English My Okou guide inside a frame", async () => {
@@ -133,7 +140,9 @@ test.each([
     click(link);
     await waitFor(() => {
       return expect(
-        document.querySelector('[role="dialog"] img[src="' + bookshop + '"]'),
+        document.querySelector(
+          '[data-testid="artifact-sidebar"] img[src="' + bookshop + '"]',
+        ),
       ).toBeVisible();
     });
   },
@@ -176,12 +185,14 @@ test("chat-official-template-previews-010 seven welcome illustrations and the gu
     click(await screen.findByText("Diagram " + (index + 1)));
     await waitFor(() => {
       return expect(
-        document.querySelector('[role="dialog"] img[src="' + picture + '"]'),
+        document.querySelector(
+          '[data-testid="artifact-sidebar"] img[src="' + picture + '"]',
+        ),
       ).toBeVisible();
     });
-    await userEvent.keyboard("{Escape}");
+    click(await findAction("button", "Close artifact"));
     await waitFor(() => {
-      return expect(screen.queryByRole("dialog")).toBeNull();
+      return expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
     });
   }
   click(await screen.findByText("Quick start"));
@@ -230,6 +241,6 @@ test("chat-official-template-previews-011 unrelated and altered catalogue URLs r
     await userEvent.click(link);
     expect(link).toHaveAttribute("target", "_blank");
     await expect(handled.promise).resolves.toBeFalsy();
-    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   }
 });

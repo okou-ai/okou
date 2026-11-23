@@ -1,5 +1,4 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -44,9 +43,8 @@ test("artifact-catalog-pagination-001 closes a later-page deep link back to its 
   await setupPage({
     context,
     path: page,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
-  const preview = await screen.findByRole("dialog");
+  const preview = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(preview).findByAltText(chosen.title),
   ).resolves.toHaveAttribute("src", url);
@@ -57,9 +55,11 @@ test("artifact-catalog-pagination-001 closes a later-page deep link back to its 
   expect(location.pathname).toBe("/artifacts");
   expect(new URLSearchParams(location.search).get("artifact")).toBe(chosen.id);
   expect(new URLSearchParams(location.search).get("tab")).toBe("image");
-  click(getButtonByName("Close", preview));
+  click(getButtonByName("Close artifact", preview));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    return expect(
+      screen.queryByTestId("artifact-sidebar"),
+    ).not.toBeInTheDocument();
   });
   expect(location.pathname + location.search).toBe("/artifacts?tab=image");
   expect(

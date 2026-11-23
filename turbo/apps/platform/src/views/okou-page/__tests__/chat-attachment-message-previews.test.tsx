@@ -66,8 +66,6 @@ test.each([
     serveUploaded(context, [file]);
     await conversation(context, { chatEvents: [userRow(fileParts([file]))] });
     click(await findAction("button", action));
-    const lightbox = await screen.findByTestId("attachment-lightbox");
-    click(await findAction("button", "Open in split view", lightbox));
     const side = await screen.findByTestId("artifact-sidebar");
     await waitFor(() => {
       return expect(side.querySelector(tag)?.getAttribute("src")).toContain(
@@ -92,7 +90,7 @@ test("chat-attachment-message-previews-010 fullscreen keeps the quarterly deck a
   click(
     await findAction("button", "Open html preview for quarterly-deck.html"),
   );
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   for (const control of ["Enter fullscreen", "Exit fullscreen"]) {
     click(await findAction("button", control, dialog));
     await waitFor(() => {
@@ -102,8 +100,9 @@ test("chat-attachment-message-previews-010 fullscreen keeps the quarterly deck a
   await expect(
     findAction("button", "Enter fullscreen", dialog),
   ).resolves.toBeEnabled();
-  click(await findAction("button", "Download options", dialog));
+  click(await findAction("button", "Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
+
   await waitFor(() => {
     return expect(
       browser.downloads.map((d) => {
@@ -136,7 +135,7 @@ test("chat-attachment-message-previews-012 a Slack message keeps its permalink w
   click(
     await findAction("button", "Open markdown preview for handoff.md", row),
   );
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(dialog).findByRole("heading", {
       name: "North ridge checklist",
@@ -169,7 +168,7 @@ test("chat-attachment-message-previews-013 a Lark binary JPEG opens its signed o
   expect(img.src).toContain(file.url);
   fireEvent.load(img);
   click(img);
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(dialog.querySelector("img")).toHaveAttribute("src", file.url);
   });

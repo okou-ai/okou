@@ -39,8 +39,8 @@ async function downloadFromLink(
     ],
   });
   click(await findAction("link", label));
-  const panel = await screen.findByTestId("attachment-lightbox");
-  click(await findAction("button", "Download options", panel));
+  const panel = await screen.findByTestId("artifact-sidebar");
+  click(await findAction("button", "Download artifact", panel));
   click(await findNamedMenuItem("Download"));
   return panel;
 }
@@ -91,7 +91,7 @@ test.each([
         name: "artifact_action_clicked",
         properties: {
           action: "download",
-          surface: "dialog",
+          surface: "page",
           artifact_type: product,
         },
       }),

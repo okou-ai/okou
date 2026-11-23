@@ -140,7 +140,7 @@ test("A restored historical turn opens both saved attachments", async () => {
     }) as HTMLElement,
   );
 
-  const preview = await screen.findByRole("dialog");
+  const preview = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     expect(
       within(preview).getByRole("img", { name: before.filename }),

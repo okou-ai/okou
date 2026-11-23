@@ -1,5 +1,4 @@
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import userEvent from "@testing-library/user-event";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
@@ -41,10 +40,9 @@ async function openFirstPhoto() {
   await setupPage({
     context,
     path: "/chats/" + ATTACHMENT_THREAD_ID,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   click(await findNamedLink("Preview quay.png"));
-  return await screen.findByRole("dialog");
+  return await screen.findByTestId("artifact-sidebar");
 }
 
 test("artifact-image-viewer-001 waits for decoded pixels despite knowing the first photo's size", async () => {
@@ -62,7 +60,8 @@ test("artifact-image-viewer-001 waits for decoded pixels despite knowing the fir
   vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
     this: HTMLImageElement,
   ) {
-    return this.alt === "quay.png" && this.closest('[role="dialog"]')
+    return this.alt === "quay.png" &&
+      this.closest('[data-testid="artifact-sidebar"]')
       ? decoded.promise
       : Promise.resolve();
   });
@@ -106,7 +105,8 @@ test("artifact-image-viewer-002 keeps keyboard focus through the next photo's UR
   vi.spyOn(HTMLImageElement.prototype, "decode").mockImplementation(function (
     this: HTMLImageElement,
   ) {
-    return this.alt === "harbor.png" && this.closest('[role="dialog"]')
+    return this.alt === "harbor.png" &&
+      this.closest('[data-testid="artifact-sidebar"]')
       ? secondDecode.promise
       : Promise.resolve();
   });
@@ -129,11 +129,14 @@ test("artifact-image-viewer-002 keeps keyboard focus through the next photo's UR
     within(next).getByRole("status", { name: "Loading artifacts" }),
   ).toBeVisible();
   secondUrl.resolve();
-  const photo = await within(next).findByAltText("harbor.png");
-  expect(photo).toHaveAttribute(
-    "src",
-    "https://media.example.test/photos/harbor.png",
-  );
+  const photo = await waitFor(() => {
+    const image = within(viewer).getByTestId("artifact-sidebar-body-image");
+    expect(image).toHaveAttribute(
+      "src",
+      "https://media.example.test/photos/harbor.png",
+    );
+    return image;
+  });
   expect(photo).not.toBeVisible();
   secondDecode.resolve();
   await waitFor(() => {
@@ -143,7 +146,7 @@ test("artifact-image-viewer-002 keeps keyboard focus through the next photo's UR
   expect(next).toHaveFocus();
 });
 
-test("artifact-image-viewer-003 applies continuous lightbox zoom for buttons and modified wheel gestures", async () => {
+test("The sidebar applies continuous zoom for buttons and modified wheel gestures", async () => {
   twoImageChat();
   context.mocks.api(webFilesContract.fileUrl, ({ query, respond }) => {
     const url = "https://media.example.test/photos/" + query.file_id;
@@ -196,11 +199,15 @@ test("artifact-image-viewer-003 applies continuous lightbox zoom for buttons and
     wheel(delta, opts);
     expect(zoom.getByText(level)).toBeInTheDocument();
   }
-  wheel(2000);
+  wheel(100_000);
   expect(zoom.getByText("10%")).toBeInTheDocument();
-  expect(decrease).toBeDisabled();
-  wheel(-2000);
-  expect(increase).toBeDisabled();
+  await waitFor(() => {
+    return expect(getNamedButton("Zoom out", viewer)).toBeDisabled();
+  });
+  wheel(-100_000);
+  await waitFor(() => {
+    return expect(getNamedButton("Zoom in", viewer)).toBeDisabled();
+  });
   expect(zoom.getByText("300%")).toBeInTheDocument();
   click(reset);
   expect(zoom.getByText("100%")).toBeInTheDocument();

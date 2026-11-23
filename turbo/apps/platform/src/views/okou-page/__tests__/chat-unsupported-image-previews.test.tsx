@@ -33,7 +33,7 @@ test("assistant BMP images display the original in the thread and lightbox", asy
 
   click(inline.closest("a, button") ?? inline);
 
-  const lightbox = await screen.findByRole("dialog");
+  const lightbox = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     expect(
       within(lightbox).getByRole("img", { name: "photo.BMP" }),

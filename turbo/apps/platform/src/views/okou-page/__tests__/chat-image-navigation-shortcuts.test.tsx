@@ -42,10 +42,7 @@ test("chat-image-navigation-shortcuts-007 modifiers, menus and fullscreen focus 
     await userEvent.keyboard("{" + key + ">}{ArrowRight}{/" + key + "}");
     expect(stage).toHaveAccessibleName("first.png preview");
   }
-  const menu = await findFastControl(
-    "button",
-    /Download options|Download menu/i,
-  );
+  const menu = await findFastControl("button", "Download artifact");
   click(menu);
   await userEvent.keyboard("{ArrowRight}");
   expect(stage).toHaveAccessibleName("first.png preview");
@@ -54,10 +51,6 @@ test("chat-image-navigation-shortcuts-007 modifiers, menus and fullscreen focus 
   await userEvent.keyboard("{ArrowRight}");
   expect(stage).toHaveAccessibleName("first.png preview");
   stage.focus();
-  await userEvent.keyboard("{ArrowRight}");
-  await screen.findByRole("group", { name: "second.png preview" });
-  click(await findFastControl("button", /open in split view/i));
-  click(await findFastControl("button", "Enter fullscreen"));
   await userEvent.keyboard("{ArrowRight}");
   const side = await screen.findByRole("group", { name: "second.png preview" });
   side.focus();
@@ -147,7 +140,6 @@ test("chat-image-navigation-shortcuts-004 the sidebar keeps keyboard focus until
     host: "app.okou.ai",
     relatedFiles: [detail],
   });
-  click(await findFastControl("button", /open in split view/i));
   const sidebar = await screen.findByTestId("artifact-sidebar");
   const first = await within(sidebar).findByRole("group", {
     name: "map-cover.png preview",

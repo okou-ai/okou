@@ -4,7 +4,6 @@ import { screen, waitFor } from "@testing-library/react";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -81,38 +80,31 @@ test("artifact-action-telemetry-001 catalog archive downloads report their disti
     context,
     host: "app.okou.ai",
     path: "/artifacts",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   click((await screen.findByText(item.title)).closest("button")!);
-  const dialog = await screen.findByTestId("attachment-lightbox");
-  const download = await findAction("button", "Download", dialog);
+  const dialog = await screen.findByTestId("artifact-sidebar");
   expect(events()).toStrictEqual([]);
-  click(download);
-  const first = {
-      action: "download",
-      surface: "file_preview",
-      artifact_type: "archive",
-    },
-    second = { ...first, surface: "dialog" };
-  const saved = { filename: zip.filename, url: zip.url, blob: null };
-  await waitFor(() => {
-    return expect(browser.downloads).toStrictEqual([saved]);
-  });
-  expect(events()).toStrictEqual([first]);
-  click(await findAction("button", "Download options", dialog));
+  click(await findAction("button", "Download artifact", dialog));
   const menu = await findNamedMenuItem("Download");
-  expect(events()).toStrictEqual([first]);
+  expect(events()).toStrictEqual([]);
   click(menu);
   await waitFor(() => {
-    return expect(browser.downloads).toStrictEqual([saved, saved]);
+    return expect(browser.downloads).toStrictEqual([
+      { filename: zip.filename, url: zip.url, blob: null },
+    ]);
   });
-  expect(events()).toStrictEqual([first, second]);
-  click(await findAction("button", "Share", dialog));
+  const download = {
+    action: "download",
+    surface: "page",
+    artifact_type: "archive",
+  };
+  expect(events()).toStrictEqual([download]);
+  click(await findAction("button", "Share artifact", dialog));
   click(await findAction("button", "Copy link"));
   await waitFor(() => {
     return expect(clipboard.writes).toContain(ownerUrl);
   });
-  expect(events()).toStrictEqual([first, second]);
+  expect(events()).toStrictEqual([download]);
 });
 test("artifact-action-telemetry-002 opening Word is silent and saving the binary reports the attachment chip", async () => {
   const events = captureDownloads(),
@@ -145,7 +137,7 @@ test("artifact-action-telemetry-002 opening Word is silent and saving the binary
     chatEvents: [userRow(fileParts([bin, word]))],
   });
   click(await findAction("button", "Preview " + word.filename));
-  const panel = await screen.findByTestId("attachment-lightbox");
+  const panel = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(
       new URL(panel.querySelector("iframe")!.src).searchParams.get("src"),
@@ -153,7 +145,7 @@ test("artifact-action-telemetry-002 opening Word is silent and saving the binary
   });
   expect(events()).toStrictEqual([]);
   expect(browser.downloads).toStrictEqual([]);
-  click(await findAction("button", "Close", panel));
+  click(await findAction("button", "Close artifact", panel));
   await waitFor(() => {
     return expect(panel).not.toBeInTheDocument();
   });

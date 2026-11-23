@@ -3,7 +3,6 @@ import {
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -43,13 +42,10 @@ function storedFile(
   };
 }
 
-function openCatalog(sidebarPreview: boolean, path = "/artifacts") {
+function openCatalog(path = "/artifacts") {
   return setupPage({
     context,
     path,
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreview,
-    },
   });
 }
 
@@ -59,7 +55,7 @@ function sidebar(): HTMLElement | null {
   );
 }
 
-test("Text artifacts use the sidebar only when sidebar previews are enabled (false)", async () => {
+test("A reader can return to the catalog after previewing a text artifact", async () => {
   const summary = artifact({
     id: "a0000000-0000-4000-a000-000000000e01",
     title: "launch-plan.txt",
@@ -72,19 +68,15 @@ test("Text artifacts use the sidebar only when sidebar previews are enabled (fal
   context.mocks.http.get(url, () => {
     return HttpResponse.text("The launch plan is ready");
   });
-  await openCatalog(false);
+  await openCatalog();
 
   click(await findArtifactAction("launch-plan.txt"));
 
-  const lightbox = await screen.findByRole("dialog", {
-    name: "launch-plan.txt preview",
-  });
+  const lightbox = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(lightbox).findByText("The launch plan is ready"),
   ).resolves.toBeInTheDocument();
-  expect(sidebar()).toBeNull();
-
-  click(getButtonByName("Close", lightbox));
+  click(getButtonByName("Close artifact", lightbox));
 
   await waitFor(() => {
     expect(lightbox).not.toBeInTheDocument();
@@ -114,7 +106,7 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
       },
     });
   });
-  await openCatalog(true, `/artifacts?tab=hosted-site&artifact=${summary.id}`);
+  await openCatalog(`/artifacts?tab=hosted-site&artifact=${summary.id}`);
   await waitFor(() => {
     expect(sidebar()).toBeInTheDocument();
   });
@@ -159,7 +151,7 @@ test("Binary artifacts open a download-capable sidebar instead of downloading on
     );
   });
   const browser = context.mocks.browser.blobDownload();
-  await openCatalog(true);
+  await openCatalog();
 
   click(await findArtifactAction("release-bundle.zip"));
 
@@ -193,7 +185,7 @@ test("Closing a loading sidebar cancels its preview and allows a later reopen", 
     }
     return respond(200, detail);
   });
-  await openCatalog(true);
+  await openCatalog();
   const card = await findArtifactAction("pending.pdf");
 
   click(card);

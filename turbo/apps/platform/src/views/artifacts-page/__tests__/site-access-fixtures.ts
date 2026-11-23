@@ -122,7 +122,6 @@ export async function openSharing(
     path: "/artifacts",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: options.sidebar ?? false,
       [FeatureSwitchKey.HostedSiteShareRows]: true,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]:
         options.refreshPreview !== undefined,
@@ -130,7 +129,7 @@ export async function openSharing(
     },
   });
   click(await findArtifactAction("Studio notes"));
-  const shareLabel = options.sidebar ? "Share artifact" : "Share";
+  const shareLabel = "Share artifact";
   const trigger = await findFastControl("button", shareLabel);
   click(trigger);
   const dialog = await screen.findByRole("dialog", { name: shareLabel });

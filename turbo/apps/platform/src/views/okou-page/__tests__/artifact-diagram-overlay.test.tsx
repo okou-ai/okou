@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
@@ -13,6 +12,7 @@ import {
   ATTACHMENT_THREAD_ID,
   artifactFile,
   findNamedButton,
+  getNamedButton,
   findNamedLink,
   mockAttachmentChat,
   publicArtifactUrl,
@@ -44,13 +44,12 @@ async function openDocument(filename: string, markdown: string) {
   await setupPage({
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   click(await findNamedLink(filename));
-  const preview = await screen.findByTestId("attachment-lightbox");
+  const preview = await screen.findByTestId("artifact-sidebar");
   return {
     preview,
-    stage: within(preview).getByTestId("artifact-dialog-stage"),
+    stage: within(preview).getByTestId("artifact-sidebar-stage"),
   };
 }
 
@@ -121,7 +120,7 @@ test("closing an expanded diagram preserves its document, source and reading pos
   });
   expect(browser.revokedUrls).not.toContain(inlineUrl);
   expect(preview).toBeInTheDocument();
-  expect(preview).toHaveAttribute("data-mode", "windowed");
+  expect(getNamedButton("Enter fullscreen", preview)).toBeEnabled();
   expect(stage.scrollTop).toBe(120);
   expect(source.open).toBeTruthy();
   await waitFor(() => {
@@ -145,7 +144,7 @@ test("closing an expanded diagram preserves its document, source and reading pos
   });
   expect(preview).toBeInTheDocument();
 
-  pressEscape();
+  click(await findNamedButton("Close artifact", preview));
   await waitFor(() => {
     expect(preview).not.toBeInTheDocument();
   });
@@ -157,15 +156,17 @@ test("changing document fullscreen preserves the paragraph currently being read"
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
     function measured(this: HTMLElement) {
       const stage = this.closest<HTMLElement>(
-        '[data-testid="artifact-dialog-stage"]',
+        '[data-testid="artifact-sidebar-stage"]',
       );
       if (stage === this) {
         return new DOMRect(0, 0, 800, 100);
       }
       const mode = this.closest<HTMLElement>(
-        '[data-testid="attachment-lightbox"]',
-      )?.dataset.mode;
-      if (!stage || this.tagName !== "P" || !mode) {
+        '[data-testid="artifact-sidebar"]',
+      )?.querySelector('[aria-label="Exit fullscreen"]')
+        ? "fullscreen"
+        : "windowed";
+      if (!stage || this.tagName !== "P") {
         return new DOMRect(0, 0, 0, 0);
       }
       const height =
@@ -189,13 +190,13 @@ test("changing document fullscreen preserves the paragraph currently being read"
       "Reading note 6 explains one step of the launch.",
     ),
   ).resolves.toBeInTheDocument();
-  expect(preview).toHaveAttribute("data-mode", "windowed");
+  expect(getNamedButton("Enter fullscreen", preview)).toBeEnabled();
   stage.scrollTop = 190;
 
   click(await findNamedButton("Enter fullscreen", preview));
 
   await waitFor(() => {
-    expect(preview).toHaveAttribute("data-mode", "fullscreen");
+    expect(getNamedButton("Exit fullscreen", preview)).toBeEnabled();
   });
   expect(stage.scrollTop).toBe(110);
   stage.scrollTop = 295;
@@ -203,7 +204,7 @@ test("changing document fullscreen preserves the paragraph currently being read"
   click(await findNamedButton("Exit fullscreen", preview));
 
   await waitFor(() => {
-    expect(preview).toHaveAttribute("data-mode", "windowed");
+    expect(getNamedButton("Enter fullscreen", preview)).toBeEnabled();
   });
   expect(stage.scrollTop).toBe(495);
 });

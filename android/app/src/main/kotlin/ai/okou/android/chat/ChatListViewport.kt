@@ -87,8 +87,9 @@ internal fun ChatListViewport(
             subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
                 .single()
                 .measure(loose)
-        val visibleStatus =
-            status.takeUnless { it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0 }
+        val visibleStatus = status.takeUnless {
+            it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0
+        }
         val floating =
             if (short) null
             else
@@ -281,7 +282,7 @@ internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
         modifier.background(
             MaterialTheme.colorScheme.surfaceVariant,
             RoundedCornerShape(cornerRadius),
-        )
+        ),
     )
 }
 

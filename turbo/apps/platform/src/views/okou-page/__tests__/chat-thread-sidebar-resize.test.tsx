@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, fireEvent, waitFor } from "@testing-library/react";
 import { test, expect, vi } from "vitest";
 import { setupPage, click } from "../../../__tests__/page-helper.ts";
@@ -35,7 +34,6 @@ async function openArtifact() {
   await setupPage({
     context,
     path: "/chats/" + ATTACHMENT_THREAD_ID,
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   const link = await findNamedLink("Read the estuary notes");
   click(link);

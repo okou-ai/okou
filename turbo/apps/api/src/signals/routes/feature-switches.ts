@@ -28,11 +28,15 @@ function featureSwitchResponseBody(params: {
 }) {
   return {
     switches: params.switches,
-    effectiveSwitches: getAllFeatureStates({
-      orgId: params.orgId,
-      userId: params.userId,
-      overrides: params.switches,
-    }),
+    effectiveSwitches: {
+      ...getAllFeatureStates({
+        orgId: params.orgId,
+        userId: params.userId,
+        overrides: params.switches,
+      }),
+      // Older iOS builds require this response field to review and apply batches.
+      batchConnectorPermissions: true,
+    },
   };
 }
 

@@ -65,7 +65,7 @@ test("capability-home-page-004 Hiding compliance restores composer focus and per
   expect(editor).toHaveFocus();
   click(await findFastControl("link", "Workflows"));
   await screen.findByRole("heading", { name: "Workflows" });
-  click(await findFastControl("link", "Chat"));
+  click(await findFastControl("link", "Okou"));
   await screen.findByRole("region", { name: "Find people" });
   expect(screen.queryByText("SOC 2 Type II")).toBeNull();
 });

@@ -88,23 +88,20 @@ test("chat-artifact-deletion-001 returns focus after Cancel and removes the owne
   });
   // The legend's catalog title is supplied by the same refreshed inventory.
   click(await findNamedLink(legend.filename));
-  await screen.findByRole("dialog", { name: "legend.png preview" });
+  const legendPreview = await screen.findByTestId("artifact-sidebar");
+  await within(legendPreview).findByText("legend.png");
   inventory.resolve();
-  const refreshed = await screen.findByRole("dialog", {
-    name: "Survey legend preview",
-  });
-  click(getNamedButton("Close", refreshed));
+  await within(legendPreview).findByText("Survey legend");
+  click(getNamedButton("Close artifact", legendPreview));
   click(await findNamedLink("Inspect attachment"));
-  const reopened = await screen.findByRole("dialog", {
-    name: "shore.png preview",
-  });
+  const reopened = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(reopened).findByAltText(file.filename),
   ).resolves.toHaveAttribute("src", file.url);
   await waitFor(() => {
     return expect(within(reopened).getByAltText(file.filename)).toBeVisible();
   });
-  expect(reopened).toHaveAccessibleName("shore.png preview");
+  await within(reopened).findByText("shore.png");
   expect(queryNamedButton("Delete", reopened)).toBeNull();
 });
 
@@ -123,7 +120,7 @@ test("chat-artifact-deletion-004 shares a read-only attachment and offers its do
   });
   const clipboard = context.mocks.browser.clipboardWriteText();
   const viewer = await openMessageFile(context, file, { groupedActions: true });
-  const share = within(viewer).getByLabelText("Share");
+  const share = within(viewer).getByLabelText("Share artifact");
   expect(share).not.toBeVisible();
   decision.resolve();
   await waitFor(() => {
@@ -133,7 +130,7 @@ test("chat-artifact-deletion-004 shares a read-only attachment and offers its do
   await waitFor(() => {
     return expect(clipboard.writes).toContain(file.url);
   });
-  click(getNamedButton("Download options", viewer));
+  click(getNamedButton("Download artifact", viewer));
   await expect(findNamedMenuItem("Download")).resolves.toBeEnabled();
   expect(queryNamedButton("More artifact actions", viewer)).toBeNull();
   expect(queryNamedButton("Delete", viewer)).toBeNull();

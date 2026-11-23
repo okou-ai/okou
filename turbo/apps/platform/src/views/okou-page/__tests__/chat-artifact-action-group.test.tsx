@@ -111,7 +111,7 @@ function rights(
   );
   return ownerUrl;
 }
-async function route(sidebar = false, other = false) {
+async function route(other = false) {
   await setupPage({
     context,
     host: "app.okou.ai",
@@ -121,7 +121,6 @@ async function route(sidebar = false, other = false) {
       (other ? "?sidebar=" + SECOND_ATTACHMENT_THREAD_ID : ""),
     featureSwitches: {
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: true,
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
     },
   });
 }
@@ -133,7 +132,6 @@ async function page(
     readOnly?: boolean;
     onOwnerReturned?: () => void;
     ownerError?: boolean;
-    sidebar?: boolean;
   } = {},
 ) {
   const r = resource("Atlas of sampling stations");
@@ -150,12 +148,10 @@ async function page(
     });
   }
   const ownerUrl = rights(r, options);
-  await route(options.sidebar);
+  await route();
   const button = await findAction("link", r.item.title);
   click(button);
-  const panel = await screen.findByTestId(
-    options.sidebar ? "artifact-sidebar" : "attachment-lightbox",
-  );
+  const panel = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(panel.querySelector("iframe")?.src).toContain(r.file.url);
   });
@@ -216,7 +212,7 @@ test("chat-artifact-action-group-001 a second thread cannot inherit the first pr
     },
   );
   rights(next);
-  await route(true, true);
+  await route(true);
   click(await findAction("link", earlier.item.title));
   const previous = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
@@ -257,7 +253,7 @@ test("chat-artifact-action-group-002 the visible document waits for sharing befo
   hiddenDownload(panel);
   sharing.resolve();
   await ready(panel);
-  expect(getAction("button", "Share", panel)).toBeVisible();
+  expect(getAction("button", "Share artifact", panel)).toBeVisible();
 });
 test("chat-artifact-action-group-006 metadata unlocks actions after the document is already readable", async () => {
   const metadata = context.mocks.deferred<void>();
@@ -265,7 +261,7 @@ test("chat-artifact-action-group-006 metadata unlocks actions after the document
   hiddenDownload(panel);
   metadata.resolve();
   await ready(panel);
-  expect(getAction("button", "Download options", panel)).toBeEnabled();
+  expect(getAction("button", "Download artifact", panel)).toBeEnabled();
 });
 test("chat-artifact-action-group-008 reopening after a pending ownership read restores the document action", async () => {
   const owner = context.mocks.deferred<void>(),
@@ -277,35 +273,35 @@ test("chat-artifact-action-group-008 reopening after a pending ownership read re
     },
   });
   hiddenDownload(panel);
-  click(await findAction("button", "Close", panel));
+  click(await findAction("button", "Close artifact", panel));
   await waitFor(() => {
     return expect(panel).not.toBeInTheDocument();
   });
   owner.resolve();
   await returned.promise;
   click(button);
-  const current = await screen.findByTestId("attachment-lightbox");
+  const current = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(current.querySelector("iframe")?.src).toContain(file.url);
   });
   await expect(
-    findAction("button", "Download options", current),
+    findAction("button", "Download artifact", current),
   ).resolves.toBeEnabled();
 });
 test("chat-artifact-action-group-012 a read-only viewer copies the reference without ownership controls", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   const { panel, ownerUrl } = await page({ readOnly: true });
-  click(await findAction("button", "Share", panel));
+  click(await findAction("button", "Share artifact", panel));
   await waitFor(() => {
     return expect(clipboard.writes).toContain(ownerUrl);
   });
-  expect(getAction("button", "Download options", panel)).toBeVisible();
+  expect(getAction("button", "Download artifact", panel)).toBeVisible();
   expect(queryAction("button", "More artifact actions", panel)).toBeNull();
 });
 test("chat-artifact-action-group-014 a failed ownership read still allows the original document download", async () => {
   const browser = context.mocks.browser.blobDownload();
   const { panel, file } = await page({ ownerError: true });
-  click(await findAction("button", "Download options", panel));
+  click(await findAction("button", "Download artifact", panel));
   click(await findNamedMenuItem("Download"));
   await waitFor(() => {
     return expect(
@@ -314,5 +310,5 @@ test("chat-artifact-action-group-014 a failed ownership read still allows the or
       }),
     ).toContain(file.url);
   });
-  expect(getAction("button", "Close", panel)).toBeEnabled();
+  expect(getAction("button", "Close artifact", panel)).toBeEnabled();
 });

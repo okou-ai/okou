@@ -101,7 +101,7 @@ internal class PersonalInstructionsOwner(
                                 persistence =
                                     if (result == InstructionsCommit.Committed)
                                         InstructionsPersistence.Durable
-                                    else InstructionsPersistence.Failed
+                                    else InstructionsPersistence.Failed,
                             )
                 }
             }
@@ -123,7 +123,7 @@ internal class PersonalInstructionsOwner(
             state.copy(
                 rejection =
                     if (state.rejection == InstructionsRejection.Invalid) InstructionsRejection.None
-                    else state.rejection
+                    else state.rejection,
             )
         replaceDraft(revision, draft, next)
     }
@@ -273,7 +273,7 @@ internal class PersonalInstructionsOwner(
                                 mutable.value.copy(
                                     rejection =
                                         if (error.status == 409) InstructionsRejection.Conflict
-                                        else InstructionsRejection.Invalid
+                                        else InstructionsRejection.Invalid,
                                 )
                             replaceDraft(op.revision, attempt.copy(attempted = false), rejected)
                         } else {
