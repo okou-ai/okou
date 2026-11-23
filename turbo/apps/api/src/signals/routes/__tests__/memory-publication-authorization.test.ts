@@ -1,5 +1,8 @@
+import { webhookMemoryArchiveContract } from "@okouai/api-contracts/contracts/webhooks";
 import { describe, expect, it } from "vitest";
-import { testContext } from "../../../__tests__/test-context";
+import { accept, testContext } from "../../../__tests__/test-context";
+import { setupApp } from "../../../__tests__/test-helpers";
+import { webhooksRunMemoryArchiveRoutes } from "../webhooks-run-memory-archive";
 import { commitMemoryVersion } from "./helpers/memory";
 import {
   createPublicRunnerMemory,
@@ -10,6 +13,56 @@ import { storageTextFile } from "./helpers/api-bdd-storage-files";
 const context = testContext();
 
 describe("Memory publication authorization", () => {
+  it("offers the committed archive only to the host of the completed publishing Run while its version is current", async () => {
+    const fixture = createPublicRunnerMemory(context);
+    await fixture.run(async () => {
+      await fixture.initializeNative();
+      fixture.installObjects();
+      const archives = setupApp({
+        context,
+        routes: webhooksRunMemoryArchiveRoutes,
+      })(webhookMemoryArchiveContract);
+      const writer = await fixture.startExecution(
+        "publish the committed archive",
+      );
+      const hostHeaders = {
+        authorization: `Bearer ${writer.execution.firewallToken}`,
+      };
+      await accept(archives.read({ headers: writer.headers }), [401]);
+      expect(
+        (await accept(archives.read({ headers: hostHeaders }), [200])).body,
+      ).toStrictEqual({});
+
+      const files = [
+        { path: "notes.md", content: "Committed Memory on the host" },
+      ];
+      const versionId = await fixture.publish(writer, files);
+      const result = await accept(
+        archives.read({ headers: hostHeaders }),
+        [200],
+      );
+      const expected = memoryFilesArchive(files);
+      expect(result.headers.get("cache-control")).toBe("private, no-store");
+      const archive = result.body.archive;
+      expect(archive).toMatchObject({
+        versionId,
+        archiveSize: expected.length,
+      });
+      if (!archive) {
+        throw new Error("Expected the completed Run's Memory archive");
+      }
+      const response = await fetch(archive.archiveUrl);
+      expect(response.ok).toBeTruthy();
+      expect(Buffer.from(await response.arrayBuffer())).toStrictEqual(expected);
+
+      const next = await fixture.startExecution("replace the archived head");
+      await fixture.publish(next, [{ path: "next.md", content: "New head" }]);
+      expect(
+        (await accept(archives.read({ headers: hostHeaders }), [200])).body,
+      ).toStrictEqual({});
+    });
+  });
+
   it("offers the captured base and fresh HEAD only to the active Memory owner", async () => {
     const fixture = createPublicRunnerMemory(context);
     await fixture.run(async () => {

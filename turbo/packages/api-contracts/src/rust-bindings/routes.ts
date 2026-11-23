@@ -145,4 +145,9 @@ export const rustRouteBindings = [
     rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
   },
+  {
+    route: runWebhookContract.memoryArchive,
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustConstName: "READ",
+  },
 ] as const satisfies readonly RustRouteBinding[];

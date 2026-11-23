@@ -1123,6 +1123,25 @@ export const webhookUsageEventContract = c.router({
 
 export type WebhookUsageEventContract = typeof webhookUsageEventContract;
 
+export const webhookMemoryArchiveContract = c.router({
+  read: {
+    method: "GET",
+    path: "/api/webhooks/run/storages/memory-archive",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({
+        archive: object({
+          versionId: string(),
+          archiveSize: number().int().positive(),
+          archiveUrl: string(),
+        }).optional(),
+      }),
+      401: apiErrorSchema,
+    },
+    summary: "Read the current Memory archive published by a completed Run",
+  },
+});
+
 export const runWebhookContract = c.router({
   events: webhookEventsContract.send,
   complete: webhookCompleteContract.complete,
@@ -1143,4 +1162,5 @@ export const runWebhookContract = c.router({
     ...webhookStoragesCommitContract.commit,
     path: "/api/webhooks/run/storages/commit",
   },
+  memoryArchive: webhookMemoryArchiveContract.read,
 });

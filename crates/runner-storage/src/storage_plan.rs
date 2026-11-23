@@ -213,7 +213,7 @@ impl ArchiveHandle {
         }
     }
 
-    #[cfg(any(test, feature = "test-support"))]
+    /// Identify an artifact source in a storage plan.
     pub const fn artifact(index: usize) -> Self {
         Self {
             kind: ArchiveKind::Artifact,

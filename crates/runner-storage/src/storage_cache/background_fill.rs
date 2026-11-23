@@ -14,13 +14,14 @@ use tokio_util::task::TaskTracker;
 use tracing::warn;
 
 use crate::error::{StorageError as RunnerError, StorageResult as RunnerResult};
+use crate::storage_plan::ArchiveHandle;
 #[cfg(test)]
 use crate::telemetry::StorageTelemetry;
 use crate::telemetry::{JobTelemetry, SandboxOpRecord, SandboxOpReporter};
 
 use super::{
-    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, decoded,
-    process_group_background_fill,
+    BackgroundFillOutcome, CACHE_MAX_SIZE, CONCURRENCY, CacheTargetGroup, cache_target_from_entry,
+    decoded, process_group_background_fill, warm_committed_memory_archive,
 };
 
 /// Maximum number of cache-fill groups that may be active across the runner.
@@ -77,6 +78,8 @@ pub(super) enum BackgroundFillAction {
     Fill(Option<decoded::DecodedCache>),
     /// An archive hit observed during preparation; it may be evicted before execution.
     WarmDecoded(decoded::DecodedCache),
+    /// Optional post-Run download with no writer held during HTTP.
+    WarmCommittedMemory,
     RetireArchive(decoded::DecodedCache),
 }
 
@@ -153,6 +156,43 @@ impl StorageCacheBackgroundFillCoordinator {
             BACKGROUND_FILL_ACTIVE_LIMIT,
             BACKGROUND_FILL_EXPANDED_QUEUE_CAPACITY,
         )
+    }
+
+    /// Enqueue an API-authorized member Memory archive after its Run settles.
+    pub fn warm_committed_memory(
+        &self,
+        home: HomePaths,
+        version_id: &str,
+        archive_url: &str,
+        archive_size: u64,
+        reporter: SandboxOpReporter,
+    ) {
+        if archive_size == 0 || archive_size > CACHE_MAX_SIZE {
+            return;
+        }
+        let Some(representative) = cache_target_from_entry(
+            ArchiveHandle::artifact(0),
+            archive_url,
+            "memory",
+            version_id,
+            Some(archive_size),
+        ) else {
+            return;
+        };
+        let group = CacheTargetGroup {
+            representative,
+            additional_targets: Vec::new(),
+            archive_size: Some(archive_size),
+            decoded_ready_observed: false,
+        };
+        Self::submit_inner(
+            &self.lifecycle.inner,
+            group,
+            home,
+            reporter,
+            BackgroundFillAction::WarmCommittedMemory,
+            false,
+        );
     }
 
     pub(super) fn new_with_limits(
@@ -251,6 +291,10 @@ impl StorageCacheBackgroundFillCoordinator {
                     }
                     (
                         current @ BackgroundFillAction::RetireArchive(_),
+                        next @ BackgroundFillAction::Fill(_),
+                    )
+                    | (
+                        current @ BackgroundFillAction::WarmCommittedMemory,
                         next @ BackgroundFillAction::Fill(_),
                     ) => {
                         *current = next;
@@ -694,7 +738,11 @@ async fn run_background_fill_work(
     http: Client,
 ) -> BackgroundFillWorkerResult {
     let started_at = Instant::now();
+    let committed_memory = matches!(&work.action, BackgroundFillAction::WarmCommittedMemory);
     let outcome = async {
+        if committed_memory {
+            return warm_committed_memory_archive(&work.group, &http, &work.home).await;
+        }
         if let BackgroundFillAction::RetireArchive(cache) = &work.action {
             return cache
                 .retire_archive(&work.key.0, &work.key.1)
@@ -722,6 +770,11 @@ async fn run_background_fill_work(
     }
     .await;
     let report = match outcome {
+        Ok(outcome @ BackgroundFillOutcome::Filled { .. }) if committed_memory => {
+            let mut report = BackgroundFillReport::from_outcome(outcome, started_at.elapsed());
+            report.outcome.action_type = "storage_cache_committed_memory_warm_published";
+            report
+        }
         Ok(outcome) => BackgroundFillReport::from_outcome(outcome, started_at.elapsed()),
         Err(error) => {
             warn!(%error, "storage_cache: background fill failed");
