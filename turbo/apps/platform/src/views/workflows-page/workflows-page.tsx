@@ -15,11 +15,14 @@ import type {
 import {
   ArrowUpDown,
   AlertTriangle,
+  Check,
   ChevronDown,
   Download,
+  Filter,
   Lock,
   Plus,
   Route,
+  Search,
   User,
   Globe,
 } from "lucide-react";
@@ -29,8 +32,11 @@ import {
   Button,
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuRadioItemIndicator,
   DropdownMenuTrigger,
+  Input,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -62,8 +68,10 @@ import {
   isGoogleCalendarWorkflowAutomation,
   setWorkflowFilter$,
   setWorkflowSortMode$,
+  setWorkflowSearchQuery$,
   workflowFilter$,
   workflowSortMode$,
+  workflowSearchQuery$,
   type WorkflowFilter,
   type WorkflowSortMode,
   type WorkflowAutomationEntry,
@@ -138,7 +146,7 @@ function connectorPillClassName({
   readonly muted?: boolean;
 }) {
   return cn(
-    "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-white px-2 text-[11px] font-medium leading-none shadow-[0_0_2px_rgba(0,0,0,0.06)]",
+    "inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-full border border-border/80 bg-white px-2 text-[11px] font-medium leading-none shadow-[0_0_2px_rgba(0,0,0,0.06)]",
     muted ? "text-muted-foreground" : "text-foreground/70",
     interactive &&
       "transition-colors hover:border-border hover:bg-state-hover hover:text-foreground",
@@ -352,7 +360,7 @@ function ConnectorCell({
                         dotClassName={automationDotClass(lead)}
                       />
                     ) : null}
-                    <span>
+                    <span className="truncate">
                       {actionRequiredEntry
                         ? i18n.t(($) => {
                             return $.workflows.list.actionRequired;
@@ -360,7 +368,7 @@ function ConnectorCell({
                         : connectorNames(entries)}
                     </span>
                     {!actionRequiredEntry && remaining > 0 ? (
-                      <span className="text-muted-foreground">
+                      <span className="shrink-0 text-muted-foreground">
                         +{remaining}
                       </span>
                     ) : null}
@@ -544,7 +552,7 @@ function WorkflowRow({
 }) {
   const title = workflowTitle(workflow);
   return (
-    <article className="flex items-center gap-3 px-5 py-3.5 text-left text-foreground transition-colors hover:bg-state-hover">
+    <article className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-3 text-left text-foreground transition-colors hover:bg-state-hover sm:flex-nowrap">
       <WorkflowTooltip workflow={workflow}>
         <Link
           pathname={ROUTES.workflowDetailAutomations}
@@ -555,20 +563,33 @@ function WorkflowRow({
             },
             { title },
           )}
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+          className="flex min-w-0 flex-1 basis-full items-center gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring sm:basis-auto"
         >
           <WorkflowRowIcon entries={entries} />
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
-              {title}
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate text-sm font-medium">
+                {title}
+              </span>
+              {workflow.shadowedBy ? (
+                <Badge className="shrink-0 text-xs text-muted-foreground">
+                  {i18n.t(($) => {
+                    return $.workflows.workspace.overridden;
+                  })}
+                </Badge>
+              ) : null}
+              {workflow.importSource ? (
+                <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
+                  {workflow.importSource === "codex"
+                    ? i18n.t(($) => {
+                        return $.workflows.skillImport.source.codex;
+                      })
+                    : i18n.t(($) => {
+                        return $.workflows.skillImport.source.claudeCode;
+                      })}
+                </Badge>
+              ) : null}
             </span>
-            {workflow.shadowedBy ? (
-              <Badge className="shrink-0 text-xs text-muted-foreground">
-                {i18n.t(($) => {
-                  return $.workflows.workspace.overridden;
-                })}
-              </Badge>
-            ) : null}
             {!workflow.shadowedBy ? (
               <span className="truncate text-xs text-muted-foreground">
                 {i18n.t(
@@ -579,22 +600,13 @@ function WorkflowRow({
                 )}
               </span>
             ) : null}
-            {workflow.importSource ? (
-              <Badge className="shrink-0 text-xs font-medium text-muted-foreground">
-                {workflow.importSource === "codex"
-                  ? i18n.t(($) => {
-                      return $.workflows.skillImport.source.codex;
-                    })
-                  : i18n.t(($) => {
-                      return $.workflows.skillImport.source.claudeCode;
-                    })}
-              </Badge>
-            ) : null}
           </span>
         </Link>
       </WorkflowTooltip>
-      <ConnectorCell entries={entries} displayTimezone={displayTimezone} />
-      <VisibilityIcon workflow={workflow} />
+      <div className="ml-11 flex min-w-0 items-center gap-3 sm:ml-auto sm:max-w-[45%] sm:shrink-0">
+        <ConnectorCell entries={entries} displayTimezone={displayTimezone} />
+        <VisibilityIcon workflow={workflow} />
+      </div>
     </article>
   );
 }
@@ -610,8 +622,23 @@ function applyWorkflowFilters(
   workflows: readonly WorkflowSummary[],
   entriesByWorkflowId: WorkflowAutomationEntryMap,
   filter: WorkflowFilter,
+  searchQuery: string,
 ): readonly WorkflowSummary[] {
+  const query = searchQuery.trim().toLocaleLowerCase(i18n.resolvedLanguage);
   return workflows.filter((workflow) => {
+    if (
+      query &&
+      ![
+        workflowTitle(workflow),
+        workflow.name,
+        `/${workflow.name}`,
+        workflow.description,
+      ].some((value) => {
+        return value?.toLocaleLowerCase(i18n.resolvedLanguage).includes(query);
+      })
+    ) {
+      return false;
+    }
     const automated = hasAutomations(workflow.id, entriesByWorkflowId);
     switch (filter) {
       case "automated": {
@@ -746,16 +773,12 @@ function workflowNextRunBucket(
 
 function WorkflowSectionHeader({ label }: { readonly label: string }) {
   return (
-    <div className="px-5 pb-1.5 pt-4">
+    <div className="px-3 pb-2 pt-3">
       <span className="text-[13px] font-medium leading-4 text-foreground/50">
         {label}
       </span>
     </div>
   );
-}
-
-function WorkflowRowDivider() {
-  return <div className="mx-5 h-px bg-divider/50" />;
 }
 
 function WorkflowRowList({
@@ -771,25 +794,27 @@ function WorkflowRowList({
 }) {
   const rows = (
     <>
-      {workflows.map((workflow, index) => {
+      {workflows.map((workflow) => {
         return (
-          <div key={workflow.id}>
-            {index > 0 ? <WorkflowRowDivider /> : null}
-            <WorkflowRow
-              workflow={workflow}
-              entries={entriesByWorkflowId.get(workflow.id) ?? []}
-              displayTimezone={displayTimezone}
-            />
-          </div>
+          <WorkflowRow
+            key={workflow.id}
+            workflow={workflow}
+            entries={entriesByWorkflowId.get(workflow.id) ?? []}
+            displayTimezone={displayTimezone}
+          />
         );
       })}
     </>
   );
   if (!framed) {
-    return <div>{rows}</div>;
+    return <div className="flex flex-col gap-1">{rows}</div>;
   }
   return (
-    <div className={surfaceVariants({ className: "overflow-hidden" })}>
+    <div
+      className={surfaceVariants({
+        className: "flex flex-col gap-1 overflow-hidden p-2",
+      })}
+    >
       {rows}
     </div>
   );
@@ -822,11 +847,14 @@ function WorkflowNextRunGroups({
   });
 
   return (
-    <div className={surfaceVariants({ className: "overflow-hidden" })}>
-      {visibleSections.map(({ section, sectionWorkflows }, index) => {
+    <div
+      className={surfaceVariants({
+        className: "flex flex-col gap-3 overflow-hidden p-2",
+      })}
+    >
+      {visibleSections.map(({ section, sectionWorkflows }) => {
         return (
           <section key={section.key}>
-            {index > 0 ? <WorkflowRowDivider /> : null}
             <WorkflowSectionHeader label={section.label} />
             <WorkflowRowList
               workflows={sectionWorkflows}
@@ -845,6 +873,7 @@ function WorkflowListPanel({
   workflows,
   loading,
   emptyDescription,
+  emptyTitle,
   emptyAction,
   sortMode = "next-run",
   automationEntriesByWorkflowId,
@@ -853,6 +882,7 @@ function WorkflowListPanel({
   readonly workflows: readonly WorkflowSummary[] | null;
   readonly loading: boolean;
   readonly emptyDescription: string;
+  readonly emptyTitle: string;
   /** Offered under the description when the list is empty. */
   readonly emptyAction?: ReactNode;
   readonly sortMode?: WorkflowSortMode;
@@ -890,15 +920,11 @@ function WorkflowListPanel({
         >
           <img
             src={emptyWorkflowImg}
-            alt={i18n.t(($) => {
-              return $.workflows.list.noWorkflows;
-            })}
+            alt=""
             className="h-24 w-36 object-contain"
           />
           <p className="mt-3 text-sm font-medium text-foreground">
-            {i18n.t(($) => {
-              return $.workflows.list.noWorkflows;
-            })}
+            {emptyTitle}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             {emptyDescription}
@@ -910,42 +936,66 @@ function WorkflowListPanel({
   );
 }
 
-function FilterPills<T extends string>({
+function FilterDropdown({
   value,
   options,
   onChange,
 }: {
-  readonly value: T;
+  readonly value: WorkflowFilter;
   readonly options: readonly {
-    readonly value: T;
-    readonly label: ReactNode;
+    readonly value: WorkflowFilter;
+    readonly label: string;
   }[];
-  readonly onChange: (value: T) => void;
+  readonly onChange: (value: WorkflowFilter) => void;
 }) {
+  const { t } = useTranslation();
+  const label = t(($) => {
+    return $.workflows.list.filter;
+  });
+  const current = options.find((option) => {
+    return option.value === value;
+  });
   return (
-    <>
-      {options.map((option) => {
-        const active = option.value === value;
-        return (
-          <button
-            key={option.value}
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
             type="button"
-            aria-pressed={active}
-            onClick={() => {
-              onChange(option.value);
-            }}
-            className={cn(
-              "inline-flex h-7 shrink-0 items-center rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
-              active
-                ? "bg-muted text-foreground"
-                : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </>
+            variant="neutral"
+            size="sm"
+            className="h-9 min-w-0 gap-1.5 rounded-lg"
+            aria-label={label}
+          />
+        }
+      >
+        <Filter size={15} aria-hidden />
+        <span className="truncate">{current?.label ?? label}</span>
+        <ChevronDown size={14} aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="min-w-40">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={onChange}
+          aria-label={label}
+        >
+          {options.map((option) => {
+            return (
+              <DropdownMenuRadioItem
+                key={option.value}
+                value={option.value}
+                closeOnClick
+                className="justify-between gap-4"
+              >
+                {option.label}
+                <DropdownMenuRadioItemIndicator>
+                  <Check size={14} aria-hidden />
+                </DropdownMenuRadioItemIndicator>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -998,26 +1048,31 @@ function SortDropdown({
           />
         }
       >
-        <ArrowUpDown size={15} className="" />
+        <ArrowUpDown size={15} aria-hidden />
         {current?.label ??
           i18n.t(($) => {
             return $.workflows.list.sort.label;
           })}
-        <ChevronDown size={14} />
+        <ChevronDown size={14} aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        {options.map((option) => {
-          return (
-            <DropdownMenuItem
-              key={option.value}
-              onClick={() => {
-                onChange(option.value);
-              }}
-            >
-              {option.label}
-            </DropdownMenuItem>
-          );
-        })}
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map((option) => {
+            return (
+              <DropdownMenuRadioItem
+                key={option.value}
+                value={option.value}
+                closeOnClick
+                className="justify-between gap-4"
+              >
+                {option.label}
+                <DropdownMenuRadioItemIndicator>
+                  <Check size={14} aria-hidden />
+                </DropdownMenuRadioItemIndicator>
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -1053,6 +1108,11 @@ function WorkflowFilterBar({
   const { t } = useTranslation();
   const setFilter = useSet(setWorkflowFilter$);
   const setSortMode = useSet(setWorkflowSortMode$);
+  const searchQuery = useGet(workflowSearchQuery$);
+  const setSearchQuery = useSet(setWorkflowSearchQuery$);
+  const searchLabel = t(($) => {
+    return $.workflows.list.search;
+  });
 
   return (
     <div
@@ -1060,9 +1120,26 @@ function WorkflowFilterBar({
       aria-label={t(($) => {
         return $.workflows.common.workflows;
       })}
-      className="flex flex-wrap items-center gap-1.5"
+      className="flex flex-wrap items-center gap-2"
     >
-      <FilterPills
+      <div className="relative w-full min-w-0 sm:max-w-sm sm:flex-1">
+        <Search
+          size={15}
+          aria-hidden
+          className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted-foreground"
+        />
+        <Input
+          type="search"
+          value={searchQuery}
+          onChange={(event) => {
+            setSearchQuery(event.target.value);
+          }}
+          placeholder={searchLabel}
+          aria-label={searchLabel}
+          className="pl-9"
+        />
+      </div>
+      <FilterDropdown
         value={filter}
         onChange={setFilter}
         options={[
@@ -1122,7 +1199,7 @@ function WorkflowsHeaderActions({
   const openCreateWorkflowDialog = useSet(openCreateWorkflowDialog$);
 
   return (
-    <div className="flex shrink-0 items-center gap-2">
+    <div className="flex max-w-full shrink-0 flex-wrap items-center gap-2">
       <Button
         type="button"
         variant="neutral"
@@ -1158,6 +1235,9 @@ export function WorkflowsPage() {
   const brandName = useGet(brandName$);
   const filter = useGet(workflowFilter$);
   const sortMode = useGet(workflowSortMode$);
+  const searchQuery = useGet(workflowSearchQuery$);
+  const setSearchQuery = useSet(setWorkflowSearchQuery$);
+  const searching = searchQuery.trim().length > 0;
 
   const workflowsLoadable = useLastLoadable(allVisibleWorkflows$);
   const automationEntriesLoadable = useLastLoadable(
@@ -1181,7 +1261,12 @@ export function WorkflowsPage() {
     new Intl.DateTimeFormat().resolvedOptions().timeZone;
   const filteredWorkflows = workflows
     ? sortWorkflows(
-        applyWorkflowFilters(workflows, automationEntriesByWorkflowId, filter),
+        applyWorkflowFilters(
+          workflows,
+          automationEntriesByWorkflowId,
+          filter,
+          searchQuery,
+        ),
         sortMode,
       )
     : null;
@@ -1192,14 +1277,14 @@ export function WorkflowsPage() {
         return $.workflows.common.workflows;
       })} | ${brandName}`}</title>
       <header className="shrink-0 bg-transparent px-4 pb-0 pt-3 sm:px-6 md:pb-3 md:pt-10">
-        <div className="mx-auto flex max-w-[900px] flex-wrap items-end justify-between gap-4">
+        <div className="mx-auto flex max-w-[900px] flex-wrap items-start justify-between gap-4">
           <div className="hidden min-w-0 md:block md:flex-1">
             <h1 className="text-lg font-semibold tracking-tight text-foreground">
               {t(($) => {
                 return $.workflows.list.title;
               })}
             </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-1 max-w-lg text-sm leading-relaxed text-muted-foreground">
               {t(($) => {
                 return $.workflows.list.description;
               })}
@@ -1216,9 +1301,34 @@ export function WorkflowsPage() {
             workflows={filteredWorkflows}
             loading={loading}
             sortMode={sortMode}
-            emptyDescription={emptyDescriptionForFilter(filter)}
+            emptyTitle={t(($) => {
+              return searching
+                ? $.workflows.list.noResults
+                : $.workflows.list.noWorkflows;
+            })}
+            emptyDescription={
+              searching
+                ? t(($) => {
+                    return $.workflows.list.empty.search;
+                  })
+                : emptyDescriptionForFilter(filter)
+            }
             emptyAction={
-              filter === "all" ? (
+              searching ? (
+                <Button
+                  type="button"
+                  variant="neutral"
+                  size="sm"
+                  className="mt-4"
+                  onClick={() => {
+                    setSearchQuery("");
+                  }}
+                >
+                  {t(($) => {
+                    return $.workflows.list.clearSearch;
+                  })}
+                </Button>
+              ) : filter === "all" ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -1248,20 +1358,22 @@ export function WorkflowsPage() {
 function WorkflowIndexSkeleton() {
   return (
     <div
-      className={surfaceVariants({ className: "overflow-hidden" })}
+      className={surfaceVariants({
+        className: "flex flex-col gap-1 overflow-hidden p-2",
+      })}
       data-testid="workflows-loading"
     >
       {[0, 1, 2, 3].map((rowIndex) => {
         return (
-          <div key={rowIndex}>
-            {rowIndex > 0 ? <WorkflowRowDivider /> : null}
-            <div className="flex items-center gap-3 px-5 py-3.5">
-              <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
-              <div className="h-4 w-40 rounded bg-muted/50" />
-              <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
-              <div className="h-5 w-5 rounded-full bg-muted/40" />
-              <div className="h-6 w-6 rounded-md bg-muted/40" />
+          <div key={rowIndex} className="flex items-center gap-3 px-3 py-3">
+            <div className="h-8 w-8 shrink-0 rounded-lg bg-muted/40" />
+            <div className="flex min-w-0 flex-1 flex-col gap-2">
+              <div className="h-4 w-40 max-w-full rounded bg-muted/50" />
+              <div className="h-3 w-56 max-w-full rounded bg-muted/40" />
             </div>
+            <div className="ml-auto h-8 w-32 rounded-full bg-muted/40" />
+            <div className="h-5 w-5 rounded-full bg-muted/40" />
+            <div className="h-6 w-6 rounded-md bg-muted/40" />
           </div>
         );
       })}

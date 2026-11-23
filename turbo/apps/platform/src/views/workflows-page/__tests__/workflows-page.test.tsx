@@ -1474,89 +1474,163 @@ test("Filter workflows by automation and visibility", async () => {
   mockChatLifecycle(context);
   mockWorkflowApis([salesResearch(), opsPlaybook(), launchChecklistWorkflow()]);
 
-  await setupPage({
-    context,
-    path: "/workflows",
-  });
+  await setupPage({ context, path: "/workflows" });
 
   await waitFor(() => {
     expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   });
-  expect(search()).toBe("");
   const filterGroup = screen.getByRole("group", { name: "Workflows" });
-  const expectSelectedFilter = (selected: string) => {
-    for (const name of ["All", "Automated", "Manual", "Private", "Public"]) {
-      expect(buttonByText(name, filterGroup)).toHaveAttribute(
-        "aria-pressed",
-        String(name === selected),
-      );
-    }
-  };
-  expectSelectedFilter("All");
-
-  // The default "All" view lists every workspace workflow.
+  const filterButton = buttonByText("Filter workflows", filterGroup);
+  expect(filterButton).toHaveTextContent("All");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
+  expect(
+    within(articleByText("Sales Research")).getByText("Schedule"),
+  ).toBeInTheDocument();
 
-  // The automated workflow surfaces its connector pill on the row.
-  const salesCard = articleByText("Sales Research");
-  expect(within(salesCard).getByText("Schedule")).toBeInTheDocument();
-
-  // "Automated" keeps only workflows that have at least one automation.
-  await user.click(buttonByText("Automated", filterGroup));
+  click(filterButton);
+  expect(workflowFileItemByText("All")).toHaveAttribute("aria-checked", "true");
+  click(workflowFileItemByText("Automated"));
   await waitFor(() => {
     expect(search()).toBe("?filter=automated");
   });
-  expectSelectedFilter("Automated");
+  expect(filterButton).toHaveTextContent("Automated");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
 
-  // Space selects "Manual" using the native button contract.
-  buttonByText("Manual", filterGroup).focus();
-  await user.keyboard(" ");
+  // The dropdown owns keyboard navigation and returns focus to its trigger.
+  filterButton.focus();
+  await user.keyboard("{Enter}{Home}{ArrowDown}{ArrowDown}{Enter}");
   await waitFor(() => {
     expect(search()).toBe("?filter=without");
   });
-  expectSelectedFilter("Manual");
+  expect(filterButton).toHaveTextContent("Manual");
+  expect(filterButton).toHaveFocus();
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
 
-  // The pills are a single mutually-exclusive group: selecting "Private"
-  // replaces the automation selection rather than combining with it.
-  buttonByText("Private", filterGroup).focus();
-  await user.keyboard("{Enter}");
+  click(filterButton);
+  click(workflowFileItemByText("Private"));
   await waitFor(() => {
     expect(search()).toBe("?filter=private");
   });
-  expectSelectedFilter("Private");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
   expect(linkByAriaLabel("Open Launch Checklist")).toBeInTheDocument();
   expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
 
-  // "Public" keeps only the public workflows.
-  click(buttonByText("Public", filterGroup));
+  click(filterButton);
+  click(workflowFileItemByText("Public"));
   await waitFor(() => {
     expect(search()).toBe("?filter=public");
   });
-  expectSelectedFilter("Public");
   expect(linkByAriaLabel("Open Sales Research")).toBeInTheDocument();
   expect(screen.queryByText("Ops Playbook")).not.toBeInTheDocument();
   expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
 
-  // Re-selecting a filter keeps it selected; only "All" clears filtering.
-  click(buttonByText("Public", filterGroup));
-  expect(search()).toBe("?filter=public");
-  expectSelectedFilter("Public");
-
-  // Clearing the filter returns to the full list.
-  click(buttonByText("All", filterGroup));
+  click(filterButton);
+  expect(workflowFileItemByText("Public")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(workflowFileItemByText("All"));
   await waitFor(() => {
     expect(search()).toBe("");
   });
-  expectSelectedFilter("All");
+  expect(filterButton).toHaveTextContent("All");
   expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+});
+
+test("Search workflows while preserving the selected filter and sort", async () => {
+  context.mocks.data.userPreferences({ timezone: "UTC" });
+  mockWorkflowApis([salesResearch(), opsPlaybook(), launchChecklistWorkflow()]);
+
+  await setupPage({
+    context,
+    path: "/workflows?filter=private&sort=alphabetical&q=playbook",
+  });
+
+  await waitFor(() => {
+    expect(linkByAriaLabel("Open Ops Playbook")).toBeInTheDocument();
+  });
+  const input = screen.getByRole("searchbox", { name: "Search workflows…" });
+  expect(input).toHaveValue("playbook");
+  expect(screen.queryByText("Launch Checklist")).not.toBeInTheDocument();
+
+  await fill(input, "   ");
+  await expect(
+    screen.findByText("Launch Checklist"),
+  ).resolves.toBeInTheDocument();
+  const workflowTitles = () => {
+    return queryAllByRoleFast("link", screen.getByRole("main")).map((link) => {
+      return link.getAttribute("aria-label");
+    });
+  };
+  expect(workflowTitles()).toStrictEqual([
+    "Open Launch Checklist",
+    "Open Ops Playbook",
+  ]);
+
+  // Sorting keeps the current search and filter; creation order is newest first.
+  click(buttonByText("Alphabetical"));
+  expect(workflowFileItemByText("Alphabetical")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(workflowFileItemByText("Created time"));
+  await waitFor(() => {
+    expect(new URLSearchParams(search()).get("sort")).toBe("created");
+  });
+  expect(new URLSearchParams(search()).get("q")).toBe("   ");
+  expect(workflowTitles()).toStrictEqual([
+    "Open Launch Checklist",
+    "Open Ops Playbook",
+  ]);
+
+  // A description match is case-insensitive and ignores surrounding whitespace.
+  await fill(input, "  APPROVALS  ");
+  await waitFor(() => {
+    expect(workflowTitles()).toStrictEqual(["Open Launch Checklist"]);
+  });
+
+  // Search cannot bypass the visibility filter.
+  await fill(input, "outreach");
+  await expect(
+    screen.findByText("No matching workflows"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Sales Research")).not.toBeInTheDocument();
+  expect(
+    queryButtonByText("Import skills", screen.getByRole("main")),
+  ).toBeNull();
+
+  click(buttonByText("Filter workflows"));
+  click(workflowFileItemByText("All"));
+  await expect(
+    screen.findByText("Sales Research"),
+  ).resolves.toBeInTheDocument();
+  expect(input).toHaveValue("outreach");
+  expect(new URLSearchParams(search()).get("sort")).toBe("created");
+
+  // Slash-command searches also match workflows with a separate display name.
+  await fill(input, "/ops-playbook");
+  await expect(screen.findByText("Ops Playbook")).resolves.toBeInTheDocument();
+  expect(workflowTitles()).toStrictEqual(["Open Ops Playbook"]);
+
+  await fill(input, "no-such-workflow");
+  await expect(
+    screen.findByText("No matching workflows"),
+  ).resolves.toBeInTheDocument();
+  click(buttonByText("Clear search"));
+  await waitFor(() => {
+    expect(input).toHaveValue("");
+    expect(search()).toBe("?sort=created");
+  });
+  expect(workflowTitles()).toStrictEqual([
+    "Open Launch Checklist",
+    "Open Sales Research",
+    "Open Ops Playbook",
+  ]);
 });
 
 test("Open and manage a deep-linked automation", async () => {

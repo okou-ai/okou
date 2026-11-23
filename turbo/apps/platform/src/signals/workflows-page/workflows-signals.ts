@@ -293,6 +293,7 @@ export const setWorkflowDemoteConfirmOpen$ = command(
 
 const FILTER_PARAM = "filter";
 const SORT_MODE_PARAM = "sort";
+const SEARCH_PARAM = "q";
 
 function readSearchParam<T extends string>(
   params: URLSearchParams,
@@ -324,6 +325,10 @@ export const workflowSortMode$ = computed((get): WorkflowSortMode => {
   );
 });
 
+export const workflowSearchQuery$ = computed((get) => {
+  return get(searchParams$).get(SEARCH_PARAM) ?? "";
+});
+
 function nextSearchParams(
   current: URLSearchParams,
   key: string,
@@ -353,6 +358,15 @@ export const setWorkflowSortMode$ = command(
     set(
       replaceSearchParams$,
       nextSearchParams(get(searchParams$), SORT_MODE_PARAM, value, "next-run"),
+    );
+  },
+);
+
+export const setWorkflowSearchQuery$ = command(
+  ({ get, set }, value: string) => {
+    set(
+      replaceSearchParams$,
+      nextSearchParams(get(searchParams$), SEARCH_PARAM, value, ""),
     );
   },
 );
