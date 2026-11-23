@@ -360,6 +360,21 @@ test("Send a recording from the composer as a voice-only message", async () => {
     },
   });
   context.mocks.browser.voiceInput({ rms: 0.12 });
+  const dictationRequests: string[] = [];
+  context.mocks.http.post(
+    "*/api/voice-io/transcribe/segment",
+    ({ request }) => {
+      dictationRequests.push(request.url);
+      return HttpResponse.json({
+        transcript: "Unexpected dictation",
+        language: "en",
+      });
+    },
+  );
+  context.mocks.http.post("*/api/voice-io/polish/segments", ({ request }) => {
+    dictationRequests.push(request.url);
+    return HttpResponse.json({ text: "Unexpected dictation" });
+  });
   context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
     return respond(200, {
       switches: {},
@@ -403,4 +418,5 @@ test("Send a recording from the composer as a voice-only message", async () => {
       { version: 1, parts: [{ type: "voice", clips: [{ fileId }] }] },
     ]);
   });
+  expect(dictationRequests).toHaveLength(0);
 });

@@ -131,7 +131,7 @@ function createVoiceDraftData(draftTarget: string) {
 type VoiceDraftData = ReturnType<typeof createVoiceDraftData>;
 type VoiceDraftCommand = Command<Promise<void>, [AbortSignal]>;
 
-function createVoiceDraftTranscription(
+function createVoiceDraftDelivery(
   data: VoiceDraftData,
   deliverText$: DeliverVoiceInputCommand,
   deliverClip$: DeliverVoiceInputCommand,
@@ -145,7 +145,7 @@ function createVoiceDraftTranscription(
       return { editorContext: set(readEditorContext$) };
     }),
   });
-  const transcribe$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const deliver$ = command(async ({ get, set }, signal: AbortSignal) => {
     set(providerUnavailable$, null);
     const recording = await get(recording$);
     signal.throwIfAborted();
@@ -214,7 +214,7 @@ function createVoiceDraftTranscription(
     }
   });
   return {
-    transcribe$,
+    deliver$,
     initialize$: incremental.initialize$,
     append$: incremental.append$,
     cancel$: incremental.cancel$,
@@ -223,7 +223,7 @@ function createVoiceDraftTranscription(
 
 function createVoiceDraftMutations(
   data: VoiceDraftData,
-  transcribe$: VoiceDraftCommand,
+  deliver$: VoiceDraftCommand,
   initializeTranscription$: VoiceDraftCommand,
   appendTranscription$: Command<Promise<void>, [boolean, AbortSignal]>,
   cancelTranscription$: VoiceDraftCommand,
@@ -291,7 +291,10 @@ function createVoiceDraftMutations(
                 : owned;
             });
             signal.throwIfAborted();
-            if (recording.asVoiceMessage && appended.sampleCount >= MAX_VOICE_MESSAGE_SAMPLES) {
+            if (
+              recording.asVoiceMessage &&
+              appended.sampleCount >= MAX_VOICE_MESSAGE_SAMPLES
+            ) {
               set(capture.cancel$);
             } else if (!recording.asVoiceMessage) {
               await set(appendTranscription$, false, signal);
@@ -316,9 +319,9 @@ function createVoiceDraftMutations(
       signal,
     );
     signal.throwIfAborted();
-    await set(transcribe$, signal);
+    await set(deliver$, signal);
   });
-  return { start$, finish$, discard$, transcribe$ };
+  return { start$, finish$, discard$ };
 }
 
 function createVoiceActionBindings(
@@ -405,7 +408,7 @@ export function createComposerVoiceInputSignals(
   draftTarget: string,
 ) {
   const data = createVoiceDraftData(draftTarget);
-  const transcription = createVoiceDraftTranscription(
+  const delivery = createVoiceDraftDelivery(
     data,
     deliverText$,
     deliverClip$,
@@ -415,10 +418,10 @@ export function createComposerVoiceInputSignals(
     data,
     createVoiceDraftMutations(
       data,
-      transcription.transcribe$,
-      transcription.initialize$,
-      transcription.append$,
-      transcription.cancel$,
+      delivery.deliver$,
+      delivery.initialize$,
+      delivery.append$,
+      delivery.cancel$,
     ),
   );
   return {
