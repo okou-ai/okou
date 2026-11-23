@@ -217,6 +217,7 @@ test.each([
     context.mocks.browser.matchMedia((query) => {
       return wide && query === SPLIT_QUERY;
     });
+    const user = userEvent.setup({ delay: null });
     const clipboard = context.mocks.browser.clipboardWriteText();
     mockMarkdown();
     mockAttachmentChat(context, {
@@ -246,7 +247,7 @@ test.each([
     await within(preview).findByText(PASSAGE);
     within(preview).getByRole("document").focus();
     selectDocumentText(preview);
-    await userEvent.setup({ delay: null }).keyboard("cq");
+    await user.keyboard("cq");
     expect(quoteAction()).toBeUndefined();
     expect(queryNamedButton("Copy")).toBeNull();
     expect(clipboard.writes).toStrictEqual([]);
@@ -262,6 +263,7 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY || query === "(min-width: 48rem)";
   });
+  const user = userEvent.setup({ delay: null });
   const clipboard = context.mocks.browser.clipboardWriteText();
   const refreshStarted = context.mocks.deferred<void>();
   const refreshed = context.mocks.deferred<void>();
@@ -313,6 +315,10 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   await openMarkdown();
   await selectPassage(PASSAGE);
   await expect(findButton("Copy")).resolves.toBeInTheDocument();
+  await user.keyboard("c");
+  await expect(screen.findByText("Copied")).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([PASSAGE]);
+  await selectPassage(PASSAGE);
 
   click(await findButton("Test User"));
   click(await screen.findByText("Lab"));
@@ -349,10 +355,10 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   const sidebar = await openMarkdown();
   within(sidebar).getByRole("document").focus();
   selectDocumentText(sidebar);
-  await userEvent.setup({ delay: null }).keyboard("cq");
+  await user.keyboard("cq");
   expect(quoteAction()).toBeUndefined();
   expect(queryNamedButton("Copy")).toBeNull();
-  expect(clipboard.writes).toStrictEqual([]);
+  expect(clipboard.writes).toStrictEqual([PASSAGE]);
   expect(screen.getByRole("textbox", { name: "Message" })).toHaveTextContent(
     "Keep this draft.",
   );
