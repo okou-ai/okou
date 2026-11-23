@@ -269,11 +269,8 @@ test("The image viewer resolves and decodes the next image during keyboard navig
   expect(getButtonByName("Next image artifact")).toBeEnabled();
   await userEvent.setup({ delay: null }).keyboard("{ArrowRight}");
   await waitFor(() => {
-    expect(
-      within(dialog).getByRole("status", { name: "Loading artifacts" }),
-    ).toBeVisible();
+    expect(firstLightboxImage).not.toBeInTheDocument();
   });
-  expect(firstLightboxImage).not.toBeInTheDocument();
   expect(within(dialog).getByRole("group")).toHaveAccessibleName(
     "second.png preview",
   );

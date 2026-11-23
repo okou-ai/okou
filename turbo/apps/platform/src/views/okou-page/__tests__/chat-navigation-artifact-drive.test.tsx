@@ -1667,7 +1667,7 @@ test.each([false, true])(
         }),
       ).toHaveLength(1);
     });
-    expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(1);
+    expect(screen.getAllByTestId("artifact-sidebar")).toHaveLength(1);
     expect(roleItemNamed("menuitem", "Download")).not.toHaveAttribute(
       "aria-disabled",
       "true",

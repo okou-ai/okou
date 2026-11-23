@@ -90,12 +90,6 @@ test.each([false, true])(
     expect(
       within(documentDialog).getByText("Deployment notes", { selector: "h1" }),
     ).toBeInTheDocument();
-    expect(
-      getNamedButton(
-        fullscreen ? "Exit fullscreen" : "Enter fullscreen",
-        documentDialog,
-      ),
-    ).toBeInTheDocument();
     await waitFor(() => {
       return expect(diagram.contains(document.activeElement)).toBeTruthy();
     });

@@ -107,6 +107,7 @@ function artifactDownloadFilename(
 }
 
 export type ArtifactDownloadSyncTarget = {
+  readonly authorizationSignal?: AbortSignal;
   readonly accountReady: boolean;
   readonly threadId: string;
   readonly disconnected: boolean;
@@ -465,7 +466,7 @@ function useGoogleDriveMenuAction(
             connectorLabel: availability.googleDriveConnector.label,
           },
         },
-        actionSignal,
+        syncTarget.authorizationSignal ?? actionSignal,
       ),
       Reason.DomCallback,
       "artifact google drive connect sync",

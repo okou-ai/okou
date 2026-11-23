@@ -355,6 +355,7 @@ function ThreadArtifactDetail({
     return (
       <ArtifactSidebar
         artifactRef={source.ref}
+        ownerSignal={source.ownerSignal}
         thread={thread}
         fullscreenState={fullscreenState}
         onClose={close}
@@ -409,6 +410,7 @@ function ThreadArtifactDetail({
     <>
       <ArtifactSidebarContent
         artifactId={detail.id}
+        ownerSignal={source.ownerSignal}
         deletionOrigin={{ kind: "thread-sidebar", threadId: thread.threadId }}
         syncTarget={artifactSidebarSyncTarget({
           threadId: thread.threadId,

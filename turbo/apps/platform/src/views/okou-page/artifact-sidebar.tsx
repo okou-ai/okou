@@ -100,6 +100,7 @@ type ArtifactSidebarFullscreenState = {
 
 type ArtifactSidebarProps = {
   readonly artifactRef: ArtifactRef;
+  readonly ownerSignal: AbortSignal;
   readonly fullscreenState: ArtifactSidebarFullscreenState;
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
   readonly onBack?: () => void;
@@ -114,6 +115,7 @@ type ArtifactSidebarContentProps = {
   artifactId?: string;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   artifactRef: ArtifactRef;
+  ownerSignal?: AbortSignal;
   fullscreenState: ArtifactSidebarFullscreenState;
   imageCanvasSignals: ZoomableImageCanvasSignals;
   imageNavigation?: ArtifactImageNavigationActions;
@@ -130,6 +132,7 @@ type ArtifactSidebarContentProps = {
 
 export function ArtifactSidebar({
   artifactRef,
+  ownerSignal,
   fullscreenState,
   markdownTree$: providedMarkdownTree$,
   onBack,
@@ -177,6 +180,7 @@ export function ArtifactSidebar({
           !item && (loadable.state === "loading" || crossChatArtifact.loading)
         }
         artifactRef={artifactRef}
+        ownerSignal={ownerSignal}
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
         imageNavigation={{
@@ -216,6 +220,7 @@ export function ArtifactSidebarContent({
   artifactId,
   artifactKind,
   artifactRef,
+  ownerSignal,
   fullscreenState,
   imageCanvasSignals,
   imageNavigation,
@@ -248,12 +253,16 @@ export function ArtifactSidebarContent({
     ...resolvedDisplay,
     artifactKind: artifactKind ?? resolvedDisplay.artifactKind,
   };
-  const syncTarget =
+  const resolvedSyncTarget =
     providedSyncTarget ??
     artifactSidebarSyncTargetForItem({
       item,
       threadId,
     });
+  const syncTarget =
+    resolvedSyncTarget && ownerSignal
+      ? { ...resolvedSyncTarget, authorizationSignal: ownerSignal }
+      : resolvedSyncTarget;
   const recoveryTarget =
     display.kind === "html" ? hostedSiteRecoveryTarget(display.url) : null;
   let recovery: ReactNode = null;
