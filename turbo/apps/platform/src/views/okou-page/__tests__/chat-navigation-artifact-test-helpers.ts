@@ -335,20 +335,3 @@ export function buttonNamed(
   }
   return button;
 }
-
-export function roleItemNamed(
-  role: "menuitem",
-  name: string,
-  container: ParentNode = document.body,
-): HTMLElement {
-  const item = queryAllByRoleFast(role, container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!item) {
-    throw new Error(`${role} not found: ${name}`);
-  }
-  return item;
-}
