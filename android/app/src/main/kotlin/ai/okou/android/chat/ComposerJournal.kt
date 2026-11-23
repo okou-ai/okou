@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.connectors.ChatConnectorOverride
 import kotlin.time.TimeMark
 import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
@@ -15,8 +16,12 @@ data class PendingText(
     val create: CreateThreadRequest?,
     val send: SendRequestVariant1,
     val stage: TextStage,
+    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
     @Transient val started: TimeMark? = null,
 )
+
+internal val PendingText.awaitingConnectorSetup: Boolean
+    get() = stage == TextStage.Created && connectorOverrides.isNotEmpty()
 
 @Serializable
 enum class TextStage {
@@ -67,6 +72,7 @@ data class ComposerEntry(
     val receipt: TextReceipt? = null,
     val createdThreadId: String? = null,
     val recovery: ComposerRecovery? = null,
+    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
 )
 
 @Serializable
@@ -149,11 +155,27 @@ data class ComposerState(
     }
 
     fun entry(target: ComposerTarget): ComposerEntry {
+        val journal = journal
         val entry = journal?.entries?.get(target.key) ?: ComposerEntry()
-        return if (journal?.format == 3)
+        return if (journal != null && journal.format >= 3)
             entry.copy(text = journal.drafts[draftKey(target)]?.text.orEmpty())
         else entry
     }
+
+    internal fun connectorOverrides(target: ComposerTarget): List<ChatConnectorOverride> {
+        val entry = entry(target)
+        return entry.pending?.connectorOverrides ?: entry.connectorOverrides
+    }
+
+    internal fun canEditDraftConnectors(target: ComposerTarget): Boolean {
+        if (target.threadId != null || journal == null || target.key in busy) return false
+        val entry = entry(target)
+        return entry.createdThreadId == null &&
+            (entry.pending == null || entry.pending.stage == TextStage.Created)
+    }
+
+    internal fun connectorSetupFailed(key: String): Boolean =
+        key in failed && journal?.entries?.get(key)?.pending?.awaitingConnectorSetup == true
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
 
@@ -163,7 +185,7 @@ data class ComposerState(
             val pending = entry.pending?.takeIf { it.threadId == threadId } ?: return@forEach
             val delivery =
                 when {
-                    pending.started != null -> PendingDelivery.Sending
+                    pending.started != null && !connectorSetupFailed(key) -> PendingDelivery.Sending
                     key in checking -> PendingDelivery.Checking
                     key in busy -> PendingDelivery.Sending
                     else -> PendingDelivery.Unconfirmed

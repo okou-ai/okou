@@ -5,10 +5,12 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.connectors.ConnectorService
 import java.io.Closeable
 import java.net.ConnectException
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
 import kotlinx.serialization.json.buildJsonObject
@@ -38,6 +40,13 @@ internal data class FixtureConnectorIcon(
     val scale: Double? = null,
 )
 
+internal data class FixtureChatOverride(
+    val threadId: String,
+    val slug: String,
+    val connectionId: String,
+    val enabled: Boolean?,
+)
+
 internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
@@ -56,6 +65,11 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var renameReplyGate: CountDownLatch? = null
     val defaultReplyStarted = CountDownLatch(1)
     @Volatile var defaultReplyGate: CountDownLatch? = null
+    @Volatile var chatOverrideReplyGate: CountDownLatch? = null
+    @Volatile var rejectChatOverride: Int? = null
+    @Volatile var loseChatOverrideReply = false
+    val chatOverrideRequests = CopyOnWriteArrayList<FixtureChatOverride>()
+    private val chatOverrides = mutableMapOf<Pair<String, String>, Boolean>()
     @Volatile var failOauthCompletion = false
     @Volatile var oauthCompletion: String? = null
     @Volatile var rejectConnection = false
@@ -196,6 +210,11 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         defaultReplyStarted.countDown()
                         defaultReplyGate?.await()
                     }
+                    if (
+                        request.method == "PUT" &&
+                            url.pathSegments.getOrNull(3) == "connector-access"
+                    )
+                        chatOverrideReplyGate?.await()
                     return response
                 }
             }
@@ -221,6 +240,9 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     fun removeAccount(id: String) {
         synchronized(accounts) { accounts.remove(id) }
     }
+
+    fun chatOverride(threadId: String, accountId: String): Boolean? =
+        synchronized(accounts) { chatOverrides[threadId to accountId] }
 
     fun commitDeferredRename() {
         synchronized(accounts) {
@@ -279,11 +301,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                                         Json.parseToJsonElement("null"),
                                                     )
                                                     put("externalEmail", account.email)
-                                                    put(
-                                                        "overrideEnabled",
-                                                        Json.parseToJsonElement("null"),
-                                                    )
-                                                    put("enabled", account.enabled)
+                                                    val override =
+                                                        url.queryParameter("threadId")?.let {
+                                                            chatOverrides[it to id]
+                                                        }
+                                                    put("overrideEnabled", override)
+                                                    put("enabled", override ?: account.enabled)
                                                 }
                                             },
                                         ),
@@ -292,6 +315,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             },
                     ),
                 )
+            parts.getOrNull(1) == "chat-threads" && parts.getOrNull(3) == "connector-access" ->
+                chatAccess(request, parts[2], parts.getOrNull(4), querySlug)
             parts.getOrNull(1) == "connector-catalog" -> {
                 val slug = parts.getOrNull(2)
                 if (slug in unavailableCatalogSlugs) return rejected(404)
@@ -482,11 +507,64 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    private fun chatAccess(
+        request: RecordedRequest,
+        threadId: String,
+        id: String?,
+        querySlug: String?,
+    ): MockResponse {
+        val slug =
+            if (id == null) {
+                if (request.method != "GET") return rejected(400)
+                querySlug ?: return rejected(400)
+            } else {
+                if (request.method != "PUT") return rejected(400)
+                val body = body(request)
+                val account = accounts[id] ?: return rejected(404)
+                if (body["target"] != target(account.slug)) return rejected(400)
+                val choice = body["enabled"] ?: return rejected(400)
+                val enabled = if (choice == JsonNull) null else choice.jsonPrimitive.boolean
+                chatOverrideRequests += FixtureChatOverride(threadId, account.slug, id, enabled)
+                rejectChatOverride?.let {
+                    return rejected(it)
+                }
+                if (enabled == null) chatOverrides.remove(threadId to id)
+                else chatOverrides[threadId to id] = enabled
+                if (loseChatOverrideReply) return rejected(503)
+                account.slug
+            }
+        val rows = accounts.filterValues { it.slug == slug }
+        return json(
+            buildJsonObject {
+                put("target", target(slug))
+                put("currentConnectionId", JsonNull)
+                put(
+                    "available",
+                    rows.any { (id, account) -> chatOverrides[threadId to id] ?: account.enabled },
+                )
+                put(
+                    "accounts",
+                    JsonArray(
+                        rows.map { (id, account) ->
+                            buildJsonObject {
+                                for ((key, value) in account.defaults(id)) put(key, value)
+                                val override = chatOverrides[threadId to id]
+                                put("overrideEnabled", override)
+                                put("enabled", override ?: account.enabled)
+                            }
+                        },
+                    ),
+                )
+            },
+        )
+    }
+
     override fun close() {
         discoveryGate?.countDown()
         detailReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
+        chatOverrideReplyGate?.countDown()
         https.use { api.close() }
     }
 

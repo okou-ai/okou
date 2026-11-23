@@ -160,6 +160,17 @@ const connectorBindings = [
     route: chatConnectorAccessContract.overview,
   },
   {
+    name: "chatConnectorAccess",
+    response: "ChatConnectorAccess",
+    route: chatConnectorAccessContract.getThread,
+  },
+  {
+    name: "chatConnectorOverride",
+    response: "ChatConnectorAccess",
+    request: "ChatConnectorOverrideRequest",
+    route: chatConnectorAccessContract.setThreadOverride,
+  },
+  {
     name: "connectorAccountDefaults",
     response: "ConnectorAccountDefaults",
     route: chatConnectorAccessContract.accountDefaults,

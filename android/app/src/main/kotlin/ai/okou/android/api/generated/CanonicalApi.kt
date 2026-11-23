@@ -45,6 +45,21 @@ internal interface CanonicalApi {
         @Query("threadId") `queryThreadId`: String? = null,
     ): Response<ConnectorOverview>
 
+    @GET("/api/chat-threads/{threadId}/connector-access")
+    suspend fun `chatConnectorAccessWire`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<ChatConnectorAccess>
+
+    @PUT("/api/chat-threads/{threadId}/connector-access/{connectionId}")
+    suspend fun `chatConnectorOverride`(
+        @Header("Authorization") token: String,
+        @Path("threadId") `pathThreadId`: String,
+        @Path("connectionId") `pathConnectionId`: String,
+        @Body body: ChatConnectorOverrideRequest,
+    ): Response<ChatConnectorAccess>
+
     @GET("/api/connector-account-access/defaults")
     suspend fun `connectorAccountDefaultsWire`(
         @Header("Authorization") token: String,
@@ -540,6 +555,48 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
         @Body body: ReorderPinnedThreadRequest,
     ): Response<Unit>
+}
+
+internal suspend fun CanonicalApi.`chatConnectorAccess`(
+    token: String,
+    `pathThreadId`: String,
+    query: ChatConnectorAccessQuery,
+): Response<ChatConnectorAccess> =
+    `chatConnectorAccessWire`(token, `pathThreadId`, query.toQueryParameters())
+
+internal fun ChatConnectorAccessQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(ChatConnectorAccessQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("kind", "connectorSlug") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "builtin")
+                    } &&
+                    value["connectorSlug"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content.length >= 1 &&
+                            field.content.length <= 64 &&
+                            Regex("^[a-z0-9][a-z0-9-]*\$").containsMatchIn(field.content))
+                    }),
+                (value.keys.all { it in setOf("kind", "customConnectorId") } &&
+                    value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "custom")
+                    } &&
+                    value["customConnectorId"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            Regex(
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
+                                )
+                                .containsMatchIn(field.content))
+                    }),
+            )
+            .count { it } == 1,
+    ) {
+        "Invalid ChatConnectorAccessQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }
 
 internal suspend fun CanonicalApi.`connectorAccountDefaults`(
