@@ -14591,6 +14591,43 @@
         }
       }
     },
+    "Open App Store": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "App Store öffnen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abrir App Store" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouvrir App Store" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "App Store खोलें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Buka App Store" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apri App Store" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "App Store を開く" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "App Store 열기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abrir o App Store" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "打开 App Store" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "開啟 App Store" }
+        }
+      }
+    },
     "Open TestFlight": {
       "localizations": {
         "de": {
