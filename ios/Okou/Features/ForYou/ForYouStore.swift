@@ -102,10 +102,10 @@ final class ForYouStore {
 
   func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
 
-  func move(_ offset: Int) {
-    guard !busy, cards.count > 1 else { return }
-    direction?.composer.editor.dismissKeyboard()
-    position = (position + offset + cards.count) % cards.count
+  /// The pager came to rest on a card.
+  func show(_ id: String) {
+    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
+    position = index
     error = nil
   }
 
@@ -217,6 +217,16 @@ final class ForYouStore {
 
   func openDirection(_ card: ForYouCard) async {
     guard case .suggestion(let suggestion) = card.content, let workspace else { return }
+    // The input grows out of its pill at once when its chat needs no check: a new chat, or one
+    // the list already holds. Only a chat the list does not know is checked first.
+    let target = suggestion.customOption.threadId
+    if target == nil || workspace.list.threads.contains(where: { $0.id == target }) {
+      guard !busy, current?.id == card.id, !workspace.isClosed else { return }
+      closeDirection()
+      direction = ForYouDirection(
+        cardID: card.id, threadID: target, commands: commands, workspace: workspace)
+      return
+    }
     await perform {
       let target = try await availableThread(suggestion.customOption.threadId)
       try Task.checkCancellation()
