@@ -90,10 +90,12 @@ final class ChatDraftDocumentTests: XCTestCase {
     XCTAssertEqual(reopened, document)
     let message = try JSONDecoder().decode(ChatUserMessage.self, from: encoded)
     try message.validate()
-    XCTAssertEqual(message.bodyParts.map(\.source), [
-      .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
-      .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
-    ])
+    XCTAssertEqual(
+      message.bodyParts.map(\.source),
+      [
+        .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
+      ])
   }
 
   func testUnsupportedPartsStayLosslessAndAreExplicitlyUnsupported() throws {

@@ -51,14 +51,16 @@ final class ChatUserMessageTests: XCTestCase {
       """#)
     let message = try XCTUnwrap(history([document]).messages.first)
     let parts = try XCTUnwrap(message.userMessage?.bodyParts)
-    XCTAssertEqual(parts.map(\.source), [
-      nil,
-      .mail(id: "mail-draft", status: .draft, sentId: nil),
-      .mail(id: "mail-sent", status: .sent, sentId: "sent-message"),
-      .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
-      .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
-      .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: "artifact")
-    ])
+    XCTAssertEqual(
+      parts.map(\.source),
+      [
+        nil,
+        .mail(id: "mail-draft", status: .draft, sentId: nil),
+        .mail(id: "mail-sent", status: .sent, sentId: "sent-message"),
+        .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-b", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: "artifact")
+      ])
     XCTAssertNotEqual(parts[3].source, parts[4].source)
     XCTAssertNotEqual(parts[3].source, parts[5].source)
     XCTAssertTrue(message.copyText.contains("Same name, different file"))
