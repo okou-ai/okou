@@ -27,7 +27,10 @@ test("link-navigation-001 Both exits from the missing page reach their labeled d
   await open(unknown);
   const browse = await findAction("link", "Browse workflows");
   expect(browse).toHaveAttribute("href", "/workflows");
-  expect(await findAction("link", "Back to home")).toHaveAttribute("href", "/");
+  await expect(findAction("link", "Back to home")).resolves.toHaveAttribute(
+    "href",
+    "/",
+  );
   click(browse);
   await expect(
     screen.findByRole("heading", { name: "Workflows" }),
