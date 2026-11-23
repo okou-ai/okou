@@ -14931,6 +14931,7 @@ data class UserPreferences(
     val `chatResourcesEnabledByDefault`: Boolean,
     val `theme`: UserPreferencesTheme?,
     val `colorTheme`: UserPreferencesColorTheme?,
+    val `forYouCoverId`: String?,
     val `captureNetworkBodiesRemaining`: Long,
     val `memoryInitialized`: Boolean,
 )
@@ -15006,6 +15007,7 @@ data class UpdatePreferencesRequest(
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,
     val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
+    val `forYouCoverId`: CanonicalOptional<String?> = CanonicalOptional.Absent,
     val `captureNetworkBodiesRemaining`: Long? = null,
 )
 
