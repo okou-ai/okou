@@ -1,3 +1,4 @@
+import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
 import { holdResponseField } from "./browser-response-fixture.ts";
 import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { screen, within, waitFor, act } from "@testing-library/react";
@@ -214,4 +215,39 @@ test("Opening Remote control lists newly configured devices while the selector s
   click(returned);
   await screen.findByText("Night desk");
   expect(screen.getByText("Day desk")).toBeVisible();
+});
+
+test("remote-control-guided-setup-117 Selecting Remote control keeps the old SSH count until the inventory summary arrives", async () => {
+  const inventory = mockRemoteInventory(context, {
+    ssh: [sshHost(17, "Warehouse scanner")],
+  });
+  await setupPage({ context, path: "/connectors?scope=custom" });
+  const remote = await screen.findByTestId("connectors-scope-remote-control");
+  await waitFor(() => {
+    expect(remote).toHaveTextContent(/Remote control\s*1$/);
+  });
+  expect(remote).toHaveAttribute("aria-checked", "false");
+  const release = context.mocks.deferred<void>();
+  const refreshing = context.mocks.deferred<void>();
+  inventory.ssh.push(sshHost(23, "Shipping terminal"));
+  context.mocks.api(
+    sshConnectionsContract.summary,
+    async ({ respond, withSignal }) => {
+      refreshing.resolve();
+      await withSignal(release.promise);
+      return respond(200, { configuredCount: inventory.ssh.length });
+    },
+  );
+  click(remote);
+  await refreshing.promise;
+  await screen.findByRole("listitem", { name: "Shipping terminal" });
+  expect(remote).toHaveAttribute("aria-checked", "true");
+  expect(remote).toHaveTextContent(/Remote control\s*1$/);
+  release.resolve();
+  await waitFor(() => {
+    expect(remote).toHaveTextContent(/Remote control\s*2$/);
+  });
+  expect(
+    screen.getByRole("listitem", { name: "Warehouse scanner" }),
+  ).toBeVisible();
 });

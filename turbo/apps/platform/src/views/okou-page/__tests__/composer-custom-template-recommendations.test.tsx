@@ -198,80 +198,90 @@ test.each([
   },
 );
 
-test("Importing a WEBP publishes the reusable style even with a PDF attached to the Image draft", async () => {
-  const image = new File(["test image"], "coastal-palette.webp", {
-    type: "image/webp",
-  });
-  const fileId = crypto.randomUUID();
-  const submission = captureTemplateSubmission(context);
-  await setupPage({ context, path: "/" });
-  const editor = await screen.findByLabelText("Message");
-  await fill(editor, "Create an ocean postcard");
-  click(await findAction("button", "Image"));
-  const shelf = await screen.findByRole("group", { name: "Image styles" });
-  const pdf = new File(["%PDF"], "old-manual.pdf", { type: "application/pdf" });
-  const pdfId = crypto.randomUUID();
-  context.mocks.upload.success({
-    id: pdfId,
-    filename: pdf.name,
-    size: pdf.size,
-    contentType: pdf.type,
-    url: "https://media.example.test/old-manual.pdf",
-  });
-  const transfer = new DataTransfer();
-  transfer.items.add(pdf);
-  editor.focus();
-  fireEvent.paste(editor, { clipboardData: transfer });
-  expect(editor).toHaveTextContent("Create an ocean postcard");
-  await expect(findAction("button", "Remove Image")).resolves.toBeVisible();
-  await expect(screen.findByText(pdf.name)).resolves.toBeVisible();
-  expect(submission.settled()).toBeFalsy();
-  context.mocks.upload.success({
-    id: fileId,
-    filename: image.name,
-    size: image.size,
-    contentType: image.type,
-    url: "https://media.example.test/coastal-palette.webp",
-  });
-  await userEvent.upload(
-    within(shelf).getByLabelText("Import your own", { selector: "input" }),
-    image,
-  );
-  const request = await submission.promise;
-  const parts = request.userMessage?.parts ?? [];
-  expect(parts).toContainEqual({
-    type: "file",
-    fileId,
-    filenameSnapshot: image.name,
-    contentType: image.type,
-  });
-  expect(parts).toContainEqual({
-    type: "file",
-    fileId: pdfId,
-    filenameSnapshot: pdf.name,
-    contentType: pdf.type,
-  });
-  expect(
-    parts.find((part) => {
-      return part.type === "text";
-    })?.text,
-  ).toMatch(/analyse this file and save it as a reusable template/i);
-  expect(
-    parts.find((part) => {
-      return part.type === "additional_info";
-    })?.text,
-  ).toMatch(/okou user-template publish/);
-  expect(
-    parts.some((part) => {
-      return part.type === "template";
-    }),
-  ).toBeFalsy();
-  await waitFor(() => {
-    return expect(location.pathname).toBe("/chats/" + request.threadId);
-  });
-  await waitFor(() => {
-    return expect(
-      document.querySelector('[data-role="user"]'),
-    ).toHaveTextContent(/analyse this file/i);
-  });
-});
+test.each(["clipboard", "file picker"] as const)(
+  "The Image composer imports a reusable WEBP after receiving a PDF through the %s",
+  async (source) => {
+    const image = new File(["test image"], "coastal-palette.webp", {
+      type: "image/webp",
+    });
+    const fileId = crypto.randomUUID();
+    const submission = captureTemplateSubmission(context);
+    await setupPage({ context, path: "/" });
+    const editor = await screen.findByLabelText("Message");
+    await fill(editor, "Create an ocean postcard");
+    click(await findAction("button", "Image"));
+    const shelf = await screen.findByRole("group", { name: "Image styles" });
+    const pdf = new File(["%PDF"], "old-manual.pdf", {
+      type: "application/pdf",
+    });
+    const pdfId = crypto.randomUUID();
+    context.mocks.upload.success({
+      id: pdfId,
+      filename: pdf.name,
+      size: pdf.size,
+      contentType: pdf.type,
+      url: "https://media.example.test/old-manual.pdf",
+    });
+    const chooser = within(shelf).getByLabelText("Import your own", {
+      selector: "input",
+    });
+    if (source === "clipboard") {
+      const transfer = new DataTransfer();
+      transfer.items.add(pdf);
+      editor.focus();
+      fireEvent.paste(editor, { clipboardData: transfer });
+      await screen.findByText(pdf.name);
+    } else {
+      await userEvent.upload(chooser, pdf);
+    }
+    expect(screen.queryByText(pdf.name) !== null).toBe(source === "clipboard");
+    expect(editor).toHaveTextContent("Create an ocean postcard");
+    await expect(findAction("button", "Remove Image")).resolves.toBeVisible();
+    expect(submission.settled()).toBeFalsy();
+    context.mocks.upload.success({
+      id: fileId,
+      filename: image.name,
+      size: image.size,
+      contentType: image.type,
+      url: "https://media.example.test/coastal-palette.webp",
+    });
+    await userEvent.upload(chooser, image);
+    const request = await submission.promise;
+    const parts = request.userMessage?.parts ?? [];
+    const filenames = parts.flatMap((part) => {
+      return part.type === "file" ? [part.filenameSnapshot] : [];
+    });
+    expect(filenames.sort()).toStrictEqual(
+      source === "clipboard" ? [image.name, pdf.name].sort() : [image.name],
+    );
+    expect(parts).toContainEqual({
+      type: "file",
+      fileId,
+      filenameSnapshot: image.name,
+      contentType: image.type,
+    });
+    expect(
+      parts.find((part) => {
+        return part.type === "text";
+      })?.text,
+    ).toMatch(/analyse this file and save it as a reusable template/i);
+    expect(
+      parts.find((part) => {
+        return part.type === "additional_info";
+      })?.text,
+    ).toMatch(/okou user-template publish/);
+    expect(
+      parts.some((part) => {
+        return part.type === "template";
+      }),
+    ).toBeFalsy();
+    await waitFor(() => {
+      return expect(location.pathname).toBe("/chats/" + request.threadId);
+    });
+    await waitFor(() => {
+      return expect(
+        document.querySelector('[data-role="user"]'),
+      ).toHaveTextContent(/analyse this file/i);
+    });
+  },
+);

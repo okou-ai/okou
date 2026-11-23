@@ -1,6 +1,7 @@
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import jsQR from "jsqr";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { publicStatusItem } from "./connector-page-test-helpers.ts";
 import { connectorCatalogConnectItem } from "../../../mocks/handlers/api-connectors.ts";
 import {
   onboardingOAuth,
@@ -687,7 +688,18 @@ test("Copying a pending invitation preserves its referral code and restores focu
   expect(
     within(dialog).getByRole("status", { name: /getting.*invitation link/i }),
   ).toBeVisible();
-  expect(dialog).toHaveTextContent(/\$20/i);
+  expect(
+    within(dialog).getByRole("heading", {
+      name: "Invite friends, get $20 each",
+    }),
+  ).toBeVisible();
+  expect(dialog).toHaveTextContent(
+    "You get $20 in credits once a friend completes all 3 steps",
+  );
+  expect(
+    within(dialog).getByText("Signs up with your invite link"),
+  ).toBeVisible();
+  expect(within(dialog).getByText("Upgrades to Pro or above")).toBeVisible();
 
   expect(dialog).toHaveTextContent(/expire 1 month/i);
   release.resolve();
@@ -751,4 +763,55 @@ test("get-started-entry-010 the member phone quest offers the earned credits, sc
   await expect(
     findFastControl("button", /close/i, dialog),
   ).resolves.toBeEnabled();
+});
+
+test("A connector chosen in the rewards picker reveals the authentication options from its detail response", async () => {
+  const choice = publicStatusItem({
+    connectorSlug: "github",
+    label: "Choice connector",
+    authMethods: ["Personal OAuth", "Workspace OAuth"].map((label, index) => {
+      return {
+        id: index === 0 ? "personal" : "workspace",
+        grantKind: "auth-code",
+        label,
+        description: null,
+        supportsRefresh: true,
+        manualFields: [],
+        startOptions: [],
+      };
+    }),
+  });
+  const release = context.mocks.deferred<void>();
+  const selected = context.mocks.deferred<void>();
+  context.mocks.api(
+    connectorCatalogContract.get,
+    async ({ params, respond }) => {
+      if (params.connectorSlug !== choice.slug) {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector unavailable" },
+        });
+      }
+      selected.resolve();
+      await release.promise;
+      return respond(200, { connector: choice });
+    },
+  );
+  context.mocks.api(connectorCatalogContract.oneClick, ({ respond }) => {
+    return respond(200, { connectors: [connectorCatalogConnectItem(choice)] });
+  });
+  serve(rewards());
+  await home();
+  await open();
+  const picker = await intro("connector");
+  click(await findFastControl("button", /Choice connector/, picker));
+  await selected.promise;
+  expect(screen.queryByText("Workspace OAuth")).toBeNull();
+  release.resolve();
+  const dialog = await screen.findByRole("dialog", {
+    name: "Choice connector",
+  });
+  await expect(
+    within(dialog).findByText("Workspace OAuth"),
+  ).resolves.toBeVisible();
+  expect(within(dialog).getByText("Personal OAuth")).toBeVisible();
 });

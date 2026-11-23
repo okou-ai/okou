@@ -744,7 +744,8 @@ test("A pending standalone field is withdrawn when preflight finds changed field
   });
   await inspecting.promise;
   const address = await screen.findByLabelText(account.label);
-  expect(address).toBeEnabled();
+  await fill(address, "reviewer@example.test");
+  expect(address).toHaveValue("reviewer@example.test");
   changed.resolve();
   await screen.findByText("Fields changed");
   expect(

@@ -3180,3 +3180,15 @@ The merge from main preserves the existing weekday automation run and both succe
 The workflow picker shows four recent items under [#40543](https://github.com/okou-ai/okou/pull/40543). Event links land 28% down the viewport under [#41809](https://github.com/okou-ai/okou/pull/41809). The desktop QR and narrow-screen SMS invitation follow [#37478](https://github.com/okou-ai/okou/pull/37478).
 
 [Fixed selection](https://app.okou.ai/artifacts/g9179fgi0h.md) · [41 dispositions, frozen clauses and regression rows](./test-rebuild-batch-91.tsv) · [Shared 485-file queue](./test-rebuild-first-pass.tsv)
+
+## Batch 92 concentrated revisit
+
+The assignment covers 30 frozen files and 42 unique IDs. One ID receives first acceptance, 31 retain partial coverage, three lack direct proof, and seven have sourced upstream dispositions. Four files close after checking their full selected inventories. The other 26 keep their complete BDD. The shared revisit count moves from 124 to 120. All 485 files have passed their first review.
+
+A structured insufficient-credit failure on a zero-balance limited-free workspace displays “Upgrade to Pro to run Okou” and a visible explanation. Both tested roles suppress the raw diagnostic and model selector. The admin's only card action opens the Pro checkout review. An ordinary member sees guidance to contact an admin. The structured billing branch, entitlement-specific helper, and branded copy predate the freeze. The original registration used a title substring and inspected only the generic error-description node. [Structured recovery](https://github.com/okou-ai/okou/pull/36069) · [Billing copy](https://github.com/okou-ai/okou/pull/22498) · [Brand parameter](https://github.com/okou-ai/okou/pull/27214)
+
+Entering Remote control mounts the SSH management subscription. The selected category keeps its previous count of one while two SSH hosts are visible. Releasing the refreshed summary changes the same category's count to two. The VNC inventory control still shows the previous count until navigation. The other complete inventories cover chat run models, SSH connections and the standalone browser form.
+
+The rewards picker exposes both provider methods after the selected connector's detail arrives. Exact catalog-read cardinality remains open. The Image composer's clipboard accepts a PDF while the style file chooser filters it. Retrying a paid image submission can produce the same input and run. These distinctions remain in the ledger.
+
+[Fixed selection](https://app.okou.ai/artifacts/pn1e4t5mc4.md) · [42 dispositions and regression rows](./test-rebuild-batch-92.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv)

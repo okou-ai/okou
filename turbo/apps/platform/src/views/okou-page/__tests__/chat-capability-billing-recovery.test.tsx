@@ -6,8 +6,13 @@ import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-s
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { accountModels } from "./chat-account-model-fixture.ts";
 import { getAction } from "./connector-integrations-test-helpers.ts";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  setupPage,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import {
   billingPlanCapabilities,
   defaultBillingStatus,
@@ -222,35 +227,54 @@ test("A limited-free owner sees the specific recovery explanation for an exhaust
   ).resolves.toBeVisible();
 });
 
-test("A structured credit failure explains the upgrade to the free workspace owner", async () => {
-  arrangeWorkspace("admin", { tier: "limited-free-1", credits: 0 });
-  const raw = "The provider rejected invoice authorization for the draft.";
-  const { events } = blockedRun("insufficient_credits");
-  installRunChat({
-    chatEvents: [
-      events[0]!,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        runId: BLOCKED_RUN_ID,
-        content: raw,
-        runLifecycleEvent: "failed",
-        failureReason: "insufficient_credits",
-        seqId: 2,
-        createdAt: "2026-11-20T07:52:00Z",
-      },
-    ],
-  });
-  await setupPage({ context, path: RUN_PATH });
-  await screen.findByText(BLOCKED_PROMPT);
-  const card = await screen.findByTestId("assistant-error-card-shell");
-  const content = within(card);
-  expect(content.getByText("Upgrade to Pro to run Okou")).toBeVisible();
-  expect(
-    content.getByText("Upgrade to Pro to keep chatting with Okou."),
-  ).toBeVisible();
-  expect(card).toBeVisible();
-  expect(content.queryByText(raw)).toBeNull();
-  expect(content.queryByRole("combobox")).toBeNull();
-  expect(getAction("button", "Upgrade to Pro", card)).toBeEnabled();
-});
+test.each(["admin", "member"] as const)(
+  "A structured credit failure shows the billing recovery available to the %s",
+  async (role) => {
+    arrangeWorkspace(role, { tier: "limited-free-1", credits: 0 });
+    accountModels(context, ["gpt-5.6-sol", "gpt-5.6-luna"], "gpt-5.6-sol");
+    const checkout = mockProCheckout();
+    const raw = "The provider rejected invoice authorization for the draft.";
+    const { events } = blockedRun("insufficient_credits");
+    installRunChat({
+      chatEvents: [
+        events[0]!,
+        {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          runId: BLOCKED_RUN_ID,
+          content: raw,
+          runLifecycleEvent: "failed",
+          failureReason: "insufficient_credits",
+          seqId: 2,
+          createdAt: "2026-11-20T07:52:00Z",
+        },
+      ],
+    });
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText(BLOCKED_PROMPT);
+    const card = await screen.findByTestId("assistant-error-card-shell");
+    const content = within(card);
+    expect(content.getByText("Upgrade to Pro to run Okou")).toBeVisible();
+    expect(content.queryByText("Upgrade to Pro to run")).toBeNull();
+    expect(screen.queryByText(raw)).toBeNull();
+    expect(content.queryByRole("combobox")).toBeNull();
+    const explanation =
+      role === "admin"
+        ? "Upgrade to Pro to keep chatting with Okou."
+        : "Ask a workspace admin to upgrade to Pro so you can keep chatting with Okou.";
+    await expect(content.findByText(explanation)).resolves.toBeVisible();
+    const labels = queryAllByRoleFast("button", card).map((button) => {
+      return button.textContent?.trim();
+    });
+    expect(labels).toStrictEqual(role === "admin" ? ["Upgrade to Pro"] : []);
+    if (role === "member") {
+      return;
+    }
+    const upgrade = getAction("button", "Upgrade to Pro", card);
+    click(upgrade);
+    await expect(
+      screen.findByRole("dialog", { name: "Upgrade to Pro" }),
+    ).resolves.toBeVisible();
+    expect(checkout.tier).toBe("pro");
+  },
+);

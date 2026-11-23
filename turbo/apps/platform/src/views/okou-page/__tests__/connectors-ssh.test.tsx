@@ -101,6 +101,10 @@ test("A host detail can read diagnostics while its saved entry remains available
   const archived = await screen.findByRole("listitem", {
     name: "Archive gateway",
   });
+  expect(
+    screen.getByRole("listitem", { name: "Records gateway" }),
+  ).toBeVisible();
+  expect(within(archived).queryByRole("status")).toBeNull();
   click(await findFastControl("link", "Manage", archived));
   await rejected.promise;
   await findFastControl("button", "Delete connection");
@@ -108,5 +112,6 @@ test("A host detail can read diagnostics while its saved entry remains available
   window.history.back();
   await expect(
     screen.findByRole("listitem", { name: "Archive gateway" }),
-  ).resolves.toBeInTheDocument();
+  ).resolves.toBeVisible();
+  expect(screen.queryByText("Private upstream diagnostic service")).toBeNull();
 });

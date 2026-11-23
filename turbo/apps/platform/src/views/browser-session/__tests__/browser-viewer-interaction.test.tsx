@@ -1854,3 +1854,36 @@ test("Choosing the blank address before a failed creation keeps the draft scoped
     })?.url,
   ).toBe("http://after-failure.example/path");
 });
+
+test("A stale capture reply after returning to a navigating page cannot authorize typing", async () => {
+  const documentState = context.mocks.browser.visibilityState("visible");
+  const remote = await openWindow();
+  const originalSession = remote.pageSession("main");
+  const frame = { frameId: "example-frame" };
+  remote.event("Page.frameStartedNavigating", frame, originalSession);
+  const earlier = remote.holdNext("Page.startScreencast");
+  await choosePng();
+  await earlier.received;
+  const stopped = remote.holdNext("Page.stopScreencast");
+  documentState.changeTo("hidden");
+  await waitFor(() => {
+    expect(input()).toBeDisabled();
+  });
+  const replacement = remote.holdTargetFrames("main");
+  documentState.changeTo("visible");
+  await earlier.release();
+  remote.event("Page.frameStoppedLoading", frame, originalSession);
+  await stopped.received;
+  expect(input()).toBeDisabled();
+  await stopped.release();
+  await replacement.received;
+  expect(input()).toBeDisabled();
+  replacement.release();
+  await expectStreamingAt(home);
+  await userEvent.click(input());
+  insertText("resume my review");
+  await waitFor(() => {
+    expect(inserted(remote, "main")).toContain("resume my review");
+  });
+  expect(remote.pageSession("main")).toBe(originalSession);
+});

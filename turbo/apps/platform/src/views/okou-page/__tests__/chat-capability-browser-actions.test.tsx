@@ -682,6 +682,8 @@ test.each(["explained", "historical"] as const)(
     expect(
       within(primaryAnswer).getByText("Agent notified"),
     ).toBeInTheDocument();
+    expect(queryButton("Enter information", primaryAnswer)).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByText("Information added")).toBeInTheDocument();
     expect(location.pathname).toBe("/chats/" + threadId);
     await expect(request.applied.promise).resolves.toContainEqual({
