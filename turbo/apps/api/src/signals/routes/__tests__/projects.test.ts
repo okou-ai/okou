@@ -1,7 +1,7 @@
 import { createStore } from "ccstate";
 import { recallProjectForUnread$ } from "../../services/project.service";
 import { randomUUID } from "node:crypto";
-import { describe, it, expect } from "vitest";
+import { describe, it, test, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
 import {
   chatThreadsContract,
@@ -130,7 +130,7 @@ async function listedIds(actor: ApiTestUser) {
   });
 }
 
-it("archives a Project, recalls it for a new unread result, and keeps its original member", async () => {
+test("archives a Project, recalls it for a new unread result, and keeps its original member", async () => {
   const actor = owner();
   const project = await create(actor);
   const member = await thread(actor, project.id);

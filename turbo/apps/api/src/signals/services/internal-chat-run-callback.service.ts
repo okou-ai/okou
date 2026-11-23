@@ -12,7 +12,7 @@ import {
   sendWechatChatReply$,
   dispatchWechatChatDelivery$,
 } from "./wechat-delivery.service";
-import { db$, writeDb$ } from "../external/db";
+import { db$, writeDb$, type Db } from "../external/db";
 import { recordLastEventToComplete$ } from "./internal-chat-run-output-timing.service";
 import {
   clearCanonicalSlackThreadStatusIfIdle$,
@@ -589,6 +589,20 @@ const insertEmailDeliveryCallback$ = command(
   },
 );
 
+async function readCommittedRunMarker(
+  database: Pick<Db, "select">,
+  runId: string,
+  eventType: Parameters<typeof runLifecycleMarkerReadPlan>[1],
+) {
+  const plan = runLifecycleMarkerReadPlan(runId, eventType);
+  const [marker] = await database
+    .select(plan.columns)
+    .from(chatEvents)
+    .where(plan.condition)
+    .limit(plan.limit);
+  return marker;
+}
+
 const insertAssistantErrorEvent$ = command(
   async (
     { set },
@@ -609,16 +623,11 @@ const insertAssistantErrorEvent$ = command(
           )[0] ?? null;
         const event =
           insertedEvent ??
-          (await (async () => {
-            const runId = input.runId;
-            const eventType = assistantErrorEventType(input.lifecycleEvent);
-            const plan = runLifecycleMarkerReadPlan(runId, eventType);
-            const query = database.select(plan.columns).from(chatEvents);
-            const [marker] = await query
-              .where(plan.condition)
-              .limit(plan.limit);
-            return marker;
-          })());
+          (await readCommittedRunMarker(
+            database,
+            input.runId,
+            assistantErrorEventType(input.lifecycleEvent),
+          ));
         if (!event) {
           return null;
         }
@@ -1000,17 +1009,11 @@ const insertRunLifecycleMarker$ = command(
           )[0] ?? null;
         const persistedMarker =
           marker ??
-          (await (async () => {
-            const database = tx;
-            const runId = input.runId;
-            const eventType = runLifecycleMarkerEventType(input.event);
-            const plan = runLifecycleMarkerReadPlan(runId, eventType);
-            const query = database.select(plan.columns).from(chatEvents);
-            const [marker] = await query
-              .where(plan.condition)
-              .limit(plan.limit);
-            return marker;
-          })());
+          (await readCommittedRunMarker(
+            tx,
+            input.runId,
+            runLifecycleMarkerEventType(input.event),
+          ));
         if (!persistedMarker) {
           return null;
         }
