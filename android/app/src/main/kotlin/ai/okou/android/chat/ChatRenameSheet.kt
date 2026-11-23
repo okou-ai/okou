@@ -1,32 +1,25 @@
 package ai.okou.android.chat
 
+import ai.okou.android.OkouFormActions
+import ai.okou.android.OkouFormLayout
 import ai.okou.android.R
 import ai.okou.android.SettingsSheet
+import ai.okou.android.okouFormInputStyle
 import androidx.annotation.StringRes
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.sizeIn
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -36,9 +29,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 internal enum class RenameStatus {
@@ -106,78 +97,47 @@ internal fun RenameListItemSheet(
     SettingsSheet(
         title = stringResource(titleRes),
         onDismiss = dismiss,
+        actionSpacing = OkouFormLayout.GroupGap,
         actions = {
-            val actionStyle =
-                MaterialTheme.typography.labelLarge.copy(
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp,
-                    fontWeight = FontWeight(550),
-                )
-            val target = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            val shape = RoundedCornerShape(12.dp)
-            val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-            FlowRow(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                TextButton(
-                    onClick = dismiss,
-                    modifier = target,
-                    shape = shape,
-                    contentPadding = padding,
-                    colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-                ) {
-                    Text(stringResource(R.string.chat_rename_cancel), style = actionStyle)
-                }
-                Button(
-                    onClick = {
-                        if (unconfirmed) check() else if (save(name)) editor.submitted = name
-                    },
-                    modifier = target,
-                    enabled = if (unconfirmed) checkEnabled && !checking else canSave,
-                    shape = shape,
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor = colors.inverseSurface,
-                            contentColor = colors.inverseOnSurface,
-                            disabledContainerColor = colors.surfaceVariant,
-                            disabledContentColor = colors.onSurfaceVariant,
-                        ),
-                    contentPadding = padding,
-                ) {
-                    Text(
-                        stringResource(
-                            if (unconfirmed) R.string.chat_rename_check_result
-                            else R.string.chat_project_rename_save,
-                        ),
-                        style = actionStyle,
-                    )
-                }
-            }
+            OkouFormActions(
+                cancelLabel = stringResource(R.string.chat_rename_cancel),
+                confirmLabel =
+                    stringResource(
+                        if (unconfirmed) R.string.chat_rename_check_result
+                        else R.string.chat_project_rename_save,
+                    ),
+                cancel = dismiss,
+                confirm = {
+                    if (unconfirmed) check() else if (save(name)) editor.submitted = name
+                },
+                confirmEnabled = if (unconfirmed) checkEnabled && !checking else canSave,
+            )
         },
     ) {
         Column {
             Text(label, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(OkouFormLayout.LabelGap))
             OutlinedTextField(
                 state = input,
                 modifier =
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).focusRequester(focus).semantics {
-                        contentDescription = label
-                        if (validation != null) error(validation)
-                    },
-                textStyle = chatListTitleStyle(),
+                    Modifier.fillMaxWidth()
+                        .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
+                        .focusRequester(focus)
+                        .semantics {
+                            contentDescription = label
+                            if (validation != null) error(validation)
+                        },
+                textStyle = okouFormInputStyle(),
                 readOnly = readOnly,
                 isError = validation != null,
                 lineLimits = TextFieldLineLimits.SingleLine,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
-                contentPadding = PaddingValues(12.dp),
+                contentPadding = OkouFormLayout.FieldPadding,
             )
             LaunchedEffect(Unit) { focus.requestFocus() }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
             Text(
                 validation ?: hint,
                 color = if (validation == null) colors.onSurfaceVariant else colors.error,
@@ -185,7 +145,7 @@ internal fun RenameListItemSheet(
                     MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
             )
             if (notice != null) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(OkouFormLayout.GroupGap))
                 Text(
                     stringResource(notice),
                     Modifier.semantics { liveRegion = LiveRegionMode.Polite },

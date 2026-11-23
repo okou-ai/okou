@@ -1,5 +1,7 @@
 package ai.okou.android.connectors
 
+import ai.okou.android.OkouActionButton
+import ai.okou.android.OkouActionTreatment
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.OkouSwitch
 import ai.okou.android.R
@@ -8,14 +10,12 @@ import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.currentWindowSizeDp
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -30,15 +30,12 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -890,11 +887,7 @@ internal fun ConnectorProgress(label: Int) {
 internal fun ConnectorSavedAccount.label() =
     displayName ?: identity ?: stringResource(R.string.connector_account)
 
-internal enum class ConnectorButtonTreatment {
-    Primary,
-    Outline,
-    Text,
-}
+internal typealias ConnectorButtonTreatment = OkouActionTreatment
 
 @Composable
 internal fun ConnectorButton(
@@ -903,51 +896,4 @@ internal fun ConnectorButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     treatment: ConnectorButtonTreatment = ConnectorButtonTreatment.Primary,
-) {
-    val colors = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(12.dp)
-    val size = modifier.heightIn(min = 48.dp)
-    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-    val text: @Composable () -> Unit = {
-        Text(label, style = connectorSmallType().copy(fontWeight = FontWeight(550)))
-    }
-    when (treatment) {
-        ConnectorButtonTreatment.Text ->
-            TextButton(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface),
-                contentPadding = padding,
-                content = { text() },
-            )
-        ConnectorButtonTreatment.Outline ->
-            OutlinedButton(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onSurface),
-                border = BorderStroke(1.dp, colors.outline),
-                contentPadding = padding,
-                content = { text() },
-            )
-        ConnectorButtonTreatment.Primary ->
-            Button(
-                onClick,
-                size,
-                enabled,
-                shape = shape,
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor = colors.inverseSurface,
-                        contentColor = colors.inverseOnSurface,
-                        disabledContainerColor = colors.surfaceVariant,
-                        disabledContentColor = colors.onSurfaceVariant,
-                    ),
-                contentPadding = padding,
-                content = { text() },
-            )
-    }
-}
+) = OkouActionButton(label, onClick, modifier, enabled, treatment)
