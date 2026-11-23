@@ -45,9 +45,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -367,6 +369,12 @@ private val SearchRead<*>?.isPending: Boolean
 
 private sealed interface SearchItem {
     val key: String
+    val isResult
+        get() = this !is Notice && this !is Group
+
+    data class Notice(@StringRes val message: Int) : SearchItem {
+        override val key = "search_notice"
+    }
 
     data class Group(
         val type: WorkspaceSearchType,
@@ -612,19 +620,61 @@ private fun SearchResults(
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
-    val showSkeleton =
-        rememberChatWaitIndicator(
-            waitingForList && !remotePending && items.isEmpty() && status == null,
-            delayMillis = 250,
-        )
-    val showProgress = rememberChatWaitIndicator(remotePending, delayMillis = 250)
+    val showPending =
+        key(keyword, type) {
+            rememberChatWaitIndicator(
+                remotePending || waitingForList && items.isEmpty() && status == null,
+                delayMillis = 250,
+            )
+        }
+    val showSkeleton = showPending && items.isEmpty() && status == null
+    val showProgress = showPending && items.isNotEmpty() && remotePending
+    val retryError = status.takeIf {
+        keyword.isNotEmpty() &&
+            items.isEmpty() &&
+            (messageRead.canRetrySearch ||
+                workspaceToolsRead == null &&
+                    (workflowRead.canRetrySearch ||
+                        artifactRead.canRetrySearch ||
+                        moreArtifactsFailed))
+    }
+    val inlineStatus = status.takeIf { retryError == null }
+    val visibleItems =
+        remember(inlineStatus, items) {
+            if (inlineStatus == null) items else listOf(SearchItem.Notice(inlineStatus)) + items
+        }
     val resultFocus = remember { FocusRequester() }
     val anchor = search.pendingAnchor
     val pendingFocus = search.pendingFocus.takeIf { restoreResultFocus }
+    val position = search.position
+    val (wasAtTop, resultBelowHeader) =
+        Snapshot.withoutReadObservation {
+            val atTop =
+                position.firstVisibleItemIndex == 0 && position.firstVisibleItemScrollOffset == 0
+            val measuredItems = position.layoutInfo.visibleItemsInfo
+            val first = measuredItems.firstOrNull { it.index == position.firstVisibleItemIndex }
+            atTop to
+                measuredItems
+                    .firstOrNull { it.contentType == true }
+                    .takeIf { !atTop && first?.contentType == false }
+        }
+    LaunchedEffect(visibleItems) {
+        if (anchor != null || pendingFocus != null || position.isScrollInProgress) {
+            return@LaunchedEffect
+        }
+        if (wasAtTop && visibleItems.isNotEmpty()) {
+            position.requestScrollToItem(0)
+        } else if (resultBelowHeader != null) {
+            // LazyColumn anchors its first visible item. If that item was a heading,
+            // preserve the result below it even when the heading gets a new first row.
+            val index = visibleItems.indexOfFirst { it.key == resultBelowHeader.key }
+            if (index >= 0) position.requestScrollToItem(index, -resultBelowHeader.offset)
+        }
+    }
     val waitingForAnchor = anchor?.let { waitingForResult(it.key) } == true
-    LaunchedEffect(anchor, items, waitingForAnchor, pendingFocus) {
+    LaunchedEffect(anchor, visibleItems, waitingForAnchor, pendingFocus) {
         if (anchor != null) {
-            val index = items.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
+            val index = visibleItems.indexOfFirst { it.key == anchor.key }.takeIf { it >= 0 }
             // Use the selected result as the position if its former anchor is still loading.
             if (
                 index != null ||
@@ -636,9 +686,9 @@ private fun SearchResults(
         }
     }
     val waitingForFocus = pendingFocus?.let(::waitingForResult) == true
-    LaunchedEffect(pendingFocus, anchor, items, waitingForFocus) {
+    LaunchedEffect(pendingFocus, anchor, visibleItems, waitingForFocus) {
         if (pendingFocus == null) return@LaunchedEffect
-        val index = items.indexOfFirst { it.key == pendingFocus }
+        val index = visibleItems.indexOfFirst { it.key == pendingFocus }
         if (index < 0 && !waitingForFocus) {
             resultFocus.requestFocus()
             search.restoreFocus()
@@ -657,8 +707,14 @@ private fun SearchResults(
             state = search.position,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
         ) {
-            items(items, key = { it.key }) { row ->
+            items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
+                    is SearchItem.Notice ->
+                        ChatContentLoadNotice(
+                            row.message,
+                            retry = retry.takeIf { canRetryList },
+                            retryEnabled = list.listPhase != ChatReadPhase.Loading,
+                        )
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -746,34 +802,18 @@ private fun SearchResults(
                 }
             }
             if (showSkeleton) item(key = "search_loading") { ChatListSkeleton() }
-            if (status != null) {
+            if (retryError != null) {
                 item(key = "search_status") {
-                    if (
-                        keyword.isNotEmpty() &&
-                            items.isEmpty() &&
-                            (messageRead.canRetrySearch ||
-                                workspaceToolsRead == null &&
-                                    (workflowRead.canRetrySearch ||
-                                        artifactRead.canRetrySearch ||
-                                        moreArtifactsFailed))
-                    ) {
-                        SearchEmpty(
-                            if (grouped) R.string.chat_search_failed else status,
-                            {
-                                if (canRetryList) retry()
-                                onRetrySearch()
-                            },
-                            R.string.retry,
-                        )
-                    } else {
-                        ChatContentLoadNotice(
-                            status,
-                            retry = retry.takeIf { canRetryList },
-                            retryEnabled = list.listPhase != ChatReadPhase.Loading,
-                        )
-                    }
+                    SearchEmpty(
+                        if (grouped) R.string.chat_search_failed else retryError,
+                        {
+                            if (canRetryList) retry()
+                            onRetrySearch()
+                        },
+                        R.string.retry,
+                    )
                 }
-            } else if (items.isEmpty() && !pending) {
+            } else if (visibleItems.isEmpty() && !pending) {
                 item(key = "search_empty") {
                     if (keyword.isEmpty()) {
                         Text(
@@ -797,7 +837,7 @@ private fun SearchResults(
             LinearProgressIndicator(
                 modifier =
                     Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = label },
-                trackColor = lerp(colors.surface, colors.primary, 0.18f),
+                trackColor = lerp(colors.background, colors.primary, 0.18f),
             )
         }
     }
