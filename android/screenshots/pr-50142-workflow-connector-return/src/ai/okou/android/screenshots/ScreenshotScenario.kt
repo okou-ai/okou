@@ -13,10 +13,13 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
+import android.graphics.Color
+import android.graphics.Rect
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.test.core.app.ActivityScenario
+import androidx.test.core.app.takeScreenshot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.services.storage.TestStorage
@@ -45,6 +48,7 @@ class ScreenshotScenario {
             action("查看连接").click()
             text("Gmail")
             action("连接账号")
+            awaitArtwork("Gmail")
             ScreenshotCapture.capture("phone-gmail.png")
             connector.authorizeGmail()
             workflow.gmailConnected.set(true)
@@ -66,6 +70,7 @@ class ScreenshotScenario {
             action("查看连接").click()
             description("筛选服务类别")
             action("连接账号")
+            awaitArtwork("Google Calendar", wide = true)
             ScreenshotCapture.capture("wide-calendar.png")
             back()
 
@@ -139,6 +144,41 @@ class ScreenshotScenario {
         fun back() {
             description("返回").click()
         }
+
+        fun awaitArtwork(label: String, wide: Boolean = false) {
+            val heading = device.findObjects(By.pkg(app.packageName).text(label))
+                .first { !wide || it.visibleBounds.left > device.displayWidth / 3 }
+                .visibleBounds
+            val tile = Rect(heading.left - 60, heading.top, heading.left - 12, heading.top + 48)
+            val mark = Rect(tile).apply { inset(12, 12) }
+            assertTrue(
+                "Expected $label artwork inside the 24dp slot",
+                device.wait(
+                    object : Condition<UiDevice, Boolean> {
+                        override fun apply(device: UiDevice): Boolean {
+                            val bitmap = takeScreenshot()
+                            try {
+                                var count = 0
+                                for (y in tile.top until tile.bottom) for (x in tile.left until tile.right) {
+                                    val pixel = bitmap.getPixel(x, y)
+                                    val red = Color.red(pixel)
+                                    val green = Color.green(pixel)
+                                    val blue = Color.blue(pixel)
+                                    if (maxOf(red, green, blue) - minOf(red, green, blue) > 70) {
+                                        if (!mark.contains(x, y)) return false
+                                        count++
+                                    }
+                                }
+                                return count >= 25
+                            } finally {
+                                bitmap.recycle()
+                            }
+                        }
+                    },
+                    12_000,
+                ),
+            )
+        }
     }
 
     private fun onDevice(
@@ -163,6 +203,7 @@ class ScreenshotScenario {
         val fontScale = device.executeShellCommand("settings get system font_scale").trim()
         WorkflowApiFixture(chinese = true).use { workflow ->
             ConnectorApiFixture().use { connector ->
+                connector.icons = workflowDesignIcons
                 try {
                     device.executeShellCommand("wm size ${width}x$height")
                     device.executeShellCommand("wm density 160")
