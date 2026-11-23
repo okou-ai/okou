@@ -45,15 +45,21 @@ internal data class SettingsRead<T>(
     val unavailable: Boolean = false,
     val readAt: Long? = null,
     val refreshing: Boolean = false,
-)
+) {
+    val initialFailure: Boolean
+        get() = value == null && unavailable
+}
 
 private const val staleAfterMillis = 10 * 60_000L
 private const val maxReadAttempts = 3
 private const val readRetryDelayMillis = 3_000L
-private const val accountsResource = "accounts"
-private const val usagePackResource = "usage-pack"
-private const val workspaceCreditsResource = "workspace-credits"
 private val accountsSerializer = ListSerializer(RecoverySubscriptionsSubscriptionsItem.serializer())
+
+internal enum class WorkspaceSettingsResource(val cacheKey: String) {
+    Accounts("accounts"),
+    UsagePack("usage-pack"),
+    WorkspaceCredits("workspace-credits"),
+}
 
 @Serializable
 internal data class WorkspaceCreditSummary(
@@ -97,7 +103,7 @@ internal constructor(
     private var usagePackRead: Job? = null
     private var workspaceCreditsRead: Job? = null
     private val verifying = mutableSetOf<ModelAccountProvider>()
-    private val refreshTokens = mutableMapOf<String, Any>()
+    private val refreshTokens = mutableMapOf<WorkspaceSettingsResource, Any>()
 
     init {
         viewModelScope.launch {
@@ -133,11 +139,15 @@ internal constructor(
                     setOf(SettingsDestination.ModelAccounts, SettingsDestination.CreditBalance)
         ) {
             restore = viewModelScope.launch {
-                val accounts = restore(accountsResource, accountsSerializer)
-                val usagePack = restore(usagePackResource, UsagePackCredits.serializer())
+                val accounts = restore(WorkspaceSettingsResource.Accounts, accountsSerializer)
+                val usagePack =
+                    restore(WorkspaceSettingsResource.UsagePack, UsagePackCredits.serializer())
                 val credits =
                     if (showWorkspaceCredits)
-                        restore(workspaceCreditsResource, WorkspaceCreditSummary.serializer())
+                        restore(
+                            WorkspaceSettingsResource.WorkspaceCredits,
+                            WorkspaceCreditSummary.serializer(),
+                        )
                     else SettingsRead()
                 if (!authorized()) return@launch
                 mutable.update {
@@ -150,41 +160,75 @@ internal constructor(
         refresh()
     }
 
-    private suspend fun <T> restore(resource: String, serializer: KSerializer<T>): SettingsRead<T> {
-        val confirmed = cache?.load(identity, resource, serializer) ?: return SettingsRead()
+    private suspend fun <T> restore(
+        resource: WorkspaceSettingsResource,
+        serializer: KSerializer<T>,
+    ): SettingsRead<T> {
+        val confirmed =
+            cache?.load(identity, resource.cacheKey, serializer) ?: return SettingsRead()
         return SettingsRead(confirmed.value, readAt = confirmed.readAt)
     }
 
+    internal fun retry(resource: WorkspaceSettingsResource) {
+        if (!canRead()) return
+        val state = mutable.value
+        when (resource) {
+            WorkspaceSettingsResource.Accounts -> {
+                if (visible == SettingsDestination.ModelAccounts && state.accounts.initialFailure)
+                    refreshAccounts()
+            }
+            WorkspaceSettingsResource.UsagePack -> {
+                if (visible == SettingsDestination.CreditBalance && state.usagePack.initialFailure)
+                    refreshUsagePack()
+            }
+            WorkspaceSettingsResource.WorkspaceCredits -> {
+                if (
+                    visible == SettingsDestination.CreditBalance &&
+                        state.workspaceCredits.initialFailure
+                )
+                    refreshWorkspaceCredits()
+            }
+        }
+    }
+
+    private fun canRead() = restored && authorized() && !mutable.value.offline
+
     private fun refresh() {
-        if (!restored || !authorized() || mutable.value.offline) return
+        if (!canRead()) return
         refreshAccounts()
         if (visible == SettingsDestination.CreditBalance) {
-            if (usagePackRead?.isActive != true) {
-                usagePackRead = viewModelScope.launch {
-                    read(
-                        usagePackResource,
-                        UsagePackCredits.serializer(),
-                        service::usagePackCredits,
-                        { mutable.value.usagePack },
-                    ) { data ->
-                        mutable.update { it.copy(usagePack = data) }
-                    }
-                }
+            refreshUsagePack()
+            refreshWorkspaceCredits()
+        }
+    }
+
+    private fun refreshUsagePack() {
+        if (usagePackRead?.isActive == true) return
+        usagePackRead = viewModelScope.launch {
+            read(
+                WorkspaceSettingsResource.UsagePack,
+                UsagePackCredits.serializer(),
+                service::usagePackCredits,
+                { mutable.value.usagePack },
+            ) { data ->
+                mutable.update { it.copy(usagePack = data) }
             }
-            if (showWorkspaceCredits && workspaceCreditsRead?.isActive != true) {
-                workspaceCreditsRead = viewModelScope.launch {
-                    read(
-                        workspaceCreditsResource,
-                        WorkspaceCreditSummary.serializer(),
-                        {
-                            val billing = service.recoveryBilling()
-                            WorkspaceCreditSummary(billing.credits, billing.creditBreakdown)
-                        },
-                        { mutable.value.workspaceCredits },
-                    ) { data ->
-                        mutable.update { it.copy(workspaceCredits = data) }
-                    }
-                }
+        }
+    }
+
+    private fun refreshWorkspaceCredits() {
+        if (!showWorkspaceCredits || workspaceCreditsRead?.isActive == true) return
+        workspaceCreditsRead = viewModelScope.launch {
+            read(
+                WorkspaceSettingsResource.WorkspaceCredits,
+                WorkspaceCreditSummary.serializer(),
+                {
+                    val billing = service.recoveryBilling()
+                    WorkspaceCreditSummary(billing.credits, billing.creditBreakdown)
+                },
+                { mutable.value.workspaceCredits },
+            ) { data ->
+                mutable.update { it.copy(workspaceCredits = data) }
             }
         }
     }
@@ -195,7 +239,7 @@ internal constructor(
         if (accountsRead?.isActive == true) return
         accountsRead = viewModelScope.launch {
             read(
-                accountsResource,
+                WorkspaceSettingsResource.Accounts,
                 accountsSerializer,
                 {
                     service.recoverySubscriptions().subscriptions.filter { it.provider != null }
@@ -278,7 +322,7 @@ internal constructor(
                     if (values != null && readAt != null) {
                         cache?.save(
                             identity,
-                            accountsResource,
+                            WorkspaceSettingsResource.Accounts.cacheKey,
                             accountsSerializer,
                             ConfirmedSetting(values, readAt),
                         )
@@ -310,42 +354,50 @@ internal constructor(
     }
 
     private suspend fun <T> read(
-        resource: String,
+        resource: WorkspaceSettingsResource,
         serializer: KSerializer<T>,
         fetch: suspend () -> T,
         state: () -> SettingsRead<T>,
         publish: (SettingsRead<T>) -> Unit,
     ) {
-        var failures = 0
-        while (authorized() && !mutable.value.offline) {
-            val token = Any()
-            refreshTokens[resource] = token
+        val token = Any()
+        refreshTokens[resource] = token
+        try {
             val before = state()
+            if (before.initialFailure) publish(SettingsRead())
             val age = before.readAt?.let { nowMillis() - it }
             showProgress(resource, age != null && (age < 0 || age > staleAfterMillis))
-            try {
-                val data = fetch()
-                currentCoroutineContext().ensureActive()
-                if (authorized()) {
-                    val readAt = nowMillis()
-                    publish(SettingsRead(data, readAt = readAt))
-                    cache?.save(identity, resource, serializer, ConfirmedSetting(data, readAt))
-                }
-                return
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                currentCoroutineContext().ensureActive()
-                reportSessionFailure(error)
-                if (!authorized()) return
-                failures += 1
-                val retryable =
-                    error is ApiFailure.Network ||
-                        error is ApiFailure.Http &&
-                            (error.status in 500..599 || error.status in setOf(408, 429))
-                val willRetry = retryable && failures < maxReadAttempts
-                val current = state()
-                if (current.value == null || !willRetry) {
+            for (attempt in 1..maxReadAttempts) {
+                if (!canRead()) return
+                try {
+                    val data = fetch()
+                    currentCoroutineContext().ensureActive()
+                    if (authorized()) {
+                        val readAt = nowMillis()
+                        publish(SettingsRead(data, readAt = readAt))
+                        cache?.save(
+                            identity,
+                            resource.cacheKey,
+                            serializer,
+                            ConfirmedSetting(data, readAt),
+                        )
+                    }
+                    return
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    currentCoroutineContext().ensureActive()
+                    reportSessionFailure(error)
+                    if (!authorized()) return
+                    val retryable =
+                        error is ApiFailure.Network ||
+                            error is ApiFailure.Http &&
+                                (error.status in 500..599 || error.status in setOf(408, 429))
+                    if (retryable && attempt < maxReadAttempts) {
+                        delay(readRetryDelayMillis)
+                        continue
+                    }
+                    val current = state()
                     val value =
                         current.value.takeUnless { error is ApiFailure.Http && error.status == 403 }
                     publish(
@@ -356,29 +408,28 @@ internal constructor(
                         ),
                     )
                     if (value == null && current.value != null) {
-                        cache?.save(identity, resource, serializer, null)
+                        cache?.save(identity, resource.cacheKey, serializer, null)
                     }
+                    return
                 }
-                if (!willRetry) return
-                if (refreshTokens[resource] === token) showProgress(resource, false)
-                delay(readRetryDelayMillis)
-            } finally {
-                if (refreshTokens[resource] === token) {
-                    refreshTokens.remove(resource)
-                    showProgress(resource, false)
-                }
+            }
+        } finally {
+            if (refreshTokens[resource] === token) {
+                refreshTokens.remove(resource)
+                showProgress(resource, false)
             }
         }
     }
 
-    private fun showProgress(resource: String, refreshing: Boolean) {
+    private fun showProgress(resource: WorkspaceSettingsResource, refreshing: Boolean) {
         mutable.update {
             when (resource) {
-                accountsResource -> it.copy(accounts = it.accounts.copy(refreshing = refreshing))
-                usagePackResource -> it.copy(usagePack = it.usagePack.copy(refreshing = refreshing))
-                workspaceCreditsResource ->
+                WorkspaceSettingsResource.Accounts ->
+                    it.copy(accounts = it.accounts.copy(refreshing = refreshing))
+                WorkspaceSettingsResource.UsagePack ->
+                    it.copy(usagePack = it.usagePack.copy(refreshing = refreshing))
+                WorkspaceSettingsResource.WorkspaceCredits ->
                     it.copy(workspaceCredits = it.workspaceCredits.copy(refreshing = refreshing))
-                else -> error("Unknown settings resource")
             }
         }
     }

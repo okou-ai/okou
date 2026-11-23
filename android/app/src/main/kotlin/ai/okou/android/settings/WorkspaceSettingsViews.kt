@@ -56,6 +56,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -133,9 +134,12 @@ internal fun WorkspaceSettingsDataPage(
         onDispose { model.visible(null) }
     }
     when (destination) {
-        SettingsDestination.ModelAccounts -> ModelAccounts(workspace, state, model::activate)
+        SettingsDestination.ModelAccounts ->
+            ModelAccounts(workspace, state, model::activate) {
+                model.retry(WorkspaceSettingsResource.Accounts)
+            }
         SettingsDestination.CreditBalance ->
-            CreditBalance(workspace, state, model.showWorkspaceCredits)
+            CreditBalance(workspace, state, model.showWorkspaceCredits, model::retry)
         else -> Unit
     }
 }
@@ -170,13 +174,46 @@ internal fun settingsWebClick(section: String): () -> Unit {
 }
 
 @Composable
-private fun SettingsDetailStatus(text: String, modifier: Modifier = Modifier) {
+private fun SettingsDetailStatus(text: String) {
     Text(
         text,
-        modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodyMedium,
     )
+}
+
+@Composable
+private fun SettingsReadError(@StringRes label: Int, retry: (() -> Unit)?) {
+    val typography = MaterialTheme.typography
+    Column(
+        Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            stringResource(label),
+            Modifier.semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
+            style = typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+        )
+        if (retry != null) {
+            TextButton(
+                onClick = retry,
+                modifier = Modifier.heightIn(min = 48.dp),
+                colors =
+                    ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+            ) {
+                Text(
+                    stringResource(R.string.retry),
+                    style = typography.labelLarge.copy(fontSize = 13.sp, lineHeight = 20.sp),
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -217,6 +254,7 @@ private fun ModelAccounts(
     workspace: String,
     state: WorkspaceSettingsState,
     activateAccount: (String) -> Unit,
+    retry: () -> Unit,
 ) {
     val accounts = state.accounts.value
     val status =
@@ -234,9 +272,9 @@ private fun ModelAccounts(
     SettingsPageIntro(workspace, scope, status)
     when {
         accounts == null && (state.accounts.unavailable || state.offline) ->
-            SettingsDetailStatus(
-                stringResource(R.string.settings_accounts_unavailable),
-                Modifier.heightIn(min = 48.dp),
+            SettingsReadError(
+                R.string.settings_accounts_unavailable,
+                retry.takeUnless { state.offline },
             )
         accounts == null ->
             ModelAccountProvider.entries.forEach { provider ->
@@ -484,6 +522,7 @@ private fun CreditBalance(
     workspace: String,
     state: WorkspaceSettingsState,
     showWorkspaceCredits: Boolean,
+    retry: (WorkspaceSettingsResource) -> Unit,
 ) {
     val member = state.usagePack.value
     val shared = state.workspaceCredits.value
@@ -505,7 +544,11 @@ private fun CreditBalance(
                     stringResource(R.string.settings_credit_bonus) to member.bonusCredits,
                 ),
             )
-        } else CreditReadState(state.offline || state.usagePack.unavailable)
+        } else {
+            CreditReadState(state.usagePack, state.offline) {
+                retry(WorkspaceSettingsResource.UsagePack)
+            }
+        }
     }
     if (showWorkspaceCredits) {
         SettingsSection(stringResource(R.string.settings_credit_workspace)) {
@@ -531,20 +574,20 @@ private fun CreditBalance(
                         stringResource(label) to credits
                     },
                 )
-            } else CreditReadState(state.offline || state.workspaceCredits.unavailable)
+            } else {
+                CreditReadState(state.workspaceCredits, state.offline) {
+                    retry(WorkspaceSettingsResource.WorkspaceCredits)
+                }
+            }
         }
     }
     SettingsWebAction(stringResource(R.string.settings_credit_web), "usage")
 }
 
 @Composable
-private fun CreditReadState(unavailable: Boolean) {
-    if (unavailable) {
-        SettingsGroup {
-            Box(Modifier.padding(16.dp)) {
-                SettingsDetailStatus(stringResource(R.string.settings_credit_unavailable))
-            }
-        }
+private fun CreditReadState(state: SettingsRead<*>, offline: Boolean, retry: () -> Unit) {
+    if (state.initialFailure || offline) {
+        SettingsReadError(R.string.settings_credit_unavailable, retry.takeUnless { offline })
     } else SettingsPlaceholder()
 }
 

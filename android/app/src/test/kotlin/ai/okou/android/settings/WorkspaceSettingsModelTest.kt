@@ -217,7 +217,7 @@ class WorkspaceSettingsModelTest {
     }
 
     @Test
-    fun staleCreditRetriesTwiceBeforeShowingFailureAndKeepsTheConfirmedBalance() = runTest {
+    fun staleCreditKeepsProgressThroughTwoRetriesAndKeepsTheBalanceAfterFailure() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
         try {
@@ -245,13 +245,13 @@ class WorkspaceSettingsModelTest {
                 model.visible(SettingsDestination.CreditBalance)
                 runCurrent()
                 assertEquals(listOf(0L), failedAttempts)
-                assertFalse(model.uiState.value.usagePack.refreshing)
+                assertTrue(model.uiState.value.usagePack.refreshing)
                 assertFalse(model.uiState.value.usagePack.unavailable)
 
                 advanceTimeBy(3_000L)
                 runCurrent()
                 assertEquals(listOf(0L, 3_000L), failedAttempts)
-                assertFalse(model.uiState.value.usagePack.refreshing)
+                assertTrue(model.uiState.value.usagePack.refreshing)
                 assertFalse(model.uiState.value.usagePack.unavailable)
 
                 advanceTimeBy(3_000L)
@@ -264,6 +264,32 @@ class WorkspaceSettingsModelTest {
                 advanceTimeBy(60_000L)
                 runCurrent()
                 assertEquals(listOf(0L, 3_000L, 6_000L), failedAttempts)
+            }
+        } finally {
+            store.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun retryOfInitialCreditFailureReadsOnlyTheFailedBalance() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val fixture = SettingsApiFixture(api)
+                fixture.usagePackStatus = 400
+                val model = settings(store, api, admin = true)
+                model.visible(SettingsDestination.CreditBalance)
+                model.uiState.first {
+                    it.usagePack.initialFailure && it.workspaceCredits.value != null
+                }
+                fixture.usagePackStatus = 200
+                model.retry(WorkspaceSettingsResource.UsagePack)
+                val recovered = model.uiState.first { it.usagePack.value != null }
+                assertEquals(860L, recovered.usagePack.value!!.totalCredits)
+                assertEquals(2, fixture.usagePackReads.get())
+                assertEquals(1, fixture.billingReads.get())
             }
         } finally {
             store.clear()
