@@ -16,38 +16,28 @@ const availabilitySchema = strictObject({
   testflight: iosBuildIdentitySchema.optional(),
 });
 
-// Only a base commit may have the old single floor. It was backed by TestFlight.
+// Protected base commits can still contain either historical policy format.
+const baseChannelPolicy = iosCompatibilityPolicySchema.extend({
+  reviewCandidate: iosBuildIdentitySchema.nullable().optional(),
+});
+
 function readBaseIosPolicy(value: unknown): IosCompatibilityPolicy {
   const legacy = legacyPolicy.safeParse(value);
-  return iosCompatibilityPolicySchema.parse(
-    legacy.success
-      ? {
-          appStoreMinimumSupportedVersion: null,
-          testFlightMinimumSupportedVersion:
-            legacy.data.minimumSupportedVersion,
-          reviewCandidate: null,
-        }
-      : value,
-  );
+  if (legacy.success) {
+    return iosCompatibilityPolicySchema.parse({
+      appStoreMinimumSupportedVersion: null,
+      testFlightMinimumSupportedVersion: legacy.data.minimumSupportedVersion,
+    });
+  }
+  return baseChannelPolicy.parse(value);
 }
 
-function above(left: string | null | undefined, right: string): boolean {
-  if (left == null) return false;
+function above(left: string | null, right: string): boolean {
+  if (left === null) return false;
   const a = parseStableVersion(left);
   const b = parseStableVersion(right);
   if (!a || !b) throw new Error("Expected validated stable iOS versions");
   return compareVersions(a, b) > 0;
-}
-
-function sameBuild(
-  candidate: NonNullable<IosCompatibilityPolicy["reviewCandidate"]>,
-  other: IosCompatibilityPolicy["reviewCandidate"] | undefined,
-): boolean {
-  return (
-    candidate.version === other?.version &&
-    candidate.build === other.build &&
-    candidate.commit === other.commit
-  );
 }
 
 export function iosGatePolicy(
@@ -87,50 +77,12 @@ export function iosGatePolicy(
     }
   }
 
-  const candidate = current.reviewCandidate;
-  const previous = base.reviewCandidate;
-  if (
-    candidate &&
-    !sameBuild(candidate, previous) &&
-    !sameBuild(candidate, available.testflight)
-  ) {
-    errors.push(
-      "Register the review candidate using the exact version, build and release commit of a verified TestFlight upload.",
-    );
-  }
-  // Protect both builds in the PR that removes or replaces the previous lock.
-  const reviewVersion = checkReviewCeilings(current, previous, errors);
   return {
     iosAppStoreFloor: {
       floor: store,
       baseFloor: base.appStoreMinimumSupportedVersion,
     },
     iosAppStorePublishedVersion: available["app-store"]?.publishedVersion,
-    iosReviewVersion: reviewVersion,
     iosPolicyErrors: errors,
   };
-}
-
-function checkReviewCeilings(
-  current: IosCompatibilityPolicy,
-  previous: IosCompatibilityPolicy["reviewCandidate"],
-  errors: string[],
-) {
-  let highest: string | undefined;
-  for (const ceiling of new Set([
-    previous?.version,
-    current.reviewCandidate?.version,
-  ])) {
-    if (!ceiling) continue;
-    if (
-      above(current.appStoreMinimumSupportedVersion, ceiling) ||
-      above(current.testFlightMinimumSupportedVersion, ceiling)
-    ) {
-      errors.push(
-        `Neither iOS minimum may exceed review candidate ${ceiling}.`,
-      );
-    }
-    if (!highest || above(ceiling, highest)) highest = ceiling;
-  }
-  return highest;
 }
