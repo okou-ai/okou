@@ -1162,5 +1162,4 @@ export const runWebhookContract = c.router({
     ...webhookStoragesCommitContract.commit,
     path: "/api/webhooks/run/storages/commit",
   },
-  memoryArchive: webhookMemoryArchiveContract.read,
 });

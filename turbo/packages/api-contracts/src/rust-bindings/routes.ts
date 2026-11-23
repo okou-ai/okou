@@ -9,7 +9,10 @@ import {
   runnersHeartbeatContract,
   runnersSteerContract,
 } from "../contracts/runners";
-import { runWebhookContract } from "../contracts/webhooks";
+import {
+  runWebhookContract,
+  webhookMemoryArchiveContract,
+} from "../contracts/webhooks";
 
 export interface RouteLike {
   readonly method?: unknown;
@@ -146,7 +149,7 @@ export const rustRouteBindings = [
     rustConstName: "COMMIT",
   },
   {
-    route: runWebhookContract.memoryArchive,
+    route: webhookMemoryArchiveContract.read,
     rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
     rustConstName: "READ",
   },

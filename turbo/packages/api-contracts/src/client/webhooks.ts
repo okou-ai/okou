@@ -14,6 +14,7 @@ import type {
   webhookGoogleFormsContract as OriginalWebhookGoogleFormsContract,
   webhookGoogleWorkspaceEventsContract as OriginalWebhookGoogleWorkspaceEventsContract,
   webhookHeartbeatContract as OriginalWebhookHeartbeatContract,
+  webhookMemoryArchiveContract as OriginalWebhookMemoryArchiveContract,
   webhookNotionContract as OriginalWebhookNotionContract,
   webhookSessionOutputContract as OriginalWebhookSessionOutputContract,
   webhookStoragesCommitContract as OriginalWebhookStoragesCommitContract,
@@ -283,6 +284,19 @@ export const webhookHeartbeatContract: ClientDescriptor<
       401: true,
       404: true,
       500: true,
+    },
+  },
+};
+
+export const webhookMemoryArchiveContract: ClientDescriptor<
+  typeof OriginalWebhookMemoryArchiveContract
+> = {
+  read: {
+    method: "GET",
+    path: "/api/webhooks/run/storages/memory-archive",
+    statuses: {
+      200: true,
+      401: true,
     },
   },
 };

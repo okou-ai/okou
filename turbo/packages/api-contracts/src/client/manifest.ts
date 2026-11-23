@@ -837,6 +837,7 @@ export const clientDescriptorManifest = [
       "webhookGoogleFormsContract",
       "webhookGoogleWorkspaceEventsContract",
       "webhookHeartbeatContract",
+      "webhookMemoryArchiveContract",
       "webhookNotionContract",
       "webhookSessionOutputContract",
       "webhookStoragesCommitContract",

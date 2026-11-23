@@ -28,15 +28,27 @@ describe("Memory publication authorization", () => {
       const hostHeaders = {
         authorization: `Bearer ${writer.execution.firewallToken}`,
       };
-      await accept(archives.read({ headers: writer.headers }), [401]);
+      const files = [
+        { path: "notes.md", content: "Committed Memory on the host" },
+      ];
+      const prepared = await fixture.prepare(writer, files);
+      await fixture.webhooks.requestAgentStorageCommit(
+        {
+          runId: writer.run.runId,
+          storageId: writer.memory.storageId,
+          parentVersionId: writer.memory.versionId,
+          versionId: prepared.versionId,
+          files: prepared.files,
+        },
+        writer.headers,
+        [200],
+      );
       expect(
         (await accept(archives.read({ headers: hostHeaders }), [200])).body,
       ).toStrictEqual({});
 
-      const files = [
-        { path: "notes.md", content: "Committed Memory on the host" },
-      ];
-      const versionId = await fixture.publish(writer, files);
+      await fixture.completePublication(writer, prepared.versionId);
+      await accept(archives.read({ headers: writer.headers }), [401]);
       const result = await accept(
         archives.read({ headers: hostHeaders }),
         [200],
@@ -45,7 +57,7 @@ describe("Memory publication authorization", () => {
       expect(result.headers.get("cache-control")).toBe("private, no-store");
       const archive = result.body.archive;
       expect(archive).toMatchObject({
-        versionId,
+        versionId: prepared.versionId,
         archiveSize: expected.length,
       });
       if (!archive) {

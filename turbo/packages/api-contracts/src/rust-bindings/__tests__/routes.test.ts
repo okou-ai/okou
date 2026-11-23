@@ -143,6 +143,12 @@ const expectedBindings = [
     rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
   },
+  {
+    method: "GET",
+    path: "/api/webhooks/run/storages/memory-archive",
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustConstName: "READ",
+  },
 ] as const;
 
 function validBinding(

@@ -192,6 +192,13 @@ export function createPublicRunnerMemory(
       execution.headers,
       [200],
     );
+    await completePublication(execution, prepared.versionId);
+    return prepared.versionId;
+  }
+  async function completePublication(
+    execution: Awaited<ReturnType<typeof startExecution>>,
+    versionId: string,
+  ) {
     await webhooks.requestAgentComplete(
       {
         runId: execution.run.runId,
@@ -204,7 +211,7 @@ export function createPublicRunnerMemory(
             {
               name: execution.memory.name,
               mountPath: execution.memory.mountPath,
-              version: prepared.versionId,
+              version: versionId,
               ...(execution.memory.missingRootPolicy === undefined
                 ? {}
                 : { missingRootPolicy: execution.memory.missingRootPolicy }),
@@ -215,7 +222,6 @@ export function createPublicRunnerMemory(
       execution.headers,
       [200],
     );
-    return prepared.versionId;
   }
   async function cancel(execution: Awaited<ReturnType<typeof startExecution>>) {
     await api.requestCancelRun(fixture.actor, execution.run.runId, [200]);
@@ -236,6 +242,7 @@ export function createPublicRunnerMemory(
     readExecution,
     prepare,
     publish,
+    completePublication,
     cancel,
     objects,
     installObjects,
