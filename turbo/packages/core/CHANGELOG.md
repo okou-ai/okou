@@ -1,5 +1,25 @@
 # Changelog
 
+## [8.863.0](https://github.com/okou-ai/okou/compare/core-v8.862.1...core-v8.863.0) (2026-11-23)
+
+
+### Features
+
+* **app:** preview small zip artifacts ([#50234](https://github.com/okou-ai/okou/issues/50234)) ([4eacaf8](https://github.com/okou-ai/okou/commit/4eacaf86edc8ef2029a31605da1a0b7f78b75aa5))
+* persist presentation output format preference ([#50220](https://github.com/okou-ai/okou/issues/50220)) ([c68256f](https://github.com/okou-ai/okou/commit/c68256fc724a9baf19e9c099443be1a2d86b513e))
+
+
+### Refactoring
+
+* **app:** remove artifact preview action group feature switch ([#50243](https://github.com/okou-ai/okou/issues/50243)) ([9a9aae7](https://github.com/okou-ai/okou/commit/9a9aae784b871bcbd4f9823252cdc8d0b183b241))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+
 ## [8.862.1](https://github.com/okou-ai/okou/compare/core-v8.862.0...core-v8.862.1) (2026-11-23)
 
 

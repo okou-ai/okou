@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1169.0](https://github.com/okou-ai/okou/compare/app-v0.1168.0...app-v0.1169.0) (2026-11-23)
+
+
+### Features
+
+* **app:** preview small zip artifacts ([#50234](https://github.com/okou-ai/okou/issues/50234)) ([4eacaf8](https://github.com/okou-ai/okou/commit/4eacaf86edc8ef2029a31605da1a0b7f78b75aa5))
+
+
+### Bug Fixes
+
+* **app:** preserve cover hover through empty card stack ([#50241](https://github.com/okou-ai/okou/issues/50241)) ([a312c90](https://github.com/okou-ai/okou/commit/a312c901bcc1e326dd7ece01db277286b1a02e2b))
+
+
+### Refactoring
+
+* **app:** remove artifact preview action group feature switch ([#50243](https://github.com/okou-ai/okou/issues/50243)) ([9a9aae7](https://github.com/okou-ai/okou/commit/9a9aae784b871bcbd4f9823252cdc8d0b183b241))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+    * @okouai/core bumped to 8.863.0
+    * @okouai/ui bumped to 1.21.107
+
 ## [0.1168.0](https://github.com/okou-ai/okou/compare/app-v0.1167.0...app-v0.1168.0) (2026-11-23)
 
 

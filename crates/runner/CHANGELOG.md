@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.114](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.113...runner-rs-v0.249.114) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native create cancellation receipt validation ([#50277](https://github.com/okou-ai/okou/issues/50277)) ([f99f699](https://github.com/okou-ai/okou/commit/f99f699d2d71edbdeef145bcf37e74a08accf3db))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.113](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.112...runner-rs-v0.249.113) (2026-11-23)
 
 
