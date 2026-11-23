@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.58.0](https://github.com/okou-ai/okou/compare/ios-v0.57.0...ios-v0.58.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
 ## [0.57.0](https://github.com/okou-ai/okou/compare/ios-v0.56.1...ios-v0.57.0) (2026-11-23)
 
 
