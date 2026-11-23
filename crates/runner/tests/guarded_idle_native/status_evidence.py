@@ -74,6 +74,20 @@ def original_status(value, sandbox=None, previous=None):
     )
 
 
+def validate_initial_status_receipt(initial, policy, sandbox, paths, *, path_error, receipt_error):
+    """Claim the receipt's path and return its validated original parked publication."""
+    path = initial.get("status_path")
+    claim_status_path(path, paths, path_error)
+    baseline = initial.get("published_status")
+    original_status(baseline, sandbox=sandbox)
+    report.exact(
+        initial,
+        {"policy": policy, "status_path": path, "published_status": baseline, "regular_file": True},
+        receipt_error,
+    )
+    return baseline
+
+
 def current_status(value, initial, sandbox=None, reuse=None, blank=False):
     expected = _base_status(
         value, "current status missing", "invalid current status timestamp"
