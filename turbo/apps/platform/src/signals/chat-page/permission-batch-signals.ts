@@ -3,12 +3,10 @@ import {
   permissionActionTarget,
   verifyPermissionCallbackThread,
 } from "../permission-allow/permission-action-target.ts";
-import { featureSwitches$ } from "../external/feature-switch.ts";
 import { runChatActionCallback$ } from "./action-callback.ts";
 import { command, computed, state } from "ccstate";
 
 import type { UserPermissionGrantExpiresIn } from "@okouai/api-contracts/validators/user-permission-grants";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import {
   findPermissionInMetadata,
@@ -93,14 +91,6 @@ function createBatchState(descriptor: PermissionBatchActionDescriptor) {
   };
 }
 type BatchState = ReturnType<typeof createBatchState>;
-
-const assertBatchEnabled$ = command(async ({ get }, signal: AbortSignal) => {
-  const features = await get(featureSwitches$);
-  signal.throwIfAborted();
-  if (!features[FeatureSwitchKey.BatchConnectorPermissions]) {
-    throw new Error("Batch connector permissions are unavailable");
-  }
-});
 
 function missingPermissionGroups(
   descriptor: PermissionBatchActionDescriptor,
@@ -197,7 +187,7 @@ function createBatchSaveCommand(
   const performSave$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       const expiresIn = get(local.expiresIn$);
-      await set(assertBatchEnabled$, signal);
+      signal.throwIfAborted();
       if (get(local.dismissed$)) {
         return false;
       }

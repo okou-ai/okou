@@ -6,7 +6,6 @@ import {
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -38,7 +37,7 @@ function batchUrl(
   return url;
 }
 
-async function openMarkdown(source: string, enabled: boolean) {
+async function openMarkdown(source: string) {
   const chat = createMarkdownChatFixture(context);
   chat.install({
     rows: () => {
@@ -52,7 +51,6 @@ async function openMarkdown(source: string, enabled: boolean) {
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.BatchConnectorPermissions]: enabled },
   });
 }
 
@@ -103,7 +101,6 @@ test("A markdown batch link renders grouped permissions without duplicate rows",
 
   await openMarkdown(
     `Review these permissions.\n\n[Authorize tools](${batchUrl().toString()})`,
-    true,
   );
 
   const card = await screen.findByTestId("permission-batch-action-card");
@@ -184,7 +181,7 @@ test("A batch card shows three service logos and exposes every service in its ov
     return respond(200, connectorPermissionsResponse(query, []));
   });
 
-  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
+  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`);
 
   const card = await screen.findByTestId("permission-batch-action-card");
   await expect(
@@ -223,7 +220,7 @@ test("A partially allowed batch shows the remaining permission count", async () 
     );
   });
 
-  await openMarkdown(`[Authorize tools](${batchUrl().toString()})`, true);
+  await openMarkdown(`[Authorize tools](${batchUrl().toString()})`);
   const card = await screen.findByTestId("permission-batch-action-card");
   await expect(
     within(card).findByText("1 permission to allow"),
@@ -244,7 +241,7 @@ test("A batch stays reviewable while service details load and enables duration o
     return respond(200, connectorPermissionsResponse(query, []));
   });
 
-  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`, true);
+  await openMarkdown(`[Authorize tools](${batchUrl(items).toString()})`);
   const card = await screen.findByTestId("permission-batch-action-card");
   expect(
     within(card).getByRole("status", { name: "Loading permissions" }),
@@ -335,7 +332,7 @@ test.each(["legacy", "member"])(
       url.searchParams.set("orgId", "org_default");
       url.searchParams.set("userId", "test-user-123");
     }
-    await openMarkdown(`[Authorize tools](${url})`, true);
+    await openMarkdown(`[Authorize tools](${url})`);
     const card = await screen.findByTestId("permission-batch-action-card");
     await within(card).findByText("2 permissions to allow");
     click(getButton("Review permissions", card));
@@ -386,18 +383,8 @@ test.each(["legacy", "member"])(
 test("An invalid batch query renders the unavailable action instead of partial permissions", async () => {
   const url = batchUrl();
   url.searchParams.append("action", "allow");
-  await openMarkdown(`[Authorize tools](${url.toString()})`, true);
+  await openMarkdown(`[Authorize tools](${url.toString()})`);
   await expect(
     screen.findByTestId("unavailable-action-card"),
   ).resolves.toBeInTheDocument();
-});
-
-test("A batch link stays an ordinary markdown link while the feature is disabled", async () => {
-  const href = batchUrl().toString();
-  await openMarkdown(`[Authorize tools](${href})`, false);
-  await screen.findByText("Authorize tools");
-  const link = queryAllByRoleFast("link").find((candidate) => {
-    return candidate.textContent === "Authorize tools";
-  });
-  expect(link).toHaveAttribute("href", href);
 });

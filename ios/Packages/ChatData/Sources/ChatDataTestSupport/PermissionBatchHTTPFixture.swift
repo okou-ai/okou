@@ -28,7 +28,6 @@ public final class PermissionBatchHTTPFixture: Sendable {
   }
 
   public struct State: Sendable {
-    public var enabled = true
     public var metadataThreadID = PermissionBatchHTTPFixture.threadID
     public var grants: [Grant] = []
     public var grantExpiry = "2099-01-01T00:00:00Z"
@@ -98,11 +97,6 @@ public final class PermissionBatchHTTPFixture: Sendable {
         value.requests.append(request)
         let path = request.url!.path
         let threadPath = "/api/chat-threads/\(Self.threadID)"
-        if path == "/api/feature-switches" {
-          return Self.response([
-            "effectiveSwitches": ["batchConnectorPermissions": value.enabled]
-          ])
-        }
         if path == threadPath + "/metadata" {
           return Self.response([
             "id": value.metadataThreadID,

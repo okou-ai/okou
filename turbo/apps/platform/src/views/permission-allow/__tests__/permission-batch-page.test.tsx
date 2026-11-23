@@ -9,7 +9,6 @@ import {
   type ChatEventSendBody,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   connectorPermissionsContract,
   type ConnectorPermissions,
@@ -126,9 +125,6 @@ function openPage({
     context,
     host: "app.okou.ai",
     path: `/connectors/permissions/batch?orgId=org_default&userId=test-user-123&${params}`,
-    featureSwitches: {
-      [FeatureSwitchKey.BatchConnectorPermissions]: true,
-    },
   });
 }
 

@@ -10,7 +10,6 @@ import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connec
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import type { UserPermissionGrantBatchItem } from "@okouai/api-contracts/validators/user-permission-grants";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-contracts";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -33,9 +32,6 @@ import {
 
 const context = testContext();
 const { installCapabilityChat } = createChatCapabilityHelpers(context);
-const featureSwitches = Object.freeze({
-  [FeatureSwitchKey.BatchConnectorPermissions]: true,
-});
 const items: readonly UserPermissionGrantBatchItem[] = [
   {
     connectorSlug: "calendar-service",
@@ -195,7 +191,6 @@ test("Review full scopes grouped by connector and apply the selected duration to
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
@@ -314,7 +309,6 @@ test("Review every scope in a large batch as metadata and grants arrive separate
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
@@ -394,7 +388,6 @@ test("Approve only missing scopes without reapplying or extending active grants"
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
@@ -450,7 +443,6 @@ test("Keep the whole batch unavailable when one connector's delayed authoritativ
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   const card = await screen.findByTestId("permission-batch-action-card");
@@ -486,7 +478,6 @@ test("Reject the entire batch with an invalid original row", async () => {
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   await expect(
@@ -528,7 +519,6 @@ test("A batch save does not empty sibling permission cards during a grants reloa
     context,
     path: RUN_PATH,
     host: "app.okou.ai",
-    featureSwitches,
   });
   await readyChat();
   const batch = await screen.findByTestId("permission-batch-action-card");

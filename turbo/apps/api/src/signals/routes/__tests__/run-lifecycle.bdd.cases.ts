@@ -8798,44 +8798,32 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         },
       );
 
-      it.each([false, true])(
-        "selects batch or individual permission approval guidance for the run (%s)",
-        async (enabled) => {
-          const api = createRunsApi(context);
-          const connectors = createConnectorBddApi(context);
-          const webhooks = createWebhookCallbackApi(context);
-          const { actor, runnerGroup } = await entitledRunActor();
-          await connectors.updateFeatureSwitches(actor, {
-            [FeatureSwitchKey.BatchConnectorPermissions]: enabled,
-          });
-          const run = await api.createThreadRun(actor, {
-            prompt: "prepare the connector permissions needed for this task",
-          });
-          await api.heartbeatRunner(runnerGroup);
-          const execution = await api.executionInput(run.runId);
-          const prompt = execution.appendSystemPrompt ?? "";
-          if (enabled) {
-            expect(prompt).toContain(
-              "okou connector permission-request --batch-file <path>",
-            );
-            expect(prompt).toContain(
-              "A single batch approval may carry one `--callback-prompt <prompt>`",
-            );
-            expect(prompt).toContain(
-              "Do not use callbacks when additional connector connections",
-            );
-          } else {
-            expect(prompt).toContain("one command per permission");
-            expect(prompt).toContain("using only ordinary non-callback links");
-          }
-          await api.requestCancelRun(actor, run.runId, [200]);
-          await webhooks.requestAgentComplete(
-            { runId: run.runId, exitCode: 1 },
-            { authorization: `Bearer ${execution.sandboxToken}` },
-            [200],
-          );
-        },
-      );
+      it("includes batch permission approval guidance for the run", async () => {
+        const api = createRunsApi(context);
+        const webhooks = createWebhookCallbackApi(context);
+        const { actor, runnerGroup } = await entitledRunActor();
+        const run = await api.createThreadRun(actor, {
+          prompt: "prepare the connector permissions needed for this task",
+        });
+        await api.heartbeatRunner(runnerGroup);
+        const execution = await api.executionInput(run.runId);
+        const prompt = execution.appendSystemPrompt ?? "";
+        expect(prompt).toContain(
+          "okou connector permission-request --batch-file <path>",
+        );
+        expect(prompt).toContain(
+          "A single batch approval may carry one `--callback-prompt <prompt>`",
+        );
+        expect(prompt).toContain(
+          "Do not use callbacks when additional connector connections",
+        );
+        await api.requestCancelRun(actor, run.runId, [200]);
+        await webhooks.requestAgentComplete(
+          { runId: run.runId, exitCode: 1 },
+          { authorization: `Bearer ${execution.sandboxToken}` },
+          [200],
+        );
+      });
 
       it("mounts the caller's private workflow over same-slug visible workflows", async () => {
         const bdd = createBddApi(context);

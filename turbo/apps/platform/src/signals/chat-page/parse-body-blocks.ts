@@ -191,7 +191,6 @@ interface ParseBodyBlocksOptions {
   /** A streaming bare URL needs a following boundary before becoming a card. */
   readonly requireUrlTerminator?: boolean;
   readonly chatActionContext?: ChatActionContext;
-  readonly batchConnectorPermissions?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -849,24 +848,21 @@ function createComputerAuthorizationBlock(
 function createPermissionActionBlock(
   url: string,
   chatActionContext: ChatActionContext | undefined,
-  batchConnectorPermissions: boolean,
 ): CardDescriptorBlock | null {
-  if (batchConnectorPermissions) {
-    const batch = parsePermissionBatchActionUrl(url, chatActionContext);
-    if (batch.status === "valid") {
-      return {
-        type: "permission-batch-action",
-        resourceKey: permissionBatchActionResourceKey(batch.descriptor),
-        descriptor: batch.descriptor,
-      };
-    }
-    if (batch.status === "invalid") {
-      return {
-        type: "unavailable-action",
-        resourceKey: batch.originalUrl,
-        descriptor: { originalUrl: batch.originalUrl },
-      };
-    }
+  const batch = parsePermissionBatchActionUrl(url, chatActionContext);
+  if (batch.status === "valid") {
+    return {
+      type: "permission-batch-action",
+      resourceKey: permissionBatchActionResourceKey(batch.descriptor),
+      descriptor: batch.descriptor,
+    };
+  }
+  if (batch.status === "invalid") {
+    return {
+      type: "unavailable-action",
+      resourceKey: batch.originalUrl,
+      descriptor: { originalUrl: batch.originalUrl },
+    };
   }
 
   const permissionAction = parsePermissionActionUrl(url, chatActionContext);
@@ -890,7 +886,6 @@ function createPermissionActionBlock(
 function createActionBlockFromUrl(
   url: string,
   chatActionContext: ChatActionContext | undefined,
-  batchConnectorPermissions: boolean,
 ): CardDescriptorBlock | null {
   const subscriptionReset = parseSubscriptionResetUrl(url);
   if (subscriptionReset.status === "valid") {
@@ -944,11 +939,7 @@ function createActionBlockFromUrl(
     };
   }
 
-  const permissionAction = createPermissionActionBlock(
-    url,
-    chatActionContext,
-    batchConnectorPermissions,
-  );
+  const permissionAction = createPermissionActionBlock(url, chatActionContext);
   if (permissionAction) {
     return permissionAction;
   }
@@ -1116,18 +1107,13 @@ function retainedActionEmphasis(
 interface ActionLinkOptions {
   readonly requireUrlTerminator: boolean;
   readonly allowMailDraftCard: boolean;
-  readonly batchConnectorPermissions: boolean;
 }
 
 function actionLinksFromTokens(
   source: string,
   tokens: readonly Token[],
   chatActionContext: ChatActionContext | undefined,
-  {
-    requireUrlTerminator,
-    allowMailDraftCard,
-    batchConnectorPermissions,
-  }: ActionLinkOptions,
+  { requireUrlTerminator, allowMailDraftCard }: ActionLinkOptions,
 ): ActionText {
   const matches: ActionLinkMatch[] = [];
   const parts: string[] = [];
@@ -1154,11 +1140,7 @@ function actionLinksFromTokens(
         isTerminatedActionLink(token, source, offset, requireUrlTerminator)
       ) {
         const url = trimPreviewUrl(candidate);
-        const block = createActionBlockFromUrl(
-          url,
-          chatActionContext,
-          batchConnectorPermissions,
-        );
+        const block = createActionBlockFromUrl(url, chatActionContext);
         if (block?.type === "mail-draft" && !allowMailDraftCard) {
           // Keep the existing bare-URL boundary without extracting the link
           // from its paragraph. Marked otherwise includes adjacent CJK prose.
@@ -1186,7 +1168,6 @@ function actionLinksFromTokens(
           // A complete emphasis token closes the contained URL.
           requireUrlTerminator: false,
           allowMailDraftCard: false,
-          batchConnectorPermissions,
         },
       );
       matches.push(...inner.matches);
@@ -1205,11 +1186,7 @@ function actionLinksFromTokens(
             return match;
           }
           const url = trimPreviewUrl(match);
-          const block = createActionBlockFromUrl(
-            url,
-            chatActionContext,
-            batchConnectorPermissions,
-          );
+          const block = createActionBlockFromUrl(url, chatActionContext);
           if (!block) {
             return match;
           }
@@ -1232,7 +1209,6 @@ function actionLinksFromMarkdown(
   chatActionContext: ChatActionContext | undefined,
   requireUrlTerminator: boolean,
   allowMailDraftCard: boolean,
-  batchConnectorPermissions: boolean,
 ): ActionText {
   if (!new RegExp(URL_TOKEN_PATTERN).test(source)) {
     return { markdown: source, matches: [] };
@@ -1245,7 +1221,7 @@ function actionLinksFromMarkdown(
       tokenizer: new WalletActionTokenizer(),
     }),
     chatActionContext,
-    { requireUrlTerminator, allowMailDraftCard, batchConnectorPermissions },
+    { requireUrlTerminator, allowMailDraftCard },
   );
 }
 
@@ -1549,7 +1525,6 @@ function parseBodyBlocks(
           options.requireUrlTerminator === true &&
             lineIndex === lines.length - 1,
           mailDraftRows.has(lineIndex),
-          options.batchConnectorPermissions === true,
         )
       : null;
     if (actionLine && actionLine.matches.length > 0) {
