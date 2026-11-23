@@ -121,9 +121,15 @@ Pin, pin reorder, rename, mute, archive and delete project their visible result
 from memory before the request completes. Definitive refusals remove their
 local edits immediately, including any unsent reorder steps. Canonical event
 IDs settle submitted changes, including events observed before a snapshot
-rebase. Transient list reads retry in the background while the list is visible
-in the foreground. If an outcome stays unconfirmed, Refresh chats reads back
-the list and clears the unresolved projection once that read succeeds.
+rebase. Chat list reads retry while the foreground needs the list, after 3, 3,
+6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend the wait.
+Known loss of connectivity pauses reads. Reconnecting retries immediately,
+subject to a server `Retry-After` deadline. Failures keep the available list
+or first-load skeleton in place. An active read shows progress when the last
+confirmation is more than ten minutes old.
+After three consecutive read failures, the same progress bar stays visible
+through retry gaps until success. If a write stays unconfirmed, Refresh chats
+reads back the list and clears the unresolved projection once that read succeeds.
 
 Sending a first message adds a provisional inbox row that opens its pending
 conversation. The list adopts the confirmed row by thread ID. Sending in an

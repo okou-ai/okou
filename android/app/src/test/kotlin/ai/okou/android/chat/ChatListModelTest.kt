@@ -1013,7 +1013,7 @@ class ChatListModelTest {
                     title = "Newer title",
                 ),
             )
-            advanceTimeBy(5_000)
+            advanceTimeBy(3_000)
             runCurrent()
             val settled = model.uiState.value
             assertEquals(ChatReadPhase.Ready, settled.listPhase)
@@ -1313,7 +1313,7 @@ class ChatListModelTest {
             assertEquals("a2", retrying.threads.single { it.id == submitted }.pinOrder)
 
             readUnavailable = false
-            advanceTimeBy(5_000)
+            advanceTimeBy(3_000)
             runCurrent()
             val recovered = model.uiState.value
             assertEquals(ChatReadPhase.Ready, recovered.listPhase)
@@ -2049,80 +2049,68 @@ class ChatListModelTest {
     }
 
     @Test
-    fun listRefreshNoticeUsesCompletedFailuresAndReconnectResetsTheAttemptWindow() = runTest {
-        val connected = MutableStateFlow(true)
-        var failing = false
-        var attempts = 0
-        val service =
-            Service().apply {
-                listRead = {
-                    attempts++
-                    if (failing) throw ApiFailure.Http(503, null, null, null)
-                    page()
-                }
-            }
-        withCatchUpModel(service, connectivity = connected) { model ->
+    fun listRetriesUseTheDesignScheduleAndResetAfterSuccess() = runTest {
+        val service = Service()
+        withCatchUpModel(service) { model ->
             model.refresh()
             runCurrent()
             val cachedRows = model.uiState.value.threads
             assertTrue(cachedRows.isNotEmpty())
-            failing = true
-            val first = attempts
+
+            val recovery = CompletableDeferred<ChatEvents>()
+            val attempts = mutableListOf<Long>()
+            val retryTimes =
+                listOf(3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L, 192_000L)
+            val startedAt = testScheduler.currentTime
+            service.listRead = {
+                attempts.add(testScheduler.currentTime - startedAt)
+                if (attempts.size <= retryTimes.size) throw ApiFailure.Http(503, null, null, null)
+                recovery.await()
+            }
             model.refreshList()
             runCurrent()
-            assertEquals(first + 1, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 2, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(10_000)
-            runCurrent()
-            assertEquals(first + 3, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(14_999)
-            runCurrent()
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(first + 3, attempts)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 4, attempts)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            assertEquals(cachedRows, model.uiState.value.threads)
+            assertEquals(listOf(0L), attempts)
+            for ((index, time) in retryTimes.withIndex()) {
+                val state = model.uiState.value
+                assertEquals(ChatListReadFailure.Retrying, state.listReadFailure)
+                assertEquals(index >= 2, state.listRetryProgressVisible)
+                assertEquals(cachedRows, state.threads)
 
-            model.selectFilter(ChatListFilter.Inbox)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            model.selectFilter(ChatListFilter.Unread)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
+                advanceTimeBy(startedAt + time - testScheduler.currentTime - 1)
+                runCurrent()
+                assertEquals(index + 1, attempts.size)
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(index + 2, attempts.size)
+            }
+            assertEquals(listOf(0L) + retryTimes, attempts)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
 
-            connected.value = false
+            recovery.complete(page())
             runCurrent()
-            assertTrue(model.uiState.value.offline)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            model.refresh()
-            advanceTimeBy(40_000)
-            runCurrent()
-            assertEquals(first + 4, attempts)
-
-            connected.value = true
-            runCurrent()
-            assertFalse(model.uiState.value.offline)
-            assertEquals(first + 5, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            failing = false
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 6, attempts)
             assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
             assertNull(model.uiState.value.listReadFailure)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+
+            var subsequentAttempts = 0
+            service.listRead = {
+                if (++subsequentAttempts == 1) throw ApiFailure.Http(503, null, null, null)
+                page()
+            }
+            model.refreshList()
+            runCurrent()
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, subsequentAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
         }
     }
 
     @Test
-    fun listRetryKeepsTheServerDeadlineAfterHidingTheList() = runTest {
+    fun listRetryKeepsTheServerDeadlineAfterHidingAndReconnecting() = runTest {
+        val connected = MutableStateFlow(true)
         var attempts = 0
         var indicatorsAvailable = false
         val service =
@@ -2141,7 +2129,7 @@ class ChatListModelTest {
                     return super.indicators()
                 }
             }
-        withCatchUpModel(service) { model ->
+        withCatchUpModel(service, connectivity = connected) { model ->
             model.refresh()
             runCurrent()
             assertEquals(1, attempts)
@@ -2149,10 +2137,14 @@ class ChatListModelTest {
             assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
 
             model.listVisibilityChanged(false)
+            connected.value = false
+            runCurrent()
             advanceTimeBy(15_000)
             runCurrent()
             assertEquals(1, attempts)
 
+            connected.value = true
+            runCurrent()
             model.listVisibilityChanged(true)
             model.refreshList()
             advanceTimeBy(4_999)
@@ -2169,10 +2161,37 @@ class ChatListModelTest {
     }
 
     @Test
-    fun anInFlightFailureDoesNotCountAfterSwitchingAwayAndBackToTheSameFilter() = runTest {
-        val first = CompletableDeferred<ChatEvents>()
+    fun aConfirmedWorkspaceAccessFailureStopsListRetries() = runTest {
         val service = Service()
         withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            var attempts = 0
+            service.listRead = {
+                val status = if (++attempts <= 3) 503 else 403
+                throw ApiFailure.Http(status, null, null, null)
+            }
+            model.refreshList()
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(ChatListReadFailure.NeedsRetry, model.uiState.value.listReadFailure)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(4, attempts)
+        }
+    }
+
+    @Test
+    fun listRetriesSurviveFilterAndConnectivityChanges() = runTest {
+        val connected = MutableStateFlow(true)
+        val first = CompletableDeferred<ChatEvents>()
+        val service = Service()
+        withCatchUpModel(service, connectivity = connected) { model ->
             model.refresh()
             runCurrent()
             val unavailable = ApiFailure.Http(503, null, null, null)
@@ -2183,16 +2202,43 @@ class ChatListModelTest {
             model.selectFilter(ChatListFilter.Unread)
             model.selectFilter(ChatListFilter.Inbox)
 
-            service.listRead = { throw unavailable }
+            var attempts = 1
+            service.listRead = {
+                attempts++
+                throw unavailable
+            }
             first.completeExceptionally(unavailable)
             runCurrent()
-            advanceTimeBy(30_000)
+            advanceTimeBy(5_999)
             runCurrent()
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
 
-            advanceTimeBy(5_000)
+            advanceTimeBy(1)
             runCurrent()
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
+            assertEquals(3, attempts)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            model.selectFilter(ChatListFilter.Archived)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+
+            connected.value = false
+            runCurrent()
+            assertTrue(model.uiState.value.offline)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(3, attempts)
+
+            service.listRead = {
+                attempts++
+                page()
+            }
+            connected.value = true
+            runCurrent()
+            assertEquals(4, attempts)
+            assertFalse(model.uiState.value.offline)
+            assertEquals(ChatListFilter.Archived, model.uiState.value.filter)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
         }
     }
 
@@ -2502,7 +2548,7 @@ class ChatListModelTest {
                 runCurrent()
                 assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
                 if (requestDuringBackoff) model.refresh()
-                advanceTimeBy(4_999)
+                advanceTimeBy(2_999)
                 assertEquals(1, reads)
                 assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
                 advanceTimeBy(1)

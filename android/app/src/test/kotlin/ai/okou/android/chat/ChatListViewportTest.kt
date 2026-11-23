@@ -52,7 +52,6 @@ class ChatListViewportTest {
                     Modifier.fillMaxWidth().height(height.value),
                     listState,
                     contentChangeKey = projectCount.value to "chat_${rowCount.value - 1}",
-                    status = ChatListStatus.Offline,
                     syncing = syncing.value,
                     newChatEnabled = true,
                     newChat = {},

@@ -2,6 +2,7 @@ package ai.okou.android
 
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
+import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectDeleteStatus
@@ -1348,13 +1349,13 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Search workspace").performClick()
         app.responseGate.countDown()
         compose.waitUntil(10_000) {
-            compose
-                .onAllNodesWithText("Temporarily unable to load")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+            currentList()?.listReadFailure == ChatListReadFailure.Retrying
         }
         compose.onNodeWithTag("chat_search").assertExists()
-        shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.SECONDS)
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+        compose.onNodeWithText("Temporarily unable to load").assertDoesNotExist()
+        shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Project chat").fetchSemanticsNodes().isNotEmpty()
         }
@@ -1436,7 +1437,7 @@ class ChatListRootTest {
         }
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
         compose.onNodeWithText("No archived chats").assertExists()
-        compose.onNodeWithTag("chat_list_bottom_status").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Syncing chats…").assertDoesNotExist()
     }
 
     @Test
@@ -2363,7 +2364,6 @@ class ChatListRootTest {
         awaitRowActionSettled(CHAT_PERSONAL)
         compose.runOnIdle { app.connectivity.value = false }
         compose.waitUntil(10_000) { currentList()?.offline == true }
-        compose.onNodeWithText("Offline").assertIsDisplayed()
         assertEquals(2, commands.size)
         try {
             undo.assertIsEnabled().performClick()
@@ -3130,7 +3130,7 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w320dp-h270dp")
-    fun aShortPaneScrollsNewChatAndOfflineStatusWithTheRows() {
+    fun aShortPaneScrollsNewChatWithTheRows() {
         val app = compose.activity.application as ChatListApplication
         val rows =
             (1..14).joinToString(",") { index ->
@@ -3149,13 +3149,13 @@ class ChatListRootTest {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.runOnIdle { app.connectivity.value = false }
-        compose.onNodeWithTag("chat_list_bottom_status").assertIsDisplayed()
+        compose.waitUntil(10_000) { currentList()?.offline == true }
+        compose.onNodeWithText("Offline").assertDoesNotExist()
         compose.onNodeWithText("New chat").assertIsDisplayed()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Short pane chat 1"))
         compose.onNodeWithText("Short pane chat 1").assertIsDisplayed()
         compose.onNodeWithText("New chat").assertDoesNotExist()
         compose.onNodeWithTag("chat_list").performScrollToIndex(0)
         compose.onNodeWithText("New chat").assertIsDisplayed()
-        compose.onNodeWithTag("chat_list_bottom_status").assertIsDisplayed()
     }
 }

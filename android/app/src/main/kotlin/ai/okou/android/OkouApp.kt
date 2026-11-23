@@ -788,8 +788,8 @@ internal fun OkouApp(
                     showList ||
                     (provisionalId != null && provisionalChat == null) ||
                     (target is WorkspaceTarget.Chat && thread == null)))
-    DisposableEffect(chats, needsChatList, showChatList) {
-        chats?.listVisibilityChanged(needsChatList, showingFilter = showChatList)
+    DisposableEffect(chats, needsChatList) {
+        chats?.listVisibilityChanged(needsChatList)
         onDispose { chats?.listVisibilityChanged(false) }
     }
     LaunchedEffect(newChat, provisionalId, provisionalChat, createdId) {
