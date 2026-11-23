@@ -39,7 +39,7 @@ import org.junit.runners.model.MultipleFailureException
 @RunWith(AndroidJUnit4::class)
 class NativeUpdateTest {
     @Test
-    fun updateSharesProgressContinuesExplicitlyAndKeepsTheRequiredGateAcrossRecreation() {
+    fun updateSharesProgressInstallsFromSearchAndKeepsTheRequiredGateAcrossRecreation() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as TestOkouApplication
         val device = UiDevice.getInstance(instrumentation)
@@ -290,38 +290,20 @@ class NativeUpdateTest {
             captureState("settings-progress")
             backToChatList()
 
-            openOverflow()
-            assertNotNull(text(filter))
+            button(search).click()
+            val searchQuery = "fixture query"
+            val searchField =
+                requireNotNull(find(By.pkg(app.packageName).clazz("android.widget.EditText")))
+            searchField.setText(searchQuery)
             check(file.parentFile!!.isDirectory || file.parentFile!!.mkdirs())
             file.writeText("verified package from the service fixture")
             download.get().complete(file)
-            assertTrue(
-                device.wait(
-                    object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice) = owner.state.value.canInstall
-                    },
-                    10_000,
-                ),
-            )
-            assertNotNull(text(filter))
-            assertFalse(
-                device.hasObject(
-                    By.pkg(app.packageName).text(app.getString(R.string.updates_allow_install)),
-                ),
-            )
-            assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
-            assertTrue(device.wait(Until.gone(By.pkg(app.packageName).text(filter)), 10_000))
-            val continueInstall =
-                button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
-            assertFalse(
-                device.hasObject(
-                    By.pkg(app.packageName).text(app.getString(R.string.updates_open_settings)),
-                ),
-            )
-            continueInstall.click()
             exists(R.string.updates_open_settings)
             captureState("install-permission")
             click(R.string.updates_later)
+            assertNotNull(text(searchQuery))
+            button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
+            device.awaitChatList(app)
             button(By.pkg(app.packageName).desc(app.getString(R.string.updates_ready)))
             captureState("toolbar-ready")
             openOverflow()

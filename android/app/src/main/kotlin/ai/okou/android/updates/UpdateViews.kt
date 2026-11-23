@@ -45,7 +45,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
@@ -213,11 +212,7 @@ internal fun UpdateHost(
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
-    automaticInstall: AndroidUpdatesRelease?,
-    windowFocused: Boolean,
-    startAutomaticInstall: (AndroidUpdatesRelease, fromDetails: Boolean) -> Unit,
     detailsOpen: MutableState<Boolean>,
-    onDetailsFocusChanged: (Boolean) -> Unit = {},
     content: @Composable (openUpdates: () -> Unit) -> Unit,
 ) {
     var details by detailsOpen
@@ -225,10 +220,6 @@ internal fun UpdateHost(
     var returningToDetails by remember { mutableStateOf(false) }
     if (details && installProgress != null) SideEffect { returningToDetails = true }
     val showDetails = details && !state.required
-    LaunchedEffect(automaticInstall, state.required, windowFocused) {
-        if (automaticInstall != null && state.required && windowFocused)
-            startAutomaticInstall(automaticInstall, false)
-    }
     if (state.required) {
         LaunchedEffect(Unit) {
             details = false
@@ -254,11 +245,8 @@ internal fun UpdateHost(
                 download,
                 install,
                 installProgress,
-                automaticInstall,
-                startAutomaticInstall = { startAutomaticInstall(it, true) },
                 restoreInstallFocus = returningToDetails && installProgress == null,
                 onInstallFocusRestored = { returningToDetails = false },
-                onFocusChanged = onDetailsFocusChanged,
                 close = {
                     details = false
                     returningToDetails = false
@@ -346,11 +334,8 @@ private fun UpdateSheet(
     download: (AndroidUpdatesRelease) -> Unit,
     install: (AndroidUpdatesRelease) -> Unit,
     @StringRes installProgress: Int?,
-    automaticInstall: AndroidUpdatesRelease?,
-    startAutomaticInstall: (AndroidUpdatesRelease) -> Unit,
     restoreInstallFocus: Boolean,
     onInstallFocusRestored: () -> Unit,
-    onFocusChanged: (Boolean) -> Unit,
     close: () -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -361,10 +346,6 @@ private fun UpdateSheet(
         }
     SettingsModal(close) { centered ->
         val focused = LocalWindowInfo.current.isWindowFocused
-        DisposableEffect(focused) {
-            onFocusChanged(focused)
-            onDispose { onFocusChanged(false) }
-        }
         val installFocus = remember { FocusRequester() }
         val inputMode = LocalInputModeManager.current
         LaunchedEffect(restoreInstallFocus, focused) {
@@ -372,9 +353,6 @@ private fun UpdateSheet(
                 if (inputMode.inputMode == InputMode.Keyboard) installFocus.requestFocus()
                 onInstallFocusRestored()
             }
-        }
-        LaunchedEffect(automaticInstall, focused) {
-            if (automaticInstall != null && focused) startAutomaticInstall(automaticInstall)
         }
         val release = state.displayedRelease?.takeIf { state.available }
         val base = with(LocalDensity.current) { 16.sp.toDp() }

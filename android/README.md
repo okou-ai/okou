@@ -635,9 +635,10 @@ during preparation is not queued against a later version or recovery result.
 
 Users initiate credential-free APK downloads inside Okou. The app streams into
 private files, validates byte count, SHA-256, package/version and signer, then
-offers installation through a narrowly scoped FileProvider and Android's
-installer. Android 8+ may require installation-source authorization. Activity
-recreation retains work; OS process termination can interrupt it. A later launch
+continues automatically through a narrowly scoped FileProvider and Android's
+installer once the Activity is resumed. Android 8+ may require installation-source
+authorization. A cancellation leaves the verified package available to retry.
+Activity recreation retains work; OS process termination can interrupt it. A later launch
 discards partial files and offers explicit retry, or revalidates a completed APK.
 No resident service, DownloadManager, silent installation or range resumption is
 implied. Installation handoff does not establish package replacement.
