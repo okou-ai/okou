@@ -1,4 +1,4 @@
-import { command, type Command } from "ccstate";
+import type { Command } from "ccstate";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   googleWorkspaceTarget,
@@ -68,6 +68,7 @@ import { detach, isAbortError, Reason } from "../../signals/utils.ts";
 import {
   syncArtifactAndRefresh$,
   googleDriveArtifactOperation$,
+  readNoSidebarOwner$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
 import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
 import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
@@ -393,10 +394,6 @@ function resolveGoogleDrivePendingAction(
   }
   return { kind: "unavailable" };
 }
-
-const readNoSidebarOwner$ = command(() => {
-  return undefined;
-});
 
 function useGoogleDriveMenuAction(
   syncTarget: ArtifactDownloadSyncTarget | undefined,
