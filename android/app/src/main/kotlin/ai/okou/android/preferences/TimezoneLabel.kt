@@ -15,8 +15,13 @@ private const val utcTimezone = "Etc/UTC"
 private const val gmtTimezone = "Etc/GMT"
 
 private val locationTimezones by lazy {
-    TimeZone.getAvailableIDs(TimeZone.SystemTimeZoneType.CANONICAL_LOCATION, null, null) +
-        utcTimezone
+    TimeZone.getAvailableIDs()
+        .asSequence()
+        .mapNotNull { TimeZone.getCanonicalID(it) }
+        .distinct()
+        // ICU uses the world region for zones without a named location.
+        .filter { TimeZone.getRegion(it) != "001" }
+        .toSet() + utcTimezone
 }
 
 internal data class TimezoneOption(val id: String, val name: String?, val offsetMinutes: Int?)

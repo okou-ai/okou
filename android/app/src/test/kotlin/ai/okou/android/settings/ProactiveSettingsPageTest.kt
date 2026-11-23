@@ -174,13 +174,14 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
+    @Config(sdk = [24, 35])
     fun savedIanaAliasUsesTheLocalizedNameOfItsCanonicalZone() {
         val saved = "Asia/Kathmandu"
         val canonical = TimeZone.getCanonicalID(saved)
-        val matching =
-            timezoneOptions(saved, Locale.SIMPLIFIED_CHINESE, "协调世界时").filter {
-                TimeZone.getCanonicalID(it.id) == canonical
-            }
+        val options = timezoneOptions(saved, Locale.SIMPLIFIED_CHINESE, "协调世界时")
+        assertTrue(options.any { it.id == "Pacific/Chatham" })
+        assertTrue(options.any { it.id == "Etc/UTC" })
+        val matching = options.filter { TimeZone.getCanonicalID(it.id) == canonical }
         assertEquals(saved, matching.single().id)
         assertEquals("加德满都", matching.single().name)
     }
