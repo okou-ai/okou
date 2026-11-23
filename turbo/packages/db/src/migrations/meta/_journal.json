@@ -3795,6 +3795,13 @@
       "when": 1795412018406,
       "tag": "1620_drop_custom_connector_skill_publication_view",
       "breakpoints": true
+    },
+    {
+      "idx": 1621,
+      "version": "7",
+      "when": 1795420969285,
+      "tag": "1621_hosted_site_email_sharing",
+      "breakpoints": true
     }
   ]
 }

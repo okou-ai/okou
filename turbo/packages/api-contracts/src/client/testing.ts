@@ -348,6 +348,8 @@ import { healthContract as OriginalHealthContract } from "../contracts/health";
 import { healthContract } from "./health";
 import { hostContract as OriginalHostContract } from "../contracts/host";
 import { hostContract } from "./host";
+import { hostedSiteSharingContract as OriginalHostedSiteSharingContract } from "../contracts/hosted-site-sharing";
+import { hostedSiteSharingContract } from "./hosted-site-sharing";
 import { imageIoGenerateContract as OriginalImageIoGenerateContract } from "../contracts/image-io-generate";
 import { imageIoGenerateContract } from "./image-io-generate";
 import { instructionsContract as OriginalInstructionsContract } from "../contracts/instructions";
@@ -1047,6 +1049,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [githubOauthContract, OriginalGithubOauthContract],
   [healthContract, OriginalHealthContract],
   [hostContract, OriginalHostContract],
+  [hostedSiteSharingContract, OriginalHostedSiteSharingContract],
   [imageIoGenerateContract, OriginalImageIoGenerateContract],
   [instructionsContract, OriginalInstructionsContract],
   [integrationsAgentPhoneContract, OriginalIntegrationsAgentPhoneContract],

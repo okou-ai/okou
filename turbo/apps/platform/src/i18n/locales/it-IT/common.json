@@ -591,6 +591,28 @@
       "generated": "Generato {{date}}",
       "updated": "Aggiornato {{date}}"
     },
+    "people": {
+      "accounts": "Membri corrispondenti dello spazio di lavoro",
+      "anyone": "Chiunque",
+      "empty": "Nessun altro ha ancora accesso.",
+      "hint": "Fuori dal tuo spazio di lavoro? Usa il loro indirizzo e-mail completo.",
+      "invitationProcessed": "Invito alla condivisione elaborato",
+      "label": "Condividi con persone",
+      "noAccounts": "Nessun membro corrispondente. Inserisci un indirizzo e-mail completo per invitare.",
+      "placeholder": "Nome o indirizzo e-mail",
+      "remove": "Rimuovi l’accesso di {{email}}",
+      "removed": "Accesso rimosso",
+      "restricted": "Persone invitate",
+      "restrictedDescription": "Solo tu e le persone invitate",
+      "searching": "Ricerca dei membri dello spazio di lavoro…",
+      "searchUnavailable": "La ricerca dei membri non è temporaneamente disponibile. Riprova tra poco.",
+      "share": "Invita",
+      "updateUnavailable": "Impossibile aggiornare la condivisione. Riprova tra poco.",
+      "viewers": "Persone con accesso",
+      "workspace": "Spazio di lavoro",
+      "workspaceDescription": "Membri di {{organization}} e persone invitate",
+      "workspaceDescriptionUnnamed": "Membri dello spazio di lavoro e persone invitate"
+    },
     "preview": {
       "audioLabel": "Anteprima audio per {{filename}}",
       "badge": "Anteprima",

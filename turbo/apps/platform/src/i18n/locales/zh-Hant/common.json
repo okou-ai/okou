@@ -574,6 +574,28 @@
       "generated": "生成於 {{date}}",
       "updated": "更新於 {{date}}"
     },
+    "people": {
+      "accounts": "符合的工作區成員",
+      "anyone": "任何人",
+      "empty": "尚未邀請其他人。",
+      "hint": "邀請工作區外的使用者？請輸入對方的完整電子郵件地址。",
+      "invitationProcessed": "分享邀請已處理",
+      "label": "分享給指定使用者",
+      "noAccounts": "找不到符合的工作區成員。請輸入完整電子郵件地址邀請。",
+      "placeholder": "姓名或電子郵件地址",
+      "remove": "移除 {{email}} 的存取權限",
+      "removed": "已移除存取權限",
+      "restricted": "受邀人員",
+      "restrictedDescription": "僅你和受邀人員",
+      "searching": "正在搜尋工作區成員…",
+      "searchUnavailable": "成員搜尋暫時無法使用，請稍後重試。",
+      "share": "邀請",
+      "updateUnavailable": "暫時無法更新分享設定，請稍後重試。",
+      "viewers": "有權存取的使用者",
+      "workspace": "工作區",
+      "workspaceDescription": "{{organization}} 成員和受邀人員",
+      "workspaceDescriptionUnnamed": "工作區成員和受邀人員"
+    },
     "preview": {
       "audioLabel": "{{filename}} 的音訊預覽",
       "badge": "預覽",

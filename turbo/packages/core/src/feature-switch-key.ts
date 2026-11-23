@@ -46,6 +46,7 @@ export enum FeatureSwitchKey {
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   WorksChannelCards = "worksChannelCards",
   HostedSiteShareRows = "hostedSiteShareRows",
+  HostedSiteEmailSharing = "hostedSiteEmailSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",
   BillingSurvey = "billingSurvey",
   OnboardingMultipleOutputs = "onboardingMultipleOutputs",

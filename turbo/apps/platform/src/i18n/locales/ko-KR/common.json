@@ -574,6 +574,28 @@
       "generated": "생성됨 {{date}}",
       "updated": "업데이트됨 {{date}}"
     },
+    "people": {
+      "accounts": "일치하는 워크스페이스 멤버",
+      "anyone": "모든 사람",
+      "empty": "아직 다른 사람을 초대하지 않았습니다.",
+      "hint": "워크스페이스 외부 사람은 전체 이메일 주소로 초대하세요.",
+      "invitationProcessed": "공유 초대를 처리했습니다",
+      "label": "사용자와 공유",
+      "noAccounts": "일치하는 멤버가 없습니다. 전체 이메일 주소로 초대하세요.",
+      "placeholder": "이름 또는 이메일 주소",
+      "remove": "{{email}}의 액세스 권한 삭제",
+      "removed": "액세스 권한을 삭제했습니다",
+      "restricted": "초대받은 사람",
+      "restrictedDescription": "나와 초대받은 사람만",
+      "searching": "워크스페이스 멤버 검색 중…",
+      "searchUnavailable": "멤버 검색을 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도하세요.",
+      "share": "초대",
+      "updateUnavailable": "공유 설정을 업데이트할 수 없습니다. 잠시 후 다시 시도하세요.",
+      "viewers": "액세스 권한이 있는 사용자",
+      "workspace": "워크스페이스",
+      "workspaceDescription": "{{organization}} 멤버와 초대받은 사람",
+      "workspaceDescriptionUnnamed": "워크스페이스 멤버와 초대받은 사람"
+    },
     "preview": {
       "audioLabel": "{{filename}} 오디오 미리보기",
       "badge": "미리보기",

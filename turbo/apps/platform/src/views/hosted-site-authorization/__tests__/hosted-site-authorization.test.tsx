@@ -88,7 +88,14 @@ test("sign-in returns to the trusted App bridge with the complete browser state"
   ).toBe(`https://app.okou.ai${path}`);
 });
 
-test("organization selection preserves the bridge continuation", async () => {
+test("a website viewer without a workspace continues directly after signing in", async () => {
+  const callbackUrl = `${origin}/.okou/auth/callback?code=${"c".repeat(64)}&state=${state}`;
+  const redirect = vi
+    .spyOn(window.location, "replace")
+    .mockImplementation(() => {});
+  context.mocks.api(hostContract.authorizeSiteSession, ({ respond }) => {
+    return respond(200, { callbackUrl });
+  });
   await startPage({
     context,
     host: "app.okou.ai",
@@ -99,14 +106,6 @@ test("organization selection preserves the bridge continuation", async () => {
     },
   });
   await waitFor(() => {
-    return expect(window.location.pathname).toBe(
-      "/sign-in/tasks/choose-organization",
-    );
+    expect(redirect).toHaveBeenCalledWith(callbackUrl);
   });
-  expect(
-    new URL(window.location.href).searchParams.get("redirect_url") ??
-      new URLSearchParams(new URL(window.location.href).hash.split("?")[1]).get(
-        "redirect_url",
-      ),
-  ).toBe(`https://app.okou.ai${path}`);
 });

@@ -247,7 +247,9 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.hostedSiteAuthorize,
-    setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$),
+    setup: setupAuthPageWrapper(setupHostedSiteAuthorizationPage$, {
+      requireOrganization: false,
+    }),
     analytics: false,
   },
   {
