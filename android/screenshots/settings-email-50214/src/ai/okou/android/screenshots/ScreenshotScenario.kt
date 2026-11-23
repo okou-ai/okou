@@ -205,6 +205,12 @@ class ScreenshotScenario {
                 check(fixture.emailWrites == listOf(false))
                 ScreenshotCapture.capture("05-email-write-rejected.png")
                 dismissEmail()
+                device.waitForIdle()
+                check(
+                    !device.hasObject(By.text(app.getString(R.string.settings_email_save_failed))),
+                ) {
+                    "Email feedback remained after the originating panel closed"
+                }
 
                 fixture.emailDelivery = "suppressed"
                 clickRow(text(R.string.settings_email_updates))
@@ -225,15 +231,19 @@ class ScreenshotScenario {
                 check(primary.hasObject(By.text(app.getString(R.string.settings_account_current))))
                 check(fixture.activations == listOf(SettingsApiFixture.alternateAccount))
                 ScreenshotCapture.capture("07-model-account-write-rejected.png")
+                val switchFailure = By.text(app.getString(R.string.settings_account_switch_failed))
+                // Short feedback stays visible for five seconds before the host dismisses it.
+                check(device.wait(Until.gone(switchFailure), 8_000) == true)
                 back()
                 clickRow(text(R.string.settings_model_accounts))
                 text("personal@example.com")
-                check(
-                    device.wait(
-                        Until.gone(By.text(app.getString(R.string.settings_account_switch_failed))),
-                        4_000,
-                    ) == true,
-                )
+                check(!device.hasObject(switchFailure))
+                check(fixture.activations == listOf(SettingsApiFixture.alternateAccount))
+            } catch (error: Throwable) {
+                runCatching { ScreenshotCapture.capture("failure.png") }
+                    .exceptionOrNull()
+                    ?.let(error::addSuppressed)
+                throw error
             } finally {
                 gate.getAndSet(null)?.released?.countDown()
                 scenario?.close()

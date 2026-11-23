@@ -8,6 +8,7 @@ import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -18,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -79,6 +81,7 @@ private fun EmailSubscriptionSheet(
     SettingsSheet(
         title = title,
         onDismiss = dismiss,
+        modifier = Modifier.animateContentSize(alignment = Alignment.BottomCenter),
         titleInset = 8.dp,
         progress = {
             if (state.read.refreshing && !state.offline) {

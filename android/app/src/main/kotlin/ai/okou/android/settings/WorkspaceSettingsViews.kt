@@ -132,14 +132,19 @@ internal fun SettingsRefreshProgress(
 }
 
 @Composable
-internal fun WorkspaceSettingsFeedback(model: WorkspaceSettingsModel, snackbar: SnackbarHostState) {
+internal fun WorkspaceSettingsFeedback(
+    model: WorkspaceSettingsModel,
+    snackbar: SnackbarHostState,
+    destination: SettingsDestination,
+    inOverlay: Boolean,
+) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val switchFailed by
         rememberUpdatedState(stringResource(R.string.settings_account_switch_failed))
     val emailFailed by rememberUpdatedState(stringResource(R.string.settings_email_save_failed))
     val emailUnconfirmed by
         rememberUpdatedState(stringResource(R.string.settings_email_save_unconfirmed))
-    LaunchedEffect(model, snackbar, lifecycle) {
+    LaunchedEffect(model, snackbar, lifecycle, destination, inOverlay) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             model.notices.collectLatest { notice ->
                 val message =

@@ -141,6 +141,7 @@ internal fun SessionRoot(
                             appUpdates,
                             retry,
                             snackbar,
+                            feedbackInOverlay,
                             { feedbackInOverlay = it },
                         )
                     },
@@ -254,10 +255,13 @@ private fun WorkspaceSettingsContent(
     appUpdates: @Composable (() -> Unit)?,
     retry: () -> Unit,
     snackbar: SnackbarHostState,
+    feedbackInOverlay: Boolean,
     onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
     val ready = state.ready
-    if (ready != null) WorkspaceSettingsFeedback(ready.settings, snackbar)
+    if (ready != null) {
+        WorkspaceSettingsFeedback(ready.settings, snackbar, destination, feedbackInOverlay)
+    }
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
     var focused by remember { mutableStateOf<SettingsDestination?>(null) }
     var restore by rememberSettingsReturnFocus()

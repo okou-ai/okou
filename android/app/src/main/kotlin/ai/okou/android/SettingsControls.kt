@@ -356,6 +356,7 @@ internal fun SettingsModal(
 internal fun SettingsSheet(
     title: String,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
@@ -365,7 +366,8 @@ internal fun SettingsSheet(
     val scroll = rememberScrollState()
     SettingsModal(onDismiss) { centered ->
         Column(
-            Modifier.fillMaxWidth()
+            modifier
+                .fillMaxWidth()
                 .heightIn(max = windowHeight * 0.80f)
                 .padding(
                     start = 16.dp,
