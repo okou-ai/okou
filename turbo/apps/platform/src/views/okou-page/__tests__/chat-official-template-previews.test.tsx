@@ -89,11 +89,10 @@ test.each([
     }
     click(card);
     await waitFor(() => {
-      expect(
-        screen
-          .getByTestId("artifact-dialog-site-frame")
-          .querySelector("iframe"),
-      ).toHaveAttribute("src", sharedSnapshot ? previewUrl : url);
+      expect(screen.getByTestId("artifact-sidebar-body-html")).toHaveAttribute(
+        "src",
+        sharedSnapshot ? previewUrl : url,
+      );
     });
   },
 );
@@ -122,7 +121,7 @@ test("The My Okou guide opens as HTML on an isolated App preview", async () => {
   const preview = await screen.findByTestId("attachment-preview-html");
   click(preview);
   await waitFor(() => {
-    const element = screen.getByTestId("artifact-dialog-site-frame");
+    const element = screen.getByTestId("artifact-sidebar-body-html");
     const iframe =
       element instanceof HTMLIFrameElement
         ? element
@@ -142,33 +141,31 @@ function link(name: string) {
 }
 
 async function closePreview() {
-  click(await findNamedButton("Close"));
+  click(await findNamedButton("Close artifact"));
   await waitFor(() => {
-    return expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
+    return expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
   });
 }
 
 async function expectImagePreview() {
   click(link("Sunlit bookshop.jpg"));
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", IMAGE);
   await closePreview();
 }
 
 async function expectDeckPreview() {
   click(link("View deck"));
-  expect(
-    (await screen.findByTestId("artifact-dialog-site-frame")).querySelector(
-      "iframe",
-    ),
-  ).toHaveAttribute("src", DECK);
+  await expect(
+    screen.findByTestId("artifact-sidebar-body-html"),
+  ).resolves.toHaveAttribute("src", DECK);
   await closePreview();
 }
 
 async function expectVideoPreview() {
   click(link("View video"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await waitFor(() => {
     return expect(dialog.querySelector("video")).toHaveAttribute("src", VIDEO);
   });
@@ -273,13 +270,13 @@ test("Welcome diagrams and the quick start open without uploaded artifacts", asy
   for (const [name, url] of diagrams) {
     click(link(name));
     await expect(
-      screen.findByTestId("attachment-lightbox-image"),
+      screen.findByTestId("artifact-sidebar-body-image"),
     ).resolves.toHaveAttribute("src", url);
     await closePreview();
   }
   click(link("View the quick start"));
   await waitFor(() => {
-    const element = screen.getByTestId("artifact-dialog-site-frame");
+    const element = screen.getByTestId("artifact-sidebar-body-html");
     const frame =
       element instanceof HTMLIFrameElement
         ? element

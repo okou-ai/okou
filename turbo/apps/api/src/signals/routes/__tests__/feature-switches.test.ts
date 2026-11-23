@@ -299,6 +299,7 @@ describe("/api/feature-switches", () => {
             switches: {
               [FeatureSwitchKey.RealAgentInPreview]: false,
               unregisteredFeature: true,
+              batchConnectorPermissions: false,
             },
           },
         }),
@@ -309,9 +310,15 @@ describe("/api/feature-switches", () => {
         [FeatureSwitchKey.Dummy]: false,
       };
       expect(updated.body.switches).toStrictEqual(expected);
-      expect(updated.body.effectiveSwitches).toMatchObject(expected);
+      expect(updated.body.effectiveSwitches).toMatchObject({
+        ...expected,
+        batchConnectorPermissions: true,
+      });
       expect(Object.keys(updated.body.effectiveSwitches).sort()).toStrictEqual(
-        Object.values(FeatureSwitchKey).sort(),
+        [
+          ...Object.values(FeatureSwitchKey),
+          "batchConnectorPermissions",
+        ].sort(),
       );
       const current = await accept(client().get({ headers }), [200]);
       expect(current.body.switches).toStrictEqual(expected);

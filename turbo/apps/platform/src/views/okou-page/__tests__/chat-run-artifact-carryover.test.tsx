@@ -1,7 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { unzipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
@@ -10,10 +9,6 @@ import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { renderMarkdownDocx } from "../../../lib/markdown-docx/render.ts";
 import type { DocumentExportRequest } from "../../../lib/message-pdf/types.ts";
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import {
-  artifactSummary,
-  openResourceArtifact,
-} from "./chat-navigation-artifact-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
@@ -104,7 +99,6 @@ async function openRelatedArtifacts(): Promise<HTMLElement> {
 
 async function setupArtifactRun(
   outputEvents: ReturnType<typeof assistantEvent>[],
-  sidebarPreviews = false,
   markdownFirstOutput = false,
 ): Promise<void> {
   installRunChat({
@@ -128,7 +122,6 @@ async function setupArtifactRun(
     context,
     path: RUN_PATH,
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebarPreviews,
       [FeatureSwitchKey.MarkdownFirstOutput]: markdownFirstOutput,
     },
   });
@@ -155,7 +148,6 @@ test("Show format download items and report conversion failures in a toast", asy
         text: "Final Markdown summary",
       }),
     ],
-    false,
     true,
   );
 
@@ -250,13 +242,12 @@ test("Download a Word export with document title styles without changing Markdow
         text: "Final Markdown preview summary",
       }),
     ],
-    false,
     true,
   );
 
   const dialog = await openRelatedArtifacts();
   click(relatedArtifactRow(dialog, markdownUrl));
-  const preview = await screen.findByTestId("attachment-lightbox");
+  const preview = await screen.findByTestId("artifact-sidebar");
   const title = await within(preview).findByRole("heading", {
     level: 1,
     name: "Summary report",
@@ -268,7 +259,7 @@ test("Download a Word export with document title styles without changing Markdow
     ).toBeInTheDocument();
   }
   const exportButton = queryAllByRoleFast("button", preview).find((button) => {
-    return button.getAttribute("aria-label") === "Download options";
+    return button.getAttribute("aria-label") === "Download artifact";
   });
   if (!exportButton) {
     throw new Error("Expected Markdown export options in the artifact preview");
@@ -418,34 +409,6 @@ test("Expose an artifact referenced only by history from the main result actions
   expect(queryWorkHistoryToggle("expanded")).toBeVisible();
 });
 
-test("A carried image keeps its label and opens a lightbox over the dialog", async () => {
-  const url = artifactUrl("linked-evidence", "evidence.png");
-  await setupArtifactRun([
-    assistantEvent({
-      id: "linked-artifact-history",
-      runId: RUN_ID,
-      seqId: 2,
-      text: `Review [**Supporting evidence**](${url}) before continuing.`,
-    }),
-    assistantEvent({
-      id: "linked-artifact-main",
-      runId: RUN_ID,
-      seqId: 3,
-      text: "Final linked evidence summary",
-    }),
-  ]);
-
-  const dialog = await openRelatedArtifacts();
-  const artifact = relatedArtifactRow(dialog, url);
-  expect(artifact).toHaveTextContent("Supporting evidence");
-  click(artifact);
-  await expect(
-    screen.findByTestId("attachment-lightbox-image"),
-  ).resolves.toHaveAttribute("src", url);
-  expect(dialog).toBeVisible();
-  await closeRelatedArtifactPreview(dialog);
-});
-
 test("Sidebar-first previews dismiss the related-artifacts dialog rather than stacking a lightbox", async () => {
   const url = artifactUrl("sidebar-evidence", "evidence.pdf");
   await setupArtifactRun(
@@ -477,100 +440,6 @@ test("Sidebar-first previews dismiss the related-artifacts dialog rather than st
     ).not.toBeInTheDocument();
   });
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
-});
-
-async function openRelatedArtifactOverSidebar(filename: string, body?: string) {
-  context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
-    return respond(200, {
-      artifacts: [
-        artifactSummary(
-          "a0000000-0000-4000-a000-000000000282",
-          "file",
-          "Supporting report",
-        ),
-      ],
-      nextCursor: null,
-    });
-  });
-  context.mocks.api(artifactCatalogContract.get, ({ respond }) => {
-    return respond(404, {
-      error: { code: "ARTIFACT_NOT_FOUND", message: "Artifact not found" },
-    });
-  });
-  const url = artifactUrl("sidebar-preview", filename);
-  if (body !== undefined) {
-    context.mocks.http.get(url, () => {
-      return HttpResponse.text(body);
-    });
-  }
-  await setupArtifactRun([
-    assistantEvent({
-      id: "sidebar-artifact-history",
-      runId: RUN_ID,
-      seqId: 2,
-      text: `[Supporting artifact](${url})`,
-    }),
-    assistantEvent({
-      id: "sidebar-artifact-main",
-      runId: RUN_ID,
-      seqId: 3,
-      text: "Final sidebar artifact summary",
-    }),
-  ]);
-  await openResourceArtifact("Supporting report");
-  await expect(
-    screen.findByTestId("thread-sidebar-artifact-unavailable"),
-  ).resolves.toBeVisible();
-
-  const dialog = await openRelatedArtifacts();
-  click(relatedArtifactRow(dialog, url));
-  const lightbox = await screen.findByRole("dialog", {
-    name: `${filename} preview`,
-  });
-  expect(lightbox).toBeVisible();
-  expect(dialog).toBeVisible();
-  return { dialog, lightbox, url };
-}
-
-async function closeRelatedArtifactPreview(dialog: HTMLElement) {
-  const viewport = screen
-    .getByTestId("attachment-lightbox")
-    .closest('[data-slot="dialog-viewport"]');
-  if (!viewport) {
-    throw new Error("Expected the active artifact preview viewport");
-  }
-  click(viewport);
-  await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).toBeNull();
-  });
-  expect(dialog).toBeVisible();
-}
-
-test("Open a carried generic file over an existing artifact sidebar", async () => {
-  const browser = context.mocks.browser.blobDownload();
-  const { dialog, lightbox } = await openRelatedArtifactOverSidebar(
-    "archive.zip",
-    "archive bytes",
-  );
-  expect(
-    within(lightbox).getByText("No inline preview available for this file."),
-  ).toBeVisible();
-
-  // Nothing renders here, so the screen has to carry the one action that still
-  // applies to the file rather than leaving an icon in the header as its only
-  // way out.
-  const download = queryAllByRoleFast("button", lightbox).find((candidate) => {
-    return candidate.textContent?.trim() === "Download";
-  });
-  expect(download).toBeDefined();
-  click(download as HTMLElement);
-  await waitFor(() => {
-    expect(browser.downloads).toHaveLength(1);
-  });
-  // Files without a preview take the browser's native download path, so the
-  // request carries the name rather than a blob this test could read.
-  expect(browser.downloads[0]?.filename).toBe("archive.zip");
-  await closeRelatedArtifactPreview(dialog);
 });
 
 test("List every carried artifact without a secondary browse step", async () => {
