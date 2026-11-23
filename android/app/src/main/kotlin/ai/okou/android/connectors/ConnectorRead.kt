@@ -89,3 +89,8 @@ internal fun Exception.connectionFailed(): Boolean =
         (cause is UnknownHostException ||
             cause is ConnectException ||
             cause is NoRouteToHostException)
+
+internal fun Exception.hasUncertainResponse() =
+    this is ApiFailure.Network ||
+        this is ApiFailure.IncompatibleResponse ||
+        this is ApiFailure.Http && (status == 408 || status >= 500)

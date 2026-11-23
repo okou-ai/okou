@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
@@ -86,6 +87,7 @@ class ChatConnectorOptionsTest {
     fun close() {
         val application = app
         application.connectors.chatOverrideReplyGate?.countDown()
+        application.connectors.chatOverrideReadReplyGate?.countDown()
         try {
             val jobs = compose.runOnIdle {
                 ViewModelProvider(compose.activity)[SessionModel::class.java]
@@ -154,6 +156,11 @@ class ChatConnectorOptionsTest {
         account.performClick()
         waitText("Could not save the connector choice.")
         account.assertIsOff()
+        val failure =
+            compose
+                .onNodeWithText("Could not save the connector choice.")
+                .getUnclippedBoundsInRoot()
+        assertEquals(8.dp, failure.top - account.getUnclippedBoundsInRoot().bottom)
 
         app.connectors.rejectChatOverride = null
         compose.onNodeWithTag("chat-connector-reset").performClick()
@@ -162,6 +169,29 @@ class ChatConnectorOptionsTest {
         }
         account.assertIsOn()
         assertEquals(null, app.connectors.chatOverride(CHAT_PERSONAL, CONNECTOR_CALENDAR_PRIMARY))
+    }
+
+    @Test
+    fun existingChatRetainsTheConfirmedChoiceWhenReadbackIsUnavailable() {
+        waitText("Personal chat")
+        compose.onNodeWithText("Personal chat").performClick()
+        openPicker()
+        val account = compose.onNodeWithTag(primaryTag)
+        val readback = CountDownLatch(1)
+        app.connectors.loseChatOverrideReply = true
+        app.connectors.failChatOverrideReads = true
+        app.connectors.chatOverrideReadReplyGate = readback
+        try {
+            account.assertIsOn().performClick()
+            waitText("Checking account…")
+            account.assertIsOn().assertIsNotEnabled()
+        } finally {
+            readback.countDown()
+        }
+        waitText("The outcome is still unconfirmed.")
+        account.assertIsOn()
+        assertEquals(listOf(CHAT_PERSONAL to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
+        assertEquals(1, app.connectors.chatOverrideRequests.size)
     }
 
     @Test
@@ -238,7 +268,7 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun projectDraftAppliesItsExactAccountChoiceBeforeTheFirstSend() {
+    fun projectDraftConfirmsItsExactAccountChoiceBeforeTheFirstSendAfterALostResponse() {
         waitText("Research")
         compose.onNodeWithText("Research").performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("New chat in this Project").performClick()
@@ -258,16 +288,28 @@ class ChatConnectorOptionsTest {
         openPicker()
         compose.onNodeWithTag(primaryTag).assertIsOn().performClick()
         closeOptions()
-        compose.onNodeWithContentDescription("Send").performClick()
+        val readback = CountDownLatch(1)
+        application.connectors.loseChatOverrideReply = true
+        application.connectors.chatOverrideReadReplyGate = readback
+        try {
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { application.connectors.chatOverrideReads.isNotEmpty() }
+            }
+            assertTrue(application.chats.inputs.isEmpty())
+        } finally {
+            readback.countDown()
+        }
 
-        compose.waitUntil(10_000) { app.chats.inputs.size == 1 && observedAtSend.get() != null }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { application.chats.inputs.size == 1 && observedAtSend.get() != null }
+        }
         val chat = app.chats.created.single()
         assertEquals(CHAT_PROJECT, chat.getValue("projectId").jsonPrimitive.content)
         assertEquals(false, observedAtSend.get())
-        assertEquals(
-            chat.getValue("clientThreadId").jsonPrimitive.content,
-            app.connectors.chatOverrideRequests.single().threadId,
-        )
+        val thread = chat.getValue("clientThreadId").jsonPrimitive.content
+        assertEquals(thread, app.connectors.chatOverrideRequests.single().threadId)
+        assertEquals(listOf(thread to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
     }
 
     private fun composer() =

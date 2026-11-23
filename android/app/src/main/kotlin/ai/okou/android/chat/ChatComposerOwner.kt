@@ -906,7 +906,7 @@ internal class ChatComposerOwner(
         val connectors = op.connection.connectors ?: throw ApiFailure.IncompatibleResponse()
         durable(op, pending)
         for (choice in pending.connectorOverrides) {
-            connectors.setChatOverride(pending.threadId, choice)
+            connectors.setChatOverride(pending.threadId, choice, canReadBack = { current(op) })
             requireCurrent(op)
         }
     }
