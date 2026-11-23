@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
+import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
@@ -135,6 +136,9 @@ internal fun WorkflowScreen(
     onClose: () -> Unit,
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
@@ -229,7 +233,19 @@ internal fun WorkflowScreen(
                         WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
-                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
+                        WorkflowEditor(
+                            detail,
+                            editor,
+                            state,
+                            model,
+                            wide,
+                            ::exitEditor,
+                            onViewConnection =
+                                onViewConnection?.let { open -> { slug -> open(slug, null) } },
+                            restoreConnectionFocus =
+                                connectionReturn != null && connectionReturn.ruleId == null,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
+                        )
                     else ->
                         WorkflowDetailPane(
                             detail = detail,
@@ -245,6 +261,9 @@ internal fun WorkflowScreen(
                             },
                             onEditRule = { model.edit(it) },
                             onToggle = model::toggle,
+                            onViewConnection = onViewConnection,
+                            connectionReturn = connectionReturn,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                             handoffPending = handoffPending,
                             useError = useError,
                             onUse = { onUse(detail) },
@@ -722,6 +741,9 @@ private fun WorkflowDetailPane(
     onNewRule: () -> Unit,
     onEditRule: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     handoffPending: Boolean,
     useError: Int?,
     onUse: () -> Unit,
@@ -788,6 +810,9 @@ private fun WorkflowDetailPane(
                             timezone = timezone,
                             onEdit = onEditRule,
                             onToggle = onToggle,
+                            onViewConnection = onViewConnection,
+                            restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                         )
                         if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                     }

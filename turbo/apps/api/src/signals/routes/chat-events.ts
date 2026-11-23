@@ -1,4 +1,5 @@
 /** Canonical ChatEvent route adapter. */
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { command } from "ccstate";
 import {
   chatEventsContract,
@@ -13,6 +14,8 @@ import {
   notFound,
 } from "../../lib/error";
 import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
+import { settleIncludingAbort } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
@@ -40,7 +43,9 @@ const prepareSuggestionSend$ = command(
       data,
       bootstrap,
     }: {
-      readonly data: ChatEventSendBody;
+      readonly data: ChatEventSendBody & {
+        readonly userMessage: UserMessageDocument;
+      };
       readonly bootstrap: ReturnType<
         (typeof startNormalSendBootstrap$)["write"]
       >;
@@ -49,13 +54,6 @@ const prepareSuggestionSend$ = command(
   ) => {
     const auth = get(organizationAuthContext$);
     const document = data.userMessage;
-    if (
-      auth.tokenType !== "session" ||
-      !document ||
-      !suggestionFeedbacks(document).length
-    ) {
-      return null;
-    }
     const timing = get(chatEnqueueTiming$);
     const access = await measureChatEnqueue(
       timing,
@@ -122,11 +120,27 @@ export const sendValidatedChatEvent$ = command(
     const referenceRead = measureChatEnqueue(timing, "references", () => {
       return get(captureProjectReferences(auth, data.userMessage, projectId));
     });
-    const bootstrap = set(startNormalSendBootstrap$, {
-      body: data,
-      auth,
-      requireVisibleThread,
-    });
+    const bootstrap = set(
+      startNormalSendBootstrap$,
+      { body: data, auth, requireVisibleThread },
+      signal,
+    );
+    const document = data.userMessage;
+    const suggestionRead =
+      auth.tokenType === "session" &&
+      document &&
+      suggestionFeedbacks(document).length
+        ? settleIncludingAbort(
+            set(
+              prepareSuggestionSend$,
+              { data: { ...data, userMessage: document }, bootstrap },
+              signal,
+            ),
+          )
+        : undefined;
+    if (suggestionRead) {
+      waitUntil(suggestionRead);
+    }
     const projectReferences = await referenceRead;
     signal.throwIfAborted();
     if (projectReferences === null) {
@@ -134,12 +148,12 @@ export const sendValidatedChatEvent$ = command(
         projectId ? "Project not found" : "Project or conversation not found",
       );
     }
-    const suggestion = await set(
-      prepareSuggestionSend$,
-      { data, bootstrap },
-      signal,
-    );
+    const checkedSuggestion = await suggestionRead;
     signal.throwIfAborted();
+    if (checkedSuggestion && !checkedSuggestion.ok) {
+      throw checkedSuggestion.error;
+    }
+    const suggestion = checkedSuggestion?.value;
     if (suggestion && "status" in suggestion) {
       return suggestion;
     }

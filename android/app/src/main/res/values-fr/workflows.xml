@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Exécution du chat terminée</string>
     <string name="workflow_clear_search">Effacer la recherche</string>
     <string name="workflow_connect_provider">Connectez %1$s pour activer cette règle.</string>
-    <string name="workflow_connection_unavailable">Impossible d’ouvrir les connexions.</string>
     <string name="workflow_create_uncertain">La création n’a pas pu être confirmée. Fermez l’éditeur et vérifiez les règles avant de réessayer.</string>
     <string name="workflow_creation_prompt">Aidez-moi à créer un workflow privé. Utilisez la compétence workflow-setup. Demandez-moi quelle tâche je veux répéter et présentez-moi les instructions pour validation avant de les enregistrer. Créez une automatisation uniquement si je vous le demande.</string>
     <string name="workflow_daily">Tous les jours</string>

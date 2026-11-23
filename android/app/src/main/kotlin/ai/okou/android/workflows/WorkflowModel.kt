@@ -154,11 +154,11 @@ internal constructor(
         }
     }
 
-    internal fun visibilityChanged(open: Boolean) {
+    internal fun visibilityChanged(open: Boolean, retainCurrentVisit: Boolean = false) {
         if (visible == open) return
         visible = open
         if (open) {
-            presentCachedRanges()
+            if (!retainCurrentVisit) presentCachedRanges()
             refresh()
         } else stopReads()
     }

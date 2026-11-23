@@ -7232,8 +7232,16 @@ function equalFeedbackSources(
   if (left === undefined || right === undefined) {
     return left === right;
   }
+  if (left.type === "artifact") {
+    return (
+      right.type === "artifact" &&
+      left.fileId === right.fileId &&
+      left.filenameSnapshot === right.filenameSnapshot &&
+      left.artifactId === right.artifactId
+    );
+  }
   return (
-    left.type === right.type &&
+    right.type === "mail" &&
     left.id === right.id &&
     left.status === right.status &&
     left.sentId === right.sentId
@@ -7244,7 +7252,8 @@ function userMessageFeedbackHeading(
   parts: readonly UserMessageFeedbackRenderPart[],
   chatRunSourceTitle: string | undefined,
 ): string {
-  if (chatRunSourceTitle) {
+  const source = parts[0]?.part.source;
+  if (chatRunSourceTitle && source?.type !== "artifact") {
     return parts.length === 1
       ? i18n.t(
           ($) => {
@@ -7259,7 +7268,6 @@ function userMessageFeedbackHeading(
           { count: parts.length, title: chatRunSourceTitle },
         );
   }
-  const source = parts[0]?.part.source;
   if (!source) {
     return parts.length === 1
       ? i18n.t(($) => {
@@ -7275,13 +7283,15 @@ function userMessageFeedbackHeading(
         );
   }
   const description =
-    source.status === "draft"
-      ? i18n.t(($) => {
-          return $.chat.feedback.emailDraftDescription;
-        })
-      : i18n.t(($) => {
-          return $.chat.feedback.sentEmailDescription;
-        });
+    source.type === "artifact"
+      ? source.filenameSnapshot
+      : source.status === "draft"
+        ? i18n.t(($) => {
+            return $.chat.feedback.emailDraftDescription;
+          })
+        : i18n.t(($) => {
+            return $.chat.feedback.sentEmailDescription;
+          });
   return parts.length === 1
     ? i18n.t(
         ($) => {

@@ -98,9 +98,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
 @Composable
-internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () -> Unit) {
+internal fun ConnectorsPage(
+    model: ConnectorModel,
+    listWidth: Int?,
+    initialSlug: String? = null,
+    close: () -> Unit,
+) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val route = rememberConnectorDirectory()
+    val route = rememberConnectorDirectory(initialSlug)
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
     val focus = LocalFocusManager.current
@@ -131,7 +136,7 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
-        if (!wide && selected != null) {
+        if (initialSlug == null && !wide && selected != null) {
             restoreRow = selected
             route.slug = null
         } else {
