@@ -1,9 +1,11 @@
-import { screen } from "@testing-library/react";
+import { publicArtifactUrl } from "./chat-attachment-test-helpers.ts";
+import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   assistantEvent,
+  completedEvent,
   createChatRunFixtures,
   findEnabledButton,
   promptEvent,
@@ -88,4 +90,74 @@ test("chat-run-steer-005 interrupts the active run while its queued follow-up re
   await screen.findByText("queue...");
   expect(screen.getByText(followup)).toBeVisible();
   expect(screen.queryByRole("listitem", { name: "Queued message" })).toBeNull();
+});
+
+test("Two completed review phases keep independent artifacts and durations after a steer", async () => {
+  const at = (sec: number) => {
+    return new Date(Date.UTC(2026, 8, 9, 10, 0, sec)).toISOString();
+  };
+  const output = (
+    sec: number,
+    id: string,
+    text: string,
+    file: string,
+    seqId: number,
+  ) => {
+    return assistantEvent({
+      id,
+      runId,
+      seqId,
+      createdAt: at(sec),
+      text: text + "\n\n[" + file + "](" + publicArtifactUrl(file) + ")",
+    });
+  };
+  const events = [
+    promptEvent({
+      id: "api-request",
+      text: "Review the API",
+      runId,
+      seqId: 1,
+      createdAt: at(0),
+    }),
+    output(8, "review", "Review complete.", "review.md", 2),
+  ];
+  installRunChat({ activeRunIds: [runId], chatEvents: events });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText("Review complete.");
+  events.push(
+    promptEvent({
+      id: "steering",
+      text: "Check error handling.",
+      runId,
+      seqId: 3,
+      createdAt: at(12),
+    }),
+  );
+  publishRunUpdate();
+  const steer = await screen.findByText("Check error handling.");
+  events.push(
+    output(18, "followup", "Error paths checked.", "errors.md", 4),
+    completedEvent({ id: "finished", runId, seqId: 5, createdAt: at(20) }),
+  );
+  publishRunUpdate();
+  const followup = await screen.findByText("Error paths checked.");
+  const initial = screen.getByText("Review complete.");
+  expect(
+    initial.compareDocumentPosition(steer) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    steer.compareDocumentPosition(followup) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  for (const [message, file] of [
+    [initial, "review.md"],
+    [followup, "errors.md"],
+  ] as const) {
+    const result = within(
+      message.closest<HTMLElement>('[data-role="assistant"]')!,
+    );
+    expect(result.getByText(file)).toBeInTheDocument();
+    expect(result.getByLabelText("Copy message")).toBeInTheDocument();
+  }
+  await screen.findByText("Worked for 12 sec");
+  await screen.findByText("Worked for 8 sec");
 });

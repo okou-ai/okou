@@ -468,3 +468,95 @@ test("chat-navigation-artifact-drive-021 authorizing conversion replaces the Doc
   ).resolves.toHaveAttribute("href", docsUrl);
   expect(within(menu).queryByText("Upload to Google Docs")).toBeNull();
 });
+
+test("Closing a pending Drive upload leaves the reopened artifact ready for download", async () => {
+  const file = installArtifactConversation("delivery.bin", addAccount);
+  const auth = authorization("add");
+  const download = context.mocks.browser.blobDownload();
+  const began = context.mocks.deferred<void>(),
+    aborted = context.mocks.deferred<void>();
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadFromChat,
+    async ({ request, respond }) => {
+      request.signal.addEventListener(
+        "abort",
+        () => {
+          return aborted.resolve();
+        },
+        {
+          once: true,
+        },
+      );
+      began.resolve();
+      await aborted.promise;
+      return respond(200, {
+        id: "cancelled-delivery",
+        name: file.filename,
+        webViewLink: null,
+      });
+    },
+  );
+  const first = await preview();
+  await choose(first, "Connect Google Drive");
+  await waitFor(() => {
+    return expect(auth.popup.location.href).toBe(providerUrl);
+  });
+  auth.complete();
+  await began.promise;
+  click(await findNamedButton("Close artifact", first));
+  await aborted.promise;
+  click(await screen.findByText("Review the file"));
+  const reopened = await screen.findByTestId("artifact-sidebar");
+  expect(
+    within(reopened).queryByText(/Cancel sync/, { selector: "button" }),
+  ).not.toBeInTheDocument();
+  const menu = await options(reopened);
+  click(await findNamedMenuItem("Download", menu));
+  await waitFor(() => {
+    return expect(download.downloads.at(-1)?.filename).toBe(file.filename);
+  });
+  expect(screen.queryByText("Synced to Google Drive")).not.toBeInTheDocument();
+});
+
+test("The conversation's saved Drive destination still accepts a downloadable file during a catalog outage", async () => {
+  const file = installArtifactConversation("manifest.txt", {
+    status: "not_synced",
+  });
+  const browser = context.mocks.browser.blobDownload();
+  const outage = {
+    error: {
+      code: "SERVICE_UNAVAILABLE",
+      message: "Account records unavailable",
+    },
+  };
+  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+    return respond(503, outage);
+  });
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(503, outage);
+  });
+  context.mocks.api(
+    artifactGoogleDriveContract.uploadFromChat,
+    ({ params, body, respond }) => {
+      return body.connectionId === account &&
+        params.artifactId === artifact &&
+        body.chatThreadId === ATTACHMENT_THREAD_ID
+        ? respond(200, {
+            id: "saved-manifest",
+            name: file.filename,
+            webViewLink: null,
+          })
+        : respond(403, {
+            error: { code: "FORBIDDEN", message: "Choose the saved account" },
+          });
+    },
+  );
+  const panel = await preview();
+  await choose(panel, "Upload to Google Drive");
+  await screen.findByText("Synced to Google Drive");
+  const menu = await options(panel);
+  click(await findNamedMenuItem("Download", menu));
+  await waitFor(() => {
+    return expect(browser.downloads.at(-1)?.filename).toBe(file.filename);
+  });
+});

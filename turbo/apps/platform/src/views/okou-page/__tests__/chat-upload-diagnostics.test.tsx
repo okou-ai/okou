@@ -3,7 +3,7 @@ import { findAction } from "./connector-integrations-test-helpers.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { HttpResponse } from "msw";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
@@ -76,4 +76,45 @@ test("chat-upload-diagnostics-002 a failed video transfer can retry into a remov
       return r.type === "exception";
     }),
   ).toStrictEqual([]);
+});
+
+test("chat-upload-diagnostics-001 A storage outage leaves the named video failed and reports its terminal part", async () => {
+  const telemetry = storage();
+  context.mocks.http.put("https://upload.example.org/*", () => {
+    return HttpResponse.error();
+  });
+  await attach();
+  await screen.findByText("Failed to upload " + filename + ".");
+  await waitFor(() => {
+    const exceptions = telemetry.reports
+      .filter((report) => {
+        return report.type === "exception";
+      })
+      .filter((report) => {
+        return (
+          typeof report.error === "object" &&
+          report.error !== null &&
+          "diagnostics" in report.error
+        );
+      });
+    expect(
+      exceptions.map((report) => {
+        return report.error;
+      }),
+    ).toContainEqual(
+      expect.objectContaining({
+        diagnostics: expect.objectContaining({
+          file_size: size,
+          total_bytes: size,
+          part_number: 1,
+          part_count: 1,
+          attempt: 5,
+          request_event: "error",
+          response_status: 0,
+          target_origin: "https://upload.example.org",
+          with_credentials: false,
+        }),
+      }),
+    );
+  });
 });

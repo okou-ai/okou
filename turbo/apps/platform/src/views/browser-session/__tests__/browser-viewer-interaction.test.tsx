@@ -1769,3 +1769,88 @@ test("browser-viewer-interaction-164 Widening removes the focused picker without
   expect(field()).toHaveFocus();
   expect(field()).toHaveValue("chosen.example/draft");
 });
+
+test.each([
+  ["browser-viewer-interaction-064", "address"],
+  ["Control: current read", "remote"],
+] as const)(
+  "%s A password-context reply reaches the browser while %s has focus",
+  async (_case, destination) => {
+    const remote = await openWindow();
+    const delayed = remote.holdNext("editing-context");
+    remote.setFocusedEditing(password);
+    await userEvent.click(input());
+    await delayed.received;
+    if (destination === "address") {
+      await userEvent.click(field());
+      remote.event(
+        "Page.navigatedWithinDocument",
+        {
+          frameId: "example-frame",
+          url: home + "/#invoice",
+          navigationType: "fragment",
+        },
+        remote.pageSession("main"),
+      );
+      await replaceDraft("my-choice.example");
+    }
+    const read = context.mocks.deferred<void>();
+    await delayed.release(undefined, () => {
+      if (!read.settled()) {
+        read.resolve();
+      }
+    });
+    await read.promise;
+    if (destination === "remote") {
+      await waitFor(() => {
+        return hints("numeric", "done", "ja", "none", "password");
+      });
+      return;
+    }
+    expect(field()).toHaveFocus();
+    expect(field()).toHaveValue("my-choice.example");
+    expect(input()).toHaveAttribute("type", "text");
+    expect(input()).not.toHaveAttribute("inputmode", "numeric");
+    expect(input()).not.toHaveAttribute("enterkeyhint", "done");
+  },
+);
+
+test("An address first typed after creation fails can navigate the existing Example tab", async () => {
+  const remote = await openWindow();
+  const creating = await startCreation(remote);
+  await failMovedCreation(remote, creating);
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue(home);
+  await navigateFromEditor(remote, "main", "retained.example/path");
+  await userEvent.click(input());
+  await navigateFromEditor(remote, "main", "after-failure.example/path");
+});
+
+test("Choosing the blank address before a failed creation keeps the draft scoped to that tab", async () => {
+  const remote = await openWindow();
+  const creating = await startCreation(remote);
+  await userEvent.click(field());
+  await failMovedCreation(remote, creating);
+  await replaceDraft("retained.example/path");
+  await userEvent.keyboard("{Enter}");
+  expect(field()).toHaveValue("retained.example/path");
+  expect(field()).toHaveFocus();
+  selected("Example");
+  await userEvent.click(input());
+  await replaceDraft("after-failure.example/path");
+  await userEvent.keyboard("{Enter}");
+  expect(field()).toHaveValue("after-failure.example/path");
+  selected("Example");
+  expect(
+    remote.targets.find((target) => {
+      return target.targetId === "main";
+    })?.url,
+  ).toBe(home);
+  await userEvent.keyboard("{Escape}");
+  await navigateFromEditor(remote, "main", "after-failure.example/path");
+  expect(
+    remote.targets.find((target) => {
+      return target.targetId === "main";
+    })?.url,
+  ).toBe("http://after-failure.example/path");
+});

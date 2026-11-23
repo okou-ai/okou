@@ -210,3 +210,72 @@ test("composer-task-chips-019 the reply recommendation prepares one Gmail watch 
     }),
   ).toBeFalsy();
 });
+
+test.each(["keep", "remove"] as const)(
+  "A brief sent after dismissing both tasks can %s its separate inline style",
+  async (style) => {
+    const asset = {
+      id: crypto.randomUUID(),
+      filename: "brief.txt",
+      contentType: "text/plain",
+      size: 5,
+      url: "https://files.example.org/brief.txt",
+    };
+    context.mocks.upload.success(asset);
+    const { editor, sent } = await home();
+    await fill(editor, draft);
+    await userEvent
+      .setup({ delay: null })
+      .upload(
+        await screen.findByLabelText("Attach", { selector: "input" }),
+        new File(["brief"], asset.filename, { type: asset.contentType }),
+      );
+    await findFastControl("button", "Remove brief.txt");
+    await press("Image");
+    await press("View all");
+    const gallery = await screen.findByRole("dialog");
+    const template = await findFastControl(
+      "button",
+      /^Select template /i,
+      gallery,
+    );
+    click(template);
+    const title = template
+      .getAttribute("aria-label")!
+      .replace(/^Select template /i, "");
+    await expectInlineTemplateInComposer(title);
+    await press("Remove Image");
+    await press("Presentation");
+    await countSlides();
+    await press("Remove Presentation");
+    if (style === "remove") {
+      await fill(editor, draft);
+    }
+    await press("Send");
+    await waitFor(() => {
+      return expect(sent.sentMessages[0]).toBeDefined();
+    });
+    const parts = sent.sentMessages[0]!.parts;
+    expect(parts).toContainEqual(
+      expect.objectContaining({ type: "text", text: draft }),
+    );
+
+    expect(parts).toContainEqual(
+      expect.objectContaining({ type: "file", filenameSnapshot: "brief.txt" }),
+    );
+    expect(
+      parts.map((part) => {
+        return part.type;
+      }),
+    ).not.toContain("additional_info");
+    expect(
+      parts
+        .filter((part) => {
+          return part.type === "template";
+        })
+        .map((part) => {
+          return part.titleSnapshot;
+        }),
+    ).toStrictEqual(style === "keep" ? [title] : []);
+  },
+);

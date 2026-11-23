@@ -113,3 +113,23 @@ test("chat-thread-header-actions-014 both failed pin changes release the next mo
     "true",
   );
 });
+
+test("The same chat offers Rename on mobile and mail management in the desktop More menu", async () => {
+  const viewport = await openMobile();
+  const mobileRename = await action("Rename chat");
+  click(mobileRename);
+  const editor = await screen.findByDisplayValue("Cargo review");
+  expect(editor).toBeVisible();
+  click(await findButton("Cancel"));
+  act(() => {
+    return viewport.setMatches((query) => {
+      return query.startsWith("(min-width:");
+    });
+  });
+  const desktopMenu = await action("Manage emails");
+  const menu = desktopMenu.closest<HTMLElement>('[role="menu"]')!;
+  expect(menu).toHaveTextContent("Automations");
+  expect(menu).toHaveTextContent("Open browser");
+  expect(menu).not.toHaveTextContent(/Pin chat|Rename chat/);
+  expect(screen.getByText(subject)).toBeInTheDocument();
+});

@@ -142,3 +142,47 @@ test("connectors-account-rename-focus-009 the refreshed Research row takes focus
   await userEvent.keyboard("{Enter}");
   await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
 });
+
+test.each(["keyboard", "pointer"] as const)(
+  "Cancelling the %s account edit restores Work 1's menu trigger through Escape",
+  async (interaction) => {
+    const saved = accounts();
+    mockSavedConnectorAccounts(context, () => {
+      return saved;
+    });
+    context.mocks.api(
+      connectorAccountsContract.rename,
+      ({ body, params, respond }) => {
+        const row = saved.find((item) => {
+          return item.id === params.connectionId;
+        })!;
+        row.displayName = body.displayName;
+        return respond(200, row);
+      },
+    );
+    await setupPage({ context, path: "/connectors" });
+    const dialog = await openAccountList();
+    const name = await beginEdit("Work 1", interaction);
+    await fill(name, "Release planning");
+    await userEvent.tab();
+    expect(queryButton("Cancel", dialog)).toHaveFocus();
+    await userEvent.keyboard("{Enter}");
+    const opener = await accountActions("Work 1");
+    await waitFor(() => {
+      return expect(opener).toHaveFocus();
+    });
+    await userEvent.keyboard("{Enter}");
+    await screen.findByRole("menu");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    });
+    expect(opener).toHaveFocus();
+    expect(dialog).toBeVisible();
+    const nextEdit = await beginEdit("Work 1", "pointer");
+    expect(nextEdit).toHaveValue("Work 1");
+    await fill(nextEdit, "Release planning");
+    await userEvent.keyboard("{Enter}");
+    await expect(accountActions("Release planning")).resolves.toHaveFocus();
+  },
+);

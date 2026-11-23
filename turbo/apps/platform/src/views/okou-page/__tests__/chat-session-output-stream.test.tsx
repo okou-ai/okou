@@ -1,6 +1,6 @@
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import { sessionOutputChannelName } from "@okouai/api-contracts/validators/realtime";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
@@ -291,4 +291,59 @@ test("A returning conversation reacquires live output after its reader left for 
   session.nextBlock("Depart from platform four.");
   await screen.findByText("Depart from platform four.");
   await expect(findComposerEditor()).resolves.toBeEnabled();
+});
+
+async function pendingReport() {
+  const events = await conversation();
+  events.chunk("Preparing the report.");
+  await screen.findByText("Preparing the report.");
+  return events;
+}
+
+test("chat-session-output-stream-002 A durable report ignores a late live fragment before completion", async () => {
+  const events = await pendingReport();
+  events.persist("The complete report");
+  await screen.findByText("The complete report");
+  act(() => {
+    return events.chunk(" Additional figures.");
+  });
+  expect(screen.getByText("The complete report")).toBeInTheDocument();
+  expect(screen.queryByText(/Additional figures/)).not.toBeInTheDocument();
+  events.finish();
+  await waitFor(() => {
+    return expect(events.subscribed()).toBeFalsy();
+  });
+  expect(screen.getAllByText("The complete report")).toHaveLength(1);
+  expect(
+    screen.queryByText(/Preparing the report|Additional figures/),
+  ).not.toBeInTheDocument();
+});
+
+test("Without a durable event the late fragment extends the visible report", async () => {
+  const events = await pendingReport();
+  events.chunk(" Additional figures.");
+  await expect(
+    screen.findByText("Preparing the report. Additional figures."),
+  ).resolves.toBeVisible();
+});
+
+test("A partial authorization URL can already be followed before the terminating space", async () => {
+  const events = await conversation();
+  const prefix = "https://app.okou.ai/computer-use/authorize/";
+  events.chunk(prefix + "harbor");
+  const early = await findFastControl("link", prefix + "harbor");
+  expect(early).toHaveAttribute("href", prefix + "harbor");
+  expect(
+    screen.queryByTestId("computer-use-authorization-card"),
+  ).not.toBeInTheDocument();
+  events.chunk("-report.");
+  await findFastControl("link", url);
+  events.chunk(" Continue here.");
+  const ready = await card();
+  events.persist(url + ". Continue here.");
+  events.finish();
+  await waitFor(() => {
+    return expect(events.subscribed()).toBeFalsy();
+  });
+  await expect(card()).resolves.toBe(ready);
 });

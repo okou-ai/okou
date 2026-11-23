@@ -38,7 +38,9 @@ async function openConversation(
   fields: Field[],
   messages: string[],
   options: {
-    arrange?: () => void;
+    arrange?: (request: ReturnType<typeof installBrowserRequest>) => void;
+    initial?: Parameters<typeof installBrowserRequest>[2];
+    transport?: "message-port";
     startPath?: string;
   } = {},
 ) {
@@ -55,12 +57,13 @@ async function openConversation(
     ];
   });
   createChatRunFixtures(context).installRunChat({ threadId, chatEvents });
-  const request = installBrowserRequest(context, fields);
-  options.arrange?.();
+  const request = installBrowserRequest(context, fields, options.initial);
+  options.arrange?.(request);
   await setupPage({
     context,
     host: "app.okou.ai",
     path: options.startPath ?? "/chats/" + threadId,
+    sharedWorkerTestTransport: options.transport,
   });
   return request;
 }
@@ -562,3 +565,132 @@ test("chat-capability-browser-actions-001 the Research card exposes its live thu
     "16px",
   );
 });
+
+test.each(["explained", "historical"] as const)(
+  "Submitting the %s Notes dialog leaves the completed request in the conversation",
+  async (version) => {
+    const notes: Field = {
+      key: "notes",
+      label: "Notes",
+      fieldKind: "text",
+      required: true,
+      control: { tagName: "INPUT", inputType: "text" },
+    };
+    const companionToken = "vm0_browser_user_action_" + "d".repeat(43);
+    const originalUrl = new URL(path, "https://app.okou.ai");
+    const otherUrl = new URL(originalUrl);
+    otherUrl.pathname = "/browser/actions/" + companionToken;
+    const inspecting = context.mocks.deferred<void>(),
+      checked = context.mocks.deferred<void>();
+    let finishedCompanion = false,
+      reopened = false;
+    const task = {
+      title: "Update release notes",
+      reason: "Add the signed-off text to the release form.",
+    };
+    const request = await openConversation(
+      [notes],
+      [originalUrl.href, otherUrl.href],
+      {
+        initial: version === "explained" ? task : {},
+        transport: "message-port",
+        arrange(primary) {
+          context.mocks.api(
+            browserUserActionsContract.get,
+            ({ params, respond }) => {
+              return params.requestToken === companionToken
+                ? respond(200, {
+                    ...primary.record,
+                    requestToken: companionToken,
+                    title: "Companion approval",
+                    callbackDelivered: false,
+                    state: finishedCompanion ? "succeeded" : "pending",
+                  })
+                : respond(200, primary.record);
+            },
+          );
+          context.mocks.api(
+            browserUserActionsContract.preflight,
+            async ({ respond }) => {
+              if (!inspecting.settled()) {
+                inspecting.resolve();
+              }
+              await checked.promise;
+              return respond(200, {
+                ...primary.record,
+                fields: [
+                  {
+                    ...notes,
+                    control: { tagName: "TEXTAREA", inputType: "textarea" },
+                  },
+                  {
+                    key: "qty",
+                    label: reopened ? "Updated quantity" : "Quantity",
+                    fieldKind: "number",
+                    required: false,
+                    control: { tagName: "INPUT", inputType: "number" },
+                  },
+                ],
+              });
+            },
+          );
+        },
+      },
+    );
+    await waitFor(() => {
+      return expect(
+        screen.getAllByText("Enter information", { selector: "button" }),
+      ).toHaveLength(2);
+    });
+    const primaryButton = screen.getAllByText("Enter information", {
+      selector: "button",
+    })[0]!;
+    const primaryAnswer = primaryButton.closest<HTMLElement>(
+      '[data-role="assistant"]',
+    )!;
+    click(primaryButton);
+    const dialog = await screen.findByRole("dialog");
+    const form = within(dialog);
+    expect(form.getByRole("heading")).toHaveTextContent(
+      version === "explained" ? task.title : "Enter information in browser",
+    );
+    expect(form.queryAllByText(task.reason)).toHaveLength(
+      version === "explained" ? 1 : 0,
+    );
+    await inspecting.promise;
+    await fill(
+      form.getByLabelText("Notes", { selector: "input" }),
+      "Draft notes",
+    );
+    checked.resolve();
+    await expect(
+      form.findByLabelText("Notes", { selector: "textarea" }),
+    ).resolves.toHaveValue("Draft notes");
+    await form.findByLabelText("Quantity");
+    finishedCompanion = true;
+    request.announce();
+    await screen.findByText("Information added");
+    expect(dialog).toBeVisible();
+    click(await findEnabledButton("Close", dialog));
+    reopened = true;
+    click(await screen.findByText("Enter information", { selector: "button" }));
+    const again = await screen.findByRole("dialog");
+    await within(again).findByLabelText("Updated quantity");
+    await fill(within(again).getByLabelText("Notes"), "Ready");
+    click(await findEnabledButton("Add to browser", again));
+    await screen.findByText("Agent notified");
+    expect(
+      within(primaryAnswer).getByText("Agent notified"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Information added")).toBeInTheDocument();
+    expect(location.pathname).toBe("/chats/" + threadId);
+    await expect(request.applied.promise).resolves.toContainEqual({
+      key: "notes",
+      value: "Ready",
+    });
+    await expect(request.callback.promise).resolves.toMatchObject({
+      threadId,
+      prompt: callbackPrompt,
+    });
+  },
+);

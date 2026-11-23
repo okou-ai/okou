@@ -754,3 +754,83 @@ test("A failed cover change leaves the saved artwork and selection available for
     current!,
   );
 });
+
+test("A previously visited suggestion becomes available again after its fresh feed arrives", async () => {
+  const first = createTestRuntime(context);
+  const saved = proposal("Harbor budget review");
+  const loading = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let reopening = false;
+  context.mocks.api(feedContract.list, async ({ respond }) => {
+    if (reopening) {
+      if (!loading.settled()) {
+        loading.resolve();
+      }
+      await release.promise;
+    }
+    return respond(200, { items: [saved] });
+  });
+  const featureSwitches = { [FeatureSwitchKey.AgentSuggestion]: true };
+  await setupPage({ context: first, path: "/for-you", featureSwitches });
+  await activeCard(saved);
+  cleanup();
+  first.dispose();
+  reopening = true;
+  try {
+    await openDeck("/");
+    click(await findFastControl("link", /For you/));
+    await loading.promise;
+    expect(location.pathname).toBe("/for-you");
+    expect(
+      screen.queryByRole("article", { name: saved.content.title }),
+    ).not.toBeInTheDocument();
+  } finally {
+    release.resolve();
+  }
+  await expect(activeCard(saved)).resolves.toBeInTheDocument();
+});
+
+test.each([409, 503] as const)(
+  "A loaded option sends its draft when the unavailable suggestion returns %i",
+  async (status) => {
+    const item = proposal("Harbor permits");
+    const pool = [item];
+    feed(pool);
+    const sent = context.mocks.deferred<string>();
+    createChatRunFixtures(context).installRunChat({
+      onSendRequest: ({ prompt }) => {
+        return sent.resolve(prompt);
+      },
+    });
+    const receipt = context.mocks.deferred<void>();
+    context.mocks.api(feedContract.consume, ({ respond }) => {
+      receipt.resolve();
+      return status === 409
+        ? respond(409, {
+            error: { code: "CONFLICT", message: "Suggestion already consumed" },
+          })
+        : respond(503, {
+            error: {
+              code: "SERVICE_UNAVAILABLE",
+              message: "Suggestion service unavailable",
+            },
+          });
+    });
+    await openDeck();
+    const choose = await findFastControl(
+      "button",
+      "Prepare Harbor permits",
+      await activeCard(item),
+    );
+    pool.splice(0);
+    click(choose);
+    await expect(sent.promise).resolves.toBe("Draft Harbor permits");
+    await receipt.promise;
+    await screen.findByText("All caught up");
+    expect(location.pathname).toBe("/for-you");
+    if (status === 503) {
+      await screen.findByRole("alert");
+    }
+    expect(screen.queryAllByRole("alert")).toHaveLength(status === 503 ? 1 : 0);
+  },
+);

@@ -697,3 +697,59 @@ test("browser-user-action-page-053 the target thread signals an uncertain outcom
     release.resolve();
   }
 });
+
+test("An email-only request shows the fallback heading and notifies its chat", async () => {
+  const request = browserRequest([account]);
+  await request.open();
+  const heading = await screen.findByRole("heading", {
+    name: "Enter information in browser",
+  });
+  const form = within(screen.getByRole("form", { name: heading.textContent! }));
+  expect(
+    form.queryByText("Enter information in browser", { selector: "p" }),
+  ).not.toBeInTheDocument();
+  await fill(form.getByLabelText(account.label), email);
+  await expect(submit(request)).resolves.toStrictEqual([
+    { key: account.key, value: email },
+  ]);
+  await expect(request.callback.promise).resolves.toMatchObject({
+    threadId,
+    prompt: callbackPrompt,
+  });
+});
+
+test("A pending standalone field is withdrawn when preflight finds changed fields", async () => {
+  const request = browserRequest([account]);
+  const inspecting = context.mocks.deferred<void>();
+  const changed = context.mocks.deferred<void>();
+  context.mocks.api(
+    browserUserActionsContract.preflight,
+    async ({ respond }) => {
+      inspecting.resolve();
+      await changed.promise;
+      request.transition("stale");
+      return respond(409, {
+        error: { code: "FIELDS_CHANGED", message: "The target changed" },
+      });
+    },
+  );
+  await request.open("message-port");
+  await waitFor(() => {
+    return expect(
+      context.mocks.ably.hasSubscriptionOnChannel(
+        "user:test-user-123",
+        "browserUserActionChanged:" + threadId,
+      ),
+    ).toBeTruthy();
+  });
+  await inspecting.promise;
+  const address = await screen.findByLabelText(account.label);
+  expect(address).toBeEnabled();
+  changed.resolve();
+  await screen.findByText("Fields changed");
+  expect(
+    screen.getByText("Ask the agent to create a new request."),
+  ).toBeInTheDocument();
+  expect(screen.queryByRole("form")).not.toBeInTheDocument();
+  expect(address).not.toBeInTheDocument();
+});

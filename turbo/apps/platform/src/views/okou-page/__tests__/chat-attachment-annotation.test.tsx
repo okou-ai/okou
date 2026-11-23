@@ -4,7 +4,12 @@ import { HttpResponse } from "msw";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
@@ -307,4 +312,47 @@ test("chat-attachment-annotation-021 undo reverses the drag after confirming the
   expect(mark.style.left).not.toBe("8%");
   await user.keyboard("{Control>}z{/Control}");
   expect(mark.style.left).toBe("8%");
+});
+
+test("A restored mark unlocks the draft after the reference image becomes available", async () => {
+  imageDraft({
+    annotations: boxAnnotation([
+      { id: "freight-box", ordinal: 1, note: "Inspect the seal" },
+    ]),
+  });
+  context.mocks.api(webFilesContract.fileUrl, ({ respond }) => {
+    return respond(200, {
+      url: original.url,
+      downloadUrl: original.url,
+      expiresAt: "2099-01-01T00:00:00Z",
+      publicUrl: original.url,
+    });
+  });
+  const waiting = context.mocks.deferred<void>(),
+    imageReady = context.mocks.deferred<void>();
+  context.mocks.http.get(original.url, async () => {
+    if (!waiting.settled()) {
+      waiting.resolve();
+    }
+    await imageReady.promise;
+    return originalBytes();
+  });
+  context.mocks.upload.success(copy);
+  const page = await startPage({
+    context,
+    path: "/chats/" + ATTACHMENT_THREAD_ID,
+    host: "app.okou.ai",
+  });
+  await page.content;
+  await waiting.promise;
+  await expect(
+    screen.findByTestId("composer-attachment-mark-count"),
+  ).resolves.toHaveTextContent("1");
+  await expect(findNamedButton("Send")).resolves.toBeDisabled();
+  imageReady.resolve();
+  await page.ready;
+  await expect(findEnabledButton("Send")).resolves.toBeEnabled();
+  expect(
+    screen.getByTestId("composer-attachment-mark-count"),
+  ).toHaveTextContent("1");
 });

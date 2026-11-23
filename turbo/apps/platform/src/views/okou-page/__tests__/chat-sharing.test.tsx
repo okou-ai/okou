@@ -394,3 +394,61 @@ test.each(["013", "014"] as const)(
     expectSelectionCommands();
   },
 );
+
+test("A new share opens with public access while both message groups remain selectable", async () => {
+  await conversation("Release approved");
+  click(await findFastControl("button", "Share messages"));
+  await expect(
+    screen.findByText("Anyone with the link"),
+  ).resolves.toBeInTheDocument();
+  click(messageGroup("Release approved").getByText("Select message group"));
+  expect(messageGroup("Release approved").getByRole("checkbox")).toBeChecked();
+});
+
+test.each(["created", "denied"] as const)(
+  "The composer survives a %s organization link after both events are selected by the message shortcut",
+  async (outcome) => {
+    const clipboard = context.mocks.browser.clipboardWriteText();
+    const choice = context.mocks.deferred<{
+      audience: string;
+      eventIds: string[];
+      id?: string;
+    }>();
+    const release = context.mocks.deferred<void>();
+    context.mocks.api(
+      sharedThreadVisibilityContract.create,
+      async ({ body, respond }) => {
+        choice.resolve(body);
+        await release.promise;
+        return outcome === "created"
+          ? respond(201, { id: body.id! })
+          : respond(403, {
+              error: {
+                code: "FORBIDDEN",
+                message: "Organization sharing denied",
+              },
+            });
+      },
+    );
+    const ids = await conversation("Release approved", true);
+    const editor = await screen.findByRole("textbox", { name: /message/i });
+    click(await findFastControl("button", "Share message"));
+    click(within(await screen.findByRole("menu")).getByText("Organization"));
+    const chosen = await choice.promise;
+    await screen.findAllByText("Copied");
+    expect(chosen).toMatchObject({ audience: "organization", eventIds: ids });
+    expect(clipboard.writes).toContain(
+      location.origin + "/share/threads/" + chosen.id,
+    );
+    release.resolve();
+    if (outcome === "denied") {
+      await screen.findByText("The shared link could not be created.");
+    }
+    await userEvent.click(editor);
+    await userEvent.keyboard("Keep editing");
+    expect(editor).toHaveTextContent("Keep editing");
+    expect(
+      screen.queryByRole("textbox", { name: "Shared chat link" }),
+    ).not.toBeInTheDocument();
+  },
+);

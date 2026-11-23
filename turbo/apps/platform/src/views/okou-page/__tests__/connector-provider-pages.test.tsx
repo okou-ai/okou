@@ -1,3 +1,9 @@
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
+import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
+import {
+  browserAuthMethod,
+  catalogConnector,
+} from "./chat-capability-connector-test-helpers.ts";
 import { integrationsTelegramContract } from "@okouai/api-contracts/contracts/integrations-telegram";
 import {
   slackConnectContract,
@@ -5,7 +11,7 @@ import {
 } from "@okouai/api-contracts/contracts/slack-connect";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { findButton, queryButton } from "./chat-run-test-fixtures.ts";
 import { findNamedLink } from "./chat-attachment-test-helpers.ts";
@@ -163,4 +169,55 @@ test("connector-provider-pages-011 the signed Telegram invitation leads to the o
     "/works",
   );
   expect(new URL(window.location.href).searchParams.has("sig")).toBeFalsy();
+});
+
+test("The signed-out Feishu callback renders its catalog mark before opening the connected bot", async () => {
+  const destination = "https://applink.feishu.cn/client/chat/open?id=review";
+  const browser = context.mocks.browser.locationAssign();
+  const allow = context.mocks.deferred<void>();
+  const item = catalogConnector({
+    slug: "lark",
+    label: "Lark",
+    method: browserAuthMethod(),
+  });
+  const mark = "https://icons.example.test/selected-feishu-mark.svg";
+  context.mocks.api(connectorCatalogContract.get, ({ params, respond }) => {
+    return params.connectorSlug === "lark"
+      ? respond(200, {
+          connector: { ...item, icon: { url: mark, invertInDarkMode: false } },
+        })
+      : respond(404, {
+          error: { code: "NOT_FOUND", message: "Unknown connector" },
+        });
+  });
+  context.mocks.api(
+    feishuOauthContract.callback,
+    async ({ query, respond }) => {
+      await allow.promise;
+      return query.code === "oauth-code" &&
+        query.state === "oauth-state" &&
+        query.responseMode === "json"
+        ? respond(200, { redirectUrl: destination })
+        : respond(400, {
+            error: { code: "INVALID_CALLBACK", message: "Wrong callback" },
+          });
+    },
+  );
+  const page = await startPage({
+    context,
+    auth: null,
+    path: "/connectors/feishu/callback?code=oauth-code&state=oauth-state",
+  });
+  await page.content;
+  await screen.findByText("Connecting Feishu…");
+  await waitFor(() => {
+    return expect(
+      document.querySelector('img[src="' + mark + '"]'),
+    ).toBeVisible();
+  });
+  allow.resolve();
+  await waitFor(() => {
+    return expect(browser.calls).toContain(destination);
+  });
+  await page.ready;
 });

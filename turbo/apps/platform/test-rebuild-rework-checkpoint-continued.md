@@ -3158,3 +3158,13 @@ Main #50243 makes grouped artifact actions unconditional. The former pending-dia
 [Fixed selection](https://app.okou.ai/artifacts/gnxdkucusp.md) · [44 dispositions and frozen clauses](./test-rebuild-batch-89.tsv) · [Shared 485-file queue](./test-rebuild-first-pass.tsv) · [Grouped action change](https://github.com/okou-ai/okou/commit/9a9aae784b871bcbd4f9823252cdc8d0b183b241)
 
 Main #50234 added ZIP previews while this batch was in progress. The catalog regression opens two nested entries in turn, verifies their rendered contents and preserves the download action. A valid archive declared over 5 MiB keeps the fallback. The upstream ZIP reader size-boundary tests are also included in the synchronization scope.
+
+## Batch 90 concentrated revisit
+
+The fixed assignment covers 30 files and 46 distinct frozen IDs. Three IDs receive first verification, 37 have partial regressions, two lack evidence and four have an upstream disposition. Chat upload diagnostics closes after checking both of its selected frozen scenarios. The other 29 files retain their complete BDD. The first pass stands at 485 passed and zero unpassed. The file revisit queue moves from 128 to 127.
+
+An idle-reclaimed browser shows “Browser not live” and “Start browser.” Its frozen Then requires “Browser view unavailable.” During viewer replacement the old canvas remains visible and the replacement window receives 720 × 480. Both clauses stay open. Delayed CDP delivery after remote input loses focus and the transition from streamed to durable output have paired positive controls. The upload failure has both a routed App regression and a local production-browser SDK envelope with one terminal exception and redacted storage breadcrumbs.
+
+The long-recording supplement uses real captured audio for 128 and 129 stored transcripts. The regular App cases cover short restored audio and a missing transcript. Those files stay open for a permanent scale test compatible with the App test budget. Two native windows show the shared realtime update, recovery and final worker exit. The exact resync cardinality and the final unsubscribe packet remain open.
+
+[Fixed selection](https://app.okou.ai/artifacts/q0sdyahywc.md) · [46 dispositions and frozen clauses](./test-rebuild-batch-90.tsv) · [Shared 485-file queue](./test-rebuild-first-pass.tsv)

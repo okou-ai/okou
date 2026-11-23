@@ -126,3 +126,24 @@ test("chat-run-status-tail-008 retires the completed run's followups on a pendin
   retainedAnswer();
   gate.resolve();
 });
+
+test("Replaying a continuation of a failed run keeps its report and attachment with the copy action", async () => {
+  const continuation = "Continue from the recorded input";
+  installRunChat({
+    activeRunIds: [runId],
+    chatEvents: [
+      ...failedHistory(),
+      promptEvent({
+        id: "recorded-second-input",
+        runId,
+        seqId: 4,
+        text: continuation,
+      }),
+    ],
+  });
+  await setupPage({ context, path: RUN_PATH });
+  await screen.findByText(continuation);
+  retainedAnswer();
+  expect(screen.queryByText(generic)).not.toBeInTheDocument();
+  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+});

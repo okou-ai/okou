@@ -1,5 +1,11 @@
+import userEvent from "@testing-library/user-event";
+import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
+import {
+  browserAuthMethod,
+  catalogConnector,
+} from "./chat-capability-connector-test-helpers.ts";
 import { connectorAccountFixture } from "../../../mocks/handlers/connector-account-fixtures.ts";
-import { screen, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -130,4 +136,44 @@ test("connector-directory-004 GitHub connection details return to the named cata
   expect(
     within(list).getByRole("heading", { name: "Connected" }),
   ).toBeInTheDocument();
+});
+
+test("Activating Gmail with Enter leaves a provider window that closes with the directory", async () => {
+  mockPublicConnectorStatus(context, [
+    catalogConnector({
+      slug: "gmail",
+      label: "Gmail",
+      method: browserAuthMethod(),
+    }),
+  ]);
+  const popup = context.mocks.browser.authWindow();
+  Object.defineProperty(popup, "location", { value: { href: "about:blank" } });
+  context.mocks.browser.open(popup);
+  const destination = "https://accounts.example.test/allow-mail";
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ params, respond }) => {
+      return params.connectorSlug === "gmail"
+        ? respond(200, {
+            authorizationUrl: destination,
+            oauthAttemptId: crypto.randomUUID(),
+          })
+        : respond(404, {
+            error: { code: "NOT_FOUND", message: "Unknown provider" },
+          });
+    },
+  );
+  const dialog = await directory();
+  const connect = await findButton("Connect Gmail");
+  connect.focus();
+  expect(connect).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    return expect(popup.location.href).toBe(destination);
+  });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    return expect(popup.closed).toBeTruthy();
+  });
+  expect(dialog).not.toBeInTheDocument();
 });

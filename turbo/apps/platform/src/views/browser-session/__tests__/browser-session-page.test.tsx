@@ -859,3 +859,101 @@ test("browser-session-page-055 Old lease is cancelled when the user returns to t
   );
   expect(owners).toStrictEqual([s.viewer.browser.threadId, otherThread]);
 });
+
+test("An idle-reclaimed browser offers a fresh start from its stopped state", async () => {
+  const session = arrangeNativePage(context);
+  const { window: _window, ...browser } = session.viewer.browser;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(200, {
+      browser: {
+        ...browser,
+        status: "suspended",
+        suspendedAt: "2026-08-01T11:20:00Z",
+        suspensionReason: "idle",
+      },
+      viewer: null,
+    });
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(200, {
+      browser: session.viewer.browser,
+      viewer: session.viewer,
+    });
+  });
+  await session.openPage();
+  await screen.findByText("Browser not live");
+  expect(screen.queryByText("Browser view unavailable.")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await userEvent.click(
+    screen.getByText("Start browser", { selector: "button" }),
+  );
+  await expectStreamingAt(address);
+  expect(screen.queryByText("Browser not live")).toBeNull();
+});
+
+test("Changing the display during handover fits the newly assigned window", async () => {
+  const panel = vi.spyOn(HTMLCanvasElement.prototype, "getBoundingClientRect");
+  panel.mockReturnValue(new DOMRect(0, 0, 900, 600));
+  const original = {
+    targetId: "morning",
+    title: "Morning",
+    url: "https://morning.example.test/",
+    windowId: 31,
+  };
+  const late = {
+    targetId: "evening",
+    title: "Evening",
+    url: "https://evening.example.test/",
+    windowId: 72,
+  };
+  const { cdp, openPage, viewer } = arrangeNativePage(
+    context,
+    { targets: [original, late] },
+    original.windowId,
+  );
+  const fit = (windowId: number, width: number, height: number) => {
+    return expect(cdp.requests).toContainEqual(
+      expect.objectContaining({
+        method: "Browser.setContentsSize",
+        params: expect.objectContaining({ windowId, width, height }),
+      }),
+    );
+  };
+  await openPage();
+  await expectStreamingAt(original.url);
+  await waitFor(() => {
+    return fit(original.windowId, 900, 600);
+  });
+  const held = context.mocks.deferred<void>();
+  const requested = context.mocks.deferred<void>();
+  const browser = {
+    ...viewer.browser,
+    window: {
+      primaryWindowId: late.windowId,
+      instanceId: "62ded10b-3232-478f-860a-268953513e72",
+    },
+  };
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    if (!requested.settled()) {
+      requested.resolve();
+    }
+    await held.promise;
+    return respond(200, { browser, viewer: { ...viewer, browser } });
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: browser.threadId,
+  });
+  await requested.promise;
+  await waitFor(() => {
+    return expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  panel.mockReturnValue(new DOMRect(0, 0, 720, 480));
+  window.dispatchEvent(new Event("resize"));
+  cdp.setWindowState("minimized", late.windowId, { width: 1280, height: 800 });
+  held.resolve();
+  await expectStreamingAt(late.url);
+  await waitFor(() => {
+    return fit(late.windowId, 720, 480);
+  });
+});

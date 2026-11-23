@@ -1,9 +1,12 @@
 import userEvent from "@testing-library/user-event";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, startPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   cachedChatListEvents,
   chatListEvent,
@@ -186,4 +189,18 @@ test("search-result-number-shortcuts-002 Command+9 opens the ninth cached conver
   } finally {
     await finish();
   }
+});
+
+test("Leaving the member session keeps its saved conversation out of the signed-out sign-in page", async () => {
+  const member = createTestRuntime(context);
+  const thread = chatListThread(91, "Private financing draft");
+  installChatListStream(context, { caseId: 902, snapshot: [thread] });
+  await setupPage({ context: member, path: "/" });
+  await screen.findByText("Private financing draft");
+  cleanup();
+  member.dispose();
+  await setupPage({ context, path: "/sign-in", auth: null });
+  await expect(screen.findByTestId("clerk-sign-in")).resolves.toBeVisible();
+  expect(location.pathname).toBe("/sign-in");
+  expect(screen.queryByText("Private financing draft")).not.toBeInTheDocument();
 });

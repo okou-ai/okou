@@ -1,6 +1,6 @@
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -9,7 +9,10 @@ import {
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
 const QUEUED_SAMPLES = 4096;
@@ -19,7 +22,9 @@ const FINAL_LEVEL = 0.5;
 
 function queryControl(name: string): HTMLElement | undefined {
   return queryAllByRoleFast("button").find((button) => {
-    return button.getAttribute("aria-label") === name;
+    return (
+      (button.getAttribute("aria-label") ?? button.textContent?.trim()) === name
+    );
   });
 }
 
@@ -109,4 +114,109 @@ test("Include the final worklet chunk before transcribing", async () => {
   expect(new Set(samples.slice(QUEUED_SAMPLES))).toStrictEqual(
     new Set([FINAL_LEVEL]),
   );
+});
+
+test("A restored two-part recording uses both saved transcripts while the transcriber has different text", async () => {
+  const total = 2;
+  const labels = Array.from({ length: total }, (_, index) => {
+    return "word" + String(index + 1);
+  });
+
+  let accepting = false;
+  const firstPolish = context.mocks.deferred<void>();
+  const rate = 16_000;
+  const windowStep = 13 * rate;
+  const microphone = new Float32Array((total - 1) * windowStep + 3 * rate);
+  for (let index = 0; index < microphone.length; index++) {
+    microphone[index] = index % 2 ? 0.4 : -0.4;
+  }
+  context.mocks.browser.voiceInput({
+    rms: 0.3,
+    vadProbability: 0.95,
+    finalPcmSamples: microphone,
+  });
+  context.mocks.http.post(
+    "*" + voiceIoTranscribeContract.segment.path,
+    async ({ request }) => {
+      const file = (await request.formData()).get("file");
+      if (!(file instanceof File)) {
+        throw new Error("Missing audio segment");
+      }
+      const start = Number(/(\d+)\.wav$/.exec(file.name)?.[1]);
+      return HttpResponse.json({
+        transcript: accepting ? "retranscribed" : labels[start / windowStep],
+        language: "en",
+      });
+    },
+  );
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    if (!accepting) {
+      firstPolish.resolve();
+      return respond(503, {
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Polishing is offline",
+        },
+      });
+    }
+    return respond(200, { text: body.segments.join(" | ") });
+  });
+  const original = createTestRuntime(context);
+  await setupPage({ context: original, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  click(await findEnabledControl("Stop recording"));
+  await firstPolish.promise;
+  await waitFor(() => {
+    expect(queryControl("Use recording")).toBeDefined();
+  });
+  cleanup();
+  original.dispose();
+  accepting = true;
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Use recording"));
+  const result = labels.join(" | ");
+  await expect(screen.findByText(result)).resolves.toBeInTheDocument();
+});
+
+test("A reopened recording that lacks a completed transcript uses the recovered transcriber", async () => {
+  context.mocks.browser.voiceInput({
+    rms: 0.45,
+    vadProbability: 0.99,
+    finalPcmSamples: new Float32Array(4096).fill(0.4),
+  });
+  let restored = false;
+  context.mocks.http.post("*" + voiceIoTranscribeContract.segment.path, () => {
+    return restored
+      ? HttpResponse.json({
+          transcript: "Recovered from audio",
+          language: "en",
+        })
+      : HttpResponse.json(
+          {
+            error: {
+              code: "PROVIDER_UNAVAILABLE",
+              message: "Transcription unavailable",
+            },
+          },
+          { status: 503 },
+        );
+  });
+  context.mocks.api(voiceIoPolishSegmentsContract.post, ({ body, respond }) => {
+    return respond(200, { text: body.segments.join(" ") });
+  });
+  const first = createTestRuntime(context);
+  await setupPage({ context: first, path: "/" });
+  click(await findEnabledControl("Voice input"));
+  click(await findEnabledControl("Stop recording"));
+  await waitFor(() => {
+    expect(queryControl("Use recording")).toBeDefined();
+  });
+  cleanup();
+  first.dispose();
+  restored = true;
+  await setupPage({ context, path: "/" });
+  click(await findEnabledControl("Use recording"));
+  await expect(
+    screen.findByText("Recovered from audio"),
+  ).resolves.toBeInTheDocument();
 });
