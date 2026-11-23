@@ -94,7 +94,9 @@ public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {
     // Retries compare the complete message, including the JSON embedded in this text part.
     let encoder = JSONEncoder()
     encoder.outputFormatting = .sortedKeys
-    let serialized = String(decoding: try encoder.encode(context), as: UTF8.self)
+    guard let serialized = String(data: try encoder.encode(context), encoding: .utf8) else {
+      throw APIClientError.incompatibleData
+    }
     feedback["note"] = .array(noteParts)
     var parts: [MessageJSON] = [
       .object([
