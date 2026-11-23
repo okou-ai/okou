@@ -34,6 +34,7 @@
     <string name="chat_back_to_inbox">返回收件箱</string>
     <string name="chat_more_actions">更多操作</string>
     <string name="chat_unread">未读</string>
+    <string name="chat_has_draft">有草稿</string>
     <string name="chat_archived">已归档</string>
     <string name="chat_muted">已静音</string>
     <string name="chat_project_empty">此项目暂无聊天。</string>

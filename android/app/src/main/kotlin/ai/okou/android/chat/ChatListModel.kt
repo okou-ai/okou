@@ -180,6 +180,7 @@ data class ChatListUiState(
     val projectList: ProjectListUiState = ProjectListUiState(),
     internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
+    internal val draftThreadIds: Set<String> = emptySet(),
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
@@ -391,6 +392,7 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
+    private var draftIndexEdits: MutableMap<String, Boolean>? = null
     private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
@@ -1404,6 +1406,7 @@ class ChatListModel(
         requestListRead(resetCompletedActivity = true)
         refreshMetadata()
         refreshIndicators()
+        refreshDraftIndex()
     }
 
     internal fun listVisibilityChanged(visible: Boolean) {
@@ -1414,6 +1417,7 @@ class ChatListModel(
             val state = mutable.value
             if (state.projectsPhase == ChatReadPhase.Failed) refreshMetadata()
             if (state.indicatorsPhase == ChatReadPhase.Failed) refreshIndicators()
+            refreshDraftIndex()
         }
     }
 
@@ -1792,6 +1796,40 @@ class ChatListModel(
 
     fun refreshIndicators() {
         if (!mutable.value.offline) readIndicators()
+    }
+
+    private fun refreshDraftIndex() {
+        if (!current() || mutable.value.offline || draftIndexEdits != null) return
+        val edits = mutableMapOf<String, Boolean>()
+        draftIndexEdits = edits
+        viewModelScope.launch {
+            try {
+                val ids = service.draftThreadIds().toMutableSet()
+                requireCurrent()
+                for ((id, present) in edits) {
+                    if (present) ids.add(id) else ids.remove(id)
+                }
+                mutable.value = mutable.value.copy(draftThreadIds = ids)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (current()) onFailure(error)
+            } finally {
+                draftIndexEdits = null
+            }
+        }
+    }
+
+    internal fun confirmDraftPresence(threadId: String, present: Boolean) {
+        if (!current()) return
+        // A response from an index read in flight may precede the acknowledged save.
+        draftIndexEdits?.set(threadId, present)
+        val state = mutable.value
+        if ((threadId in state.draftThreadIds) != present) {
+            val ids =
+                if (present) state.draftThreadIds + threadId else state.draftThreadIds - threadId
+            mutable.value = state.copy(draftThreadIds = ids)
+        }
     }
 
     private fun continueUnreadRead(): Boolean =

@@ -4247,6 +4247,45 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     @Test
+    fun draftIndexDoesNotGateRowsAndKeepsSavesMadeDuringTheRead() = runTest {
+        val reply = CompletableDeferred<List<String>>()
+        var requests = 0
+        val service =
+            object : Service() {
+                override suspend fun draftThreadIds(): List<String> {
+                    if (++requests == 1) return reply.await()
+                    throw ApiFailure.Network(IOException("No response"))
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.uiState.value.threads.isNotEmpty())
+            assertTrue(model.uiState.value.draftThreadIds.isEmpty())
+            model.refresh()
+            runCurrent()
+            assertEquals(1, requests)
+
+            model.confirmDraftPresence(CHAT_PERSONAL, true)
+            model.confirmDraftPresence(CHAT_IN_PROJECT, false)
+            reply.complete(listOf(CHAT_IN_PROJECT, "unrelated-thread"))
+            runCurrent()
+            assertEquals(
+                setOf(CHAT_PERSONAL, "unrelated-thread"),
+                model.uiState.value.draftThreadIds,
+            )
+
+            model.refresh()
+            runCurrent()
+            assertEquals(2, requests)
+            assertEquals(
+                setOf(CHAT_PERSONAL, "unrelated-thread"),
+                model.uiState.value.draftThreadIds,
+            )
+        }
+    }
+
+    @Test
     fun listRetriesUseTheDesignScheduleAndResetAfterSuccess() = runTest {
         val service = Service()
         withCatchUpModel(service) { model ->

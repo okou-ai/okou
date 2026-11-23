@@ -38,6 +38,7 @@
     <string name="chat_back_to_inbox">Retour à la boîte de réception</string>
     <string name="chat_more_actions">Plus d’actions</string>
     <string name="chat_unread">Non lues</string>
+    <string name="chat_has_draft">Brouillon disponible</string>
     <string name="chat_archived">Archivées</string>
     <string name="chat_muted">En sourdine</string>
     <string name="chat_project_empty">Aucune discussion dans ce projet.</string>

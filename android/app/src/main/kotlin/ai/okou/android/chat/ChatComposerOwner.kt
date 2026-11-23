@@ -450,6 +450,12 @@ internal class ChatComposerOwner(
                         connection.service.saveComposerDraft(target, draft.text)
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
+                        target.threadId?.let {
+                            connection.chatList?.confirmDraftPresence(
+                                it,
+                                !draft.text.isBlankWebDraft(),
+                            )
+                        }
                         journal = mutable.value.journal ?: return@launch
                         if (journal.drafts[target.key] == draft)
                             replace(
