@@ -20,7 +20,11 @@ IMAGE = "system-images;android-35;default;x86_64"
 UI_DUMP = "/data/local/tmp/okou-release-smoke.xml"
 APP_DATA = f"/data/user/0/{PACKAGE}"
 UPDATE_STATE = "files/updates/state.json"
-AUTH_HEADINGS = {"Welcome to Okou", "Continue to Okou"}
+AUTH_HEADINGS = {
+    "Restoring your session…",
+    "Couldn’t load your session or workspace",
+    "Continue to Okou",
+}
 REQUIRED_HEADING = "Update Okou to continue"
 
 
