@@ -83,4 +83,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Atualizando contas de modelos</string>
     <string name="settings_refreshing_credit_balance">Atualizando saldo de créditos</string>
+    <string name="settings_proactive_services">Serviços proativos</string>
+    <string name="settings_proactive_scope">Estas configurações se aplicam em “%1$s”.</string>
+    <string name="settings_proactive_loading">Carregando serviços proativos</string>
+    <string name="settings_proactive_offline">Off-line. Conecte-se para alterar esta configuração.</string>
+    <string name="settings_proactive_needs_timezone">Escolha um fuso horário para programar o envio.</string>
+    <string name="settings_proactive_read_failed">Não foi possível carregar esta configuração agora.</string>
+    <string name="settings_proactive_refresh_failed">Não foi possível sincronizar. A última configuração confirmada está sendo exibida.</string>
+    <string name="settings_proactive_preparing">Preparando a programação…</string>
+    <string name="settings_proactive_schedule_failed">Sua escolha foi salva. Verifique a programação.</string>
+    <string name="settings_proactive_save_unconfirmed">O salvamento ainda não foi confirmado.</string>
+    <string name="settings_morning_brief">Resumo matinal</string>
+    <string name="settings_morning_brief_detail">Entregue antes das 7h no fuso horário selecionado</string>
+    <string name="settings_morning_brief_save_failed">Não foi possível salvar o resumo matinal. A configuração anterior foi restaurada.</string>
+    <string name="settings_suggestions">Sugestões</string>
+    <string name="settings_suggestions_detail">Verifica o conteúdo conectado, atualiza seu perfil e faz sugestões</string>
+    <string name="settings_suggestions_partial">Ativação parcial</string>
+    <string name="settings_suggestions_hourly_only">No momento, apenas verifica o conteúdo e atualiza seu perfil.</string>
+    <string name="settings_suggestions_cards_only">No momento, apenas entrega cartões de sugestões.</string>
+    <string name="settings_suggestions_enable_both">Ativar as duas opções</string>
+    <string name="settings_suggestions_disable_both">Desativar as duas opções</string>
+    <string name="settings_suggestions_save_failed">Não foi possível salvar as sugestões. A configuração anterior foi restaurada.</string>
 </resources>

@@ -40,6 +40,7 @@ internal enum class SettingsDestination {
     ModelAccounts,
     CreditBalance,
     Account,
+    ProactiveServices,
 }
 
 internal enum class SearchRoute {
