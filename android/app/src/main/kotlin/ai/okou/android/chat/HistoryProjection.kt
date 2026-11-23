@@ -65,7 +65,11 @@ data class HistoryTranscript(
     val terminatedRunIds: Set<String> = emptySet(),
     val pendingInputIds: Set<String> = emptySet(),
     val revocableInputIds: Set<String> = emptySet(),
-)
+) {
+    internal fun searchMessage(sequence: Long): HistoryMessage? = messages.firstOrNull {
+        it.sourceSeqId == sequence && it.visibleInConversation() && it.id !in pendingInputIds
+    }
+}
 
 internal fun HistoryTranscript.hasSettledInput(eventId: String) =
     eventId in persistedIds && eventId !in pendingInputIds

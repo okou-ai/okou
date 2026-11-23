@@ -89,7 +89,7 @@ class WorkflowModelTest {
             refresh.complete(Unit)
             runCurrent()
             assertEquals(saved, model.state.value.catalog)
-            assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+            assertNull(model.state.value.catalogFailure)
 
             model.searchVisibilityChanged(false)
             advanceTimeBy(600_000)

@@ -79,7 +79,6 @@ internal fun WorkflowState.searchCatalog(keyword: String): SearchRead<SearchWork
         catalog
             ?: return when (catalogFailure) {
                 null -> SearchRead.Loading
-                WorkflowReadFailure.CouldNotLoad -> SearchRead.Retrying
                 WorkflowReadFailure.Unavailable -> SearchRead.AccessLost
                 else -> SearchRead.Failed
             }

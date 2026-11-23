@@ -400,8 +400,7 @@ class ConversationHistoryModel(
     }
 
     private fun ConversationUiState.hasSearchMessage(sequence: Long) =
-        transcript?.messages?.any { it.sourceSeqId == sequence && it.visibleInConversation() } ==
-            true
+        transcript?.searchMessage(sequence) != null
 
     private fun reportAuthorization(error: Exception) {
         if (
