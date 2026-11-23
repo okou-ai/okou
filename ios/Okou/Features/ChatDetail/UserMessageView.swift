@@ -36,9 +36,13 @@ struct UserMessageView: View {
               sourceTitle: document.annotation?.isForwardedChat == true
                 ? document.annotation?.titleSnapshot : nil)
             if let error = message.inputError {
-              Label(error, okouSymbol: "circle-alert")
-                .font(.okou(.subheadline)).foregroundStyle(OkouColor.destructive).textSelection(
-                  .enabled)
+              let reason = ChatFailure.BillingReason(diagnostic: error)
+              Label(
+                reason.map { AssistantFailureCopy.billing($0).title } ?? error,
+                okouSymbol: "circle-alert"
+              )
+              .font(.okou(.subheadline)).foregroundStyle(OkouColor.destructive).textSelection(
+                .enabled)
             }
           }
           .padding(14)
