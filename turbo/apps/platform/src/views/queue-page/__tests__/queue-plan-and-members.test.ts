@@ -134,8 +134,10 @@ test("The queue drawer receives the active organization's capacity update on its
     context.mocks.ably.hasSubscriptionOnChannel("user:test-user-123", topic),
   ).toBeFalsy();
   api.setQueueResponse(queueResponse(plan("team", 7, 4)));
-  context.mocks.ably.triggerOnChannel(organization, topic);
+  context.mocks.ably.triggerOnChannel("user:test-user-123", topic);
   const view = within(drawer);
+  expect(view.getByText("6 of 7 slots in use")).toBeVisible();
+  context.mocks.ably.triggerOnChannel(organization, topic);
   await expect(view.findByText("4 of 7 slots in use")).resolves.toBeVisible();
   expect(view.getByText("3 slots")).toBeVisible();
 });

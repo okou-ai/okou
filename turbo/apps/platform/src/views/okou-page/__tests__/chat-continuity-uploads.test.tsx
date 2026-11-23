@@ -359,6 +359,7 @@ test("The recording shows the storage finalization error after its parts have tr
   await fill(message, "Keep this recording draft");
   upload.completed.resolve();
   await screen.findByText("Multipart upload not found");
+  expect(screen.getAllByText("Multipart upload not found")).toHaveLength(1);
   expect(screen.queryByText(/failed to upload/i)).toBeNull();
   expect(message).toHaveTextContent("Keep this recording draft");
 });

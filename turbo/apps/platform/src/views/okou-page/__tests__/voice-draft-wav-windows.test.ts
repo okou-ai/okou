@@ -18,6 +18,7 @@ function speech(count: number) {
   });
 }
 async function record(live: number, tail: number) {
+  const microphone = context.mocks.deferred<(samples: Float32Array) => void>();
   const files: {
     start: number;
     length: number;
@@ -29,6 +30,7 @@ async function record(live: number, tail: number) {
     rms: 0.3,
     vadProbability: 0.95,
     onPcmCapture(emit) {
+      microphone.resolve(emit);
       if (live > 0) {
         emit(speech(live));
       }
@@ -68,7 +70,7 @@ async function record(live: number, tail: number) {
   const editor = await screen.findByRole("textbox", { name: "Message" });
   click(await findEnabledButton("Voice input"));
   const stop = await findEnabledButton("Stop recording");
-  return { editor, files, stop };
+  return { editor, files, stop, microphone: await microphone.promise };
 }
 test("voice-draft-audio-014 A stopped 42-second recording transcribes four overlapping windows", async () => {
   const { files, editor, stop } = await record(rate, 41 * rate);
@@ -169,4 +171,29 @@ test("A microphone stream reaching 73 seconds uploads windows before the member 
     return expect(editor).toHaveTextContent("Window 6");
   });
   expect(files.at(-1)?.start).toBe(65 * rate);
+});
+
+test("Continuing a live one-minute recording sends the next full WAV before Use recording", async () => {
+  const capture = await record(60 * rate, 0);
+  await waitFor(() => {
+    expect(
+      capture.files.map((f) => {
+        return f.start / rate;
+      }),
+    ).toStrictEqual([0, 13, 26, 39]);
+  });
+  capture.microphone(speech(13 * rate));
+  await waitFor(() => {
+    const window = capture.files.at(-1);
+    expect([window?.start, window?.length]).toStrictEqual([
+      52 * rate,
+      15 * rate,
+    ]);
+  });
+  expect(capture.stop).toBeEnabled();
+  click(capture.stop);
+  await waitFor(() => {
+    expect(capture.editor).toHaveTextContent("Window 6");
+  });
+  expect(capture.files.at(-1)?.start).toBe(65 * rate);
 });

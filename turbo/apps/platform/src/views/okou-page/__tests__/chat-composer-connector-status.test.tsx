@@ -179,6 +179,9 @@ test("Feishu still opens its managed connection flow when account inventory fail
   expect(within(catalog).queryByText("No accounts")).toBeNull();
   const search = within(catalog).getByRole("textbox");
   await fill(search, "Acme Search");
+  expect(
+    within(catalog).queryByText("Acme Search", { exact: true }),
+  ).toBeNull();
   expect(queryFastControl("button", "Connect Acme Search", catalog)).toBeNull();
   await fill(search, "Feishu");
   const managed = await findFastControl("button", "Connect Feishu", catalog);

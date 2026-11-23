@@ -193,6 +193,7 @@ test.each([
   ["color-themes-009", "Citrus spark"],
   ["color-themes-010", "Berry blush"],
   ["color-themes-011", "Cotton sky"],
+  ["color-themes-012", "Blue horizon"],
 ])(
   "%s keeps both ambient strengths in percentage units when switching appearance",
   async (_id, paletteName) => {
@@ -208,6 +209,9 @@ test.each([
         click(await findAction("button", mode));
         await waitFor(() => {
           expect(palette).toHaveAttribute("aria-pressed", "true");
+          expect(document.documentElement.dataset.colorTheme).toBe(
+            paletteName.toLowerCase().replaceAll(" ", "-"),
+          );
           expect(document.documentElement).toHaveAttribute(
             "data-theme",
             mode.toLowerCase(),

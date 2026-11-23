@@ -484,17 +484,23 @@ test("An assigned window conflict ends recovery before the member reconnects", a
     threadId: live.viewer.browser.threadId,
   });
   await requested.promise;
+  interrupted.release();
+  expect(proxy()).toBeDisabled();
   answer.resolve();
-  interrupted.release("!invalid");
   await screen.findByText("Browser view unavailable");
   const telemetry = [...live.errors.reports];
-  expect(telemetry).toContainEqual(
+  expect(telemetry).toStrictEqual([
     expect.objectContaining({
       context: expect.objectContaining({
         tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
+        contexts: expect.objectContaining({
+          browser_http: { status: 409, code: "CONFLICT" },
+          browser_viewer: { kind: "protocol", transient: false },
+          browser_recovery: { outcome: "terminal" },
+        }),
       }),
     }),
-  );
+  ]);
   missing = false;
   await userEvent.click(screen.getByText("Reconnect", { selector: "button" }));
   await expectStreamingAt(primary.url);
@@ -502,27 +508,30 @@ test("An assigned window conflict ends recovery before the member reconnects", a
   expect(live.errors.reports).toStrictEqual(telemetry);
 });
 
-test("Manual reconnect restores typing on the replacement endpoint after three frame attempts", async () => {
-  const live = await online();
-  const oldFrame = await nextImage(live, 3);
-  live.time(64_000);
-  const descriptor = refresh(live, "replacement");
-  await descriptor.arrived;
-  const replacement = live.cdp.holdTargetFrames(primary.targetId);
-  await descriptor.release();
-  await replacement.received;
-  oldFrame.release("!invalid");
-  live.time(65_001);
-  replacement.release("!invalid");
-  const manual = await screen.findByText("Reconnect", { selector: "button" });
-  expect(proxy()).toBeDisabled();
-  const receipts = [...live.errors.reports];
-  const connections = live.cdp.connections(endpoint);
-  live.time(69_001);
-  expect(manual).toBeEnabled();
-  expect(live.cdp.connections(endpoint)).toBe(connections);
-  await userEvent.click(manual);
-  await expectStreamingAt(primary.url);
-  await write(live, "h");
-  expect(live.errors.reports).toStrictEqual(receipts);
-});
+test.each([65_000, 180_000])(
+  "Manual reconnect restores typing after the replacement frame crosses %i ms",
+  async (elapsed) => {
+    const live = await online();
+    const oldFrame = await nextImage(live, 3);
+    live.time(elapsed - 1000);
+    const descriptor = refresh(live, "replacement");
+    await descriptor.arrived;
+    const replacement = live.cdp.holdTargetFrames(primary.targetId);
+    await descriptor.release();
+    await replacement.received;
+    oldFrame.release("!invalid");
+    live.time(elapsed + 1);
+    replacement.release("!invalid");
+    const manual = await screen.findByText("Reconnect", { selector: "button" });
+    expect(proxy()).toBeDisabled();
+    const receipts = [...live.errors.reports];
+    const connections = live.cdp.connections(endpoint);
+    live.time(elapsed + 4001);
+    expect(manual).toBeEnabled();
+    expect(live.cdp.connections(endpoint)).toBe(connections);
+    await userEvent.click(manual);
+    await expectStreamingAt(primary.url);
+    await write(live, "h");
+    expect(live.errors.reports).toStrictEqual(receipts);
+  },
+);

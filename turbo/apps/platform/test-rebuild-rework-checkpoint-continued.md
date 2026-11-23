@@ -3168,3 +3168,15 @@ An idle-reclaimed browser shows “Browser not live” and “Start browser.” 
 The long-recording supplement uses real captured audio for 128 and 129 stored transcripts. The regular App cases cover short restored audio and a missing transcript. Those files stay open for a permanent scale test compatible with the App test budget. Two native windows show the shared realtime update, recovery and final worker exit. The exact resync cardinality and the final unsubscribe packet remain open.
 
 [Fixed selection](https://app.okou.ai/artifacts/q0sdyahywc.md) · [46 dispositions and frozen clauses](./test-rebuild-batch-90.tsv) · [Shared 485-file queue](./test-rebuild-first-pass.tsv)
+
+## Batch 91 concentrated revisit
+
+The fixed assignment covers 30 frozen files and 41 unique IDs. Two IDs receive first verification, 30 have partial regressions, six lack direct evidence and three have sourced upstream dispositions. Conversation position restoration, the onboarding iMessage invitation and color themes have evidence for every selected ID in their frozen files. The revisit queue moves from 127 to 124. All 485 files have completed their first pass.
+
+The artifact sidebar shows one title and the download saves the distinct source filename. Exchanging the two names changes the saved filename accordingly. The delete menu, cancellation focus and confirmed preview closure pass. The original title-as-filename clause remains open. Retrying a chat after interrupted creation preserves the admitted payload, chat and event identities. Opening the chat verifies the original prompt with Personal access.
+
+The merge from main preserves the existing weekday automation run and both success and failure outcomes of the optional recency write introduced in [#50189](https://github.com/okou-ai/okou/pull/50189). The associated tests run separately from the selected IDs.
+
+The workflow picker shows four recent items under [#40543](https://github.com/okou-ai/okou/pull/40543). Event links land 28% down the viewport under [#41809](https://github.com/okou-ai/okou/pull/41809). The desktop QR and narrow-screen SMS invitation follow [#37478](https://github.com/okou-ai/okou/pull/37478).
+
+[Fixed selection](https://app.okou.ai/artifacts/g9179fgi0h.md) · [41 dispositions, frozen clauses and regression rows](./test-rebuild-batch-91.tsv) · [Shared 485-file queue](./test-rebuild-first-pass.tsv)

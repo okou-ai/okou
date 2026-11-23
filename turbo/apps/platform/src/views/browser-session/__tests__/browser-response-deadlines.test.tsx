@@ -384,25 +384,30 @@ test("An empty assigned window can create a usable tab with the version reply he
   expect(cdp.connections()).toBe(1);
 });
 
-test("The paused viewer abandons its expired native handshake and accepts text on the next socket", async () => {
-  const advance = browserRecoveryClock(context.signal);
-  const documentState = context.mocks.browser.visibilityState("visible");
-  const { cdp, openPage } = viewer();
-  const firstHandshake = cdp.holdNextNative("hello");
-  await openPage();
-  await firstHandshake.received;
-  documentState.changeTo("hidden");
-  await screen.findByText("Viewing paused");
-  advance(30_001);
-  await waitFor(() => {
-    expect(cdp.activeConnections()).toBe(0);
-  });
-  expect(remoteInput()).toBeDisabled();
-  documentState.changeTo("visible");
-  await firstHandshake.release();
-  advance(1001);
-  await expectStreamingAt(original.url);
-  await sendText(cdp, "dispatch after the paused handshake");
-  expect(cdp.connections()).toBe(2);
-  expect(cdp.activeConnections()).toBe(1);
-});
+test.each(["released", "withheld"] as const)(
+  "The replacement viewer accepts typing with the expired handshake %s",
+  async (reply) => {
+    const advance = browserRecoveryClock(context.signal);
+    const documentState = context.mocks.browser.visibilityState("visible");
+    const { cdp, openPage } = viewer();
+    const firstHandshake = cdp.holdNextNative("hello");
+    await openPage();
+    await firstHandshake.received;
+    documentState.changeTo("hidden");
+    await screen.findByText("Viewing paused");
+    advance(30_001);
+    await waitFor(() => {
+      expect(cdp.activeConnections()).toBe(0);
+    });
+    expect(remoteInput()).toBeDisabled();
+    documentState.changeTo("visible");
+    if (reply === "released") {
+      await firstHandshake.release();
+    }
+    advance(1001);
+    await expectStreamingAt(original.url);
+    await sendText(cdp, "dispatch after the paused handshake");
+    expect(cdp.connections()).toBe(2);
+    expect(cdp.activeConnections()).toBe(1);
+  },
+);

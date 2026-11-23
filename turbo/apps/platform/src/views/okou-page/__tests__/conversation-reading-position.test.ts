@@ -175,7 +175,7 @@ test("chat-navigation-position-restoration-010 Sending while reading history cle
   });
 });
 
-test.each([400, 700])(
+test.each([400, 550, 700])(
   "Opening a middle event keeps reading context in a %i pixel viewport",
   async (height) => {
     mockChatGeometry(() => {

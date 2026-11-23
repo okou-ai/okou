@@ -34,8 +34,8 @@ import {
   fileArtifactDetail,
 } from "./chat-navigation-artifact-test-helpers.ts";
 const context = testContext();
-function resource(title: string) {
-  const file = attachment("dispatch.pdf", "application/pdf");
+function resource(title: string, filename = "dispatch.pdf") {
+  const file = attachment(filename, "application/pdf");
   file.url = "https://cdn.okou.io/artifacts/field/private/" + file.id + ".pdf";
   const item = artifactSummary(crypto.randomUUID(), "file", title);
   const metadata = artifactFile(file.filename, {
@@ -129,13 +129,18 @@ async function page(
   options: {
     share?: Hold;
     owner?: Hold;
+    title?: string;
+    filename?: string;
     meta?: Hold;
     readOnly?: boolean;
     onOwnerReturned?: () => void;
     ownerError?: boolean;
   } = {},
 ) {
-  const r = resource("Atlas of sampling stations");
+  const r = resource(
+    options.title ?? "Atlas of sampling stations",
+    options.filename,
+  );
   mockAttachmentChat(context, {
     chatEvents: [r.message],
     artifacts: [r.metadata],
@@ -314,71 +319,78 @@ test("chat-artifact-action-group-014 a failed ownership read still allows the or
   expect(getAction("button", "Close artifact", panel)).toBeEnabled();
 });
 
-test("The owned sidebar offers Delete on More and downloads the original PDF", async () => {
-  const downloads = context.mocks.browser.blobDownload();
-  context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
-    return respond(200, { deleted: true });
-  });
-  const { panel, file, item } = await page();
-  await ready(panel);
-  expect(item.title).not.toBe(file.filename);
-  expect(panel).toHaveTextContent(item.title);
-  const more = await findAction("button", "More artifact actions", panel);
-  const separator = within(panel).getByRole("separator");
-  const full = getAction("button", "Enter fullscreen", panel);
-  const close = getAction("button", "Close artifact", panel);
-  expect(separator).toHaveAttribute("aria-orientation", "vertical");
-  for (const [before, after] of [
-    [more, separator],
-    [separator, full],
-    [full, close],
-  ] as const) {
+test.each([
+  ["Coastal atlas.pdf", "station-grid.pdf"],
+  ["station-grid.pdf", "Coastal atlas.pdf"],
+])(
+  "The owned sidebar shows %s and saves %s before deletion",
+  async (title, filename) => {
+    const downloads = context.mocks.browser.blobDownload();
+    context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
+      return respond(200, { deleted: true });
+    });
+    const { panel, file, item } = await page({ title, filename });
+    await ready(panel);
+    expect(item.title).not.toBe(file.filename);
+    expect(panel).toHaveTextContent(item.title);
+    const more = await findAction("button", "More artifact actions", panel);
+    const separator = within(panel).getByRole("separator");
+    const full = getAction("button", "Enter fullscreen", panel);
+    const close = getAction("button", "Close artifact", panel);
+    expect(separator).toHaveAttribute("aria-orientation", "vertical");
+    for (const [before, after] of [
+      [more, separator],
+      [separator, full],
+      [full, close],
+    ] as const) {
+      expect(
+        before.compareDocumentPosition(after) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    click(more);
+    const menu = await screen.findByRole("menu");
     expect(
-      before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  }
-  click(more);
-  const menu = await screen.findByRole("menu");
-  expect(
-    queryAllByRoleFast("menuitem", menu).map((row) => {
-      return row.textContent?.trim();
-    }),
-  ).toStrictEqual(["Delete"]);
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(menu).not.toBeInTheDocument();
-  });
-  const share = await findAction("button", "Share artifact", panel);
-  click(share);
-  const shareDialog = await screen.findByRole("dialog", { name: /Share/ });
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(shareDialog).not.toBeInTheDocument();
-  });
-  click(await findAction("button", "Download artifact", panel));
-  click(await findNamedMenuItem("Download"));
-  await waitFor(() => {
-    expect(downloads.downloads).toContainEqual(
-      expect.objectContaining({ url: file.url, filename: file.filename }),
-    );
-  });
-  click(more);
-  click(await findNamedMenuItem("Delete"));
-  const prompt = await screen.findByRole("dialog", {
-    name: "Delete " + item.title + "?",
-  });
-  click(await findAction("button", "Cancel", prompt));
-  await waitFor(() => {
-    expect(more).toHaveFocus();
-  });
-  click(more);
-  click(await findNamedMenuItem("Delete"));
-  const confirm = await screen.findByRole("dialog", {
-    name: "Delete " + item.title + "?",
-  });
-  click(await findAction("button", "Delete", confirm));
-  await screen.findByText("Artifact deleted");
-  await waitFor(() => {
-    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
-  });
-});
+      queryAllByRoleFast("menuitem", menu).map((row) => {
+        return row.textContent?.trim();
+      }),
+    ).toStrictEqual(["Delete"]);
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(menu).not.toBeInTheDocument();
+    });
+    const share = await findAction("button", "Share artifact", panel);
+    click(share);
+    const shareDialog = await screen.findByRole("dialog", { name: /Share/ });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(shareDialog).not.toBeInTheDocument();
+    });
+    click(await findAction("button", "Download artifact", panel));
+    click(await findNamedMenuItem("Download"));
+    await waitFor(() => {
+      expect(downloads.downloads).toContainEqual(
+        expect.objectContaining({ url: file.url, filename }),
+      );
+    });
+    click(more);
+    click(await findNamedMenuItem("Delete"));
+    const prompt = await screen.findByRole("dialog", {
+      name: "Delete " + item.title + "?",
+    });
+    click(await findAction("button", "Cancel", prompt));
+    await waitFor(() => {
+      expect(more).toHaveFocus();
+    });
+    click(more);
+    click(await findNamedMenuItem("Delete"));
+    const confirm = await screen.findByRole("dialog", {
+      name: "Delete " + item.title + "?",
+    });
+    click(await findAction("button", "Delete", confirm));
+    await screen.findByText("Artifact deleted");
+    await waitFor(() => {
+      expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
+    });
+  },
+);

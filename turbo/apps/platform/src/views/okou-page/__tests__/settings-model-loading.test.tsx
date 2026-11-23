@@ -80,6 +80,9 @@ test("Returning to model settings presents account setup while the updated balan
     context.mocks.ably.trigger("billing:changed");
     click(getAction("button", "Models", dialog));
     await refreshing.promise;
+    expect(
+      within(dialog).queryByRole("heading", { name: "Models" }),
+    ).toBeNull();
     await expect(
       within(dialog).findByRole("heading", { name: "Use more models" }),
     ).resolves.toBeInTheDocument();

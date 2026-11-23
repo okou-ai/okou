@@ -2,6 +2,7 @@ import {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
 } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { continuityAttachment } from "./chat-continuity-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
@@ -42,6 +43,7 @@ async function openChat(
     ) => Promise<void>;
     remoteHost?: string;
   } = {},
+  configureBoundary?: () => void,
 ) {
   const defaults = options.defaults ?? [true];
   const accounts = defaults.map((_enabled, i) => {
@@ -187,6 +189,7 @@ async function openChat(
       },
     );
   }
+  configureBoundary?.();
   await setupPage({
     context,
     path: options.path ?? "/chats/" + SCOUT_THREAD_ID,
@@ -451,11 +454,8 @@ test("A new chat inherits both account choices after leaving a pending thread ov
 });
 
 test("A rejected Personal selection leaves the attached field report and message in the new composer", async () => {
-  const { atRun } = await openChat({
-    path: "/?compose=1",
-    defaults: [true, true],
-    failSelection: true,
-  });
+  const attempted = context.mocks.deferred<void>();
+  const reject = context.mocks.deferred<void>();
   const attachment = continuityAttachment(
     86,
     6,
@@ -463,19 +463,34 @@ test("A rejected Personal selection leaves the attached field report and message
     "text/plain",
     5,
   );
-  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
-    return respond(200, {
-      ...attachment,
-      uploadUrl: "https://survey-storage.example/report",
-      uploadHeaders: {},
-    });
-  });
-  context.mocks.http.put("https://survey-storage.example/report", () => {
-    return new Response(null, { status: 200 });
-  });
-  context.mocks.api(uploadsContract.complete, ({ respond }) => {
-    return respond(200, attachment);
-  });
+  const { atRun } = await openChat(
+    {
+      path: "/?compose=1",
+      defaults: [true, true],
+      failSelection: true,
+      beforeCurrent: async () => {
+        if (!attempted.settled()) {
+          attempted.resolve();
+        }
+        await reject.promise;
+      },
+    },
+    () => {
+      context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+        return respond(200, {
+          ...attachment,
+          uploadUrl: "https://survey-storage.example/report",
+          uploadHeaders: {},
+        });
+      });
+      context.mocks.http.put("https://survey-storage.example/report", () => {
+        return new Response(null, { status: 200 });
+      });
+      context.mocks.api(uploadsContract.complete, ({ respond }) => {
+        return respond(200, attachment);
+      });
+    },
+  );
   const editor = await findComposerEditor();
   const message = "Review the attached field report";
   await fill(editor, message);
@@ -498,9 +513,13 @@ test("A rejected Personal selection leaves the attached field report and message
   await user.keyboard("{Escape}{Escape}");
   await user.click(editor);
   await user.keyboard("{Enter}");
+  await attempted.promise;
+  const edited = "Review the updated field report first";
+  await fill(editor, edited);
+  reject.resolve();
   await screen.findByText("Account access could not be saved");
   expect(location.pathname).toBe("/");
-  expect(editor).toHaveTextContent(message);
+  expect(editor).toHaveTextContent(edited);
   await expect(
     findFastControl("button", "Remove field-report.txt"),
   ).resolves.toBeEnabled();
@@ -512,7 +531,7 @@ test("A rejected Personal selection leaves the attached field report and message
   await user.keyboard("{Escape}{Escape}");
   await user.click(editor);
   await user.keyboard("{Enter}");
-  await screen.findByText(message, { selector: "[data-role=user] *" });
+  await screen.findByText(edited, { selector: "[data-role=user] *" });
   await screen.findByText(attachment.filename);
   expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
 });
@@ -542,4 +561,70 @@ test("A new composer can change local account access before a conversation exist
   await expect(toggle(again.panel, "Personal")).resolves.toBeChecked();
   expect(location.pathname).toBe("/");
   expect(write.settled()).toBeFalsy();
+});
+
+test("chat-composer-connector-accounts-008 Retrying the original admission sends the prompt with Personal access", async () => {
+  let admission: { chat: string; event: string; request: string } | undefined;
+  const { atRun } = await openChat(
+    {
+      path: "/",
+      defaults: [true, false],
+    },
+    () => {
+      context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+        if (!body.clientThreadId || !body.eventId) {
+          throw new Error("A chat needs both client identifiers");
+        }
+        if (!admission) {
+          admission = {
+            chat: body.clientThreadId,
+            event: body.eventId,
+            request: JSON.stringify(body),
+          };
+          return respond(500, {
+            error: {
+              code: "INTERNAL_ERROR",
+              message: "Chat admission interrupted",
+            },
+          });
+        }
+        if (
+          admission.chat !== body.clientThreadId ||
+          admission.event !== body.eventId ||
+          admission.request !== JSON.stringify(body)
+        ) {
+          return respond(500, {
+            error: {
+              code: "INTERNAL_ERROR",
+              message: "Previous admission has different identifiers",
+            },
+          });
+        }
+        return respond(201, {
+          id: admission.chat,
+          title: "Repository desk",
+          createdAt: "2026-03-10T00:07:00Z",
+          selectedModel: body.model ?? null,
+          serviceTier: null,
+        });
+      });
+    },
+  );
+  const controls = await choices();
+  click(await toggle(controls.panel, "Personal"));
+  click(await toggle(controls.panel, "Work"));
+  await expect(toggle(controls.panel, "Personal")).resolves.toBeChecked();
+  await userEvent.keyboard("{Escape}{Escape}");
+  const editor = await findComposerEditor();
+  const prompt = "Open the personal repository";
+  await fill(editor, prompt);
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText("Chat admission interrupted");
+  expect(editor).toHaveTextContent(prompt);
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText(prompt, { selector: "[data-role=user] *" });
+  expect(location.pathname).toBe("/chats/" + admission?.chat);
+  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
 });
