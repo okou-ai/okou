@@ -184,7 +184,7 @@ async fn snapshot_artifact_plan(
             &entry.mount_path,
             entry.missing_root_policy,
         ),
-        entry.name == MEMORY_ARTIFACT_NAME && snapshot.changed_version,
+        entry.name == MEMORY_ARTIFACT_NAME && snapshot.changed_archive_version,
     ))
 }
 

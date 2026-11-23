@@ -77,7 +77,7 @@ pub struct PreparedFinalization {
 }
 
 impl PreparedFinalization {
-    /// Whether preparation committed a Memory version distinct from its parent.
+    /// Whether preparation committed a nonempty Memory version distinct from its parent.
     pub fn memory_published(&self) -> bool {
         self.memory_published
     }

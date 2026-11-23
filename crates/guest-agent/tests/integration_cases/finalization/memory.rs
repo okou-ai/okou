@@ -36,6 +36,75 @@ fn version(files: &[serde_json::Value]) -> std::io::Result<String> {
 }
 
 #[tokio::test]
+async fn clearing_memory_reports_the_committed_empty_version_without_a_warmup_hint() {
+    let api = SharedApiMock::new().await;
+    let server = api.server();
+    let mut runtime = finalization_runtime().unwrap();
+    runtime.config.framework = guest_agent::env::Framework::Pi;
+    let mount = tempfile::tempdir().unwrap();
+    let mount_path = mount.path().to_str().unwrap().to_owned();
+    let parent = version(&[file("last.md", "previous contents")]).unwrap();
+    let empty = version(&[]).unwrap();
+    runtime
+        .config
+        .artifacts
+        .push(guest_agent::env::ArtifactEnv {
+            name: "memory".to_owned(),
+            mount_path: mount_path.clone(),
+            storage_id: STORAGE.to_owned(),
+            version_id: parent.clone(),
+            missing_root_policy: None,
+        });
+    server.mock(|when, then| {
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
+        then.json_body(json!({"versionId": empty, "existing": true}));
+    });
+    let commit = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/run/storages/commit")
+            .json_body_includes(
+                json!({"parentVersionId": parent, "versionId": empty, "files": []}).to_string(),
+            );
+        then.json_body(json!({
+            "success": true,
+            "versionId": empty,
+            "storageName": "memory",
+            "size": 0,
+            "fileCount": 0
+        }));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/api/webhooks/run/complete")
+            .json_body_includes(
+                json!({
+                    "exitCode": 0,
+                    "completion": {"storageOutputs": [{
+                        "name": "memory", "mountPath": mount_path, "version": empty
+                    }]}
+                })
+                .to_string(),
+            );
+        then.json_body(json!({"success": true, "status": "completed"}));
+    });
+
+    let metadata = guest_agent::session_metadata::CapturedSessionMetadata::for_test(
+        "clear-memory-session",
+        None,
+    );
+    let finalization =
+        guest_agent::finalization::prepare_finalization_for_runtime(&runtime, &metadata)
+            .await
+            .unwrap();
+    assert!(!finalization.memory_published());
+    report_prepared_finalization(&runtime, 0, finalization)
+        .await
+        .unwrap();
+    commit.assert_calls_async(1).await;
+    complete.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_committed_version() {
     for missing_after in [None, Some(0), Some(1)] {
         let api = SharedApiMock::new().await;

@@ -10,6 +10,6 @@
 /// EOF-terminated final record is measured without an implicit terminator.
 pub const ORDINARY_CLI_STDOUT_MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
 
-/// Optional terminal guest-agent output after an acknowledged Memory publication.
+/// Optional terminal guest-agent output after an acknowledged nonempty Memory publication.
 /// Runner treats it only as a hint to query the authoritative API.
 pub const MEMORY_PUBLISHED_MARKER: &str = "\n[okou:memory-published]\n";

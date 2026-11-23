@@ -19,16 +19,29 @@ use crate::tests::status_active_run_records;
 
 #[tokio::test]
 async fn committed_memory_lookup_starts_after_run_settlement() {
-    run_memory_lookup_case(true).await;
+    run_memory_lookup_case(Some(LookupResponse::MissingRoute)).await;
+}
+
+#[tokio::test]
+async fn committed_memory_lookup_warms_the_published_archive() {
+    run_memory_lookup_case(Some(LookupResponse::Archive)).await;
 }
 
 #[tokio::test]
 async fn committed_memory_lookup_skips_runs_without_a_publication_hint() {
-    run_memory_lookup_case(false).await;
+    run_memory_lookup_case(None).await;
 }
 
-async fn run_memory_lookup_case(published: bool) {
+#[derive(Clone, Copy)]
+enum LookupResponse {
+    MissingRoute,
+    Archive,
+}
+
+async fn run_memory_lookup_case(lookup_response: Option<LookupResponse>) {
     const WAIT: Duration = Duration::from_secs(5);
+    const VERSION: &str = "committed-memory-version";
+    const ARCHIVE: &[u8] = b"committed memory archive bytes";
     let run_id = RunId::new_v4();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_url = format!("http://{}", listener.local_addr().unwrap());
@@ -58,6 +71,9 @@ async fn run_memory_lookup_case(published: bool) {
                     .send(socket)
                     .unwrap();
                 continue;
+            } else if request_line.starts_with("GET /committed-memory.tar.gz ") {
+                assert!(matches!(lookup_response, Some(LookupResponse::Archive)));
+                http_response("200 OK", ARCHIVE)
             } else if request_line.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup "))
             {
                 http_response("204 No Content", b"")
@@ -70,7 +86,7 @@ async fn run_memory_lookup_case(published: bool) {
     }));
 
     let overrides = Arc::new(MockSandboxOverrides::new());
-    if published {
+    if lookup_response.is_some() {
         let (first, last) = MEMORY_PUBLISHED_MARKER.as_bytes().split_at(10);
         overrides.push_start_process_stdout_chunks(
             [first, last]
@@ -92,6 +108,11 @@ async fn run_memory_lookup_case(published: bool) {
     );
     let budget = Arc::clone(&config.capacity.budget);
     let status_path = env._temp_dir.path().join("status.json");
+    let cached_archive = config
+        .exec_config
+        .home
+        .storage_cache_dir("memory", VERSION)
+        .join("archive.tar.gz");
     let mut context = minimal_context(run_id);
     context.firewall_token = Some("host-firewall-token".into());
     context.storage_manifest = Some(StorageManifest {
@@ -110,7 +131,7 @@ async fn run_memory_lookup_case(published: bool) {
     let runner = AbortOnDropHandle::new(tokio::spawn(run(config)));
     push_job(&env, run_id, "vm0/default", Some(context));
 
-    if !published {
+    let Some(lookup_response) = lookup_response else {
         let completed = env.handle.wait_completion(run_id, WAIT).await.unwrap();
         assert_eq!(completed.exit_code, 0);
         shutdown(&env, runner.detach()).await;
@@ -121,7 +142,7 @@ async fn run_memory_lookup_case(published: bool) {
             Err(oneshot::error::TryRecvError::Closed)
         ));
         return;
-    }
+    };
 
     let mut lookup = tokio::time::timeout(WAIT, observed_lookup)
         .await
@@ -138,12 +159,38 @@ async fn run_memory_lookup_case(published: bool) {
     assert_eq!(budget.allocated().2, 0);
     assert!(status_active_run_records(&status_path).await.is_empty());
 
-    // An older API can return 404 while the optional route is rolling out.
-    lookup
-        .write_all(&http_response("404 Not Found", b""))
-        .await
-        .unwrap();
+    let reply = match lookup_response {
+        LookupResponse::MissingRoute => http_response("404 Not Found", b""),
+        LookupResponse::Archive => json_response(
+            "200 OK",
+            &serde_json::json!({
+                "archive": {
+                    "versionId": VERSION,
+                    "archiveSize": ARCHIVE.len(),
+                    "archiveUrl": format!("{api_url}/committed-memory.tar.gz"),
+                },
+            })
+            .to_string(),
+        ),
+    };
+    lookup.write_all(&reply).await.unwrap();
     drop(lookup);
+    if matches!(lookup_response, LookupResponse::Archive) {
+        let content = tokio::time::timeout(WAIT, async {
+            loop {
+                match tokio::fs::read(&cached_archive).await {
+                    Ok(content) => break content,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) => panic!("read warmed archive: {error}"),
+                }
+            }
+        })
+        .await
+        .expect("Runner should publish the fetched archive to its versioned cache");
+        assert_eq!(content, ARCHIVE);
+    }
     shutdown(&env, runner.detach()).await;
     stop.send(()).unwrap();
     server.await.unwrap();
