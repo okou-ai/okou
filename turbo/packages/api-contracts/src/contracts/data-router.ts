@@ -8,10 +8,10 @@ const c = initContract();
 export const DATA_ROUTER_REQUEST_BODY_MAX_BYTES = 1024 * 1024;
 
 /** MITM records Router-generated response IDs against trusted Run attribution. */
-export const dataRouterRequestContract = c.router({
+export const runDataRouterRequestContract = c.router({
   register: {
     method: "POST",
-    path: "/api/webhooks/agent/data-request",
+    path: "/api/webhooks/run/data-request",
     headers: object({ authorization: string().optional() }),
     body: object({ runId: uuid(), requestId: uuid() }).strict(),
     responses: {
@@ -22,13 +22,6 @@ export const dataRouterRequestContract = c.router({
       409: apiErrorSchema,
     },
     summary: "Register a Data Router request for the current Run",
-  },
-});
-
-export const runDataRouterRequestContract = c.router({
-  register: {
-    ...dataRouterRequestContract.register,
-    path: "/api/webhooks/run/data-request",
   },
 });
 
