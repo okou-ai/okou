@@ -437,10 +437,9 @@ class ConversationRouteTest {
         } finally {
             allowRefreshResponse.countDown()
         }
-        compose.waitUntil(5_000) {
-            model.history.uiState.value.phase != HistoryPhase.Loading
+        compose.waitUntil("the stale refresh is confirmed", 5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
         }
-        assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
         assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
     }
 
