@@ -6,7 +6,8 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { screen, waitFor, within } from "@testing-library/react";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -129,6 +130,62 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
   await expect(
     findArtifactAction("Release website"),
   ).resolves.toBeInTheDocument();
+});
+
+test("The catalog sidebar refreshes a private website after publication changes", async () => {
+  let version = 1;
+  const title = "Private release website";
+  mockCatalog({
+    ...artifact({ title, kind: "hosted-site" }),
+    kind: "hosted-site",
+    site: {
+      id: "f0000000-0000-4000-a000-000000000002",
+      slug: "private-release",
+      publicSlug: "private-release",
+      url: "https://private-release.okou.app/",
+      deploymentVersion: 1,
+      entrypoint: "index.html",
+      spaFallback: false,
+    },
+  });
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, {
+      url: `https://pv-private-release-v${version}.okou.app/`,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+  });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=hosted-site",
+    host: "app.okou.ai",
+  });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(title));
+  await expect(screen.findByTitle(`${title} preview`)).resolves.toHaveAttribute(
+    "src",
+    "https://pv-private-release-v1.okou.app/",
+  );
+
+  version = 2;
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: ARTIFACT_ID });
+  });
+  await waitFor(() => {
+    expect(screen.getByTitle(`${title} preview`)).toHaveAttribute(
+      "src",
+      "https://pv-private-release-v2.okou.app/",
+    );
+  });
+  const sidebar = screen.getByTestId("artifact-sidebar");
+  click(getButtonByName("Close artifact", sidebar));
+  await expect(findArtifactAction(title)).resolves.toBeInTheDocument();
+  click(await findArtifactAction(title));
+  await expect(screen.findByTitle(`${title} preview`)).resolves.toHaveAttribute(
+    "src",
+    "https://pv-private-release-v2.okou.app/",
+  );
 });
 
 test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
