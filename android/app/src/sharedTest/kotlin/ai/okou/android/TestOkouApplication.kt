@@ -33,6 +33,7 @@ import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
+import ai.okou.android.workflows.WorkflowService
 import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.Json
@@ -93,6 +94,8 @@ open class TestOkouApplication : OkouApplication() {
         )
     }
     var chatService: ChatListService = TestChatService()
+    var workflows: WorkflowService? = null
+    var initialPreferences: UserPreferences? = null
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
     var realtimeService: RealtimeService = TestRealtimeService()
@@ -130,7 +133,7 @@ open class TestOkouApplication : OkouApplication() {
         tokens: WorkspaceTokenProvider,
     ): WorkspaceSession {
         val key = Triple(identity.apiOrigin, identity.userId, identity.workspaceId)
-        fun stored() = preferences.getOrPut(key) { testPreferences() }
+        fun stored() = preferences.getOrPut(key) { initialPreferences ?: testPreferences() }
         val fixture = chatService as? WorkspaceSession
         val canonical = lazy { CanonicalWorkspaceSession(identity, tokens) }
         return object :
@@ -141,6 +144,7 @@ open class TestOkouApplication : OkouApplication() {
             ChatComposerService by composerService {
 
             override val artifacts = (fixture ?: canonical.value).artifacts
+            override val workflowService = workflows
             override val connectors = connectorService
 
             override suspend fun usagePackCredits() =

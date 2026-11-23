@@ -114,6 +114,10 @@ internal fun SessionRoot(
                     ready?.chats ?: opened?.chats,
                     ready?.composer ?: opened?.composer,
                     ready?.controls,
+                    workflows = ready?.workflows,
+                    workflowTimezone =
+                        ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value?.timezone
+                            ?: java.util.TimeZone.getDefault().id,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
                     settingsContent = { destination, open, close ->
                         WorkspaceSettingsContent(

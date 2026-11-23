@@ -156,5 +156,6 @@
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
     <string name="settings_timezone">Fuseau horaire</string>
     <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
-    <string name="settings_timezone_utc">Temps universel coordonné (UTC)</string>
+    <string name="settings_timezone_utc">Temps universel coordonné</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

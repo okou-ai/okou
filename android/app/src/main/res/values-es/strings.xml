@@ -156,5 +156,6 @@
     <string name="instructions_save_when_online">Conéctate para guardar los cambios.</string>
     <string name="settings_timezone">Zona horaria</string>
     <string name="settings_timezone_hint">Zona horaria predeterminada para nuevas tareas programadas.</string>
-    <string name="settings_timezone_utc">Tiempo universal coordinado (UTC)</string>
+    <string name="settings_timezone_utc">Tiempo universal coordinado</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

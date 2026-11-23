@@ -156,5 +156,6 @@
     <string name="instructions_save_when_online">인터넷에 연결하면 변경사항을 저장할 수 있습니다.</string>
     <string name="settings_timezone">시간대</string>
     <string name="settings_timezone_hint">새 예약 작업에 사용할 기본 시간대입니다.</string>
-    <string name="settings_timezone_utc">협정 세계시(UTC)</string>
+    <string name="settings_timezone_utc">협정 세계시</string>
+    <string name="settings_timezone_format">%1$s(UTC%2$s)</string>
 </resources>

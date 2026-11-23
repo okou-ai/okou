@@ -13,7 +13,6 @@ import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
 import ai.okou.android.resolveDark
 import ai.okou.android.resolvePalette
-import android.icu.text.TimeZoneNames
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -169,18 +168,9 @@ private val commonTimezones =
 @Composable
 private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     val title = stringResource(R.string.settings_timezone)
-    val utc = stringResource(R.string.settings_timezone_utc)
-    val locale = LocalConfiguration.current.locales[0]
-    val labels = remember(locale) { TimeZoneNames.getInstance(locale) }
-    fun label(id: String): String =
-        when (id) {
-            "UTC",
-            "Etc/UTC" -> utc
-            else -> labels.getExemplarLocationName(id) ?: id
-        }
     SettingsPickerRow(
         title,
-        value = current?.let(::label),
+        value = current?.let { timezoneLabel(it) },
         leading = { SettingsIcon(R.drawable.ic_schedule) },
         enabled = current != null && onSelect != null,
     ) { dismiss ->
@@ -201,7 +191,7 @@ private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
             Column(Modifier.fillMaxWidth().selectableGroup()) {
                 options.forEach { zone ->
                     SettingsChoiceRow(
-                        label(zone),
+                        timezoneLabel(zone),
                         selected = zone == current,
                         enabled = true,
                         onClick = {

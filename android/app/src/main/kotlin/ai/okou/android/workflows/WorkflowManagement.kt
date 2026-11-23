@@ -1,0 +1,742 @@
+package ai.okou.android.workflows
+
+import ai.okou.android.BuildConfig
+import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.R
+import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.generated.WorkflowAutomation
+import ai.okou.android.api.generated.WorkflowAutomationVariant1
+import ai.okou.android.api.generated.WorkflowAutomationVariant11
+import ai.okou.android.api.generated.WorkflowAutomationVariant12
+import ai.okou.android.api.generated.WorkflowAutomationVariant13
+import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
+import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant3
+import ai.okou.android.api.generated.WorkflowAutomationVariant2
+import ai.okou.android.api.generated.WorkflowAutomationVariant3
+import ai.okou.android.api.generated.WorkflowAutomationVariant4
+import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.chat.chatTime
+import ai.okou.android.preferences.timezoneLabel
+import ai.okou.android.state.rememberJournalEditor
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import java.text.DateFormat
+import java.text.NumberFormat
+import java.util.Date
+import java.util.TimeZone
+
+@Composable
+internal fun WorkflowRuleRow(
+    rule: WorkflowAutomation,
+    state: WorkflowState,
+    actionsEnabled: Boolean,
+    timezone: String,
+    onEdit: (WorkflowEdit.Rule) -> Unit,
+    onToggle: (WorkflowAutomation) -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val connectionRequired = rule.needsConnection(state.connections)
+    val status =
+        stringResource(
+            if (rule.enabled) R.string.workflow_enabled else R.string.workflow_rule_paused
+        )
+    val badge =
+        if (connectionRequired) stringResource(R.string.workflow_status_connection, status)
+        else status
+    val badgeColor =
+        when {
+            connectionRequired -> colors.error
+            rule.enabled -> LocalActivityStatusColor.current
+            else -> colors.onSurfaceVariant
+        }
+    val editable = remember(rule, timezone) { rule.editableRule(timezone) }
+    val titleMinWidth = with(LocalDensity.current) { 16.sp.toDp() * 10 }
+    val uriHandler = LocalUriHandler.current
+    var couldNotOpen by remember(rule.id) { mutableStateOf(false) }
+    fun viewConnections() {
+        couldNotOpen = !openWorkflowConnections(uriHandler)
+    }
+    Column(
+        Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("workflow_rule_${rule.id}"),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                ruleTitle(rule),
+                Modifier.widthIn(min = titleMinWidth).weight(1f).semantics { heading() },
+                style = workflowBodyStyle(),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Box(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                WorkflowStatus(badge, badgeColor)
+            }
+        }
+        val scheduleZone = ruleScheduleZone(rule)
+        val nextRun =
+            rule.nextRunAt
+                ?.takeIf { rule.enabled }
+                ?.let {
+                    stringResource(
+                        R.string.workflow_next_run,
+                        workflowTimestamp(it, scheduleZone ?: timezone),
+                    )
+                }
+        if (scheduleZone != null) {
+            val label = timezoneLabel(scheduleZone)
+            val schedule =
+                if (nextRun == null) stringResource(R.string.workflow_rule_timezone, label)
+                else "$nextRun · $label"
+            WorkflowSecondary(schedule, small = true)
+        } else {
+            ruleDescription(rule, connectionRequired)?.let { WorkflowSecondary(it, small = true) }
+            if (nextRun != null) WorkflowSecondary(nextRun, small = true)
+        }
+        when (state.issue?.takeIf { it.ruleId == rule.id }?.failure) {
+            WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_rule_network_failed)
+            WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_rule_change_failed)
+            else -> Unit
+        }
+        if (rule.official == null) {
+            val toggleFocus = remember { FocusRequester() }
+            var connectionFocused by remember { mutableStateOf(false) }
+            val showSeparateConnection = connectionRequired && rule.enabled
+            val restoreToggleFocus = !showSeparateConnection && connectionFocused
+            LaunchedEffect(showSeparateConnection) {
+                if (restoreToggleFocus) toggleFocus.requestFocus()
+            }
+            FlowRow(
+                Modifier.padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (showSeparateConnection)
+                    WorkflowAction(
+                        stringResource(R.string.workflow_view_connection),
+                        ::viewConnections,
+                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
+                        enabled = actionsEnabled,
+                    )
+                val needsRecovery = connectionRequired && !rule.enabled
+                val canToggle = rule.enabled || rule.canEnable(state.connections)
+                WorkflowAction(
+                    stringResource(
+                        when {
+                            rule.enabled -> R.string.workflow_pause
+                            needsRecovery -> R.string.workflow_view_connection
+                            else -> R.string.workflow_enable
+                        }
+                    ),
+                    {
+                        if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
+                    },
+                    enabled = actionsEnabled && (needsRecovery || canToggle),
+                    modifier =
+                        Modifier.focusRequester(toggleFocus)
+                            .then(
+                                if (needsRecovery) Modifier
+                                else Modifier.testTag("workflow_toggle_${rule.id}")
+                            ),
+                )
+                if (editable != null)
+                    WorkflowAction(
+                        stringResource(R.string.workflow_edit),
+                        { onEdit(editable) },
+                        enabled = actionsEnabled && !state.writing,
+                    )
+            }
+        }
+        if (couldNotOpen) WorkflowNotice(R.string.workflow_connection_unavailable)
+    }
+}
+
+@Composable
+private fun ruleTitle(rule: WorkflowAutomation): String =
+    when (rule) {
+        is WorkflowAutomationVariant1 -> {
+            val simple =
+                (rule.schedule as? WorkflowAutomationVariant1ScheduleVariant1)?.simpleRule()
+            if (simple == null) rule.scheduleSummary
+            else
+                stringResource(
+                    if (simple.weekdays) R.string.workflow_weekday_schedule
+                    else R.string.workflow_daily_schedule,
+                    simple.time,
+                )
+        }
+        is WorkflowAutomationVariant3 ->
+            rule.eventConfig.match?.subject?.contains?.let {
+                stringResource(R.string.workflow_mail_subject_contains, it)
+            } ?: stringResource(rule.eventLabel)
+        else -> stringResource(rule.eventLabel)
+    }
+
+@Composable
+private fun ruleDescription(rule: WorkflowAutomation, connectionRequired: Boolean): String? {
+    if (connectionRequired)
+        return stringResource(
+            if (rule.enabled) R.string.workflow_resume_provider
+            else R.string.workflow_connect_provider,
+            stringResource(rule.source.label),
+        )
+    return when (rule) {
+        is WorkflowAutomationVariant1 -> null
+        is WorkflowAutomationVariant2 -> rule.eventConfig.outputPattern
+        is WorkflowAutomationVariant3 ->
+            rule.eventConfig.match?.from?.contains?.let {
+                stringResource(R.string.workflow_mail_from_contains, it)
+            }
+        is WorkflowAutomationVariant4 -> rule.eventConfig.labelName
+        is WorkflowAutomationVariant11 -> rule.eventConfig.calendarId
+        is WorkflowAutomationVariant12 -> rule.eventConfig.calendarId
+        is WorkflowAutomationVariant13 -> rule.eventConfig.calendarId
+        else -> rule.githubRepositorySummary() ?: stringResource(rule.source.label)
+    }
+}
+
+private fun ruleScheduleZone(rule: WorkflowAutomation): String? =
+    when (val schedule = (rule as? WorkflowAutomationVariant1)?.schedule) {
+        is WorkflowAutomationVariant1ScheduleVariant1 -> schedule.timezone
+        is WorkflowAutomationVariant1ScheduleVariant3 -> schedule.timezone
+        else -> null
+    }
+
+@Composable
+internal fun WorkflowHistoryRow(
+    rule: WorkflowAutomation,
+    timezone: String,
+    sourceChatAvailable: (String) -> Boolean,
+    sourceNavigationEnabled: Boolean,
+    onOpenChat: (String) -> Unit,
+) {
+    val source = rule.chatThreadId?.takeIf(sourceChatAvailable)
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 52.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .then(
+                if (source != null)
+                    Modifier.clickable(enabled = sourceNavigationEnabled, role = Role.Button) {
+                        onOpenChat(source)
+                    }
+                else Modifier
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(painterResource(R.drawable.ic_event), null, Modifier.size(18.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                workflowTimestamp(rule.lastRunAt.orEmpty(), timezone),
+                style = workflowBodyStyle(),
+                fontWeight = FontWeight.SemiBold,
+            )
+            WorkflowSecondary(ruleTitle(rule), small = true)
+        }
+        if (source != null)
+            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(18.dp))
+    }
+}
+
+@Composable
+private fun workflowTimestamp(time: String, timezone: String): String {
+    val locale = LocalConfiguration.current.locales[0]
+    return remember(time, timezone, locale) {
+        try {
+            DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+                .apply { timeZone = TimeZone.getTimeZone(timezone) }
+                .format(Date(chatTime(time)))
+        } catch (_: ApiFailure.IncompatibleResponse) {
+            time
+        }
+    }
+}
+
+@Composable
+internal fun WorkflowEditor(
+    detail: WorkflowDetail,
+    editor: WorkflowEdit,
+    state: WorkflowState,
+    model: WorkflowModel,
+    wide: Boolean,
+    onCancel: () -> Unit,
+) {
+    val horizontalPadding = if (wide) 32.dp else 20.dp
+    val activeRule = editor as? WorkflowEdit.Rule
+    val available = !state.writing && detail.canChange(activeRule?.id)
+    val uriHandler = LocalUriHandler.current
+    var couldNotOpen by remember { mutableStateOf(false) }
+    val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
+    val showConnectionAction = connectionRequired != null && state.connections != null
+    val connectionFeedback =
+        state.connectionReadFeedback().takeIf {
+            activeRule?.value?.trigger?.source?.connector != null
+        }
+    val saveEnabled =
+        available &&
+            editor.canSave &&
+            connectionRequired == null &&
+            state.issue?.failure != WorkflowWriteFailure.UncertainCreate
+    val saveFocus = remember { FocusRequester() }
+    var connectionFocused by remember { mutableStateOf(false) }
+    var saveFocused by remember { mutableStateOf(false) }
+    var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
+    val restoreSaveFocus =
+        !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
+    LaunchedEffect(showConnectionAction, saveEnabled) {
+        if (restoreSaveFocus) {
+            restoreSaveFocusAfterWrite = false
+            saveFocus.requestFocus()
+        }
+    }
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            Modifier.widthIn(max = 730.dp)
+                .fillMaxWidth()
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = horizontalPadding, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            val heading =
+                when (editor) {
+                    is WorkflowEdit.Instructions -> R.string.workflow_edit_instructions
+                    is WorkflowEdit.Rule ->
+                        if (editor.id == null) R.string.workflow_add_automation
+                        else R.string.workflow_edit_automation
+                }
+            Text(
+                stringResource(heading),
+                Modifier.semantics { heading() },
+                style = MaterialTheme.typography.headlineSmall,
+            )
+            when (editor) {
+                is WorkflowEdit.Instructions -> {
+                    val value = editor.value
+                    WorkflowField(
+                        R.string.workflow_name,
+                        value.title,
+                        available,
+                        errorMessage =
+                            if (value.title.isBlank())
+                                stringResource(R.string.workflow_name_required)
+                            else workflowLengthError(value.title, WORKFLOW_DISPLAY_NAME_LIMIT),
+                    ) {
+                        model.edit(editor.copy(value = editor.value.copy(title = it)))
+                    }
+                    WorkflowField(
+                        R.string.workflow_purpose,
+                        value.purpose,
+                        available,
+                        errorMessage = workflowLengthError(value.purpose, WORKFLOW_PURPOSE_LIMIT),
+                    ) {
+                        model.edit(editor.copy(value = editor.value.copy(purpose = it)))
+                    }
+                    WorkflowField(
+                        R.string.workflow_instructions_heading,
+                        value.instruction,
+                        available,
+                        singleLine = false,
+                        errorMessage =
+                            workflowLengthError(value.instruction, WORKFLOW_INSTRUCTION_LIMIT),
+                    ) {
+                        model.edit(editor.copy(value = editor.value.copy(instruction = it)))
+                    }
+                }
+                is WorkflowEdit.Rule ->
+                    WorkflowRuleFields(editor, available) { model.edit(editor.copy(value = it)) }
+            }
+        }
+        WorkflowDivider()
+        Column(
+            Modifier.widthIn(max = 730.dp)
+                .fillMaxWidth()
+                .padding(horizontal = horizontalPadding, vertical = 8.dp),
+            horizontalAlignment = Alignment.End,
+        ) {
+            when (state.issue?.failure) {
+                WorkflowWriteFailure.Network -> WorkflowNotice(R.string.workflow_offline_changes)
+                WorkflowWriteFailure.UncertainCreate ->
+                    WorkflowNotice(R.string.workflow_create_uncertain)
+                WorkflowWriteFailure.Conflict -> WorkflowNotice(R.string.workflow_write_conflict)
+                WorkflowWriteFailure.Failed -> WorkflowNotice(R.string.workflow_write_failed)
+                null -> Unit
+            }
+            val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
+            if (readFeedback != null) WorkflowNotice(readFeedback)
+            if (
+                connectionRequired != null &&
+                    (state.connections != null || connectionFeedback == null)
+            ) {
+                WorkflowStatus(
+                    stringResource(
+                        R.string.workflow_connect_to_save,
+                        stringResource(connectionRequired.label),
+                    ),
+                    MaterialTheme.colorScheme.error,
+                )
+            }
+            if (couldNotOpen) WorkflowNotice(R.string.workflow_connection_unavailable)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                WorkflowAction(
+                    stringResource(R.string.workflow_cancel),
+                    onCancel,
+                    enabled = !state.writing,
+                )
+                if (showConnectionAction) {
+                    WorkflowAction(
+                        stringResource(R.string.workflow_view_connection),
+                        { couldNotOpen = !openWorkflowConnections(uriHandler) },
+                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
+                        enabled = !state.writing,
+                    )
+                }
+                WorkflowAction(
+                    stringResource(R.string.workflow_save),
+                    onClick = {
+                        restoreSaveFocusAfterWrite = saveFocused
+                        model.save(editor)
+                    },
+                    primary = true,
+                    enabled = saveEnabled,
+                    modifier =
+                        Modifier.focusRequester(saveFocus)
+                            .onFocusChanged { saveFocused = it.isFocused }
+                            .testTag("workflow_save"),
+                )
+            }
+        }
+    }
+}
+
+internal fun WorkflowReadFailure?.cachedReadFeedback(): Int? =
+    when (this) {
+        WorkflowReadFailure.Offline -> R.string.workflow_offline_cache
+        WorkflowReadFailure.Unavailable,
+        WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
+        else -> null
+    }
+
+internal fun WorkflowState.connectionReadFeedback(): Int? =
+    if (connections != null) connectionsFailure.cachedReadFeedback()
+    else
+        when (connectionsFailure) {
+            WorkflowReadFailure.Offline -> R.string.connector_load_when_online
+            null -> null
+            else -> R.string.connector_accounts_failed
+        }
+
+private fun openWorkflowConnections(uriHandler: UriHandler): Boolean =
+    try {
+        uriHandler.openUri("${BuildConfig.WEB_ORIGIN}/connectors")
+        true
+    } catch (_: IllegalArgumentException) {
+        false
+    }
+
+@Composable
+private fun WorkflowRuleFields(
+    editor: WorkflowEdit.Rule,
+    enabled: Boolean,
+    onChange: (RuleFields) -> Unit,
+) {
+    val fields = editor.value
+    if (editor.id == null) {
+        val triggers = EditableTrigger.entries
+        WorkflowChoice(
+            R.string.workflow_trigger,
+            stringResource(fields.trigger.label),
+            triggers.map { stringResource(it.label) },
+            enabled,
+        ) {
+            onChange(fields.copy(trigger = triggers[it]))
+        }
+    }
+    when (fields.trigger) {
+        EditableTrigger.Schedule -> {
+            val frequency =
+                listOf(
+                    stringResource(R.string.workflow_weekdays),
+                    stringResource(R.string.workflow_daily),
+                )
+            WorkflowChoice(
+                R.string.workflow_frequency,
+                frequency[if (fields.weekdays) 0 else 1],
+                frequency,
+                enabled,
+            ) {
+                onChange(fields.copy(weekdays = it == 0))
+            }
+            WorkflowField(R.string.workflow_time, fields.time, enabled) {
+                onChange(fields.copy(time = it))
+            }
+            WorkflowTimezone(fields.timezone, enabled) { onChange(fields.copy(timezone = it)) }
+        }
+        EditableTrigger.Gmail ->
+            WorkflowField(R.string.workflow_match_subject, fields.subject, enabled) {
+                onChange(fields.copy(subject = it))
+            }
+        EditableTrigger.Calendar ->
+            WorkflowField(
+                R.string.workflow_calendar_id,
+                fields.calendarId,
+                enabled,
+                errorMessage =
+                    workflowLengthError(fields.trimmedCalendarId, WORKFLOW_CALENDAR_ID_LIMIT),
+            ) {
+                onChange(fields.copy(calendarId = it))
+            }
+    }
+    WorkflowSecondary(
+        stringResource(
+            if (editor.enabled) R.string.workflow_rule_stays_enabled
+            else R.string.workflow_rule_stays_paused
+        ),
+        small = true,
+    )
+}
+
+private val EditableTrigger.label: Int
+    get() =
+        when (this) {
+            EditableTrigger.Schedule -> R.string.workflow_schedule
+            EditableTrigger.Gmail -> R.string.workflow_mail_received
+            EditableTrigger.Calendar -> R.string.workflow_event_created
+        }
+
+@Composable
+private fun workflowLengthError(value: String, limit: Int): String? {
+    if (value.length <= limit) return null
+    val formattedLimit =
+        NumberFormat.getIntegerInstance(LocalConfiguration.current.locales[0]).format(limit)
+    return stringResource(R.string.workflow_field_too_long, formattedLimit)
+}
+
+@Composable
+private fun WorkflowField(
+    label: Int,
+    value: String,
+    enabled: Boolean,
+    singleLine: Boolean = true,
+    errorMessage: String? = null,
+    onChange: (String) -> Unit,
+) {
+    val title = stringResource(label)
+    val input = rememberJournalEditor(value, target = label)
+    val interactions = remember { MutableInteractionSource() }
+    val colors = MaterialTheme.colorScheme
+    val isError = errorMessage != null
+    Column {
+        WorkflowFieldLabel(title)
+        Spacer(Modifier.height(8.dp))
+        BasicTextField(
+            value = input.value,
+            onValueChange = {
+                input.edit(it)
+                if (it.text != value) onChange(it.text)
+            },
+            modifier =
+                Modifier.fillMaxWidth()
+                    .heightIn(min = if (singleLine) 56.dp else 112.dp)
+                    .semantics {
+                        contentDescription = title
+                        if (errorMessage != null) error(errorMessage)
+                    },
+            readOnly = !enabled,
+            singleLine = singleLine,
+            maxLines = if (singleLine) 1 else 8,
+            textStyle = workflowBodyStyle().copy(color = colors.onBackground),
+            cursorBrush = SolidColor(if (isError) colors.error else colors.onBackground),
+            interactionSource = interactions,
+            decorationBox = { inner ->
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = value,
+                    innerTextField = inner,
+                    enabled = true,
+                    singleLine = singleLine,
+                    visualTransformation = VisualTransformation.None,
+                    interactionSource = interactions,
+                    contentPadding = PaddingValues(12.dp),
+                    isError = isError,
+                    container = {
+                        OutlinedTextFieldDefaults.Container(
+                            enabled = true,
+                            isError = isError,
+                            interactionSource = interactions,
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                    },
+                )
+            },
+        )
+        if (errorMessage != null) {
+            Text(
+                errorMessage,
+                Modifier.padding(top = 4.dp),
+                color = colors.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun WorkflowFieldLabel(title: String) {
+    Text(title, style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp))
+}
+
+@Composable
+private fun WorkflowChoice(
+    label: Int,
+    current: String,
+    options: List<String>,
+    enabled: Boolean,
+    pick: (Int) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        WorkflowFieldLabel(stringResource(label))
+        Spacer(Modifier.height(8.dp))
+        Box {
+            WorkflowAction(
+                current,
+                { expanded = true },
+                Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                enabled,
+            )
+            DropdownMenu(expanded, onDismissRequest = { expanded = false }) {
+                options.forEachIndexed { index, option ->
+                    DropdownMenuItem(
+                        text = { Text(option) },
+                        onClick = {
+                            expanded = false
+                            pick(index)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowTimezone(current: String, enabled: Boolean, pick: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val title = stringResource(R.string.workflow_timezone)
+    Column {
+        WorkflowFieldLabel(title)
+        Spacer(Modifier.height(8.dp))
+        WorkflowAction(
+            timezoneLabel(current),
+            { expanded = true },
+            Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            enabled,
+        )
+    }
+    if (expanded) {
+        val zones =
+            remember(current) {
+                (listOf(
+                        current,
+                        "Asia/Shanghai",
+                        "Asia/Tokyo",
+                        "Asia/Singapore",
+                        "Europe/London",
+                        "America/Los_Angeles",
+                        "UTC",
+                    ) + TimeZone.getAvailableIDs().sorted())
+                    .distinct()
+            }
+        AlertDialog(
+            onDismissRequest = { expanded = false },
+            title = { Text(title) },
+            text = {
+                LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                    items(zones, key = { it }) { zone ->
+                        TextButton(
+                            onClick = {
+                                pick(zone)
+                                expanded = false
+                            },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) {
+                            Text(timezoneLabel(zone))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { expanded = false }) {
+                    Text(stringResource(R.string.workflow_cancel))
+                }
+            },
+        )
+    }
+}

@@ -156,5 +156,6 @@
     <string name="instructions_save_when_online">連線後即可儲存，變更已保留。</string>
     <string name="settings_timezone">時區</string>
     <string name="settings_timezone_hint">用於新建排程任務的預設時區。</string>
-    <string name="settings_timezone_utc">世界協調時間（UTC）</string>
+    <string name="settings_timezone_utc">世界協調時間</string>
+    <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
 </resources>
