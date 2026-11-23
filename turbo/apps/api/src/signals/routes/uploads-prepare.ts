@@ -28,7 +28,7 @@ import {
 import { allocateUploadedArtifact$ } from "../services/uploaded-artifact.service";
 import { rejectSuspendedOrg$ } from "../services/org-suspension.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
-import { MAX_TOTAL_AUDIO_BYTES } from "../services/voice-clips.service";
+import { MAX_TOTAL_AUDIO_BYTES } from "@okouai/api-contracts/contracts/voice-clips";
 import type { RouteEntry } from "../route-entry";
 import { onRejection, tapError } from "../utils";
 

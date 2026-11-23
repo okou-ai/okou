@@ -7,7 +7,7 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { MAX_VOICE_CLIPS } from "@okouai/api-contracts/contracts/voice-clips";
+import { MAX_TOTAL_AUDIO_BYTES, MAX_VOICE_CLIPS } from "@okouai/api-contracts/contracts/voice-clips";
 import {
   badRequestMessage,
   notFound,
@@ -21,7 +21,6 @@ import {
   type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 
-export const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
 const audioTypes = zEnum([
   "audio/wav",
   "audio/mpeg",

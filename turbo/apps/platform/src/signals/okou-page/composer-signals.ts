@@ -515,6 +515,11 @@ function createComposerVoiceInput(
   );
   return createComposerVoiceInputSignals(
     deliverText$,
+    command(async ({ set }, fileId: string, signal: AbortSignal) => {
+      await set(options.draft.load$, signal);
+      signal.throwIfAborted();
+      set(workflowComposer.insertVoiceClip$, fileId);
+    }),
     workflowComposer.readVoiceContext$,
     options.voiceDraftTarget,
   );

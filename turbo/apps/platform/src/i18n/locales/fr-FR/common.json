@@ -2930,6 +2930,7 @@
       "storageFailed": "Le son n’a pas pu être sauvegardé. Seul le son déjà enregistré sur cet appareil est disponible.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
+      "uploadingRecording": "Envoi de l’enregistrement…",
       "useRecording": "Utiliser l’enregistrement"
     },
     "walletAction": {

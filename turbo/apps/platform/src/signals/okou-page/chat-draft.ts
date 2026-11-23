@@ -231,13 +231,15 @@ const prepareStorageUpload$ = command(
     _visitor,
     createClient: ApiClientFactory,
     file: File,
+    privateArtifact: boolean,
     signal: AbortSignal,
   ) => {
     const client = createClient(uploadsContract);
     const contentType = inferUploadContentType(file);
     return await accept(
-      client.prepare({
+      (privateArtifact ? client.preparePrivate : client.prepare)({
         body: {
+          ...(privateArtifact ? { requirePrivateArtifact: true } : {}),
           filename: file.name,
           contentType,
           size: file.size,
@@ -261,11 +263,12 @@ const prepareStorageUpload$ = command(
  * a second, subtly different uploader. The file body never travels through the
  * app runtime in either case.
  */
-const uploadFileToStorage$ = command(
+export const uploadFileToStorage$ = command(
   async (
     { get, set },
     file: File,
     uploadedBytes$: State<number> | undefined,
+    privateArtifact: boolean,
     signal: AbortSignal,
   ): Promise<FileInfo> => {
     const createClient = get(apiClient$);
@@ -274,6 +277,7 @@ const uploadFileToStorage$ = command(
       prepareStorageUpload$,
       createClient,
       file,
+      privateArtifact,
       signal,
     );
     signal.throwIfAborted();
@@ -381,7 +385,10 @@ const uploadFileToStorage$ = command(
       throwStorageUploadFailure(file.name, transfer.reason, signal);
     }
 
-    if (parseArtifactReference(prepared.body.url, location.origin)) {
+    if (
+      privateArtifact ||
+      parseArtifactReference(prepared.body.url, location.origin)
+    ) {
       const completed = await accept(
         client.complete({
           body: { id: prepared.body.id },
@@ -431,6 +438,7 @@ function createUploadAnnotatedCopy(
         uploadFileToStorage$,
         flattened.file,
         undefined,
+        false,
         signal,
       );
       // Replacement, removal and teardown must not install an older derivative.
@@ -617,7 +625,13 @@ function createChatAttachment(file: File): ChatAttachment {
         : null,
     );
     set(uploadedBytes$, 0);
-    const promise = set(uploadFileToStorage$, file, uploadedBytes$, signal);
+    const promise = set(
+      uploadFileToStorage$,
+      file,
+      uploadedBytes$,
+      false,
+      signal,
+    );
     set(internalUpload$, promise);
     const [result] = await Promise.allSettled([promise]);
     if (result.status === "rejected") {

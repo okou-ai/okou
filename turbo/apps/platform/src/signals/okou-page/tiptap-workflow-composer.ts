@@ -80,6 +80,7 @@ import {
 } from "./workflow-composer-domain.ts";
 import {
   PROJECT_MENTION_NODE_NAME,
+  VOICE_CLIP_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
@@ -270,6 +271,7 @@ export interface WorkflowComposerSignals {
     void,
     [OpenComposerTemplatePickerIntent]
   >;
+  readonly insertVoiceClip$: Command<void, [string]>;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
   readonly selectOrAppendText$: Command<void, [string]>;
@@ -455,6 +457,56 @@ function createChatThreadMentionNodeView(node: ProseMirrorNode): NodeView {
     },
   };
 }
+
+function voiceClipLabel() {
+  return i18n.t(($) => {
+    return $.chat.messageDocument.voice;
+  });
+}
+
+const VoiceClipNode = Node.create({
+  name: VOICE_CLIP_NODE_NAME,
+  group: "inline",
+  inline: true,
+  atom: true,
+  addAttributes() {
+    return { fileId: { default: null } };
+  },
+  parseHTML() {
+    return [
+      {
+        tag: "span[data-voice-clip]",
+        getAttrs: (element) => {
+          return { fileId: element.dataset.voiceClip };
+        },
+      },
+    ];
+  },
+  renderHTML({ node }) {
+    const fileId: unknown = node.attrs.fileId;
+    return [
+      "span",
+      { "data-voice-clip": fileId, class: COMPOSER_INLINE_REFERENCE_CLASS },
+      [
+        "svg",
+        {
+          xmlns: "http://www.w3.org/2000/svg",
+          viewBox: "0 0 24 24",
+          width: 13,
+          height: 13,
+          fill: "none",
+          stroke: "currentColor",
+          "stroke-width": 1.7,
+          "aria-hidden": "true",
+        },
+        ["rect", { x: 9, y: 2, width: 6, height: 12, rx: 3 }],
+        ["path", { d: "M5 10v1a7 7 0 0 0 14 0v-1M12 18v4" }],
+      ],
+      ["span", voiceClipLabel()],
+    ];
+  },
+  renderText: voiceClipLabel,
+});
 
 const ChatThreadMentionNode = Node.create({
   name: CHAT_THREAD_MENTION_NODE_NAME,
@@ -1406,6 +1458,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === VOICE_CLIP_NODE_NAME) {
+    return voiceClipLabel();
+  }
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
   }
@@ -1789,6 +1844,7 @@ function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
       ChatThreadMentionNode,
+      VoiceClipNode,
       WorkflowHighlight,
       UrlHighlight,
     ],
@@ -2655,6 +2711,21 @@ function createInsertTextCommands(editor: Editor) {
 
   return {
     readVoiceContext$,
+    insertVoiceClip$: command((_context, fileId: string) => {
+      const doc = editor.state.doc;
+      const clip = { type: VOICE_CLIP_NODE_NAME, attrs: { fileId } };
+      const lastIsParagraph = doc.lastChild?.type.name === "paragraph";
+      const position = doc.content.size - (lastIsParagraph ? 1 : 0);
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(
+          position,
+          lastIsParagraph ? clip : { type: "paragraph", content: [clip] },
+        )
+        .scrollIntoView()
+        .run();
+    }),
     insertText$,
     insertPromptMarkdown$,
     ...createPromptTextCommands(editor),
@@ -2944,6 +3015,7 @@ function createInsertUserMessageCommand(editor: Editor) {
   return command((_context, value: UserMessageDocument) => {
     const insertableParts = value.parts.filter((part) => {
       return (
+        part.type === "voice" ||
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "feedback" ||

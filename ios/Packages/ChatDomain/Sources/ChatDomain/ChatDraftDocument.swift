@@ -73,7 +73,7 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
           }
         }
         return [
-          "text", "file", "chat_thread", "template", "source", "additional_info",
+          "text", "file", "voice", "chat_thread", "template", "source", "additional_info",
           "automation", "feedback"
         ].contains(type)
       }
@@ -84,14 +84,14 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
       if part["type"]?.string == "text" {
         return !(part["text"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       }
-      return ["chat_thread", "feedback"].contains(part["type"]?.string ?? "")
+      return ["voice", "chat_thread", "feedback"].contains(part["type"]?.string ?? "")
     }
   }
 
   public var contextLabels: [String] {
     parts.compactMap { part in
       switch part["type"]?.string {
-      case "text", "file": return nil
+      case "text", "file", "voice": return nil
       case "chat_thread", "template": return part["titleSnapshot"]?.string
       case "feedback": return nil
       case "source": return "Source context"

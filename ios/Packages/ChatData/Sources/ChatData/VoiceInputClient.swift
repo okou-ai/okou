@@ -24,6 +24,18 @@ public struct VoiceInputClient: Sendable {
 
   public init(client: APIClient) { self.client = client }
 
+  public func recordAsMessage() async throws -> Bool {
+    let features = try await ChatModelService(client: client).featureSwitches().effectiveSwitches
+    return features["composerVoiceMessages"] == true && features["voiceMessages"] == true
+  }
+
+  func uploadClip(file: URL) async throws -> String {
+    let clip = try await ChatAttachmentUpload(client: client).upload(
+      file: file, filename: "Voice recording.wav", contentType: "audio/wav", requirePrivate: true
+    ) { _ in }
+    return clip.id
+  }
+
   public func quota() async throws -> VoiceInputQuota {
     try await client.request("/api/voice-io/quota")
   }

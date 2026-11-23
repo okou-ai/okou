@@ -2,7 +2,7 @@ import { command } from "ccstate";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
 import { badRequestMessage } from "../../lib/error";
-import { MAX_TOTAL_AUDIO_BYTES } from "../services/voice-clips.service";
+import { MAX_TOTAL_AUDIO_BYTES } from "@okouai/api-contracts/contracts/voice-clips";
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";

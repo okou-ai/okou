@@ -24,6 +24,7 @@ final class ComposerVoiceInputStore {
   private var generation = UUID()
   private var startingTask: Task<Void, Never>?
   private var quotaTask: Task<Void, Error>?
+  private(set) var asVoiceMessage = false
   private var quotaAllowed = false
   private var captureTask: Task<Void, Error>?
   private var transcriptionTask: Task<Void, Never>?
@@ -54,6 +55,7 @@ final class ComposerVoiceInputStore {
         client: client, storage: storage, activityDetection: NativeVoiceActivityDetection())
       self.session = session
       recordingID = session.restoredRecordingID
+      asVoiceMessage = session.restoredAsVoiceMessage
       duration = session.restoredDuration
       phase = storage.hasRecording ? .saved : .idle
     } catch {
@@ -113,18 +115,20 @@ final class ComposerVoiceInputStore {
       if generation == owner { phase = .idle }
       return
     }
-    let quota = checkQuota()
-    quotaTask = quota
     do {
+      let asMessage = try await client.recordAsMessage()
+      guard generation == owner, !Task.isCancelled, composer.canEditVoice else { return }
+      asVoiceMessage = asMessage
+      quotaTask = asMessage ? nil : checkQuota()
       let stream = try await capture.start()
       guard generation == owner, composer.canEditVoice else {
-        quota.cancel()
+        quotaTask?.cancel()
         capture.stop()
         if generation == owner { phase = .idle }
         return
       }
       guard let session else { throw VoiceDraftError.unavailable }
-      let id = try await session.begin(context: target.context)
+      let id = try await session.begin(context: target.context, asVoiceMessage: asVoiceMessage)
       recordingID = id
       insertion = target
       duration = 0
@@ -137,12 +141,12 @@ final class ComposerVoiceInputStore {
         composer.editor.dismissMentions()
         composer.editor.workflows.dismiss()
       } else {
-        quota.cancel()
+        quotaTask?.cancel()
         capture.stop()
         if phase == .idle { phase = .saved }
       }
     } catch {
-      quota.cancel()
+      quotaTask?.cancel()
       guard generation == owner else { return }
       capture.stop()
       phase = storage.hasRecording ? .saved : .idle
@@ -152,6 +156,7 @@ final class ComposerVoiceInputStore {
       }
       return
     }
+    guard let quota = quotaTask else { return }
     do {
       try await quota.value
       guard generation == owner, !Task.isCancelled else { return }
@@ -221,7 +226,8 @@ final class ComposerVoiceInputStore {
   }
 
   private func transcribeAvailable(id: UUID, owner: UUID) {
-    guard quotaAllowed, transcriptionTask == nil, !transcriptionFailed, let session else { return }
+    guard !asVoiceMessage, quotaAllowed, transcriptionTask == nil, !transcriptionFailed, let session
+    else { return }
     transcriptionTask = Task { [weak self] in
       defer { self?.transcriptionTask = nil }
       do { try await session.transcribeAvailable(recordingID: id) } catch {
@@ -260,6 +266,23 @@ final class ComposerVoiceInputStore {
       captureTask = nil
       await transcriptionTask?.value
       _ = await preparationTask?.result
+      if asVoiceMessage {
+        let preparation = Task { try await session.uploadClip(recordingID: id) }
+        preparationTask = preparation
+        let fileID = try await preparation.value
+        guard generation == owner, composer.canEditVoice else { return }
+        composer.appendVoiceClip(fileID, recordingID: id)
+        guard !composer.hasLocalFailure else {
+          error = "Save the draft on this device before discarding the recording."
+          return
+        }
+        try await session.discard()
+        guard generation == owner else { return }
+        recordingID = nil
+        insertion = nil
+        phase = .idle
+        return
+      }
       let hasPreparedText = await session.hasPreparedText
       guard generation == owner, composer.canEditVoice else { return }
       if !hasPreparedText {

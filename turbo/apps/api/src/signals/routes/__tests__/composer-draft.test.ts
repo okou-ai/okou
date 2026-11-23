@@ -139,7 +139,7 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
     for (const client of [CLIENT_TYPE_IOS, CLIENT_TYPE_ANDROID]) {
       const native = await accept(
         draftsClient().get({
-          headers: authHeaders(),
+          headers: { ...authHeaders(), [CLIENT_VERSION_HEADER]: "0.60.0" },
           extraHeaders: { [CLIENT_TYPE_HEADER]: client },
         }),
         [200],
@@ -155,6 +155,15 @@ describe("GET/PATCH /api/chat-drafts/composer", () => {
         ...draftUserMessage.parts.slice(2),
       ]);
     }
+
+    const voiceAware = await accept(
+      draftsClient().get({
+        headers: { ...authHeaders(), [CLIENT_VERSION_HEADER]: "0.61.0" },
+        extraHeaders: { [CLIENT_TYPE_HEADER]: CLIENT_TYPE_IOS },
+      }),
+      [200],
+    );
+    expect(voiceAware.body.draftUserMessage).toStrictEqual(draftUserMessage);
 
     const updatedDraftUserMessage: UserMessageInputDocument = {
       version: 1,

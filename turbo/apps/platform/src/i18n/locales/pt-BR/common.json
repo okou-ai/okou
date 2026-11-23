@@ -2930,6 +2930,7 @@
       "storageFailed": "Não foi possível salvar o áudio. Somente o áudio já salvo neste dispositivo está disponível.",
       "textTakingShape": "O texto está tomando forma",
       "transcribing": "Transcrevendo",
+      "uploadingRecording": "Enviando a gravação…",
       "useRecording": "Usar gravação"
     },
     "walletAction": {

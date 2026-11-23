@@ -1,3 +1,6 @@
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
@@ -342,4 +345,62 @@ test("Finish a provider no-speech response and preserve the input", async () => 
 
   await userEvent.type(currentComposer(), "New words", { skipClick: true });
   expect(normalizedComposerText()).toBe("New words");
+});
+
+test("Send a recording from the composer as a voice-only message", async () => {
+  const fileId = "b0000000-0000-4000-a000-000000000611";
+  const uploadUrl = "https://storage.example.test/private-voice";
+  const filename = "Voice recording.wav";
+  const url = new URL(artifactReferencePath(fileId, filename), location.origin)
+    .href;
+  const submitted: unknown[] = [];
+  installRunChat({
+    onRunCreate: ({ userMessage }) => {
+      submitted.push(userMessage);
+    },
+  });
+  context.mocks.browser.voiceInput({ rms: 0.12 });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: { composerVoiceMessages: true },
+    });
+  });
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    expect(body.requirePrivateArtifact).toBe(true);
+    expect(body.contentType).toBe("audio/wav");
+    return respond(200, {
+      id: fileId,
+      filename,
+      url,
+      contentType: body.contentType,
+      size: body.size,
+      uploadUrl,
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(uploadUrl, () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    return respond(200, {
+      id: body.id,
+      filename,
+      url,
+      contentType: "audio/wav",
+      size: 32044,
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  click(await readyVoiceInput());
+  click(await activeVoiceDraftStopButton());
+  await waitFor(() => {
+    expect(currentComposer()).toHaveTextContent("Voice message");
+  });
+  click(await findEnabledButton("Send"));
+  await waitFor(() => {
+    expect(submitted).toEqual([
+      { version: 1, parts: [{ type: "voice", clips: [{ fileId }] }] },
+    ]);
+  });
 });

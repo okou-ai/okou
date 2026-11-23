@@ -71,6 +71,7 @@ final class VoiceComposerState: Sendable {
     var quotaFailure: ChatHTTPResponse?
     var quotaError: URLError?
     var quotaGate: VoiceResponseGate?
+    var recordAsMessage = false
     var quotaAllowed = true
     var quotaApproved = false
     var audioUploads = 0
@@ -101,6 +102,29 @@ final class VoiceComposerFixture: Sendable {
         }
         let data = try JSONEncoder().encode(state.value.withLock { $0.remote })
         return ChatHTTPResponse(body: String(data: data, encoding: .utf8)!)
+      case "/api/feature-switches":
+        let enabled = state.value.withLock { $0.recordAsMessage }
+        return try ChatHTTPResponse(json: [
+          "effectiveSwitches": ["composerVoiceMessages": enabled, "voiceMessages": true]
+        ])
+      case "/api/uploads/prepare/private":
+        let url = try XCTUnwrap(
+          request.url?.deletingLastPathComponent()
+            .appendingPathComponent("voice-object"))
+        return try ChatHTTPResponse(json: [
+          "id": MessageJSON.string("73000000-0000-4000-8000-000000000002"),
+          "filename": .string("Voice recording.wav"), "uploadHeaders": .object([:]),
+          "contentType": .string("audio/wav"), "uploadUrl": .string(url.absoluteString)
+        ])
+      case "/api/uploads/prepare/voice-object":
+        XCTAssertEqual(Data(try chatRequestBody(request).prefix(4)), Data("RIFF".utf8))
+        return ChatHTTPResponse(body: "")
+      case "/api/uploads/complete":
+        return try ChatHTTPResponse(json: [
+          "id": MessageJSON.string("73000000-0000-4000-8000-000000000002"),
+          "filename": .string("Voice recording.wav"), "contentType": .string("audio/wav"),
+          "size": .number(32044), "url": .string("/artifacts/voice.wav")
+        ])
       case "/api/voice-io/quota":
         let quota = state.value.withLock { value in
           value.quotaApproved = false
