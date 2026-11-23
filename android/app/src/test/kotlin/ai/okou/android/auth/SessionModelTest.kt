@@ -320,6 +320,36 @@ class SessionModelTest {
     }
 
     @Test
+    fun failedBrowserLaunchKeepsItsFeedbackWhenThePendingCheckConfirmsNoWorkspace() {
+        val auth = TestAuthentication(testAuthenticationState(workspace = null))
+        auth.available = emptyList()
+        check(auth) { model, _ ->
+            runCurrent()
+            val empty = model.uiState.value
+            val response = CompletableDeferred<List<WorkspaceMembership>>()
+            auth.membershipsAction = { response.await() }
+            model.retry(empty.generation)
+            runCurrent()
+            model.openWorkspaceSetup(empty.generation) { false }
+            assertTrue(model.uiState.value.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, model.uiState.value.entryFailure)
+
+            auth.state.value = auth.state.value.copy(membershipAccess = emptyList())
+            runCurrent()
+            assertTrue(model.uiState.value.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, model.uiState.value.entryFailure)
+
+            response.complete(emptyList())
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, recovered.stage)
+            assertTrue(recovered.memberships.isEmpty())
+            assertFalse(recovered.checkingWorkspace)
+            assertEquals(SessionEntryFailure.Browser, recovered.entryFailure)
+        }
+    }
+
+    @Test
     fun transientInitialMembershipFailureRetriesAndPublishesOnlyAConfirmedResult() {
         val auth = TestAuthentication(testAuthenticationState(workspace = null))
         var attempts = 0

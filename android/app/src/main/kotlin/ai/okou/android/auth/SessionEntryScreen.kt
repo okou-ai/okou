@@ -165,15 +165,14 @@ internal fun SessionEntryScreen(
                         }
                     }
                     val feedback =
-                        if (state.checkingWorkspace) R.string.auth_checking_workspace
-                        else
-                            when (state.entryFailure) {
-                                SessionEntryFailure.Check -> R.string.auth_check_failed
-                                SessionEntryFailure.Selection -> R.string.auth_selection_failed
-                                SessionEntryFailure.Browser -> R.string.auth_browser_unavailable
-                                SessionEntryFailure.SignOut -> R.string.auth_sign_out_failed
-                                null -> null
-                            }
+                        when (state.entryFailure) {
+                            SessionEntryFailure.Check -> R.string.auth_check_failed
+                            SessionEntryFailure.Selection -> R.string.auth_selection_failed
+                            SessionEntryFailure.Browser -> R.string.auth_browser_unavailable
+                            SessionEntryFailure.SignOut -> R.string.auth_sign_out_failed
+                            null ->
+                                R.string.auth_checking_workspace.takeIf { state.checkingWorkspace }
+                        }
                     if (feedback != null) {
                         Text(
                             stringResource(feedback),
