@@ -5,6 +5,7 @@ import ai.okou.android.MainActivity
 import ai.okou.android.ProactiveSettingsApiFixture
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
+import android.os.Looper
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -37,6 +38,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 class ProactiveSettingsTestApplication : TestOkouApplication() {
@@ -86,7 +88,11 @@ class ProactiveSettingsPageTest {
             entry.performKeyInput { pressKey(Key.Enter) }
             compose.onNodeWithText(title).assertIsDisplayed()
             compose.onNodeWithText("These settings apply in “Workspace A”.").assertIsDisplayed()
-            compose.waitUntil(10_000) { "morning-brief" in fixture.reads }
+            compose.waitUntil("Morning Brief request reaches the fixture", 10_000) {
+                // The cache read resumes on Android's main looper, outside the Compose test clock.
+                shadowOf(Looper.getMainLooper()).idle()
+                "morning-brief" in fixture.reads
+            }
             compose.onNodeWithText("Morning Brief").assertDoesNotExist()
 
             release.countDown()
