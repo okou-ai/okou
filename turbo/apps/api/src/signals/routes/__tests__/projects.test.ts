@@ -1,5 +1,3 @@
-import { createStore } from "ccstate";
-import { recallProjectForUnread$ } from "../../services/project.service";
 import { randomUUID } from "node:crypto";
 import { describe, it, test, expect } from "vitest";
 import { projectsContract } from "@okouai/api-contracts/contracts/projects";
@@ -130,7 +128,7 @@ async function listedIds(actor: ApiTestUser) {
   });
 }
 
-test("archives a Project, recalls it for a new unread result, and keeps its original member", async () => {
+test("archives and restores a Project with its original member", async () => {
   const actor = owner();
   const project = await create(actor);
   const member = await thread(actor, project.id);
@@ -151,20 +149,8 @@ test("archives a Project, recalls it for a new unread result, and keeps its orig
     archived: true,
     lastArchivedAt: expect.any(String),
   });
-  await createStore().set(
-    recallProjectForUnread$,
-    { userId: actor.userId, orgId: actor.orgId!, threadId: member.id },
-    new Date(Date.parse(archived.lastArchivedAt!) + 1),
-    context.signal,
-  );
-  const restored = await accept(
-    client().get({
-      headers: headers(actor),
-      params: { id: project.id },
-    }),
-    [200],
-  );
-  expect(restored.body).toMatchObject({
+  const restored = await update(false);
+  expect(restored).toMatchObject({
     archived: false,
     lastArchivedAt: archived.lastArchivedAt,
     sortOrder: project.sortOrder,

@@ -1,7 +1,7 @@
 import { db$, rawSqlReadDb$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { command, computed } from "ccstate";
-import { and, asc, eq, gt, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, or, sql, type SQL } from "drizzle-orm";
 import { array, boolean, number, object, uuid } from "zod";
 import { randomUUID } from "node:crypto";
 import { chatThreads } from "@okouai/db/schema/chat-thread";
@@ -378,8 +378,11 @@ export const recallProjectForUnread$ = command(
           eq(projects.userId, owner.userId),
           eq(projects.orgId, owner.orgId),
           eq(projects.archived, true),
-          sql`${projects.lastArchivedAt} < ${createdAt.toISOString()}::timestamp`,
-          sql`(${chatThreads.lastReadAt} IS NULL OR ${chatThreads.lastReadAt} < ${createdAt.toISOString()}::timestamp)`,
+          lt(projects.lastArchivedAt, createdAt),
+          or(
+            isNull(chatThreads.lastReadAt),
+            lt(chatThreads.lastReadAt, createdAt),
+          ),
         ),
       );
     signal.throwIfAborted();
