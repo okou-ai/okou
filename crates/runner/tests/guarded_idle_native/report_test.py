@@ -94,6 +94,21 @@ def assert_scalar_refusals(test, witnesses, validate):
                 node[path[-1]] = value
 
 
+def assert_witness_omission_and_duplication_refused(test):
+    """Check every omission and a duplicate final witness through the reader."""
+    original = test.witnesses
+    for index in range(len(original)):
+        test.witnesses = original.copy()
+        test.witnesses.pop(index)
+        with test.assertRaises(ValueError):
+            test.validate()
+    test.witnesses = original.copy()
+    test.validate()
+    test.witnesses.append(copy.deepcopy(original[-1]))
+    with test.assertRaises(ValueError):
+        test.validate()
+
+
 def prepare_snapshot_record(root, artifacts):
     """Write synthetic real-file evidence for ordinary consumer tests, never a native run."""
     inputs = {key: artifacts[key] for key in (
