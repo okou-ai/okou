@@ -9,6 +9,7 @@ import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
 import ai.okou.android.CONNECTOR_MANUAL_EXAMPLE
 import ai.okou.android.CONNECTOR_SLACK_ACCOUNT
 import ai.okou.android.ConnectorApiFixture
+import ai.okou.android.FixtureConnectorIcon
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
@@ -541,6 +542,43 @@ class ConnectorModelTest {
 
             val refreshed = model.await { it.connected.data?.containsKey("slack") == false }
             assertEquals(2, refreshed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun accountReadKeepsNewArtworkFromTheConnectedOverview() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val current = model.await { it.connected.data?.containsKey(CONNECTOR_CALENDAR) == true }
+            val previousIcon = checkNotNull(current.detail.data?.entry?.icon)
+            val updatedAsset = "calendar-v2"
+            fixture.icons = mapOf(CONNECTOR_CALENDAR to FixtureConnectorIcon(updatedAsset))
+            model.enterDirectoryTab(connected = true)
+            val updated = model.await {
+                it.connected.data
+                    ?.get(CONNECTOR_CALENDAR)
+                    ?.entry
+                    ?.icon
+                    ?.url
+                    ?.pathSegments
+                    ?.last() == "$updatedAsset.svg"
+            }
+            val updatedIcon =
+                checkNotNull(updated.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon)
+
+            val releaseDetail = CountDownLatch(1)
+            fixture.detailReplyGate = releaseDetail
+            try {
+                model.select(null)
+                model.select(CONNECTOR_CALENDAR)
+                val readback = model.await { it.accounts.data != null }
+                assertEquals(previousIcon, readback.detail.data?.entry?.icon)
+                assertEquals(
+                    updatedIcon,
+                    readback.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon,
+                )
+            } finally {
+                releaseDetail.countDown()
+            }
+            model.await { it.detail.data?.entry?.icon == updatedIcon }
         }
 
     @Test
