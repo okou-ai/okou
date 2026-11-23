@@ -431,14 +431,6 @@ internal fun ChatListScreen(
                     row("list_metadata_unavailable") {
                         ChatListDependencyNotice(R.string.chat_metadata_unavailable)
                     }
-                if (expansion != null && (expansion.readFailed || expansion.writeFailed)) {
-                    row("list_expansion_unavailable") {
-                        ChatListDependencyNotice(
-                            if (expansion.writeFailed) R.string.chat_project_expansion_save_failed
-                            else R.string.chat_project_expansion_read_failed,
-                        )
-                    }
-                }
             }
         KeepChatListProjectAnchor(listState, knownProjects) { key, offset ->
             sections.findScrollAnchor(key, offset, leadingItems.size, projectNoticeIds)

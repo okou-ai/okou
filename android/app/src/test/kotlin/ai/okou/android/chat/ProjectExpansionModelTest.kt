@@ -24,8 +24,6 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -42,7 +40,6 @@ class ProjectExpansionModelTest {
             assertEquals(setOf("project-a", "project-b"), model.state.value.expandedIds)
             runCurrent()
             assertEquals(2, preferences.writeAttempts)
-            assertFalse(model.state.value.writeFailed)
 
             model.toggle("project-a")
             assertEquals(setOf("project-b"), model.state.value.expandedIds)
@@ -56,7 +53,6 @@ class ProjectExpansionModelTest {
             assertEquals(4, preferences.writeAttempts)
             assertEquals(setOf("project-b"), model.state.value.expandedIds)
             assertEquals(setOf("project-b"), store.observe(identity).first())
-            assertFalse(model.state.value.writeFailed)
         }
     }
 
@@ -66,15 +62,16 @@ class ProjectExpansionModelTest {
         val store = ProjectExpansionStore(preferences)
         withModel(store) { model ->
             model.toggle("project-a")
+            val optimistic = model.state.value
             runCurrent()
             advanceTimeBy(5_999)
             runCurrent()
             assertEquals(2, preferences.writeAttempts)
-            assertFalse(model.state.value.writeFailed)
+            assertEquals(optimistic, model.state.value)
             advanceTimeBy(1)
             runCurrent()
-            assertTrue(model.state.value.writeFailed)
-            assertEquals(setOf("project-a"), model.state.value.expandedIds)
+            assertEquals(3, preferences.writeAttempts)
+            assertEquals(optimistic, model.state.value)
             assertEquals(emptySet<String>(), store.observe(identity).first())
             advanceTimeBy(12_000)
             runCurrent()
@@ -84,7 +81,6 @@ class ProjectExpansionModelTest {
             model.toggle("project-a")
             runCurrent()
             assertEquals(emptySet<String>(), model.state.value.expandedIds)
-            assertFalse(model.state.value.writeFailed)
         }
     }
 
@@ -113,7 +109,7 @@ class ProjectExpansionModelTest {
     }
 
     @Test
-    fun readRetriesKeepConfirmedExpansionAndRecoverBeforeReportingFailure() = runTest {
+    fun readRetriesKeepConfirmedExpansionUntilRecovery() = runTest {
         val preferences = ControlledPreferences()
         val store = ProjectExpansionStore(preferences)
         store.setExpanded(identity, "project-a", true)
@@ -124,7 +120,6 @@ class ProjectExpansionModelTest {
             advanceTimeBy(3_000)
             runCurrent()
             assertEquals(2, preferences.readAttempts)
-            assertFalse(model.state.value.readFailed)
             assertEquals(setOf("project-a"), model.state.value.expandedIds)
 
             preferences.rejectReads.value = false
@@ -133,7 +128,6 @@ class ProjectExpansionModelTest {
             runCurrent()
             assertEquals(3, preferences.readAttempts)
             assertEquals(setOf("project-a", "project-b"), model.state.value.expandedIds)
-            assertFalse(model.state.value.readFailed)
         }
     }
 
@@ -146,7 +140,6 @@ class ProjectExpansionModelTest {
             advanceTimeBy(6_000)
             runCurrent()
             assertEquals(3, preferences.readAttempts)
-            assertTrue(model.state.value.readFailed)
             assertEquals(null, model.state.value.expandedIds)
 
             preferences.rejectReads.value = false
@@ -155,13 +148,11 @@ class ProjectExpansionModelTest {
             model.toggle("project-a")
             runCurrent()
             assertEquals(setOf("project-a"), model.state.value.expandedIds)
-            assertTrue(model.state.value.readFailed)
             store.setExpanded(identity, "project-a", false)
             runCurrent()
             readback.complete(Unit)
             runCurrent()
             assertEquals(emptySet<String>(), model.state.value.expandedIds)
-            assertFalse(model.state.value.readFailed)
         }
     }
 
