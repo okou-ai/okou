@@ -1959,7 +1959,7 @@
       },
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "hint": "Search workflows or choose a template…",
+        "hint": "choose an action",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
