@@ -24,6 +24,7 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource?
 
   var sendTransition: ConversationSendTransition?
+  var quotedSuggestionTitle: String?
   var placeholder: String?
   var showsTrailingFeedbackInput = true
   var project: ChatProject?
@@ -52,7 +53,13 @@ struct ChatComposerView: View {
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var hasContent: Bool {
-    hasText || attachments.hasAttachments || draftState?.hasContent == true
+    if quotedSuggestionTitle != nil {
+      return hasText
+        || draftState?.document.parts.contains {
+          $0["type"]?.string != "text" && ComposerAttributedDocument.isInline($0)
+        } == true
+    }
+    return hasText || attachments.hasAttachments || draftState?.hasContent == true
   }
   private var returnKeyPreference: ComposerReturnKeyPreference {
     preferences?.returnKey ?? .newline
@@ -84,7 +91,8 @@ struct ChatComposerView: View {
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
-    showsEditingLayout || hasText || draftState?.document.hasFeedback == true
+    quotedSuggestionTitle != nil || showsEditingLayout || hasText
+      || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
       || voiceActive || showsModels
   }
@@ -184,37 +192,45 @@ struct ChatComposerView: View {
         // Retired native editors must leave immediately. Fading a first responder
         // through a draft reset can restart keyboard avoidance during the send flight.
         OkouComposerSurface(isExpanded: expandsInput) {
-          Group {
-            if let state = draftState {
-              ChatFeedbackComposer(
-                state: state, inputID: inputID, isFocused: $isFocused,
-                acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
-                showsTrailingParagraph: showsTrailingFeedbackInput,
-                expanded: showsEditingLayout,
-                returnKeyPreference: returnKeyPreference,
-                canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
-                submitFromKeyboard: sendFromKeyboard
-              )
-              .id(inputID)
-              .transition(.identity)
-              .disabled(!state.document.isSupported)
-            } else {
-              ChatComposerTextInput(
-                text: $draft, isFocused: $isFocused,
-                acceptsImages: !isBusy && !needsUpgrade,
-                isCurrent: { attachments.inputID == inputID },
-                pasteImages: attachments.importPastedImages,
-                placeholder: resolvedPlaceholder,
-                expanded: showsEditingLayout,
-                returnKeyPreference: returnKeyPreference,
-                canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
-                submitFromKeyboard: sendFromKeyboard
-              )
-              .id(inputID)
-              .transition(.identity)
+          VStack(alignment: .leading, spacing: OkouSpace.sm) {
+            if let quotedSuggestionTitle {
+              Label(quotedSuggestionTitle, okouSymbol: "quote")
+                .font(.okou(.footnote).weight(.medium)).lineLimit(2)
+                .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
+                .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.small))
             }
+            Group {
+              if let state = draftState {
+                ChatFeedbackComposer(
+                  state: state, inputID: inputID, isFocused: $isFocused,
+                  acceptsImages: !isBusy && !needsUpgrade, placeholder: resolvedPlaceholder,
+                  showsTrailingParagraph: showsTrailingFeedbackInput,
+                  expanded: showsEditingLayout,
+                  returnKeyPreference: returnKeyPreference,
+                  canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
+                  submitFromKeyboard: sendFromKeyboard
+                )
+                .id(inputID)
+                .transition(.identity)
+                .disabled(!state.document.isSupported)
+              } else {
+                ChatComposerTextInput(
+                  text: $draft, isFocused: $isFocused,
+                  acceptsImages: !isBusy && !needsUpgrade,
+                  isCurrent: { attachments.inputID == inputID },
+                  pasteImages: attachments.importPastedImages,
+                  placeholder: resolvedPlaceholder,
+                  expanded: showsEditingLayout,
+                  returnKeyPreference: returnKeyPreference,
+                  canSendEmptyFromKeyboard: canSendEmptyFromKeyboard,
+                  submitFromKeyboard: sendFromKeyboard
+                )
+                .id(inputID)
+                .transition(.identity)
+              }
+            }
+            .accessibilityIdentifier("message-input")
           }
-          .accessibilityIdentifier("message-input")
         } leading: {
           HStack(spacing: 0) {
             Button {
@@ -262,7 +278,7 @@ struct ChatComposerView: View {
         value: hasText)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
-    .padding(.horizontal, OkouControl.pageInset)
+    .padding(.horizontal, quotedSuggestionTitle == nil ? OkouControl.pageInset : 0)
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)

@@ -1,4 +1,6 @@
 use super::*;
+use flate2::{Compression, write::GzEncoder};
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -19,9 +21,13 @@ pub(super) fn namespace() -> (tempfile::TempDir, PathBuf) {
 }
 
 pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, String, String) {
+    request_bytes(path, request.as_bytes()).await
+}
+
+async fn request_bytes(path: &std::path::Path, request: &[u8]) -> (u16, String, String) {
     tokio::time::timeout(Duration::from_secs(5), async {
         let mut stream = UnixStream::connect(path).await.unwrap();
-        stream.write_all(request.as_bytes()).await.unwrap();
+        stream.write_all(request).await.unwrap();
         let mut bytes = Vec::new();
         stream.read_to_end(&mut bytes).await.unwrap();
         let response = String::from_utf8(bytes).unwrap();
@@ -34,6 +40,12 @@ pub(super) async fn request(path: &std::path::Path, request: &str) -> (u16, Stri
     })
     .await
     .unwrap()
+}
+
+fn gzip_bytes(body: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::fast());
+    encoder.write_all(body).unwrap();
+    encoder.finish().unwrap()
 }
 
 fn dispatch_timing(head: &str) -> Option<serde_json::Value> {
@@ -96,7 +108,7 @@ async fn dispatch_rejects_untrusted_routing_auth_and_bounded_body_without_custod
         (
             base.replace(
                 "Content-Type: application/json",
-                "Content-Type: application/json\r\nContent-Encoding: gzip",
+                "Content-Type: application/json\r\nContent-Encoding: br",
             ),
             400,
         ),
@@ -214,9 +226,16 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
         "executionContext": {"runId":run_id,"prompt":"hello","sandboxToken":"run-token","firewallToken":"firewall-token","cliAgentType":"","platformEnvironment":{},"connectorRuntimeTargets":[],"contentBundles":{"format":"tar-gzip-v1","skills":[]}}
     });
     let original = dispatch_request(id, run_id, &input.to_string());
+    let compressed = gzip_bytes(input.to_string().as_bytes());
+    let mut sent = format!(
+        "POST /runners/{}/control/runs/{run_id}/dispatch HTTP/1.1\r\nHost: {HOST}\r\nAuthorization: Bearer {TOKEN}\r\nContent-Type: application/json\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+        id.runner_id(),
+        compressed.len()
+    )
+    .into_bytes();
+    sent.extend_from_slice(&compressed);
     let peer_socket = socket.clone();
-    let sent = original.clone();
-    let sending = tokio::spawn(async move { request(&peer_socket, &sent).await });
+    let sending = tokio::spawn(async move { request_bytes(&peer_socket, &sent).await });
     let owned = tokio::time::timeout(Duration::from_secs(5), receiver.recv())
         .await
         .unwrap()
@@ -235,6 +254,11 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
     );
     let timing = dispatch_timing(&response.2).unwrap();
     assert_eq!(timing["runnerVersion"], RUNNER_VERSION);
+    assert!(
+        timing["bodyGzipDecodeMs"]
+            .as_f64()
+            .is_some_and(|ms| ms >= 0.0)
+    );
     let body_read = timing["bodyReadMs"].as_f64().unwrap();
     let envelope_parse = timing["envelopeParseMs"].as_f64().unwrap();
     let context_decode = timing["contextDecodeMs"].as_f64().unwrap();
@@ -282,6 +306,24 @@ async fn expired_http_replay_is_unknown_and_new_runs_still_enter_intake() {
     );
     drop(owned);
     runtime.shutdown().await;
+}
+
+#[test]
+fn dispatch_gzip_accepts_one_complete_member_within_the_decoded_limit() {
+    let body = vec![b' '; dispatch::MAX_BODY];
+    let gzip = gzip_bytes(&body);
+    assert_eq!(decode_dispatch_gzip(&gzip).unwrap(), body);
+    assert_eq!(
+        decode_dispatch_gzip(&gzip[..gzip.len() - 1]),
+        Err(StatusCode::BAD_REQUEST)
+    );
+    let mut extra = gzip;
+    extra.extend_from_slice(&gzip_bytes(b""));
+    assert_eq!(decode_dispatch_gzip(&extra), Err(StatusCode::BAD_REQUEST));
+    assert_eq!(
+        decode_dispatch_gzip(&gzip_bytes(&vec![b' '; dispatch::MAX_BODY + 1])),
+        Err(StatusCode::PAYLOAD_TOO_LARGE)
+    );
 }
 
 #[tokio::test]

@@ -111,7 +111,8 @@ final class ComposerDraftStore {
   let editor = ComposerEditor()
   let voice: ComposerVoiceInputStore?
   private var consumedVoiceID: UUID?
-  var canEditVoice: Bool {
+  var canEditVoice: Bool { canEditDocument }
+  private var canEditDocument: Bool {
     !closed && isForeground && document.isSupported && !localReadFailed && conflictingRemote == nil
   }
 
@@ -407,6 +408,31 @@ final class ComposerDraftStore {
     lifecycleTasks.track(task)
     syncTask = task
     await task.value
+  }
+
+  func prependSuggestion(_ suggestion: ComposerDraft) async throws {
+    await synchronize()
+    try Task.checkCancellation()
+    guard canEditDocument, syncWarning == nil, error == nil,
+      let incoming = suggestion.draftUserMessage, incoming.isSupported
+    else { throw ChatError.composerUnavailable }
+    let existing = value
+    let suffix = existing.draftUserMessage?.parts ?? []
+    let separator: [MessageJSON] =
+      suffix.isEmpty ? [] : [.object(["type": .string("text"), "text": .string("\n\n")])]
+    let files = existing.draftAttachments ?? []
+    let existingIDs = Set(files.map(\.id))
+    let added = (suggestion.draftAttachments ?? []).filter { !existingIDs.contains($0.id) }
+    let referenced = Set(
+      incoming.parts.compactMap { $0["type"]?.string == "file" ? $0["fileId"]?.string : nil })
+    guard referenced.isSubset(of: Set((files + added).map(\.id))) else {
+      throw ChatError.composerUnavailable
+    }
+    try attachments.appendRemoteFiles(added)
+    document = ChatDraftDocument(parts: incoming.parts + separator + suffix)
+    metadata = files + added
+    resetEditors()
+    changed()
   }
 
   private func apply(_ remote: ComposerDraft) {
