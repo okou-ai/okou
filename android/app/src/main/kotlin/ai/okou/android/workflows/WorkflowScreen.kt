@@ -967,7 +967,8 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                     selected = tab == current,
                     onClick = { pick(tab) },
                     modifier =
-                        Modifier.focusRequester(tabFocus[index])
+                        Modifier.heightIn(min = 48.dp)
+                            .focusRequester(tabFocus[index])
                             .updateFocusOutline(RoundedCornerShape(8.dp), accent)
                             .onPreviewKeyEvent { event ->
                                 val next =
@@ -989,25 +990,25 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                             .testTag("workflow_tab_${tab.name.lowercase()}"),
                     selectedContentColor = colors.onBackground,
                     unselectedContentColor = colors.onSurfaceVariant,
-                    text = {
-                        Text(
-                            stringResource(
-                                when (tab) {
-                                    WorkflowTab.Instructions -> R.string.workflow_instructions
-                                    WorkflowTab.Automations -> R.string.workflow_automations
-                                    WorkflowTab.History -> R.string.workflow_history
-                                }
+                ) {
+                    Text(
+                        stringResource(
+                            when (tab) {
+                                WorkflowTab.Instructions -> R.string.workflow_instructions
+                                WorkflowTab.Automations -> R.string.workflow_automations
+                                WorkflowTab.History -> R.string.workflow_history
+                            }
+                        ),
+                        Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        style =
+                            MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight(550),
                             ),
-                            style =
-                                MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    fontWeight = FontWeight(550),
-                                ),
-                            textAlign = TextAlign.Center,
-                        )
-                    },
-                )
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(16.dp))
