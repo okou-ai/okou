@@ -1,6 +1,6 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { mockMonotonicNow } from "../../../lib/time.ts";
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   browserTab,
@@ -13,13 +13,10 @@ import {
 } from "./scoped-browser-transport-fixtures.ts";
 const context = testContext();
 test("browser-frames-recovery-009 A lost image connection during retry can still deliver a fresh image of Example", async () => {
+  const advance = browserRecoveryClock(context.signal);
   const v = scopedViewer(context);
   await v.start(true);
   const cdp = v.cdp;
-  let recoveryAdvance = 0;
-  mockMonotonicNow(() => {
-    return performance.now() + recoveryAdvance;
-  }, context.signal);
   vi.spyOn(globalThis, "createImageBitmap").mockRejectedValueOnce(
     new Error("Invalid raster from image transport"),
   );
@@ -33,12 +30,14 @@ test("browser-frames-recovery-009 A lost image connection during retry can still
   await waitFor(() => {
     return expect(input()).toBeDisabled();
   });
-  recoveryAdvance += 1000;
+  advance(1000);
   await capture.received;
   const fresh = cdp.holdTargetFrames(v.first);
-  v.disconnectImage();
-  await capture.release();
-  recoveryAdvance += 2000;
+  await act(async () => {
+    v.disconnectImage();
+    await capture.release();
+  });
+  advance(2000);
   await fresh.received;
   expect(input()).toBeDisabled();
   expect(browserTab("Example")).toHaveAttribute("aria-selected", "true");

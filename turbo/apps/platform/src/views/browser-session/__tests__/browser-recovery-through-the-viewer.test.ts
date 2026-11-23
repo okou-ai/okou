@@ -1,7 +1,8 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
 import { initSentry } from "../../../lib/sentry.ts";
@@ -78,20 +79,37 @@ function refresh(d: Desktop) {
 
 test("browser-automatic-recovery-043 Exhausted service errors expose manual reconnect and the restored service accepts input", async () => {
   const d = desktop();
-  const outages: string[] = [];
-  const faults = ["BOOTING_DESKTOP", "RESUMING_STORAGE", "LAST_SERVICE_OUTAGE"];
-  mockMonotonicNow(() => {
-    return performance.now() * 10;
-  }, context.signal);
+  const advance = browserRecoveryClock(context.signal);
+  const attempts = [
+    { interval: 1000, code: "BOOTING_DESKTOP" },
+    { interval: 2000, code: "RESUMING_STORAGE" },
+    { interval: 4000, code: "LAST_SERVICE_OUTAGE" },
+  ].map((attempt) => {
+    return { ...attempt, received: context.mocks.deferred<void>() };
+  });
+  const outages: typeof attempts = [];
   context.mocks.api(browserContract.get, ({ respond }) => {
-    const message = outages.shift();
-    return message
-      ? respond(500, { error: { code: message, message } })
-      : respond(200, { browser: d.viewer.browser, viewer: d.viewer });
+    const outage = outages.shift();
+    if (outage) {
+      outage.received.resolve();
+      return respond(500, {
+        error: { code: outage.code, message: outage.code },
+      });
+    }
+    return respond(200, { browser: d.viewer.browser, viewer: d.viewer });
   });
   await ready(d);
-  outages.push(...faults);
-  lost(d);
+  outages.push(...attempts);
+  await act(() => {
+    lost(d);
+  });
+  await screen.findByText("Reconnecting…");
+  for (const attempt of attempts) {
+    await act(async () => {
+      advance(attempt.interval);
+      await attempt.received.promise;
+    });
+  }
   await waitFor(() => {
     return expect(d.reports).toContainEqual(
       expect.objectContaining({

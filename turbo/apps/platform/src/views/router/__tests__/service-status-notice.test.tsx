@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
+import { mockMonotonicNow } from "../../../lib/time.ts";
 import {
   click,
   queryAllByRoleFast,
@@ -76,4 +77,23 @@ test("service-status-notice-003 mobile home displays its navigation and the curr
       screen.getByRole("navigation", { name: "Main navigation" }),
     ).toBeVisible();
   });
+});
+
+test("The open page replaces a resolved incident on its next status refresh", async () => {
+  mockMonotonicNow(0, context.signal);
+  let incident = { id: "slow-uploads", name: "Slow uploads" };
+  context.mocks.http.get("https://api.instatus.com/issues", () => {
+    return HttpResponse.json({
+      activeIncidents: [{ ...incident, status: "INVESTIGATING" }],
+    });
+  });
+  await setupPage({ context, path: "/", host: "app.okou.ai" });
+  await screen.findByRole("status", { name: "Investigating: Slow uploads" });
+
+  incident = { id: "delayed-messages", name: "Delayed messages" };
+  mockMonotonicNow(180_000, context.signal);
+  await screen.findByRole("status", {
+    name: "Investigating: Delayed messages",
+  });
+  expect(screen.queryByText("Slow uploads")).not.toBeInTheDocument();
 });
