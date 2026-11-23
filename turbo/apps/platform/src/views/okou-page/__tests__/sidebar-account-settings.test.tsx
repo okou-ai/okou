@@ -95,6 +95,7 @@ test("Toggle network-body capture in Debug settings", async () => {
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
+    forYouCoverId: null,
     theme: "system",
     colorTheme: null,
     captureNetworkBodiesRemaining: 0,

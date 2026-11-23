@@ -112,3 +112,67 @@ test("initialization uses Pacific Time and English when no hints are provided", 
   const persisted = await accept(client().get({ headers: headers() }), [200]);
   expect(persisted.body).toStrictEqual(initialized.body);
 });
+
+test("for you covers persist per workspace member and can be reset", async () => {
+  const userId = `user_${randomUUID()}`;
+  const orgId = `org_${randomUUID()}`;
+  mocks.clerk.session(userId, orgId);
+  const initialized = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { timezone: "Asia/Shanghai", locale: "en-US" },
+    }),
+    [200],
+  );
+  expect(initialized.body.forYouCoverId).toBeNull();
+
+  const saved = await accept(
+    client().update({
+      headers: headers(),
+      body: { forYouCoverId: "cover-08" },
+    }),
+    [200],
+  );
+  expect(saved.body.forYouCoverId).toBe("cover-08");
+  const persisted = await accept(client().get({ headers: headers() }), [200]);
+  expect(persisted.body.forYouCoverId).toBe("cover-08");
+
+  mocks.clerk.session(`user_${randomUUID()}`, orgId);
+  const otherMember = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { locale: "en-US" },
+    }),
+    [200],
+  );
+  expect(otherMember.body.forYouCoverId).toBeNull();
+
+  mocks.clerk.session(userId, `org_${randomUUID()}`);
+  const otherWorkspace = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { locale: "en-US" },
+    }),
+    [200],
+  );
+  expect(otherWorkspace.body.forYouCoverId).toBeNull();
+
+  mocks.clerk.session(userId, orgId);
+  await accept(
+    client().update({ headers: headers(), body: { theme: "dark" } }),
+    [200],
+  );
+  const afterThemeChange = await accept(
+    client().get({ headers: headers() }),
+    [200],
+  );
+  expect(afterThemeChange.body.forYouCoverId).toBe("cover-08");
+
+  await accept(
+    client().update({ headers: headers(), body: { forYouCoverId: null } }),
+    [200],
+  );
+  const reset = await accept(client().get({ headers: headers() }), [200]);
+  expect(reset.body.forYouCoverId).toBeNull();
+  expect(reset.body.theme).toBe("dark");
+});

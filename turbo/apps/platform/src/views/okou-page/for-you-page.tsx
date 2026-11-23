@@ -7,7 +7,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, Loader2 } from "lucide-react";
 import {
   Button,
   Card,
@@ -312,9 +312,15 @@ function ForYouNavigation() {
 
 function ForYouCover() {
   const { t } = useTranslation();
-  const cover = useGet(forYouCover$);
-  const select = useSet(selectForYouCover$);
+  const cover = useLastResolved(forYouCover$);
+  const [saving, select] = useLoadableSet(selectForYouCover$);
+  const signal = useGet(pageSignal$);
   const markPainted = useSet(markForYouCoverPainted$);
+  if (!cover) {
+    return (
+      <Skeleton className="-mx-4 h-58 shrink-0 rounded-none sm:-mx-8 sm:h-56" />
+    );
+  }
   return (
     <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
       <img
@@ -339,7 +345,11 @@ function ForYouCover() {
             />
           }
         >
-          <ImageIcon aria-hidden />
+          {saving.state === "loading" ? (
+            <Loader2 aria-hidden className="animate-spin" />
+          ) : (
+            <ImageIcon aria-hidden />
+          )}
           {t(($) => {
             return $.chat.agentSuggestions.forYou.cover.change;
           })}
@@ -358,8 +368,9 @@ function ForYouCover() {
           </p>
           <RadioGroup
             value={cover.id}
+            disabled={saving.state === "loading"}
             onValueChange={(value) => {
-              select(String(value));
+              detach(select(String(value), signal), Reason.DomCallback);
             }}
             aria-label={t(($) => {
               return $.chat.agentSuggestions.forYou.cover.gallery;
@@ -462,7 +473,10 @@ function ForYouHeader() {
   const steps = cards.slice(firstStep, firstStep + 7);
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
-  const cover = useGet(forYouPaintedCover$);
+  const cover = useLastResolved(forYouPaintedCover$);
+  if (!cover) {
+    return null;
+  }
   return (
     <header
       style={headerInkVars(cover)}
