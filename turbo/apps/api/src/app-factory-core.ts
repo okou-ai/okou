@@ -5,6 +5,7 @@ import { DISCORD_OAUTH_CALLBACK_PATH } from "./lib/discord-oauth-telemetry";
 import { isTelegramAuthTelemetryUrl } from "./lib/telegram-auth-telemetry";
 import * as Sentry from "@sentry/node";
 import {
+  CLIENT_DISTRIBUTION_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_REQUEST_ID_HEADER,
   CLIENT_SESSION_ID_HEADER,
@@ -22,12 +23,13 @@ import { HTTPException } from "hono/http-exception";
 import { bodyLimit } from "hono/body-limit";
 import { matchedRoutes, routePath } from "hono/route";
 
+import { compareAppVersions } from "./lib/app-version";
 import { corsMiddleware } from "./lib/cors";
 import { env } from "./lib/env";
 import {
   iosMinimumSupportedVersion,
   iosUpgradeRequired,
-  isSupportedIosClientVersion,
+  iosDistribution,
 } from "./lib/ios-client-compatibility";
 import {
   androidMinimumSupportedVersion,
@@ -92,6 +94,8 @@ interface UnhandledRequestErrorLogFields {
 interface ClientHeaderLogFields {
   readonly x_client_version?: string;
   readonly x_client_type?: string;
+  readonly x_client_distribution?: ReturnType<typeof iosDistribution>;
+  readonly ios_minimum_supported_version?: string | null;
   readonly x_client_session_id?: string;
   readonly x_client_request_id?: string;
 }
@@ -421,8 +425,18 @@ function clientHeaderLogFields(context: Context): ClientHeaderLogFields {
   const clientType = requestHeader(context, CLIENT_TYPE_HEADER);
   const clientSessionId = requestHeader(context, CLIENT_SESSION_ID_HEADER);
   const clientRequestId = requestHeader(context, CLIENT_REQUEST_ID_HEADER);
+  const channel =
+    clientType === CLIENT_TYPE_IOS
+      ? iosDistribution(requestHeader(context, CLIENT_DISTRIBUTION_HEADER))
+      : undefined;
 
   return {
+    ...(channel
+      ? {
+          x_client_distribution: channel,
+          ios_minimum_supported_version: iosMinimumSupportedVersion(channel),
+        }
+      : {}),
     ...(clientVersion ? { x_client_version: clientVersion } : {}),
     ...(clientType ? { x_client_type: clientType } : {}),
     ...(clientSessionId ? { x_client_session_id: clientSessionId } : {}),
@@ -459,13 +473,16 @@ async function clientCompatibilityMiddleware(
   }
 
   if (clientType === CLIENT_TYPE_IOS && clientVersion) {
-    const minimumSupportedVersion = iosMinimumSupportedVersion();
+    const channel = iosDistribution(
+      requestHeader(context, CLIENT_DISTRIBUTION_HEADER),
+    );
+    const minimumSupportedVersion = iosMinimumSupportedVersion(channel);
     if (
       minimumSupportedVersion !== null &&
-      !isSupportedIosClientVersion(clientVersion)
+      (compareAppVersions(clientVersion, minimumSupportedVersion) ?? 0) < 0
     ) {
       return context.json(
-        iosUpgradeRequired(minimumSupportedVersion),
+        iosUpgradeRequired(minimumSupportedVersion, channel),
         CLIENT_FORCE_UPGRADE_STATUS,
         {
           "Cache-Control": "no-store",

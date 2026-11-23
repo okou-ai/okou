@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CLIENT_DISTRIBUTION_HEADER,
   CLIENT_FORCE_UPGRADE_STATUS,
   CLIENT_HEADER_NAMES,
   CLIENT_REQUEST_ID_HEADER,
@@ -43,12 +44,14 @@ describe("client header contract", () => {
     expect(CLIENT_HEADER_NAMES).toStrictEqual([
       CLIENT_VERSION_HEADER,
       CLIENT_TYPE_HEADER,
+      CLIENT_DISTRIBUTION_HEADER,
       CLIENT_SESSION_ID_HEADER,
       CLIENT_REQUEST_ID_HEADER,
     ]);
     expect(CLIENT_HEADER_NAMES).toStrictEqual([
       "X-Client-Version",
       "X-Client-Type",
+      "X-Client-Distribution",
       "X-Client-Session-Id",
       "X-Client-Request-Id",
     ]);

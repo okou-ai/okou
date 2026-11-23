@@ -334,7 +334,6 @@ jobs:
             .github/scripts/tests/cloudflare-ssh-tcp-test.sh \
             .github/scripts/tests/deploy-desktop-workflow-test.sh \
             .github/scripts/tests/ios-testflight-workflow-test.sh \
-            .github/scripts/tests/ios-published-version-test.sh \
             .github/scripts/tests/android-published-version-test.sh \
             .github/scripts/tests/android-release-workflow-test.sh \
             .github/scripts/tests/deploy-okou-app-worker-workflow-test.sh \

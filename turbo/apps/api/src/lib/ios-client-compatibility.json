@@ -1,3 +1,5 @@
 {
-  "minimumSupportedVersion": "0.51.12"
+  "appStoreMinimumSupportedVersion": null,
+  "testFlightMinimumSupportedVersion": "0.51.12",
+  "reviewCandidate": null
 }

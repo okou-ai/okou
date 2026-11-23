@@ -14,8 +14,8 @@ import { stableStringify } from "./schema";
 export const DESKTOP_PUBLISHED_VERSION_ORACLE =
   "release tag version in the redirect from GET https://api.okou.ai/api/desktop/updates/stable/darwin/arm64/release";
 
-export const IOS_PUBLISHED_VERSION_ORACLE =
-  "ios-v* release commit with a successful publish-ios-testflight job and successful internal availability verification in release-please.yml";
+export const IOS_APP_STORE_VERSION_ORACLE =
+  "protected iOS distribution availability verification for the selected App Store build in every supported storefront";
 
 export const ANDROID_PUBLISHED_VERSION_ORACLE =
   "release.version from GET https://api.okou.ai/api/android/updates after the API validates the published R2 manifest";
@@ -51,7 +51,7 @@ const nativeClients: Readonly<Record<NativeOwner, NativeClientPolicy>> = {
     label: "iOS",
     floorFile: "turbo/apps/api/src/lib/ios-client-compatibility.json",
     transformsFile: "turbo/packages/api-contracts/src/client-transforms/ios.ts",
-    oracle: IOS_PUBLISHED_VERSION_ORACLE,
+    oracle: IOS_APP_STORE_VERSION_ORACLE,
   },
 };
 
@@ -76,8 +76,10 @@ export interface RuntimeApiGateInput {
   /** Published Desktop version; undefined when the oracle was unavailable. */
   readonly desktopPublishedVersion?: string;
   readonly desktopTransforms: readonly ClientResponseTransform[];
-  readonly iosFloor?: NativeFloorChange;
-  readonly iosPublishedVersion?: string;
+  readonly iosAppStoreFloor?: NativeFloorChange;
+  readonly iosAppStorePublishedVersion?: string | undefined;
+  readonly iosReviewVersion?: string | undefined;
+  readonly iosPolicyErrors?: readonly string[];
   readonly iosTransforms?: readonly ClientResponseTransform[];
   readonly androidFloor?: NativeFloorChange;
   readonly androidPublishedVersion?: string;
@@ -125,13 +127,18 @@ interface ClassifyContext {
   readonly inherited: ReadonlySet<string>;
   readonly floor: NativeFloorEvaluation;
   readonly publishedVersion: string | undefined;
+  readonly reviewVersion: string | undefined;
   readonly transforms: readonly ClientResponseTransform[];
 }
 
 export function evaluateRuntimeApiGate(
   input: RuntimeApiGateInput,
 ): RuntimeApiGateResult {
-  const errors: RuntimeApiGateError[] = [];
+  const errors: RuntimeApiGateError[] = (input.iosPolicyErrors ?? []).map(
+    (message) => {
+      return { kind: "ios-floor-invalid", message };
+    },
+  );
   const desktop = nativeContext(input, nativeClients.desktop, errors);
   const ios = nativeContext(input, nativeClients.ios, errors);
   const android = nativeContext(input, nativeClients.android, errors);
@@ -164,12 +171,12 @@ function nativeContext(
 ): ClassifyContext {
   const change = {
     desktop: input.desktopFloor,
-    ios: input.iosFloor,
+    ios: input.iosAppStoreFloor,
     android: input.androidFloor,
   }[client.owner];
   const publishedVersion = {
     desktop: input.desktopPublishedVersion,
-    ios: input.iosPublishedVersion,
+    ios: input.iosAppStorePublishedVersion,
     android: input.androidPublishedVersion,
   }[client.owner];
   const transforms = {
@@ -191,6 +198,7 @@ function nativeContext(
     client,
     floor,
     publishedVersion,
+    reviewVersion: client.owner === "ios" ? input.iosReviewVersion : undefined,
     transforms,
     blockingOwners: input.blockingOwners,
     inherited: new Set((input.baseFindings ?? []).map(findingKey)),
@@ -280,7 +288,10 @@ export function parseStableVersion(value: string): StableVersion | undefined {
   return [major, minor, patch];
 }
 
-function compareVersions(left: StableVersion, right: StableVersion): number {
+export function compareVersions(
+  left: StableVersion,
+  right: StableVersion,
+): number {
   return left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
 }
 
@@ -294,7 +305,7 @@ function evaluateNativeFloor(
   }
 
   const { floor, baseFloor } = change;
-  const summary = `${client.floorFile} changes minimumSupportedVersion from ${JSON.stringify(baseFloor)} to ${JSON.stringify(floor)}`;
+  const summary = `${client.floorFile} changes ${client.owner === "ios" ? "appStoreMinimumSupportedVersion" : "minimumSupportedVersion"} from ${JSON.stringify(baseFloor)} to ${JSON.stringify(floor)}`;
   const invalid = (reason: string): NativeFloorEvaluation => {
     return { kind: "invalid", message: `${summary}, ${reason}` };
   };
@@ -423,6 +434,17 @@ function classifyOutcome(
   }
 
   const client = context.client;
+  if (
+    client.owner === "ios" &&
+    context.floor.kind === "raised" &&
+    context.floor.from === null
+  ) {
+    return {
+      outcome: "blocking",
+      resolution:
+        "Enable the first App Store minimum in a separate change from breaking iOS API changes.",
+    };
+  }
   if (context.floor.kind === "raised") {
     return {
       outcome: "proven",
@@ -435,6 +457,7 @@ function classifyOutcome(
     context.transforms,
     context.publishedVersion,
     client,
+    context.reviewVersion,
   );
   if (transform.proof) {
     return {
@@ -457,6 +480,7 @@ function transformProof(
   transforms: readonly ClientResponseTransform[],
   published: string | undefined,
   client: NativeClientPolicy,
+  reviewVersion: string | undefined,
 ): {
   readonly proof?: ClientResponseTransform;
   readonly rejection?: string;
@@ -477,6 +501,7 @@ function transformProof(
   const publishedVersion =
     published === undefined ? undefined : parseStableVersion(published);
   const rejections: string[] = [];
+  const review = reviewVersion && parseStableVersion(reviewVersion);
 
   for (const transform of matches) {
     if (transform.maxVersion === null) {
@@ -486,6 +511,12 @@ function transformProof(
     if (!publishedVersion) {
       rejections.push(
         `The matching transform (since ${transform.since}) has maxVersion ${transform.maxVersion}, but the published ${client.label} version is unavailable, so it cannot be verified. Oracle: ${client.oracle}.`,
+      );
+      continue;
+    }
+    if (review && maxVersion && compareVersions(maxVersion, review) < 0) {
+      rejections.push(
+        `The matching transform must also cover iOS review candidate ${reviewVersion}.`,
       );
       continue;
     }
@@ -520,7 +551,7 @@ function nativeProofs(
       : `(B) register a response transform for ${finding.method} ${finding.routePath} ${status} in ${client.transformsFile} with maxVersion null or at least ${publishedLabel}.`;
 
   return [
-    `A breaking change here needs one proof in the same PR: (A) raise minimumSupportedVersion in ${client.floorFile} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
+    `A breaking change here needs one proof in the same PR: (A) raise ${client.owner === "ios" ? "appStoreMinimumSupportedVersion" : "minimumSupportedVersion"} in ${client.floorFile} to a stable x.y.z version that is not lower than the base branch floor, not above ${publishedLabel}, and already tolerates the new shape; or`,
     proofB,
   ].join(" ");
 }
