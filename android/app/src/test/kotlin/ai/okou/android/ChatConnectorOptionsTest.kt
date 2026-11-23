@@ -4,6 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
+import ai.okou.android.chat.TextDisposition
 import android.os.Looper
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -27,6 +28,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInputSelection
 import androidx.compose.ui.test.performTextReplacement
@@ -255,8 +257,15 @@ class ChatConnectorOptionsTest {
         compose.onNodeWithTag("chat-connector-reset").performClick()
         compose.onNodeWithTag(primaryTag).assertIsOn()
         closeOptions()
-        compose.onNodeWithText("Retry this same message").performClick()
-        compose.waitUntil(10_000) { app.chats.inputs.containsKey(pending.eventId) }
+        compose
+            .onNodeWithText("Retry this same message")
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { app.chats.inputs.containsKey(pending.eventId) }
+        }
         assertEquals(1, app.chats.created.size)
         assertEquals(1, app.chats.inputs.size)
         assertEquals(pending.threadId, app.connectors.chatOverrideRequests.last().threadId)
@@ -268,7 +277,7 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
-    fun projectDraftConfirmsItsExactAccountChoiceBeforeTheFirstSendAfterALostResponse() {
+    fun projectSendConfirmsTheAccountAndRecoversTheOriginalInputWithoutRewriting() {
         waitText("Research")
         compose.onNodeWithText("Research").performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("New chat in this Project").performClick()
@@ -291,6 +300,8 @@ class ChatConnectorOptionsTest {
         val readback = CountDownLatch(1)
         application.connectors.loseChatOverrideReply = true
         application.connectors.chatOverrideReadReplyGate = readback
+        application.chats.disconnectSend = true
+        application.chats.inputDisposition = "queued"
         try {
             compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
             compose.waitUntil(10_000) {
@@ -308,6 +319,20 @@ class ChatConnectorOptionsTest {
         assertEquals(CHAT_PROJECT, chat.getValue("projectId").jsonPrimitive.content)
         assertEquals(false, observedAtSend.get())
         val thread = chat.getValue("clientThreadId").jsonPrimitive.content
+        val event = application.chats.inputs.keys.single()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                val receipt =
+                    composer().uiState.value.entry(ComposerTarget(threadId = thread)).receipt
+                receipt?.eventId == event && receipt.disposition == TextDisposition.Queued
+            }
+        }
+        assertEquals(
+            1,
+            application.chats.requests.count {
+                it.method == "POST" && it.requestUrl?.encodedPath == "/api/chat/events"
+            },
+        )
         assertEquals(thread, app.connectors.chatOverrideRequests.single().threadId)
         assertEquals(listOf(thread to CONNECTOR_CALENDAR), app.connectors.chatOverrideReads)
     }
