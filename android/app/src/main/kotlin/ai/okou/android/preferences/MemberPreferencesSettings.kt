@@ -23,6 +23,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ButtonDefaults
@@ -32,13 +35,21 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -138,32 +149,6 @@ internal fun MemberPreferencesSettings(
     }
 }
 
-private val commonTimezones =
-    listOf(
-        "Asia/Shanghai",
-        "Asia/Tokyo",
-        "Asia/Singapore",
-        "Europe/London",
-        "America/Los_Angeles",
-        "Etc/UTC",
-        "America/New_York",
-        "America/Chicago",
-        "America/Denver",
-        "America/Anchorage",
-        "Pacific/Honolulu",
-        "America/Toronto",
-        "America/Vancouver",
-        "America/Sao_Paulo",
-        "Europe/Berlin",
-        "Europe/Paris",
-        "Europe/Moscow",
-        "Asia/Dubai",
-        "Asia/Kolkata",
-        "Asia/Seoul",
-        "Australia/Sydney",
-        "Pacific/Auckland",
-    )
-
 @Composable
 internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     val title = stringResource(R.string.settings_timezone)
@@ -174,23 +159,39 @@ internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
         enabled = current != null && onSelect != null,
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
-        SettingsSheet(title, dismiss) {
+        SettingsSheet(title, dismiss, scrollContent = false) {
             SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
+            val locale = LocalConfiguration.current.locales[0]
+            val utcName = stringResource(R.string.settings_timezone_utc)
             val options =
-                if (current in commonTimezones) commonTimezones
-                else
-                    listOf(current) +
-                        commonTimezones.filterNot { current == "UTC" && it == "Etc/UTC" }
-            Column(Modifier.fillMaxWidth().selectableGroup()) {
-                options.forEach { zone ->
+                remember(current, locale, utcName) { timezoneOptions(current, locale, utcName) }
+            val initialZone = remember { current }
+            val list =
+                rememberLazyListState(
+                    initialFirstVisibleItemIndex = options.indexOfFirst { it.id == current },
+                )
+            val focus = remember { FocusRequester() }
+            val input = LocalInputModeManager.current
+            var positioned by remember { mutableStateOf(false) }
+            LaunchedEffect(positioned) {
+                if (positioned && input.inputMode == InputMode.Keyboard) focus.requestFocus()
+            }
+            LazyColumn(Modifier.fillMaxWidth().selectableGroup(), state = list) {
+                items(options, key = { it.id }) { zone ->
                     SettingsChoiceRow(
                         timezoneLabel(zone),
-                        selected = zone == current,
+                        selected = zone.id == current,
                         enabled = true,
                         onClick = {
                             dismiss()
-                            onSelect(zone)
+                            onSelect(zone.id)
                         },
+                        modifier =
+                            if (zone.id == initialZone)
+                                Modifier.focusRequester(focus).onGloballyPositioned {
+                                    positioned = true
+                                }
+                            else Modifier,
                     )
                 }
             }

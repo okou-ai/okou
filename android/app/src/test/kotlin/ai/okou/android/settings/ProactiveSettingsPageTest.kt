@@ -5,6 +5,9 @@ import ai.okou.android.MainActivity
 import ai.okou.android.ProactiveSettingsApiFixture
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.preferences.timezoneOptions
+import ai.okou.android.testPreferences
+import android.icu.util.TimeZone
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
@@ -15,19 +18,24 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
+import java.util.Locale
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import org.junit.After
@@ -48,6 +56,7 @@ class ProactiveSettingsTestApplication : TestOkouApplication() {
         proactive = ProactiveSettingsApiFixture(transport)
         chatService = transport.service
         proactivePreferencesService = transport.service.proactivePreferences
+        initialPreferences = testPreferences().copy(timezone = "Asia/Shanghai")
         super.onCreate()
     }
 }
@@ -108,16 +117,60 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
-    fun missingTimezoneOpensTheNativePickerWithoutSendingAMorningBriefChange() {
+    fun missingTimezoneOpensTheCurrentSelectionAndSavesAStandardRegionOutsideTheOldList() {
         val fixture = app.proactive
         fixture.morningNeedsTimezone = true
-        openOverview()
-        compose.onNodeWithText(title).performScrollTo().performClick()
-        compose.waitUntilExactlyOneExists(hasText("Morning Brief") and nativeSwitch, 10_000)
-        compose.onNode(hasText("Morning Brief") and nativeSwitch).assertIsNotEnabled().assertIsOff()
-        compose.onNodeWithText("Time zone").assertIsDisplayed().performClick()
-        compose.onNodeWithText(app.getString(R.string.settings_timezone_hint)).assertIsDisplayed()
-        assertTrue(fixture.writes.isEmpty())
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            openOverview()
+            compose.onNodeWithText(title).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasText("Morning Brief") and nativeSwitch, 10_000)
+            compose
+                .onNode(hasText("Morning Brief") and nativeSwitch)
+                .assertIsNotEnabled()
+                .assertIsOff()
+            val trigger = compose.onNodeWithText("Time zone").assertIsDisplayed()
+            trigger.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            trigger.performKeyInput { pressKey(Key.Enter) }
+            compose
+                .onNodeWithText(app.getString(R.string.settings_timezone_hint))
+                .assertIsDisplayed()
+            compose
+                .onNode(hasText("Shanghai (UTC+8)") and isSelectable())
+                .assertIsDisplayed()
+                .assertIsSelected()
+                .assertIsFocused()
+
+            val kathmandu = TimeZone.getCanonicalID("Asia/Kathmandu")
+            val options =
+                timezoneOptions(
+                    "Asia/Shanghai",
+                    Locale.US,
+                    app.getString(R.string.settings_timezone_utc),
+                )
+            val offsets = options.mapNotNull { it.offsetMinutes }
+            assertEquals(offsets.sorted(), offsets)
+            val destination = options.indexOfFirst { it.id == kathmandu }
+            assertTrue(destination >= 0)
+            compose.onNode(hasScrollToIndexAction()).performScrollToIndex(destination)
+            compose
+                .onNode(
+                    hasText("Time zone") and
+                        SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
+                )
+                .assertIsDisplayed()
+            compose.onNode(hasText("Kathmandu (UTC+5:45)") and isSelectable()).performClick()
+            compose.waitUntil(10_000) {
+                compose.runOnIdle {
+                    app.snapshotApiPreferences().values.any { it.timezone == kathmandu }
+                }
+            }
+            assertTrue(fixture.writes.isEmpty())
+        } finally {
+            instrumentation.setInTouchMode(true)
+        }
     }
 
     @Test

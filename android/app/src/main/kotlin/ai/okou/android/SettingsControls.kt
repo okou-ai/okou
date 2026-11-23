@@ -362,10 +362,11 @@ internal fun SettingsSheet(
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
+    scrollContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
-    val scroll = rememberScrollState()
+    val scroll = if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier
     SettingsModal(onDismiss) { centered ->
         Column(
             modifier
@@ -377,7 +378,7 @@ internal fun SettingsSheet(
                     top = if (centered) 16.dp else 0.dp,
                     bottom = 16.dp,
                 )
-                .verticalScroll(scroll),
+                .then(scroll),
         ) {
             Box(Modifier.fillMaxWidth()) {
                 Text(

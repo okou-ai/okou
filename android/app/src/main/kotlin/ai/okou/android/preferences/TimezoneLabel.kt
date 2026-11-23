@@ -7,25 +7,70 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
+import java.text.Collator
+import java.util.Locale
 import kotlin.math.abs
+
+private const val utcTimezone = "Etc/UTC"
+private const val gmtTimezone = "Etc/GMT"
+
+private val locationTimezones by lazy {
+    TimeZone.getAvailableIDs(TimeZone.SystemTimeZoneType.CANONICAL_LOCATION, null, null) +
+        utcTimezone
+}
+
+internal data class TimezoneOption(val id: String, val name: String?, val offsetMinutes: Int?)
+
+internal fun timezoneOptions(
+    current: String,
+    locale: Locale,
+    utcName: String,
+    atMillis: Long = System.currentTimeMillis(),
+): List<TimezoneOption> {
+    val canonical = TimeZone.getCanonicalID(current)
+    val selectedZone = if (isUtcTimezone(canonical)) utcTimezone else canonical
+    val regions = locationTimezones.map { if (it == selectedZone) current else it }
+    val ids = if (current in regions) regions else regions + current
+    val names = TimeZoneNames.getInstance(locale)
+    val collator = Collator.getInstance(locale)
+    return ids.map { timezoneOption(it, names, utcName, atMillis) }
+        .sortedWith(
+            compareBy<TimezoneOption> { it.offsetMinutes ?: Int.MAX_VALUE }
+                .thenComparator { left, right ->
+                    collator.compare(left.name ?: left.id, right.name ?: right.id)
+                }
+                .thenBy { it.id },
+        )
+}
+
+private fun isUtcTimezone(canonical: String?) = canonical == utcTimezone || canonical == gmtTimezone
+
+private fun timezoneOption(
+    id: String,
+    names: TimeZoneNames,
+    utcName: String,
+    atMillis: Long,
+): TimezoneOption {
+    val zone = TimeZone.getFrozenTimeZone(id)
+    if (zone.id == TimeZone.UNKNOWN_ZONE_ID) return TimezoneOption(id, null, null)
+    val name =
+        if (isUtcTimezone(TimeZone.getCanonicalID(id))) utcName
+        else names.getExemplarLocationName(id)
+    return TimezoneOption(id, name, zone.getOffset(atMillis) / 60_000)
+}
 
 @Composable
 internal fun timezoneLabel(id: String): String {
-    val zone = remember(id) { TimeZone.getFrozenTimeZone(id) }
-    if (zone.id == TimeZone.UNKNOWN_ZONE_ID) return id
-
     val locale = LocalConfiguration.current.locales[0]
-    val name =
-        when (id) {
-            "UTC",
-            "Etc/UTC",
-            "GMT" -> stringResource(R.string.settings_timezone_utc)
-            else ->
-                remember(id, locale) {
-                    TimeZoneNames.getInstance(locale).getExemplarLocationName(id) ?: id
-                }
-        }
-    val offsetMinutes = zone.getOffset(System.currentTimeMillis()) / 60_000
+    val names = remember(locale) { TimeZoneNames.getInstance(locale) }
+    val utcName = stringResource(R.string.settings_timezone_utc)
+    return timezoneLabel(timezoneOption(id, names, utcName, System.currentTimeMillis()))
+}
+
+@Composable
+internal fun timezoneLabel(option: TimezoneOption): String {
+    val name = option.name ?: return option.id
+    val offsetMinutes = option.offsetMinutes ?: return option.id
     val hours = abs(offsetMinutes) / 60
     val minutes = abs(offsetMinutes) % 60
     val sign = if (offsetMinutes < 0) "-" else "+"
