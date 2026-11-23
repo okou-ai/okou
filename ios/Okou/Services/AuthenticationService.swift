@@ -356,9 +356,7 @@ final class AuthenticationService {
             workspacesSessionID = session.id
             workspacesUserID = user.id
             errorMessage = nil
-            if workspaces.count == 1, let workspace = workspaces.first, activeID != workspace.id {
-              try await switchWorkspace(workspace.id)
-            }
+            try await resolveWorkspace(resources, clerk: clerk, user: user, session: session)
             guard !Task.isCancelled, generation == refreshGeneration,
               clerk.session?.id == session.id, clerk.user?.id == user.id
             else { return }
@@ -385,6 +383,44 @@ final class AuthenticationService {
       guard !Task.isCancelled, generation == refreshGeneration else { return }
       errorMessage = error.localizedDescription
     }
+  }
+
+  private func resolveWorkspace(
+    _ resources: AccountMembershipResources, clerk: Clerk, user: User, session: Session
+  ) async throws {
+    let startingID = clerk.session?.lastActiveOrganizationId
+    guard
+      let destination = try await resources.setup.destination(
+        clerk: clerk, user: user, session: session, memberships: workspaces)
+    else { return }
+    try Task.checkCancellation()
+    guard membershipResources === resources else { throw CancellationError() }
+    if !workspaces.contains(where: { $0.id == destination }) {
+      // Creation and invitation acceptance return an ID before our membership list includes it.
+      let confirmed = try await resources.refresh().value
+      try Task.checkCancellation()
+      guard membershipResources === resources, clerk.session?.id == session.id,
+        clerk.user?.id == user.id
+      else { throw CancellationError() }
+      workspaces = confirmed
+    }
+    guard clerk.session?.id == session.id, clerk.user?.id == user.id,
+      clerk.session?.lastActiveOrganizationId == startingID
+    else { throw CancellationError() }
+    try await switchWorkspace(destination)
+    resources.setup.didActivate(destination)
+  }
+
+  func acceptInvitation(_ invitation: UserOrganizationInvitation) async throws {
+    guard let resources = membershipResources, let clerk, let user = clerk.user,
+      let session = clerk.session, session.id == resources.sessionID, user.id == resources.userID
+    else { throw AuthenticationError.workspaceChanged }
+    try await resources.setup.accept(invitation, clerk: clerk, user: user, session: session)
+    try Task.checkCancellation()
+    guard membershipResources === resources else { throw CancellationError() }
+    if let membershipRefresh { await membershipRefresh.task.value }
+    guard membershipResources === resources, !Task.isCancelled else { return }
+    await refreshWorkspaces()
   }
 
   private func makeMembershipResources(clerk: Clerk, user: User, session: Session)
