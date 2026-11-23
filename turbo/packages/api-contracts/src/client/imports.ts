@@ -789,7 +789,11 @@ export const clientContractImportManifest = [
   },
   {
     module: "data-router",
-    contracts: ["dataRouterHistoryContract", "dataRouterRequestContract"],
+    contracts: [
+      "dataRouterHistoryContract",
+      "dataRouterRequestContract",
+      "runDataRouterRequestContract",
+    ],
     bindings: [],
   },
   {

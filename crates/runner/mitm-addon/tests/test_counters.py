@@ -94,7 +94,7 @@ class TestUsagePendingCounter:
         usage.reset_usage_buffer_for_tests(enqueue_webhook=enqueue)
 
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1")],

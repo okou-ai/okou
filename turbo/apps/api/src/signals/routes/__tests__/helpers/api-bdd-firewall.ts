@@ -1,4 +1,4 @@
-import { webhookFirewallAuthContract } from "@okouai/api-contracts/contracts/webhooks";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { HttpResponse, http } from "msw";
 import type { infer as zInfer } from "zod";
 import { mockClerkUsers } from "./clerk-users";
@@ -10,7 +10,7 @@ import { webhooksAgentFirewallAuthRoutes } from "../../webhooks-agent-firewall-a
 import type { ApiTestUser } from "./api-bdd";
 
 type FirewallAuthBody = zInfer<
-  (typeof webhookFirewallAuthContract.resolve)["body"]
+  (typeof runWebhookContract.firewallAuth)["body"]
 >;
 
 interface SandboxHeaders {
@@ -95,7 +95,7 @@ export function createFirewallApi(context: TestContext) {
       statuses: readonly (200 | 400 | 401 | 402 | 403 | 424 | 502)[],
     ) {
       return await accept(
-        firewallApp(context)(webhookFirewallAuthContract).resolve({
+        firewallApp(context)(runWebhookContract).firewallAuth({
           headers,
           body,
         }),

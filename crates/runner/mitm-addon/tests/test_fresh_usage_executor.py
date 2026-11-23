@@ -54,7 +54,7 @@ def test_fresh_usage_executor_restores_and_shuts_down_after_flush_failure(tmp_pa
             assert usage.webhook.usage_executor is executor
             executors.append(executor)
             usage.buffer_usage_events(
-                "https://api.test/api/webhooks/agent/usage-event",
+                "https://api.test/api/webhooks/run/usage-event",
                 "token-a",
                 "run-1",
                 [_event()],

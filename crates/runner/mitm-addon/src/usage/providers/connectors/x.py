@@ -680,7 +680,7 @@ def _report_usage(
 
     Derives per-permission billable resource counts from the request and
     response, then buffers their source events for batched upload via
-    ``/api/webhooks/agent/usage-event``.
+    ``/api/webhooks/run/usage-event``.
 
     **Caller contract**: the dispatcher in
     :mod:`usage.providers.connectors` guarantees ``run_id`` is non-empty,

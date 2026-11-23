@@ -13,7 +13,7 @@ def test_rejected_events_do_not_leave_empty_destination_buckets(tmp_path):
 
     assert (
         usage.buffer_usage_events(
-            "https://api-empty.test/api/webhooks/agent/usage-event",
+            "https://api-empty.test/api/webhooks/run/usage-event",
             "token-empty",
             "run-empty",
             [],
@@ -26,7 +26,7 @@ def test_rejected_events_do_not_leave_empty_destination_buckets(tmp_path):
 
     assert (
         usage.buffer_usage_events(
-            "https://api-a.test/api/webhooks/agent/usage-event",
+            "https://api-a.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1")],
@@ -37,7 +37,7 @@ def test_rejected_events_do_not_leave_empty_destination_buckets(tmp_path):
 
     assert (
         usage.buffer_usage_events(
-            "https://api-b.test/api/webhooks/agent/usage-event",
+            "https://api-b.test/api/webhooks/run/usage-event",
             "token-b",
             "run-2",
             [event(source_key="source-1")],
@@ -49,7 +49,7 @@ def test_rejected_events_do_not_leave_empty_destination_buckets(tmp_path):
     assert usage.flush_usage_events(trigger="test") == 1
 
     enqueue.assert_called_once()
-    assert enqueue.last_call.url == "https://api-a.test/api/webhooks/agent/usage-event"
+    assert enqueue.last_call.url == "https://api-a.test/api/webhooks/run/usage-event"
     assert enqueue.last_call.sandbox_token == "token-a"
     assert enqueue.last_call.payload["runId"] == "run-1"
 
@@ -61,7 +61,7 @@ def test_aggregate_buffer_collects_only_accepted_source_keys(tmp_path):
     accepted_source_keys: set[str] = set()
 
     accepted_count = usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [
@@ -79,7 +79,7 @@ def test_aggregate_buffer_collects_only_accepted_source_keys(tmp_path):
     duplicate_keys: set[str] = set()
     assert (
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [event(source_key="source-1", quantity=200)],
@@ -100,7 +100,7 @@ def test_aggregate_idempotency_key_changes_between_flush_batches(tmp_path):
     proxy_log_path = str(tmp_path / "proxy.jsonl")
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -108,7 +108,7 @@ def test_aggregate_idempotency_key_changes_between_flush_batches(tmp_path):
     )
     usage.flush_usage_events(trigger="test")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-2", quantity=10)],
@@ -129,7 +129,7 @@ def test_source_dedupe_survives_flush_boundary(tmp_path):
     proxy_log_path = str(tmp_path / "proxy.jsonl")
 
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -137,7 +137,7 @@ def test_source_dedupe_survives_flush_boundary(tmp_path):
     )
     usage.flush_usage_events(trigger="test")
     usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         [event(source_key="source-1", quantity=10)],
@@ -156,7 +156,7 @@ def test_source_dedupe_accepts_evicted_oldest_key_after_bound(tmp_path):
     events = [event(source_key=f"source-{index}", quantity=1) for index in range(source_key_count)]
 
     accepted = usage.buffer_usage_events(
-        "https://api.test/api/webhooks/agent/usage-event",
+        "https://api.test/api/webhooks/run/usage-event",
         "token-a",
         "run-1",
         events,
@@ -170,7 +170,7 @@ def test_source_dedupe_accepts_evicted_oldest_key_after_bound(tmp_path):
 
     assert (
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [
@@ -195,7 +195,7 @@ def test_aggregate_idempotency_key_separates_webhook_destinations(tmp_path):
 
     for token in ("token-a", "token-b"):
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             token,
             "run-1",
             [event(source_key=f"source-{token}", quantity=10)],

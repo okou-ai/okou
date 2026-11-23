@@ -1585,6 +1585,7 @@ async function findWorkspaceImport(
   signal: AbortSignal,
 ): Promise<
   | DriveTokenResult<zInfer<typeof driveFileSchema> | null>
+  | { readonly type: "scope-required" }
   | { readonly type: "unavailable"; readonly httpStatus: number }
 > {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
@@ -1626,11 +1627,19 @@ async function findWorkspaceImport(
     return { type: "unauthorized" };
   }
   if (!response.ok) {
+    const providerReasons = await readDriveErrorReasons(response, signal);
     log.warn("Google Drive previous conversion lookup failed", {
       providerStatus: response.status,
-      providerReasons: await readDriveErrorReasons(response, signal),
+      providerReasons,
       attempt: args.attempt,
     });
+    if (
+      response.status === 403 &&
+      (providerReasons.includes("insufficientPermissions") ||
+        providerReasons.includes("ACCESS_TOKEN_SCOPE_INSUFFICIENT"))
+    ) {
+      return { type: "scope-required" };
+    }
     return { type: "unavailable", httpStatus: response.status };
   }
   const files = driveFileListSchema.parse(await response.json()).files;
@@ -1983,6 +1992,7 @@ const reuseWorkspaceImport$ = command(
     signal: AbortSignal,
   ): Promise<
     | BadRequestResponse
+    | DriveScopeRequiredResponse
     | {
         readonly tokens: ConnectorTokens;
         readonly existing: DriveSyncResult | null;
@@ -2037,6 +2047,9 @@ const reuseWorkspaceImport$ = command(
         signal,
       );
       signal.throwIfAborted();
+    }
+    if (previous.type === "scope-required") {
+      return driveScopeRequired(uploadTokens.connection.connectorId);
     }
     if (previous.type !== "ok") {
       return badRequestMessage(
@@ -2300,7 +2313,7 @@ const uploadResolvedArtifact$ = command(
         )
       : null;
     signal.throwIfAborted();
-    if (previous && isBadRequestResponse(previous)) {
+    if (previous && "status" in previous) {
       return previous;
     }
     if (previous?.existing) {
