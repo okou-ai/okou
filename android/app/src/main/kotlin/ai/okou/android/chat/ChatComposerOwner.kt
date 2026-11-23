@@ -55,6 +55,7 @@ internal class ChatComposerOwner(
         val key: String,
         val connection: Connection,
         val checking: Boolean = false,
+        val recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
     ) {
         var job: Job? = null
         var unsentReset: UnsentReset? = null
@@ -114,10 +115,7 @@ internal class ChatComposerOwner(
             .filter { it.connection === connection }
             .toList()
             .forEach { op ->
-                restoreUnsentReset(op)
-                operations.remove(op.key)
-                mutable.value =
-                    mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                finish(op)
                 op.job?.cancel()
             }
         connections -= connection
@@ -551,7 +549,12 @@ internal class ChatComposerOwner(
     private fun checkingTargets() =
         operations.values.filter { it.checking }.mapTo(hashSetOf()) { it.key }
 
-    private fun begin(connection: Connection, key: String, checking: Boolean = false): Operation? {
+    private fun begin(
+        connection: Connection,
+        key: String,
+        checking: Boolean = false,
+        recovery: Pair<RecoverySelection, RecoveryOperationPhase>? = null,
+    ): Operation? {
         if (!connection.current() || mutable.value.journal == null) return null
         operations[key]?.let { previous ->
             // A previous accepted input's replaceable read never owns the next user send.
@@ -564,12 +567,14 @@ internal class ChatComposerOwner(
                 previous.job?.cancel()
             } else return null
         }
-        return Operation(key, connection, checking).also {
+        return Operation(key, connection, checking, recovery).also {
             operations[key] = it
             mutable.value =
                 mutable.value.copy(
                     busy = operations.keys.toSet(),
                     checking = checkingTargets(),
+                    recovering =
+                        recovery?.let { mutable.value.recovering + it } ?: mutable.value.recovering,
                     failed = mutable.value.failed - key,
                     unobserved = mutable.value.unobserved - key,
                 )
@@ -673,7 +678,14 @@ internal class ChatComposerOwner(
         if (entry.recovery == unsent.prepared) put(op.key, entry.copy(recovery = unsent.previous))
     }
 
-    fun recover(connection: Connection, target: ComposerTarget, failureId: String, reset: Boolean) {
+    fun recover(
+        connection: Connection,
+        target: ComposerTarget,
+        failureId: String,
+        reset: Boolean,
+        confirmedAccount: String? = null,
+        originalResetKey: String? = null,
+    ) {
         val recovery = connection.recovery ?: return
         val selected =
             recovery.selection()?.takeIf {
@@ -693,10 +705,17 @@ internal class ChatComposerOwner(
             previous?.takeIf { it.selection == selected && it.outcome == null }?.reset?.accountId
                 ?: displayed?.resetAccount?.id
         if (reset && expectedAccount == null) return
+        if (confirmedAccount != null && expectedAccount != confirmedAccount) return
+        val unconfirmed = previous?.takeIf { it.outcome == null }?.reset
+        if (confirmedAccount != null && unconfirmed != null) return
+        if (originalResetKey != null && unconfirmed?.idempotencyKey != originalResetKey) return
         if (previous?.submitted == true && previous.selection == selected) return
         if (previous?.reset != null && previous.outcome == null && previous.selection != selected)
             return
-        val op = begin(connection, target.key) ?: return
+        val phase =
+            if (reset && unconfirmed != null) RecoveryOperationPhase.CheckingReset
+            else RecoveryOperationPhase.Preparing
+        val op = begin(connection, target.key, recovery = selected to phase) ?: return
         op.job =
             connection.scope.launch {
                 try {
@@ -1220,7 +1239,13 @@ internal class ChatComposerOwner(
             restoreUnsentReset(op)
             operations.remove(op.key)
             mutable.value =
-                mutable.value.copy(busy = operations.keys.toSet(), checking = checkingTargets())
+                mutable.value.copy(
+                    busy = operations.keys.toSet(),
+                    checking = checkingTargets(),
+                    recovering =
+                        op.recovery?.let { mutable.value.recovering - it.first }
+                            ?: mutable.value.recovering,
+                )
         }
     }
 }

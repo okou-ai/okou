@@ -4,6 +4,7 @@ import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
+import ai.okou.android.chat.AssistantFailureText
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
@@ -1756,7 +1757,7 @@ internal fun OkouApp(
                                                         }
                                                     }
                                                 },
-                                            ) { failureId ->
+                                            ) { failure ->
                                                 if (
                                                     recovery != null &&
                                                         composer != null &&
@@ -1766,9 +1767,11 @@ internal fun OkouApp(
                                                         recovery,
                                                         composer,
                                                         composerTarget,
-                                                        failureId = failureId,
+                                                        failureId = failure.id,
+                                                        reason = failure.failureReason,
                                                         offline = list.offline,
                                                     )
+                                                else AssistantFailureText(failure.failureReason)
                                             }
                                             Column(contentWidth.fillMaxWidth()) {
                                                 if (showConversationFeedback)

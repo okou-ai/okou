@@ -141,12 +141,18 @@ enum class ComposerContext {
     NetworkFailed,
 }
 
+enum class RecoveryOperationPhase {
+    Preparing,
+    CheckingReset,
+}
+
 data class ComposerState(
     val journal: ComposerJournal? = null,
     val persistence: ComposerPersistence = ComposerPersistence.Loading,
     val context: ComposerContext = ComposerContext.Idle,
     val busy: Set<String> = emptySet(),
     val checking: Set<String> = emptySet(),
+    val recovering: Map<RecoverySelection, RecoveryOperationPhase> = emptyMap(),
     val failed: Set<String> = emptySet(),
     val unobserved: Set<String> = emptySet(),
     val synchronization: Map<String, ComposerSync> = emptyMap(),
