@@ -241,7 +241,10 @@ function ProjectMenu({
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() => {
-            return setArchived(project.id, !project.archived, signal);
+            detach(
+              setArchived(project.id, !project.archived, signal),
+              Reason.DomCallback,
+            );
           }}
         >
           {project.archived

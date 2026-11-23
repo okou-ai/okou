@@ -263,22 +263,17 @@ test("Archived opens the full contents of an archived Project and the archived c
     { id: researchId, name: "Research", createdAt: at, updatedAt: at },
   ]);
   await setupPage({ context, path: "/", ...workspace.pageOptions });
-  await expect(screen.findByText("Research")).resolves.toBeInTheDocument();
-  click(projectToggle("Research", researchId));
-  await waitFor(() => {
-    expect(
-      button("Show archived chats", projectRows(researchId)),
-    ).toBeInTheDocument();
-  });
-  click(button("Show archived chats", projectRows(researchId)));
+  const user = userEvent.setup({ delay: null });
+  await user.click(
+    await screen.findByRole("button", { name: "Open chat list menu" }),
+  );
+  await user.click(menuItemByText("Archived"));
   await waitFor(() => {
     expect(projectToggle("Launch")).toBeInTheDocument();
+    expect(projectToggle("Research", researchId)).toBeInTheDocument();
   });
-  click(projectToggle("Launch"));
-  const researchToggle = projectToggle("Research", researchId);
-  if (researchToggle.getAttribute("aria-expanded") === "false") {
-    click(researchToggle);
-  }
+  await user.click(projectToggle("Launch"));
+  await user.click(projectToggle("Research", researchId));
   await waitFor(() => {
     expect(projectChatTitles()).toHaveLength(2);
     expect(projectChatTitles()).toStrictEqual(
