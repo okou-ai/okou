@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1165.5](https://github.com/okou-ai/okou/compare/app-v0.1165.4...app-v0.1165.5) (2026-11-23)
+
+
+### Bug Fixes
+
+* **app:** restore immediate check-in reward confirmation ([#50136](https://github.com/okou-ai/okou/issues/50136)) ([94eae58](https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+    * @okouai/core bumped to 8.861.0
+    * @okouai/ui bumped to 1.21.103
+
 ## [0.1165.4](https://github.com/okou-ai/okou/compare/app-v0.1165.3...app-v0.1165.4) (2026-11-23)
 
 

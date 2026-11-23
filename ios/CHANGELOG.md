@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.0](https://github.com/okou-ai/okou/compare/ios-v0.55.0...ios-v0.56.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** add the native for you deck ([#50086](https://github.com/okou-ai/okou/issues/50086)) ([8ff411e](https://github.com/okou-ai/okou/commit/8ff411ea4757a12255c04401bcceb0b47246fd35))
+
 ## [0.55.0](https://github.com/okou-ai/okou/compare/ios-v0.54.0...ios-v0.55.0) (2026-11-23)
 
 
