@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Novedades por correo</string>
+    <string name="settings_email_scope">Recibe resúmenes, recordatorios y novedades de todos los espacios de trabajo.</string>
+    <string name="settings_email_receive">Recibir correos</string>
+    <string name="settings_email_unavailable">Correo no disponible</string>
+    <string name="settings_email_check_address">Revisar el correo de la cuenta</string>
+    <string name="settings_email_load_failed">La configuración de correo no está disponible temporalmente.</string>
+    <string name="settings_email_refresh_failed">No se pudo sincronizar. Se muestra la última suscripción guardada.</string>
+    <string name="settings_email_refreshing">Sincronizando la suscripción por correo</string>
+    <string name="settings_email_save_failed">No se pudo actualizar la suscripción por correo.</string>
+    <string name="settings_email_save_unconfirmed">La actualización de la suscripción por correo aún no se ha confirmado.</string>
     <string name="settings_models">Modelos</string>
     <string name="settings_tools">Herramientas</string>
     <string name="settings_my_okou">Mi Okou</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">Es necesario volver a conectar</string>
     <string name="settings_account_switching">Cambiando…</string>
     <string name="settings_account_switch_unconfirmed">Cambio sin confirmar</string>
-    <string name="settings_account_switch_failed">No se pudo cambiar de cuenta.</string>
+    <string name="settings_account_switch_failed">No se pudo cambiar de cuenta de modelo.</string>
     <string name="settings_quota">Cuota</string>
     <string name="settings_hour_quota">Cuota de %1$d h</string>
     <string name="settings_day_quota">Cuota de %1$d días</string>
