@@ -888,6 +888,34 @@ class RunControlsModelTest {
     }
 
     @Test
+    fun checkingOneWithdrawalLeavesTheOtherQueueEntryAtItsOwnPhase() = runTest {
+        val manual = eventId("queued manual message")
+        withControls(
+            initial =
+                listOf(
+                    input(manual, 1, run = null),
+                    input(automation, 2, run = null, type = "input.automation"),
+                ),
+        ) { f ->
+            f.remote.write = { MockResponse().setResponseCode(503) }
+            f.controls.skip(CHAT_PERSONAL, manual)
+            f.controls.skip(CHAT_PERSONAL, automation)
+            val unknown =
+                f.controls.uiState.first { state ->
+                    state.phases.values.count { it == RunControlPhase.Unknown } == 2
+                }
+            val intents = checkNotNull(unknown.journal).pending.associateBy { it.targetId }
+            val manualAttempt = intents.getValue(manual).id
+            val automationAttempt = intents.getValue(automation).id
+            f.controls.checkWithdrawal(CHAT_PERSONAL, manual)
+            val checked =
+                f.controls.uiState.first { it.phases[manualAttempt] == RunControlPhase.Retryable }
+            assertEquals(RunControlPhase.Unknown, checked.phases[automationAttempt])
+            assertEquals(2, f.remote.posts.size)
+        }
+    }
+
+    @Test
     fun queuedFollowupRemainsPendingWithoutSubmittingARevoke() = runTest {
         val followup = eventId("recommended-followup")
         val queued = eventId("queued-followup")

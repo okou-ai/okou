@@ -10,6 +10,8 @@ import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ComposerPersistence
 import ai.okou.android.chat.ComposerTarget
+import ai.okou.android.chat.HistoryPhase
+import ai.okou.android.chat.RunControlPersistence
 import ai.okou.android.chat.plainText
 import android.content.Intent
 import android.os.Looper
@@ -43,6 +45,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ActivityScenario
 import java.util.UUID
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -715,6 +718,135 @@ class ChatComposerRootTest {
                 .assertIsDisplayed()
         } finally {
             releaseList.countDown()
+        }
+    }
+
+    @Test
+    fun confirmedWithdrawalRemovesOnlyItsCardWhileOlderHistoryIsHeld() {
+        val app = compose.activity.application as ComposerRootApplication
+        val api = app.fixture.chats
+        val manualId = UUID.randomUUID().toString()
+        val automationId = UUID.randomUUID().toString()
+        val holdHistory = AtomicBoolean(false)
+        val historyRequested = CountDownLatch(1)
+        val releaseHistory = CountDownLatch(1)
+        val withdrawals = ConcurrentLinkedQueue<JsonObject>()
+        val manualText = "Withdraw this message"
+        val workflowName = "Keep this automation"
+        val queuedRows =
+            listOf(
+                historyEventWire(
+                    manualId,
+                    1,
+                    type = "input.prompt",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"text","text":"$manualText"}]}}""",
+                    run = null,
+                ),
+                historyEventWire(
+                    automationId,
+                    2,
+                    type = "input.automation",
+                    payload =
+                        """{"userMessage":{"version":1,"parts":[{"type":"automation","workflowName":"$workflowName"}]}}""",
+                    run = null,
+                ),
+            )
+        val otherRows = api.historyRows
+        api.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL) otherRows(request)
+            else {
+                val withdrawalId =
+                    withdrawals.peek()?.getValue("clientEventId")?.jsonPrimitive?.content
+                val terminalRow = withdrawalId?.let { id ->
+                    historyEventWire(
+                        id,
+                        3,
+                        type = "control.revoke",
+                        payload = "null",
+                        run = null,
+                        revoke = manualId,
+                    )
+                }
+                val events = queuedRows + listOfNotNull(terminalRow)
+                if (holdHistory.compareAndSet(true, false)) {
+                    historyRequested.countDown()
+                    releaseHistory.await()
+                }
+                val since = url.queryParameter("sinceSeqId")?.toInt() ?: 0
+                val rows = events.drop(since).joinToString(",")
+                val lastId = withdrawalId ?: automationId
+                jsonResponse(
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":${events.size}},"hasMore":false}""",
+                )
+            }
+        }
+        val composerResponse = api.commandResponse
+        api.commandResponse = { request ->
+            val body =
+                if (
+                    request.method == "POST" &&
+                        request.requestUrl?.encodedPath == "/api/chat/events"
+                )
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                else null
+            if (body != null && "revokesEventId" in body) {
+                withdrawals += body
+                MockResponse().setResponseCode(503)
+            } else composerResponse(request)
+        }
+
+        app.contextGate.countDown()
+        try {
+            compose.waitUntilExactlyOneExists(hasText("Personal chat"), 10_000)
+            compose.onNodeWithText("Personal chat").performClick()
+            captureOwners()
+            val ready = compose.runOnIdle {
+                checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+            }
+            val withdraw =
+                compose.onNodeWithContentDescription(app.getString(R.string.conversation_revoke))
+            awaitConversation {
+                ready.chats.history.uiState.value.phase == HistoryPhase.Ready &&
+                    ready.controls.uiState.value.persistence == RunControlPersistence.Durable
+            }
+            withdraw.assertIsEnabled()
+            holdHistory.set(true)
+            compose.runOnIdle { ready.chats.history.refresh() }
+            awaitConversation { historyRequested.count == 0L }
+            withdraw.performClick()
+            val checkOutcome = compose.onNodeWithText(app.getString(R.string.controls_check))
+            compose.waitUntilExactlyOneExists(
+                hasText(app.getString(R.string.controls_check)),
+                10_000,
+            )
+            checkOutcome.assertIsEnabled().performClick()
+            awaitConversation {
+                ready.controls.uiState.value.journal?.pending?.isEmpty() == true
+            }
+            assertEquals(
+                manualId,
+                withdrawals.single().getValue("revokesEventId").jsonPrimitive.content,
+            )
+            assertTrue(
+                manualId in ready.chats.history.uiState.value.transcript?.pendingInputIds.orEmpty(),
+            )
+            messageText(manualId, manualText).assertDoesNotExist()
+            messageText(automationId, workflowName).assertIsDisplayed()
+            compose.onNodeWithText(app.getString(R.string.controls_recorded)).assertDoesNotExist()
+            releaseHistory.countDown()
+            awaitConversation {
+                ready.chats.history.uiState.value.transcript?.pendingInputIds == setOf(automationId)
+            }
+            messageText(manualId, manualText).assertDoesNotExist()
+        } finally {
+            releaseHistory.countDown()
         }
     }
 

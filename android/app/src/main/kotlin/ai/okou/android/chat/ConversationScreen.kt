@@ -111,9 +111,10 @@ internal fun ConversationRoute(
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
     val transcript = state.transcript.takeIf { thread != null }
+    val settledQueueInputs = controls?.settledQueueInputs.orEmpty()
     val presentation =
-        remember(transcript, output, threadId, localMessages) {
-            conversationContent(transcript, output, threadId, localMessages)
+        remember(transcript, output, threadId, localMessages, settledQueueInputs) {
+            conversationContent(transcript, output, threadId, localMessages, settledQueueInputs)
         }
     val content = presentation.messages
     val queue = presentation.queue

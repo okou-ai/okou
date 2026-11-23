@@ -36,6 +36,7 @@ data class RunControlsState(
     val persistence: RunControlPersistence = RunControlPersistence.Loading,
     val phases: Map<String, RunControlPhase> = emptyMap(),
     val notice: RunControlNotice? = null,
+    internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
 )
 
 fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
@@ -111,6 +112,9 @@ class RunControlsModel(
         if (owner.hasPending(threadId)) owner.check(connection, threadId)
         else refreshRecovery(threadId)
     }
+
+    internal fun checkWithdrawal(threadId: String, eventId: String) =
+        owner.check(connection, threadId, withdrawalId = eventId)
 
     fun refreshRecovery(threadId: String) {
         if (connection.current() && history.uiState.value.thread?.id == threadId)

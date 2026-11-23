@@ -42,6 +42,8 @@ internal class ConversationRunControls(
     val pending: List<RunControlIntent>,
     val offline: Boolean,
 ) {
+    val settledQueueInputs = state.settledQueueInputs[threadId].orEmpty()
+
     fun pendingOutsideQueue(queueIds: Set<String>) = pending.filterNot {
         it.kind == RunControlKind.Revoke && it.targetId in queueIds
     }
@@ -66,7 +68,12 @@ internal class ConversationRunControls(
     }
 
     fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
-        if (!available || !confirmed.canWithdrawInput(threadId, eventId, preview)) return null
+        if (
+            !available ||
+                eventId in settledQueueInputs ||
+                !confirmed.canWithdrawInput(threadId, eventId, preview)
+        )
+            return null
         val intent = withdrawal(eventId)
         return when {
             intent == null -> ({ model.skip(threadId, eventId, preview) })
@@ -83,7 +90,7 @@ internal class ConversationRunControls(
 
     fun checkWithdrawal(eventId: String): (() -> Unit)? =
         if (available && withdrawalPhase(eventId) == RunControlPhase.Unknown)
-            ({ model.check(threadId) })
+            ({ model.checkWithdrawal(threadId, eventId) })
         else null
 }
 

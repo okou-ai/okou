@@ -26,6 +26,7 @@ internal fun conversationContent(
     output: RunOutputState,
     threadId: String,
     previews: List<ComposerMessagePreview>,
+    settledQueueInputs: Set<String>,
 ): ConversationContent {
     val confirmed = transcript?.withOutput(output, threadId).orEmpty()
     val pending = transcript?.pendingInputIds.orEmpty()
@@ -51,6 +52,7 @@ internal fun conversationContent(
                         queueSequence = null,
                         queuedWorkflow = null,
                     )
+            message.id in settledQueueInputs -> Unit
             else -> queue += ConversationMessage(message.copy(queued = true))
         }
     }
@@ -58,7 +60,9 @@ internal fun conversationContent(
     for (preview in previews) {
         if (
             preview.eventId in transcript?.persistedIds.orEmpty() ||
-                preview.disposition == TextDisposition.Revoked
+                preview.disposition == TextDisposition.Revoked ||
+                preview.disposition == TextDisposition.Queued &&
+                    preview.eventId in settledQueueInputs
         )
             continue
         val message =

@@ -723,6 +723,9 @@ catch up. An observed delivery or revocation also supersedes an older queued
 history row. The composer groups outstanding messages and workflow triggers in an
 independently scrolling queue, ordered by server sequence above the editor.
 Pending controls keep their feedback on the affected row while it is queued.
+Checking a withdrawal changes the request phase on that row only. A confirmed
+outcome removes the row even when the conversation still shows an older history
+checkpoint.
 Pending ordinary sends survive Activity recreation in memory. After process
 restart the app reads confirmed messages and queue entries from canonical history.
 
