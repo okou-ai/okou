@@ -108,6 +108,18 @@ function detailClient() {
   );
 }
 
+async function readRunHistory(workflowId: string) {
+  const response = await accept(
+    detailClient().runHistory({
+      headers: authHeaders(),
+      params: { workflowId },
+      query: {},
+    }),
+    [200],
+  );
+  return response.body;
+}
+
 async function readThreadLifecycleEvents(sinceSeqId?: number) {
   const response = await accept(
     setupApp({ context, routes: chatThreadRoutes })(chatThreadsContract).events(
@@ -2635,6 +2647,15 @@ describe("okou workflow automations", () => {
         }),
       }),
     ]);
+    const history = await readRunHistory(scenario.workflowId);
+    expect(history.runs).toMatchObject([
+      {
+        id: expect.any(String),
+        trigger: "event",
+        eventType: "google-calendar-event-created",
+        chatThreadId: expect.any(String),
+      },
+    ]);
   });
 
   it("does not create provider watches for disabled Gmail or Calendar automations", async () => {
@@ -4241,7 +4262,7 @@ describe("okou workflow automations", () => {
   it("lazily binds a chat thread when a one-time automation runs now", async () => {
     const requestedAt = now();
     mockNow(requestedAt);
-    const { workflowId } = await setupFixture();
+    const { actor, workflowId } = await setupFixture();
     await runs.configureRunnerGroup();
     const created = await accept(
       automationsClient().create({
@@ -4258,6 +4279,10 @@ describe("okou workflow automations", () => {
       [201],
     );
     expect(created.body).toMatchObject({ chatThreadId: null, enabled: true });
+    await expect(readRunHistory(workflowId)).resolves.toStrictEqual({
+      runs: [],
+      nextCursor: null,
+    });
 
     const run = await runAutomationNow(created.body.id);
 
@@ -4268,6 +4293,20 @@ describe("okou workflow automations", () => {
 
     const execution = await runs.executionInput(run.runId);
     const requestedAtIso = new Date(requestedAt).toISOString();
+    const runStatus = await runs.readRun(actor, run.runId);
+    await expect(readRunHistory(workflowId)).resolves.toStrictEqual({
+      runs: [
+        {
+          id: run.runId,
+          createdAt: requestedAtIso,
+          status: runStatus.status,
+          trigger: "manual",
+          eventType: null,
+          chatThreadId: threadId,
+        },
+      ],
+      nextCursor: null,
+    });
     expect(execution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: manual\nSummary: manual run requested at ${requestedAtIso}.`,
     );
@@ -4442,8 +4481,19 @@ describe("okou workflow automations", () => {
         enabled: false,
       });
       const deleted = await readThreadLifecycleEvents();
+      mockNow(now() + 1000);
       const repaired = await runAutomationNow(created.body.id);
       expect(repaired.chatThreadId).not.toBe(first.chatThreadId);
+      const history = await readRunHistory(workflowId);
+      expect(history.runs).toMatchObject([
+        { id: repaired.runId, chatThreadId: repaired.chatThreadId },
+        {
+          id: first.runId,
+          status: "cancelled",
+          chatThreadId: null,
+          trigger: null,
+        },
+      ]);
       await expect(wf.readAutomation(created.body.id)).resolves.toMatchObject({
         chatThreadId: repaired.chatThreadId,
       });
@@ -4537,6 +4587,12 @@ describe("okou workflow automations", () => {
         await runs.ensurePersonalSubscriptionModel(member);
         const memberRun = await createAndRun(workflowId);
         expect(memberRun.chatThreadId).not.toBe(first.chatThreadId);
+        const history = await readRunHistory(workflowId);
+        expect(
+          history.runs.map(({ id }) => {
+            return id;
+          }),
+        ).toStrictEqual([memberRun.runId]);
         const memberEvents = await readThreadLifecycleEvents();
         expect(
           memberEvents.filter((event) => {
@@ -4559,6 +4615,14 @@ describe("okou workflow automations", () => {
         );
         await wf.demoteWorkflow(owned.actor, workflowId);
         mocks.clerk.session(member.userId, member.orgId, member.orgRole);
+        await accept(
+          detailClient().runHistory({
+            headers: authHeaders(),
+            params: { workflowId },
+            query: {},
+          }),
+          [404],
+        );
         await accept(
           automationsClient().run({
             headers: authHeaders(),

@@ -183,7 +183,7 @@ internal fun OkouApp(
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
     fun syncWorkflowDestination(route: WorkflowsRoute, open: Boolean) {
         workflows?.let {
-            if (open) it.select(route.id)
+            if (open) it.select(route.id, route.tab)
             it.visibilityChanged(open)
         }
     }
@@ -191,7 +191,7 @@ internal fun OkouApp(
         syncWorkflowDestination(route, !showingConnectors && route.mode == WorkflowsMode.Directory)
         workflowRoute = route
     }
-    LaunchedEffect(workflows, workflowRoute.id, showWorkflows) {
+    LaunchedEffect(workflows, workflowRoute.id, workflowRoute.tab, showWorkflows) {
         syncWorkflowDestination(workflowRoute, showWorkflows)
     }
     LaunchedEffect(workflows, list.offline, showWorkflows) {
@@ -756,9 +756,7 @@ internal fun OkouApp(
     val needsWorkflowSourceChats =
         showWorkflows &&
             workflowRoute.tab == WorkflowTab.History &&
-            workflowState?.detail?.automations?.any {
-                it.lastRunAt != null && it.chatThreadId != null
-            } == true
+            workflowState?.history?.runs?.any { it.chatThreadId != null } == true
     val needsChatList =
         needsWorkflowSourceChats ||
             (settings == null &&

@@ -18,21 +18,18 @@ import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
 import ai.okou.android.preferences.timezoneLabel
 import ai.okou.android.state.rememberJournalEditor
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,7 +40,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -56,7 +52,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -66,10 +61,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
@@ -265,45 +258,7 @@ private fun ruleScheduleZone(rule: WorkflowAutomation): String? =
     }
 
 @Composable
-internal fun WorkflowHistoryRow(
-    rule: WorkflowAutomation,
-    timezone: String,
-    sourceChatAvailable: (String) -> Boolean,
-    sourceNavigationEnabled: Boolean,
-    onOpenChat: (String) -> Unit,
-) {
-    val source = rule.chatThreadId?.takeIf(sourceChatAvailable)
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(
-                if (source != null)
-                    Modifier.clickable(enabled = sourceNavigationEnabled, role = Role.Button) {
-                        onOpenChat(source)
-                    }
-                else Modifier
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(painterResource(R.drawable.ic_event), null, Modifier.size(18.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                workflowTimestamp(rule.lastRunAt.orEmpty(), timezone),
-                style = workflowBodyStyle(),
-                fontWeight = FontWeight.SemiBold,
-            )
-            WorkflowSecondary(ruleTitle(rule), small = true)
-        }
-        if (source != null)
-            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(18.dp))
-    }
-}
-
-@Composable
-private fun workflowTimestamp(time: String, timezone: String): String {
+internal fun workflowTimestamp(time: String, timezone: String): String {
     val locale = LocalConfiguration.current.locales[0]
     return remember(time, timezone, locale) {
         try {

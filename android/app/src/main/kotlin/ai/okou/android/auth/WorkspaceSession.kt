@@ -136,6 +136,9 @@ class CanonicalWorkspaceSession(
 
     override suspend fun workflow(id: String) = api.workflow(id)
 
+    override suspend fun workflowRunHistory(id: String, cursor: String?) =
+        api.workflowRunHistory(id, cursor)
+
     override suspend fun workflowAutomations() = api.workspaceWorkflowAutomations()
 
     override suspend fun workflowConnections() = api.workflowConnections()

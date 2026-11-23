@@ -220,6 +220,13 @@ internal interface CanonicalApi {
         @Path("workflowId") `pathWorkflowId`: String,
     ): Response<WorkflowDetail>
 
+    @GET("/api/workflows/{workflowId}/run-history")
+    suspend fun `workflowRunHistory`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+        @Query("cursor") `queryCursor`: String? = null,
+    ): Response<WorkflowRunHistory>
+
     @PATCH("/api/workflows/{workflowId}")
     suspend fun `updateWorkflow`(
         @Header("Authorization") token: String,

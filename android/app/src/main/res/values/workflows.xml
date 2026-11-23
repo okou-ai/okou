@@ -110,4 +110,17 @@
     <string name="workflow_rule_change_failed">Could not change this rule.</string>
     <string name="workflow_rule_network_failed">Could not change this rule. Check your connection and try again.</string>
     <string name="workflow_write_conflict">This workflow changed while saving. Your edits are preserved.</string>
+    <string name="workflow_history_earlier">Show earlier runs</string>
+    <string name="workflow_history_event">Event</string>
+    <string name="workflow_history_failed">Could not load run history</string>
+    <string name="workflow_history_loading">Loading run history…</string>
+    <string name="workflow_history_offline">Connect to load run history</string>
+    <string name="workflow_history_open_chat">Open source chat</string>
+    <string name="workflow_history_unavailable">Run history unavailable</string>
+    <string name="workflow_run_pending">Pending</string>
+    <string name="workflow_run_running">Running</string>
+    <string name="workflow_run_timeout">Timed out</string>
+    <string name="workflow_history_trigger_unavailable">Trigger unavailable</string>
+    <string name="workflow_history_scheduled">Scheduled trigger</string>
+    <string name="workflow_history_manual">Manual run</string>
 </resources>

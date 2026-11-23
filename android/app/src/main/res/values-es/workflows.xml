@@ -111,4 +111,17 @@
     <string name="workflow_rule_change_failed">No se pudo cambiar esta regla.</string>
     <string name="workflow_rule_network_failed">No se pudo cambiar esta regla. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="workflow_write_conflict">Este flujo de trabajo cambió durante el guardado. Tus cambios se conservan.</string>
+    <string name="workflow_history_earlier">Ver ejecuciones anteriores</string>
+    <string name="workflow_history_event">Evento</string>
+    <string name="workflow_history_failed">No se pudo cargar el historial de ejecuciones</string>
+    <string name="workflow_history_loading">Cargando el historial de ejecuciones…</string>
+    <string name="workflow_history_offline">Conéctate para cargar el historial de ejecuciones</string>
+    <string name="workflow_history_open_chat">Abrir el chat de origen</string>
+    <string name="workflow_history_unavailable">Historial de ejecuciones no disponible</string>
+    <string name="workflow_run_pending">Pendiente</string>
+    <string name="workflow_run_running">En ejecución</string>
+    <string name="workflow_run_timeout">Tiempo agotado</string>
+    <string name="workflow_history_trigger_unavailable">Activador no disponible</string>
+    <string name="workflow_history_scheduled">Activación programada</string>
+    <string name="workflow_history_manual">Ejecución manual</string>
 </resources>

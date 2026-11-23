@@ -1,5 +1,10 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntry
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryEventType
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.chat.plainDraftDocument
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -13,6 +18,8 @@ import org.junit.Assert.assertNull
 
 internal const val WORKFLOW_RELEASE = "a1111111-1111-4111-8111-111111111111"
 internal const val WORKFLOW_SHARED = "a2222222-2222-4222-8222-222222222222"
+internal const val WORKFLOW_SOURCE_RUN = "b1111111-1111-4111-8111-111111111111"
+internal const val WORKFLOW_NO_SOURCE_RUN = "b2222222-2222-4222-8222-222222222222"
 private const val WORKFLOW_FEEDBACK = "a3333333-3333-4333-8333-333333333333"
 
 internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCloseable {
@@ -31,6 +38,40 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     @Volatile var calendarId: String? = null
     @Volatile var beforeCatalog: () -> Unit = {}
     @Volatile var beforeReleaseDetailRead: () -> Unit = {}
+    @Volatile var beforeHistoryRead: () -> Unit = {}
+    @Volatile
+    var firstRunHistory =
+        WorkflowRunHistory(
+            runs =
+                listOf(
+                    WorkflowRunHistoryEntry(
+                        id = WORKFLOW_SOURCE_RUN,
+                        createdAt = "2026-11-23T01:00:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.RUNNING,
+                        trigger = WorkflowRunHistoryEntryTrigger.SCHEDULE,
+                        eventType = null,
+                        chatThreadId = CHAT_PERSONAL,
+                    ),
+                    WorkflowRunHistoryEntry(
+                        id = WORKFLOW_NO_SOURCE_RUN,
+                        createdAt = "2026-11-22T08:15:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.FAILED,
+                        trigger = WorkflowRunHistoryEntryTrigger.EVENT,
+                        eventType = WorkflowRunHistoryEntryEventType.GMAIL_NEW_MESSAGE,
+                        chatThreadId = null,
+                    ),
+                    WorkflowRunHistoryEntry(
+                        id = "b3333333-3333-4333-8333-333333333333",
+                        createdAt = "2026-11-21T09:30:00.000Z",
+                        status = WorkflowRunHistoryEntryStatus.COMPLETED,
+                        trigger = WorkflowRunHistoryEntryTrigger.MANUAL,
+                        eventType = null,
+                        chatThreadId = CHAT_PERSONAL,
+                    ),
+                ),
+            nextCursor = null,
+        )
+    @Volatile var earlierRunHistory = WorkflowRunHistory(emptyList(), null)
     @Volatile var beforeConnectionsRead: () -> Unit = {}
     @Volatile var beforeDraftRead: () -> Unit = {}
     @Volatile var beforeInstructionSave: () -> Unit = {}
@@ -98,6 +139,15 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         if (hasSharedSchedule) "[${sharedSchedule()}]" else "[]",
                     )
                 )
+            "/api/workflows/$WORKFLOW_RELEASE/run-history" -> {
+                beforeHistoryRead()
+                val page =
+                    if (request.requestUrl?.queryParameter("cursor") == null) firstRunHistory
+                    else earlierRunHistory
+                jsonResponse(Json.encodeToString(page))
+            }
+            "/api/workflows/$WORKFLOW_SHARED/run-history" ->
+                jsonResponse(Json.encodeToString(WorkflowRunHistory(emptyList(), null)))
             "/api/workflow-automations" -> {
                 val rules = buildList {
                     releaseRules().forEach { add(automationEntry(release(), it)) }

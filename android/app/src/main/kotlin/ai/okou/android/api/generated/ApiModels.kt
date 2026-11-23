@@ -6847,6 +6847,59 @@ data class WorkflowDetail(
     val `automations`: List<WorkflowAutomation>,
 )
 
+@Serializable
+enum class WorkflowRunHistoryEntryStatus {
+    @SerialName("queued") QUEUED,
+    @SerialName("pending") PENDING,
+    @SerialName("running") RUNNING,
+    @SerialName("completed") COMPLETED,
+    @SerialName("failed") FAILED,
+    @SerialName("timeout") TIMEOUT,
+    @SerialName("cancelled") CANCELLED,
+}
+
+@Serializable
+enum class WorkflowRunHistoryEntryTrigger {
+    @SerialName("schedule") SCHEDULE,
+    @SerialName("event") EVENT,
+    @SerialName("manual") MANUAL,
+}
+
+@Serializable
+enum class WorkflowRunHistoryEntryEventType {
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED,
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE,
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED,
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED,
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED,
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST,
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED,
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED,
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED,
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED,
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED,
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED,
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED,
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED,
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED,
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED,
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED,
+    @SerialName("webhook-received") WEBHOOK_RECEIVED,
+}
+
+@Serializable
+data class WorkflowRunHistoryEntry(
+    val `id`: String,
+    val `createdAt`: String,
+    val `status`: WorkflowRunHistoryEntryStatus,
+    val `trigger`: WorkflowRunHistoryEntryTrigger?,
+    val `eventType`: WorkflowRunHistoryEntryEventType?,
+    val `chatThreadId`: String?,
+)
+
+@Serializable
+data class WorkflowRunHistory(val `runs`: List<WorkflowRunHistoryEntry>, val `nextCursor`: String?)
+
 @Serializable(with = CanonicalOptionalSerializer::class)
 sealed interface CanonicalOptional<out T> {
     data object Absent : CanonicalOptional<Nothing>

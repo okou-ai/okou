@@ -110,4 +110,17 @@
     <string name="workflow_rule_change_failed">यह नियम बदला नहीं जा सका।</string>
     <string name="workflow_rule_network_failed">यह नियम बदला नहीं जा सका। अपना कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="workflow_write_conflict">सहेजते समय यह वर्कफ़्लो बदल गया। आपके बदलाव सुरक्षित हैं।</string>
+    <string name="workflow_history_earlier">पिछले रन दिखाएँ</string>
+    <string name="workflow_history_event">इवेंट</string>
+    <string name="workflow_history_failed">रन का इतिहास लोड नहीं हो सका</string>
+    <string name="workflow_history_loading">रन का इतिहास लोड हो रहा है…</string>
+    <string name="workflow_history_offline">रन का इतिहास लोड करने के लिए कनेक्ट करें</string>
+    <string name="workflow_history_open_chat">संबंधित चैट खोलें</string>
+    <string name="workflow_history_unavailable">रन का इतिहास उपलब्ध नहीं है</string>
+    <string name="workflow_run_pending">लंबित</string>
+    <string name="workflow_run_running">चल रहा है</string>
+    <string name="workflow_run_timeout">समय सीमा समाप्त</string>
+    <string name="workflow_history_trigger_unavailable">ट्रिगर उपलब्ध नहीं है</string>
+    <string name="workflow_history_scheduled">शेड्यूल किया गया ट्रिगर</string>
+    <string name="workflow_history_manual">मैन्युअल रन</string>
 </resources>

@@ -12,10 +12,15 @@ import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1
 import ai.okou.android.api.generated.WorkflowAutomationVariant1ScheduleVariant1Type
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntry
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomationsItem
+import ai.okou.android.state.WorkflowTab
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -143,7 +148,7 @@ class WorkflowModelTest {
             assertEquals(3, service.detailReads)
             assertEquals(first, model.state.value.detail)
 
-            model.detailTabOpened(checkConnections = false)
+            model.select(first.id, WorkflowTab.History)
             runCurrent()
             assertEquals(3, service.detailReads)
 
@@ -152,6 +157,97 @@ class WorkflowModelTest {
             runCurrent()
             assertEquals(refreshed, model.state.value.detail)
         }
+
+    @Test
+    fun historyKeepsLoadedPagesDuringRefreshAndClearsExpiredCacheOnReturn() =
+        check { service, model ->
+            val id = service.summary.id
+            val recent =
+                WorkflowRunHistoryEntry(
+                    id = "48da3630-376b-4a70-82ce-f1d8e17a4433",
+                    createdAt = "2026-11-23T01:00:00.000Z",
+                    status = WorkflowRunHistoryEntryStatus.RUNNING,
+                    trigger = WorkflowRunHistoryEntryTrigger.SCHEDULE,
+                    eventType = null,
+                    chatThreadId = "80d3cd3c-76aa-477f-90de-bdf6d58705d6",
+                )
+            val older =
+                recent.copy(
+                    id = "f84ea6d9-3243-450b-a58e-488fd5428130",
+                    createdAt = "2026-11-22T01:00:00.000Z",
+                    status = WorkflowRunHistoryEntryStatus.FAILED,
+                    chatThreadId = null,
+                )
+            fun page(cursor: String?) =
+                if (cursor == null) WorkflowRunHistory(listOf(recent), "earlier")
+                else WorkflowRunHistory(listOf(older), null)
+            service.historyRead = { workflowId, cursor ->
+                assertEquals(id, workflowId)
+                page(cursor)
+            }
+            model.visibilityChanged(true)
+            model.select(id)
+            runCurrent()
+            assertTrue(service.historyCursors.isEmpty())
+
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recent), model.state.value.history?.runs)
+            model.loadEarlierRuns()
+            model.loadEarlierRuns()
+            runCurrent()
+            assertEquals(listOf(null, "earlier"), service.historyCursors)
+            assertEquals(listOf(recent, older), model.state.value.history?.runs)
+
+            val refresh = CompletableDeferred<Unit>()
+            service.historyRead = { _, cursor ->
+                refresh.await()
+                val page = page(cursor)
+                if (cursor == null)
+                    page.copy(
+                        runs = listOf(recent.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED))
+                    )
+                else page
+            }
+            model.select(id)
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recent, older), model.state.value.history?.runs)
+            advanceTimeBy(600_000)
+            assertEquals(listOf(recent, older), model.state.value.history?.runs)
+            model.visibilityChanged(false)
+            model.visibilityChanged(true)
+            assertNull(model.state.value.history)
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(
+                listOf(
+                    WorkflowRunHistoryEntryStatus.COMPLETED,
+                    WorkflowRunHistoryEntryStatus.FAILED,
+                ),
+                model.state.value.history?.runs?.map { it.status },
+            )
+            assertEquals(listOf(null, "earlier"), service.historyCursors.takeLast(2))
+        }
+
+    @Test
+    fun revokedHistoryClearsTheCachedRange() = check { service, model ->
+        val id = service.summary.id
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertNotNull(model.state.value.history)
+        service.historyRead = { _, _ -> throw ApiFailure.Http(404, null, null, null) }
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNotNull(model.state.value.history)
+        runCurrent()
+        assertNull(model.state.value.history)
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.historyFailure)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNull(model.state.value.history)
+    }
 
     @Test
     fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
@@ -552,6 +648,10 @@ class WorkflowModelTest {
     }
 
     private class Service : WorkflowService {
+        val historyCursors = mutableListOf<String?>()
+        var historyRead: suspend (String, String?) -> WorkflowRunHistory = { _, _ ->
+            WorkflowRunHistory(emptyList(), null)
+        }
         val summary =
             WorkflowSummary(
                 id = "a1111111-1111-4111-8111-111111111111",
@@ -633,6 +733,11 @@ class WorkflowModelTest {
         override suspend fun workflow(id: String): WorkflowDetail {
             detailReads++
             return detailRead(id)
+        }
+
+        override suspend fun workflowRunHistory(id: String, cursor: String?): WorkflowRunHistory {
+            historyCursors.add(cursor)
+            return historyRead(id, cursor)
         }
 
         override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations {

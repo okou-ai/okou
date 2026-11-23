@@ -183,6 +183,10 @@ class ApiClient(
 
     suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
 
+    internal suspend fun workflowRunHistory(id: String, cursor: String?) = execute {
+        reads.workflowRunHistory(it, id, cursor)
+    }
+
     suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
 
     suspend fun workflowConnections() =

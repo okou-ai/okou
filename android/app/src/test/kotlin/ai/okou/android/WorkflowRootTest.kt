@@ -1,5 +1,7 @@
 package ai.okou.android
 
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
@@ -618,6 +620,44 @@ class WorkflowRootTest {
     }
 
     @Test
+    fun historyShowsConfirmedResultsAndOnlyLinksAvailableSourceChats() {
+        val page = app.fixture.firstRunHistory
+        val earlierRun =
+            page.runs
+                .last()
+                .copy(
+                    id = "b4444444-4444-4444-8444-444444444444",
+                    createdAt = "2026-11-20T09:30:00.000Z",
+                    status = WorkflowRunHistoryEntryStatus.TIMEOUT,
+                    chatThreadId = null,
+                )
+        app.fixture.firstRunHistory = page.copy(nextCursor = "earlier")
+        app.fixture.earlierRunHistory = WorkflowRunHistory(listOf(earlierRun), null)
+        openWorkflowDetail()
+        assertTrue(app.fixture.requests.none { it.path?.contains("/run-history") == true })
+
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val sourceTag = "workflow_run_$WORKFLOW_SOURCE_RUN"
+        val missingTag = "workflow_run_$WORKFLOW_NO_SOURCE_RUN"
+        waitForTag(sourceTag)
+        compose.onNodeWithTag(sourceTag).assertTextContains("Running")
+        compose.onNodeWithTag(missingTag).assertTextContains("Failed")
+        compose.onNode(hasTestTag(missingTag) and hasClickAction()).assertDoesNotExist()
+        val bounds = compose.onNodeWithTag(sourceTag).getUnclippedBoundsInRoot()
+        assertTrue(bounds.bottom - bounds.top >= 52.dp)
+        compose.onNodeWithTag("workflow_use").assertIsDisplayed()
+
+        compose.onNodeWithTag("workflow_earlier_runs").performClick()
+        val earlierTag = "workflow_run_${earlierRun.id}"
+        waitForTag(earlierTag)
+        compose.onNodeWithTag(earlierTag).assertTextContains("Timed out")
+        compose.onNodeWithTag(sourceTag).assertIsDisplayed()
+        assertTrue(
+            app.fixture.requests.any { it.requestUrl?.queryParameter("cursor") == "earlier" }
+        )
+    }
+
+    @Test
     fun pendingDraftHandoffDisablesSourceNavigationAndRuleActions() {
         app.gate.countDown()
         waitFor("Personal chat")
@@ -626,7 +666,7 @@ class WorkflowRootTest {
         compose.onNodeWithTag("workflow_row_$WORKFLOW_RELEASE").performClick()
         waitForTag("workflow_detail_title")
         compose.onNodeWithTag("workflow_tab_history").performClick()
-        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
         compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(source).assertIsEnabled()
 
@@ -689,7 +729,7 @@ class WorkflowRootTest {
         app.fixture.chats.historyReply = "[Project handoff](/chats/$CHAT_IN_PROJECT)"
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_history").performClick()
-        val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
         compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(source).performClick()
         waitForTag("conversation")
@@ -735,7 +775,7 @@ class WorkflowRootTest {
         try {
             openWorkflowDetail()
             compose.onNodeWithTag("workflow_tab_history").performClick()
-            val source = hasText(app.fixture.ruleTitle) and hasClickAction()
+            val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
             compose.waitUntil(10_000) {
                 compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty()
             }

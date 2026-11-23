@@ -109,4 +109,17 @@
     <string name="workflow_rule_change_failed">このルールを変更できませんでした。</string>
     <string name="workflow_rule_network_failed">このルールを変更できませんでした。接続を確認して、もう一度お試しください。</string>
     <string name="workflow_write_conflict">保存中にこのワークフローが更新されました。編集内容は保持されています。</string>
+    <string name="workflow_history_earlier">以前の実行を表示</string>
+    <string name="workflow_history_event">イベント</string>
+    <string name="workflow_history_failed">実行履歴を読み込めませんでした</string>
+    <string name="workflow_history_loading">実行履歴を読み込み中…</string>
+    <string name="workflow_history_offline">接続して実行履歴を読み込む</string>
+    <string name="workflow_history_open_chat">関連するチャットを開く</string>
+    <string name="workflow_history_unavailable">実行履歴を利用できません</string>
+    <string name="workflow_run_pending">保留中</string>
+    <string name="workflow_run_running">実行中</string>
+    <string name="workflow_run_timeout">タイムアウト</string>
+    <string name="workflow_history_trigger_unavailable">トリガーを確認できません</string>
+    <string name="workflow_history_scheduled">スケジュール実行</string>
+    <string name="workflow_history_manual">手動実行</string>
 </resources>

@@ -5,9 +5,12 @@ import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailShadowedBy
 import ai.okou.android.api.generated.WorkflowDetailVisibility
+import ai.okou.android.api.generated.WorkflowRunHistory
+import ai.okou.android.api.generated.WorkflowRunHistoryEntry
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryShadowedBy
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.state.WorkflowTab
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -19,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 internal data class WorkflowState(
@@ -26,14 +30,22 @@ internal data class WorkflowState(
     val rules: Map<String, List<WorkflowAutomation>>? = null,
     val connections: Set<String>? = null,
     val detail: WorkflowDetail? = null,
+    val history: WorkflowRunHistory? = null,
     val catalogFailure: WorkflowReadFailure? = null,
     val rulesFailure: WorkflowReadFailure? = null,
     val connectionsFailure: WorkflowReadFailure? = null,
     val detailFailure: WorkflowReadFailure? = null,
+    val historyFailure: WorkflowReadFailure? = null,
+    val historyRead: WorkflowHistoryRead? = null,
     val writing: Boolean = false,
     val issue: WorkflowWriteIssue? = null,
     val editor: WorkflowEdit? = null,
 )
+
+internal enum class WorkflowHistoryRead {
+    Latest,
+    Earlier,
+}
 
 internal enum class WorkflowReadFailure {
     Unavailable,
@@ -68,6 +80,7 @@ internal constructor(
     private var foreground = false
     private var offline = false
     private var selected: String? = null
+    private var tab = WorkflowTab.Instructions
     private var readSequence = 0L
     private val catalogRead = WorkflowRangeRead()
     private val rulesRead = WorkflowRangeRead()
@@ -75,6 +88,9 @@ internal constructor(
     private val details =
         LinkedHashMap<String, CachedWorkflowDetail>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
     private var detailLoad: Job? = null
+    private val histories =
+        LinkedHashMap<String, CachedWorkflowHistory>(WORKFLOW_DETAIL_CACHE_CAPACITY, 0.75f, true)
+    private var historyLoad: Job? = null
     private val readsAfterWrite = mutableSetOf<WorkflowReadScope>()
 
     internal fun connectivityChanged(offline: Boolean) {
@@ -86,6 +102,7 @@ internal constructor(
             if (current.rulesFailure.canRecheckOnReconnect()) rulesRead.cancel()
             if (current.connectionsFailure.canRecheckOnReconnect()) connectionsRead.cancel()
             if (current.detailFailure.canRecheckOnReconnect()) cancelDetailRead()
+            if (current.historyFailure.canRecheckOnReconnect()) cancelHistoryRead()
             mutable.value =
                 current.copy(
                     catalogFailure =
@@ -96,6 +113,9 @@ internal constructor(
                         current.connectionsFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     detailFailure =
                         current.detailFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    historyFailure =
+                        current.historyFailure.takeUnless { it == WorkflowReadFailure.Offline },
+                    historyRead = mutable.value.historyRead,
                     issue = current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
                 )
             val now = monotonicMillis()
@@ -121,6 +141,11 @@ internal constructor(
                             current.detailFailure.canRecheckOnReconnect()
                     )
                         add(WorkflowReadScope.Detail)
+                    if (
+                        !selected?.let { histories[it]?.readAt }.isFresh(now) ||
+                            current.historyFailure.canRecheckOnReconnect()
+                    )
+                        add(WorkflowReadScope.History)
                 }
             )
         }
@@ -144,6 +169,7 @@ internal constructor(
 
     private fun stopReads() {
         stopWorkflowReads()
+        cancelHistoryRead()
         connectionsRead.cancel()
     }
 
@@ -158,29 +184,49 @@ internal constructor(
         detailLoad = null
     }
 
-    internal fun select(id: String?) {
-        if (selected == id) return
+    private fun cancelHistoryRead() {
+        historyLoad?.cancel()
+        historyLoad = null
+        if (mutable.value.historyRead != null)
+            mutable.value = mutable.value.copy(historyRead = null)
+    }
+
+    internal fun select(id: String?, tab: WorkflowTab = WorkflowTab.Instructions) {
+        val newSelection = selected != id
+        if (!newSelection && this.tab == tab) return
         selected = id
-        cancelDetailRead()
+        this.tab = tab
+        cancelHistoryRead()
+        if (newSelection) cancelDetailRead()
+        val now = monotonicMillis()
         val cached = id?.let(details::get)
+        val history = id?.let(histories::get)?.takeIf { tab == WorkflowTab.History }
+        val current = mutable.value
         mutable.value =
-            mutable.value.copy(
-                detail = cached?.takeIf { it.readAt.isFresh(monotonicMillis()) }?.detail,
-                detailFailure = null,
-                issue = null,
-                editor = null,
+            current.copy(
+                detail =
+                    if (newSelection) cached?.takeIf { it.readAt.isFresh(now) }?.detail
+                    else current.detail,
+                history = history?.takeIf { it.readAt.isFresh(now) }?.page,
+                detailFailure = current.detailFailure.takeUnless { newSelection },
+                historyFailure = null,
+                issue = current.issue.takeUnless { newSelection },
+                editor = current.editor.takeUnless { newSelection },
             )
         if (id == null) {
             if (visible) presentCachedRanges()
             refresh(directoryScopes)
-        } else refresh(setOf(WorkflowReadScope.Detail))
-    }
-
-    internal fun detailTabOpened(checkConnections: Boolean) {
-        refresh(
-            if (checkConnections) setOf(WorkflowReadScope.Detail, WorkflowReadScope.Connections)
-            else setOf(WorkflowReadScope.Detail)
-        )
+        } else {
+            refresh(
+                when (tab) {
+                    WorkflowTab.Instructions -> setOf(WorkflowReadScope.Detail)
+                    WorkflowTab.Automations ->
+                        setOf(WorkflowReadScope.Detail, WorkflowReadScope.Connections)
+                    WorkflowTab.History ->
+                        setOf(WorkflowReadScope.Detail, WorkflowReadScope.History)
+                }
+            )
+        }
     }
 
     private fun presentCachedRanges() {
@@ -191,16 +237,23 @@ internal constructor(
         val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
         val detail =
             selected?.let { details[it]?.takeIf { entry -> entry.readAt.isFresh(now) }?.detail }
+        val history =
+            selected
+                ?.let(histories::get)
+                ?.takeIf { tab == WorkflowTab.History && it.readAt.isFresh(now) }
+                ?.page
         mutable.value =
             current.copy(
                 catalog = catalog,
                 rules = rules,
                 connections = connections,
                 detail = detail,
+                history = history,
                 catalogFailure = current.catalogFailure.takeIf { catalog != null },
                 rulesFailure = current.rulesFailure.takeIf { rules != null },
                 connectionsFailure = current.connectionsFailure.takeIf { connections != null },
                 detailFailure = current.detailFailure.takeIf { detail != null },
+                historyFailure = current.historyFailure.takeIf { history != null },
             )
     }
 
@@ -212,6 +265,8 @@ internal constructor(
         }
         for (scope in scopes) when (scope) {
             WorkflowReadScope.Detail -> selected?.let(::loadDetail)
+            WorkflowReadScope.History ->
+                if (tab == WorkflowTab.History) selected?.let { loadHistory(it, null) }
             WorkflowReadScope.Catalog -> loadCatalog()
             WorkflowReadScope.Rules -> loadDirectoryRules()
             WorkflowReadScope.Connections -> loadConnections()
@@ -314,10 +369,12 @@ internal constructor(
         val current = mutable.value
         val previouslyKnown = current.catalog.orEmpty().mapTo(mutableSetOf()) { it.id }
         previouslyKnown.addAll(details.keys)
+        previouslyKnown.addAll(histories.keys)
         selected?.let(previouslyKnown::add)
         val removed = previouslyKnown.filter { it !in summaries && updates[it] == null }
         for (id in removed) {
             details.remove(id)
+            histories.remove(id)
             rulesRead.pending?.updates?.set(id, null)
         }
         details.replaceAll { id, cached ->
@@ -326,13 +383,19 @@ internal constructor(
             else cached.copy(detail = cached.detail.withSummary(summary))
         }
         val lostSelected = selected?.let(removed::contains) == true
-        if (lostSelected) cancelDetailRead()
+        if (lostSelected) {
+            cancelDetailRead()
+            cancelHistoryRead()
+        }
         mutable.value =
             current.copy(
                 catalog = rows,
                 catalogFailure = null,
                 rules = if (removed.isEmpty()) current.rules else current.rules?.minus(removed),
                 detail = current.detail?.let { details[it.id]?.detail },
+                history = current.history.takeUnless { lostSelected },
+                historyRead = current.historyRead.takeUnless { lostSelected },
+                historyFailure = current.historyFailure.takeUnless { lostSelected },
                 detailFailure =
                     if (lostSelected) WorkflowReadFailure.Unavailable else current.detailFailure,
                 editor = current.editor.takeUnless { lostSelected },
@@ -364,13 +427,17 @@ internal constructor(
         rulesRead.invalidate()
         connectionsRead.invalidate()
         cancelDetailRead()
+        cancelHistoryRead()
         details.clear()
+        histories.clear()
         mutable.value =
             mutable.value.copy(
                 catalog = null,
                 rules = null,
                 connections = null,
                 detail = null,
+                history = null,
+                historyFailure = null,
                 catalogFailure = WorkflowReadFailure.Unavailable,
                 rulesFailure = null,
                 connectionsFailure = null,
@@ -400,12 +467,16 @@ internal constructor(
                             detail?.official != null -> {
                             recordDetailUpdate(id, null, sequence)
                             details.remove(id)
+                            histories.remove(id)
+                            cancelHistoryRead()
                             val current = mutable.value
                             mutable.value =
                                 current.copy(
                                     catalog = current.catalog?.filterNot { it.id == id },
                                     rules = current.rules?.minus(id),
                                     detail = null,
+                                    history = null,
+                                    historyFailure = null,
                                     detailFailure = WorkflowReadFailure.Unavailable,
                                     editor = null,
                                     issue = null,
@@ -420,6 +491,100 @@ internal constructor(
                     }
                 }
             }
+    }
+
+    internal fun loadEarlierRuns() {
+        if (!authorized() || !visible || !foreground || tab != WorkflowTab.History) return
+        val id = selected ?: return
+        val cursor = mutable.value.history?.nextCursor ?: return
+        loadHistory(id, cursor)
+    }
+
+    private fun loadHistory(id: String, cursor: String?) {
+        if (
+            historyLoad?.isActive == true ||
+                mutable.value.detailFailure == WorkflowReadFailure.Unavailable
+        )
+            return
+        val cached = histories[id]
+        mutable.value =
+            mutable.value.copy(
+                historyRead =
+                    if (cursor == null) WorkflowHistoryRead.Latest else WorkflowHistoryRead.Earlier
+            )
+        historyLoad =
+            viewModelScope.launch {
+                try {
+                    retryReads({ mutable.value = mutable.value.copy(historyFailure = it) }) {
+                        val response = read {
+                            // Revalidate through the previous oldest row. Newer runs can push that
+                            // row past the previous page boundary while the user's position
+                            // remains.
+                            val through =
+                                if (cursor == null) cached?.page?.runs?.lastOrNull() else null
+                            fetchHistory(id, cursor, through)
+                        }
+                        if (!authorized() || selected != id || tab != WorkflowTab.History)
+                            return@retryReads null
+                        val error = response.exceptionOrNull()
+                        if (error.denied() || (error as? ApiFailure.Http)?.status == 404) {
+                            histories.remove(id)
+                            mutable.value =
+                                mutable.value.copy(
+                                    history = null,
+                                    historyFailure = WorkflowReadFailure.Unavailable,
+                                )
+                            return@retryReads null
+                        }
+                        if (error != null) return@retryReads error
+                        val page = response.getOrThrow()
+                        val entry =
+                            if (cursor == null || cached == null) {
+                                CachedWorkflowHistory(page, monotonicMillis())
+                            } else {
+                                cached.copy(
+                                    page =
+                                        page.copy(
+                                            runs =
+                                                (cached.page.runs + page.runs).distinctBy { it.id }
+                                        )
+                                )
+                            }
+                        histories[id] = entry
+                        if (histories.size > WORKFLOW_DETAIL_CACHE_CAPACITY)
+                            histories.remove(histories.keys.first())
+                        mutable.value =
+                            mutable.value.copy(history = entry.page, historyFailure = null)
+                        null
+                    }
+                } finally {
+                    if (isActive) mutable.value = mutable.value.copy(historyRead = null)
+                }
+            }
+    }
+
+    private suspend fun fetchHistory(
+        id: String,
+        cursor: String?,
+        through: WorkflowRunHistoryEntry?,
+    ): WorkflowRunHistory {
+        val runs = mutableListOf<WorkflowRunHistoryEntry>()
+        val visited = mutableSetOf<String?>()
+        var before = cursor
+        while (visited.add(before)) {
+            val page = service.workflowRunHistory(id, before)
+            runs.addAll(page.runs)
+            if (
+                through == null ||
+                    page.nextCursor == null ||
+                    page.runs.any { it.id == through.id } ||
+                    page.runs.lastOrNull()?.let { it.createdAt < through.createdAt } == true
+            ) {
+                return page.copy(runs = runs.distinctBy { it.id })
+            }
+            before = page.nextCursor
+        }
+        throw ApiFailure.IncompatibleResponse()
     }
 
     private suspend fun retryReads(
@@ -656,8 +821,11 @@ internal constructor(
 
 private data class CachedWorkflowDetail(val detail: WorkflowDetail, val readAt: Long)
 
+private data class CachedWorkflowHistory(val page: WorkflowRunHistory, val readAt: Long)
+
 private enum class WorkflowReadScope {
     Detail,
+    History,
     Catalog,
     Rules,
     Connections,

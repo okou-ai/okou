@@ -45,6 +45,7 @@ import { personalModelProviderAccountsByIdContract } from "../contracts/personal
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
 import {
   workflowAutomationsContract,
+  workflowRunHistoryEntrySchema,
   workflowScheduleAutomationSummarySchema,
   workflowSummarySchema,
   workflowsCollectionContract,
@@ -303,6 +304,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     name: "workflow",
     response: "WorkflowDetail",
     route: workflowsDetailContract.get,
+  },
+  {
+    name: "workflowRunHistory",
+    response: "WorkflowRunHistory",
+    route: workflowsDetailContract.runHistory,
   },
   {
     name: "updateWorkflow",
@@ -639,6 +645,17 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "WorkflowDetail",
     schema: workflowsDetailContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "WorkflowRunHistoryEntry",
+    schema: workflowRunHistoryEntrySchema,
+    direction: "output",
+    reusableOutput: true,
+  },
+  {
+    name: "WorkflowRunHistory",
+    schema: workflowsDetailContract.runHistory.responses[200],
     direction: "output",
   },
   {

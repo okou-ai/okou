@@ -46,6 +46,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -235,14 +236,7 @@ internal fun WorkflowScreen(
                             position = positions[route.tab.ordinal],
                             wide = wide,
                             timezone = timezone,
-                            onTab = {
-                                if (it != route.tab) {
-                                    changeRoute(route.copy(tab = it))
-                                    model.detailTabOpened(
-                                        checkConnections = it == WorkflowTab.Automations
-                                    )
-                                }
-                            },
+                            onTab = { if (it != route.tab) changeRoute(route.copy(tab = it)) },
                             onEdit = { model.edit(detail.editableInstructions()) },
                             onNewRule = {
                                 model.edit(WorkflowEdit.Rule(null, RuleFields(timezone = timezone)))
@@ -254,6 +248,7 @@ internal fun WorkflowScreen(
                             onUse = { onUse(detail) },
                             sourceChatAvailable = sourceChatAvailable,
                             onOpenChat = onOpenChat,
+                            onEarlierRuns = model::loadEarlierRuns,
                         )
                 }
             }
@@ -728,16 +723,21 @@ private fun WorkflowDetailPane(
     onUse: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     onOpenChat: (String) -> Unit,
+    onEarlierRuns: () -> Unit,
 ) {
     val padding = if (wide) 32.dp else 20.dp
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    // An empty loading layout must not clamp the saved position of a long history.
+    val listState =
+        if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
+        else position
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         LazyColumn(
             contentWidth.weight(1f),
-            state = position,
+            state = listState,
             contentPadding =
                 PaddingValues(
                     start = padding,
@@ -787,23 +787,44 @@ private fun WorkflowDetailPane(
                     }
                 }
                 WorkflowTab.History -> {
-                    val latest =
-                        detail.automations
-                            .filter { it.lastRunAt != null }
-                            .sortedByDescending { it.lastRunAt }
-                    item {
+                    val history = state.history
+                    item(key = "history_heading") {
                         WorkflowSectionHeader(R.string.workflow_recent_runs)
-                        if (latest.isEmpty())
-                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
                     }
-                    items(latest, key = { it.id }) {
+                    if (history == null) {
+                        item(key = "history_pending") {
+                            WorkflowHistoryPending(state.historyFailure)
+                        }
+                    } else if (history.runs.isEmpty()) {
+                        item(key = "history_empty") {
+                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
+                        }
+                    }
+                    items(history?.runs.orEmpty(), key = { it.id }) { run ->
                         WorkflowHistoryRow(
-                            rule = it,
+                            run = run,
                             timezone = timezone,
                             sourceChatAvailable = sourceChatAvailable,
                             sourceNavigationEnabled = !handoffPending,
                             onOpenChat = onOpenChat,
                         )
+                    }
+                    if (history?.nextCursor != null) {
+                        item(key = "history_earlier") {
+                            TextButton(
+                                onClick = onEarlierRuns,
+                                enabled = !handoffPending && state.historyRead == null,
+                                modifier = Modifier.testTag("workflow_earlier_runs"),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (state.historyRead == WorkflowHistoryRead.Earlier)
+                                            R.string.workflow_history_loading
+                                        else R.string.workflow_history_earlier
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -815,7 +836,13 @@ private fun WorkflowDetailPane(
             )
                 state.connectionReadFeedback()
             else null
-        WorkflowReadFeedback(state.detailFailure.cachedReadFeedback() ?: connectionFeedback)
+        val historyFeedback =
+            state.historyFailure.cachedReadFeedback().takeIf {
+                tab == WorkflowTab.History && state.history != null
+            }
+        WorkflowReadFeedback(
+            state.detailFailure.cachedReadFeedback() ?: historyFeedback ?: connectionFeedback
+        )
         WorkflowUseBar(
             wide = wide,
             enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
