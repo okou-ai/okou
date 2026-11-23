@@ -100,6 +100,6 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
-      webURL: fixture.http.baseURL, thread: thread, didFail: { _ in })
+      webURL: fixture.http.baseURL, threadID: thread?.id, didFail: { _ in })
   }
 }

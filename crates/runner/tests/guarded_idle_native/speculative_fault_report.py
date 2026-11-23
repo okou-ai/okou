@@ -105,12 +105,11 @@ def validate(directory):
             path_error="invalid or replayed speculative private status path",
             receipt_error="speculative fault changed original inputs",
         )
-        history, operation = later.history_operation(
-            waiting, identities, "speculative callback replayed run or resource identity"
+        history, operation, reuse = later.bind_history_operation(
+            waiting, identities, baseline, identity[0],
+            replay_error="speculative callback replayed run or resource identity",
+            binding_error="speculative callback lost original history/reuse binding",
         )
-        reuse = "thread:native-guarded-"+history
-        exact(baseline["idle_sandboxes"], [{"reuse_key": reuse, "sandbox_id": identity[0]}],
-              "speculative callback lost original history/reuse binding")
         started = batch.clock(waiting.get("prepare_started_ns"), events[0]["monotonic_ns"], events[1]["monotonic_ns"])
         rpc = batch.clock(waiting.get("rpc_completed_ns"), started, events[1]["monotonic_ns"])
         raw = history.encode()

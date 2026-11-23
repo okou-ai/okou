@@ -171,6 +171,10 @@ export const suggestionSchema = feedItemBaseSchema.extend({
   content: suggestionContentSchema,
   state: suggestionStateSchema,
   expiresAt: iso.datetime(),
+  // The digest of the stored custom draft, independent of the client's JSON serializer.
+  customContextVersion: string()
+    .regex(/^[a-f0-9]{64}$/u)
+    .optional(),
   consumeToken: string()
     .regex(/^[a-f0-9]{64}$/u)
     .optional(),

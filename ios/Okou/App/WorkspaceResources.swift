@@ -26,6 +26,9 @@ final class WorkspaceResources {
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let projects: WorkspaceRead<[ChatProject]>
   private let sidebarDrafts: WorkspaceRead<Set<String>>
+  private let feedSummary: WorkspaceRead<Bool>
+  private let feedItems: WorkspaceRead<[ForYouCard]>
+  var forYouSummary: Computed<Task<Bool, Error>> { feedSummary.value }
   var featureSwitches: Computed<Task<SidebarFeatureSwitches, Error>> { features.value }
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
@@ -62,6 +65,13 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
+    let feed = ForYouFeed(client: client)
+    feedSummary = WorkspaceRead(
+      "For you summary", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: feed.hasUnread)
+    feedItems = WorkspaceRead(
+      "For you items", sleep: sleep, lifetime: lifetime, lifecycleTasks: lifecycleTasks,
+      read: feed.cards)
     let featureValue = features.value
     let projectReadiness: (@MainActor () async throws -> Void)?
     if let projectBootstrap {
@@ -148,6 +158,15 @@ final class WorkspaceResources {
     return try store.get(catalog.value)
   }
 
+  func loadForYou() async throws -> [ForYouCard] {
+    try store.set(feedItems.reload)
+    return try await store.get(feedItems.value).value
+  }
+
+  func refreshForYouSummary() throws {
+    try store.set(feedSummary.reload)
+  }
+
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     try store.set(invalidateReads, changes)
   }
@@ -167,6 +186,8 @@ final class WorkspaceResources {
   func close() {
     modelBootstrap?.close()
     projectBootstrap?.close()
+    feedSummary.close()
+    feedItems.close()
     preference.close()
     available.close()
     catalog.close()

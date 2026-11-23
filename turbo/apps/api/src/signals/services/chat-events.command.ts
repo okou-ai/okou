@@ -2603,33 +2603,6 @@ const prepareNormalSendContext$ = command(
     if (!request.bootstrap) {
       waitUntil(settle(get(context.executionPackageSources$)));
     }
-    const existing = await existingRead;
-    signal.throwIfAborted();
-    if (request.body.threadId !== undefined && !existing) {
-      return notFound("Chat thread not found");
-    }
-    set(preloadAgentRunContext$, context, signal);
-    const prepared = await set(
-      authorizeNormalSend$,
-      { ...args, existing: existing ?? undefined, chatRunSource },
-      signal,
-    );
-    if ("status" in prepared) {
-      return prepared;
-    }
-    if (attachmentRecords?.voiceIds.length) {
-      const voiceError = await set(
-        validateIncomingVoiceClips$,
-        args,
-        context,
-        attachmentRecords,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (voiceError) {
-        return voiceError;
-      }
-    }
     const host =
       args.body.computerUseHostId && args.body.cloudBrowserEnabled !== true
         ? settleIncludingAbort(() => {
@@ -2651,6 +2624,12 @@ const prepareNormalSendContext$ = command(
     if (host) {
       waitUntil(host);
     }
+    const existing = await existingRead;
+    signal.throwIfAborted();
+    if (request.body.threadId !== undefined && !existing) {
+      return notFound("Chat thread not found");
+    }
+    set(preloadAgentRunContext$, context, signal);
     const revocation =
       existing && args.body.revokesEventId
         ? settleIncludingAbort(() => {
@@ -2673,6 +2652,27 @@ const prepareNormalSendContext$ = command(
         : undefined;
     if (revocation) {
       waitUntil(revocation);
+    }
+    const prepared = await set(
+      authorizeNormalSend$,
+      { ...args, existing: existing ?? undefined, chatRunSource },
+      signal,
+    );
+    if ("status" in prepared) {
+      return prepared;
+    }
+    if (attachmentRecords?.voiceIds.length) {
+      const voiceError = await set(
+        validateIncomingVoiceClips$,
+        args,
+        context,
+        attachmentRecords,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (voiceError) {
+        return voiceError;
+      }
     }
     return {
       ...prepared,

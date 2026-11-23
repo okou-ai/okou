@@ -41,7 +41,7 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("enables three-point timing only for Bingjie's user ID across workspaces", () => {
+  it("keeps three-point timing enabled for Bingjie's user ID across workspaces", () => {
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
     for (const orgId of [
@@ -64,17 +64,34 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("rejects three-point timing opt-ins outside the user-only rollout", () => {
+  it("enables three-point timing in staff workspaces and honors personal overrides", () => {
+    const key = FeatureSwitchKey.ArtifactThreePointTiming;
+    for (const identity of [
+      { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+    ]) {
+      expect(isFeatureSwitchAvailable(key, identity)).toBe(true);
+      expect(isFeatureEnabled(key, identity)).toBe(true);
+      expect(getAllFeatureStates(identity)[key]).toBe(true);
+      for (const enabled of [false, true]) {
+        const context = { ...identity, overrides: { [key]: enabled } };
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+    }
+  });
+
+  it("rejects three-point timing opt-ins outside its rollout audience", () => {
     const key = FeatureSwitchKey.ArtifactThreePointTiming;
     for (const identity of [
       {},
       { email: "bingjie@okou.ai" },
       { userId: "external-user", orgId: "external-org" },
-      { userId: "staff-colleague", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "staff-colleague" },
       {
         userId: "staff-colleague",
-        email: "bingjie@okou.ai",
-        orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+        email: "ethan@okou.ai",
+        orgId: "external-org",
       },
     ]) {
       expect(isFeatureSwitchAvailable(key, identity)).toBe(false);
