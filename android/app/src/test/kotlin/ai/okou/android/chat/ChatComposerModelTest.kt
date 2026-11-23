@@ -18,6 +18,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ApplicationProvider
 import java.io.IOException
+import kotlin.time.Duration.Companion.days
+import kotlin.time.TestTimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -110,6 +112,7 @@ class ChatComposerModelTest {
 
     private fun check(
         blockedDisk: Boolean = false,
+        sendClock: TestTimeSource = TestTimeSource(),
         action:
             suspend TestScope.(
                 Service,
@@ -125,6 +128,7 @@ class ChatComposerModelTest {
                 ApplicationProvider.getApplicationContext(),
                 if (blockedDisk) temporary.newFile() else temporary.newFolder(),
                 dispatcher,
+                sendClock,
             )
         val owners = mutableListOf<ViewModelStore>()
         fun model(replace: Boolean, scope: WorkspaceIdentity): ChatComposerModel {
@@ -450,7 +454,7 @@ class ChatComposerModelTest {
     }
 
     @Test
-    fun newProjectSubmissionIsDurableBeforeDispatchAndMovesNewerEditsAtomically() =
+    fun newProjectSubmissionStaysInMemoryAndMovesNewerEditsAtomically() =
         check { service, store, create ->
             val target = ComposerTarget(projectId = CHAT_PROJECT)
             val first = create(false, identity)
@@ -462,7 +466,7 @@ class ChatComposerModelTest {
             service.create = { request ->
                 val disk = store.load(identity)
                 assertTrue(disk.durable)
-                assertEquals(request, disk.journal.entries[target.key]!!.pending!!.create)
+                assertNull(disk.journal.entries[target.key]?.pending)
                 CreatedThread(
                     checkNotNull(request.clientThreadId),
                     request.projectId,
@@ -475,7 +479,7 @@ class ChatComposerModelTest {
             service.write = { request ->
                 val disk = store.load(identity)
                 assertTrue(disk.durable)
-                assertEquals(request, disk.journal.entries[target.key]!!.pending!!.send)
+                assertNull(disk.journal.entries[target.key]?.pending)
                 gate.await()
                 AcceptedInput(checkNotNull(request.threadId))
             }
@@ -505,144 +509,153 @@ class ChatComposerModelTest {
         }
 
     @Test
-    fun unavailableReadNeverReplaysAndExplicitRecoveryKeepsTheExactFrozenRequest() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "immutable submission")
-            service.write = { request ->
-                service.accepted[checkNotNull(request.clientEventId)] = request
-                throw ApiFailure.Network(IOException("response disconnected after acceptance"))
-            }
-            model.send(existing)
-            runCurrent()
-            val frozen = service.requests.single()
-            model.edit(existing, "next draft")
-            model = create(true, identity.copy(sessionId = "renewed"))
-            model.open(existing)
-            runCurrent()
-            service.read = { thread, event -> InputObservation(thread, event, null) }
-            model.observe(existing)
-            runCurrent()
-            assertEquals(1, service.requests.size)
-            assertEquals(frozen, model.uiState.value.entry(existing).pending!!.send)
-            val restored = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
-            assertEquals(frozen.clientEventId, restored.eventId)
-            assertEquals("immutable submission", restored.text)
-            assertNull(restored.disposition)
-            assertEquals(PendingDelivery.Unconfirmed, restored.pendingDelivery)
-            assertTrue(existing.key in model.uiState.value.unobserved)
-            service.write = { request ->
-                assertEquals(frozen, request)
-                assertEquals(frozen, service.accepted[request.clientEventId])
-                AcceptedInput(checkNotNull(request.threadId))
-            }
-            model.retry(existing)
-            runCurrent()
-            assertEquals(2, service.requests.size)
-            assertEquals(1, service.accepted.size)
-            assertEquals("next draft", model.uiState.value.entry(existing).text)
+    fun lostAcceptanceIsReadBackBeforeAnyRetry() = check { service, store, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "immutable submission")
+        service.write = { throw ApiFailure.Network(IOException("lost response")) }
+        model.send(existing)
+        runCurrent()
+        val frozen = service.requests.single()
+        assertNull(store.load(identity).journal.entries[existing.key]?.pending)
+        model.edit(existing, "next draft")
+        service.read = { thread, event ->
+            assertEquals(frozen.clientEventId, event)
+            InputObservation(thread, event, TextDisposition.Queued)
         }
+        advanceTimeBy(2_999)
+        runCurrent()
+        assertEquals(
+            PendingDelivery.Sending,
+            model.uiState.value
+                .messagesFor(checkNotNull(existing.threadId))
+                .single()
+                .pendingDelivery,
+        )
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(1, service.requests.size)
+        assertEquals(
+            TextDisposition.Queued,
+            model.uiState.value.entry(existing).receipt!!.disposition,
+        )
+        assertEquals("next draft", model.uiState.value.entry(existing).text)
+    }
 
     @Test
-    fun authoritativeRejectionSettlesOnlyOriginalInputAndPreservesTheNextDraft() =
-        check { service, _, create ->
+    fun unavailableStatusRetriesFrozenRequestsAtTheDesignIntervals() = check { service, _, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "retry original")
+        service.write = { throw ApiFailure.Network(IOException("lost response")) }
+        service.read = { thread, event -> InputObservation(thread, event, null) }
+        model.send(existing)
+        runCurrent()
+        val frozen = service.requests.single()
+        for ((index, seconds) in listOf(3L, 3L, 6L, 12L, 24L, 48L, 48L).withIndex()) {
+            advanceTimeBy(seconds * 1_000 - 1)
+            runCurrent()
+            assertEquals(index + 1, service.requests.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(index + 2, service.requests.size)
+            assertEquals(frozen, service.requests.last())
+        }
+    }
+
+    @Test
+    fun expiredDeduplicationWindowOnlyChecksTheOriginalInput() {
+        val clock = TestTimeSource()
+        check(sendClock = clock) { service, _, create ->
             val model = create(false, identity)
             model.open(existing)
             runCurrent()
-            model.edit(existing, "submitted")
-            service.write = { throw ApiFailure.Network(IOException("lost")) }
-            model.send(existing)
-            runCurrent()
-            model.edit(existing, "later edit")
+            model.edit(existing, "retained request")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            var reads = 0
             service.read = { thread, event ->
-                InputObservation(thread, event, TextDisposition.Rejected)
+                reads++
+                InputObservation(thread, event, null)
             }
-            model.observe(existing)
+            model.send(existing)
             runCurrent()
+            clock += 30.days
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(2, reads)
+            assertEquals(1, service.requests.size)
+        }
+    }
+
+    @Test
+    fun definitiveRejectionClearsPendingAndPreservesANewerDraft() = check { service, _, create ->
+        val model = create(false, identity)
+        model.open(existing)
+        runCurrent()
+        model.edit(existing, "submitted")
+        val response = service.gate()
+        service.write = {
+            response.await()
+            throw ApiFailure.Http(422, null, null, null)
+        }
+        model.send(existing)
+        runCurrent()
+        model.edit(existing, "later edit")
+        response.complete(Unit)
+        runCurrent()
+        assertNull(model.uiState.value.entry(existing).pending)
+        assertEquals("later edit", model.uiState.value.entry(existing).text)
+        val rejected = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
+        assertEquals("submitted", rejected.text)
+        assertEquals(TextDisposition.Rejected, rejected.disposition)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(1, service.requests.size)
+    }
+
+    @Test
+    fun processRestartLoadsTheDraftWithoutReplayingThePendingSend() =
+        check { service, store, create ->
+            var model = create(false, identity)
+            model.open(existing)
+            runCurrent()
+            model.edit(existing, "in-flight")
+            service.write = { throw ApiFailure.Network(IOException("lost response")) }
+            model.send(existing)
+            runCurrent()
+            model.edit(existing, "newer draft")
+            runCurrent()
+            assertNull(store.load(identity).journal.entries[existing.key]?.pending)
+            model = create(true, identity)
+            model.open(existing)
+            runCurrent()
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(1, service.requests.size)
             assertNull(model.uiState.value.entry(existing).pending)
-            assertEquals(
-                TextDisposition.Rejected,
-                model.uiState.value.entry(existing).receipt!!.disposition,
-            )
-            assertEquals("later edit", model.uiState.value.entry(existing).text)
-            val rejected = model.uiState.value.messagesFor(checkNotNull(existing.threadId)).single()
-            assertEquals("submitted", rejected.text)
-            assertEquals(TextDisposition.Rejected, rejected.disposition)
-            assertEquals(1, service.requests.size)
+            assertEquals("newer draft", model.uiState.value.entry(existing).text)
         }
 
     @Test
-    fun retirementBeforeDispatchDoesNotWriteRemotelyOrLoseTheFrozenInput() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "kept before dispatch")
-            model.send(existing)
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            assertTrue(service.requests.isEmpty())
-            assertEquals(
-                "kept before dispatch",
-                model.uiState.value.entry(existing).pending!!.send.prompt,
-            )
-            model.retry(existing)
-            runCurrent()
-            assertEquals(1, service.requests.size)
-        }
-
-    @Test
-    fun uncancellableOldResponseCannotSettleAReplacementEditorsNewInput() =
-        check { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            val gate = service.gate()
-            service.write = { request ->
-                withContext(NonCancellable) {
-                    gate.await()
-                    AcceptedInput(checkNotNull(request.threadId))
-                }
-            }
-            model.edit(existing, "old message")
-            model.send(existing)
-            runCurrent()
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "replacement draft")
-            gate.complete(Unit)
-            runCurrent()
-            assertEquals("replacement draft", model.uiState.value.entry(existing).text)
-            assertNotNull(model.uiState.value.entry(existing).pending)
-            assertNull(model.uiState.value.entry(existing).receipt)
-        }
-
-    @Test
-    fun failedDiskNeverAuthorizesDispatchAndReplacementRetainsBothInputs() =
-        check(blockedDisk = true) { service, _, create ->
-            var model = create(false, identity)
-            model.open(existing)
-            runCurrent()
-            model.edit(existing, "frozen on failed storage")
-            model.send(existing)
-            model.edit(existing, "newer unsaved draft")
-            runCurrent()
-            assertTrue(service.requests.isEmpty())
-            assertEquals(ComposerPersistence.Failed, model.uiState.value.persistence)
-            model = create(true, identity)
-            model.open(existing)
-            runCurrent()
-            assertEquals("newer unsaved draft", model.uiState.value.entry(existing).text)
-            assertEquals(
-                "frozen on failed storage",
-                model.uiState.value.entry(existing).pending!!.send.prompt,
-            )
-            assertFalse(model.uiState.value.canSend(existing))
-        }
+    fun lostCreateResponseReusesTheOriginalThreadAndEventIds() = check { service, _, create ->
+        val target = ComposerTarget(projectId = CHAT_PROJECT)
+        val model = create(false, identity)
+        model.open(target)
+        runCurrent()
+        val successfulCreate = service.create
+        service.create = { throw ApiFailure.Network(IOException("lost create response")) }
+        model.edit(target, "first prompt")
+        model.send(target)
+        runCurrent()
+        val creation = service.creates.single()
+        service.create = successfulCreate
+        advanceTimeBy(3_000)
+        runCurrent()
+        assertEquals(listOf(creation, creation), service.creates)
+        assertEquals(creation.clientThreadId, service.requests.single().threadId)
+    }
 
     @Test
     fun anOlderReceiptsHeldReadCannotBlockOrOverwriteTheNextSend() = check { service, _, create ->
