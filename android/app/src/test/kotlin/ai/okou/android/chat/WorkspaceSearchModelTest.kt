@@ -209,7 +209,8 @@ class WorkspaceSearchModelTest {
             advanceTimeBy(60_000)
             assertEquals(4, requests)
 
-            model.update("launch", WorkspaceSearchType.Messages, retryFailed = true)
+            model.update("launch", WorkspaceSearchType.Messages, visible = false)
+            model.update("launch", WorkspaceSearchType.Messages)
             advanceTimeBy(300)
             runCurrent()
             assertEquals(5, requests)

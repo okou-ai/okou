@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -287,9 +288,9 @@ internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
 }
 
 @Composable
-internal fun ChatListSkeleton() {
-    val label = stringResource(R.string.chat_loading)
-    Column(Modifier.semantics { this.contentDescription = label }) {
+internal fun ChatListSkeleton(@StringRes loadingLabel: Int = R.string.chat_loading) {
+    val label = stringResource(loadingLabel)
+    Column(Modifier.semantics { contentDescription = label }) {
         val widths = listOf(.56f, .70f, .44f)
         repeat(6) { index ->
             Box(

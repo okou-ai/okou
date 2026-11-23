@@ -176,19 +176,6 @@ internal constructor(
         }
     }
 
-    internal fun retrySearchCatalog() {
-        if (
-            searchingCatalog &&
-                authorized() &&
-                foreground &&
-                mutable.value.catalogFailure == WorkflowReadFailure.RefreshFailed &&
-                catalogRead.job?.isActive != true
-        ) {
-            mutable.value = mutable.value.copy(catalogFailure = null)
-            refresh(catalogScope)
-        }
-    }
-
     internal fun foregroundChanged(resumed: Boolean) {
         if (foreground == resumed) return
         foreground = resumed
