@@ -60,6 +60,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failDiscovery = false
     @Volatile var denyDefaultDiscovery = false
     @Volatile var failAccountReads = false
+    @Volatile var denyAccountReads = false
+    @Volatile var denyPermissionReads = false
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -324,6 +326,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 if (slug in unavailableCatalogSlugs) return rejected(404)
                 val entry = entries.find { it.slug == slug } ?: return rejected(404)
                 if (parts.getOrNull(3) == "permissions") {
+                    if (denyPermissionReads) return rejected(403)
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
@@ -375,6 +378,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 )
             }
             path == "/api/connector-accounts/connections" -> {
+                if (denyAccountReads) return rejected(403)
                 if (failAccountReads) return rejected(503)
                 if (
                     querySlug == null ||

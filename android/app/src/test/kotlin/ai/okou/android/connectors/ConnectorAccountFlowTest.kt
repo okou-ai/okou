@@ -9,8 +9,12 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -18,6 +22,7 @@ import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
@@ -193,6 +198,43 @@ class ConnectorAccountFlowTest {
             compose.onNodeWithText(LOAD_WHEN_ONLINE).assertDoesNotExist()
             networkFailure.assertDoesNotExist()
         }
+
+    @Test
+    fun firstAccountReadFailureAnnouncesTheErrorAndKeepsBack() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        fixture.denyAccountReads = true
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val error = "Could not load accounts."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("connector-gmail").assertIsDisplayed()
+    }
+
+    @Test
+    fun firstPermissionReadFailureAnnouncesTheErrorAndKeepsClose() = withDirectory { fixture, _ ->
+        awaitText("Gmail")
+        compose.onNodeWithTag("connector-gmail").performClick()
+        val permissions = "Permissions this service can request"
+        awaitText(permissions)
+        fixture.denyPermissionReads = true
+        compose.onNodeWithText(permissions).performClick()
+        val error = "Could not load permissions."
+        awaitText(error)
+        compose
+            .onNodeWithText(error)
+            .assertWidthIsAtLeast(300.dp)
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithText("Close").performClick()
+        compose.onNodeWithText(permissions).assertIsDisplayed()
+    }
 
     @Test
     fun unavailableServicePermissionPanelCanCloseAfterItsLaunchControlDisappears() =
