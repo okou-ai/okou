@@ -190,12 +190,20 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
                 if (!wide) ConnectorTopBar(stringResource(R.string.connector_title), ::back)
                 val matchingState = state.takeIf { it.slug == selected }
                 val entry =
-                    remember(state.browse.data, state.matches, state.connected.data, selected) {
-                        state.browse.data?.entries?.find { it.slug == selected }
-                            ?: state.matches?.entries?.data?.entries?.find { it.slug == selected }
-                            ?: state.connected.data?.get(selected)?.let {
-                                ConnectorEntry(selected, it.label, "", null, null)
-                            }
+                    remember(
+                        state.browse.data,
+                        state.matches,
+                        state.connected.data,
+                        route.connected,
+                        selected,
+                    ) {
+                        val catalog =
+                            state.matches?.entries?.data?.entries?.find { it.slug == selected }
+                                ?: state.browse.data?.entries?.find { it.slug == selected }
+                        val connected = state.connected.data?.get(selected)?.entry
+                        if (route.connected && connected != null) {
+                            catalog?.let { it.copy(icon = connected.icon ?: it.icon) } ?: connected
+                        } else catalog ?: connected
                     }
                 key(selected) {
                     ConnectorDetails(
@@ -303,9 +311,9 @@ private fun ConnectorDirectory(
                     connected
                         ?.mapNotNull { (slug, service) ->
                             val entry =
-                                bySlug[slug]
+                                bySlug[slug]?.let { it.copy(icon = service.entry.icon ?: it.icon) }
                                     ?: if (filtered != null) return@mapNotNull null
-                                    else ConnectorEntry(slug, service.label, "", null, null)
+                                    else service.entry
                             if (
                                 entry.matches(query) ||
                                     directory.accountsFor(slug).any { account ->
@@ -647,7 +655,7 @@ private fun ConnectorDirectoryRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ConnectorIcon(entry, large = false, modifier = Modifier.align(Alignment.Top))
+        ConnectorIcon(entry.icon, large = false, modifier = Modifier.align(Alignment.Top))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(entry.name, style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold))
             if (entry.description.isNotBlank()) {
@@ -711,27 +719,6 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                 ),
             color = colors.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-internal fun ConnectorIcon(entry: ConnectorEntry, large: Boolean, modifier: Modifier = Modifier) {
-    val icon =
-        when {
-            entry.slug in setOf("google-calendar", "outlook-calendar", "calendly") ->
-                R.drawable.ic_event
-            entry.slug in setOf("gmail", "outlook-mail", "resend") -> R.drawable.ic_mail
-            entry.category == "meetings-scheduling" -> R.drawable.ic_event
-            entry.category == "docs-files-knowledge" -> R.drawable.ic_folder
-            else -> R.drawable.ic_extension
-        }
-    Box(
-        modifier
-            .size(if (large) 48.dp else 40.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(painterResource(icon), null, Modifier.size(if (large) 24.dp else 20.dp))
     }
 }
 

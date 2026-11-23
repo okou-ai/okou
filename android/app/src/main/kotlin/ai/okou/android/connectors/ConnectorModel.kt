@@ -863,15 +863,15 @@ class ConnectorModel(
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
             val knownServices = state.connected.data
-            val label =
-                state.detail.data?.entry?.takeIf { it.slug == slug }?.name
-                    ?: knownServices?.get(slug)?.label
-                    ?: cached?.detail?.data?.entry?.name
+            val entry =
+                state.detail.data?.entry?.takeIf { it.slug == slug }
+                    ?: knownServices?.get(slug)?.entry
+                    ?: cached?.detail?.data?.entry
             val services =
                 when {
                     knownServices == null -> null
                     accounts.isEmpty() -> knownServices - slug
-                    label != null -> knownServices + (slug to ConnectedService(label, accounts))
+                    entry != null -> knownServices + (slug to ConnectedService(entry, accounts))
                     else -> knownServices
                 }
             state.copy(

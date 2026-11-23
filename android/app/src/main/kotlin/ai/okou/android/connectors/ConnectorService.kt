@@ -97,6 +97,13 @@ internal data class ConnectorEntry(
     val description: String,
     val category: String?,
     val rank: Long?,
+    val icon: ConnectorBrandIcon?,
+)
+
+internal data class ConnectorBrandIcon(
+    val url: HttpUrl,
+    val invertInDarkMode: Boolean,
+    val scale: Float,
 )
 
 internal enum class ConnectorAccountStatus {
@@ -115,7 +122,10 @@ internal data class ConnectorSavedAccount(
     val defaultEnabled: Boolean?,
 )
 
-internal data class ConnectedService(val label: String, val accounts: List<ConnectorSavedAccount>)
+internal data class ConnectedService(
+    val entry: ConnectorEntry,
+    val accounts: List<ConnectorSavedAccount>,
+)
 
 internal data class ConnectorBrowse(val entries: List<ConnectorEntry>, val categories: Set<String>)
 
@@ -177,7 +187,14 @@ class ConnectorService(private val api: ApiClient) {
                 if (target == null || entry.accounts.isEmpty()) return@mapNotNull null
                 target.connectorSlug to
                     ConnectedService(
-                        entry.label,
+                        ConnectorEntry(
+                            target.connectorSlug,
+                            entry.label,
+                            "",
+                            null,
+                            null,
+                            entry.icon?.let { brandIcon(it.url, it.invertInDarkMode, it.scale) },
+                        ),
                         entry.accounts.map { account ->
                             ConnectorSavedAccount(
                                 account.connectionId,
@@ -257,6 +274,7 @@ class ConnectorService(private val api: ApiClient) {
                 connector.description,
                 connector.category,
                 connector.popularityRank,
+                brandIcon(connector.icon.url, connector.icon.invertInDarkMode, connector.icon.scale),
             ),
             connector.authMethods.filter {
                 it.grantKind != ConnectorDetailConnectorAuthMethodsItemGrantKind.MANAGED
@@ -663,7 +681,19 @@ class ConnectorService(private val api: ApiClient) {
 }
 
 private fun ConnectorDiscoveryConnectorsItem.entry() =
-    ConnectorEntry(slug, label, description, category, popularityRank)
+    ConnectorEntry(
+        slug,
+        label,
+        description,
+        category,
+        popularityRank,
+        brandIcon(icon.url, icon.invertInDarkMode, icon.scale),
+    )
+
+private fun brandIcon(url: String, invertInDarkMode: Boolean, scale: Double?): ConnectorBrandIcon? =
+    url.toHttpUrlOrNull()
+        ?.takeIf { it.isHttps && it.username.isEmpty() && it.password.isEmpty() }
+        ?.let { ConnectorBrandIcon(it, invertInDarkMode, scale?.toFloat() ?: 1f) }
 
 private fun identity(vararg values: String?): String? = values.firstOrNull { !it.isNullOrBlank() }
 
