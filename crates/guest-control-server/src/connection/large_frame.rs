@@ -23,6 +23,10 @@ pub(super) const STREAMED_BATCH_MIN_BYTES: usize = 1024 * 1024;
 pub(super) const STREAMED_STORAGE_PAYLOAD_BYTES: RangeInclusive<usize> =
     1024 * 1024..=MAX_INPUT_BYTES;
 
+// Preserve an already allocated decoder buffer across the medium frames
+// newly handled by the streaming receiver.
+pub(super) const STREAMED_STORAGE_BUFFER_REUSE_LIMIT: usize = 4 * 1024 * 1024;
+
 pub(super) fn receive_write(
     reader: &mut impl Read,
     scratch: &mut [u8],
