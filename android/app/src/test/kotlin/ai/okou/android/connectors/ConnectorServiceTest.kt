@@ -44,7 +44,7 @@ class ConnectorServiceTest {
         ConnectorApiFixture().use { fixture ->
             val service = fixture.service
             fixture.omittedFromDefaultBrowse = setOf("slack")
-            val artwork = FixtureConnectorIcon("slack-v1", "", invertInDarkMode = true, scale = 2.2)
+            val artwork = FixtureConnectorIcon("slack-v1", invertInDarkMode = true, scale = 2.2)
             fixture.icons = mapOf("slack" to artwork)
 
             assertFalse(service.discover(null, null).entries.any { it.slug == "slack" })
@@ -54,7 +54,6 @@ class ConnectorServiceTest {
             assertEquals(2.2f, connected.scale, 0f)
             assertEquals(connected, service.discover("slack", null).entries.single().icon)
             assertEquals(connected, service.detail("slack").entry.icon)
-            assertTrue(fixture.iconRequests.isEmpty())
 
             fixture.icons = mapOf("slack" to artwork.copy(asset = "slack-v2", scale = null))
             val updated = checkNotNull(service.detail("slack").entry.icon)

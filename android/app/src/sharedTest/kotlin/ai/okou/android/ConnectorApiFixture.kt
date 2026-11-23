@@ -5,7 +5,6 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.connectors.ConnectorService
 import java.io.Closeable
 import java.net.ConnectException
-import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.serialization.json.Json
@@ -35,7 +34,6 @@ internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
-    val svg: String,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
 )
@@ -45,7 +43,6 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     private val api: ApiClient
     val service: ConnectorService
     @Volatile var icons: Map<String, FixtureConnectorIcon> = emptyMap()
-    val iconRequests = CopyOnWriteArrayList<String>()
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
@@ -99,7 +96,6 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
         add(CatalogEntry("gmail", "Gmail", "查找邮件、整理往来记录和起草回复。", "email", 1))
         add(CatalogEntry("slack", "Slack", "查找团队消息、读取频道并起草更新。", "communication-collaboration", 2))
-        add(CatalogEntry("github", "GitHub", "查看仓库、议题和拉取请求。", "engineering-team-execution", null))
         add(
             CatalogEntry(
                 "google-drive",
@@ -145,20 +141,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) {
-                        if (
-                            request.getHeader("Authorization") != null ||
-                                request.getHeader("Cookie") != null
-                        )
-                            return rejected(400)
-                        val name = url.pathSegments.last().removeSuffix(".svg")
-                        iconRequests += name
-                        val artwork =
-                            icons.values.firstOrNull { it.asset == name } ?: return rejected(404)
-                        return MockResponse()
-                            .setHeader("Content-Type", "image/svg+xml")
-                            .setBody(artwork.svg)
-                    }
+                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
