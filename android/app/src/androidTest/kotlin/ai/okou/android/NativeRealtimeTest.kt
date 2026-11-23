@@ -188,18 +188,14 @@ class NativeRealtimeTest {
                     )
                 if (!matched) throw AssertionError(diagnostics())
             }
+            val stopAction = By.pkg(app.packageName).desc(app.getString(R.string.controls_stop))
             fun clickStop() {
                 step = "Locate enabled Stop button"
                 val button =
                     checkNotNull(
                         device.wait(
                             Until.findObject(
-                                By.pkg(app.packageName)
-                                    .clickable(true)
-                                    .enabled(true)
-                                    .hasDescendant(
-                                        label(app.getString(R.string.conversation_stop)),
-                                    ),
+                                stopAction,
                             ),
                             10_000,
                         ),
@@ -574,7 +570,6 @@ class NativeRealtimeTest {
                     !device.hasObject(label(app.getString(R.string.composer_sync_saving))) &&
                     !device.hasObject(label(app.getString(R.string.composer_unconfirmed)))
             }
-            reveal(app.getString(R.string.conversation_stop))
             clickStop()
             condition("Single interrupt reaches transport while the response is held") {
                 controlPosts.get() == 1 &&
@@ -583,21 +578,15 @@ class NativeRealtimeTest {
                     controls?.uiState?.value?.phases?.values?.singleOrNull() ==
                         RunControlPhase.Sending
             }
-            text(app.getString(R.string.controls_stopping))
-            assertFalse(device.hasObject(label(app.getString(R.string.conversation_processing))))
-            controlResponse.countDown()
-            condition("Ambiguous interrupt response publishes Unknown") {
-                controls?.uiState?.value?.phases?.values?.singleOrNull() == RunControlPhase.Unknown
+            condition("Only the Stop action leaves the running layout") {
+                !device.hasObject(stopAction)
             }
+            reveal(app.getString(R.string.conversation_processing))
+            assertFalse(device.hasObject(label(app.getString(R.string.controls_stop_failed))))
             assertEquals(
                 activeRun,
                 interrupted.get()!!.getValue("interruptsRunId").jsonPrimitive.content,
             )
-            // The fixed operation row replaces Stop in a regular window until it can be verified.
-            text(app.getString(R.string.controls_stop_unknown))
-            text(app.getString(R.string.controls_check))
-            assertFalse(device.hasObject(label(app.getString(R.string.conversation_stop))))
-            device.waitForIdle()
             scenario.onActivity {
                 assertEquals(1, controls?.uiState?.value?.journal?.pending?.size)
             }
@@ -606,6 +595,7 @@ class NativeRealtimeTest {
                 external.snapshot.value.copy(phase = RealtimePhase.Unavailable)
             condition { chats?.updates?.phase?.value == RealtimePhase.Unavailable }
             publishControl.set(true)
+            controlResponse.countDown()
             external.snapshot.value =
                 external.snapshot.value.copy(
                     phase = RealtimePhase.Connected,
@@ -613,7 +603,6 @@ class NativeRealtimeTest {
                     changes = ChatChanges(resync = true),
                 )
             condition { controls?.uiState?.value?.journal?.pending?.isEmpty() == true }
-            text(app.getString(R.string.controls_recovering))
             reveal(app.getString(R.string.history_cancelled))
             assertEquals(1, controlPosts.get())
             assertTrue(
@@ -688,9 +677,7 @@ class NativeRealtimeTest {
             try {
                 val button =
                     device.findObject(
-                        By.pkg(app.packageName)
-                            .clickable(true)
-                            .hasDescendant(By.text(app.getString(R.string.conversation_stop))),
+                        By.pkg(app.packageName).desc(app.getString(R.string.controls_stop)),
                     )
                 val summary =
                     diagnostics() +

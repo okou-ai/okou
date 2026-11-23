@@ -718,15 +718,14 @@ class ChatComposerRootTest {
             assertEquals(input.getValue("threadId"), request.getValue("threadId"))
             assertEquals(eventId, request.getValue("revokesEventId").jsonPrimitive.content)
             assertEquals(1, app.fixture.inputs.size)
-            messageText(eventId, app.getString(R.string.conversation_withdrawing))
-                .assertIsDisplayed()
+            compose.onNodeWithTag("message_$eventId").assertDoesNotExist()
         } finally {
             releaseList.countDown()
         }
     }
 
     @Test
-    fun confirmedWithdrawalRemovesOnlyItsCardWhileOlderHistoryIsHeld() {
+    fun pendingWithdrawalRemovesOnlyItsCardAndTransfersFocusBeforeHistoryReturns() {
         val app = compose.activity.application as ComposerRootApplication
         val api = app.fixture.chats
         val manualId = UUID.randomUUID().toString()
@@ -831,15 +830,9 @@ class ChatComposerRootTest {
             compose.runOnIdle { ready.chats.history.refresh() }
             awaitConversation { historyRequested.count == 0L }
             withdraw.performClick()
-            val checkOutcome = compose.onNodeWithText(app.getString(R.string.controls_check))
-            compose.waitUntilExactlyOneExists(
-                hasText(app.getString(R.string.controls_check)),
-                10_000,
-            )
-            compose.onNodeWithTag("message_$manualId").assertIsFocused()
-            messageText(manualId, manualText).assertIsDisplayed()
+            compose.onNodeWithTag("message_$manualId").assertDoesNotExist()
             messageText(automationId, workflowName).assertIsDisplayed()
-            checkOutcome.assertIsEnabled().performClick()
+            compose.onNodeWithTag("message_$automationId").assertIsFocused()
             awaitConversation {
                 ready.controls.uiState.value.journal?.pending?.isEmpty() == true
             }

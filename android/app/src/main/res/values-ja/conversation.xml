@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_run_queued">開始待ち</string>
     <string name="conversation_welcome">今日は何を進めますか？</string>
     <string name="conversation_welcome_detail">やりたいことを Okou に伝えましょう。</string>
     <string name="conversation_jump_latest">最新に戻る</string>
@@ -16,13 +17,8 @@
     <string name="conversation_queue">キュー</string>
     <string name="conversation_queue_automation">ワークフローの自動化</string>
     <string name="conversation_skip_automation">今回の自動化をスキップ</string>
-    <string name="conversation_withdrawing">取り消し中…</string>
-    <string name="conversation_skipping">スキップ中…</string>
-    <string name="conversation_withdraw_unknown">取り消し結果を確認する必要があります</string>
-    <string name="conversation_skip_unknown">スキップ結果を確認する必要があります</string>
-    <string name="conversation_withdraw_failed">取り消せませんでした</string>
-    <string name="conversation_skip_failed">スキップできませんでした</string>
-    <string name="conversation_stop">停止</string>
+    <string name="conversation_withdraw_failed">メッセージを取り消せませんでした</string>
+    <string name="conversation_skip_failed">自動化をスキップできませんでした</string>
     <string name="conversation_find">メッセージを検索</string>
     <string name="conversation_find_turns">やり取りを表示</string>
     <string name="conversation_find_empty">検索できるメッセージがありません</string>

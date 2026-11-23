@@ -41,6 +41,8 @@ data class RunControlsState(
     val notice: RunControlNotice? = null,
     internal val settledQueueInputs: Map<String, Set<String>> = emptyMap(),
     internal val settledRuns: Map<String, Set<String>> = emptyMap(),
+    internal val optimistic: Set<String> = emptySet(),
+    internal val actionFailures: List<RunControlIntent> = emptyList(),
 )
 
 fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
@@ -119,6 +121,9 @@ class RunControlsModel(
 
     internal fun checkIntent(threadId: String, intentId: String) =
         owner.check(connection, threadId, intentId = intentId)
+
+    internal fun consumeActionFailure(intent: RunControlIntent) =
+        owner.consumeActionFailure(connection, intent)
 
     fun refreshRecovery(threadId: String) {
         if (connection.current() && history.uiState.value.thread?.id == threadId)

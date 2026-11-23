@@ -28,8 +28,10 @@ import ai.okou.android.chat.ConversationFindVisit
 import ai.okou.android.chat.ConversationLink
 import ai.okou.android.chat.ConversationLinkPosition
 import ai.okou.android.chat.ConversationLinkSource
+import ai.okou.android.chat.ConversationOffline
 import ai.okou.android.chat.ConversationRoute
-import ai.okou.android.chat.ConversationStatus
+import ai.okou.android.chat.ConversationStopButton
+import ai.okou.android.chat.ConversationStopPlacement
 import ai.okou.android.chat.ConversationToolbarActions
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
@@ -1151,6 +1153,7 @@ internal fun OkouApp(
             is WorkspaceTarget.NewChat -> createdId
             else -> null
         }
+    val stopPlacement = remember(controlThreadId) { ConversationStopPlacement() }
     val runActions =
         if (
             settings == null &&
@@ -1218,7 +1221,9 @@ internal fun OkouApp(
     }
     val detailActions =
         @Composable {
-            if (shortConversation) ConversationStatus(list.offline, runActions, short = true)
+            if (shortConversation && list.offline) ConversationOffline(short = true)
+            if (!stopPlacement.inline && !list.offline && runActions?.currentRunId != null)
+                ConversationStopButton(runActions, stopPlacement, inline = false)
             ConversationToolbarActions(
                 state = listState.value,
                 thread = thread,
@@ -1698,6 +1703,7 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 realtime = chats.updates.takeIf { workspaceReady },
                                                 controls = runActions,
+                                                stopPlacement = stopPlacement,
                                                 showComposerStatus =
                                                     !shortConversation &&
                                                         composerTarget != null &&
@@ -1821,6 +1827,7 @@ internal fun OkouApp(
                                                     realtime =
                                                         chats.updates.takeIf { workspaceReady },
                                                     controls = runActions,
+                                                    stopPlacement = stopPlacement,
                                                     showComposerStatus =
                                                         !shortConversation &&
                                                             createdId == null &&
@@ -1848,12 +1855,12 @@ internal fun OkouApp(
                                                 composer != null
                                         ) {
                                             Column(contentWidth.fillMaxWidth()) {
-                                                if (!shortConversation && provisionalId == null)
-                                                    ConversationStatus(
-                                                        list.offline,
-                                                        null,
-                                                        short = false,
-                                                    )
+                                                if (
+                                                    !shortConversation &&
+                                                        provisionalId == null &&
+                                                        list.offline
+                                                )
+                                                    ConversationOffline(short = false)
                                                 conversations.Content(newTarget.key) {
                                                     ChatComposerField(
                                                         composer,

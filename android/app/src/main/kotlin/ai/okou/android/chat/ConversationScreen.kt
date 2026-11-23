@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -27,6 +28,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,6 +52,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -96,6 +100,7 @@ internal fun ConversationRoute(
     realtime: ChatUpdatesModel? = null,
     controls: ConversationRunControls? = null,
     showComposerStatus: Boolean = false,
+    stopPlacement: ConversationStopPlacement? = null,
     artifactActions: ChatArtifactActions? = null,
     findTarget: ConversationFindTarget? = null,
     linkPosition: ConversationLinkPosition? = null,
@@ -117,15 +122,13 @@ internal fun ConversationRoute(
         }
     val thread = state.thread?.takeIf { historyAvailable && it.id == threadId }
     val transcript = state.transcript.takeIf { thread != null }
-    val settledQueueInputs = controls?.settledQueueInputs.orEmpty()
+    val hiddenQueueInputs = controls?.hiddenQueueInputs.orEmpty()
     val presentation =
-        remember(transcript, output, threadId, localMessages, settledQueueInputs) {
-            conversationContent(transcript, output, threadId, localMessages, settledQueueInputs)
+        remember(transcript, output, threadId, localMessages, hiddenQueueInputs) {
+            conversationContent(transcript, output, threadId, localMessages, hiddenQueueInputs)
         }
     val content = presentation.messages
     val queue = presentation.queue
-    val queueIds = remember(queue) { queue.mapTo(hashSetOf()) { it.message.id } }
-    val showControlFeedback = controls?.hasFeedback == true
     val hasContent = transcript != null || content.isNotEmpty() || queue.isNotEmpty()
     val missing = thread != null && state.phase == HistoryPhase.Missing
     val firstReadFailed = !hasContent && thread != null && state.initialReadFailed
@@ -165,13 +168,12 @@ internal fun ConversationRoute(
             else -> null
         }
     val activeRun = controls?.currentRunId ?: transcript?.activeRunId
-    val execution =
-        transcript?.execution?.takeUnless {
-            list.offline || missing || controls?.suppressRunActivity == true
-        }
+    val execution = transcript?.execution?.takeUnless { list.offline || missing }
     val activity =
-        R.string.conversation_processing.takeIf {
-            execution == HistoryExecution.Running && content.isNotEmpty()
+        when (execution) {
+            HistoryExecution.Running -> R.string.conversation_processing
+            HistoryExecution.Queued -> R.string.conversation_run_queued
+            else -> null
         }
     val activeMessage =
         remember(content, activeRun) {
@@ -211,7 +213,7 @@ internal fun ConversationRoute(
             (state.consecutiveReadFailures >= 3 ||
                 (syncDelay == 0L || syncDelayReached) &&
                     activity == null &&
-                    !showControlFeedback &&
+                    controls?.storageFailed != true &&
                     queue.isEmpty() &&
                     content.none { it.preview?.pendingDelivery != null })
     val feedback: @Composable (() -> Unit)? =
@@ -302,6 +304,43 @@ internal fun ConversationRoute(
             else emptySet()
         val runningFrame = rememberRunningWaveFrame(position, runningRows)
         val scope = rememberCoroutineScope()
+        val stopSnackbar = remember { SnackbarHostState() }
+        val stopFeedbackVisible = stopSnackbar.currentSnackbarData != null
+        val stopFeedbackBounds =
+            if (stopPlacement != null && stopFeedbackVisible) {
+                DisposableEffect(stopPlacement) {
+                    onDispose { stopPlacement.reportFeedbackTop(null) }
+                }
+                Modifier.onGloballyPositioned {
+                    stopPlacement.reportFeedbackTop(it.boundsInRoot().top)
+                }
+            } else Modifier
+        val failure = controls?.state?.actionFailures?.firstOrNull { it.threadId == threadId }
+        if (visible && failure != null) {
+            val messageId =
+                when (failure.kind) {
+                    RunControlKind.Interrupt ->
+                        R.string.controls_stop_failed.takeIf {
+                            failure.targetId == controls.currentRunId
+                        }
+                    RunControlKind.Revoke ->
+                        queue
+                            .firstOrNull { it.message.id == failure.targetId }
+                            ?.let {
+                                if (it.message.queuedWorkflow == null)
+                                    R.string.conversation_withdraw_failed
+                                else R.string.conversation_skip_failed
+                            }
+                }
+            val message = messageId?.let { stringResource(it) }
+            LaunchedEffect(failure) {
+                if (controls.model.consumeActionFailure(failure) && message != null) {
+                    scope.launch {
+                        stopSnackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                    }
+                }
+            }
+        }
         var restored by remember(linkPosition) { mutableStateOf(false) }
         var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
         var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
@@ -570,7 +609,12 @@ internal fun ConversationRoute(
                                         .padding(top = if (entry.showHeader) 20.dp else 8.dp),
                                 ) {
                                     if (entry.showHeader) ConversationReplyHeader()
-                                    ConversationActivity(entry.label, runningFrame = runningFrame)
+                                    ConversationActivity(
+                                        entry.label,
+                                        runningFrame = runningFrame,
+                                        controls = controls,
+                                        stopPlacement = stopPlacement,
+                                    )
                                 }
                             is ConversationMessage -> {
                                 val highlight =
@@ -636,22 +680,28 @@ internal fun ConversationRoute(
                             ),
                     )
                 }
-                if (jump != null) {
-                    Box(contentWidth.align(Alignment.BottomCenter).fillMaxWidth()) {
-                        ConversationJump(
-                            jump,
-                            modifier =
-                                Modifier.align(
-                                        if (window.height < 480) Alignment.BottomEnd
-                                        else Alignment.BottomCenter,
-                                    )
-                                    .padding(
-                                        bottom = 4.dp,
-                                        end = if (window.height < 480) 12.dp else 0.dp,
-                                    ),
-                            onClick = { scope.launch { position.scrollToItem(0) } },
-                        )
+                Column(
+                    contentWidth.align(Alignment.BottomCenter).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    if (jump != null) {
+                        Box(Modifier.fillMaxWidth()) {
+                            ConversationJump(
+                                jump,
+                                modifier =
+                                    Modifier.align(
+                                            if (window.height < 480) Alignment.BottomEnd
+                                            else Alignment.BottomCenter,
+                                        )
+                                        .padding(
+                                            bottom = if (stopFeedbackVisible) 8.dp else 4.dp,
+                                            end = if (window.height < 480) 12.dp else 0.dp,
+                                        ),
+                                onClick = { scope.launch { position.scrollToItem(0) } },
+                            )
+                        }
                     }
+                    WorkspaceFeedbackHost(stopSnackbar, stopFeedbackBounds.padding(bottom = 8.dp))
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
@@ -672,14 +722,9 @@ internal fun ConversationRoute(
             }
             if (!missing) {
                 Column(contentWidth) {
-                    ConversationStatus(
-                        offline = showComposerStatus && list.offline,
-                        controls = controls,
-                        short = false,
-                        showStop = showComposerStatus,
-                    )
-                    if (controls != null && showControlFeedback)
-                        ConversationControlNotes(controls, queueIds)
+                    if (showComposerStatus && list.offline) ConversationOffline(short = false)
+                    if (controls?.storageFailed == true)
+                        ConversationControlStorageFailure(controls.model::retryLocal)
                     ConversationQueue(queue, controls, timelineFocus)
                 }
             }
