@@ -53,9 +53,9 @@ private fun timezoneOption(
 ): TimezoneOption {
     val zone = TimeZone.getFrozenTimeZone(id)
     if (zone.id == TimeZone.UNKNOWN_ZONE_ID) return TimezoneOption(id, null, null)
+    val canonical = TimeZone.getCanonicalID(id)
     val name =
-        if (isUtcTimezone(TimeZone.getCanonicalID(id))) utcName
-        else names.getExemplarLocationName(id)
+        if (isUtcTimezone(canonical)) utcName else names.getExemplarLocationName(canonical ?: id)
     return TimezoneOption(id, name, zone.getOffset(atMillis) / 60_000)
 }
 

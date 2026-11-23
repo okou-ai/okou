@@ -174,6 +174,18 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
+    fun savedIanaAliasUsesTheLocalizedNameOfItsCanonicalZone() {
+        val saved = "Asia/Kathmandu"
+        val canonical = TimeZone.getCanonicalID(saved)
+        val matching =
+            timezoneOptions(saved, Locale.SIMPLIFIED_CHINESE, "协调世界时").filter {
+                TimeZone.getCanonicalID(it.id) == canonical
+            }
+        assertEquals(saved, matching.single().id)
+        assertEquals("加德满都", matching.single().name)
+    }
+
+    @Test
     fun partialSuggestionsUseTheLinkedChoice() {
         val fixture = app.proactive
         fixture.cardsEnabled = true
