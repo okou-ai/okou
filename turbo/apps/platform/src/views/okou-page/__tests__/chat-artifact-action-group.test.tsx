@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
@@ -6,7 +7,11 @@ import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifac
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { setupPage, click } from "../../../__tests__/page-helper.ts";
+import {
+  setupPage,
+  click,
+  queryAllByRoleFast,
+} from "../../../__tests__/page-helper.ts";
 import {
   assistantRow,
   attachment,
@@ -311,4 +316,58 @@ test("chat-artifact-action-group-014 a failed ownership read still allows the or
     ).toContain(file.url);
   });
   expect(getAction("button", "Close artifact", panel)).toBeEnabled();
+});
+
+test("The owned sidebar offers Delete on More and downloads the original PDF", async () => {
+  const downloads = context.mocks.browser.blobDownload();
+  context.mocks.api(artifactCatalogContract.delete, ({ respond }) => {
+    return respond(200, { deleted: true });
+  });
+  const { panel, file, item } = await page();
+  await ready(panel);
+  const more = await findAction("button", "More artifact actions", panel);
+  click(more);
+  const menu = await screen.findByRole("menu");
+  expect(
+    queryAllByRoleFast("menuitem", menu).map((row) => {
+      return row.textContent?.trim();
+    }),
+  ).toEqual(["Delete"]);
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(menu).not.toBeInTheDocument();
+  });
+  const share = await findAction("button", "Share artifact", panel);
+  click(share);
+  const shareDialog = await screen.findByRole("dialog", { name: /Share/ });
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(shareDialog).not.toBeInTheDocument();
+  });
+  click(await findAction("button", "Download artifact", panel));
+  click(await findNamedMenuItem("Download"));
+  await waitFor(() => {
+    expect(downloads.downloads).toContainEqual(
+      expect.objectContaining({ url: file.url, filename: file.filename }),
+    );
+  });
+  click(more);
+  click(await findNamedMenuItem("Delete"));
+  const prompt = await screen.findByRole("dialog", {
+    name: "Delete " + item.title + "?",
+  });
+  click(await findAction("button", "Cancel", prompt));
+  await waitFor(() => {
+    expect(more).toHaveFocus();
+  });
+  click(more);
+  click(await findNamedMenuItem("Delete"));
+  const confirm = await screen.findByRole("dialog", {
+    name: "Delete " + item.title + "?",
+  });
+  click(await findAction("button", "Delete", confirm));
+  await screen.findByText("Artifact deleted");
+  await waitFor(() => {
+    expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
+  });
 });

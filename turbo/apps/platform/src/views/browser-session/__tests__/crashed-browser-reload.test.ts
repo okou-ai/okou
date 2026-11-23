@@ -83,3 +83,58 @@ test("browser-page-crash-003 A crash on the separate image channel stays unavail
     })?.url,
   ).toBe(next);
 });
+
+test.each([
+  ["browser-page-crash-005", "delivered"],
+  ["Withheld control", "withheld"],
+] as const)(
+  "%s Reload keeps the recovered tab navigable with the old frame tree %s",
+  async (_label, delivery) => {
+    const viewer = scopedViewer(context);
+    const { cdp, first } = viewer;
+    const oldFrame = cdp.holdNext("Page.getFrameTree", first);
+    await viewer.openPage();
+    await oldFrame.received;
+    const connection = [...cdp.requests].reverse().find((request) => {
+      return request.method === "Page.getFrameTree";
+    })?.connectionId;
+    expect(connection).toBeDefined();
+    cdp.event("Inspector.targetCrashed", {}, cdp.pageSession(first));
+    await screen.findByText("Browser view unavailable");
+    expect(input()).toBeDisabled();
+    click(reload());
+    await expectStreamingAt(firstUrl);
+    const recovered = "https://survey.example/resumed";
+    await navigate(recovered);
+    if (delivery === "delivered") {
+      const receipt = context.mocks.deferred<void>();
+      await oldFrame.release(
+        {
+          frameTree: {
+            frame: {
+              id: "example-frame",
+              loaderId: "retired-loader",
+              url: "https://retired.example/old-document",
+            },
+          },
+        },
+        () => {
+          if (!receipt.settled()) {
+            receipt.resolve();
+          }
+        },
+      );
+      await receipt.promise;
+    }
+    expect(screen.getByLabelText("Address")).toHaveValue(recovered);
+    expect(input()).toBeEnabled();
+    expect(
+      [...cdp.requests].reverse().find((request) => {
+        return (
+          request.method === "Page.navigate" &&
+          request.params?.url === recovered
+        );
+      })?.connectionId,
+    ).toBe(connection);
+  },
+);

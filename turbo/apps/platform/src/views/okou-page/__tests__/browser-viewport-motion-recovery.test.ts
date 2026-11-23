@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -162,4 +162,42 @@ test("chat-navigation-browser-012 Narrow Page 12 admission releases after both n
   transition(list, false);
   await admission(12, "Page 12");
   expect(tabs()).toContain("Page 12");
+});
+
+test("Leaving the selected browser page removes its panel while preserving the chat list", async () => {
+  nativeGeometry(180);
+  const motion = nativeTransitions();
+  const { open } = await openBrowserChat(context, "live", false, {
+    many: true,
+  });
+  click(open);
+  await remoteBrowserInput();
+  await selectLast();
+  await admission(2, "Page 12");
+  click(await findFastControl("button", "Hide chat list"));
+  const show = await findFastControl("button", "Show chat list");
+  const old = owner("panel");
+  old.style.flexGrow = "0";
+  motion(old, true);
+  click(show);
+  const list = await waitFor(() => {
+    return owner("chat-list");
+  });
+  motion(list, true);
+  click(await findFastControl("link", "Workflows"));
+  await waitFor(() => {
+    expect(location.pathname).toBe("/workflows");
+    expect(old).not.toBeInTheDocument();
+  });
+  expect(list).toBeInTheDocument();
+  act(() => {
+    history.back();
+  });
+  click(await findFastControl("button", /Open .*browser/i));
+  await remoteBrowserInput();
+  expect(owner("panel")).not.toBe(old);
+  expect(owner("chat-list")).toBe(list);
+  await waitFor(() => {
+    expect(tabs()).toHaveLength(2);
+  });
 });

@@ -3102,3 +3102,11 @@ The opening commit was `f3b41d461bd544deaf34016cc4baa1725d7a3848`. The branch in
 Acme OAuth confirms the named custom account in its actual provider window. The old agent grant was removed in #48841 and #49268. Its former recipient has no current equivalent on the chat continuation path. A browser-backed Discord guide probe records the modifier-opened child and the guide in its original tab. The maintained Vitest row verifies the normal navigation. Exact request counts that the testing guidelines preclude remain open.
 
 [Fixed selection](https://app.okou.ai/artifacts/28ndmunhsz.md) · [41 frozen IDs, evidence and next entries](https://app.okou.ai/artifacts/384ovrvdoe.tsv) · [30 file dispositions](https://app.okou.ai/artifacts/ry7udpviak.tsv) · [Shared queue](./test-rebuild-first-pass.tsv) · [Upstream changes outside the fixed selection](./test-rebuild-batch-85-main-sync.tsv)
+
+## Batch 86 concentrated revisit
+
+The opening head was `c7ad91eb16592c51f31ebe7389a2405166ba1464`. The batch incorporates `main@5a0dc6316ac1457cc1ee8220800ec3977dc0dec8`. The first pass has 485 passed and 0 failed. Five of the 30 frozen files closed, taking the open queue from 145 to 140. Of 44 selected IDs, 9 gained their first complete evidence, 30 have partial regression evidence, 4 still lack the required observation, and 1 dialog variant was retired in #50074.
+
+The completed-run summary keeps its historical title and ID. The browser response fixture distinguishes an outstanding read from a delivered field that its consumer accessed. A live run shows the same summary that the completed run discards. Paid image creation reaches a run and renders its message after the confirmed preference change. The exact submission count stays open. Search 001, retired search 002, the abortable zero-delay Vitest branch and the ordered media playback cases carry forward.
+
+[Fixed selection](https://app.okou.ai/artifacts/zkupjxmf6z.md) · [44 frozen IDs with original conditions and evidence](https://app.okou.ai/artifacts/8iovmtfjyw.tsv) · [30 file dispositions and remaining IDs](https://app.okou.ai/artifacts/q9prpinihb.tsv)

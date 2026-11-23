@@ -1,7 +1,8 @@
 import { chatThreadActivitySummaryContract } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
+import { holdResponseField } from "./browser-response-fixture.ts";
 import { fill } from "../../../__tests__/page-helper.ts";
 import { changeChatIndicators } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -91,51 +92,65 @@ test("A chat event starts demand for the newly active run", async () => {
   });
 });
 
-test("A completed run cannot revive the previous indicator", async () => {
-  const chatEvents = [...finishedExchange(), checklistPrompt()];
-  const activeRunIds = [RUN_ID];
-  installRunChat({ chatEvents, activeRunIds });
-  const requested = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  const answered = context.mocks.deferred<void>();
+test.each([
+  ["A completed run cannot revive the previous indicator", true, true],
+  [
+    "A completed run stays ready while its last summary is withheld",
+    true,
+    false,
+  ],
+  ["An active run displays the same delivered summary", false, true],
+] as const)("%s", async (_title, completed, deliver) => {
+  const active = [RUN_ID];
+  const events = [...finishedExchange(), checklistPrompt()];
+  installRunChat({ activeRunIds: active, chatEvents: events });
+  const boundary = holdResponseField(
+    context,
+    (url, value) => {
+      return url.pathname.endsWith("/activity-summary") && value === RUN_ID;
+    },
+    "runId",
+  );
   context.mocks.api(
     chatThreadActivitySummaryContract.summarize,
-    async ({ body, respond }) => {
-      requested.resolve();
-      await release.promise;
-      answered.resolve();
+    ({ body, respond }) => {
       return respond(200, summaryFor(body.runId));
     },
   );
   await setupPage({ context, path: RUN_PATH });
-  await readyChat();
-  await requested.promise;
-  await expect(screen.findByText("Thinking...")).resolves.toBeInTheDocument();
-
-  chatEvents.push(
-    assistantEvent({
-      id: "checklist-answer",
-      runId: RUN_ID,
-      seqId: 5,
-      text: "Launch checklist prepared",
-    }),
-    completedEvent({ id: "checklist-complete", runId: RUN_ID, seqId: 6 }),
-  );
-  activeRunIds.splice(0);
-  publishRunUpdate();
-  changeChatIndicators();
-  await expect(findButton("Send")).resolves.toBeVisible();
-  release.resolve();
-  await answered.promise;
-
-  // The next draft is typed after the late summary has been answered.
-  const composer = await screen.findByRole("textbox", { name: "Message" });
-  await fill(composer, "Share the checklist");
-  await waitFor(() => {
-    expect(queryButton("Send")).toBeEnabled();
-  });
-  expect(screen.getByText("Launch checklist prepared")).toBeInTheDocument();
-  expect(screen.queryByText(SUMMARY)).not.toBeInTheDocument();
-  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-  expect(queryButton("Send")).toBeVisible();
+  await boundary.received.promise;
+  await screen.findByText("Thinking...");
+  if (completed) {
+    events.push(
+      assistantEvent({
+        id: "field-answer",
+        runId: RUN_ID,
+        seqId: 5,
+        text: "The overnight forecast is ready",
+      }),
+      completedEvent({ id: "field-done", runId: RUN_ID, seqId: 6 }),
+    );
+    active.splice(0);
+    publishRunUpdate();
+    changeChatIndicators();
+    await screen.findByText("The overnight forecast is ready");
+  }
+  if (deliver) {
+    await act(async () => {
+      boundary.release.resolve();
+      await boundary.consumed.promise;
+    });
+  }
+  if (completed) {
+    const composer = await screen.findByRole("textbox", { name: "Message" });
+    await fill(composer, "Send today’s field report");
+    await waitFor(() => {
+      expect(queryButton("Send")).toBeEnabled();
+    });
+    await expect(findButton("Send")).resolves.toBeVisible();
+    expect(screen.queryByText("Thinking...")).toBeNull();
+    expect(screen.queryByText(SUMMARY)).toBeNull();
+  } else {
+    await expect(screen.findByText(SUMMARY)).resolves.toBeVisible();
+  }
 });

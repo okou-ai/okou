@@ -111,3 +111,37 @@ test("thread-resource-thumbnails-002 Workspace search shows the matching private
     }
   }
 });
+
+test("thread-resource-thumbnails-001 The private image from the conversation’s resource list opens with its authorized source", async () => {
+  const grant = privateArtwork();
+  await open();
+  click(await findFastControl("button", "Artifacts and chats"));
+  const panel = await screen.findByRole("dialog", {
+    name: "Artifacts and chats",
+  });
+  const resource = await within(panel).findByText(title);
+  expect(resource.closest("button")?.querySelector("img")).toBeNull();
+  click(resource);
+  await grant.asked.promise;
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(await findFastControl("button", "Back to all artifacts", preview));
+  const returned = await screen.findByTestId("thread-sidebar-artifacts");
+  const entry = (await within(returned).findByText(title)).closest("button")!;
+  expect(entry).toBeVisible();
+  expect(
+    entry.querySelector('[data-testid="artifact-catalog-thumbnail"]'),
+  ).toBeNull();
+  grant.reply.resolve();
+  await waitFor(() => {
+    return thumbnail(entry, 640);
+  });
+  click(entry);
+  const original = await screen.findByTestId("artifact-sidebar");
+  await waitFor(() => {
+    expect(
+      Array.from(original.querySelectorAll("img")).map((img) => {
+        return img.src;
+      }),
+    ).toContain(authorized);
+  });
+});

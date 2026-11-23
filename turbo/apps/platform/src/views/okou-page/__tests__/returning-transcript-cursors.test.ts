@@ -138,3 +138,83 @@ test("A returning reader sees cached expenses before two later messages arrive a
     }
   }
 });
+
+test("Only the updated conversation gains a message when the worker warms two open threads", async () => {
+  const stable = continuityThread(886, 1, "Mooring notes");
+  const changed = continuityThread(886, 2, "Harbor survey");
+  const ws = installContinuityWorkspace(context, {
+    caseId: 886,
+    threads: [stable, changed],
+    chatEventRows: [],
+  });
+  const row = mockChatEventRows(
+    normalizeMockChatEvents(
+      [
+        {
+          role: "user",
+          id: crypto.randomUUID(),
+          runId: crypto.randomUUID(),
+          seqId: 1,
+          createdAt: "2026-10-18T12:00:00Z",
+          content: "Survey marker installed",
+        },
+      ],
+      changed.id,
+    ),
+  )[0]!;
+  const batch = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let supply = false;
+  context.mocks.api(
+    chatThreadEventsContract.catchUp,
+    async ({ body, respond }) => {
+      const targets = body.map(([id]) => {
+        return id;
+      });
+      const matching =
+        supply && targets.includes(stable.id) && targets.includes(changed.id);
+      if (matching) {
+        if (!batch.settled()) {
+          batch.resolve();
+        }
+        await release.promise;
+      }
+      return respond(200, {
+        notFoundThreads: [],
+        events: Object.fromEntries(
+          body.map(([id, seq]) => {
+            return [id, matching && id === changed.id && seq < 1 ? [row] : []];
+          }),
+        ),
+      });
+    },
+  );
+  await setupPage({
+    ...ws.pageOptions,
+    context,
+    path: "/chats/" + stable.id + "?sidebar=" + changed.id,
+    sharedWorkerTestTransport: "message-port",
+  });
+  const pane = (id: string) => {
+    return document.querySelector<HTMLElement>(
+      '[data-chat-thread-container-id="' + id + '"]',
+    )!;
+  };
+  await waitFor(() => {
+    expect(pane(stable.id)).toBeVisible();
+    expect(pane(changed.id)).toBeVisible();
+  });
+  supply = true;
+  const auth = ws.pageOptions.auth;
+  context.mocks.ably.triggerOnChannel(
+    "user-org:" + auth.user.id + ":" + auth.organization?.activeOrg?.id,
+    "chatThreadMessageCreated:" + stable.id,
+    { threadId: stable.id },
+  );
+  await batch.promise;
+  expect(screen.queryByText("Survey marker installed")).toBeNull();
+  release.resolve();
+  await screen.findByText("Survey marker installed");
+  expect(pane(changed.id)).toHaveTextContent("Survey marker installed");
+  expect(pane(stable.id)).not.toHaveTextContent("Survey marker installed");
+});

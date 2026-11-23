@@ -1,3 +1,9 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  mockChatGeometry,
+  messageOffset,
+  requiredElement,
+} from "./chat-conversation-locator-test-helpers.ts";
 import {
   chatRelationsContract,
   type CreatedChatRelation,
@@ -94,7 +100,13 @@ type Listing = {
 function install(
   current: Listing,
   source?: UserMessagePart,
-  destination?: { id: string; title: string; listing: Listing; runId?: string },
+  destination?: {
+    id: string;
+    title: string;
+    listing: Listing;
+    runId?: string;
+    followingTurns?: number;
+  },
 ) {
   const received = current.history?.find((item) => {
     return item.targetChatThreadId === RUN_THREAD_ID && item.targetRunId;
@@ -123,12 +135,24 @@ function install(
       seqId: 1,
       text: "Work in " + destination.title,
     });
+    const nextTurns = Array.from(
+      { length: destination.followingTurns ?? 0 },
+      (_, i) => {
+        const id = crypto.randomUUID();
+        return promptEvent({
+          id,
+          runId: id,
+          seqId: i + 2,
+          text: "Follow-up survey " + (i + 1),
+        });
+      },
+    );
     context.mocks.api(
       chatThreadEventsContract.rows,
       ({ params, query, respond }) => {
         const events =
           params.threadId === destination.id
-            ? [target]
+            ? [target, ...nextTurns]
             : params.threadId === RUN_THREAD_ID
               ? [original]
               : [];
@@ -553,4 +577,33 @@ test("chat-relations-007 the only origin row links its parent run and reveals th
   expect(row.getByText("From")).toBeVisible();
   expect(within(panel).queryByRole("region", { name: "From" })).toBeNull();
   await revealClippedTitle(link, label);
+});
+
+test("chat-navigation-position-restoration-007 Following a child’s resource origin places the parent run at the top of its conversation", async () => {
+  mockChatGeometry();
+  const parent = contact("Field survey");
+  const link = origin(parent);
+  install({}, link, {
+    id: parent.threadId,
+    title: parent.title,
+    listing: {},
+    runId: link.runId,
+    followingTurns: 10,
+  });
+  await openChat();
+  const resources = await openPanel();
+  click(anchor(await within(await chats(resources)).findByText(parent.title)));
+  const text = "Work in Field survey";
+  await screen.findByText(text);
+  await waitFor(() => {
+    expect(location.pathname + location.hash).toBe(
+      path(parent.threadId) + "#run-" + link.runId,
+    );
+    expect(
+      messageOffset(text, requiredElement("[data-scroll-container]")),
+    ).toBe(0);
+  });
+  await expect(
+    findFastControl("button", "Scroll to bottom"),
+  ).resolves.toBeVisible();
 });

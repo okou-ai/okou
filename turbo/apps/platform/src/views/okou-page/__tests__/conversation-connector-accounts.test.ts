@@ -2,6 +2,8 @@ import {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
 } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { continuityAttachment } from "./chat-continuity-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
@@ -18,7 +20,10 @@ import {
   SCOUT_THREAD_ID,
   OTHER_THREAD_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
-import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  findFastControl,
+  queryFastControl,
+} from "./chat-message-experience-test-helpers.ts";
 import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 const context = testContext();
 const target = { kind: "builtin", connectorSlug: "github" } as const;
@@ -30,6 +35,7 @@ async function openChat(
     path?: string;
     defaults?: readonly boolean[];
     failSelection?: boolean;
+    beforeOverride?: (signal: AbortSignal) => Promise<void>;
     remoteHost?: string;
   } = {},
 ) {
@@ -116,7 +122,8 @@ async function openChat(
 
   context.mocks.api(
     chatConnectorAccessContract.setThreadOverride,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond, request }) => {
+      await options.beforeOverride?.(request.signal);
       if (body.enabled !== null) {
         overrides.set(params.connectionId, body.enabled);
       }
@@ -365,4 +372,126 @@ test("chat-composer-chat-connector-access-003 the same composer opens its enable
     within(directory).findByRole("radio", { name: "Custom" }),
   ).resolves.toBeEnabled();
   expect(within(directory).getByRole("textbox")).toBeEnabled();
+});
+
+test("The new conversation restores Personal access on reopening and applies it before its first prompt", async () => {
+  const { atRun } = await openChat({
+    path: "/?compose=1",
+    defaults: [true, true],
+  });
+  const first = await choices();
+  await expect(toggle(first.panel, "Work")).resolves.toBeChecked();
+  await expect(toggle(first.panel, "Personal")).resolves.toBeChecked();
+  click(await toggle(first.panel, "Work"));
+  await waitFor(() => {
+    expect(
+      within(first.panel).getByRole("switch", { name: "Work access" }),
+    ).not.toBeChecked();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}{Escape}");
+  const reopened = await choices();
+  await expect(toggle(reopened.panel, "Personal")).resolves.toBeChecked();
+  await expect(toggle(reopened.panel, "Work")).resolves.not.toBeChecked();
+  await user.keyboard("{Escape}{Escape}");
+  const editor = await findComposerEditor();
+  await fill(editor, "List my personal repository issues");
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  await screen.findByText("List my personal repository issues", {
+    selector: "[data-role=user] *",
+  });
+  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
+});
+
+test("A new chat inherits both account choices after leaving a pending thread override", async () => {
+  const request = context.mocks.deferred<AbortSignal>();
+  const release = context.mocks.deferred<void>();
+  await openChat({
+    defaults: [true, true],
+    beforeOverride: async (signal) => {
+      request.resolve(signal);
+      await release.promise;
+    },
+  });
+  const previous = await choices();
+  click(await toggle(previous.panel, "Work"));
+  const signal = await request.promise;
+  await userEvent.keyboard("{Escape}{Escape}");
+  click(await findFastControl("link", /^New chat/));
+  await waitFor(() => {
+    expect(location.pathname).toBe("/");
+  });
+  expect(signal.aborted).toBe(true);
+  release.resolve();
+  const fresh = await choices();
+  await expect(toggle(fresh.panel, "Personal")).resolves.toBeChecked();
+  await expect(toggle(fresh.panel, "Work")).resolves.toBeChecked();
+});
+
+test("A rejected Personal selection leaves the attached field report and message in the new composer", async () => {
+  const { atRun } = await openChat({
+    path: "/?compose=1",
+    defaults: [true, true],
+    failSelection: true,
+  });
+  const attachment = continuityAttachment(
+    86,
+    6,
+    "field-report.txt",
+    "text/plain",
+    5,
+  );
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+    return respond(200, {
+      ...attachment,
+      uploadUrl: "https://survey-storage.example/report",
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put("https://survey-storage.example/report", () => {
+    return new Response(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, ({ respond }) => {
+    return respond(200, attachment);
+  });
+  const editor = await findComposerEditor();
+  const message = "Review the attached field report";
+  await fill(editor, message);
+  const picker = document.querySelector<HTMLInputElement>(
+    "input[type=file][multiple]",
+  )!;
+  await userEvent.upload(
+    picker,
+    new File(["notes"], attachment.filename, { type: "text/plain" }),
+  );
+  await findFastControl("button", "Remove field-report.txt");
+  const accounts = await choices();
+  click(await toggle(accounts.panel, "Work"));
+  await waitFor(() => {
+    expect(
+      within(accounts.panel).getByRole("switch", { name: "Work access" }),
+    ).not.toBeChecked();
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Escape}{Escape}");
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  await screen.findByText("Account access could not be saved");
+  expect(location.pathname).toBe("/");
+  expect(editor).toHaveTextContent(message);
+  await expect(
+    findFastControl("button", "Remove field-report.txt"),
+  ).resolves.toBeEnabled();
+  expect(atRun).toEqual([]);
+  const retry = await choices();
+  await expect(toggle(retry.panel, "Personal")).resolves.toBeChecked();
+  await expect(toggle(retry.panel, "Work")).resolves.not.toBeChecked();
+  expect(queryFastControl("button", "Use default", retry.panel)).toBeNull();
+  await user.keyboard("{Escape}{Escape}");
+  await user.click(editor);
+  await user.keyboard("{Enter}");
+  await screen.findByText(message, { selector: "[data-role=user] *" });
+  await screen.findByText(attachment.filename);
+  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
 });

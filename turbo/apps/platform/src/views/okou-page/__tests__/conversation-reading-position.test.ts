@@ -17,6 +17,7 @@ import {
   mockChatGeometry,
   messageOffset,
   requiredElement,
+  messageAnchor,
 } from "./chat-conversation-locator-test-helpers.ts";
 import {
   findFastControl,
@@ -169,4 +170,37 @@ test("chat-navigation-position-restoration-010 Sending while reading history cle
     expect(editor.textContent).toBe("");
     expect(queryFastControl("button", "Scroll to bottom")).toBeNull();
   });
+});
+
+test("Opening an event fragment lands its marker and offers a return to the latest message", async () => {
+  mockChatGeometry();
+  const id = crypto.randomUUID();
+  const entries = Array.from({ length: 12 }, (_, i) => {
+    const runId = eventId(63, i + 1);
+    return {
+      id: runId,
+      runId,
+      role: "user" as const,
+      content: "Survey station " + (i + 1),
+      createdAt: new Date(Date.UTC(2026, 6, 3, 8, i)).toISOString(),
+    };
+  });
+  mockChatLifecycle(context, { threadId: id, chatEvents: entries });
+  await setupPage({
+    context,
+    path: "/chats/" + id + "#event-" + entries[2]!.id,
+  });
+  const title = entries[2]!.content;
+  const viewport = await surface(title);
+  await waitFor(() => {
+    expect(
+      messageAnchor(title, viewport).querySelector("[data-locator-landed]"),
+    ).toBeInTheDocument();
+  });
+  const offset = messageOffset(title, viewport);
+  expect(offset).toBeGreaterThan(0);
+  expect(offset).toBeLessThan(viewport.clientHeight);
+  await expect(
+    findFastControl("button", "Scroll to bottom"),
+  ).resolves.toBeVisible();
 });

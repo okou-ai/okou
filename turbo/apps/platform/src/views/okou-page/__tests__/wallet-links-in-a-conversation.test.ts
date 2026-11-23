@@ -1,6 +1,8 @@
+import { observeOrganizationNotification } from "./organization-notification-fixture.ts";
 import {
   queryAllByRoleFast,
   setupPage,
+  fill,
   click,
 } from "../../../__tests__/page-helper.ts";
 import {
@@ -287,4 +289,32 @@ test("wallet-action-card-001 Authorization that finishes during subscription att
       joining.attach();
     }
   }
+});
+
+test("wallet-action-card-019 A suspended purchase subscription reloads the continued purchase on reconnection", async () => {
+  const foreign = observeOrganizationNotification(
+    context,
+    "wallet:changed",
+    "other-organization",
+  );
+  const provider = wallet({ status: "pending" }, "pending");
+  await readConversation(purchase, {}, "message-port");
+  await findFastControl("link", "Review purchase");
+  await watching();
+  provider.approval = "approved";
+  change("other-organization");
+  await foreign;
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await fill(editor, "Draft a note for the purchasing team");
+  expect(editor).toHaveTextContent("Draft a note for the purchasing team");
+  expect(screen.queryByText("Approved; waiting to continue")).toBeNull();
+  expect(queryFastControl("link", "Review purchase")).toBeVisible();
+  change("org_default");
+  await screen.findByText("Approved; waiting to continue");
+  expect(queryFastControl("button", "Status recorded")).toBeDisabled();
+  context.mocks.ably.triggerSharedWorkerConnectionState("suspended");
+  provider.approval = "continued";
+  context.mocks.ably.triggerSharedWorkerConnectionState("connected");
+  await screen.findByText("Purchase request continued");
+  expect(queryFastControl("button", "Status recorded")).toBeDisabled();
 });

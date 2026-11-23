@@ -1,8 +1,8 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { installMockedClerkBootstrap } from "../../../__tests__/mock-auth.ts";
-import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 
@@ -107,4 +107,21 @@ test("authentication-startup-018 Changing the workspace leaves Workflows for hom
   await waitFor(() => {
     return expect(location.pathname).toBe("/");
   });
+});
+
+test("A repeated signed-in member notification keeps Workflows and its account menu available", async () => {
+  const clerk = context.mocks.clerk();
+  const member = { id: "user-a", fullName: "Avery Coast" };
+  const session = { id: "field-session", token: "fixture-session" };
+  await setupPage({ ...workflows, auth: { user: member, session } });
+  await screen.findByRole("heading", { name: "Workflows" });
+  const account = await screen.findByLabelText("Avery Coast");
+  act(() => {
+    clerk.user(member, session);
+    clerk.stateChanged();
+  });
+  click(account);
+  await screen.findByRole("menu");
+  expect(screen.getByRole("heading", { name: "Workflows" })).toBeVisible();
+  expect(location.pathname).toBe("/workflows");
 });

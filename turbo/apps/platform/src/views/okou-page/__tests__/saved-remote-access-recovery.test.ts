@@ -230,3 +230,27 @@ test("chat-composer-ssh-004 Resizing and reopening during a save keeps both choi
     return expect(second).toHaveTextContent(/^On$/);
   });
 });
+
+test("Changing one SSH host keeps both hosts in the dialog through confirmation", async () => {
+  const session = await twoHosts();
+  const panel = await session.open();
+  const [first, other] = fields(panel);
+  await choice(first!, "On");
+  await session.ready;
+  expect(first).toHaveTextContent("Default (Off)");
+  expect(other).toBeEnabled();
+  session.save.resolve();
+  await session.refreshing;
+  expect(fields(panel)[0]).toHaveTextContent("Default (Off)");
+  expect(fields(panel)[1]).toHaveTextContent("Default (Off)");
+  session.refresh.resolve();
+  await waitFor(() => {
+    expect(fields(panel)[0]).toHaveTextContent(/^On$/);
+  });
+  expect(fields(panel)[1]).toBeEnabled();
+  await close(panel);
+  click(session.trigger);
+  await screen.findByText("1 enabled");
+  const again = await session.open();
+  expect(fields(again)[0]).toHaveTextContent(/^On$/);
+});

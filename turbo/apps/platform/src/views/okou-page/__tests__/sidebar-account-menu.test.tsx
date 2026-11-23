@@ -1,3 +1,4 @@
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   setupAddAccountPage,
   openAccountMenu,
@@ -7,7 +8,7 @@ import { DetachedBrowserContext } from "happy-dom";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect, vi } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 test("sidebar-account-menu-006 Help offers the public documentation in a separate tab and opens the keyboard reference", async () => {
@@ -81,4 +82,85 @@ test("sidebar-account-menu-004 adding another account uses a dark-theme hosted s
   expect(sdk.uiRequests).toContain(
     "https://app.example.test/assets/clerk-ui-test.js",
   );
+});
+
+test("sidebar-account-menu-001 A successful session switch releases the outgoing conversation while Clerk finishes selecting Jamie", async () => {
+  const users = [
+    { name: "Alex Rivera", session: "session_alex" },
+    { name: "Jamie Chen", session: "session_jamie" },
+  ];
+  const chosen = context.mocks.deferred<string>();
+  const approve = context.mocks.deferred<void>();
+  const reading = context.mocks.deferred<AbortSignal>();
+  const leave = context.mocks.deferred<void>();
+  const reports = context.mocks.sentry();
+  const redirects = context.mocks.browser.locationReplace();
+  context.mocks.clerk();
+  const sdk = mockedClerk.setActive.getMockImplementation()!;
+  mockedClerk.setActive.mockImplementation(async (options) => {
+    chosen.resolve(String(options.session));
+    await approve.promise;
+    await sdk(options);
+  });
+  context.mocks.api(
+    chatThreadMetadataContract.get,
+    async ({ request, respond }) => {
+      if (!reading.settled()) {
+        reading.resolve(request.signal);
+      }
+      await leave.promise;
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Conversation removed" },
+      });
+    },
+  );
+  const id = crypto.randomUUID();
+  await startPage({
+    context,
+    host: "app.okou.ai",
+    path: "/chats/" + id,
+    cachedChatThreadEvents: { snapshot: null, events: [] },
+    auth: {
+      session: { id: "session_alex", token: "session-fixture" },
+      user: {
+        id: "alex",
+        fullName: "Alex Rivera",
+        clientSessions: users.map((person) => {
+          return {
+            id: person.session,
+            status: "active",
+            user: { fullName: person.name },
+          };
+        }),
+      },
+    },
+  });
+  const pending = await reading.promise;
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(await within(rail).findByLabelText("Alex Rivera"));
+  const user = userEvent.setup({ delay: null });
+  await user.click(await screen.findByText("Switch account"));
+  click(
+    (await screen.findByText("Jamie Chen")).closest<HTMLElement>(
+      '[role="menuitem"]',
+    )!,
+  );
+  await expect(chosen.promise).resolves.toBe("session_jamie");
+  await waitFor(() => {
+    expect(rail).not.toBeInTheDocument();
+    expect(pending.aborted).toBe(true);
+  });
+  expect(context.signal.aborted).toBe(false);
+  expect(redirects.calls).toEqual([]);
+  leave.resolve();
+  approve.resolve();
+  await waitFor(() => {
+    expect(redirects.calls).toContain("/");
+  });
+  expect(screen.queryByTestId("labeled-nav-rail")).toBeNull();
+  expect(
+    reports.reports.filter((r) => {
+      return r.type === "exception";
+    }),
+  ).toEqual([]);
 });

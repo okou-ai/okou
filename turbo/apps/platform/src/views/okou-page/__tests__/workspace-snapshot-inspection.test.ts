@@ -1,12 +1,16 @@
+import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { screen, within } from "@testing-library/react";
+import { screen, cleanup, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   chatListEvent,
   cachedChatListEvents,
@@ -73,4 +77,76 @@ test("platform-direct-bridge-006 A second rename arrives on the live workspace l
     findFastControl("link", /Reviewed field notes/u),
   ).resolves.toHaveAttribute("href", initial.getAttribute("href"));
   expect(queryFastControl("link", /Team field notes/u)).toBeNull();
+});
+
+test("A reopened workspace shows its downloaded conversation before a later rename is delivered", async () => {
+  const thread = chatListThread(51, "Southern coast notes");
+  const auth = { user: { id: "field-reader", fullName: "Field reader" } };
+  const archive =
+    "https://r2.example.com/snapshot/coastal-archive.json?signature=fixture";
+  const started = context.mocks.deferred<void>();
+  const allowObject = context.mocks.deferred<void>();
+  const tailRead = context.mocks.deferred<void>();
+  const allowRename = context.mocks.deferred<void>();
+  let reopening = false;
+  installChatListStream(context, { caseId: 851, snapshot: [] });
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(200, {
+      url: archive,
+      expiresInSeconds: 300,
+      latestSeqId: 1,
+      latestEventId: crypto.randomUUID(),
+    });
+  });
+  context.mocks.http.get(archive.split("?")[0]!, async () => {
+    if (!started.settled()) {
+      started.resolve();
+    }
+    await allowObject.promise;
+    return Response.json({ chatThreads: [thread] });
+  });
+  context.mocks.api(chatThreadsContract.events, async ({ query, respond }) => {
+    if (reopening) {
+      if (!tailRead.settled()) {
+        tailRead.resolve();
+      }
+      await allowRename.promise;
+    }
+    const events =
+      reopening && (query.sinceSeqId ?? 0) < 2
+        ? [
+            chatListEvent(851, 2, "renamed", thread.id, {
+              title: "Approved coast notes",
+            }),
+          ]
+        : [];
+    return respond(200, { events, hasMore: false });
+  });
+  const options = {
+    path: "/",
+    auth,
+    sharedWorkerTestTransport: "message-port" as const,
+  };
+  const first = createTestRuntime(context);
+  const session = await startPage({ ...options, context: first });
+  await started.promise;
+  expect(queryFastControl("link", thread.title!)).toBeNull();
+  allowObject.resolve();
+  await session.ready;
+  await expect(findFastControl("link", thread.title!)).resolves.toBeVisible();
+  cleanup();
+  first.dispose();
+  reopening = true;
+  const second = await startPage({
+    ...options,
+    context: createTestRuntime(context),
+  });
+  await tailRead.promise;
+  await expect(findFastControl("link", thread.title!)).resolves.toBeVisible();
+  expect(queryFastControl("link", "Approved coast notes")).toBeNull();
+  allowRename.resolve();
+  await second.ready;
+  const renamed = await findFastControl("link", "Approved coast notes");
+  expect(renamed.getAttribute("href")).toContain(thread.id);
+  expect(queryFastControl("link", thread.title!)).toBeNull();
 });

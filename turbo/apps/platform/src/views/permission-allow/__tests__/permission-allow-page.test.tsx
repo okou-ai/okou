@@ -215,3 +215,21 @@ test.each([
     expect(queryAction("button", "Confirm")).toBeNull();
   },
 );
+
+test("A still-active timed grant shows when access will expire", async () => {
+  const now = new Date(PERMISSION_NOW);
+  mockNow(now, context.signal);
+  const expiresAt = new Date(now.getTime() + 60 * 60 * 1000).toISOString();
+  mockPermissionCatalog(context);
+  mockPermissionGrants(context, {
+    initial: [{ permission: ANALYTICS, action: "allow", expiresAt }],
+  });
+  await setupPage({
+    context,
+    path: permissionLink({ action: "allow", connectorSlug: "slack" }),
+  });
+  await screen.findByText("Already allowed");
+  expect(screen.getByText("Expires in 1 hour")).toBeVisible();
+  expect(queryAction("button", "Confirm")).toBeNull();
+  expect(screen.queryByText(/expired/i)).toBeNull();
+});

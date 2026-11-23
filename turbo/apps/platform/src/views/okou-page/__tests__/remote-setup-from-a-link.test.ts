@@ -1,3 +1,5 @@
+import { holdResponseField } from "./browser-response-fixture.ts";
+import { sshCredentialsContract } from "@okouai/api-contracts/contracts/ssh-credentials";
 import { screen, within, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
@@ -5,7 +7,9 @@ import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockRemoteInventory,
+  remoteId,
   sshHost,
+  vncHost,
 } from "./connectors-remote-control-test-helpers.ts";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
@@ -119,4 +123,85 @@ test("remote-control-guided-setup-026 VNC setup returns directly to the connecti
   await expect(
     findFastControl("button", /Control.*screen/i),
   ).resolves.toBeInTheDocument();
+});
+
+test.each([
+  [
+    "remote-control-guided-setup-067 Returning to device management after a pending SSH login read",
+    true,
+  ],
+  [
+    "Withholding the saved SSH login after returning to device management",
+    false,
+  ],
+] as const)("%s", async (_name, deliver) => {
+  const credentialId = remoteId("d", 67);
+  const host = sshHost(67, "Field recorder", { credentialId });
+  mockRemoteInventory(context, { ssh: [host] });
+  const login = "Recorder operator";
+  const boundary = holdResponseField(
+    context,
+    (url, value) => {
+      return (
+        url.pathname.endsWith("/api/ssh/credentials") &&
+        Array.isArray(value) &&
+        value.some((item) => {
+          return item?.name === login;
+        })
+      );
+    },
+    "credentials",
+  );
+  context.mocks.api(sshCredentialsContract.list, ({ respond }) => {
+    return respond(200, {
+      credentials: [
+        {
+          id: credentialId,
+          name: login,
+          username: "recorder",
+          authMethod: "password",
+          revision: 1,
+          createdAt: host.createdAt,
+          updatedAt: host.updatedAt,
+          hosts: [],
+        },
+      ],
+    });
+  });
+  await setupPage({
+    context,
+    path: "/connectors?scope=remote-control&setup=ssh&step=login",
+  });
+  await boundary.received.promise;
+  await screen.findByLabelText(/^SSH username$/i);
+  click(await findFastControl("button", "Back"));
+  click(await screen.findByTestId("connectors-scope-private-network"));
+  await screen.findByText("No networks added yet");
+  expect(screen.queryByRole("dialog")).toBeNull();
+  if (deliver) {
+    await act(async () => {
+      boundary.release.resolve();
+      await boundary.consumed.promise;
+    });
+  }
+  click(await screen.findByTestId("connectors-scope-remote-control"));
+  await screen.findByText(host.displayName);
+  expect(screen.queryByLabelText(/^SSH username$/i)).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+test("Opening Remote control lists newly configured devices while the selector shows its previous count", async () => {
+  const original = vncHost(91, "Night desk");
+  const inventory = mockRemoteInventory(context, { vnc: [original] });
+  await setupPage({ context, path: "/connectors?scope=connected" });
+  const control = await screen.findByTestId("connectors-scope-remote-control");
+  await waitFor(() => {
+    expect(control).toHaveTextContent(/Remote control\s*1/);
+  });
+  inventory.vnc.push(vncHost(92, "Day desk"));
+  click(control);
+  await screen.findByText("Day desk");
+  expect(screen.getByText("Night desk")).toBeVisible();
+  expect(control).toHaveAttribute("aria-checked", "true");
+  expect(control).toHaveTextContent(/Remote control\s*1/);
 });

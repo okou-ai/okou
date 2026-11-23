@@ -146,3 +146,62 @@ test("lab-page-006 Reset all restores the test OAuth connector's original off st
     return expect(toggle).not.toBeChecked();
   });
 });
+
+test("Lab reads the embedded Banking preference before showing the service's later updates", async () => {
+  const banking = FeatureSwitchKey.Banking;
+  const bootstrap = document.createElement("script");
+  bootstrap.type = "application/json";
+  bootstrap.dataset.okouApiBootstrap = "";
+  bootstrap.dataset.method = "GET";
+  bootstrap.dataset.path = encodeURIComponent("/api/feature-switches");
+  bootstrap.dataset.contentType = "application/json";
+  bootstrap.textContent = JSON.stringify({
+    switches: { [banking]: true },
+    effectiveSwitches: { [banking]: true },
+  });
+  document.head.append(bootstrap);
+  let network = false;
+  const observed: boolean[] = [];
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    observed.push(network);
+    return respond(200, {
+      switches: { [banking]: network },
+      effectiveSwitches: { [banking]: network },
+    });
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    network = Boolean(body.switches[banking]);
+    return respond(200, {
+      switches: { [banking]: network },
+      effectiveSwitches: { [banking]: network },
+    });
+  });
+  context.mocks.api(featureSwitchesContract.delete, ({ respond }) => {
+    network = true;
+    return respond(200, { deleted: true });
+  });
+  try {
+    await visitLab(false, true);
+    const toggle = () => {
+      return screen.getByRole("switch", { name: /^banking\b/i });
+    };
+    expect(toggle()).toBeChecked();
+    click(toggle());
+    await waitFor(() => {
+      expect(observed).toContain(false);
+      expect(toggle()).not.toBeChecked();
+      expect(toggle()).toBeEnabled();
+    });
+    const reset = getButtonByName("Reset all");
+    await waitFor(() => {
+      expect(reset).toBeEnabled();
+    });
+    click(reset);
+    await waitFor(() => {
+      expect(observed).toContain(true);
+      expect(toggle()).toBeChecked();
+    });
+  } finally {
+    bootstrap.remove();
+  }
+});

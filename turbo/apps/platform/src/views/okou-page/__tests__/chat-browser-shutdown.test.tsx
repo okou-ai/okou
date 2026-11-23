@@ -126,3 +126,43 @@ test("chat-browser-shutdown-003 a rejected Shift release preserves the protocol 
     });
   });
 });
+
+test("Reopening the browser while the original keyboard release is pending resumes text input", async () => {
+  const { cdp, close, errors } = await sidebar();
+  const user = userEvent.setup({ delay: null });
+  await user.click(screen.getByLabelText("Remote browser input"));
+  await user.keyboard("{Shift>}");
+  const held = await waitFor(() => {
+    const request = [...cdp.requests].reverse().find((r) => {
+      return r.method === "Input.dispatchKeyEvent" && r.params?.key === "Shift";
+    });
+    expect(request?.params?.type).toMatch(/keyDown/i);
+    return request!;
+  });
+  const keyup = cdp.holdNext("Input.dispatchKeyEvent");
+  click(close);
+  await keyup.received;
+  click(await findFastControl("button", /Open .*browser/i));
+  const field = await screen.findByLabelText("Remote browser input");
+  expect(field).toBeDisabled();
+  await keyup.release();
+  await waitFor(() => {
+    expect(field).toBeEnabled();
+  });
+  await user.click(field);
+  await user.keyboard("q");
+  await waitFor(() => {
+    const events = cdp.requests;
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        connectionId: held.connectionId,
+        params: expect.objectContaining({ key: "Shift", type: "keyUp" }),
+      }),
+    );
+    const q = [...events].reverse().find((r) => {
+      return r.params?.key === "q" || r.params?.text === "q";
+    });
+    expect(q?.params?.key ?? q?.params?.text).toBe("q");
+  });
+  expect(errors.reports).toEqual([]);
+});

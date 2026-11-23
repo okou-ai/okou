@@ -130,3 +130,32 @@ test("The member workspace saves a blank draft after whitespace-only input", asy
   await expect(saved.promise).resolves.toStrictEqual(blank);
   await expect(findAction("button", "Send")).resolves.toBeDisabled();
 });
+
+test("An active workspace draft save is cancelled when the writer replaces its text", async () => {
+  const prior = context.mocks.deferred<AbortSignal>();
+  const finish = context.mocks.deferred<void>();
+  const saved = context.mocks.deferred<string>();
+  context.mocks.api(
+    composerDraftContract.patch,
+    async ({ body, request, respond }) => {
+      const content = draftPlainText(body.draftUserMessage);
+      if (content === "old" && !prior.settled()) {
+        prior.resolve(request.signal);
+        await finish.promise;
+      }
+      if (content === "new" && !saved.settled()) {
+        saved.resolve(content);
+      }
+      return respond(204);
+    },
+  );
+  await setupPage({ context, path: "/" });
+  const editor = await findComposerEditor();
+  await fill(editor, "old");
+  const signal = await prior.promise;
+  await fill(editor, "new");
+  await expect(saved.promise).resolves.toBe("new");
+  expect(signal.aborted).toBe(true);
+  finish.resolve();
+  expect(editor).toHaveTextContent("new");
+});
