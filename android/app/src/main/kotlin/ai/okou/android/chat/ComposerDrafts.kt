@@ -28,7 +28,14 @@ enum class ComposerSync {
     Saving,
     Saved,
     Failed,
+    NetworkFailed,
     Unsupported,
+}
+
+internal enum class ComposerPrefillResult {
+    Ready,
+    Unavailable,
+    NetworkFailed,
 }
 
 /** Null means unsupported/unreadable, while an empty String is authoritative empty content. */

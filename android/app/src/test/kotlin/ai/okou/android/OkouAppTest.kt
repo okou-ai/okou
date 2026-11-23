@@ -660,6 +660,7 @@ class OkouAppTest {
             val width = mutableStateOf(320.dp)
             val fontScale = mutableStateOf(1f)
             val requestFocus = FocusRequester()
+            val workflowFocus = FocusRequester()
             val connectorFocus = FocusRequester()
             compose.setContent {
                 CompositionLocalProvider(
@@ -668,11 +669,14 @@ class OkouAppTest {
                     OkouTheme(dark = false) {
                         Box(Modifier.width(width.value)) {
                             WorkspaceToolEntries(
+                                openWorkflows = {},
+                                workflowsFocus = workflowFocus,
+                                onWorkflowsFocusChanged = {},
                                 openArtifacts = {},
                                 artifactFocus = requestFocus,
                                 connectorFocus = connectorFocus,
                                 onConnectorFocusChanged = {},
-                                openConnectors = null,
+                                openConnectors = {},
                             )
                         }
                     }

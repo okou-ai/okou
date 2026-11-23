@@ -24,10 +24,11 @@ class ReleaseDiagnosticsTest(unittest.TestCase):
         def surface(xml):
             return smoke["AUTH_HEADINGS"] & smoke["app_labels"](xml)
 
-        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Welcome to Okou"/></hierarchy>'))
+        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Restoring your session…"/></hierarchy>'))
+        self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Couldn’t load your session or workspace"/></hierarchy>'))
         self.assertTrue(surface('<hierarchy><node package="ai.okou.android" text="Continue to Okou"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text="Okou"/></hierarchy>'))
-        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Welcome to Okou"/></hierarchy>'))
+        self.assertFalse(surface('<hierarchy><node package="com.android.launcher3" text="Restoring your session…"/></hierarchy>'))
         self.assertFalse(surface('<hierarchy><node package="ai.okou.android" text=""/></hierarchy>'))
         self.assertFalse(surface('<hierarchy>'))
 

@@ -1,0 +1,1182 @@
+package ai.okou.android.workflows
+
+import ai.okou.android.LocalActivityStatusColor
+import ai.okou.android.R
+import ai.okou.android.WorkspaceSearchField
+import ai.okou.android.api.generated.WorkflowAutomation
+import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.api.generated.WorkflowDetailVisibility
+import ai.okou.android.api.generated.WorkflowSummary
+import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.chat.ChatSkeletonBlock
+import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.state.ChatSearchState
+import ai.okou.android.state.WorkflowScope
+import ai.okou.android.state.WorkflowTab
+import ai.okou.android.state.WorkflowsRoute
+import ai.okou.android.state.rememberWorkflowDiscardConfirmation
+import ai.okou.android.state.retainWhileComposing
+import ai.okou.android.updates.updateFocusOutline
+import ai.okou.android.workspaceSearchTextStyle
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.LifecycleResumeEffect
+
+@Composable
+internal fun WorkflowScreen(
+    model: WorkflowModel,
+    state: WorkflowState,
+    route: WorkflowsRoute,
+    changeRoute: (WorkflowsRoute) -> Unit,
+    query: ChatSearchState,
+    positions: List<LazyListState>,
+    listWidth: Int?,
+    timezone: String,
+    handoffPending: Boolean,
+    createError: Int?,
+    useError: Int?,
+    feedback: @Composable () -> Unit,
+    onClose: () -> Unit,
+    onCreate: () -> Unit,
+    onUse: (WorkflowDetail) -> Unit,
+    sourceChatAvailable: (String) -> Boolean,
+    onOpenChat: (String) -> Unit,
+) {
+    LifecycleResumeEffect(model) {
+        model.foregroundChanged(true)
+        onPauseOrDispose { model.foregroundChanged(false) }
+    }
+    val wide = listWidth != null
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val editor = state.editor
+    var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
+    var restoreRow by remember { mutableStateOf<String?>(null) }
+    fun exitEditor() {
+        if (state.writing) return
+        if (editor?.changed == true) discard = true else model.edit(null)
+    }
+    fun back() {
+        when {
+            editor != null -> exitEditor()
+            state.writing -> Unit
+            route.id != null && !wide && !handoffPending -> {
+                restoreRow = route.id
+                changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
+            }
+            else -> onClose()
+        }
+    }
+    BackHandler(onBack = ::back)
+    if (discard && editor?.changed == true) {
+        WorkflowDiscardDialog(
+            onClose = { discard = false },
+            onDiscard = {
+                discard = false
+                model.edit(null)
+            },
+        )
+    }
+
+    Row(
+        Modifier.fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .imePadding()
+    ) {
+        if (wide || route.id == null) {
+            WorkflowDirectory(
+                state = state,
+                route = route,
+                query = query,
+                modifier =
+                    if (listWidth != null)
+                        Modifier.widthIn(min = (listWidth - 1).dp, max = (listWidth - 1).dp)
+                            .fillMaxHeight()
+                    else Modifier.weight(1f).fillMaxHeight(),
+                onBack = { if (editor != null) exitEditor() else if (!state.writing) onClose() },
+                onCreate = onCreate,
+                canNavigate = editor == null && !state.writing && !handoffPending,
+                createError = createError,
+                onScope = {
+                    query.position.requestScrollToItem(0)
+                    changeRoute(route.copy(scope = it))
+                },
+                onSelect = {
+                    focus.clearFocus()
+                    keyboard?.hide()
+                    if (it != route.id)
+                        changeRoute(route.copy(id = it, tab = WorkflowTab.Instructions))
+                },
+                restoreRow = restoreRow,
+                onRowRestored = { restoreRow = null },
+            )
+        }
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide || route.id != null) {
+            Column(Modifier.weight(1f).fillMaxHeight()) {
+                val detail = state.detail?.takeIf { it.id == route.id }
+                if (!wide || editor != null)
+                    WorkflowToolbar(
+                        if (editor != null) stringResource(R.string.workflow_edit)
+                        else stringResource(R.string.workspace_workflows),
+                        ::back,
+                    )
+                if (route.id != null) {
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { feedback() }
+                }
+                when {
+                    route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
+                    state.detailFailure == WorkflowReadFailure.Unavailable ->
+                        WorkflowPlaceholder(R.string.workflow_unavailable)
+                    detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
+                    editor != null ->
+                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
+                    else ->
+                        WorkflowDetailPane(
+                            detail = detail,
+                            state = state,
+                            tab = route.tab,
+                            position = positions[route.tab.ordinal],
+                            wide = wide,
+                            timezone = timezone,
+                            onTab = {
+                                if (it != route.tab) {
+                                    changeRoute(route.copy(tab = it))
+                                    model.detailTabOpened(
+                                        checkConnections = it == WorkflowTab.Automations
+                                    )
+                                }
+                            },
+                            onEdit = { model.edit(detail.editableInstructions()) },
+                            onNewRule = {
+                                model.edit(WorkflowEdit.Rule(null, RuleFields(timezone = timezone)))
+                            },
+                            onEditRule = { model.edit(it) },
+                            onToggle = model::toggle,
+                            handoffPending = handoffPending,
+                            useError = useError,
+                            onUse = { onUse(detail) },
+                            sourceChatAvailable = sourceChatAvailable,
+                            onOpenChat = onOpenChat,
+                        )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowDiscardDialog(onClose: () -> Unit, onDiscard: () -> Unit) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        val dialogWidth = 360.dp
+        val regularMargin = 24.dp
+        BoxWithConstraints(
+            Modifier.widthIn(max = dialogWidth + regularMargin * 2),
+            contentAlignment = Alignment.Center,
+        ) {
+            val compact = maxHeight < with(LocalDensity.current) { 16.sp.toDp() * 12 }
+            val margin = if (compact) 12.dp else regularMargin
+            val colors = MaterialTheme.colorScheme
+            val actionColors = ButtonDefaults.textButtonColors(contentColor = colors.onSurface)
+            val actionStyle =
+                MaterialTheme.typography.labelLarge.copy(fontSize = 14.sp, lineHeight = 20.sp)
+            val actionPadding =
+                PaddingValues(horizontal = if (compact) 8.dp else 12.dp, vertical = 8.dp)
+            Surface(
+                modifier = Modifier.padding(margin).widthIn(max = dialogWidth).fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                color = colors.surfaceContainerHigh,
+                contentColor = colors.onSurface,
+            ) {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState())
+                        .padding(if (compact) 16.dp else 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 24.dp),
+                ) {
+                    Text(
+                        stringResource(R.string.workflow_discard_title),
+                        Modifier.semantics { heading() },
+                        style =
+                            MaterialTheme.typography.headlineSmall.copy(
+                                fontSize = if (compact) 20.sp else 24.sp,
+                                lineHeight = if (compact) 28.sp else 32.sp,
+                            ),
+                    )
+                    FlowRow(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(
+                            onClick = onClose,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = actionColors,
+                            contentPadding = actionPadding,
+                        ) {
+                            Text(
+                                stringResource(R.string.workflow_keep_editing),
+                                style = actionStyle,
+                            )
+                        }
+                        TextButton(
+                            onClick = onDiscard,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = actionColors,
+                            contentPadding = actionPadding,
+                        ) {
+                            Text(stringResource(R.string.workflow_discard), style = actionStyle)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowToolbar(
+    title: String,
+    onBack: () -> Unit,
+    action: (@Composable () -> Unit)? = null,
+) {
+    Column {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 12.dp, end = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(painterResource(R.drawable.ic_arrow_back), stringResource(R.string.back))
+            }
+            Text(
+                title,
+                Modifier.weight(1f).semantics { heading() },
+                style =
+                    MaterialTheme.typography.titleLarge.copy(
+                        fontSize = 20.sp,
+                        lineHeight = 28.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+            )
+            action?.invoke()
+        }
+        WorkflowDivider()
+    }
+}
+
+@Composable
+private fun WorkflowDirectory(
+    state: WorkflowState,
+    route: WorkflowsRoute,
+    query: ChatSearchState,
+    modifier: Modifier,
+    canNavigate: Boolean,
+    createError: Int?,
+    onBack: () -> Unit,
+    onCreate: () -> Unit,
+    onScope: (WorkflowScope) -> Unit,
+    onSelect: (String) -> Unit,
+    restoreRow: String?,
+    onRowRestored: () -> Unit,
+) {
+    val text = query.committedQuery.text.trim()
+    val displayedState =
+        if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
+        else query.retainWhileComposing(state)
+    val catalog =
+        remember(displayedState.catalog, state.catalog) {
+            val displayed = displayedState.catalog
+            val current = state.catalog
+            when {
+                current == null -> null
+                displayed == null || displayed === current -> displayed
+                else -> {
+                    // Preserve composition order without restoring rows removed by the current
+                    // catalog.
+                    val visibleIds = current.mapTo(mutableSetOf()) { it.id }
+                    displayed.filter { it.id in visibleIds }
+                }
+            }
+        }
+    val rules = displayedState.rules.takeIf { state.rules != null }
+    val connections = displayedState.connections.takeIf { state.connections != null }
+    val rows =
+        remember(catalog, route.scope, text) {
+            catalog?.filter { it.matches(route.scope, text) }.orEmpty()
+        }
+    val anchor = query.pendingAnchor
+    LaunchedEffect(rows, anchor, catalog) {
+        if (anchor != null && catalog != null)
+            query.restorePosition(rows.indexOfFirst { it.id == anchor.chatId }.takeIf { it >= 0 })
+    }
+    Column(
+        modifier.testTag("workflow_directory"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        WorkflowToolbar(stringResource(R.string.workspace_workflows), onBack) {
+            TextButton(
+                onClick = onCreate,
+                enabled = canNavigate && state.catalogFailure != WorkflowReadFailure.Unavailable,
+                modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
+                colors =
+                    ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onBackground
+                    ),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+            ) {
+                Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
+                Spacer(Modifier.size(4.dp))
+                Text(stringResource(R.string.workflow_new), style = workflowSmallStyle())
+            }
+        }
+        if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
+            WorkflowPlaceholder(R.string.workflow_unavailable)
+            return@Column
+        }
+        Column(
+            Modifier.widthIn(max = 730.dp)
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (createError != null) WorkflowNotice(createError)
+            WorkflowQuery(query)
+            FlowRow(
+                Modifier.selectableGroup(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                for (scope in WorkflowScope.entries) {
+                    val selected = scope == route.scope
+                    Box(
+                        Modifier.heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.secondaryContainer
+                                else MaterialTheme.colorScheme.background
+                            )
+                            .selectable(
+                                selected,
+                                role = Role.RadioButton,
+                                onClick = { onScope(scope) },
+                            )
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(stringResource(scope.label), style = workflowSmallStyle())
+                    }
+                }
+            }
+        }
+        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+            when {
+                catalog == null && state.catalogFailure == WorkflowReadFailure.Offline ->
+                    WorkflowPlaceholder(R.string.workflow_offline)
+                catalog == null && state.catalogFailure != null ->
+                    WorkflowPlaceholder(R.string.workflow_load_failed)
+                catalog == null -> WorkflowSkeleton(directory = true)
+                rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
+                else ->
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        state = query.position,
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
+                    ) {
+                        items(rows, key = { it.id }) { row ->
+                            WorkflowRow(
+                                row,
+                                rules?.let { it[row.id].orEmpty() },
+                                connections,
+                                row.id == route.id,
+                                canNavigate,
+                                row.id == restoreRow,
+                                onRowRestored,
+                                onSelect = { onSelect(row.id) },
+                            )
+                        }
+                    }
+            }
+        }
+        if (catalog != null) {
+            WorkflowReadFeedback(
+                state.catalogFailure.cachedReadFeedback()
+                    ?: state.rulesFailure.cachedReadFeedback()
+                    ?: state.connectionReadFeedback()
+            )
+        }
+    }
+}
+
+internal fun WorkflowSummary.matches(scope: WorkflowScope, query: String): Boolean {
+    val visible =
+        when (scope) {
+            WorkflowScope.All -> true
+            WorkflowScope.Private -> visibility == WorkflowSummaryVisibility.PRIVATE
+            WorkflowScope.Shared -> visibility == WorkflowSummaryVisibility.PUBLIC
+        }
+    return visible &&
+        (displayName?.contains(query, ignoreCase = true) == true ||
+            description?.contains(query, ignoreCase = true) == true ||
+            "/$name".contains(query, ignoreCase = true))
+}
+
+private val WorkflowScope.label: Int
+    get() =
+        when (this) {
+            WorkflowScope.All -> R.string.workflow_all
+            WorkflowScope.Private -> R.string.workflow_private
+            WorkflowScope.Shared -> R.string.workflow_shared
+        }
+
+@Composable
+private fun WorkflowQuery(query: ChatSearchState) {
+    val name = stringResource(R.string.workflow_search)
+    val requester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val keyboard = LocalSoftwareKeyboardController.current
+    val colors = MaterialTheme.colorScheme
+    val style = workspaceSearchTextStyle()
+    BasicTextField(
+        value = query.query,
+        onValueChange = query::edit,
+        modifier =
+            Modifier.fillMaxWidth()
+                .focusRequester(requester)
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (!it.isFocused) query.cancelComposition()
+                }
+                .testTag("workflow_query")
+                .semantics { contentDescription = name },
+        textStyle = style.copy(color = colors.onBackground),
+        singleLine = true,
+        cursorBrush = SolidColor(colors.onBackground),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+        decorationBox = { input ->
+            WorkspaceSearchField(
+                Modifier.fillMaxWidth(),
+                focused = focused,
+                hasTrailingAction = query.query.text.isNotEmpty(),
+                shape = RoundedCornerShape(18.dp),
+            ) {
+                Box(Modifier.weight(1f).padding(vertical = 8.dp)) {
+                    if (query.query.text.isEmpty())
+                        Text(
+                            name,
+                            color = colors.onSurfaceVariant,
+                            style = style,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    input()
+                }
+                if (query.query.text.isNotEmpty())
+                    IconButton(
+                        onClick = {
+                            query.reset()
+                            requester.requestFocus()
+                            keyboard?.show()
+                        }
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_close),
+                            stringResource(R.string.workflow_clear_search),
+                        )
+                    }
+            }
+        },
+    )
+}
+
+@Composable
+private fun WorkflowEmpty(
+    scope: WorkflowScope,
+    text: String,
+    reset: () -> Unit,
+    onScope: (WorkflowScope) -> Unit,
+) {
+    Column(
+        Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        when {
+            text.isNotEmpty() -> {
+                WorkflowSecondary(stringResource(R.string.workflow_no_matches))
+                TextButton(onClick = reset) { Text(stringResource(R.string.workflow_clear_search)) }
+            }
+            scope != WorkflowScope.All -> {
+                WorkflowSecondary(stringResource(R.string.workflow_empty_scope))
+                TextButton(onClick = { onScope(WorkflowScope.All) }) {
+                    Text(stringResource(R.string.workflow_show_all))
+                }
+            }
+            else -> WorkflowSecondary(stringResource(R.string.workflow_empty))
+        }
+    }
+}
+
+@Composable
+private fun WorkflowRow(
+    item: WorkflowSummary,
+    rules: List<WorkflowAutomation>?,
+    connections: Set<String>?,
+    selected: Boolean,
+    enabled: Boolean,
+    restoreFocus: Boolean,
+    onRestored: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    val sources = remember(rules) { rules.orEmpty().map { it.source }.distinct() }
+    val glyph = sources.singleOrNull()?.icon ?: R.drawable.ic_account_tree
+    val scope =
+        stringResource(
+            if (item.visibility == WorkflowSummaryVisibility.PRIVATE) R.string.workflow_private
+            else R.string.workflow_shared
+        )
+    val trigger =
+        when {
+            rules == null -> null
+            sources.isEmpty() -> stringResource(R.string.workflow_manual)
+            else -> sources.map { stringResource(it.label) }.joinToString(" · ")
+        }
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(restoreFocus, enabled) {
+        if (restoreFocus && enabled) {
+            requester.requestFocus()
+            onRestored()
+        }
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .heightIn(min = 80.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) colors.secondaryContainer else colors.background)
+            .focusRequester(requester)
+            .selectable(selected, enabled = enabled, role = Role.Button, onClick = onSelect)
+            .testTag("workflow_row_${item.id}")
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(40.dp).background(colors.surfaceVariant, RoundedCornerShape(12.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(painterResource(glyph), null, Modifier.size(20.dp), tint = colors.onBackground)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                item.displayName ?: item.name,
+                style = workflowBodyStyle(),
+                fontWeight = FontWeight.SemiBold,
+            )
+            item.description
+                ?.takeIf { it.isNotBlank() }
+                ?.let {
+                    Text(
+                        it,
+                        color = colors.onSurfaceVariant,
+                        style = workflowSmallStyle(),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            val enabledCount = rules.orEmpty().count { it.enabled }
+            val status =
+                when {
+                    rules.orEmpty().any { it.needsConnection(connections) } ->
+                        stringResource(R.string.workflow_needs_connection) to colors.error
+                    enabledCount > 0 ->
+                        pluralStringResource(
+                            R.plurals.workflow_enabled_count,
+                            enabledCount,
+                            enabledCount,
+                        ) to LocalActivityStatusColor.current
+                    !rules.isNullOrEmpty() ->
+                        stringResource(R.string.workflow_paused) to colors.onSurfaceVariant
+                    else -> null
+                }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                WorkflowSecondary(listOfNotNull(scope, trigger).joinToString(" · "), small = true)
+                status?.let { WorkflowStatus(it.first, it.second) }
+            }
+        }
+        Icon(
+            painterResource(R.drawable.ic_chevron_right),
+            null,
+            Modifier.align(Alignment.CenterVertically).size(18.dp),
+            tint = colors.onBackground,
+        )
+    }
+}
+
+@Composable
+private fun WorkflowDetailPane(
+    detail: WorkflowDetail,
+    state: WorkflowState,
+    tab: WorkflowTab,
+    position: LazyListState,
+    wide: Boolean,
+    timezone: String,
+    onTab: (WorkflowTab) -> Unit,
+    onEdit: () -> Unit,
+    onNewRule: () -> Unit,
+    onEditRule: (WorkflowEdit.Rule) -> Unit,
+    onToggle: (WorkflowAutomation) -> Unit,
+    handoffPending: Boolean,
+    useError: Int?,
+    onUse: () -> Unit,
+    sourceChatAvailable: (String) -> Boolean,
+    onOpenChat: (String) -> Unit,
+) {
+    val padding = if (wide) 32.dp else 20.dp
+    val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    Column(
+        Modifier.fillMaxSize().testTag("workflow_detail"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        LazyColumn(
+            contentWidth.weight(1f),
+            state = position,
+            contentPadding =
+                PaddingValues(
+                    start = padding,
+                    end = padding,
+                    top = if (wide) 24.dp else 16.dp,
+                    bottom = 24.dp,
+                ),
+        ) {
+            item(key = "header") { WorkflowDetailHeader(detail) }
+            stickyHeader(key = "tabs") { WorkflowTabs(tab, onTab) }
+            when (tab) {
+                WorkflowTab.Instructions ->
+                    item {
+                        WorkflowSectionHeader(
+                            R.string.workflow_instructions_heading,
+                            if (detail.canManage) R.string.workflow_edit_instructions else null,
+                            !state.writing && !handoffPending,
+                            onEdit,
+                        )
+                        Text(
+                            detail.instruction?.takeIf { it.isNotBlank() }
+                                ?: stringResource(R.string.workflow_no_instructions),
+                            style = workflowBodyStyle(),
+                        )
+                    }
+                WorkflowTab.Automations -> {
+                    item {
+                        WorkflowSectionHeader(
+                            R.string.workflow_trigger_rules,
+                            if (detail.canManage) R.string.workflow_add_automation else null,
+                            !state.writing && !handoffPending,
+                            onNewRule,
+                        )
+                        if (detail.automations.isEmpty())
+                            WorkflowSecondary(stringResource(R.string.workflow_no_rules))
+                    }
+                    items(detail.automations, key = { it.id }) { rule ->
+                        WorkflowRuleRow(
+                            rule = rule,
+                            state = state,
+                            actionsEnabled = !handoffPending,
+                            timezone = timezone,
+                            onEdit = onEditRule,
+                            onToggle = onToggle,
+                        )
+                        if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
+                    }
+                }
+                WorkflowTab.History -> {
+                    val latest =
+                        detail.automations
+                            .filter { it.lastRunAt != null }
+                            .sortedByDescending { it.lastRunAt }
+                    item {
+                        WorkflowSectionHeader(R.string.workflow_recent_runs)
+                        if (latest.isEmpty())
+                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
+                    }
+                    items(latest, key = { it.id }) {
+                        WorkflowHistoryRow(
+                            rule = it,
+                            timezone = timezone,
+                            sourceChatAvailable = sourceChatAvailable,
+                            sourceNavigationEnabled = !handoffPending,
+                            onOpenChat = onOpenChat,
+                        )
+                    }
+                }
+            }
+        }
+        val connectionFeedback =
+            if (
+                tab == WorkflowTab.Automations &&
+                    detail.automations.any { it.source.connector != null }
+            )
+                state.connectionReadFeedback()
+            else null
+        WorkflowReadFeedback(state.detailFailure.cachedReadFeedback() ?: connectionFeedback)
+        WorkflowUseBar(
+            wide = wide,
+            enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
+            notice = if (detail.shadowedBy != null) R.string.workflow_shadowed else useError,
+            onUse = onUse,
+        )
+    }
+}
+
+@Composable
+private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
+            when (failure) {
+                null -> WorkflowSkeleton(directory = false)
+                WorkflowReadFailure.Offline -> WorkflowPlaceholder(R.string.workflow_offline)
+                else -> WorkflowPlaceholder(R.string.workflow_load_failed)
+            }
+        }
+        WorkflowUseBar(wide = wide, enabled = false, onUse = {})
+    }
+}
+
+@Composable
+private fun WorkflowUseBar(
+    wide: Boolean,
+    enabled: Boolean,
+    notice: Int? = null,
+    onUse: () -> Unit,
+) {
+    WorkflowDivider()
+    Column(
+        Modifier.widthIn(max = 730.dp)
+            .fillMaxWidth()
+            .padding(horizontal = if (wide) 32.dp else 20.dp)
+            .padding(top = 8.dp, bottom = 10.dp),
+        horizontalAlignment = if (wide) Alignment.End else Alignment.CenterHorizontally,
+    ) {
+        if (notice != null) WorkflowNotice(notice, PaddingValues(bottom = 8.dp))
+        WorkflowAction(
+            stringResource(R.string.workflow_use_in_chat),
+            onUse,
+            enabled = enabled,
+            primary = true,
+            modifier = (if (wide) Modifier else Modifier.fillMaxWidth()).testTag("workflow_use"),
+        )
+    }
+}
+
+@Composable
+private fun WorkflowDetailHeader(detail: WorkflowDetail) {
+    Column(Modifier.padding(bottom = 20.dp)) {
+        Text(
+            detail.displayName ?: detail.name,
+            Modifier.semantics { heading() }.testTag("workflow_detail_title"),
+            style =
+                MaterialTheme.typography.headlineSmall.copy(
+                    fontSize = 24.sp,
+                    lineHeight = 32.sp,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+        )
+        detail.description
+            ?.takeIf { it.isNotBlank() }
+            ?.let { Text(it, Modifier.padding(top = 8.dp), style = workflowBodyStyle()) }
+        FlowRow(
+            Modifier.padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "/${detail.name}",
+                Modifier.background(
+                        MaterialTheme.colorScheme.surfaceVariant,
+                        RoundedCornerShape(8.dp),
+                    )
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                style =
+                    MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+            )
+            WorkflowSecondary(
+                stringResource(
+                    when {
+                        detail.visibility == WorkflowDetailVisibility.PRIVATE ->
+                            R.string.workflow_private
+                        detail.canManage -> R.string.workflow_shared_manageable
+                        else -> R.string.workflow_shared_usable
+                    }
+                ),
+                small = true,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    val accent = LocalActivityStatusColor.current
+    val tabs = WorkflowTab.entries
+    val tabFocus = remember { List(WorkflowTab.entries.size) { FocusRequester() } }
+    val stepRight = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
+    Column(Modifier.fillMaxWidth().background(colors.background)) {
+        PrimaryTabRow(
+            selectedTabIndex = current.ordinal,
+            containerColor = colors.background,
+            indicator = {
+                TabRowDefaults.PrimaryIndicator(
+                    Modifier.tabIndicatorOffset(current.ordinal, matchContentSize = true),
+                    width = Dp.Unspecified,
+                    height = 3.dp,
+                    shape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp),
+                    color = accent,
+                )
+            },
+            divider = { WorkflowDivider() },
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                Tab(
+                    selected = tab == current,
+                    onClick = { pick(tab) },
+                    modifier =
+                        Modifier.focusRequester(tabFocus[index])
+                            .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                            .onPreviewKeyEvent { event ->
+                                val next =
+                                    when (event.key) {
+                                        Key.DirectionLeft ->
+                                            (index - stepRight + tabs.size) % tabs.size
+                                        Key.DirectionRight ->
+                                            (index + stepRight + tabs.size) % tabs.size
+                                        Key.MoveHome -> 0
+                                        Key.MoveEnd -> tabs.lastIndex
+                                        else -> return@onPreviewKeyEvent false
+                                    }
+                                if (event.type == KeyEventType.KeyDown) {
+                                    tabFocus[next].requestFocus()
+                                    pick(tabs[next])
+                                }
+                                true
+                            }
+                            .testTag("workflow_tab_${tab.name.lowercase()}"),
+                    selectedContentColor = colors.onBackground,
+                    unselectedContentColor = colors.onSurfaceVariant,
+                    text = {
+                        Text(
+                            stringResource(
+                                when (tab) {
+                                    WorkflowTab.Instructions -> R.string.workflow_instructions
+                                    WorkflowTab.Automations -> R.string.workflow_automations
+                                    WorkflowTab.History -> R.string.workflow_history
+                                }
+                            ),
+                            style =
+                                MaterialTheme.typography.bodyMedium.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                    fontWeight = FontWeight(550),
+                                ),
+                            textAlign = TextAlign.Center,
+                        )
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+internal fun WorkflowSectionHeader(
+    label: Int,
+    action: Int? = null,
+    actionEnabled: Boolean = true,
+    perform: () -> Unit = {},
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(label),
+            Modifier.weight(1f).semantics { heading() },
+            style = workflowBodyStyle(),
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (action != null) WorkflowAction(stringResource(action), perform, enabled = actionEnabled)
+    }
+}
+
+@Composable
+internal fun WorkflowAction(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    primary: Boolean = false,
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(12.dp)
+    val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    if (primary) {
+        Button(
+            onClick,
+            modifier.heightIn(min = 48.dp),
+            enabled = enabled,
+            shape = shape,
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor = colors.onBackground,
+                    contentColor = colors.background,
+                ),
+            contentPadding = padding,
+        ) {
+            Text(
+                label,
+                style = workflowSmallStyle(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight(550),
+            )
+        }
+    } else {
+        OutlinedButton(
+            onClick,
+            modifier.heightIn(min = 48.dp),
+            enabled = enabled,
+            shape = shape,
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
+            border = BorderStroke(1.dp, colors.outline),
+            contentPadding = padding,
+        ) {
+            Text(
+                label,
+                style = workflowSmallStyle(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight(550),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun WorkflowDivider() = HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+
+@Composable
+internal fun WorkflowSecondary(text: String, small: Boolean = false) {
+    Text(
+        text,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style =
+            if (small) workflowSmallStyle()
+            else workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+    )
+}
+
+@Composable
+private fun WorkflowPlaceholder(label: Int) {
+    Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.Center) {
+        Text(
+            stringResource(label),
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+        )
+    }
+}
+
+@Composable
+private fun WorkflowSkeleton(directory: Boolean) {
+    if (rememberChatWaitIndicator(true)) {
+        val label = stringResource(R.string.workspace_workflows)
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
+                contentDescription = label
+                progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+            }
+        ) {
+            if (directory) {
+                repeat(5) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 80.dp).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        ChatSkeletonBlock(Modifier.size(40.dp), 12.dp)
+                        Column(
+                            Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            ChatSkeletonBlock(Modifier.fillMaxWidth(.7f).height(14.dp))
+                            ChatSkeletonBlock(Modifier.fillMaxWidth(.5f).height(14.dp))
+                        }
+                    }
+                }
+            } else {
+                ChatSkeletonBlock(Modifier.fillMaxWidth(.6f).height(24.dp))
+                Spacer(Modifier.height(12.dp))
+                ChatSkeletonBlock(Modifier.fillMaxWidth(.8f).height(14.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkflowReadFeedback(label: Int?) {
+    if (label == null) return
+    val shape = RoundedCornerShape(12.dp)
+    Text(
+        stringResource(label),
+        Modifier.widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .heightIn(min = 48.dp)
+            .background(MaterialTheme.colorScheme.surface, shape)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .padding(12.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+    )
+}
+
+@Composable
+internal fun WorkflowNotice(label: Int, padding: PaddingValues = PaddingValues(vertical = 4.dp)) {
+    Text(
+        stringResource(label),
+        Modifier.padding(padding).semantics { liveRegion = LiveRegionMode.Polite },
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
+    )
+}
+
+@Composable
+internal fun WorkflowStatus(label: String, color: androidx.compose.ui.graphics.Color) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(7.dp).background(color, CircleShape))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+internal fun workflowBodyStyle() =
+    MaterialTheme.typography.bodyLarge.copy(
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+        letterSpacing = 0.sp,
+    )
+
+@Composable
+internal fun workflowSmallStyle() =
+    MaterialTheme.typography.bodySmall.copy(
+        fontSize = 13.sp,
+        lineHeight = 20.sp,
+        letterSpacing = 0.sp,
+    )

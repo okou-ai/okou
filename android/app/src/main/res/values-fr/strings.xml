@@ -29,15 +29,19 @@
     <string name="appearance_dark">Sombre</string>
     <string name="on_this_device">Sur cet appareil</string>
     <string name="retry">Réessayer</string>
-    <string name="auth_welcome">Bienvenue sur Okou</string>
     <string name="auth_restoring">Restauration de votre session…</string>
     <string name="auth_preparing_workspace">Préparation de votre espace de travail…</string>
     <string name="auth_choose_workspace">Choisissez votre espace de travail</string>
-    <string name="auth_no_workspace">Vous n’avez pas encore accès à un espace de travail.</string>
-    <string name="auth_workspace_setup">Configurer un espace de travail sur le web</string>
-    <string name="auth_access_removed">Votre session ou votre accès a changé. Reconnectez-vous ou actualisez votre accès.</string>
+    <string name="auth_no_workspace">Aucun espace de travail accessible pour le moment</string>
+    <string name="auth_no_workspace_detail">Créez un espace de travail ou acceptez une invitation dans votre navigateur, puis revenez dans Okou.</string>
+    <string name="auth_workspace_setup">Configurer un espace de travail sur le Web</string>
+    <string name="auth_access_removed">Cet espace de travail n’est plus accessible</string>
+    <string name="auth_access_removed_detail">Vérifiez les espaces de travail auxquels ce compte a encore accès.</string>
     <string name="auth_update_required">Mettez Okou à jour pour continuer.</string>
-    <string name="auth_unavailable">Impossible de charger votre session ou votre espace de travail. Réessayez.</string>
+    <string name="auth_unavailable">Impossible de charger la session ou l’espace de travail</string>
+    <string name="auth_check_workspace">Vérifier les espaces de travail</string>
+    <string name="auth_check_access">Vérifier l’accès</string>
+    <string name="auth_sign_in_again">Se reconnecter</string>
     <string name="auth_sign_out">Se déconnecter</string>
     <string name="auth_signing_out">Déconnexion…</string>
     <string name="auth_workspace">Espace de travail actuel</string>
@@ -152,5 +156,6 @@
     <string name="instructions_save_when_online">Connectez-vous pour enregistrer les modifications.</string>
     <string name="settings_timezone">Fuseau horaire</string>
     <string name="settings_timezone_hint">Fuseau horaire par défaut des nouvelles tâches planifiées.</string>
-    <string name="settings_timezone_utc">Temps universel coordonné (UTC)</string>
+    <string name="settings_timezone_utc">Temps universel coordonné</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

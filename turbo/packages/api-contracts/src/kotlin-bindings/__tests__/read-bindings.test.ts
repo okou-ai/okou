@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
   array,
+  boolean,
   coerce,
   discriminatedUnion,
   literal,
@@ -85,6 +86,21 @@ describe("selected Kotlin chat readers", () => {
     expect(source).toContain(
       "val `optional`: Map<String, List<String>>? = null,",
     );
+  });
+
+  it("keeps boolean literals and disjoint scalar alternatives typed", () => {
+    const source = renderKotlinTypes([
+      {
+        name: "Fixture",
+        direction: "output",
+        schema: object({
+          readOnly: literal(true),
+          binding: union([string(), number().int().safe(), boolean()]),
+        }),
+      },
+    ]);
+    expect(source).toContain("val `readOnly`: CanonicalTrue");
+    expect(source).toContain("val `binding`: FixtureBinding");
   });
 
   it.each([

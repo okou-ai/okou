@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.state.ChatSearchState
+import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.compose.foundation.clickable
@@ -86,11 +87,14 @@ internal fun ChatTitleSearch(
     val contentWidth = Modifier.widthIn(max = 720.dp).fillMaxWidth()
     val untitled = stringResource(R.string.chat_untitled)
     val archived = stringResource(R.string.chat_archived)
-    val projectNames = remember(state.projects) { state.projects.associate { it.id to it.name } }
-    val keyword = query.text.trim().lowercase()
+    val displayedState = search.retainWhileComposing(state)
+    val projects = displayedState.projects
+    val threads = displayedState.threadsByRecency
+    val projectNames = remember(projects) { projects.associate { it.id to it.name } }
+    val keyword = search.committedQuery.text.trim().lowercase()
     val results =
-        remember(state.threadsByRecency, keyword, untitled) {
-            val visible = state.threadsByRecency.asSequence().filter { it.hidden != true }
+        remember(threads, keyword, untitled) {
+            val visible = threads.asSequence().filter { it.hidden != true }
             if (keyword.isEmpty()) visible.take(12).toList()
             else visible.filter { it.searchTitle(untitled).lowercase().contains(keyword) }.toList()
         }
@@ -121,7 +125,10 @@ internal fun ChatTitleSearch(
                     modifier =
                         fieldModifier
                             .focusRequester(inputFocus)
-                            .onFocusChanged { inputFocused = it.isFocused }
+                            .onFocusChanged {
+                                inputFocused = it.isFocused
+                                if (!it.isFocused) search.cancelComposition()
+                            }
                             .testTag("chat_search_query")
                             .semantics {
                                 contentDescription =
@@ -188,10 +195,11 @@ internal fun ChatTitleSearch(
         val retryFailedRead =
             retry.takeIf { !state.offline && failure == ChatListReadFailure.NeedsRetry }
         val retryEnabled = state.listPhase != ChatReadPhase.Loading
-        val awaitingResults = state.confirmedAt == null && !state.offline && failure == null
+        val awaitingResults =
+            displayedState.confirmedAt == null && !state.offline && failure == null
         val showSkeleton = rememberChatWaitIndicator(awaitingResults)
         val resultsWidth = contentWidth.weight(1f).padding(horizontal = 16.dp)
-        if (state.confirmedAt == null) {
+        if (displayedState.confirmedAt == null) {
             // Let the restored list position apply to the result rows once data is available.
             LazyColumn(resultsWidth) {
                 when {

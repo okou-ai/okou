@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.249.103](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.102...runner-rs-v0.249.103) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native accepted response receipt validation ([#50037](https://github.com/okou-ai/okou/issues/50037)) ([5ca5231](https://github.com/okou-ai/okou/commit/5ca5231eaa0bd49c84c1045308150a58d32f0837))
+
 ## [0.249.102](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.101...runner-rs-v0.249.102) (2026-11-22)
 
 

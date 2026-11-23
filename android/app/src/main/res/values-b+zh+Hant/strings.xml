@@ -29,15 +29,19 @@
     <string name="appearance_dark">深色</string>
     <string name="on_this_device">此裝置</string>
     <string name="retry">重試</string>
-    <string name="auth_welcome">歡迎使用 Okou</string>
     <string name="auth_restoring">正在恢復登入狀態…</string>
     <string name="auth_preparing_workspace">正在準備工作區…</string>
     <string name="auth_choose_workspace">選擇工作區</string>
-    <string name="auth_no_workspace">你尚無可存取的工作區。</string>
-    <string name="auth_workspace_setup">前往網頁建立工作區</string>
-    <string name="auth_access_removed">登入狀態或工作區存取權限已變更。請重新登入或重新整理權限。</string>
+    <string name="auth_no_workspace">還沒有可存取的工作區</string>
+    <string name="auth_no_workspace_detail">在瀏覽器建立工作區或接受邀請，再回到 Okou。</string>
+    <string name="auth_workspace_setup">前往 Web 設定工作區</string>
+    <string name="auth_access_removed">已無法存取此工作區</string>
+    <string name="auth_access_removed_detail">檢查後可選擇此帳號仍能存取的工作區。</string>
     <string name="auth_update_required">請更新 Okou 後繼續。</string>
-    <string name="auth_unavailable">無法載入登入狀態或工作區，請重試。</string>
+    <string name="auth_unavailable">暫時無法載入工作區</string>
+    <string name="auth_check_workspace">檢查工作區</string>
+    <string name="auth_check_access">檢查存取權限</string>
+    <string name="auth_sign_in_again">重新登入</string>
     <string name="auth_sign_out">登出</string>
     <string name="auth_signing_out">正在登出…</string>
     <string name="auth_workspace">目前的工作區</string>
@@ -152,5 +156,6 @@
     <string name="instructions_save_when_online">連線後即可儲存，變更已保留。</string>
     <string name="settings_timezone">時區</string>
     <string name="settings_timezone_hint">用於新建排程任務的預設時區。</string>
-    <string name="settings_timezone_utc">世界協調時間（UTC）</string>
+    <string name="settings_timezone_utc">世界協調時間</string>
+    <string name="settings_timezone_format">%1$s（UTC%2$s）</string>
 </resources>
