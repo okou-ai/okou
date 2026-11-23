@@ -612,7 +612,9 @@ describe("iOS distribution policy", () => {
         }).passed,
       ).toBe(true);
       expect(gate(change).passed).toBe(false);
-      expect(() => iosGatePolicy(base, policy, {})).toThrow();
+      expect(() => {
+        return iosGatePolicy(base, policy, {});
+      }).toThrow();
     }
   });
 });
