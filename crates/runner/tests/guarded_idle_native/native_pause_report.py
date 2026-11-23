@@ -10,6 +10,7 @@ import report
 import speculative_fault_report as saving
 import status_evidence
 from native_transition_report import (
+    validate_accepted_response,
     validate_preparation_loss,
     validate_producer_join,
     wait_progress,
@@ -80,14 +81,7 @@ def validate(directory):
             "backend_socket":"/run/vm0/sock/"+identity[0]+"/api.sock",
             "front_socket":"/run/vm0/sock/"+identity[0]+"/pause-proof.sock",
             "original_full_lease_active":True,"allocated":[2,4096,1]}, "capture was substituted for native acceptance")
-        observed = batch.clock(accepted.get("backend_response_observed_ns"), events[1]["monotonic_ns"], events[2]["monotonic_ns"])
-        response_sha = wire(accepted.get("response_raw"), True)
-        exact(accepted, {"backend_response_observed_ns":observed,"backend_status":204,
-            "response_raw":accepted["response_raw"],"response_sha256":response_sha,
-            "public_park_polled_pending":True,"response_delivery_withheld":True,
-            "restore_callback_reached":True,"internal_vmm_inflight_claimed":False,
-            "original_full_lease_active":True,"original_exit_polled_pending":True,"allocated":[2,4096,1]},
-            "native pause lacked actual success with public API wait still pending")
+        validate_accepted_response(accepted, events[1], events[2], repark=True)
         validate_preparation_loss(
             lost, events[2], events[3], observer_unwound=mode == "PauseObserverUnwind",
         )
