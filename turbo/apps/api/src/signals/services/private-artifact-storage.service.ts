@@ -5,7 +5,7 @@ import {
   parseArtifactReference,
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { command } from "ccstate";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql, type SQL } from "drizzle-orm";
 import { boolean, literal, number, object, string, uuid } from "zod";
 import {
   CURRENT_LINK_LAYOUT,
@@ -22,7 +22,7 @@ import { sanitizeArtifactFilename } from "../../lib/file-url";
 import { nowDate } from "../../lib/time";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { apiBackendUrl } from "../../lib/api-backend-url";
-import { db$, writeDb$ } from "../external/db";
+import { type ReadonlyDb, db$, writeDb$ } from "../external/db";
 import { safeUrlParse } from "../utils";
 import {
   allocateArtifactReference$,
@@ -43,23 +43,30 @@ const uploadProtocolSchema = object({
   size: number().int().nonnegative().safe(),
 }).or(object({ kind: literal("multipart-v1") }));
 
-export const privateAttachmentColumns = {
-  id: runUploadedFiles.id,
-  orgId: runUploadedFiles.orgId,
-  userId: runUploadedFiles.userId,
-  deletedAt: runUploadedFiles.deletedAt,
-  metadata: runUploadedFiles.metadata,
-  storageKey: runUploadedFiles.storageKey,
-  filename: runUploadedFiles.filename,
-  contentType: runUploadedFiles.contentType,
-  sizeBytes: runUploadedFiles.sizeBytes,
-  materializationStatus: runUploadedFiles.materializationStatus,
-};
+export function readPrivateAttachmentRows(
+  db: ReadonlyDb,
+  predicate: SQL | undefined,
+) {
+  return db
+    .select({
+      id: runUploadedFiles.id,
+      orgId: runUploadedFiles.orgId,
+      userId: runUploadedFiles.userId,
+      deletedAt: runUploadedFiles.deletedAt,
+      metadata: runUploadedFiles.metadata,
+      storageKey: runUploadedFiles.storageKey,
+      filename: runUploadedFiles.filename,
+      contentType: runUploadedFiles.contentType,
+      sizeBytes: runUploadedFiles.sizeBytes,
+      materializationStatus: runUploadedFiles.materializationStatus,
+    })
+    .from(runUploadedFiles)
+    .where(predicate);
+}
 
-export type PrivateAttachmentRow = Pick<
-  typeof runUploadedFiles.$inferSelect,
-  keyof typeof privateAttachmentColumns
->;
+export type PrivateAttachmentRow = Awaited<
+  ReturnType<typeof readPrivateAttachmentRows>
+>[number];
 
 /** Only ordinary upload preparation mints this metadata-stability contract. */
 export function completedPrivateAttachmentSize(

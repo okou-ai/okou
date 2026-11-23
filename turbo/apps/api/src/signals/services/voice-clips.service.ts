@@ -17,7 +17,7 @@ import { db$ } from "../external/db";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import {
   privateArtifactFromRow,
-  privateAttachmentColumns,
+  readPrivateAttachmentRows,
   type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 
@@ -104,17 +104,15 @@ export const resolveVoiceClips$ = command(
     const ids = args.fileIds.map((id) => {
       return id.toLowerCase();
     });
-    const rows = await get(db$)
-      .select(privateAttachmentColumns)
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          inArray(runUploadedFiles.id, ids),
-        ),
-      );
+    const rows = await readPrivateAttachmentRows(
+      get(db$),
+      and(
+        eq(runUploadedFiles.orgId, args.orgId),
+        eq(runUploadedFiles.userId, args.userId),
+        isNull(runUploadedFiles.deletedAt),
+        inArray(runUploadedFiles.id, ids),
+      ),
+    );
     signal.throwIfAborted();
     const records = new Map(
       rows.map((row) => {

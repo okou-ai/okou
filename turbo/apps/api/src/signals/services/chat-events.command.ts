@@ -199,7 +199,7 @@ import {
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
-  privateAttachmentColumns,
+  readPrivateAttachmentRows,
   type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
@@ -674,24 +674,22 @@ const startIncomingAttachmentRecords$ = command(
       counts.sqlReads += 1;
       // One statement captures every referenced record together. Binding the
       // UUID array also keeps the parameter count independent of file count.
-      const loaded = await get(db$)
-        .select(privateAttachmentColumns)
-        .from(runUploadedFiles)
-        .where(
-          or(
-            fileIds.length
-              ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
-              : undefined,
-            clipIds.length
-              ? and(
-                  sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
-                  eq(runUploadedFiles.orgId, owner.orgId),
-                  eq(runUploadedFiles.userId, owner.userId),
-                  isNull(runUploadedFiles.deletedAt),
-                )
-              : undefined,
-          ),
-        );
+      const loaded = await readPrivateAttachmentRows(
+        get(db$),
+        or(
+          fileIds.length
+            ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+            : undefined,
+          clipIds.length
+            ? and(
+                sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                eq(runUploadedFiles.orgId, owner.orgId),
+                eq(runUploadedFiles.userId, owner.userId),
+                isNull(runUploadedFiles.deletedAt),
+              )
+            : undefined,
+        ),
+      );
       signal.throwIfAborted();
       return new Map(
         loaded.map((row) => {
