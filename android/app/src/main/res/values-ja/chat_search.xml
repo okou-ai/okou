@@ -26,4 +26,10 @@
     <string name="chat_search_workflow_shadowed">このコマンドは非公開のワークフローで使用されています</string>
     <string name="chat_search_artifact_preview">成果物のプレビュー</string>
     <string name="chat_search_close_artifact_preview">成果物のプレビューを閉じる</string>
+    <string name="chat_search_short">検索</string>
+    <string name="chat_search_partial_local">一部の結果を読み込めませんでした。保存済みのチャットのみ表示しています。</string>
+    <string name="chat_search_saved_chats">更新できませんでした。保存済みのチャットを表示しています。</string>
+    <string name="chat_search_saved_results">更新できませんでした。前回の結果を表示しています。</string>
+    <string name="chat_search_messages_failed">メッセージを検索できませんでした</string>
+    <string name="chat_search_artifacts_failed">成果物を検索できませんでした</string>
 </resources>
