@@ -29,6 +29,7 @@
     <string name="settings_account_select">Pilih</string>
     <string name="settings_account_reconnect">Perlu dihubungkan kembali</string>
     <string name="settings_account_switching">Mengganti…</string>
+    <string name="settings_account_switch_unconfirmed">Peralihan belum dikonfirmasi</string>
     <string name="settings_account_switch_failed">Gagal mengganti akun.</string>
     <string name="settings_quota">Kuota</string>
     <string name="settings_hour_quota">Kuota %1$d jam</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">Sangat tinggi</string>
     <string name="settings_model_effort_max">Maksimum</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Memperbarui akun model</string>
+    <string name="settings_refreshing_credit_balance">Memperbarui saldo kredit</string>
 </resources>

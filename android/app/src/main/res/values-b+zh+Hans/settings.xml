@@ -29,6 +29,7 @@
     <string name="settings_account_select">选择</string>
     <string name="settings_account_reconnect">需要重新连接</string>
     <string name="settings_account_switching">正在切换…</string>
+    <string name="settings_account_switch_unconfirmed">切换结果尚未确认</string>
     <string name="settings_account_switch_failed">未能切换账号。</string>
     <string name="settings_quota">配额</string>
     <string name="settings_hour_quota">%1$d 小时额度</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">超高</string>
     <string name="settings_model_effort_max">最高</string>
     <string name="settings_model_effort_ultra">极高</string>
+    <string name="settings_refreshing_model_accounts">正在刷新模型账号</string>
+    <string name="settings_refreshing_credit_balance">正在刷新积分余额</string>
 </resources>

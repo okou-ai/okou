@@ -25,6 +25,7 @@ import ai.okou.android.preferences.MemberPreferencesModel
 import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
 import ai.okou.android.settings.DefaultModelStore
+import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.settings.WorkspaceSettingsModel
 import ai.okou.android.workflows.WorkflowModel
 import androidx.lifecycle.ViewModel
@@ -125,6 +126,7 @@ class SessionModel(
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
+    private val settingsCache: WorkspaceSettingsCache? = null,
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -517,6 +519,7 @@ class SessionModel(
                     { current(ticket, snapshot) },
                     { workspaceFailure(ticket, snapshot, it) },
                     connectivity,
+                    cache = settingsCache,
                 )
                 .also { it.defaultModel.foreground(foreground.value) }
         }

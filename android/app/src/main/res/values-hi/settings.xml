@@ -29,6 +29,7 @@
     <string name="settings_account_select">चुनें</string>
     <string name="settings_account_reconnect">दोबारा कनेक्ट करना होगा</string>
     <string name="settings_account_switching">बदला जा रहा है…</string>
+    <string name="settings_account_switch_unconfirmed">खाता बदलने की पुष्टि बाकी है</string>
     <string name="settings_account_switch_failed">खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>
@@ -70,4 +71,6 @@
     <string name="settings_model_effort_extra">बहुत उच्च</string>
     <string name="settings_model_effort_max">अधिकतम</string>
     <string name="settings_model_effort_ultra">अल्ट्रा</string>
+    <string name="settings_refreshing_model_accounts">मॉडल खाते रीफ़्रेश हो रहे हैं</string>
+    <string name="settings_refreshing_credit_balance">क्रेडिट बैलेंस रीफ़्रेश हो रहा है</string>
 </resources>
