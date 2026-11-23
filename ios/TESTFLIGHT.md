@@ -93,9 +93,15 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
 The repository declares `ITSAppUsesNonExemptEncryption=false`: the app's
 networking uses OS TLS, Clerk uses system Security/CryptoKit, and Ably's optional
 cipher implementation uses system CommonCrypto. Re-evaluate the declaration if
-adding custom encryption or changing these dependencies. Clerk, Ably, and
-PhoneNumberKit carry their own privacy manifests; Xcode upload validation remains
-required for the final archive.
+adding custom encryption or changing these dependencies.
+
+The app, notification service, and widget each include a privacy manifest for
+their executable. Clerk, Ably, Sentry, and PhoneNumberKit supply SDK manifests.
+Archive validation checks the app and extension API reasons. Export verification
+compares the archive and IPA manifests, including SDK resources. Use the final
+archive's Xcode privacy report and actual service data flows when updating the
+[App Store privacy answers](https://developer.apple.com/app-store/app-privacy-details/).
+Xcode upload validation still applies to the final distribution build.
 
 ## Versioning, validation, and failure recovery
 

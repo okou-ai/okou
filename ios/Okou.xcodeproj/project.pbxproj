@@ -26,7 +26,6 @@
 		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
 		0000000000000000000000A1 /* OkouWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000A5 /* OkouWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0000000000000000000000A2 /* ChatData in Frameworks */ = {isa = PBXBuildFile; productRef = 00000000000000000000002D /* ChatData */; };
-		0000000000000000000000B1 /* PrivacyInfo.xcprivacy in Textual Resources */ = {isa = PBXBuildFile; fileRef = 0000000000000000000000B2 /* Textual privacy manifest */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,17 +65,6 @@
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0000000000000000000000B3 /* Copy Textual Privacy Manifest */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = textual_Textual.bundle;
-			dstSubfolderSpec = 7;
-			files = (
-				0000000000000000000000B1 /* PrivacyInfo.xcprivacy in Textual Resources */,
-			);
-			name = "Copy Textual Privacy Manifest";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -84,7 +72,6 @@
 		00000000000000000000000A /* OkouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OkouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000049 /* OkouNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0000000000000000000000A5 /* OkouWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		0000000000000000000000B2 /* Textual privacy manifest */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ThirdParty/Textual/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -231,7 +218,6 @@
 				000000000000000000000044 /* NotificationExtension */,
 				000000000000000000000055 /* Push */,
 				0000000000000000000000A7 /* Widgets */,
-				0000000000000000000000B2 /* Textual privacy manifest */,
 				000000000000000000000007 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -246,7 +232,6 @@
 				000000000000000000000014 /* Sources */,
 				000000000000000000000015 /* Frameworks */,
 				000000000000000000000016 /* Resources */,
-				0000000000000000000000B3 /* Copy Textual Privacy Manifest */,
 				000000000000000000000054 /* Embed App Extensions */,
 			);
 			buildRules = (

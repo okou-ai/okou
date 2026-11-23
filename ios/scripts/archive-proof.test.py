@@ -128,10 +128,6 @@ class ArchiveProofTests(unittest.TestCase):
         }
         for bundle in (self.app, self.extension, self.widgets):
             write_plist(bundle / "PrivacyInfo.xcprivacy", privacy)
-        write_plist(
-            self.app / "textual_Textual.bundle/PrivacyInfo.xcprivacy",
-            {"NSPrivacyAccessedAPITypes": privacy["NSPrivacyAccessedAPITypes"][:1]},
-        )
         self.sdk_privacy = self.app / "ExampleSDK.bundle/PrivacyInfo.xcprivacy"
         write_plist(self.sdk_privacy, {"NSPrivacyTracking": False})
 

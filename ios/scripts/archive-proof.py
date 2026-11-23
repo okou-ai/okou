@@ -65,14 +65,11 @@ def archive_privacy_manifests(app):
     }
     # All three executables statically link ChatData's preference migration and
     # file timestamp cache. An SDK's nested manifest cannot declare those uses.
-    defaults = ("NSPrivacyAccessedAPICategoryUserDefaults", "CA92.1")
-    chat_data = {defaults, ("NSPrivacyAccessedAPICategoryFileTimestamp", "C617.1")}
-    for bundle, required in (
-        (Path(), chat_data),
-        (EXTENSION_PATH, chat_data),
-        (WIDGETS_PATH, chat_data),
-        (Path("textual_Textual.bundle"), {defaults}),
-    ):
+    required = {
+        ("NSPrivacyAccessedAPICategoryUserDefaults", "CA92.1"),
+        ("NSPrivacyAccessedAPICategoryFileTimestamp", "C617.1"),
+    }
+    for bundle in (Path(), EXTENSION_PATH, WIDGETS_PATH):
         name = (bundle / "PrivacyInfo.xcprivacy").as_posix()
         if name not in manifests:
             raise ValueError(f"Missing privacy manifest: {name}")
