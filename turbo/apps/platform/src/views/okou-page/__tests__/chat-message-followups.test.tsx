@@ -471,6 +471,18 @@ test.each([false, true])(
     await fill(editor, "");
     expect(editor.textContent).toBe("");
     await user.click(editor);
+    editor.addEventListener(
+      "keydown",
+      (event) => {
+        event.preventDefault();
+      },
+      {
+        capture: true,
+        once: true,
+      },
+    );
+    await user.keyboard("{Tab}");
+    expect(editor.textContent).toBe("");
     await user.keyboard("{Tab}");
     expect(editor.textContent).toBe(PRESENTATION_PROMPT);
     expect(editor).toHaveFocus();

@@ -218,7 +218,6 @@ interface TiptapWorkflowComposerProps {
 
 interface ComposerKeyDownContext {
   readonly composer: ComposerSignals;
-  readonly acceptFollowup?: () => boolean;
   readonly selectedTask: ComposerTask | null;
   readonly selectTask: (task: ComposerTask | null) => void;
   readonly onKeyDown: (event: KeyboardEventLike) => void;
@@ -317,14 +316,6 @@ function handleComposerKeyDownCapture(
   if (event.keyCode === 229) {
     // A confirming key can arrive after compositionend. Keep it out of editor
     // keymaps without preventing the input method's native confirmation.
-    return true;
-  }
-  if (
-    isPlainTab(event) &&
-    event.target === context.composer.editor.editor.view.dom &&
-    context.acceptFollowup?.()
-  ) {
-    event.preventDefault();
     return true;
   }
   if (
@@ -988,7 +979,10 @@ function ComposerSuggestionSession({
   );
 }
 
-function useFollowupPlaceholder(composer: ComposerSignals) {
+function useFollowupPlaceholder(
+  composer: ComposerSignals,
+  sessionActive: boolean,
+) {
   const switches = useLastResolved(featureSwitches$);
   const source = useGet(composer.recommendedFollowupSource$);
   const followup = switches
@@ -1005,25 +999,6 @@ function useFollowupPlaceholder(composer: ComposerSignals) {
       return $.chat.composer.placeholder;
     });
   const editor = composer.editor.editor;
-  const placeholderRef = (element: HTMLDivElement | null) => {
-    const attributes = editor.options.editorProps.attributes;
-    if (
-      element &&
-      typeof attributes === "object" &&
-      attributes.placeholder !== nativePlaceholder
-    ) {
-      editor.setOptions({
-        editorProps: {
-          ...editor.options.editorProps,
-          attributes: {
-            ...attributes,
-            placeholder: nativePlaceholder,
-            "aria-placeholder": nativePlaceholder,
-          },
-        },
-      });
-    }
-  };
   const acceptFollowup = () => {
     if (
       !followup ||
@@ -1035,6 +1010,40 @@ function useFollowupPlaceholder(composer: ComposerSignals) {
     }
     insertText(followup);
     return true;
+  };
+  const tabEnabled = Boolean(followup) && !hasInput && !sessionActive;
+  const placeholderRef = (element: HTMLDivElement | null) => {
+    const props = editor.options.editorProps;
+    const attributes = props.attributes;
+    if (
+      !element ||
+      typeof attributes !== "object" ||
+      (attributes.placeholder === nativePlaceholder &&
+        Boolean(props.handleKeyDown) === tabEnabled)
+    ) {
+      return;
+    }
+    editor.setOptions({
+      editorProps: {
+        ...props,
+        attributes: {
+          ...attributes,
+          placeholder: nativePlaceholder,
+          "aria-placeholder": nativePlaceholder,
+        },
+        handleKeyDown: tabEnabled
+          ? (view, event) => {
+              return (
+                isPlainTab(event) &&
+                event.target === view.dom &&
+                !event.isComposing &&
+                event.keyCode !== 229 &&
+                acceptFollowup()
+              );
+            }
+          : undefined,
+      },
+    });
   };
   return { followup, placeholderRef, acceptFollowup };
 }
@@ -1054,9 +1063,11 @@ function ComposerSuggestionMenu({
   readonly actions: ComposerActions;
   readonly children: ReactNode;
 }) {
-  const { followup, placeholderRef, acceptFollowup } =
-    useFollowupPlaceholder(composer);
   const sessionActive = useGet(composer.suggestion.sessionActive$);
+  const { followup, placeholderRef, acceptFollowup } = useFollowupPlaceholder(
+    composer,
+    sessionActive,
+  );
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
   const onKeyDown = useComposerKeyboard(composer, actions);
@@ -1080,7 +1091,6 @@ function ComposerSuggestionMenu({
           const nativeEvent = event.nativeEvent;
           const handled = handleComposerKeyDownCapture(nativeEvent, {
             composer,
-            acceptFollowup,
             selectedTask,
             selectTask,
             onKeyDown,
