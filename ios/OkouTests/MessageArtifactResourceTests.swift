@@ -40,6 +40,30 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertNotNil(returned.file)
   }
 
+  func testSingleImageHasNoAdjacentNavigation() async throws {
+    let fixture = try await ArtifactReadFixture.make(owner: self)
+    let image = fixture.artifact()
+    fixture.viewer.open(image, images: [image])
+    let content = try await artifactPreviewTask(fixture.viewer).value
+
+    XCTAssertEqual(content.artifact.id, image.id)
+    XCTAssertNil(content.image(-1))
+    XCTAssertNil(content.image(1))
+  }
+
+  func testMiddleImageHasBothAdjacentNavigationTargets() async throws {
+    let fixture = try await ArtifactReadFixture.make(owner: self)
+    let first = fixture.artifact()
+    let middle = fixture.artifact("image00002.png")
+    let last = fixture.artifact("image00003.png")
+    fixture.viewer.open(middle, images: [first, middle, last])
+    let content = try await artifactPreviewTask(fixture.viewer).value
+
+    XCTAssertEqual(content.artifact.id, middle.id)
+    XCTAssertEqual(content.image(-1)?.id, first.id)
+    XCTAssertEqual(content.image(1)?.id, last.id)
+  }
+
   func testConcurrentCardsShareTheirCoverAndCancellingOneWaiterKeepsTheOtherAlive() async throws {
     let entered = expectation(description: "Shared cover authorization started")
     let (gate, release) = AsyncStream<Void>.makeStream()
