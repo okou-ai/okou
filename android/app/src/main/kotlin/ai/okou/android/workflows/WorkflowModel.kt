@@ -1,6 +1,7 @@
 package ai.okou.android.workflows
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailShadowedBy
@@ -98,10 +99,8 @@ internal constructor(
     internal fun connectivityChanged(offline: Boolean) {
         if (this.offline == offline) return
         this.offline = offline
-        if (offline && !visible) catalogRead.cancel()
         if (!offline) {
             val current = mutable.value
-            if (current.catalogFailure.canRecheckOnReconnect()) catalogRead.cancel()
             if (current.rulesFailure.canRecheckOnReconnect()) rulesRead.cancel()
             if (current.connectionsFailure.canRecheckOnReconnect()) connectionsRead.cancel()
             if (current.detailFailure.canRecheckOnReconnect()) cancelDetailRead()
@@ -109,8 +108,6 @@ internal constructor(
                 cancelHistoryRead(keepEarlierRequest = true)
             mutable.value =
                 current.copy(
-                    catalogFailure =
-                        current.catalogFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     rulesFailure =
                         current.rulesFailure.takeUnless { it == WorkflowReadFailure.Offline },
                     connectionsFailure =
@@ -127,9 +124,9 @@ internal constructor(
             refresh(
                 buildSet {
                     if (
-                        searchingCatalog ||
-                            !catalogRead.readAt.isFresh(now) ||
-                            current.catalogFailure.canRecheckOnReconnect()
+                        !searchingCatalog &&
+                            (!catalogRead.readAt.isFresh(now) ||
+                                current.catalogFailure.canRecheckOnReconnect())
                     )
                         add(WorkflowReadScope.Catalog)
                     if (
@@ -286,7 +283,7 @@ internal constructor(
     }
 
     private fun refresh(scopes: Set<WorkflowReadScope> = allReadScopes) {
-        if (!authorized() || !foreground || !visible && (!searchingCatalog || offline)) return
+        if (!authorized() || !foreground || !visible && !searchingCatalog) return
         val activeScopes =
             if (visible) scopes
             else if (WorkflowReadScope.Catalog in scopes) catalogScope else return
@@ -366,7 +363,7 @@ internal constructor(
     ) {
         if (range.job?.isActive == true) return
         range.job = viewModelScope.launch {
-            retryReads(failure) {
+            retryReads(failure, catalog = range === catalogRead) {
                 val attempt = WorkflowRangeAttempt(++readSequence)
                 range.pending = attempt
                 val result =
@@ -642,6 +639,7 @@ internal constructor(
 
     private suspend fun retryReads(
         publishFailure: (WorkflowReadFailure) -> Unit,
+        catalog: Boolean = false,
         attempt: suspend () -> Throwable?,
     ) = coroutineScope {
         var failures = 0
@@ -650,26 +648,29 @@ internal constructor(
         try {
             while (authorized()) {
                 val error = attempt() ?: break
-                if (offline && error is ApiFailure.Network) {
+                if (!catalog && offline && error is ApiFailure.Network) {
                     publishFailure(WorkflowReadFailure.Offline)
                     break
                 }
                 val retryAfter = error.retryAfterMillis()
-                if (retryAfter == null) {
+                val retryDelay =
+                    if (catalog) finiteReadRetryDelays.getOrNull(failures)
+                    else workflowRetryDelays[failures]
+                if (retryAfter == null || retryDelay == null) {
                     publishFailure(WorkflowReadFailure.RefreshFailed)
                     break
                 }
-                if (failures == 0) {
+                if (failures == 0 && (!catalog || mutable.value.catalog == null)) {
                     firstFailureAt = monotonicMillis()
                     publishFailure(WorkflowReadFailure.CouldNotLoad)
                 }
-                if (failures == 2) {
+                if (!catalog && failures == 2) {
                     notice = launch {
                         delay((30_000L - (monotonicMillis() - firstFailureAt)).coerceAtLeast(0))
                         if (authorized()) publishFailure(WorkflowReadFailure.RefreshFailed)
                     }
                 }
-                delay(maxOf(workflowRetryDelays[failures], retryAfter))
+                delay(maxOf(retryDelay, retryAfter))
                 failures = (failures + 1).coerceAtMost(workflowRetryDelays.lastIndex)
             }
         } finally {

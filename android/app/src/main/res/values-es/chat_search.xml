@@ -17,8 +17,6 @@
     <string name="chat_search_no_messages">No hay mensajes que coincidan</string>
     <string name="chat_search_no_workflows">No hay flujos de trabajo que coincidan</string>
     <string name="chat_search_no_artifacts">No hay artefactos que coincidan</string>
-    <string name="chat_search_online_only">Conéctate para buscar en este tipo</string>
-    <string name="chat_search_offline_titles">Sin conexión solo se buscan títulos de chat guardados.</string>
     <string name="chat_search_unavailable">No se pudieron cargar algunos resultados</string>
     <string name="chat_search_message_unavailable">Este mensaje ya no está disponible</string>
     <string name="chat_search_workflow_add_draft">Añadir al borrador de un chat nuevo</string>
@@ -31,5 +29,8 @@
     <string name="chat_search_saved_chats">No se pudo actualizar. Se muestran los chats guardados.</string>
     <string name="chat_search_saved_results">No se pudo actualizar. Se muestran los resultados anteriores.</string>
     <string name="chat_search_messages_failed">No se pudieron buscar mensajes</string>
+    <string name="chat_search_workflows_failed">No se pudieron buscar flujos de trabajo</string>
+    <string name="chat_search_workflows_saved">No se pudo actualizar el directorio de flujos de trabajo. La búsqueda usa el último directorio cargado.</string>
     <string name="chat_search_artifacts_failed">No se pudieron buscar artefactos</string>
+    <string name="chat_search_loading">Buscando…</string>
 </resources>
