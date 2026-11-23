@@ -75,11 +75,12 @@ export function orgPlanCapabilitiesFromRow<
 
   // Destructured rather than spread so the non-null narrowing above survives
   // into the returned capability, which is declared as a plain boolean.
-  const { restrictedBuiltInModels, ...runtimeCapabilities } = capabilities;
+  const { restrictedBuiltInModels, status, ...runtimeCapabilities } =
+    capabilities;
   return {
     ...runtimeCapabilities,
     restrictedBuiltInModels,
-    status: runtimeStatusForEntitlement(capabilities.status),
+    status: runtimeStatusForEntitlement(status),
   };
 }
 
