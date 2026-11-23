@@ -1,4 +1,4 @@
-import { computed, type Computed } from "ccstate";
+import { command, computed, type Command, type Computed } from "ccstate";
 import {
   createCardSignalsRegistry,
   type CardSignalsRegistry,
@@ -48,7 +48,9 @@ export interface ArtifactSignals
 export type ArtifactCardSignalsRegistry = CardSignalsRegistry<
   ArtifactDescriptor,
   ArtifactSignals
->;
+> & {
+  readonly refresh$: Command<void, []>;
+};
 
 export function createArtifactSignals(
   descriptor: ArtifactDescriptor,
@@ -83,7 +85,18 @@ export function createArtifactSignals(
 }
 
 export function createArtifactCardSignalsRegistry(): ArtifactCardSignalsRegistry {
-  return createCardSignalsRegistry((descriptor: ArtifactDescriptor) => {
-    return publicAttachmentUrl(descriptor.url);
-  }, createArtifactSignals);
+  const registry = createCardSignalsRegistry(
+    (descriptor: ArtifactDescriptor) => {
+      return publicAttachmentUrl(descriptor.url);
+    },
+    createArtifactSignals,
+  );
+  return {
+    ...registry,
+    refresh$: command(({ get, set }) => {
+      for (const artifact of get(registry.values$)) {
+        set(artifact.refresh$);
+      }
+    }),
+  };
 }

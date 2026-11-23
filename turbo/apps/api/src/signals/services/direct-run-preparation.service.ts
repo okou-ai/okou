@@ -7,14 +7,16 @@ import { env } from "../../lib/env";
 import { monotonicNow, nowDate } from "../../lib/time";
 import { rawSqlReadDb$ } from "../external/db";
 import { recordSandboxOperations } from "../external/sandbox-op-log";
-import { joinAll, type settle } from "../utils";
+import { joinAll } from "../utils";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import {
   type selectExecutionContentBundles,
   signExecutionContentBundles$,
 } from "./execution-content-bundle";
-import type { AcceptedMemoryMount } from "./execution-storage.service";
-import { prepareExecutionRuntimeContext$ } from "./execution-runtime-context";
+import {
+  prepareExecutionRuntimeContext$,
+  type ExecutionRuntimeResources,
+} from "./execution-runtime-context";
 import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import {
   cachedContentBundleUrlSchema,
@@ -34,12 +36,8 @@ import {
 /** Receipt from durable Thread Run admission. */
 export interface AdmittedRunLaunch {
   readonly run: ExecutionPublicationRun;
-  readonly memoryMount: AcceptedMemoryMount;
   readonly facts: AdmittedExecutionFacts;
-  readonly packages: {
-    readonly mounts: ExecutionPackageMounts;
-    readonly bundles: ReturnType<typeof selectExecutionContentBundles>;
-  };
+  readonly packageMounts: ExecutionPackageMounts;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -48,6 +46,7 @@ export interface AdmittedRunLaunch {
 }
 
 export interface ExecutionBundleCacheObservation {
+  readonly bundles: ReturnType<typeof selectExecutionContentBundles>;
   readonly bundleUrlCache: ContentBundleUrlCacheSnapshot;
   readonly timing: {
     readonly timestamp: string;
@@ -56,9 +55,15 @@ export interface ExecutionBundleCacheObservation {
   };
 }
 
-export type ExecutionBundleCacheRead = ReturnType<
-  typeof settle<ExecutionBundleCacheObservation | null>
->;
+interface PreparedExecutionBundleUrls {
+  readonly signed: Awaited<
+    ReturnType<(typeof signExecutionContentBundles$)["write"]>
+  >;
+  readonly timing: ExecutionBundleCacheObservation["timing"];
+}
+
+export type ExecutionBundleUrlsRead =
+  Promise<PreparedExecutionBundleUrls | null>;
 
 export interface DirectRunCachePublication {
   readonly runId: string;
@@ -77,12 +82,14 @@ const bundleCacheRowSchema = object({
 });
 
 export function createExecutionBundleCache(
-  bundleHashes$: Computed<Promise<readonly string[] | null>>,
+  bundles$: Computed<
+    Promise<ExecutionBundleCacheObservation["bundles"] | null>
+  >,
 ) {
   return computed(
     async (get): Promise<ExecutionBundleCacheObservation | null> => {
-      const bundleHashes = await get(bundleHashes$);
-      if (bundleHashes === null) {
+      const bundles = await get(bundles$);
+      if (bundles === null) {
         return null;
       }
       const db = get(rawSqlReadDb$);
@@ -90,13 +97,14 @@ export function createExecutionBundleCache(
       const timestamp = nowDate().toISOString();
       const startedAt = monotonicNow();
       const rows = await db.execute(sql`SELECT
-        ${contentBundleUrlCacheSnapshotSql(cache, bundleHashes)} AS "cachedBundleUrls"`);
+        ${contentBundleUrlCacheSnapshotSql(cache, bundles.hashes)} AS "cachedBundleUrls"`);
       const [row] = parseRawRows(bundleCacheRowSchema, rows);
       if (!row) {
         throw new Error("Execution bundle cache query returned no row");
       }
       const readyAt = monotonicNow();
       return {
+        bundles,
         bundleUrlCache: { context: cache, rows: row.cachedBundleUrls },
         timing: { timestamp, startedAt, readyAt },
       };
@@ -104,38 +112,51 @@ export function createExecutionBundleCache(
   );
 }
 
+export const prepareExecutionBundleUrls$ = command(
+  async (
+    { set },
+    source: Promise<ExecutionBundleCacheObservation | null>,
+    signal: AbortSignal,
+  ): ExecutionBundleUrlsRead => {
+    const snapshot = await source;
+    signal.throwIfAborted();
+    if (snapshot === null) {
+      return null;
+    }
+    const signed = await set(
+      signExecutionContentBundles$,
+      snapshot.bundles,
+      snapshot.bundleUrlCache,
+      signal,
+    );
+    signal.throwIfAborted();
+    return { signed, timing: snapshot.timing };
+  },
+);
+
 export const prepareDirectRun$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
-    bundleCache: ExecutionBundleCacheRead,
+    bundleUrls: ExecutionBundleUrlsRead,
+    resources: ExecutionRuntimeResources,
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
-    const { mounts, bundles } = input.packages;
     const [prepared, publication] = await joinAll([
-      set(prepareExecutionRuntimeContext$, input, mounts, signal),
-      (async () => {
-        const snapshot = await bundleCache;
-        signal.throwIfAborted();
-        if (!snapshot.ok) {
-          throw snapshot.error;
-        }
-        if (snapshot.value === null) {
-          throw new Error(
-            "Admitted Run is missing its bundle URL cache snapshot",
-          );
-        }
-        const signed = await set(
-          signExecutionContentBundles$,
-          bundles,
-          snapshot.value.bundleUrlCache,
-          signal,
-        );
-        return { signed, timing: snapshot.value.timing };
-      })(),
+      set(
+        prepareExecutionRuntimeContext$,
+        input,
+        input.packageMounts,
+        resources,
+        signal,
+      ),
+      bundleUrls,
     ]);
     signal.throwIfAborted();
+    if (publication === null) {
+      throw new Error("Admitted Run is missing its prepared Bundle URLs");
+    }
     const bundleCacheWaitMs = Math.max(
       0,
       publication.timing.readyAt - prepared.readyAt,

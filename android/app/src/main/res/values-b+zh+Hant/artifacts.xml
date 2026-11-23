@@ -35,7 +35,8 @@
     <string name="artifact_missing">此成果已無法使用</string>
     <string name="artifact_unavailable">暫時無法載入</string>
     <string name="artifact_preview_unsupported">此檔案無法預覽</string>
-    <string name="artifact_online_preview">連上網路後可預覽</string>
+    <string name="artifact_preview_unavailable">暫時無法載入預覽</string>
+    <string name="artifact_preview_source_unavailable">來源無法使用</string>
     <string name="artifact_preview_only">僅供預覽</string>
     <string name="artifact_source_name">來源對話 · %1$s</string>
     <string name="artifact_view_source">查看來源對話</string>

@@ -35,7 +35,8 @@
     <string name="artifact_missing">이 결과물은 더 이상 사용할 수 없습니다</string>
     <string name="artifact_unavailable">일시적으로 사용할 수 없습니다</string>
     <string name="artifact_preview_unsupported">이 파일은 미리 볼 수 없습니다</string>
-    <string name="artifact_online_preview">미리 보려면 인터넷에 연결하세요</string>
+    <string name="artifact_preview_unavailable">현재 미리 보기를 불러올 수 없습니다</string>
+    <string name="artifact_preview_source_unavailable">출처를 사용할 수 없습니다</string>
     <string name="artifact_preview_only">미리보기 전용</string>
     <string name="artifact_source_name">원본 대화 · %1$s</string>
     <string name="artifact_view_source">원본 대화 보기</string>

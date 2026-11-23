@@ -67,6 +67,8 @@ import {
   userMessagePartSchema,
   userMessageDocumentSchema,
   userMessageInputDocumentSchema,
+  chatThreadDraftSchema,
+  suggestionPresetSchema,
   composerDraftSchema,
   type indicatorSchema,
   indicatorsSchema,
@@ -100,7 +102,7 @@ export type {
 } from "./chat-run-options";
 
 const c = initContract();
-const chatThreadDraftSchema = composerDraftSchema;
+
 const chatEventCursorSchema = union([
   object({
     lastEventId: zNull(),
@@ -624,6 +626,7 @@ export const chatThreadByIdContract = c.router({
     headers: authHeadersSchema,
     pathParams: chatThreadIdPathParamsSchema,
     body: object({
+      suggestionPreset: suggestionPresetSchema.optional(),
       draftUserMessage: userMessageInputDocumentSchema.nullable(),
       draftAttachments: array(persistedAttachmentSchema).nullable().optional(),
     }).superRefine(requireUserMessageForDraftAttachments),
@@ -1318,7 +1321,7 @@ export type ChatThreadSnapshotProjection = zInfer<
 export type ChatThreadEvent = zInfer<typeof chatThreadEventSchema>;
 export type ChatThreadDetail = zInfer<typeof chatThreadDetailSchema>;
 export type ChatThreadMetadata = zInfer<typeof chatThreadMetadataSchema>;
-export type ChatThreadDraft = zInfer<typeof composerDraftSchema>;
+export type ChatThreadDraft = zInfer<typeof chatThreadDraftSchema>;
 export type ChatEvent = zInfer<typeof chatEventSchema>;
 /** The event variants the client consumes. */
 export type ClientChatEvent = zInfer<

@@ -11,7 +11,6 @@ export enum FeatureSwitchKey {
   EmailIntegration = "emailIntegration",
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
-  MarkdownDocumentTypography = "markdownDocumentTypography",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   DesktopShell = "desktopShell",

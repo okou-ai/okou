@@ -119,7 +119,10 @@ export type ArtifactMetadataRef = {
 
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;
 
-function artifactRefFromUrl(url: string): ArtifactRef {
+type AttachmentArtifactRef = ArtifactRef &
+  Pick<AttachmentPreviewSignals, "refresh$">;
+
+function artifactRefFromUrl(url: string): AttachmentArtifactRef {
   const attachment = previewAttachmentFromUrl(url);
   return {
     url,
@@ -136,9 +139,9 @@ interface ThreadArtifactPreviewContext {
 }
 
 function withTextPreview(
-  ref: ArtifactRef,
+  ref: AttachmentArtifactRef,
   { openDiagram$, threadId }: ThreadArtifactPreviewContext,
-): ArtifactRef {
+): AttachmentArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
     return ref;
   }
@@ -163,7 +166,7 @@ function materializeArtifactRef(
   input: ArtifactRefInput,
   previewContext: ThreadArtifactPreviewContext,
   signal: AbortSignal,
-): ArtifactRef {
+): AttachmentArtifactRef {
   if (typeof input === "string") {
     return withTextPreview(artifactRefFromUrl(input), previewContext);
   }
@@ -215,7 +218,7 @@ export type ThreadSidebarArtifactSource =
     }
   | {
       readonly kind: "attachment";
-      readonly ref: ArtifactRef;
+      readonly ref: AttachmentArtifactRef;
       readonly ownerSignal: AbortSignal;
     };
 

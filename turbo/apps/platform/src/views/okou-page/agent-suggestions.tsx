@@ -30,6 +30,7 @@ import {
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { captureSuggestionCard } from "../../lib/posthog.ts";
 import { Link } from "../router/link.tsx";
 import { ForYouCardHeading } from "./for-you-card-heading.tsx";
 import { ChatComposer } from "./composer.tsx";
@@ -320,7 +321,7 @@ function SuggestionDirectionComposer() {
   );
 }
 
-export function AgentSuggestionCard({
+function SuggestionHeading({
   entry,
   active,
 }: {
@@ -329,9 +330,13 @@ export function AgentSuggestionCard({
 }) {
   const { t } = useTranslation();
   const { item } = entry;
-  const start = useSet(startAgentSuggestion$);
-  const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
-  const signal = useGet(pageSignal$);
+  const show = useSet(entry.show$);
+  const recordClick = () => {
+    captureSuggestionCard({
+      eventName: "suggestion_card_action_clicked",
+      properties: { ...show(), action: "view_source" },
+    });
+  };
   const sourceOption = item.content.options.find((option) => {
     return option.threadId !== null;
   });
@@ -350,36 +355,59 @@ export function AgentSuggestionCard({
     sourceOption?.threadId ??
     (sourcePart?.type === "chat_thread" ? sourcePart.threadId : null);
   return (
+    <ForYouCardHeading
+      id={item.id}
+      title={item.content.title}
+      description={item.content.rationale}
+      active={active}
+      source={
+        sourceThreadId ? (
+          <Link
+            pathname={ROUTES.chat}
+            onClick={recordClick}
+            onAuxClick={(event) => {
+              if (event.button === 1) {
+                recordClick();
+              }
+            }}
+            options={{ pathParams: { threadId: sourceThreadId } }}
+            className="-mx-1.5 -my-0.5 inline-block max-w-full truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
+            aria-label={t(($) => {
+              return $.chat.agentSuggestions.viewSource;
+            })}
+          >
+            {sourcePart?.threadId === sourceThreadId
+              ? sourcePart.titleSnapshot
+              : t(($) => {
+                  return $.chat.agentSuggestions.viewSource;
+                })}
+          </Link>
+        ) : null
+      }
+    />
+  );
+}
+
+export function AgentSuggestionCard({
+  entry,
+  active,
+}: {
+  readonly entry: AgentSuggestionEntry;
+  readonly active: boolean;
+}) {
+  const { t } = useTranslation();
+  const { item } = entry;
+  const start = useSet(startAgentSuggestion$);
+  const submitFeedback = useSet(submitSuggestionFeedbackWithUndo$);
+  const signal = useGet(pageSignal$);
+  return (
     <article
       aria-labelledby={`suggestion-title-${item.id}`}
       className="flex flex-1 flex-col"
     >
-      <ForYouCardHeading
-        id={item.id}
-        title={item.content.title}
-        description={item.content.rationale}
-        active={active}
-        source={
-          sourceThreadId ? (
-            <Link
-              pathname={ROUTES.chat}
-              options={{ pathParams: { threadId: sourceThreadId } }}
-              className="-mx-1.5 -my-0.5 inline-block max-w-full truncate rounded-md px-1.5 py-0.5 text-[13px] text-muted-foreground underline decoration-border underline-offset-4 hover:bg-state-hover hover:text-foreground"
-              aria-label={t(($) => {
-                return $.chat.agentSuggestions.viewSource;
-              })}
-            >
-              {sourcePart?.threadId === sourceThreadId
-                ? sourcePart.titleSnapshot
-                : t(($) => {
-                    return $.chat.agentSuggestions.viewSource;
-                  })}
-            </Link>
-          ) : null
-        }
-      />
+      <SuggestionHeading entry={entry} active={active} />
       <div className="-mx-4 mt-5 mb-6 flex flex-col gap-3">
-        {item.content.options.map((option) => {
+        {item.content.options.map((option, index) => {
           return (
             <Button
               key={option.id}
@@ -400,7 +428,10 @@ export function AgentSuggestionCard({
                 .filter(Boolean)
                 .join(" ")}
               onClick={() => {
-                detach(start(item.id, option.id, signal), Reason.DomCallback);
+                detach(
+                  start(entry, option, index + 1, signal),
+                  Reason.DomCallback,
+                );
               }}
             >
               <SuggestionOptionContent option={option} />

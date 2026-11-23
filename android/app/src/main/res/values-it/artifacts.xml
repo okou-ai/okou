@@ -35,7 +35,8 @@
     <string name="artifact_missing">Questo artefatto non è più disponibile</string>
     <string name="artifact_unavailable">Temporaneamente non disponibile</string>
     <string name="artifact_preview_unsupported">Nessuna anteprima per questo file</string>
-    <string name="artifact_online_preview">Connettiti per caricare l’anteprima</string>
+    <string name="artifact_preview_unavailable">Impossibile caricare l’anteprima al momento</string>
+    <string name="artifact_preview_source_unavailable">Origine non disponibile</string>
     <string name="artifact_preview_only">Solo anteprima</string>
     <string name="artifact_source_name">Conversazione di origine · %1$s</string>
     <string name="artifact_view_source">Vedi la conversazione di origine</string>

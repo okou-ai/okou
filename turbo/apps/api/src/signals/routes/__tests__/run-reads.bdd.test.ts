@@ -2698,7 +2698,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         if (sent.status !== 201) {
           throw new Error("Expected the pending input to be accepted");
         }
-        await signing.entered;
+        await signing.waitForPending();
         const messages = await chat.listThreadEvents(actor, sent.body.threadId);
         pendingRunId = messages.events.find((event) => {
           return event.revokesEventId === clientEventId;
