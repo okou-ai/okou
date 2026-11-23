@@ -670,6 +670,53 @@ class DefaultModelSettingsTest {
     }
 
     @Test
+    fun switchingBackStillSavesWhenReadbackPrecedesTheEarlierWrite() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = DefaultModelApiFixture(api)
+            val started = CompletableDeferred<Unit>()
+            val fail = CompletableDeferred<Unit>()
+            var lateWrite: UpdateDefaultModelPreference? = null
+            val remote =
+                object : WorkspaceSession by api.service {
+                    override suspend fun defaultModelPreference(): DefaultModelPreference {
+                        val snapshot = api.service.defaultModelPreference()
+                        lateWrite?.let {
+                            lateWrite = null
+                            api.service.updateDefaultModelPreference(it)
+                        }
+                        return snapshot
+                    }
+
+                    override suspend fun updateDefaultModelPreference(
+                        update: UpdateDefaultModelPreference
+                    ): DefaultModelPreference {
+                        if (update.selectedModel == "claude-test") {
+                            started.complete(Unit)
+                            fail.await()
+                            lateWrite = update
+                            throw ApiFailure.Http(503, null, null, null)
+                        }
+                        return api.service.updateDefaultModelPreference(update)
+                    }
+                }
+            val model = model(api, service = remote, onFailure = {})
+            assertEquals("gpt-test", model.openAfterSync().selectedModel)
+            model.select("claude-test")
+            started.await()
+            model.select("gpt-test")
+            fail.complete(Unit)
+
+            val confirmed = model.state.first { it.pending == null }
+            assertEquals("gpt-test", confirmed.selectedModel)
+            assertEquals("gpt-test", api.service.defaultModelPreference().selectedModel)
+            assertEquals(
+                listOf(JsonPrimitive("claude-test"), JsonPrimitive("gpt-test")),
+                fixture.writes.map { it["selectedModel"] },
+            )
+        }
+    }
+
+    @Test
     fun saveRetriesKeepTheirScheduleAcrossReconnectAndYieldToScheduledRead() = runTest {
         ChatListApiFixture().use { api ->
             DefaultModelApiFixture(api)

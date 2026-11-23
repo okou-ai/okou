@@ -472,10 +472,11 @@ internal class DefaultModelSettings(
     ): Boolean {
         val current = mutable.value
         val latest = checkNotNull(current.save)
-        val fulfilled = latest.request.matches(response)
-        // The current value can confirm the user's choice. A different value is not a receipt
-        // for the old write. Only a distinct, explicitly requested edit can replace it.
-        if (!fulfilled && latest.request == attempted) return false
+        val attemptedConfirmed = attempted.matches(response)
+        if (!attemptedConfirmed && latest.request == attempted) return false
+        // The value before the first write can look like the user's newer choice.
+        // Submit that choice explicitly unless this read also confirms the earlier attempt.
+        val fulfilled = attemptedConfirmed && latest.request.matches(response)
 
         unconfirmedWrite = null
         readbackBlocked = false
