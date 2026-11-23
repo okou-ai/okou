@@ -1,8 +1,15 @@
 import { fetchResource } from "../lib/resource-fetch.ts";
 import { command, computed, state } from "ccstate";
+import { IN_VITEST } from "../env.ts";
+import { readTestMonotonicClock } from "../lib/time.ts";
 
 import { localStorageSignals } from "./external/local-storage.ts";
-import { isRecord, jsonParseOr, setLoop } from "./utils.ts";
+import {
+  createDeferredPromise,
+  isRecord,
+  jsonParseOr,
+  setLoop,
+} from "./utils.ts";
 import { resolvePlatformServiceStatusConfig } from "../lib/platform-host.ts";
 import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 
@@ -134,17 +141,28 @@ export const pollInstatusIssues$ = command(
       return;
     }
 
-    // The first round reads the notices' initial fetch; each later round
-    // refetches them. A failed fetch drops only its round.
-    let refetch = false;
+    // Each due refresh revalidates the initial fetch, including after a failed round.
+    let nextRefreshAt: number | undefined;
     setLoop(
       async (loopSignal) => {
-        if (refetch) {
+        const clock = IN_VITEST ? readTestMonotonicClock() : undefined;
+        if (nextRefreshAt !== undefined) {
+          if (clock && clock.now < nextRefreshAt) {
+            const changed = createDeferredPromise<void>(
+              { rejection: "owner" },
+              loopSignal,
+            );
+            clock.onNextWrite(() => {
+              changed.resolve();
+            }, loopSignal);
+            await changed.promise;
+            return false;
+          }
           set(refreshVersion$, (version) => {
             return version + 1;
           });
         }
-        refetch = true;
+        nextRefreshAt = (clock?.now ?? 0) + STATUS_REFRESH_INTERVAL_MS;
         await get(visibleInstatusIssues$);
         loopSignal.throwIfAborted();
         // Mobile notices sit above the chat list.
@@ -153,7 +171,7 @@ export const pollInstatusIssues$ = command(
       },
       STATUS_REFRESH_INTERVAL_MS,
       signal,
-      { testIntervalMs: STATUS_REFRESH_INTERVAL_MS },
+      { testIntervalMs: 0 },
     );
   },
 );
