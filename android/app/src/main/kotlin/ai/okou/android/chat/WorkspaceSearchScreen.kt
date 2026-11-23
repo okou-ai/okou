@@ -111,6 +111,7 @@ internal fun WorkspaceSearchScreen(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)? = null,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)? = null,
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
+    onRetrySearch: () -> Unit = {},
 ) {
     val query = search.query
     val incomingResults = SearchSources(state, remote, workflowResults, recentlyOpened)
@@ -257,6 +258,7 @@ internal fun WorkspaceSearchScreen(
             onOpenWorkflow,
             onOpenArtifact,
             onMoreArtifacts,
+            onRetrySearch,
             retry,
             refreshChats,
             restoreResultFocus,
@@ -420,6 +422,7 @@ private fun SearchResults(
     onOpenWorkflow: ((SearchWorkflowHit) -> Unit)?,
     onOpenArtifact: ((SearchArtifactHit) -> Unit)?,
     onMoreArtifacts: (String, String) -> Unit,
+    onRetrySearch: () -> Unit,
     retry: () -> Unit,
     refreshChats: () -> Unit,
     restoreResultFocus: Boolean,
@@ -745,11 +748,30 @@ private fun SearchResults(
             if (showSkeleton) item(key = "search_loading") { ChatListSkeleton() }
             if (status != null) {
                 item(key = "search_status") {
-                    ChatContentLoadNotice(
-                        status,
-                        retry = retry.takeIf { canRetryList },
-                        retryEnabled = list.listPhase != ChatReadPhase.Loading,
-                    )
+                    if (
+                        keyword.isNotEmpty() &&
+                            items.isEmpty() &&
+                            (messageRead.canRetrySearch ||
+                                workspaceToolsRead == null &&
+                                    (workflowRead.canRetrySearch ||
+                                        artifactRead.canRetrySearch ||
+                                        moreArtifactsFailed))
+                    ) {
+                        SearchEmpty(
+                            if (grouped) R.string.chat_search_failed else status,
+                            {
+                                if (canRetryList) retry()
+                                onRetrySearch()
+                            },
+                            R.string.retry,
+                        )
+                    } else {
+                        ChatContentLoadNotice(
+                            status,
+                            retry = retry.takeIf { canRetryList },
+                            retryEnabled = list.listPhase != ChatReadPhase.Loading,
+                        )
+                    }
                 }
             } else if (items.isEmpty() && !pending) {
                 item(key = "search_empty") {
@@ -872,7 +894,11 @@ private fun SearchResult(
 }
 
 @Composable
-private fun SearchEmpty(@StringRes title: Int, onBroaden: (() -> Unit)?) {
+private fun SearchEmpty(
+    @StringRes title: Int,
+    onAction: (() -> Unit)?,
+    @StringRes action: Int = R.string.chat_search_all_types,
+) {
     Column(
         Modifier.padding(top = 24.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -882,16 +908,16 @@ private fun SearchEmpty(@StringRes title: Int, onBroaden: (() -> Unit)?) {
             Modifier.padding(horizontal = 12.dp),
             style = chatListTitleStyle().copy(fontWeight = FontWeight.SemiBold),
         )
-        if (onBroaden != null) {
+        if (onAction != null) {
             Box(
                 Modifier.heightIn(min = 48.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClick = onBroaden)
+                    .clickable(role = Role.Button, onClick = onAction)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
                 Text(
-                    stringResource(R.string.chat_search_all_types),
+                    stringResource(action),
                     style = searchSecondaryStyle().copy(fontWeight = FontWeight.SemiBold),
                 )
             }

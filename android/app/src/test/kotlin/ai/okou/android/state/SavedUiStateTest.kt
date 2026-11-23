@@ -124,6 +124,7 @@ class SavedUiStateTest {
     fun searchReportsReadFailuresAndShowsConfirmedEmptyResultsWithAnOfflineSignal() {
         val search = ChatSearchState(TextFieldValue("Release"))
         val savedChat = searchResult("release", "Release notes")
+        var retries = 0
         var remote by
             mutableStateOf(
                 WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Failed),
@@ -147,6 +148,10 @@ class SavedUiStateTest {
                     onOpen = {},
                     retry = {},
                     remote = remote,
+                    onRetrySearch = {
+                        retries++
+                        remote = remote.copy(messages = SearchRead.Retrying)
+                    },
                 )
             }
         }
@@ -154,11 +159,13 @@ class SavedUiStateTest {
         compose
             .onNodeWithText("Some results couldn’t load. Showing saved chats only.")
             .assertIsDisplayed()
+        compose.onNodeWithText("Retry").assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()
         compose.onNodeWithText("Couldn’t search messages").assertIsDisplayed()
         compose.onNodeWithText("No matching messages").assertDoesNotExist()
 
-        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Retrying) }
+        compose.onNodeWithText("Retry").performClick()
+        assertEquals(1, retries)
         compose.waitUntil(5_000) {
             compose
                 .onAllNodesWithContentDescription("Searching…")
