@@ -1026,11 +1026,6 @@ private fun <K, V> LinkedHashMap<K, V>.rememberRead(key: K, value: V) {
 private val ConnectorAction.awaitingBrowserReceipt: Boolean
     get() = browserOpened && authorization is ConnectorAuthorization.Browser
 
-private fun Exception.hasUncertainResponse() =
-    this is ApiFailure.Network ||
-        this is ApiFailure.IncompatibleResponse ||
-        this is ApiFailure.Http && (status == 408 || status >= 500)
-
 private fun ConnectedService.withStatuses(
     statuses: Map<String, ConnectorAccountStatus>,
     preserveScopeMismatch: Boolean = false,

@@ -4,10 +4,12 @@ import ai.okou.android.R
 import ai.okou.android.connectors.ChatConnectorAccount
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ChatConnectorOverride
+import ai.okou.android.connectors.ChatConnectorSavePhase
 import ai.okou.android.connectors.ConnectorAccountStatus
 import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.connectors.ConnectorButton
 import ai.okou.android.connectors.ConnectorButtonTreatment
+import ai.okou.android.connectors.ConnectorChevron
 import ai.okou.android.connectors.ConnectorLoadWhenOnline
 import ai.okou.android.connectors.ConnectorMark
 import ai.okou.android.connectors.ConnectorReadError
@@ -282,11 +284,19 @@ internal fun ChatConnectorOptionsButton(
                                         openDirectory(ConnectorAccountTarget(group.entry.slug, id))
                                     },
                                 )
-                                if (save?.choice?.connectionId == id) {
+                                if (save != null && save.choice.connectionId == id) {
                                     ConnectorOptionFeedback(
-                                        if (saving) R.string.chat_connector_saving
-                                        else R.string.chat_connector_save_failed,
-                                        Modifier.padding(start = 12.dp),
+                                        when (save.phase) {
+                                            ChatConnectorSavePhase.Saving ->
+                                                R.string.chat_connector_saving
+                                            ChatConnectorSavePhase.Checking ->
+                                                R.string.connector_working
+                                            ChatConnectorSavePhase.Unconfirmed ->
+                                                R.string.connector_verify_pending
+                                            ChatConnectorSavePhase.Failed ->
+                                                R.string.chat_connector_save_failed
+                                        },
+                                        Modifier.padding(start = 12.dp, top = 8.dp, end = 12.dp),
                                     )
                                 }
                             }
@@ -391,8 +401,7 @@ private fun ChatConnectorRow(
                 )
             }
         }
-        if (account.status.needsAttention)
-            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
+        if (account.status.needsAttention) ConnectorChevron()
         else Checkbox(checked = enabled, onCheckedChange = null, enabled = canToggle)
     }
 }
@@ -421,7 +430,7 @@ private fun ConnectorOptionRow(
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(title, Modifier.weight(1f), style = connectorBodyType())
-        Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(24.dp))
+        ConnectorChevron()
     }
 }
 
