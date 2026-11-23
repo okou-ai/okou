@@ -149,6 +149,12 @@ struct ConversationRowProjection {
       let runID = message.runID, runID == failure.runID,
       message.text.count <= 400, !message.text.contains("\n")
     else { return false }
+    // Billing cards supply their own explanation. Keep an actual partial answer in the transcript.
+    if failure.failure?.billingReason != nil,
+      ChatFailure.BillingReason(diagnostic: message.text) == nil
+    {
+      return false
+    }
     for item in items {
       if case .work(let section, _) = item, section.anchorMessageID == message.id {
         return section.stepCount == 0
