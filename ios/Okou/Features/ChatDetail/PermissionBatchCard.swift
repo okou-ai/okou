@@ -135,15 +135,10 @@ private struct PermissionBatchDetailsContent: View {
         VStack(alignment: .leading, spacing: 16) {
           requestSummary
           if let snapshot = snapshot {
-            if snapshot.enabled {
-              Text("These permissions apply to these connectors across your chats and accounts.")
-                .font(.footnote).foregroundStyle(.secondary)
-              ForEach(snapshot.groups) { group in
-                PermissionBatchGroup(group: group, verifiesGrants: !requiresReadback)
-              }
-            } else {
-              Text("Batch permissions are not available for your account right now.")
-                .foregroundStyle(.secondary)
+            Text("These permissions apply to these connectors across your chats and accounts.")
+              .font(.footnote).foregroundStyle(.secondary)
+            ForEach(snapshot.groups) { group in
+              PermissionBatchGroup(group: group, verifiesGrants: !requiresReadback)
             }
           }
           if let error = error {
@@ -175,7 +170,7 @@ private struct PermissionBatchDetailsContent: View {
         Text("\(store.action.items.count) permissions requested").font(.headline)
         Text("Workspace: \(workspaceName ?? store.action.member.workspaceID)")
           .font(.subheadline).foregroundStyle(.secondary)
-        if let snapshot = snapshot, snapshot.enabled && !requiresReadback {
+        if let snapshot = snapshot, !requiresReadback {
           Text("\(snapshot.allowedCount) of \(store.action.items.count) permissions allowed")
             .font(.footnote).foregroundStyle(.secondary)
         }

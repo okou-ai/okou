@@ -195,9 +195,9 @@ test("a snapshot pasted into an ordinary thread cannot expose source permissions
   const link = await findNamedLink("Snapshot");
   click(link);
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute("src", IMAGE_URL);
-  const share = await findNamedButton("Share");
+  const share = await findNamedButton("Share artifact");
   click(share);
   await expect(screen.findByText("Link copied")).resolves.toBeInTheDocument();
   expect(clipboard.writes).toStrictEqual([IMAGE_REF]);

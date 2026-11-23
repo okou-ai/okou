@@ -52,13 +52,14 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { setResHeader$ } from "../context/hono";
 import { waitUntil } from "../context/wait-until";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { db$, writeDb$ } from "../external/db";
 import { publishChatThreadWorkflowsChangedSafely } from "../external/realtime";
 import { publishSkillImportAfterCommit } from "../services/skill-import-telemetry";
 import { ApiDispatchTimingCollector } from "../services/api-dispatch-timing.service";
 import {
   autonomyBudgetExhausted,
+  badRequestMessage,
   conflict,
   notFound,
   providerUnavailable,
@@ -69,6 +70,10 @@ import { deleteWorkflow$ } from "../services/workflow-delete.service";
 import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
 import { loadWorkflowOwnerProfile$ } from "../services/workflow-owner-profile.service";
 import { workflowDetail$ } from "../services/workflow-detail.service";
+import {
+  parseWorkflowRunHistoryCursor,
+  workflowRunHistory,
+} from "../services/workflow-run-history.service";
 import {
   ensureWorkflowUserAutomationThread$,
   prepareWorkflowUserAutomationThread$,
@@ -127,6 +132,22 @@ const workflowWriteAuth = {
   missingOrganizationStatus: 401,
   requiredCapability: "agent:write",
 } as const;
+
+const getWorkflowRunHistoryInner$ = computed(async (get) => {
+  const { orgId, userId } = get(organizationAuthContext$);
+  const { workflowId } = get(pathParamsOf(workflowsDetailContract.runHistory));
+  const { cursor } = get(queryOf(workflowsDetailContract.runHistory));
+  const before = cursor ? parseWorkflowRunHistoryCursor(cursor) : undefined;
+  if (before && !before.success) {
+    return badRequestMessage("Invalid workflow run history cursor");
+  }
+  const page = await get(
+    workflowRunHistory({ workflowId, orgId, userId, before: before?.data }),
+  );
+  return page
+    ? { status: 200 as const, body: page }
+    : workflowNotFound(workflowId);
+});
 
 function memberFromAuth(auth: {
   readonly userId: string;
@@ -1740,6 +1761,10 @@ export const workflowsRoutes: readonly RouteEntry[] = [
   {
     route: workflowsDetailContract.get,
     handler: authRoute(workflowReadAuth, getWorkflowDetailInner$),
+  },
+  {
+    route: workflowsDetailContract.runHistory,
+    handler: authRoute(workflowReadAuth, getWorkflowRunHistoryInner$),
   },
   {
     route: workflowsDetailContract.update,

@@ -23,6 +23,7 @@ import {
 } from "./official-workflow-bindings";
 
 import { workflowImportSourceSchema } from "./workflow-import-source";
+import { runStatusSchema } from "./runs";
 
 export { GMAIL_LABEL_NOT_FOUND_ERROR_CODE } from "../validators/workflows";
 
@@ -1441,6 +1442,23 @@ export const workflowChatThreadResponseSchema = object({
 
 const workflowIdParams = object({ workflowId: uuid() });
 
+export const workflowRunHistoryEntrySchema = object({
+  id: uuid(),
+  createdAt: iso.datetime(),
+  status: runStatusSchema,
+  trigger: zEnum(["schedule", "event", "manual"]).nullable(),
+  eventType: automationEventTypeSchema.nullable(),
+  chatThreadId: uuid().nullable(),
+});
+export type WorkflowRunHistoryEntry = zInfer<
+  typeof workflowRunHistoryEntrySchema
+>;
+
+const workflowRunHistoryPageSchema = object({
+  runs: array(workflowRunHistoryEntrySchema),
+  nextCursor: string().nullable(),
+});
+
 export const workflowsCollectionContract = c.router({
   list: {
     method: "GET",
@@ -1522,6 +1540,22 @@ export const workflowsDetailContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow with its instruction and files",
+  },
+  runHistory: {
+    method: "GET",
+    path: "/api/workflows/:workflowId/run-history",
+    headers: authHeadersSchema,
+    pathParams: workflowIdParams,
+    query: object({ cursor: string().min(1).max(256).optional() }),
+    responses: {
+      200: workflowRunHistoryPageSchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "List the caller's retained automation runs for a visible workflow",
   },
   update: {
     method: "PATCH",

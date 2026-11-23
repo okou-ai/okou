@@ -189,7 +189,7 @@ test("Hiding the compliance block keeps it hidden on this device", async () => {
   await screen.findByRole("heading", { name: "Workflows" });
   click(
     link((element) => {
-      return element.textContent?.trim() === "Chat";
+      return element.textContent?.trim() === "Okou";
     }),
   );
   await screen.findByRole("group", { name: "Explore Okou capabilities" });

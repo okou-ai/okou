@@ -200,12 +200,13 @@ export async function distribute(
   );
 }
 
-async function main() {
-  const required = (name) => {
-    if (!process.env[name]) throw new Error(`${name} is required`);
-    return process.env[name];
-  };
-  const client = new AppStoreConnect({
+export function required(name) {
+  if (!process.env[name]) throw new Error(`${name} is required`);
+  return process.env[name];
+}
+
+export function appleClientFromEnvironment() {
+  return new AppStoreConnect({
     keyId: required("APP_STORE_CONNECT_API_KEY_ID"),
     issuerId: required("APP_STORE_CONNECT_API_ISSUER_ID"),
     privateKey: Buffer.from(
@@ -213,6 +214,10 @@ async function main() {
       "base64",
     ),
   });
+}
+
+async function main() {
+  const client = appleClientFromEnvironment();
   const file = required("IOS_RELEASE_METADATA");
   if (process.argv[2] === "prepare") {
     const release = await prepare(

@@ -387,7 +387,6 @@
     },
     "sidebar": {
       "ariaLabel": "Barre latérale",
-      "chat": "Chat",
       "hideChatList": "Masquer la liste des chats",
       "mobile": {
         "invite": "Inviter",

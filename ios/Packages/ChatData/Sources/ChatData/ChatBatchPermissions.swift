@@ -21,10 +21,9 @@ public struct ChatPermissionBatchSnapshot: Sendable {
     }
   }
 
-  public let enabled: Bool
   public let groups: [Group]
   public var complete: Bool {
-    enabled && !groups.isEmpty
+    !groups.isEmpty
       && groups.allSatisfy { group in
         group.items.allSatisfy { group.metadata?.contains($0.permission) == true }
       }
@@ -46,11 +45,7 @@ public struct ChatBatchPermissions: Sendable {
     _ action: ChatPermissionBatchAction
   ) async throws -> ChatPermissionBatchSnapshot {
     try ChatPermissions(client: client).validateMember(action.member)
-    let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
-    guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
-      return ChatPermissionBatchSnapshot(enabled: false, groups: [])
-    }
-    return try await ChatPermissionBatchSnapshot(enabled: true, groups: loadGroups(action))
+    return try await ChatPermissionBatchSnapshot(groups: loadGroups(action))
   }
 
   private func loadGroups(
@@ -91,13 +86,9 @@ public struct ChatBatchPermissions: Sendable {
     reviewing reviewed: ChatPermissionBatchSnapshot
   ) async throws -> ChatPermissionBatchSnapshot {
     try await validateContext(action)
-    let features: SidebarFeatureSwitches = try await client.request("/api/feature-switches")
-    guard features.effectiveSwitches["batchConnectorPermissions"] == true else {
-      throw ChatError.invalidContract("These permissions are no longer available.")
-    }
     // Fresh rules preserve existing expirations. The write endpoint validates its current catalog.
     let current = try await ChatPermissionBatchSnapshot(
-      enabled: true, groups: loadGroups(action, reviewing: reviewed))
+      groups: loadGroups(action, reviewing: reviewed))
     guard current.complete else {
       throw ChatError.invalidContract("These permissions are no longer available.")
     }
@@ -132,8 +123,7 @@ public struct ChatBatchPermissions: Sendable {
           grants: saved))
     }
     try Task.checkCancellation()
-    let updated = ChatPermissionBatchSnapshot(
-      enabled: current.enabled, groups: groups)
+    let updated = ChatPermissionBatchSnapshot(groups: groups)
     guard updated.allAllowed else { throw APIClientError.invalidResponse }
     return updated
   }

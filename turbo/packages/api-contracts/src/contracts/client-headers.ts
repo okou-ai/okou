@@ -1,5 +1,6 @@
 export const CLIENT_VERSION_HEADER = "X-Client-Version";
 export const CLIENT_TYPE_HEADER = "X-Client-Type";
+export const CLIENT_DISTRIBUTION_HEADER = "X-Client-Distribution";
 export const CLIENT_SESSION_ID_HEADER = "X-Client-Session-Id";
 export const CLIENT_REQUEST_ID_HEADER = "X-Client-Request-Id";
 export const CLIENT_FORCE_UPGRADE_STATUS = 426;
@@ -19,6 +20,7 @@ export const DESKTOP_PRODUCT_OKOU = "okou";
 export const CLIENT_HEADER_NAMES = [
   CLIENT_VERSION_HEADER,
   CLIENT_TYPE_HEADER,
+  CLIENT_DISTRIBUTION_HEADER,
   CLIENT_SESSION_ID_HEADER,
   CLIENT_REQUEST_ID_HEADER,
 ] as const;

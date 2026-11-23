@@ -2,7 +2,6 @@ import {
   artifactCatalogContract,
   type ArtifactDetail,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -48,73 +47,51 @@ function mockCatalog(detail: ArtifactDetail) {
   });
 }
 
-test.each([false, true])(
-  "Text artifacts use the sidebar only when sidebar previews are enabled (%s)",
-  async (enabled) => {
-    mockCatalog(fileDetail("launch-plan.txt", "text/plain"));
-    context.mocks.http.get(
-      "https://artifacts.example.com/launch-plan.txt",
-      () => {
-        return HttpResponse.text("The launch plan is ready");
-      },
-    );
-    await setupPage({
-      context,
-      path: "/artifacts?tab=file",
-      featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: enabled },
-    });
-    click(await findArtifactAction("launch-plan.txt"));
-    const preview = await screen.findByTestId(
-      enabled ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    await expect(
-      within(preview).findByText("The launch plan is ready"),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.queryByTestId(
-        enabled ? "attachment-lightbox" : "artifact-sidebar",
-      ),
-    ).not.toBeInTheDocument();
-    click(getButtonByName(enabled ? "Close artifact" : "Close", preview));
-    await waitFor(() => {
-      expect(
-        screen.queryByTestId(
-          enabled ? "artifact-sidebar" : "attachment-lightbox",
-        ),
-      ).not.toBeInTheDocument();
-    });
-    await expect(
-      findArtifactAction("launch-plan.txt"),
-    ).resolves.toBeInTheDocument();
-  },
-);
+test("Text artifacts open and close in the catalog sidebar", async () => {
+  mockCatalog(fileDetail("launch-plan.txt", "text/plain"));
+  context.mocks.http.get(
+    "https://artifacts.example.com/launch-plan.txt",
+    () => {
+      return HttpResponse.text("The launch plan is ready");
+    },
+  );
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+  });
+  click(await findArtifactAction("launch-plan.txt"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(preview).findByText("The launch plan is ready"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+  click(getButtonByName("Close artifact", preview));
+  await waitFor(() => {
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
+  });
+  await expect(
+    findArtifactAction("launch-plan.txt"),
+  ).resolves.toBeInTheDocument();
+});
 
-test.each([false, true])(
-  "HEIC catalog previews convert extensionless image sources (sidebar=%s)",
-  async (sidebar) => {
-    const detail = fileDetail("iPhone.heic", "image/heic");
-    const source = `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/opaque?X-Amz-Signature=signature`;
-    mockCatalog({ ...detail, file: { ...detail.file, url: source } });
-    await setupPage({
-      context,
-      path: "/artifacts?tab=file",
-      featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar },
-    });
+test("HEIC catalog previews convert extensionless image sources", async () => {
+  const detail = fileDetail("iPhone.heic", "image/heic");
+  const source = `https://${"a".repeat(32)}.r2.cloudflarestorage.com/private/opaque?X-Amz-Signature=signature`;
+  mockCatalog({ ...detail, file: { ...detail.file, url: source } });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+  });
 
-    click(await findArtifactAction("iPhone.heic"));
-    const preview = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    await expect(
-      within(preview).findByTestId(
-        sidebar ? "artifact-sidebar-body-image" : "attachment-lightbox-image",
-      ),
-    ).resolves.toHaveAttribute(
-      "src",
-      `https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/${source}`,
-    );
-  },
-);
+  click(await findArtifactAction("iPhone.heic"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(preview).findByTestId("artifact-sidebar-body-image"),
+  ).resolves.toHaveAttribute(
+    "src",
+    `https://cdn.vm7.io/cdn-cgi/image/fit=scale-down,format=auto,quality=85,metadata=none/${source}`,
+  );
+});
 
 test("A routed website preview opens in the sidebar and Close returns to its catalog", async () => {
   mockCatalog({
@@ -133,9 +110,6 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
   await setupPage({
     context,
     path: `/artifacts?tab=hosted-site&artifact=${ARTIFACT_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
-    },
   });
   const preview = await screen.findByTestId("artifact-sidebar");
   await expect(
@@ -163,7 +137,6 @@ test("Binary artifacts open a download-capable sidebar instead of downloading on
   await setupPage({
     context,
     path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   click(await findArtifactAction("release-bundle.zip"));
   const preview = await screen.findByTestId("artifact-sidebar");
@@ -203,7 +176,6 @@ test("An avatar sidebar reuses the private video URL already shown by its card",
   await setupPage({
     context,
     path: "/artifacts?tab=avatar",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   const card = await findArtifactAction("avatar.mp4");
   await expect(
@@ -230,7 +202,6 @@ test("Closing a loading sidebar cancels its preview and allows a later reopen", 
   await setupPage({
     context,
     path: "/artifacts?tab=file",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: true },
   });
   const card = await findArtifactAction("pending.pdf");
   click(card);

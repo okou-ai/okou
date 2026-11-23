@@ -74,8 +74,8 @@ test.each([
 
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
     click(await findNamedLink("Report"));
-    const dialog = await screen.findByRole("dialog");
-    click(await findNamedButton("Download options", dialog));
+    const dialog = await screen.findByTestId("artifact-sidebar");
+    click(await findNamedButton("Download artifact", dialog));
     const downloadItem = await findNamedMenuItem("Download");
     expect(actions()).toStrictEqual([]);
     click(downloadItem);
@@ -84,7 +84,7 @@ test.each([
         name: "artifact_action_clicked",
         properties: {
           action: "download",
-          surface: "dialog",
+          surface: "page",
           artifact_type: artifactType,
         },
         options: undefined,
@@ -101,9 +101,9 @@ test.each([
     expect(new Uint8Array(downloadedBytes!)).toStrictEqual(bytes);
     expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
 
-    click(await findNamedButton("Close", dialog));
+    click(await findNamedButton("Close artifact", dialog));
     await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.queryByTestId("artifact-sidebar")).toBeNull();
     });
     expect(browser.blobForUrl(download!.url)).toBe(download?.blob);
 
@@ -209,10 +209,10 @@ test.each([
     const browser = context.mocks.browser.blobDownload();
     await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
     click(await findNamedLink("Report"));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByTestId("artifact-sidebar");
     for (const grant of ["first-click", "second-click"]) {
       downloadUrl = `https://storage.example.test/download/${filename}?grant=${grant}`;
-      click(await findNamedButton("Download options", dialog));
+      click(await findNamedButton("Download artifact", dialog));
       click(await findNamedMenuItem("Download"));
       await waitFor(() => {
         expect(browser.downloads.at(-1)).toMatchObject({
@@ -232,8 +232,8 @@ test.each([
           return event.properties;
         }),
     ).toStrictEqual([
-      { action: "download", surface: "dialog", artifact_type: artifactType },
-      { action: "download", surface: "dialog", artifact_type: artifactType },
+      { action: "download", surface: "page", artifact_type: artifactType },
+      { action: "download", surface: "page", artifact_type: artifactType },
     ]);
     expect(location.pathname).toBe(`/chats/${ATTACHMENT_THREAD_ID}`);
   },
@@ -273,8 +273,8 @@ test("a server-denied download keeps the preview available and opens the plans",
   const browser = context.mocks.browser.blobDownload();
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Report"));
-  const preview = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", preview));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", preview));
   click(await findNamedMenuItem("Download"));
   await screen.findByRole("dialog", { name: "Choose a plan" });
   expect(browser.downloads).toStrictEqual([]);

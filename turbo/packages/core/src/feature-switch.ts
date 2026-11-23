@@ -153,26 +153,11 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.BatchConnectorPermissions]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Batch connector permissions",
-    description: "Approve up to 20 connector permissions together.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
     description:
       "Use interactive shells on an authorized computer with local opt-in.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ArtifactSidebarPreview]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Artifact sidebar preview",
-    description:
-      "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -240,14 +225,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Reserve artifact downloads, Customize URL, and hiding the website banner for paid plans; free-plan workspaces see an upgrade prompt instead.",
     enabled: true,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.OkouRailEntry]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Okou rail entry",
-    description:
-      "Show the Okou logo and name on the rail's chat entry, and a compose icon on New chat.",
-    enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BillingSurvey]: {

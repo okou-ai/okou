@@ -422,10 +422,7 @@ function ArtifactCardView({
         imageClassName="block h-full w-full object-contain"
         linkClassName={CHAT_INLINE_IMAGE_PREVIEW_CLASS}
         onPreview={() => {
-          detach(
-            openImageLightbox(attachment, undefined, pageSignal),
-            Reason.DomCallback,
-          );
+          openImageLightbox(attachment, pageSignal);
         }}
         load={signals.previewImageLoad}
         placeholderClassName="h-full w-full"
@@ -450,10 +447,7 @@ function ArtifactCardView({
         buttonClassName={CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS}
         filename={signals.filename}
         onPreview={() => {
-          detach(
-            openVideoLightbox(attachment, undefined, pageSignal),
-            Reason.DomCallback,
-          );
+          openVideoLightbox(attachment, pageSignal);
         }}
         posterClassName="h-full w-full"
         posterLoad={signals.previewImageLoad}
@@ -474,10 +468,7 @@ function ArtifactCardView({
         ...(previewImageUrl ? { previewImageUrl } : {}),
       }}
       onPreviewFile={() => {
-        detach(
-          openFileLightbox(attachment, undefined, pageSignal),
-          Reason.DomCallback,
-        );
+        openFileLightbox(attachment, pageSignal);
       }}
       previewImageLoad={signals.previewImageLoad}
       text$={signals.text$}

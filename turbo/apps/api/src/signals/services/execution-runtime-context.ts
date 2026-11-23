@@ -4,6 +4,8 @@ import {
 } from "@okouai/api-contracts/contracts/runners";
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { command } from "ccstate";
+import { monotonicNow } from "../../lib/time";
+import { joinAllInOrder } from "../utils";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
@@ -23,6 +25,7 @@ import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
 } from "./run-execution-defaults";
+import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
 import {
   modelProviderEnvironment,
   paidToolPlatformEnvironment,
@@ -117,57 +120,71 @@ export const prepareExecutionRuntimeContext$ = command(
       piModelConfig: facts.modelProvider.piModelConfig,
     };
     const { environment, untrustedEnvironment } = executionEnvironment(input);
-    const memory = await set(
-      prepareExecutionMemoryMount$,
-      input.memoryMount,
+    const connectorRuntimeTargets = [...environment.runtimeTargets];
+    const [prepared, networkPolicyInputs] = await joinAllInOrder(
+      [
+        (async () => {
+          const memory = await set(
+            prepareExecutionMemoryMount$,
+            input.memoryMount,
+            signal,
+          );
+          signal.throwIfAborted();
+          const prepared: PreparedExecutionContext = {
+            ...executionModelConfiguration(
+              run,
+              model,
+              packages.officialWorkflowBundles.length > 0,
+            ),
+            featureFlags: facts.featureFlags,
+            realAgentInPreview: facts.realAgentInPreview,
+            apiStartTime: facts.apiStartTime,
+            storageMounts: [memory.mount],
+            nativeContinuation: {
+              ...facts.nativeContinuation,
+              recoveryPrompt:
+                facts.nativeContinuation.recoveryPrompt === null
+                  ? null
+                  : NATIVE_CONTEXT_RECOVERY_PROMPT,
+            },
+            environment:
+              Object.keys(untrustedEnvironment).length === 0
+                ? null
+                : untrustedEnvironment,
+            platformEnvironment: environment.platformEnvironment ?? {},
+            vars: environment.vars ?? null,
+            firewalls: [...environment.firewalls],
+            networkPolicies: environment.networkPolicies,
+            secretConnectorMap: environment.secretConnectorMap ?? null,
+            secretConnectorMetadataMap:
+              environment.secretConnectorMetadataMap ?? null,
+            connectorRuntimeTargets,
+            billableFirewalls: billableFirewallsForPermissions({
+              modelProvider: model.provider,
+              permissions: environmentPermissionManifest(environment),
+            }),
+            disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
+            userTimezone: facts.userTimezone,
+            captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
+            seedSkillBundles: packages.seedSkillBundles,
+            officialWorkflowBundles: packages.officialWorkflowBundles,
+            templateGuidanceBundles: packages.templateGuidanceBundles,
+          };
+          return {
+            context: preparedExecutionContextSchema.parse(prepared),
+            storageCacheWrites: memory.cacheWrites,
+            readyAt: monotonicNow(),
+          };
+        })(),
+        set(prepareExecutionNetworkPolicy$, {
+          connectorRuntimeTargets,
+          networkPolicyInputs: facts.connectorNetworkPolicyInputs,
+        }),
+      ],
       signal,
     );
     signal.throwIfAborted();
-    const prepared: PreparedExecutionContext = {
-      ...executionModelConfiguration(
-        run,
-        model,
-        packages.officialWorkflowBundles.length > 0,
-      ),
-      featureFlags: facts.featureFlags,
-      realAgentInPreview: facts.realAgentInPreview,
-      apiStartTime: facts.apiStartTime,
-      storageMounts: [memory.mount],
-      nativeContinuation: {
-        ...facts.nativeContinuation,
-        recoveryPrompt:
-          facts.nativeContinuation.recoveryPrompt === null
-            ? null
-            : NATIVE_CONTEXT_RECOVERY_PROMPT,
-      },
-      environment:
-        Object.keys(untrustedEnvironment).length === 0
-          ? null
-          : untrustedEnvironment,
-      platformEnvironment: environment.platformEnvironment ?? {},
-      vars: environment.vars ?? null,
-      firewalls: [...environment.firewalls],
-      networkPolicies: environment.networkPolicies,
-      secretConnectorMap: environment.secretConnectorMap ?? null,
-      secretConnectorMetadataMap:
-        environment.secretConnectorMetadataMap ?? null,
-      connectorRuntimeTargets: [...environment.runtimeTargets],
-      billableFirewalls: billableFirewallsForPermissions({
-        modelProvider: model.provider,
-        permissions: environmentPermissionManifest(environment),
-      }),
-      disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
-      userTimezone: facts.userTimezone,
-      captureNetworkBodies: facts.captureNetworkBodies ? true : undefined,
-      seedSkillBundles: packages.seedSkillBundles,
-      officialWorkflowBundles: packages.officialWorkflowBundles,
-      templateGuidanceBundles: packages.templateGuidanceBundles,
-    };
-    return {
-      context: preparedExecutionContextSchema.parse(prepared),
-      storageCacheWrites: memory.cacheWrites,
-      networkPolicyInputs: facts.connectorNetworkPolicyInputs,
-    };
+    return { ...prepared, networkPolicyInputs };
   },
 );
 

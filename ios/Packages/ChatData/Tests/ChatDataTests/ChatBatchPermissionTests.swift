@@ -119,17 +119,16 @@ final class ChatBatchPermissionTests: XCTestCase {
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
   }
 
-  func testDisabledMissingOrMismatchedRequestsCannotWrite() async throws {
-    for variant in 0..<3 {
+  func testMissingOrMismatchedRequestsCannotWrite() async throws {
+    for missingMetadata in [true, false] {
       var state = FixtureData.State()
-      if variant == 1 { state.metadataStatus["google-drive"] = 404 }
+      if missingMetadata { state.metadataStatus["google-drive"] = 404 }
       let fixture = fixture(state)
       let service = ChatBatchPermissions(client: fixture.http.client)
       let action = try action()
       let reviewed = try await service.load(action)
       fixture.state.withLock {
-        if variant == 0 { $0.enabled = false }
-        if variant == 2 { $0.metadataThreadID = UUID().uuidString }
+        if !missingMetadata { $0.metadataThreadID = UUID().uuidString }
       }
       do {
         _ = try await service.apply(action, duration: .hour, reviewing: reviewed)
