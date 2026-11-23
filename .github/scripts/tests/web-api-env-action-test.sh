@@ -210,6 +210,8 @@ build_doppler_secrets_json() {
       reduce (inputs | . + "_OAUTH_CLIENT_ID", . + "_OAUTH_CLIENT_SECRET") as $key
         ({}; if $key == $omit_key then . else .[$key] = "doppler-\($key)" end)
       | . + {
+        CODEX_OAUTH_CLIENT_ID: "doppler-CODEX_OAUTH_CLIENT_ID",
+        CLAUDE_CODE_OAUTH_CLIENT_ID: "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID",
         LINK_OAUTH_CLIENT_ID: "doppler-link-client-id",
         LINK_OAUTH_CLIENT_SECRET: "doppler-link-client-secret",
         LINK_STRIPE_PUBLISHABLE_KEY: "pk_live_link_fixture",
@@ -484,6 +486,8 @@ assert_not_contains "$success_output" "handoff-dev-secret"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_BUCKET_NAME "user-artifact-private-dev"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID "private-dev-key"
 assert_env_value "$success_env_file" R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY "private-dev-secret"
+assert_env_value "$success_env_file" CODEX_OAUTH_CLIENT_ID "doppler-CODEX_OAUTH_CLIENT_ID"
+assert_env_value "$success_env_file" CLAUDE_CODE_OAUTH_CLIENT_ID "doppler-CLAUDE_CODE_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_ID "doppler-GH_OAUTH_CLIENT_ID"
 assert_env_value "$success_env_file" GH_OAUTH_CLIENT_SECRET "doppler-GH_OAUTH_CLIENT_SECRET"
 assert_env_value "$success_env_file" SLACK_OAUTH_CLIENT_ID "doppler-SLACK_OAUTH_CLIENT_ID"

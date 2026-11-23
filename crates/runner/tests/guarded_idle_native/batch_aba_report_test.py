@@ -110,11 +110,7 @@ class BatchAbaReportTests(unittest.TestCase):
 
     def refused(self, changes):
         original = copy.deepcopy(self.witnesses)
-        for index, change in enumerate(changes):
-            with self.subTest(change=index):
-                self.witnesses = copy.deepcopy(original)
-                change()
-                with self.assertRaises(ValueError): self.validate()
+        report_test.assert_indexed_witness_refusals(self, original, changes)
 
     def test_both_cases_preserve_explicit_native_measurement_limits(self):
         value = self.validate()

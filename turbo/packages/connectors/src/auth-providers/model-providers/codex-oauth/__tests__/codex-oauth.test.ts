@@ -12,7 +12,7 @@ import { codexOauthProvider } from "../provider";
 import { server } from "../../../__tests__/test-server";
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
-const CODEX_PUBLIC_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CODEX_PUBLIC_CLIENT_ID = "test-codex-client-id";
 
 function testRefreshSignal(): AbortSignal {
   return new AbortController().signal;
@@ -213,7 +213,13 @@ describe("connector/providers/codex-oauth", () => {
     });
 
     it("resolves the Codex public client for refresh", () => {
-      expect(getCodexRefreshAccess().resolveAuthClient({})).toStrictEqual({
+      const access = getCodexRefreshAccess();
+      expect(access.resolveAuthClient({})).toBeUndefined();
+      expect(
+        access.resolveAuthClient({
+          CODEX_OAUTH_CLIENT_ID: CODEX_PUBLIC_CLIENT_ID,
+        }),
+      ).toStrictEqual({
         clientRegistration: "static",
         clientType: "public",
         clientId: CODEX_PUBLIC_CLIENT_ID,

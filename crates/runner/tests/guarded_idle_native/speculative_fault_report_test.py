@@ -107,11 +107,7 @@ class SpeculativeFaultReportTests(unittest.TestCase):
     def refused(self, changes):
         original = copy.deepcopy(self.witnesses)
         try:
-            for index, change in enumerate(changes):
-                with self.subTest(change=index):
-                    self.witnesses = copy.deepcopy(original)
-                    change()
-                    with self.assertRaises(ValueError): self.validate()
+            report_test.assert_indexed_witness_refusals(self, original, changes)
         finally:
             self.witnesses = original
         self.validate()
