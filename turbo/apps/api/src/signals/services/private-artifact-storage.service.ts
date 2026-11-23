@@ -43,9 +43,30 @@ const uploadProtocolSchema = object({
   size: number().int().nonnegative().safe(),
 }).or(object({ kind: literal("multipart-v1") }));
 
+export const privateAttachmentColumns = {
+  id: runUploadedFiles.id,
+  orgId: runUploadedFiles.orgId,
+  userId: runUploadedFiles.userId,
+  deletedAt: runUploadedFiles.deletedAt,
+  metadata: runUploadedFiles.metadata,
+  storageKey: runUploadedFiles.storageKey,
+  filename: runUploadedFiles.filename,
+  contentType: runUploadedFiles.contentType,
+  sizeBytes: runUploadedFiles.sizeBytes,
+  materializationStatus: runUploadedFiles.materializationStatus,
+};
+
+export type PrivateAttachmentRow = Pick<
+  typeof runUploadedFiles.$inferSelect,
+  keyof typeof privateAttachmentColumns
+>;
+
 /** Only ordinary upload preparation mints this metadata-stability contract. */
 export function completedPrivateAttachmentSize(
-  row: typeof runUploadedFiles.$inferSelect,
+  row: Pick<
+    PrivateAttachmentRow,
+    "metadata" | "materializationStatus" | "sizeBytes"
+  >,
 ): number | null {
   const protocol = uploadProtocolSchema.safeParse(row.metadata.uploadProtocol);
   if (
@@ -302,9 +323,9 @@ export const allocatePrivateArtifact$ = command(
 );
 
 /** Decode a fetched row without issuing another ownership-record read. */
-export function privateArtifactFromRow(
-  row: typeof runUploadedFiles.$inferSelect | undefined,
-) {
+export function privateArtifactFromRow<
+  Row extends Omit<PrivateAttachmentRow, "sizeBytes" | "materializationStatus">,
+>(row: Row | undefined) {
   if (!row || row.metadata.storage === undefined || row.deletedAt !== null) {
     return null;
   }
@@ -333,7 +354,9 @@ export function privateArtifactFromRow(
 }
 
 export type PrivateArtifactRecord = NonNullable<
-  ReturnType<typeof privateArtifactFromRow>
+  ReturnType<
+    typeof privateArtifactFromRow<typeof runUploadedFiles.$inferSelect>
+  >
 >;
 
 export const privateArtifactRecord$ = command(

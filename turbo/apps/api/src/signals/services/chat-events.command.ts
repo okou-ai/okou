@@ -199,6 +199,8 @@ import {
 import {
   completedPrivateAttachmentSize,
   privateArtifactFromRow,
+  privateAttachmentColumns,
+  type PrivateAttachmentRow,
 } from "./private-artifact-storage.service";
 import { s3ObjectHead } from "../external/s3";
 import { webChatContextId } from "./web-chat-queue-context.service";
@@ -581,7 +583,7 @@ function isNormalSendBody(
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-type AttachmentRecord = typeof runUploadedFiles.$inferSelect;
+type AttachmentRecord = PrivateAttachmentRow;
 type PrivateAttachmentRecord = Pick<AttachmentRecord, "id" | "metadata">;
 interface ResolvedChatAttachment {
   readonly file: ChatEventAttachFileMetadata;
@@ -673,7 +675,7 @@ const startIncomingAttachmentRecords$ = command(
       // One statement captures every referenced record together. Binding the
       // UUID array also keeps the parameter count independent of file count.
       const loaded = await get(db$)
-        .select()
+        .select(privateAttachmentColumns)
         .from(runUploadedFiles)
         .where(
           or(
