@@ -8,6 +8,7 @@ import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.AuthenticationState
 import ai.okou.android.auth.ClerkAuthentication
+import ai.okou.android.auth.SessionModel
 import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
 import android.animation.ValueAnimator
@@ -18,6 +19,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.provider.Settings
 import androidx.annotation.StringRes
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -84,7 +86,7 @@ class ScreenshotScenario {
                 "The emulator did not enable system animator scale"
             }
             auth.state.value = AuthenticationState()
-            ActivityScenario.launch(MainActivity::class.java).use {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 find(R.string.app_name)
 
                 auth.membershipsAction = {
@@ -131,6 +133,11 @@ class ScreenshotScenario {
                 }
                 find(R.string.auth_check_workspace).click()
                 capture(R.string.auth_checking_workspace, "checking.png")
+                scenario.onActivity { activity ->
+                    val model = ViewModelProvider(activity)[SessionModel::class.java]
+                    model.openWorkspaceSetup(model.uiState.value.generation) { false }
+                }
+                find(R.string.auth_browser_unavailable)
                 check.complete(Unit)
                 capture(R.string.auth_check_failed, "check-failed.png")
                 auth.state.value =
