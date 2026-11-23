@@ -1548,9 +1548,6 @@ internal fun OkouApp(
                                 val list = listState.value
                                 ChatListScreen(
                                     list,
-                                    { chats?.retryList() },
-                                    { chats?.refreshMetadata() },
-                                    { chats?.refreshIndicators() },
                                     {
                                         if (target != WorkspaceTarget.Chat(it.id))
                                             leaveWorkflowChat()
