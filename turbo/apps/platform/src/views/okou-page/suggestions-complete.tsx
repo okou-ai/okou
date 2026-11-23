@@ -5,165 +5,181 @@ import { cn } from "@okouai/ui";
 import { forYouCompleteIllustration } from "../../lib/for-you-artwork.ts";
 import { focusSuggestionTitleOnRef$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 
-// Brand colours from the Okou palette: Dark Pink, Pink, Dark Blue, Blue and
-// Orange. Each burst has a main colour for its long rays, a light one for its
-// short rays and centre ring, and Orange for the spark on every fourth tip.
-const FIREWORK_PINK = { main: "#ff96a9", light: "#ffc6e2" } as const;
-const FIREWORK_BLUE = { main: "#3363d3", light: "#82cffb" } as const;
-const FIREWORK_ORANGE = "#ffa500";
+// Brand colours from the Okou palette: Dark Pink #ff96a9, Pink #ffc6e2, Dark
+// Blue #3363d3, Blue #82cffb and Orange #ffa500. Each burst draws its long rays
+// in the darker colour and its short rays and centre ring in the lighter one;
+// every fourth tip sparks Orange. Tailwind's scanner is text-based, so every
+// colour is spelled out as a literal class.
+const FIREWORK_PINK = {
+  trail: "bg-[linear-gradient(to_top,transparent,#ff96a9)]",
+  longRay: "bg-[linear-gradient(to_top,transparent,#ff96a9_55%)]",
+  shortRay: "bg-[linear-gradient(to_top,transparent,#ffc6e2_55%)]",
+  longTip: "bg-[#ff96a9]",
+  shortTip: "bg-[#ffc6e2]",
+} as const;
+
+const FIREWORK_BLUE = {
+  trail: "bg-[linear-gradient(to_top,transparent,#3363d3)]",
+  longRay: "bg-[linear-gradient(to_top,transparent,#3363d3_55%)]",
+  shortRay: "bg-[linear-gradient(to_top,transparent,#82cffb_55%)]",
+  longTip: "bg-[#3363d3]",
+  shortTip: "bg-[#82cffb]",
+} as const;
+
+const FIREWORK_SPARK = "bg-[#ffa500]";
 
 // Four bursts around the illustration, positioned relative to it and staggered
 // so they pop one after another: a large pink one top right, a blue one top
 // left, and two small ones low on either side. `reach` is the burst's outer
-// radius in px; `rays` alternates long and short rays.
+// radius in px; `rays` alternates long and short rays. Each burst climbs 1.8
+// and drops 0.35 times its reach.
 const FIREWORKS = [
   {
-    left: "84%",
-    top: "24%",
+    position:
+      "top-[24%] left-[84%] [--firework-delay:0ms] [--firework-climb:47px] [--firework-drop:9px]",
     reach: 26,
     rays: 20,
     rotate: 3,
-    delay: 0,
     colors: FIREWORK_PINK,
   },
   {
-    left: "13%",
-    top: "25%",
+    position:
+      "top-[25%] left-[13%] [--firework-delay:240ms] [--firework-climb:34px] [--firework-drop:7px]",
     reach: 19,
     rays: 16,
     rotate: 11,
-    delay: 240,
     colors: FIREWORK_BLUE,
   },
   {
-    left: "101%",
-    top: "52%",
+    position:
+      "top-[52%] left-[101%] [--firework-delay:460ms] [--firework-climb:18px] [--firework-drop:4px]",
     reach: 10,
     rays: 12,
     rotate: 6,
-    delay: 460,
     colors: FIREWORK_PINK,
   },
   {
-    left: "-3%",
-    top: "56%",
+    position:
+      "top-[56%] left-[-3%] [--firework-delay:620ms] [--firework-climb:14px] [--firework-drop:3px]",
     reach: 8,
     rays: 10,
     rotate: 17,
-    delay: 620,
     colors: FIREWORK_BLUE,
   },
 ] as const;
 
 // Four-point sparkles that twinkle in the gaps between the bursts.
 const FIREWORK_SPARKLES = [
-  { left: "69%", top: "7%", size: 9, delay: 300, color: FIREWORK_ORANGE },
-  { left: "29%", top: "9%", size: 7, delay: 520, color: FIREWORK_PINK.main },
-  { left: "98%", top: "8%", size: 7, delay: 700, color: FIREWORK_BLUE.main },
-  { left: "2%", top: "44%", size: 7, delay: 820, color: FIREWORK_ORANGE },
+  {
+    position:
+      "top-[7%] left-[69%] -mt-[4.5px] -ml-[4.5px] size-[9px] [--firework-delay:300ms]",
+    color: FIREWORK_SPARK,
+  },
+  {
+    position:
+      "top-[9%] left-[29%] -mt-[3.5px] -ml-[3.5px] size-[7px] [--firework-delay:520ms]",
+    color: FIREWORK_PINK.longTip,
+  },
+  {
+    position:
+      "top-[8%] left-[98%] -mt-[3.5px] -ml-[3.5px] size-[7px] [--firework-delay:700ms]",
+    color: FIREWORK_BLUE.longTip,
+  },
+  {
+    position:
+      "top-[44%] left-[2%] -mt-[3.5px] -ml-[3.5px] size-[7px] [--firework-delay:820ms]",
+    color: FIREWORK_SPARK,
+  },
 ] as const;
 
 type FireworkConfig = (typeof FIREWORKS)[number];
 
-interface FireworkRay {
-  readonly key: number;
+// A ray's angle and radii are computed per ray, so they reach the keyframes as
+// custom properties; everything visual stays in the class lists.
+function fireworkRayVars({
+  angle,
+  inner,
+  outer,
+}: {
   readonly angle: number;
   readonly inner: number;
   readonly outer: number;
-  readonly width: number;
-  readonly color: string;
-  readonly tip: string;
-  readonly tipSize: number;
-}
-
-function fireworkRays(firework: FireworkConfig): FireworkRay[] {
-  const { reach, rays, rotate, colors } = firework;
-  return Array.from({ length: rays }, (_, index) => {
-    const long = index % 2 === 0;
-    return {
-      key: index,
-      angle: rotate + (360 / rays) * index,
-      inner: reach * (long ? 0.3 : 0.42),
-      outer: reach * (long ? 1 : 0.74),
-      width: long ? 1.5 : 1,
-      color: long ? colors.main : colors.light,
-      tip:
-        index % 4 === 0 ? FIREWORK_ORANGE : long ? colors.main : colors.light,
-      tipSize: long ? 3 : 2,
-    };
-  });
-}
-
-function fireworkVars(vars: Record<string, string>): CSSProperties {
+}): CSSProperties {
+  const vars: Record<string, string> = {
+    "--firework-angle": `${angle}deg`,
+    "--firework-inner": `${inner}px`,
+    "--firework-outer": `${outer}px`,
+    "--firework-length": `${outer - inner}px`,
+  };
   return vars as CSSProperties;
 }
 
 function Firework({ firework }: { readonly firework: FireworkConfig }) {
-  const { reach, colors } = firework;
-  const rays = fireworkRays(firework);
+  const { reach, rays, rotate, colors } = firework;
   return (
     <span
-      className="absolute size-0 motion-safe:animate-firework-fall"
-      style={{
-        left: firework.left,
-        top: firework.top,
-        ...fireworkVars({
-          "--firework-delay": `${firework.delay}ms`,
-          "--firework-climb": `${Math.round(reach * 1.8)}px`,
-          "--firework-drop": `${Math.round(reach * 0.35)}px`,
-        }),
-      }}
+      className={cn(
+        "absolute size-0 motion-safe:animate-firework-fall",
+        firework.position,
+      )}
     >
       <span
-        className="absolute bottom-0 -left-px h-3.5 w-0.5 rounded-full opacity-0 motion-safe:animate-firework-rise"
-        style={{
-          background: `linear-gradient(to top, transparent, ${colors.main})`,
-        }}
+        className={cn(
+          "absolute bottom-0 -left-px h-3.5 w-0.5 rounded-full opacity-0 motion-safe:animate-firework-rise",
+          colors.trail,
+        )}
       />
       <span
-        className="absolute -top-0.75 -left-0.75 size-1.5 rounded-full opacity-0 motion-safe:animate-firework-flash"
-        style={{ background: FIREWORK_ORANGE }}
+        className={cn(
+          "absolute -top-0.75 -left-0.75 size-1.5 rounded-full opacity-0 motion-safe:animate-firework-flash",
+          FIREWORK_SPARK,
+        )}
       />
-      {rays.map((ray) => {
-        const vars = {
-          "--firework-angle": `${ray.angle}deg`,
-          "--firework-inner": `${ray.inner}px`,
-          "--firework-outer": `${ray.outer}px`,
-          "--firework-length": `${ray.outer - ray.inner}px`,
-        };
+      {Array.from({ length: rays }, (_, index) => {
+        const long = index % 2 === 0;
+        const angle = rotate + (360 / rays) * index;
+        const tip =
+          index % 4 === 0
+            ? FIREWORK_SPARK
+            : long
+              ? colors.longTip
+              : colors.shortTip;
+        const vars = fireworkRayVars({
+          angle,
+          inner: reach * (long ? 0.3 : 0.42),
+          outer: reach * (long ? 1 : 0.74),
+        });
         return (
-          <span key={ray.key}>
+          <span key={angle}>
             <span
-              className="absolute bottom-0 origin-bottom rounded-full opacity-0 motion-safe:animate-firework-ray"
-              style={{
-                left: -ray.width / 2,
-                width: ray.width,
-                height: ray.outer - ray.inner,
-                background: `linear-gradient(to top, transparent, ${ray.color} 55%)`,
-                ...fireworkVars(vars),
-              }}
+              className={cn(
+                "absolute bottom-0 h-(--firework-length) origin-bottom rounded-full opacity-0 motion-safe:animate-firework-ray",
+                long ? "-left-[0.75px] w-[1.5px]" : "-left-[0.5px] w-px",
+                long ? colors.longRay : colors.shortRay,
+              )}
+              style={vars}
             />
             <span
-              className="absolute rounded-full opacity-0 motion-safe:animate-firework-tip"
-              style={{
-                left: -ray.tipSize / 2,
-                top: -ray.tipSize / 2,
-                width: ray.tipSize,
-                height: ray.tipSize,
-                background: ray.tip,
-                ...fireworkVars(vars),
-              }}
+              className={cn(
+                "absolute rounded-full opacity-0 motion-safe:animate-firework-tip",
+                long
+                  ? "-top-[1.5px] -left-[1.5px] size-[3px]"
+                  : "-top-px -left-px size-0.5",
+                tip,
+              )}
+              style={vars}
             />
-            {ray.key % 2 === 1 && (
+            {!long && (
               <span
-                className="absolute -top-px -left-px size-0.5 rounded-full opacity-0 motion-safe:animate-firework-ring"
-                style={{
-                  background: colors.light,
-                  ...fireworkVars({
-                    ...vars,
-                    "--firework-inner": `${reach * 0.2}px`,
-                  }),
-                }}
+                className={cn(
+                  "absolute -top-px -left-px size-0.5 rounded-full opacity-0 motion-safe:animate-firework-ring",
+                  colors.shortTip,
+                )}
+                style={fireworkRayVars({
+                  angle,
+                  inner: reach * 0.2,
+                  outer: reach * 0.2,
+                })}
               />
             )}
           </span>
@@ -180,24 +196,22 @@ function FireworkSparkle({
 }) {
   return (
     <span
-      className="absolute opacity-0 motion-safe:animate-firework-twinkle"
-      style={{
-        left: sparkle.left,
-        top: sparkle.top,
-        width: sparkle.size,
-        height: sparkle.size,
-        marginLeft: -sparkle.size / 2,
-        marginTop: -sparkle.size / 2,
-        ...fireworkVars({ "--firework-delay": `${sparkle.delay}ms` }),
-      }}
+      className={cn(
+        "absolute opacity-0 motion-safe:animate-firework-twinkle",
+        sparkle.position,
+      )}
     >
       <span
-        className="absolute inset-x-0 top-1/2 -mt-px h-0.5 rounded-full"
-        style={{ background: sparkle.color }}
+        className={cn(
+          "absolute inset-x-0 top-1/2 -mt-px h-0.5 rounded-full",
+          sparkle.color,
+        )}
       />
       <span
-        className="absolute inset-y-0 left-1/2 -ml-px w-0.5 rounded-full"
-        style={{ background: sparkle.color }}
+        className={cn(
+          "absolute inset-y-0 left-1/2 -ml-px w-0.5 rounded-full",
+          sparkle.color,
+        )}
       />
     </span>
   );
@@ -231,20 +245,12 @@ export function SuggestionsComplete({
           />
           {celebrate &&
             FIREWORKS.map((firework) => {
-              return (
-                <Firework
-                  key={`${firework.left}-${firework.top}`}
-                  firework={firework}
-                />
-              );
+              return <Firework key={firework.position} firework={firework} />;
             })}
           {celebrate &&
             FIREWORK_SPARKLES.map((sparkle) => {
               return (
-                <FireworkSparkle
-                  key={`${sparkle.left}-${sparkle.top}`}
-                  sparkle={sparkle}
-                />
+                <FireworkSparkle key={sparkle.position} sparkle={sparkle} />
               );
             })}
         </span>
