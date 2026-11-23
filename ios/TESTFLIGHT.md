@@ -178,3 +178,26 @@ cover JWT verification, pagination, internal-group enforcement, build selection,
 processing, persistent group assignment, access errors, and timeout behavior.
 They do not upload an app, read production data, or replace a signed CI archive
 and TestFlight installation check.
+
+## Verify a build for a compatibility policy change
+
+Run **iOS distribution availability** on `main` with the channel, exact
+marketing version and build number. It performs read-only Apple queries. The
+release publisher must already have recorded that exact upload and source
+commit. Select a build published after the publisher started recording this
+mapping.
+
+- For TestFlight, the build must be valid, unexpired and in testing for
+  `IOS_INTERNAL_GROUP_NAME` and each group in the optional newline-separated
+  `IOS_EXTERNAL_GROUP_NAMES` production variable.
+- For App Store, set the repository variable `IOS_APP_STORE_STOREFRONTS` to
+  the complete list of supported storefronts (comma-separated two-letter
+  country codes). Use the same repository variable in production and CI. The
+  workflow checks the exact build selected in App Store Connect and the
+  version actually served by Apple's public catalog in every listed country.
+
+A successful run retains a JSON receipt. PRs and merge groups read the
+latest protected verification for each channel, valid for 24 hours or until
+TestFlight expiration, whichever comes first. Re-run verification before
+raising a floor. A failed or pending subsequent check invalidates the older
+receipt. Verification does not submit a build or change a minimum version.

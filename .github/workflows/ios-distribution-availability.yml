@@ -1,0 +1,59 @@
+name: iOS distribution availability
+run-name: Verify iOS ${{ inputs.channel }} availability
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Distribution channel to verify
+        type: choice
+        options: [app-store, testflight]
+        required: true
+      version:
+        description: Exact marketing version (x.y.z)
+        required: true
+        type: string
+      build:
+        description: Exact App Store Connect build number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  verify:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+      - name: Verify exact release against Apple
+        id: apple
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IOS_CHANNEL: ${{ inputs.channel }}
+          IOS_VERSION: ${{ inputs.version }}
+          IOS_BUILD_NUMBER: ${{ inputs.build }}
+          IOS_AVAILABILITY_OUTPUT: ${{ runner.temp }}/availability.json
+          IOS_APP_STORE_STOREFRONTS: ${{ vars.IOS_APP_STORE_STOREFRONTS }}
+          IOS_INTERNAL_GROUP_NAME: ${{ vars.IOS_INTERNAL_GROUP_NAME }}
+          IOS_EXTERNAL_GROUP_NAMES: ${{ vars.IOS_EXTERNAL_GROUP_NAMES }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.IOS_APP_STORE_CONNECT_API_ISSUER_ID }}
+        run: node ios/scripts/distribution-availability.mjs
+      - name: iOS availability receipt ${{ steps.apple.outputs.identity }}
+        run: echo "Verified against App Store Connect."
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-availability-${{ inputs.channel }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/availability.json
+          if-no-files-found: error
+          retention-days: 7
