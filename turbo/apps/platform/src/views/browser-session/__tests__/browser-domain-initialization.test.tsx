@@ -199,7 +199,7 @@ test("browser-domain-initialization-014 A fresh connection takes input after the
 test("Page setup failure leaves input unavailable past the pending inspector deadline", async () => {
   const advance = browserRecoveryClock(context.signal);
   const { cdp, openPage } = setup();
-  cdp.failNext("Page.enable", "navigation failed during setup");
+  cdp.failNext("Page.enable", "navigation failed during setup", -32_601);
   const inspector = cdp.holdNext("Inspector.enable");
   const reject = cdp.holdNext("Page.enable");
   await openPage();
@@ -217,4 +217,36 @@ test("Page setup failure leaves input unavailable past the pending inspector dea
     expect.objectContaining({ params: expect.objectContaining({ text: "z" }) }),
   );
   expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+  let lateReplyRead = false;
+  await inspector.release(undefined, () => {
+    lateReplyRead = true;
+  });
+  expect(lateReplyRead).toBeFalsy();
+  expect(input()).toBeDisabled();
+  expect(screen.getByText("Browser view unavailable")).toBeInTheDocument();
+});
+
+test("An unanswered domain handshake can recover on a different transport after its deadline", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const { cdp, openPage } = setup();
+  const silent = cdp.holdNext("Inspector.enable");
+  await openPage();
+  await silent.received;
+  const pending = cdp.requests.find((r) => {
+    return r.method === "Inspector.enable";
+  });
+  expect(pending?.connectionId).toBeDefined();
+  expect(input()).toBeDisabled();
+  advance(29_000);
+  expect(input()).toBeDisabled();
+  advance(2000);
+  await screen.findByText("Reconnecting…");
+  advance(1000);
+  await expectStreamingAt(owner.url);
+  await sendText(cdp, owner.targetId, "h");
+  const restored = cdp.requests.find((r) => {
+    return r.params?.text === "h";
+  });
+  expect(restored?.connectionId).toBeDefined();
+  expect(restored?.connectionId).not.toBe(pending?.connectionId);
 });

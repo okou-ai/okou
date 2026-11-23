@@ -3264,3 +3264,15 @@ The old My Okou profile link reaches the missing-page view. From there a member 
 Five selected files retain their complete BDD. They cover returning to a missing chat, private reads on sign-in, pasting a PDF on the Image shelf, the exact locator alignment and four browser-recovery clauses. Chromium opens the first question from 24 markers, shows its landing feedback and unmounts answers 24 and 30; after scrolling settles its anchor remains 60 pixels below the scroll container's top edge in both tested viewport sizes. The Vitest geometry fixture reports zero. The six previously reserved product decisions keep their original BDDs and inventory entries.
 
 [Next batch: 30 open files with all 411 retained IDs](https://app.okou.ai/artifacts/rzhpl3ldmq.md). Each file has a concrete evidence entry or an upstream source to inspect.
+
+## Batch 98 whole-file evidence review
+
+The fixed list covers 30 open files and all 411 retained IDs. Four files close. The shared inventory now has 435 files with no open frozen BDD and 50 to revisit. All 485 passed first review. The per-ID ledger links the original registration, historical passes, amendments, current Vitest rows and outstanding clauses. [Batch 98 ledger](./test-rebuild-batch-98.tsv) · [Shared inventory](./test-rebuild-first-pass.tsv)
+
+Browser-viewer-interaction-045 earns first acceptance. During bridge recovery the original target receives Shift down, Shift up and detachment in that order while both cleanup replies are held. Input returns to that target. Returning another key-down in place of the release fails the ordering check. The 5,120-sample recording already passed in batch 12.
+
+The pre-draft onboarding rollback retired with #49278. The supported API's structured 404 still means no server draft. For the chat browser, closing the sidebar drains the old connection and reopening uses a new one. Hiding the still-open viewer preserves the original connection. The streamed-link and steer files close with their sourced behavior revisions. The inline suggestion composer also preserves the separate home draft and submits only its own background attachment.
+
+The terminal Page failure and the silent Inspector control have different outcomes after the deadline. The original attachment retires on failure and cannot read a late reply. In the timeout control a fresh transport receives text. The retained BDD still calls for evidence excluding an intervening retry. Closing a connector manager cancels its pending rename. Both focus cases now have a persisted old name and a separate new edit to test against, while the original late-delivery clauses remain open. The five open owners from batch 97 and the six product decisions retain their original evidence.
+
+The next review covers 30 open files, 372 retained IDs and 116 priority clauses. [Batch 99 list](https://app.okou.ai/artifacts/8ir57ie32h.md)

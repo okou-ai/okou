@@ -199,3 +199,75 @@ test.each([
     await expect(accountActions("Release planning")).resolves.toHaveFocus();
   },
 );
+
+async function leavePendingRename() {
+  const rows = accounts();
+  const saved = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  const finished = context.mocks.deferred<void>();
+  mockSavedConnectorAccounts(context, () => {
+    return rows;
+  });
+  context.mocks.api(
+    connectorAccountsContract.rename,
+    async ({ params, body, respond }) => {
+      const account = rows.find((row) => {
+        return row.id === params.connectionId;
+      })!;
+      account.displayName = body.displayName;
+      if (account.id === rows[0]!.id) {
+        saved.resolve();
+        await response.promise;
+        finished.resolve();
+      }
+      return respond(200, account);
+    },
+  );
+  await setupPage({ context, path: "/connectors" });
+  const manager = await openAccountList();
+  const field = await beginEdit("Work 1", "pointer");
+  await fill(field, "Research archive");
+  await userEvent.keyboard("{Enter}");
+  await saved.promise;
+  await userEvent.click(await findFastControl("button", "Close", manager));
+  await waitFor(() => {
+    return expect(manager).not.toBeInTheDocument();
+  });
+  return async () => {
+    response.resolve();
+    await finished.promise;
+  };
+}
+
+test("connectors-account-rename-focus-011 revised closed manager keeps outside focus while its saved name is persisted", async () => {
+  const finish = await leavePendingRename();
+  const search = await screen.findByPlaceholderText("Find connectors");
+  await userEvent.click(search);
+  await finish();
+  expect(search).toHaveFocus();
+  expect(screen.queryByRole("dialog", { name: managerName })).toBeNull();
+  const manager = await openAccountList();
+  await within(manager).findByRole("group", { name: "Research archive" });
+  expect(
+    within(manager).queryByRole("textbox", { name: accountName }),
+  ).toBeNull();
+});
+
+test("connectors-account-rename-focus-013 revised reopened manager saves its own draft after the first account changes", async () => {
+  const finish = await leavePendingRename();
+  const manager = await openAccountList();
+  await within(manager).findByRole("group", { name: "Research archive" });
+  const editor = await beginEdit("Work 2", "pointer");
+  await fill(editor, "Work 2 new");
+  await finish();
+  expect(editor).toHaveFocus();
+  expect(editor).toHaveValue("Work 2 new");
+  await userEvent.keyboard(" draft{Enter}");
+  const updated = await accountActions("Work 2 new draft");
+  await waitFor(() => {
+    return expect(updated).toHaveFocus();
+  });
+  expect(
+    within(manager).getByRole("group", { name: "Research archive" }),
+  ).toBeInTheDocument();
+});

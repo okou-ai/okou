@@ -17,7 +17,11 @@ function speech(count: number) {
     return [1, -1, 0.25, -0.25, 0][i % 5]!;
   });
 }
-async function record(live: number, tail: number) {
+async function record(
+  live: number,
+  tail: number,
+  vadProbability: number | ((frame: Float32Array) => number) = 0.95,
+) {
   const microphone = context.mocks.deferred<(samples: Float32Array) => void>();
   const files: {
     start: number;
@@ -28,7 +32,7 @@ async function record(live: number, tail: number) {
   }[] = [];
   context.mocks.browser.voiceInput({
     rms: 0.3,
-    vadProbability: 0.95,
+    vadProbability,
     onPcmCapture(emit) {
       microphone.resolve(emit);
       if (live > 0) {
@@ -196,4 +200,25 @@ test("Continuing a live one-minute recording sends the next full WAV before Use 
     expect(capture.editor).toHaveTextContent("Window 6");
   });
   expect(capture.files.at(-1)?.start).toBe(65 * rate);
+});
+
+test("The speech detector receives full-scale microphone samples before the transcript is requested as WAV", async () => {
+  const observed = context.mocks.deferred<number[]>();
+  const { stop, files, editor } = await record(512, 0, (frame) => {
+    observed.resolve(Array.from(frame.subarray(0, 5)));
+    return 0.95;
+  });
+  click(stop);
+  await waitFor(() => {
+    expect(editor).toHaveTextContent("Window 1");
+  });
+  const decoded = await observed.promise;
+  expect(decoded).toEqual([
+    expect.closeTo(1, 4),
+    expect.closeTo(-1, 4),
+    expect.closeTo(0.25, 4),
+    expect.closeTo(-0.25, 4),
+    expect.closeTo(0, 4),
+  ]);
+  expect(files[0]?.type).toBe("audio/wav");
 });

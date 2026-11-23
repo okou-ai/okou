@@ -916,3 +916,93 @@ test("Opening the unread For you row during a refresh separates a preloaded card
     screen.queryByRole("article", { name: earlier.content.title }),
   ).toBeNull();
 });
+
+test("agent-suggestions-022 revised inline direction sends the card file while the home attachment stays with its draft", async () => {
+  const card = proposal("Inspect supplier terms");
+  const homeFile = {
+    id: crypto.randomUUID(),
+    filename: "personal-note.txt",
+    contentType: "text/plain",
+    size: 4,
+    url: "https://files.example.test/home-note",
+  };
+  const cardFile = {
+    ...homeFile,
+    id: crypto.randomUUID(),
+    filename: "supplier-terms.txt",
+    url: "https://files.example.test/supplier-terms",
+  };
+  card.content.customOption.draft.draftAttachments = [cardFile];
+  feed([card]);
+  context.mocks.upload.success(homeFile);
+  const created = context.mocks.deferred<string | undefined>();
+  const sent = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    onThreadCreate: ({ title }) => {
+      created.resolve(title);
+    },
+    onSendRequest: ({ userMessage }) => {
+      sent.resolve(userMessage);
+    },
+  });
+  context.mocks.api(feedContract.consume, ({ respond }) => {
+    return respond(200, card);
+  });
+  await openDeck("/");
+  const homeText = "Keep for my own review";
+  await fill(
+    await screen.findByRole("textbox", { name: /message/i }),
+    homeText,
+  );
+  const picker = await screen.findByLabelText("Attach", {
+    selector: 'input[type="file"]',
+  });
+  await userEvent.upload(
+    picker,
+    new File(["home"], homeFile.filename, { type: homeFile.contentType }),
+  );
+  await findFastControl("button", "Remove " + homeFile.filename);
+  click(await findFastControl("link", /For you/));
+  click(
+    await findFastControl(
+      "button",
+      "What do you have in mind?",
+      await activeCard(card),
+    ),
+  );
+  const inline = await screen.findByRole("region", {
+    name: "What do you have in mind?",
+  });
+  const direction = "Find the notice period";
+  await appendDirection(
+    await within(inline).findByRole("textbox", { name: /message/i }),
+    direction,
+  );
+  const send = await findFastControl("button", "Send", inline);
+  await waitFor(() => {
+    expect(send).toBeEnabled();
+  });
+  click(send);
+  await screen.findByText("Sent to a new chat");
+  await expect(created.promise).resolves.toBe(card.content.title);
+  const message = await sent.promise;
+  const files = message?.parts.filter((part) => {
+    return part.type === "file";
+  });
+  expect(files).toStrictEqual([
+    expect.objectContaining({
+      fileId: cardFile.id,
+      filenameSnapshot: cardFile.filename,
+    }),
+  ]);
+  const document = JSON.stringify(message);
+  expect(document).toContain(direction);
+  expect(document).not.toContain(homeFile.id);
+  expect(document).not.toContain(homeText);
+  expect(location.pathname).toBe("/for-you");
+  click(await findFastControl("link", "Okou"));
+  await findFastControl("button", "Remove " + homeFile.filename);
+  await expect(
+    screen.findByRole("textbox", { name: /message/i }),
+  ).resolves.toHaveTextContent(homeText);
+});

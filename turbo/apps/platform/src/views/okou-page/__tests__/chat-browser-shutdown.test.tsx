@@ -168,3 +168,36 @@ test("The prior browser releases Shift before the reopened viewer sends typing o
   });
   expect(errors.reports).toStrictEqual([]);
 });
+
+test("Hiding and restoring the open browser sidebar keeps typing on the original transport", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { cdp } = await sidebar();
+  const user = userEvent.setup({ delay: null });
+  const field = await screen.findByLabelText("Remote browser input");
+  await user.click(field);
+  await user.keyboard("{Shift>}");
+  const down = await waitFor(() => {
+    const event = cdp.requests.find((r) => {
+      return r.params?.key === "Shift";
+    });
+    expect(event?.params?.type).toMatch(/keyDown/i);
+    return event!;
+  });
+  const release = cdp.holdNext("Input.dispatchKeyEvent");
+  visibility.changeTo("hidden");
+  await release.received;
+  visibility.changeTo("visible");
+  expect(field).toBeDisabled();
+  await release.release();
+  await waitFor(() => {
+    return expect(field).toBeEnabled();
+  });
+  await user.click(field);
+  await user.keyboard("{/Shift}w");
+  await waitFor(() => {
+    const typed = cdp.requests.find((r) => {
+      return r.params?.text === "w" || r.params?.key === "w";
+    });
+    expect(typed?.connectionId).toBe(down.connectionId);
+  });
+});

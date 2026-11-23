@@ -1,3 +1,4 @@
+import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect, vi } from "vitest";
@@ -1894,4 +1895,63 @@ test("A stale capture reply after returning to a navigating page cannot authoriz
     expect(inserted(remote, "main")).toContain("resume my review");
   });
   expect(remote.pageSession("main")).toBe(originalSession);
+});
+
+test("A rejected address can be corrected after the selected target renews its membership", async () => {
+  const browser = await editingRemote("///invalid");
+  fireEvent.submit(field().form!);
+  await screen.findByText(
+    "The browser action could not be completed. Check the browser before trying again.",
+  );
+  const previous = browser.pageSession("example-page");
+  const membership = browser.holdNextMembership("example-page");
+  browser.duplicate("example-page");
+  await membership.received;
+  expect(input()).toBeDisabled();
+  expect(field()).toHaveValue("///invalid");
+  await membership.release();
+  await waitFor(() => {
+    expect(input()).toBeEnabled();
+  });
+  expect(field()).toHaveFocus();
+  expect(field()).toHaveValue("///invalid");
+  expect(browser.pageSession("example-page")).toBe(previous);
+  expect(browser.targets[0]?.url).toBe(home);
+  const corrected = "https://review.example/after-refresh";
+  await replaceDraft(corrected);
+  fireEvent.submit(field().form!);
+  await expectStreamingAt(corrected);
+  expect(browser.targets[0]?.url).toBe(corrected);
+});
+
+test("browser-viewer-interaction-045 the original tab receives its key release before detachment during bridge recovery", async () => {
+  const advance = browserRecoveryClock(context.signal);
+  const remote = await openWindow();
+  const original = remote.pageSession(primary.targetId);
+  await holdShift(remote);
+  const key = remote.holdNext("Input.dispatchKeyEvent");
+  const binding = remote.holdNext("Runtime.removeBinding");
+  remote.resetWorker();
+  await Promise.all([key.received, binding.received]);
+  await screen.findByText("Reconnecting…");
+  await waitFor(() => {
+    return expect(remote.detached).toContain(original);
+  });
+  const order = remote.requests.flatMap((event) => {
+    if (event.sessionId === original && event.params?.key === "Shift") {
+      return [event.params.type];
+    }
+    if (
+      event.method === "Target.detachFromTarget" &&
+      event.params?.sessionId === original
+    ) {
+      return ["detach"];
+    }
+    return [];
+  });
+  expect(order).toStrictEqual(["rawKeyDown", "keyUp", "detach"]);
+  advance(1000);
+  await expectStreamingAt(home);
+  expect(remote.targets).toStrictEqual([primary, sibling]);
+  await sendTo(remote, primary.targetId, "restored");
 });
