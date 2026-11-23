@@ -4,6 +4,7 @@ import { test, expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { externalProtocolHandler } from "../../../test/mocks/external-protocol-handler.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { findAction } from "../../okou-page/__tests__/connector-integrations-test-helpers.ts";
 
 const context = testContext();
 const unknown = "/missing-navigation-case";
@@ -24,12 +25,9 @@ async function workflowsLink() {
 }
 test("link-navigation-001 Both exits from the missing page reach their labeled destinations", async () => {
   await open(unknown);
-  const browse = await screen.findByRole("link", { name: "Browse workflows" });
+  const browse = await findAction("link", "Browse workflows");
   expect(browse).toHaveAttribute("href", "/workflows");
-  expect(screen.getByRole("link", { name: "Back to home" })).toHaveAttribute(
-    "href",
-    "/",
-  );
+  expect(await findAction("link", "Back to home")).toHaveAttribute("href", "/");
   click(browse);
   await expect(
     screen.findByRole("heading", { name: "Workflows" }),

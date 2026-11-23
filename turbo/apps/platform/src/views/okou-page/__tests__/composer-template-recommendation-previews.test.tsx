@@ -284,7 +284,7 @@ test("The Document card opens a report preview that can be dismissed, reopened a
     await findAction("button", "Next sample page", preview),
   );
   expect(
-    within(preview).getByRole("link", { name: "Open larger preview" }),
+    await findAction("link", "Open larger preview", preview),
   ).toHaveAttribute("href", report.previewPages[1]);
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
