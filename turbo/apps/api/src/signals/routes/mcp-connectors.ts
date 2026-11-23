@@ -268,7 +268,9 @@ const runnerMcpScope$ = computed(async (get) => {
   const builtinConnectorSourceIds = new Map<string, string>();
   const customConnectorSourceIds = new Map<string, string>();
   for (const binding of body.data.bindings) {
-    if (binding.connectionId === null) continue;
+    if (binding.connectionId === null) {
+      continue;
+    }
     if (binding.kind === "builtin") {
       builtinConnectorSourceIds.set(
         binding.connectorSlug,
@@ -289,6 +291,23 @@ const runnerMcpScope$ = computed(async (get) => {
 });
 const runnerMcpConnectors$ = runMcpConnectorList(runnerMcpScope$);
 const runnerBuiltinMcpConnectors$ = builtinMcpList(runnerMcpScope$);
+
+function runTokenAllowsMcp(
+  token: string,
+  run: Pick<RunMcpConnectorScope, "runId" | "orgId" | "userId">,
+  capability: "connector:read" | "connector:write",
+): boolean {
+  const agent = verifyOkouToken(token);
+  return (
+    agent !== null &&
+    agent.runId === run.runId &&
+    agent.orgId === run.orgId &&
+    agent.userId === run.userId &&
+    agent.capabilities.includes(capability) &&
+    agent.capabilities.includes("connector-account:switch")
+  );
+}
+
 const resolveRunnerMcpInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const [runnerAuthorization, runToken, extra] =
@@ -308,24 +327,21 @@ const resolveRunnerMcpInner$ = command(
     }
     const body = await get(runnerMcpBody$);
     signal.throwIfAborted();
-    if (!body.ok) return body.response;
+    if (!body.ok) {
+      return body.response;
+    }
     const run = await get(runnerMcpRun$);
     signal.throwIfAborted();
-    if (!run || run.status !== "running") return notFound("Run not found");
+    if (!run || run.status !== "running") {
+      return notFound("Run not found");
+    }
     if (auth.type !== "official-runner" && auth.userId !== run.userId) {
       return resourceUnavailable("Run does not belong to user");
     }
     const request = body.data.request;
-    const agent = verifyOkouToken(runToken);
     const capability =
       request.kind === "list" ? "connector:read" : "connector:write";
-    if (
-      agent?.runId !== run.runId ||
-      agent.orgId !== run.orgId ||
-      agent.userId !== run.userId ||
-      !agent.capabilities.includes(capability) ||
-      !agent.capabilities.includes("connector-account:switch")
-    ) {
+    if (!runTokenAllowsMcp(runToken, run, capability)) {
       return resourceUnavailable(
         "MCP resolution is unavailable for this Run credential",
       );
