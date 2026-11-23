@@ -392,11 +392,20 @@ class ChatListModel(
     private var cacheRead = false
     private var restoreJob: Job? = null
     private var indicatorsJob: Job? = null
-    private var draftIndexEdits: MutableMap<String, Boolean>? = null
+    private var draftIndexRead: DraftIndexRead? = null
+    internal var draftIndexRequestVersion = 0L
+        private set
+
+    private var confirmedDraftIndexVersion = 0L
     private var indicatorsRetry: ChatDependencyRetry? = null
     private val indicatorReadReceipts = mutableMapOf<String, ChatTimestamp>()
     private val readConfirmations = mutableMapOf<String, ReadConfirmation>()
     private val writes = Mutex()
+
+    private class DraftIndexRead {
+        val presenceOverrides = mutableMapOf<String, Boolean>()
+        var job: Job? = null
+    }
 
     private class ListReadBatch {
         var refresh = false
@@ -526,6 +535,11 @@ class ChatListModel(
                         listRetryProgressVisible =
                             state.listRetryProgressVisible || (!online && staleListRead(state)),
                     )
+                if (!online) {
+                    val staleRead = draftIndexRead
+                    draftIndexRead = null
+                    staleRead?.job?.cancel()
+                }
                 refreshOnReconnect = online
                 updateListRetryVisibility()
             }
@@ -1799,31 +1813,39 @@ class ChatListModel(
     }
 
     private fun refreshDraftIndex() {
-        if (!current() || mutable.value.offline || draftIndexEdits != null) return
-        val edits = mutableMapOf<String, Boolean>()
-        draftIndexEdits = edits
-        viewModelScope.launch {
+        if (!current() || mutable.value.offline || draftIndexRead != null) return
+        val read = DraftIndexRead()
+        val version = ++draftIndexRequestVersion
+        draftIndexRead = read
+        read.job = viewModelScope.launch {
             try {
                 val ids = service.draftThreadIds().toMutableSet()
                 requireCurrent()
-                for ((id, present) in edits) {
+                for ((id, present) in read.presenceOverrides) {
                     if (present) ids.add(id) else ids.remove(id)
                 }
+                confirmedDraftIndexVersion = version
                 mutable.value = mutable.value.copy(draftThreadIds = ids)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
-                if (current()) onFailure(error)
+                requireCurrent()
+                onFailure(error)
             } finally {
-                draftIndexEdits = null
+                if (draftIndexRead === read) draftIndexRead = null
             }
         }
     }
 
-    internal fun confirmDraftPresence(threadId: String, present: Boolean) {
-        if (!current()) return
-        // A response from an index read in flight may precede the acknowledged save.
-        draftIndexEdits?.set(threadId, present)
+    internal fun confirmDraftPresence(
+        threadId: String,
+        present: Boolean,
+        indexVersionAtStart: Long = draftIndexRequestVersion,
+    ) {
+        if (!current() || indexVersionAtStart < confirmedDraftIndexVersion) return
+        // Compare reads by request start. Acknowledged saves use the latest version on completion.
+        if (indexVersionAtStart == draftIndexRequestVersion)
+            draftIndexRead?.presenceOverrides?.set(threadId, present)
         val state = mutable.value
         val ids = state.draftThreadIds ?: return
         if ((threadId in ids) != present) {

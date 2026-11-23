@@ -4275,6 +4275,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 }
             }
         withCatchUpModel(service) { model ->
+            val earlierDetailRead = model.draftIndexRequestVersion
             model.refresh()
             runCurrent()
             assertTrue(model.uiState.value.threads.isNotEmpty())
@@ -4285,10 +4286,12 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
 
             model.confirmDraftPresence(CHAT_PERSONAL, true)
             model.confirmDraftPresence(CHAT_IN_PROJECT, false)
+            model.confirmDraftPresence("opened-thread", true, model.draftIndexRequestVersion)
             reply.complete(listOf(CHAT_IN_PROJECT, "unrelated-thread"))
             runCurrent()
+            model.confirmDraftPresence("unrelated-thread", false, earlierDetailRead)
             assertEquals(
-                setOf(CHAT_PERSONAL, "unrelated-thread"),
+                setOf(CHAT_PERSONAL, "opened-thread", "unrelated-thread"),
                 model.uiState.value.draftThreadIds,
             )
 
@@ -4296,9 +4299,45 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(2, requests)
             assertEquals(
-                setOf(CHAT_PERSONAL, "unrelated-thread"),
+                setOf(CHAT_PERSONAL, "opened-thread", "unrelated-thread"),
                 model.uiState.value.draftThreadIds,
             )
+        }
+    }
+
+    @Test
+    fun reconnectRefreshesDraftsWhileThePreviousConnectionIsStillFinishing() = runTest {
+        val connected = MutableStateFlow(true)
+        val previousConnection = CompletableDeferred<List<String>>()
+        var requests = 0
+        val service =
+            object : Service() {
+                override suspend fun draftThreadIds(): List<String> {
+                    if (++requests == 1)
+                        return withContext(NonCancellable) {
+                            previousConnection.await()
+                        }
+                    return listOf(CHAT_PERSONAL)
+                }
+            }
+        withCatchUpModel(service, connectivity = connected) { model ->
+            try {
+                model.refresh()
+                runCurrent()
+                assertEquals(1, requests)
+
+                connected.value = false
+                runCurrent()
+                connected.value = true
+                runCurrent()
+                assertEquals(setOf(CHAT_PERSONAL), model.uiState.value.draftThreadIds)
+
+                previousConnection.complete(listOf(CHAT_IN_PROJECT))
+                runCurrent()
+                assertEquals(setOf(CHAT_PERSONAL), model.uiState.value.draftThreadIds)
+            } finally {
+                previousConnection.complete(emptyList())
+            }
         }
     }
 

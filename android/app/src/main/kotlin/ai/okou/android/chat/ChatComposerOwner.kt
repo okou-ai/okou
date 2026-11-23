@@ -409,6 +409,8 @@ internal class ChatComposerOwner(
                         val before = journal.drafts[target.key] ?: EditableComposerDraft()
                         readableDrafts.remove(target.key)
                         syncStatus(target.key, ComposerSync.Loading)
+                        val list = connection.chatList
+                        val indexVersion = list?.draftIndexRequestVersion
                         val remote = connection.service.composerDraft(target).plainText()
                         currentCoroutineContext().ensureActive()
                         if (!current()) return@launch
@@ -416,6 +418,12 @@ internal class ChatComposerOwner(
                             syncStatus(target.key, ComposerSync.Unsupported)
                             return@launch
                         }
+                        if (target.threadId != null && indexVersion != null)
+                            list.confirmDraftPresence(
+                                target.threadId,
+                                !remote.isBlankWebDraft(),
+                                indexVersion,
+                            )
                         readableDrafts += target.key
                         journal = mutable.value.journal ?: return@launch
                         val local = journal.drafts[target.key] ?: EditableComposerDraft()

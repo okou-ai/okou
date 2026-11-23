@@ -110,6 +110,7 @@ class ChatListApplication : TestOkouApplication() {
         fixture = ChatListApiFixture()
         fixture.beforeResponse = { responseGate.await() }
         chatService = fixture.service
+        composerService = fixture.service
         searchService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
@@ -262,8 +263,34 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun openedChatsDraftReadUpdatesThePencilAfterAnOlderIndex() {
+        val app = compose.activity.application as ChatListApplication
+        val webDraft = "Draft saved on Web"
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.waitUntil(10_000) { currentList()?.draftThreadIds?.isEmpty() == true }
+
+        val row = hasTestTag("chat_$CHAT_PERSONAL")
+        val glyph =
+            compose.onNode(
+                hasTestTag("chat_draft_icon") and hasAnyAncestor(row),
+                useUnmergedTree = true,
+            )
+        glyph.assertDoesNotExist()
+        app.fixture.setThreadDraft(CHAT_PERSONAL, webDraft)
+        compose.onNode(row).performClick().assertIsSelected()
+        compose.waitUntilExactlyOneExists(
+            hasTestTag("message_input") and hasSetTextAction() and hasText(webDraft),
+            10_000,
+        )
+        glyph.assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
         val app = compose.activity.application as ChatListApplication
+        app.fixture.setThreadDraft(CHAT_PERSONAL, "Existing draft")
         val releaseIndex = CountDownLatch(1)
         app.fixture.draftIndex = {
             releaseIndex.await()
@@ -284,8 +311,6 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         try {
             app.responseGate.countDown()
             awaitListAndNames()
-            row.performClick()
-            row.assertIsSelected()
             glyph.assertDoesNotExist()
             val before = title.getUnclippedBoundsInRoot()
             val rowBounds = row.getUnclippedBoundsInRoot()
@@ -295,7 +320,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
             releaseIndex.countDown()
             compose.waitUntil(10_000) { currentList()?.draftThreadIds == setOf(CHAT_PERSONAL) }
-            row.assertIsSelected()
+            row.performClick().assertIsSelected()
             val icon = glyph.getUnclippedBoundsInRoot()
             val marked = title.getUnclippedBoundsInRoot()
             assertEquals(18.dp, icon.right - icon.left)
