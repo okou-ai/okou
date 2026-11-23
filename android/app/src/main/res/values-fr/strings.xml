@@ -99,9 +99,6 @@
     <string name="composer_not_observed">Le message est encore introuvable. Sa remise reste non confirmée.</string>
     <string name="composer_request_failed">La demande a échoué. Le brouillon et le message en attente sont conservés.</string>
     <string name="composer_saving">Enregistrement du brouillon sur cet appareil…</string>
-    <string name="composer_accepted">Message accepté ; traitement en attente.</string>
-    <string name="composer_consumed">La saisie a été prise en charge ; son état actuel est inconnu.</string>
-    <string name="composer_revoked">Message révoqué</string>
     <string name="updates_title">Mises à jour de l’application</string>
     <string name="updates_installed">Version actuelle : %1$s</string>
     <string name="updates_current">Vous utilisez la dernière version</string>

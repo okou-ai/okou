@@ -99,9 +99,6 @@
     <string name="composer_not_observed">Die Nachricht ist noch nicht sichtbar. Ihre Zustellung bleibt unbestätigt.</string>
     <string name="composer_request_failed">Die Anfrage ist fehlgeschlagen. Entwurf und ausstehende Nachricht bleiben erhalten.</string>
     <string name="composer_saving">Entwurf wird auf diesem Gerät gespeichert…</string>
-    <string name="composer_accepted">Nachricht angenommen; Verarbeitung steht aus.</string>
-    <string name="composer_consumed">Die Eingabe wurde übernommen; der aktuelle Ausführungsstatus ist unbekannt.</string>
-    <string name="composer_revoked">Nachricht zurückgenommen</string>
     <string name="updates_title">App-Updates</string>
     <string name="updates_installed">Aktuelle Version: %1$s</string>
     <string name="updates_current">Du verwendest die neueste Version</string>

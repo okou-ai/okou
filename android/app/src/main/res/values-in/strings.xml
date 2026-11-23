@@ -99,9 +99,6 @@
     <string name="composer_not_observed">Pesan belum terlihat. Pengirimannya masih belum terkonfirmasi.</string>
     <string name="composer_request_failed">Permintaan gagal. Draf dan pesan tertunda tetap disimpan.</string>
     <string name="composer_saving">Menyimpan draf di perangkat ini…</string>
-    <string name="composer_accepted">Pesan diterima; menunggu pemrosesan.</string>
-    <string name="composer_consumed">Input telah diambil; status eksekusi saat ini tidak diketahui.</string>
-    <string name="composer_revoked">Pesan ditarik kembali</string>
     <string name="updates_title">Pembaruan aplikasi</string>
     <string name="updates_installed">Versi saat ini: %1$s</string>
     <string name="updates_current">Anda menggunakan versi terbaru</string>

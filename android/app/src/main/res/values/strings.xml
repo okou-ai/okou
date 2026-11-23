@@ -100,9 +100,6 @@
     <string name="composer_not_observed">The message is not yet observable. Its delivery remains unconfirmed.</string>
     <string name="composer_request_failed">The request failed. Your draft and pending message are retained.</string>
     <string name="composer_saving">Saving draft on this device…</string>
-    <string name="composer_accepted">Message accepted; waiting for processing.</string>
-    <string name="composer_consumed">Input was picked up; current execution state is unknown.</string>
-    <string name="composer_revoked">Message revoked</string>
     <string name="updates_title">App updates</string>
     <string name="updates_installed">Current version: %1$s</string>
     <string name="updates_current">You are up to date</string>

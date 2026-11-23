@@ -99,9 +99,6 @@
     <string name="composer_not_observed">まだメッセージを確認できません。送信結果は未確定です。</string>
     <string name="composer_request_failed">リクエストに失敗しました。下書きと未確認のメッセージは保持されています。</string>
     <string name="composer_saving">この端末に下書きを保存中…</string>
-    <string name="composer_accepted">メッセージを受け付けました。処理を待っています。</string>
-    <string name="composer_consumed">入力は取得されました。現在の実行状況は不明です。</string>
-    <string name="composer_revoked">メッセージは取り消されました</string>
     <string name="updates_title">アプリの更新</string>
     <string name="updates_installed">現在のバージョン %1$s</string>
     <string name="updates_current">最新バージョンです</string>

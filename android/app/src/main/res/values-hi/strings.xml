@@ -99,9 +99,6 @@
     <string name="composer_not_observed">संदेश अभी दिखाई नहीं दे रहा है। डिलीवरी की पुष्टि नहीं हुई है।</string>
     <string name="composer_request_failed">अनुरोध विफल हुआ। ड्राफ़्ट और लंबित संदेश सुरक्षित हैं।</string>
     <string name="composer_saving">इस डिवाइस पर ड्राफ़्ट सहेजा जा रहा है…</string>
-    <string name="composer_accepted">संदेश स्वीकार किया गया; प्रोसेसिंग की प्रतीक्षा है।</string>
-    <string name="composer_consumed">इनपुट लिया गया; निष्पादन की वर्तमान स्थिति अज्ञात है।</string>
-    <string name="composer_revoked">संदेश वापस लिया गया</string>
     <string name="updates_title">ऐप अपडेट</string>
     <string name="updates_installed">मौजूदा वर्शन: %1$s</string>
     <string name="updates_current">आप नवीनतम संस्करण पर हैं</string>

@@ -99,9 +99,6 @@
     <string name="composer_not_observed">El mensaje aún no es visible. La entrega sigue sin confirmar.</string>
     <string name="composer_request_failed">La solicitud falló. El borrador y el mensaje pendiente se conservan.</string>
     <string name="composer_saving">Guardando borrador en este dispositivo…</string>
-    <string name="composer_accepted">Mensaje aceptado; en espera de procesamiento.</string>
-    <string name="composer_consumed">La entrada se ha recogido; se desconoce el estado actual de ejecución.</string>
-    <string name="composer_revoked">Mensaje revocado</string>
     <string name="updates_title">Actualizaciones de la aplicación</string>
     <string name="updates_installed">Versión actual: %1$s</string>
     <string name="updates_current">Tienes la versión más reciente</string>

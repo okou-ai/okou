@@ -99,9 +99,6 @@
     <string name="composer_not_observed">A mensagem ainda não está visível. A entrega continua sem confirmação.</string>
     <string name="composer_request_failed">A solicitação falhou. O rascunho e a mensagem pendente foram preservados.</string>
     <string name="composer_saving">Salvando rascunho neste dispositivo…</string>
-    <string name="composer_accepted">Mensagem aceita; aguardando processamento.</string>
-    <string name="composer_consumed">A entrada foi recebida; o estado atual de execução é desconhecido.</string>
-    <string name="composer_revoked">Mensagem revogada</string>
     <string name="updates_title">Atualizações do aplicativo</string>
     <string name="updates_installed">Versão atual: %1$s</string>
     <string name="updates_current">Você está na versão mais recente</string>

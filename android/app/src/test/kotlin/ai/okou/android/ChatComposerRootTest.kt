@@ -316,6 +316,7 @@ class ChatComposerRootTest {
             messageText(pending.eventId, prompt).assertIsDisplayed()
             messageDelivery(pending.eventId, "Sending…").assertIsDisplayed()
             messageText(pending.eventId, "Sending…").assertDoesNotExist()
+            compose.onNodeWithText("Check delivery").assertDoesNotExist()
             assertEquals(0, app.fixture.inputs.size)
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithTag("chat_${pending.threadId}").assertIsDisplayed().performClick()
@@ -336,6 +337,7 @@ class ChatComposerRootTest {
             }
             messageText(pending.eventId, prompt).assertIsDisplayed()
             messageDelivery(pending.eventId, "Sending…").assertDoesNotExist()
+            compose.onNodeWithText("Check delivery").assertDoesNotExist()
             val acceptedBody = messageText(pending.eventId, prompt).getUnclippedBoundsInRoot()
             assertEquals(sendingBody.left, acceptedBody.left)
             assertEquals(sendingBody.right, acceptedBody.right)
@@ -645,7 +647,7 @@ class ChatComposerRootTest {
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText("New conversation").performClick()
             compose.onNodeWithTag("message_input").assertTextContains("Keep this newer draft")
-            compose.onNodeWithText("Check delivery").assertIsNotEnabled()
+            compose.onNodeWithText("Check delivery").assertDoesNotExist()
             compose.onNodeWithContentDescription("Send").assertIsNotEnabled()
             app.sendGate.countDown()
             awaitConversation {
@@ -703,18 +705,29 @@ class ChatComposerRootTest {
                 .isNotEmpty()
         }
         messageDelivery(event, "Message delivery is unconfirmed.").assertIsDisplayed()
-        compose.activityRule.scenario.recreate()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag("message_input").fetchSemanticsNodes().size == 1
+        val checkStarted = CountDownLatch(1)
+        val checkResponse = CountDownLatch(1)
+        app.fixture.beforeInputStatusReturn = {
+            checkStarted.countDown()
+            checkResponse.await()
         }
-        compose.onNodeWithTag("message_input").assertTextContains("Newer draft 你好")
-        messageText(event, "Original **message** 👋").assertIsDisplayed()
-        compose.onNodeWithText("Check delivery").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty()
+        try {
+            compose.activityRule.scenario.recreate()
+            awaitConversation { checkStarted.count == 0L }
+            compose.onNodeWithTag("message_input").assertTextContains("Newer draft 你好")
+            messageText(event, "Original **message** 👋").assertIsDisplayed()
+            messageDelivery(event, "Checking delivery…").assertIsDisplayed()
+        } finally {
+            checkResponse.countDown()
+        }
+        val thread = app.fixture.created.single().getValue("clientThreadId").jsonPrimitive.content
+        awaitConversation {
+            editor?.uiState?.value?.entry(ComposerTarget(thread))?.receipt?.eventId == event &&
+                compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("message_input").assertTextContains("Newer draft 你好")
         compose.onNodeWithContentDescription("Send").assertIsEnabled()
+        compose.onNodeWithText("Check delivery").assertDoesNotExist()
         assertEquals(1, app.fixture.inputs.size)
         assertEquals(1, app.fixture.created.size)
         assertEquals(

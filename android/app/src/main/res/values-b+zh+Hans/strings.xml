@@ -99,9 +99,6 @@
     <string name="composer_not_observed">暂时查不到此消息，发送结果仍未确认。</string>
     <string name="composer_request_failed">请求失败，草稿和待确认消息已保留。</string>
     <string name="composer_saving">正在将草稿保存到此设备…</string>
-    <string name="composer_accepted">消息已接受，等待处理。</string>
-    <string name="composer_consumed">消息已被取用，当前执行状态未知。</string>
-    <string name="composer_revoked">消息已撤回</string>
     <string name="updates_title">应用更新</string>
     <string name="updates_installed">当前版本 %1$s</string>
     <string name="updates_current">已是最新版本</string>
