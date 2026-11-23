@@ -42,6 +42,7 @@ import { db$, writeDb$ } from "../external/db";
 import { command } from "ccstate";
 import {
   getStripeClient,
+  isStripeResourceMissingError,
   type StripeClient,
   type StripeInvoice,
   type StripeInvoiceLine,
@@ -623,6 +624,24 @@ function eligibleLegacySubscription(subscription: StripeSubscription): boolean {
   );
 }
 
+async function readMigrationSourceSubscription(
+  subscriptionId: string,
+  signal: AbortSignal,
+): Promise<StripeSubscription | null> {
+  const current = await settle(
+    getStripeClient().subscriptions.retrieve(subscriptionId),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (!current.ok) {
+    if (isStripeResourceMissingError(current.error)) {
+      return null;
+    }
+    throw current.error;
+  }
+  return current.value;
+}
+
 const loadLegacyMigrationContext$ = command(
   async (
     { set },
@@ -658,10 +677,13 @@ const loadLegacyMigrationContext$ = command(
       return null;
     }
 
-    const subscription = await getStripeClient().subscriptions.retrieve(
+    const subscription = await readMigrationSourceSubscription(
       row.stripeSubscriptionId,
+      signal,
     );
-    signal.throwIfAborted();
+    if (!subscription) {
+      return null;
+    }
     const legacyItem = legacyPlanItem(subscription, row.tier);
     if (
       !eligibleLegacySubscription(subscription) ||
@@ -724,6 +746,104 @@ function migrationConfiguration(
   };
 }
 
+export const retireCanceledUsagePackMigrations$ = command(
+  async (
+    { set },
+    source:
+      { readonly subscriptionId: string } | { readonly scheduleId: string },
+  ): Promise<readonly string[]> => {
+    const at = nowDate();
+    const subscriptionCanceled = "subscriptionId" in source;
+    const rows = await set(writeDb$)
+      .update(usagePackSubscriptionMigrations)
+      .set({
+        status: "failed",
+        failureReason: subscriptionCanceled
+          ? "subscription_canceled"
+          : "schedule_canceled",
+        completedAt: at,
+        updatedAt: at,
+      })
+      .where(
+        and(
+          subscriptionCanceled
+            ? eq(
+                usagePackSubscriptionMigrations.stripeSubscriptionId,
+                source.subscriptionId,
+              )
+            : eq(
+                usagePackSubscriptionMigrations.stripeScheduleId,
+                source.scheduleId,
+              ),
+          inArray(usagePackSubscriptionMigrations.status, [
+            ...OPEN_MIGRATION_STATUSES,
+          ]),
+        ),
+      )
+      .returning({ orgId: usagePackSubscriptionMigrations.orgId });
+    return [
+      ...new Set(
+        rows.map((row) => {
+          return row.orgId;
+        }),
+      ),
+    ];
+  },
+);
+
+const invalidOpenMigrationReason$ = command(
+  async (
+    { get },
+    migration: MigrationRow,
+    selections: readonly MigrationSelectionRow[],
+    signal: AbortSignal,
+  ): Promise<string | null> => {
+    const [owner] = await get(db$)
+      .select({ stripeSubscriptionId: orgMetadata.stripeSubscriptionId })
+      .from(orgMetadata)
+      .where(eq(orgMetadata.orgId, migration.orgId));
+    signal.throwIfAborted();
+    if (owner?.stripeSubscriptionId !== migration.stripeSubscriptionId) {
+      return "subscription_changed";
+    }
+    const subscription = await readMigrationSourceSubscription(
+      migration.stripeSubscriptionId,
+      signal,
+    );
+    if (!subscription) {
+      return "subscription_missing";
+    }
+    if (
+      subscription.status === "canceled" ||
+      subscription.status === "incomplete_expired"
+    ) {
+      return "subscription_canceled";
+    }
+    // A phase that has started can still be awaiting its paid invoice webhook.
+    if (desiredMigrationShape(migration, selections, subscription)) {
+      return null;
+    }
+    if (
+      !subscription.items.data.some((item) => {
+        return (
+          item.id === migration.legacyStripeItemId &&
+          item.price.id === migration.legacyStripePriceId
+        );
+      })
+    ) {
+      return "subscription_changed";
+    }
+    if (
+      migration.status === "scheduled" &&
+      migration.stripeScheduleId &&
+      stripeObjectId(subscription.schedule) !== migration.stripeScheduleId
+    ) {
+      return "schedule_changed";
+    }
+    return null;
+  },
+);
+
 export const getUsagePackMigrationState$ = command(
   async (
     { set },
@@ -733,7 +853,7 @@ export const getUsagePackMigrationState$ = command(
     const db = set(writeDb$);
     const at = nowDate();
     const openMigrationQuery = db
-      .select()
+      .select(migrationColumnsWithRowVersion())
       .from(usagePackSubscriptionMigrations)
       .where(
         and(
@@ -784,6 +904,34 @@ export const getUsagePackMigrationState$ = command(
           eq(usagePackSubscriptionMigrationSelections.migrationId, open.id),
         );
       signal.throwIfAborted();
+      const failureReason = await set(
+        invalidOpenMigrationReason$,
+        open,
+        selections,
+        signal,
+      );
+      if (failureReason) {
+        const [retired] = await db
+          .update(usagePackSubscriptionMigrations)
+          .set({
+            status: "failed",
+            failureReason,
+            completedAt: at,
+            updatedAt: at,
+          })
+          .where(
+            and(
+              eq(usagePackSubscriptionMigrations.id, open.id),
+              migrationRowVersionIs(open.rowVersion),
+              inArray(usagePackSubscriptionMigrations.status, [
+                ...OPEN_MIGRATION_STATUSES,
+              ]),
+            ),
+          )
+          .returning({ id: usagePackSubscriptionMigrations.id });
+        signal.throwIfAborted();
+        return retired ? { status: "not_found" } : { status: "conflict" };
+      }
       return {
         status: "ready",
         state: migrationState(open, selections),

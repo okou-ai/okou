@@ -100,12 +100,11 @@ def validate(directory):
             ordered, "speculative fault phase clocks lost ordering")
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
-        path = initial.get("status_path")
-        status_evidence.claim_status_path(path, paths, "invalid or replayed speculative private status path")
-        baseline = initial.get("published_status")
-        status_evidence.original_status(baseline, sandbox=identity[0])
-        exact(initial, {"policy": policy, "status_path": path, "published_status": baseline,
-                        "regular_file": True}, "speculative fault changed original inputs")
+        baseline = status_evidence.validate_initial_status_receipt(
+            initial, policy, identity[0], paths,
+            path_error="invalid or replayed speculative private status path",
+            receipt_error="speculative fault changed original inputs",
+        )
         history, operation = later.history_operation(
             waiting, identities, "speculative callback replayed run or resource identity"
         )
