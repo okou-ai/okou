@@ -1,4 +1,3 @@
-import { setProjectArchived$ } from "../../signals/projects/projects.ts";
 import {
   projectIndicatorStates$,
   type ProjectIndicatorState,
@@ -36,7 +35,10 @@ import {
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
-import { projects$ } from "../../signals/projects/projects.ts";
+import {
+  projects$,
+  setProjectArchived$,
+} from "../../signals/projects/projects.ts";
 import {
   projectReorderEnabled$,
   stepProject$,

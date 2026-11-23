@@ -281,10 +281,10 @@ test("Archived opens the full contents of an archived Project and the archived c
   }
   await waitFor(() => {
     expect(projectChatTitles()).toHaveLength(2);
-    expect(projectChatTitles()).toEqual(
+    expect(projectChatTitles()).toStrictEqual(
       expect.arrayContaining(["Launch planning", "Launch notes"]),
     );
-    expect(projectChatTitles(researchId)).toEqual(["Research notes"]);
+    expect(projectChatTitles(researchId)).toStrictEqual(["Research notes"]);
   });
 });
 
