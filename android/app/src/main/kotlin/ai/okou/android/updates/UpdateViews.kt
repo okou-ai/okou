@@ -370,7 +370,7 @@ private fun UpdateSheet(
                 .padding(top = if (centered) inset else 0.dp)
                 .padding(bottom = if (short) 8.dp else if (compact) 12.dp else 24.dp),
         ) {
-            val actions = measureUpdateSheetActions(maxWidth)
+            val actions = measureUpdateSheetActions(maxWidth, state.requiresNewerAndroid)
             val headingStyle =
                 if (compact)
                     MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp, lineHeight = 28.sp)
@@ -765,14 +765,19 @@ private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
 
 // Reserve room for both buttons and progress so localized wrapping cannot move the footer.
 @Composable
-private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
+private fun measureUpdateSheetActions(
+    width: Dp,
+    requiresNewerAndroid: Boolean,
+): UpdateSheetActionSize {
     val measurer = rememberTextMeasurer()
     val dismissLabel = stringResource(R.string.updates_close)
     val mainLabels =
         listOf(
             stringResource(R.string.updates_download),
-            stringResource(R.string.updates_check),
-            stringResource(R.string.updates_check_compatible),
+            stringResource(
+                if (requiresNewerAndroid) R.string.updates_check_compatible
+                else R.string.updates_check,
+            ),
             stringResource(R.string.updates_waiting_to_check),
             stringResource(R.string.updates_waiting_to_download),
             stringResource(R.string.updates_ready),
