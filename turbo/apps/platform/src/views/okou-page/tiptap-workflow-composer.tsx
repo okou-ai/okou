@@ -5,11 +5,20 @@ import {
   useSet,
 } from "ccstate-react";
 import type { ReactNode } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import type { Editor } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
-import { Popover, useMediaQuery, type KeyboardEventLike } from "@okouai/ui";
+import {
+  Button,
+  cn,
+  Popover,
+  useMediaQuery,
+  type KeyboardEventLike,
+} from "@okouai/ui";
 import { useTranslation } from "react-i18next";
+import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { i18n } from "../../i18n/index.ts";
 import type { ComposerChatThreadSuggestion } from "../../signals/okou-page/chat-thread-suggestion-domain.ts";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -136,10 +145,14 @@ function workflowComposerHasContent(editor: Editor): boolean {
 
 function WorkflowComposerPlaceholder({
   composer,
+  followup,
+  acceptFollowup,
 }: {
   composer: ComposerSignals;
+  followup: string | undefined;
+  acceptFollowup: () => boolean;
 }) {
-  useTranslation();
+  const { t } = useTranslation();
   const sending = useLastResolved(composer.submission.sending$);
   const createMode = useGet(composer.create.mode$);
   const hasInput = useGet(composer.editor.hasInput$);
@@ -152,19 +165,46 @@ function WorkflowComposerPlaceholder({
   const hasTemplateAttachment = useGet(
     composer.template.hasTemplateAttachment$,
   );
-  if (hasInput || hasEditorContent) {
+  if (hasInput || hasEditorContent || followup === "") {
     return null;
   }
   return (
     <div
-      className={`pointer-events-none absolute left-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80 ${
-        hasTemplateAttachment ? "top-[54px]" : "top-0 pt-4"
-      }`}
-      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute left-0 px-4 text-[0.9375rem] leading-6 text-muted-foreground/80",
+        hasTemplateAttachment ? "top-[54px]" : "top-0 pt-4",
+        followup !== undefined && "right-0 z-10 flex items-baseline gap-2",
+      )}
     >
-      {createMode
-        ? composerCreatePlaceholder(createMode)
-        : workflowComposerPlaceholder(sending)}
+      <span
+        aria-hidden="true"
+        className={followup ? "min-w-0 line-clamp-2 wrap-anywhere" : undefined}
+      >
+        {followup ??
+          (createMode
+            ? composerCreatePlaceholder(createMode)
+            : workflowComposerPlaceholder(sending))}
+      </span>
+      {followup && (
+        <Button
+          type="button"
+          variant="neutral"
+          size="xs"
+          className="pointer-events-auto shrink-0"
+          aria-label={t(($) => {
+            return $.chat.composer.useSuggestion;
+          })}
+          onClick={acceptFollowup}
+        >
+          {isMobileTextInputDevice()
+            ? t(($) => {
+                return $.chat.composer.followupTouchLabel;
+              })
+            : t(($) => {
+                return $.chat.composer.followupTabLabel;
+              })}
+        </Button>
+      )}
     </div>
   );
 }
@@ -248,6 +288,16 @@ function crossesSuggestionSubmenu(
     return false;
   }
   return context.crossSuggestionSubmenu(event.key === "ArrowRight" ? 1 : -1);
+}
+
+function isPlainTab(event: KeyboardEvent): boolean {
+  return (
+    event.key === "Tab" &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !event.ctrlKey &&
+    !event.metaKey
+  );
 }
 
 function handleComposerKeyDownCapture(
@@ -929,6 +979,75 @@ function ComposerSuggestionSession({
   );
 }
 
+function useFollowupPlaceholder(
+  composer: ComposerSignals,
+  sessionActive: boolean,
+) {
+  const switches = useLastResolved(featureSwitches$);
+  const source = useGet(composer.recommendedFollowupSource$);
+  const followup = switches
+    ? switches[FeatureSwitchKey.FollowupPlaceholder]
+      ? (source?.followups[0]?.prompt ?? "")
+      : undefined
+    : "";
+  const hasInput = useGet(composer.editor.hasInput$);
+  const insertText = useSet(composer.editor.insertText$);
+  const { t } = useTranslation();
+  const nativePlaceholder =
+    followup ??
+    t(($) => {
+      return $.chat.composer.placeholder;
+    });
+  const editor = composer.editor.editor;
+  const acceptFollowup = () => {
+    if (
+      !followup ||
+      hasInput ||
+      editor.view.composing ||
+      workflowComposerHasContent(editor)
+    ) {
+      return false;
+    }
+    insertText(followup);
+    return true;
+  };
+  const tabEnabled = Boolean(followup) && !hasInput && !sessionActive;
+  const placeholderRef = (element: HTMLDivElement | null) => {
+    const props = editor.options.editorProps;
+    const attributes = props.attributes;
+    if (
+      !element ||
+      typeof attributes !== "object" ||
+      (attributes.placeholder === nativePlaceholder &&
+        Boolean(props.handleKeyDown) === tabEnabled)
+    ) {
+      return;
+    }
+    editor.setOptions({
+      editorProps: {
+        ...props,
+        attributes: {
+          ...attributes,
+          placeholder: nativePlaceholder,
+          "aria-placeholder": nativePlaceholder,
+        },
+        handleKeyDown: tabEnabled
+          ? (view, event) => {
+              return (
+                isPlainTab(event) &&
+                event.target === view.dom &&
+                !event.isComposing &&
+                event.keyCode !== 229 &&
+                acceptFollowup()
+              );
+            }
+          : undefined,
+      },
+    });
+  };
+  return { followup, placeholderRef, acceptFollowup };
+}
+
 /**
  * Keep the editor's parent and send owner mounted across menu transitions.
  * Presence only needs token ranges; no workflow/model/mention payload is read
@@ -945,17 +1064,28 @@ function ComposerSuggestionMenu({
   readonly children: ReactNode;
 }) {
   const sessionActive = useGet(composer.suggestion.sessionActive$);
+  const { followup, placeholderRef, acceptFollowup } = useFollowupPlaceholder(
+    composer,
+    sessionActive,
+  );
   const selectedTask = useGet(composer.taskChips.task$);
   const selectTask = useSet(composer.taskChips.selectTask$);
   const onKeyDown = useComposerKeyboard(composer, actions);
   return (
     <>
       <div
-        className="relative flex min-h-full flex-col"
+        ref={placeholderRef}
+        className={cn(
+          "relative flex min-h-full flex-col",
+          followup !== undefined &&
+            "[&_[data-placeholder]]:before:content-none [&_[data-placeholder]]:after:content-none",
+        )}
         onKeyDownCapture={(event) => {
-          if (sessionActive) {
-            // The open session handles capture on the editor itself, after
-            // this stable parent. Do not send before its menu can claim Enter.
+          if (
+            sessionActive ||
+            !composer.editor.editor.view.dom.contains(event.target as Node)
+          ) {
+            // Let the suggestion menu or the placeholder button own its keys.
             return;
           }
           const nativeEvent = event.nativeEvent;
@@ -970,6 +1100,11 @@ function ComposerSuggestionMenu({
           }
         }}
       >
+        <WorkflowComposerPlaceholder
+          composer={composer}
+          followup={followup}
+          acceptFollowup={acceptFollowup}
+        />
         {children}
       </div>
       {sessionActive && (
@@ -991,7 +1126,6 @@ export function TiptapWorkflowComposer({
 
   return (
     <ComposerSuggestionMenu composer={composer} actions={actions}>
-      <WorkflowComposerPlaceholder composer={composer} />
       <div
         // The composer card owns responsive height allocation so its footer
         // can change modes without changing the surrounding card height.

@@ -4,6 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.SettingsApiFixture
 import ai.okou.android.api.generated.CanonicalOptional
 import ai.okou.android.state.SettingsDestination
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
@@ -13,6 +14,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -21,10 +23,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkspaceSettingsModelTest {
+    @get:Rule val temporary = TemporaryFolder()
+
     @Test
     fun usesTheReportedWindowsAndReconcilesAnAmbiguousActivationWithoutResending() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
@@ -156,7 +162,7 @@ class WorkspaceSettingsModelTest {
         }
     }
 
-    private fun settings(
+    private fun TestScope.settings(
         store: ViewModelStore,
         api: ChatListApiFixture,
         admin: Boolean = false,
@@ -166,7 +172,21 @@ class WorkspaceSettingsModelTest {
             store,
             viewModelFactory {
                 initializer {
-                    WorkspaceSettingsModel(api.service, admin, { true }, { throw it }, online)
+                    val file = temporary.newFolder().resolve("default-model.preferences_pb")
+                    val defaultModelStore =
+                        DefaultModelStore(
+                            PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
+                            backgroundScope,
+                        )
+                    WorkspaceSettingsModel(
+                        api.service,
+                        api.identity,
+                        defaultModelStore,
+                        admin,
+                        { true },
+                        { throw it },
+                        online,
+                    )
                 }
             },
         )[WorkspaceSettingsModel::class.java]

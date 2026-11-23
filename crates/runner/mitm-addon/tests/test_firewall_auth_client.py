@@ -555,7 +555,7 @@ class TestDataRouterRegistrationHttp:
             patch.dict(os.environ, _EMPTY_PROXY_ENVIRONMENT),
             patch.object(platform_api, "VERCEL_BYPASS", ""),
         ):
-            url = f"{endpoint.api_url}/api/webhooks/agent/data-request"
+            url = f"{endpoint.api_url}/api/webhooks/run/data-request"
             if status < 300:
                 assert await data_router.post_registration(url, body, "registration-token") is None
             else:
@@ -568,7 +568,7 @@ class TestDataRouterRegistrationHttp:
         assert endpoint.request_count == 1
         [request] = endpoint.requests
         assert request.method == "POST"
-        assert request.path == "/api/webhooks/agent/data-request"
+        assert request.path == "/api/webhooks/run/data-request"
         assert request.json_body() == payload
         assert request.headers["authorization"] == "Bearer registration-token"
         assert request.headers["content-type"] == "application/json"
@@ -636,7 +636,7 @@ class TestFetchFirewallHeaders:
         assert endpoint.request_count == 1
         request = endpoint.requests[0]
         assert request.method == "POST"
-        assert request.path == "/api/webhooks/agent/firewall/auth"
+        assert request.path == "/api/webhooks/run/firewall/auth"
         assert request.headers["authorization"] == "Bearer tok-xyz"
         assert request.headers["content-type"] == "application/json"
         assert request.headers["user-agent"] == "vm0-mitm-addon/1.0"
@@ -1467,7 +1467,7 @@ class TestFetchFirewallHeaders:
             )
 
         assert result.payload.headers == {"Auth": "tok"}
-        assert endpoint.requests[0].path == "/api/webhooks/agent/firewall/auth"
+        assert endpoint.requests[0].path == "/api/webhooks/run/firewall/auth"
 
 
 class TestFirewallAuthEffectiveExpiry:
@@ -1616,7 +1616,7 @@ class TestFirewallAuthAsyncTransport:
         assert cached["cache_hit"] is True
         assert len(requests) == 1
         assert requests[0].method == "POST"
-        assert requests[0].target == "/api/webhooks/agent/firewall/auth"
+        assert requests[0].target == "/api/webhooks/run/firewall/auth"
         assert requests[0].headers["authorization"] == "Bearer tok-xyz"
         assert requests[0].body == request.to_bytes()
 
@@ -1719,7 +1719,7 @@ class TestFirewallAuthAsyncTransport:
         assert result.payload.headers == {}
         assert len(requests) == 1
         assert requests[0].method == "POST"
-        assert requests[0].target == "/api/webhooks/agent/firewall/auth"
+        assert requests[0].target == "/api/webhooks/run/firewall/auth"
 
     async def test_uses_connected_socket_when_tcp_nodelay_is_unsupported(self, mitm_ctx):
         requests: list[_RawHttpRequest] = []
@@ -2522,7 +2522,7 @@ class TestFirewallAuthAsyncTransport:
         assert result.payload.headers == {}
         assert proxy.request_count == 1
         assert proxy.requests[0].path == (
-            "http://platform.example:8123/api/webhooks/agent/firewall/auth"
+            "http://platform.example:8123/api/webhooks/run/firewall/auth"
         )
         assert proxy.requests[0].headers["host"] == "platform.example:8123"
         assert proxy.requests[0].headers["proxy-authorization"] == expected_proxy_authorization
@@ -2919,7 +2919,7 @@ class TestFirewallAuthAsyncTransport:
         assert "authorization" not in proxy_requests[0].headers
         assert len(origin_requests) == 1
         assert origin_requests[0].method == "POST"
-        assert origin_requests[0].target == "/api/webhooks/agent/firewall/auth"
+        assert origin_requests[0].target == "/api/webhooks/run/firewall/auth"
         assert origin_requests[0].headers["host"] == origin_authority
         assert origin_requests[0].headers["authorization"] == "Bearer tok-xyz"
         assert json.loads(origin_requests[0].body) == {

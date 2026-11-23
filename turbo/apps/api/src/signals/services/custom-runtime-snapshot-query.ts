@@ -3,7 +3,7 @@ import {
   connectorCatalogEntries,
 } from "@okouai/db/runtime/connector-catalog";
 import { connectors } from "@okouai/db/schema/connector";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
 import { and, eq, inArray, ne, exists, sql } from "drizzle-orm";

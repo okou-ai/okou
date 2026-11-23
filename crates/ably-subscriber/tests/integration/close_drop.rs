@@ -1,7 +1,5 @@
 use crate::support::*;
-use ably_subscriber::protocol::{
-    ConnectionDetails, ErrorInfo, ProtocolMessage, action, encode_msg, error_code,
-};
+use ably_subscriber::protocol::{ErrorInfo, ProtocolMessage, action, encode_msg, error_code};
 use ably_subscriber::{Error, Event, TimingConfig, subscribe};
 use futures_util::{SinkExt, StreamExt};
 use httpmock::prelude::*;
@@ -531,24 +529,7 @@ async fn close_during_reconnect_attach_wait_closes_temporary_socket() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let msg = expect_protocol_msg(&mut conn2, "reconnect ATTACH")
             .await
@@ -609,24 +590,7 @@ async fn close_and_wait_includes_stalled_reconnect_transport_cleanup() {
 
         let (tcp, _) = ws.listener.accept().await.unwrap();
         let mut conn2 = tokio_tungstenite::accept_async(tcp).await.unwrap();
-        let connected = ProtocolMessage {
-            action: action::CONNECTED,
-            connection_id: Some("conn-2".into()),
-            connection_key: Some("conn-2!key".into()),
-            connection_details: Some(ConnectionDetails {
-                connection_key: Some("conn-2!key".into()),
-                connection_state_ttl: Some(120_000),
-                max_idle_interval: Some(15_000),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        conn2
-            .send(tungstenite::Message::Binary(
-                encode_msg(&connected).unwrap().into(),
-            ))
-            .await
-            .unwrap();
+        send_connected(&mut conn2, "conn-2").await.unwrap();
 
         let mut frame_prefix = [0_u8; 1024];
         conn2.get_mut().read_exact(&mut frame_prefix).await.unwrap();

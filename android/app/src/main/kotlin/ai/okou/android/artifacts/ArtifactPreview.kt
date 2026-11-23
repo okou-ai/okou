@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -78,6 +79,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import okhttp3.HttpUrl
 
 private const val HostedPreviewAspectRatio = 16f / 9f
@@ -204,14 +208,12 @@ internal fun ArtifactPreview(
                 }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 PreviewContent(preview, offline)
+                if (!offline && preview?.hasReadableContent == true) {
+                    preview.problem?.let { PreviewFeedback(it.label()) }
+                }
                 if (feedback != null) {
                     KeepSpaceWhenHidden(visible = saveResult != null || open != null) {
-                        Text(
-                            stringResource(feedback),
-                            Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = colors.onSurfaceVariant,
-                        )
+                        PreviewFeedback(feedback)
                     }
                 }
             }
@@ -236,6 +238,16 @@ internal fun ArtifactPreview(
             }
         }
     }
+}
+
+@Composable
+private fun PreviewFeedback(@StringRes label: Int) {
+    Text(
+        stringResource(label),
+        Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** Keep the scroll range stable when browser controls disappear on disconnect. */
@@ -366,7 +378,7 @@ private fun HostedPreviewContent(
                 offline -> PreviewStatusText(R.string.artifact_online_preview)
                 content is ArtifactContent.Website ->
                     key(content.url) {
-                        HostedArtifactPreview(content.url, siteScroll) { siteScroll = it }
+                        HostedArtifactPreview(content, siteScroll) { siteScroll = it }
                     }
                 problem != null -> PreviewStatusText(problem.label())
                 content == ArtifactContent.Unsupported ->
@@ -409,29 +421,51 @@ private fun PreviewStatusText(@StringRes label: Int) {
 }
 
 @Composable
-private fun HostedArtifactPreview(url: HttpUrl, scrollY: Int, onScroll: (Int) -> Unit) {
-    var failed by remember { mutableStateOf(false) }
-    if (failed) {
-        PreviewStatusText(R.string.artifact_unavailable)
-    } else {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = {
-                val initialScroll = scrollY
-                isolatedPreview(
-                    it,
-                    url,
-                    onFailure = { failed = true },
-                    onLoaded = { view ->
-                        view.scrollTo(0, initialScroll)
-                        view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
+private fun HostedArtifactPreview(
+    content: ArtifactContent.Website,
+    scrollY: Int,
+    onScroll: (Int) -> Unit,
+) {
+    var usedRetries by remember { mutableIntStateOf(0) }
+    key(usedRetries) {
+        var failure by remember { mutableStateOf<HostedLoadFailure?>(null) }
+        when {
+            failure == null ->
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = {
+                        val initialScroll = scrollY
+                        isolatedPreview(
+                            it,
+                            content.url,
+                            onFailure = { if (failure == null) failure = it },
+                            onLoaded = { view ->
+                                view.scrollTo(0, initialScroll)
+                                view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
+                            },
+                        )
                     },
+                    onRelease = { it.destroy() },
+                    update = {},
                 )
-            },
-            onRelease = { it.destroy() },
-            update = {},
-        )
+            failure == HostedLoadFailure.Temporary && usedRetries < content.remainingRetries -> {
+                val lifecycle = LocalLifecycleOwner.current.lifecycle
+                LaunchedEffect(lifecycle) {
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        delay(ArtifactRetryDelayMillis)
+                        usedRetries++
+                    }
+                }
+                PreviewLoading()
+            }
+            else -> PreviewStatusText(R.string.artifact_unavailable)
+        }
     }
+}
+
+private enum class HostedLoadFailure {
+    Temporary,
+    Terminal,
 }
 
 // Hosted content runs on its server-authorized HTTPS origin. It receives no app token,
@@ -440,7 +474,7 @@ private fun HostedArtifactPreview(url: HttpUrl, scrollY: Int, onScroll: (Int) ->
 private fun isolatedPreview(
     context: Context,
     url: HttpUrl,
-    onFailure: () -> Unit,
+    onFailure: (HostedLoadFailure) -> Unit,
     onLoaded: (WebView) -> Unit,
 ): WebView =
     WebView(context).apply {
@@ -450,10 +484,14 @@ private fun isolatedPreview(
         settings.javaScriptEnabled = true
         webViewClient =
             object : WebViewClient() {
+                private val initialAddress = url.toString().substringBefore('#')
+                private var openingDocument = true
+
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest,
                 ): Boolean {
+                    if (request.isForMainFrame && !request.isRedirect) openingDocument = false
                     val next = request.url
                     val port = if (next.port == -1) 443 else next.port
                     return request.isForMainFrame &&
@@ -465,7 +503,15 @@ private fun isolatedPreview(
                     request: WebResourceRequest,
                     error: WebResourceError,
                 ) {
-                    if (request.isForMainFrame) onFailure()
+                    val temporary =
+                        when (error.errorCode) {
+                            ERROR_HOST_LOOKUP,
+                            ERROR_CONNECT,
+                            ERROR_IO,
+                            ERROR_TIMEOUT -> true
+                            else -> false
+                        }
+                    reportFailure(request, temporary)
                 }
 
                 override fun onReceivedHttpError(
@@ -473,18 +519,40 @@ private fun isolatedPreview(
                     request: WebResourceRequest,
                     response: WebResourceResponse,
                 ) {
-                    if (request.isForMainFrame) onFailure()
+                    reportFailure(request, isTemporaryArtifactHttpStatus(response.statusCode))
                 }
 
                 override fun onRenderProcessGone(
                     view: WebView,
                     detail: RenderProcessGoneDetail,
                 ): Boolean {
-                    onFailure()
+                    onFailure(HostedLoadFailure.Terminal)
                     return true
                 }
 
-                override fun onPageFinished(view: WebView, address: String) = onLoaded(view)
+                override fun onPageCommitVisible(view: WebView, address: String) {
+                    openingDocument = false
+                }
+
+                override fun onPageFinished(view: WebView, address: String) {
+                    openingDocument = false
+                    onLoaded(view)
+                }
+
+                private fun reportFailure(request: WebResourceRequest, temporary: Boolean) {
+                    if (!request.isForMainFrame) return
+                    // Only the app's original GET is safe to replay, before the hosted page is
+                    // shown.
+                    val retry =
+                        temporary &&
+                            openingDocument &&
+                            request.method == "GET" &&
+                            request.url.toString().substringBefore('#') == initialAddress
+                    openingDocument = false
+                    onFailure(
+                        if (retry) HostedLoadFailure.Temporary else HostedLoadFailure.Terminal
+                    )
+                }
             }
         loadUrl(url.toString())
     }

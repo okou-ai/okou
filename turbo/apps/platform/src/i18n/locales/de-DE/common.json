@@ -1901,6 +1901,8 @@
         "slideCountAuto": "Automatisch",
         "slideCountRange": "{{range}} Folien"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "Chats oder Projekte suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
@@ -1942,6 +1944,7 @@
       "temporarilySwitchTo": "Vorübergehend wechseln zu",
       "threadSuggestions": "Chat-Threads",
       "useForFutureChats": "Dieses Modell für zukünftige Chats verwenden",
+      "useSuggestion": "Diesen Vorschlag verwenden",
       "workflows": {
         "loading": "Workflows werden geladen...",
         "manage": "Workflows verwalten",

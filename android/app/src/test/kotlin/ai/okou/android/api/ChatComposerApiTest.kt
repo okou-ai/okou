@@ -177,14 +177,15 @@ class ChatComposerApiTest {
             assertEquals(thread, created.id)
             assertEquals(CHAT_PROJECT, created.projectId)
             val create = fixture.created.single()
-            assertFalse(create.containsKey("model"))
-            assertFalse(create.containsKey("serviceTier"))
+            for (key in listOf("model", "serviceTier", "reasoningEffort")) {
+                assertFalse(create.containsKey(key))
+            }
             val send = input(thread)
             assertEquals(thread, fixture.service.sendInput(send).threadId)
             val wire = fixture.inputs.values.single()
-            for (key in listOf("model", "computerUseHostId", "cloudBrowserEnabled")) assertFalse(
-                wire.containsKey(key)
-            )
+            for (key in listOf("model", "runOptions", "computerUseHostId", "cloudBrowserEnabled")) {
+                assertFalse(wire.containsKey(key))
+            }
             assertEquals(send.prompt, wire.getValue("prompt").jsonPrimitive.content)
             val observed = fixture.service.observeInput(thread, checkNotNull(send.clientEventId))
             assertEquals(TextDisposition.Queued, observed.disposition)

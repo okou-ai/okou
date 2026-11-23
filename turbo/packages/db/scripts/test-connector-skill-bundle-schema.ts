@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 import { schema } from "../src/index";
-import { orgCustomConnectors } from "../src/runtime/org-custom-connector";
+import { orgCustomConnectors } from "../src/schema/org-custom-connector";
 
 export async function validateConnectorSkillBundleSchema(
   databaseUrl: string,
@@ -20,7 +20,8 @@ export async function validateConnectorSkillBundleSchema(
   async function readPublication() {
     const result = await client.query(
       `SELECT skill_content_bundle, skill_content_bundle_source_version_id
-       FROM org_custom_connector_skill_publications WHERE id=$1 AND org_id=$2`,
+       FROM org_custom_connectors WHERE id=$1 AND org_id=$2
+       AND skill_content_bundle_source_version_id IS NOT NULL`,
       [connectorId, orgId],
     );
     return result.rows;
@@ -145,7 +146,7 @@ export async function validateConnectorSkillBundleSchema(
       ),
       { code: "23514" },
     );
-    // Historical source IDs are independent of the bundle's content digest.
+    // Publication source IDs are independent of the bundle's content digest.
     assert.deepEqual(await readPublication(), [
       {
         skill_content_bundle: bundle,

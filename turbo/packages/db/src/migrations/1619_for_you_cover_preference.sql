@@ -1,0 +1,1 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "for_you_cover_id" text;

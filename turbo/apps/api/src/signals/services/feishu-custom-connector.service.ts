@@ -40,8 +40,7 @@ import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-con
 import { feishuOrgConnections } from "@okouai/db/schema/feishu-org-connection";
 import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installation";
 import { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
-import { orgCustomConnectors } from "@okouai/db/runtime/org-custom-connector";
-import { orgCustomConnectorSkillPublications } from "@okouai/db/schema/org-custom-connector-skill-publication";
+import { orgCustomConnectors } from "@okouai/db/schema/org-custom-connector";
 import { secrets } from "@okouai/db/schema/secret";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -51,7 +50,6 @@ import {
   type PreparedCustomConnectorSkill,
 } from "./custom-connector-skill-bundle.service";
 import {
-  customConnectorSkillPublicationJoin,
   customConnectorSkillBundleSelection,
   customConnectorSkillBundleValues,
   type CustomConnectorSkillBundleRow,
@@ -253,7 +251,7 @@ function connectorDefinitionMatches(
     connector.enabled === desired.enabled &&
     connector.permissionBundleRef === desired.permissionBundleRef &&
     connector.skillMarkdown === desired.skillMarkdown &&
-    publication?.skillContentBundleSourceVersionId === skill.sourceVersionId &&
+    publication.skillContentBundleSourceVersionId === skill.sourceVersionId &&
     isDeepStrictEqual(publication.skillContentBundle, skill.contentBundle)
   );
 }
@@ -298,7 +296,7 @@ function feishuCustomConnectorIdCondition(
 interface ExistingFeishuCustomConnector {
   readonly connector: CustomConnectorDefinitionRow;
   readonly revision: string;
-  readonly publication: CustomConnectorSkillBundleRow | null;
+  readonly publication: CustomConnectorSkillBundleRow;
   readonly oauthConfig:
     typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 }
@@ -575,10 +573,6 @@ const prepareFeishuReconciliation$ = command(
       ? await db
           .select(e.columns)
           .from(e.from)
-          .leftJoin(
-            orgCustomConnectorSkillPublications,
-            customConnectorSkillPublicationJoin(),
-          )
           .leftJoin(orgCustomConnectorOauthConfigs, e.join)
           .where(e.condition)
           .limit(1)

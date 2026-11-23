@@ -45,7 +45,7 @@ def test_does_not_follow_redirects(tmp_path, real_flow, sync_usage_executor, usa
         )
         _report_and_flush_model_usage(flow)
 
-    assert [request.path for request in webhook.requests] == ["/api/webhooks/agent/usage-event"]
+    assert [request.path for request in webhook.requests] == ["/api/webhooks/run/usage-event"]
     log_entries = read_jsonl_entries_after_flush(
         Path(flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH])
     )
@@ -169,7 +169,7 @@ def test_succeeds_on_first_attempt(tmp_path, real_flow, sync_usage_executor, usa
     assert webhook.request_count == 1
     request = webhook.requests[0]
     assert request.method == "POST"
-    assert request.path == "/api/webhooks/agent/usage-event"
+    assert request.path == "/api/webhooks/run/usage-event"
     assert request.header("content-type") == "application/json"
     assert request.header("authorization") == "Bearer tok"
     assert request.header("user-agent") == "vm0-mitm-addon/1.0"
@@ -547,7 +547,7 @@ def test_url_error_is_retryable(tmp_path, sync_usage_executor):
         patch.object(time, "sleep") as mock_sleep,
     ):
         assert usage.webhook.enqueue_webhook_delivery(
-            "https://api.okou.ai/api/webhooks/agent/usage-event",
+            "https://api.okou.ai/api/webhooks/run/usage-event",
             "tok",
             payload,
             str(proxy_log),
@@ -576,7 +576,7 @@ def test_retry_failure_sanitizes_sensitive_webhook_url_in_message_and_error(
     proxy_log = tmp_path / "proxy.jsonl"
     payload = {"runId": "run-1", "events": []}
     payload_bytes = len(json.dumps(payload).encode())
-    retry_url = "https://api.okou.ai/api/webhooks/agent/usage-event?token=secret#frag"
+    retry_url = "https://api.okou.ai/api/webhooks/run/usage-event?token=secret#frag"
     url_without_fragment = retry_url.removesuffix("#frag")
 
     with (
@@ -637,7 +637,7 @@ def test_other_webhook_404_remains_an_error(
     usage_webhook_server.queue_response(404)
 
     assert usage.webhook.enqueue_webhook_delivery(
-        usage_webhook_server.url("/api/webhooks/agent/usage-event"),
+        usage_webhook_server.url("/api/webhooks/run/usage-event"),
         "tok",
         {"runId": "run-1", "events": []},
         str(proxy_log),
@@ -656,7 +656,7 @@ def test_payload_serialization_error_logs_body_free_summary(tmp_path, sync_usage
     proxy_log = tmp_path / "proxy.jsonl"
 
     assert usage.webhook.enqueue_webhook_delivery(
-        "https://api.okou.ai/api/webhooks/agent/usage-event",
+        "https://api.okou.ai/api/webhooks/run/usage-event",
         "tok",
         {"runId": "run-1", "events": [object()]},
         str(proxy_log),

@@ -59,6 +59,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -115,14 +116,6 @@ internal fun ArtifactCatalogList(
     val rowFocus = remember { FocusRequester() }
     val noticePadding = Modifier.padding(16.dp)
 
-    LaunchedEffect(restoreRow, page) {
-        if (restoreRow != null && page != null) {
-            if (position.layoutInfo.visibleItemsInfo.any { it.key == restoreRow }) {
-                rowFocus.requestFocus()
-            } else searchFocus.requestFocus()
-            onFocusRestored()
-        }
-    }
     LaunchedEffect(model, page, state.problem, state.reading, state.offline) {
         if (
             page?.nextCursor != null &&
@@ -157,9 +150,22 @@ internal fun ArtifactCatalogList(
         }
         val showSkeleton =
             rememberChatWaitIndicator(page == null && !state.offline && state.problem == null)
+        val restoreAfterLayout =
+            if (restoreRow != null && page != null) {
+                Modifier.onGloballyPositioned {
+                    val rowVisible =
+                        position.layoutInfo.visibleItemsInfo.any { it.key == restoreRow }
+                    if (rowVisible) rowFocus.requestFocus() else searchFocus.requestFocus()
+                    onFocusRestored()
+                }
+            } else Modifier
         LazyColumn(
             modifier =
-                Modifier.widthIn(max = 730.dp).fillMaxWidth().weight(1f).testTag("artifact_list"),
+                Modifier.widthIn(max = 730.dp)
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .then(restoreAfterLayout)
+                    .testTag("artifact_list"),
             state = position,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
         ) {

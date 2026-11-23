@@ -53,12 +53,11 @@ def validate(directory):
             ordered, "native unpark phase clocks lost ordering")
         initial, captured, accepted, lost, progress, joined = [event["evidence"] for event in events[:6]]
         mode = case.rsplit("-", 1)[0]
-        path = initial.get("status_path")
-        status_evidence.claim_status_path(path, paths, "invalid or replayed native unpark status path")
-        baseline = initial.get("published_status")
-        status_evidence.original_status(baseline, sandbox=identity[0])
-        exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
-              "native unpark changed original inputs")
+        baseline = status_evidence.validate_initial_status_receipt(
+            initial, policy, identity[0], paths,
+            path_error="invalid or replayed native unpark status path",
+            receipt_error="native unpark changed original inputs",
+        )
         history, operation = later.history_operation(
             captured, identities, "native unpark replayed run or resource identity"
         )

@@ -12,6 +12,8 @@ import {
   notInArray,
   notExists,
   asc,
+  inArray,
+  type SQL,
 } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
@@ -140,6 +142,152 @@ function captureThreadClaim(
   });
 }
 
+function nextOrgThread(
+  database: ReturnType<(typeof writeDb$)["write"]>,
+  input: PickInput,
+  at: Date,
+) {
+  const { orgId } = input;
+  const after = input.after ?? null;
+  return database
+    .select({
+      chatThreadId: queuedChatThreads.chatThreadId,
+      queuedAt: queuedChatThreads.queuedAt,
+    })
+    .from(queuedChatThreads)
+    .where(
+      and(
+        eq(queuedChatThreads.orgId, orgId),
+        or(
+          isNull(queuedChatThreads.claimExpiresAt),
+          lte(queuedChatThreads.claimExpiresAt, at),
+        ),
+        after === null
+          ? undefined
+          : or(
+              gt(queuedChatThreads.queuedAt, after.queuedAt),
+              and(
+                eq(queuedChatThreads.queuedAt, after.queuedAt),
+                gt(queuedChatThreads.chatThreadId, after.chatThreadId),
+              ),
+            ),
+        after === null
+          ? undefined
+          : notInArray(queuedChatThreads.chatThreadId, [
+              ...after.visitedThreadIds,
+            ]),
+        notExists(
+          database
+            .select({ runId: activeAgentRuns.runId })
+            .from(activeAgentRuns)
+            .where(
+              eq(activeAgentRuns.chatThreadId, queuedChatThreads.chatThreadId),
+            ),
+        ),
+      ),
+    )
+    .orderBy(
+      asc(queuedChatThreads.queuedAt),
+      asc(queuedChatThreads.chatThreadId),
+    )
+    .limit(1);
+}
+
+async function leaseQueuedThread(
+  database: ReturnType<(typeof writeDb$)["write"]>,
+  input: PickInput,
+  at: Date,
+  claimId: string,
+) {
+  const { orgId } = input;
+  let cursor = input.after ?? null;
+  const update = (threadIdCondition: SQL) => {
+    return database
+      .update(queuedChatThreads)
+      .set({
+        claimId,
+        claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
+      })
+      .from(chatThreads)
+      .where(
+        and(
+          eq(chatThreads.id, queuedChatThreads.chatThreadId),
+          eq(chatThreads.orgId, orgId),
+          eq(queuedChatThreads.orgId, orgId),
+          threadIdCondition,
+          or(
+            isNull(queuedChatThreads.claimExpiresAt),
+            lte(queuedChatThreads.claimExpiresAt, at),
+          ),
+          notExists(
+            database
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(
+                eq(
+                  activeAgentRuns.chatThreadId,
+                  queuedChatThreads.chatThreadId,
+                ),
+              ),
+          ),
+        ),
+      )
+      .returning({
+        chatThreadId: queuedChatThreads.chatThreadId,
+        queuedAt: queuedChatThreads.queuedAt,
+        userId: chatThreads.userId,
+      });
+  };
+  let row:
+    { chatThreadId: string; queuedAt: Date; userId: string } | null | undefined;
+  if (input.chatThreadId !== undefined) {
+    [row] = await update(
+      eq(queuedChatThreads.chatThreadId, input.chatThreadId),
+    );
+  } else {
+    const candidate = database
+      .$with("queue_candidate")
+      .as(nextOrgThread(database, input, at));
+    const leased = database
+      .$with("leased_candidate")
+      .as(
+        update(
+          inArray(
+            queuedChatThreads.chatThreadId,
+            database.select({ id: candidate.chatThreadId }).from(candidate),
+          ),
+        ),
+      );
+    // Keep the selected cursor even if a competing claim wins the update.
+    const [result] = await database
+      .with(candidate, leased)
+      .select({
+        candidate: {
+          chatThreadId: candidate.chatThreadId,
+          queuedAt: candidate.queuedAt,
+        },
+        lease: {
+          chatThreadId: leased.chatThreadId,
+          queuedAt: leased.queuedAt,
+          userId: leased.userId,
+        },
+      })
+      .from(candidate)
+      .leftJoin(leased, eq(leased.chatThreadId, candidate.chatThreadId));
+    if (result) {
+      row = result.lease;
+      cursor = {
+        ...result.candidate,
+        visitedThreadIds: [
+          ...(cursor?.visitedThreadIds ?? []),
+          result.candidate.chatThreadId,
+        ],
+      };
+    }
+  }
+  return { row, cursor };
+}
+
 function createPickObjects() {
   // Append only actual conditional-write receipts, not a latest-input slot.
   const claimReceipts$ = state<readonly LeasedThreadClaim[]>([]);
@@ -171,62 +319,6 @@ function createPickObjects() {
     return graphs;
   });
 
-  const nextOrgThread$ = command(
-    async ({ get }, input: PickInput, signal: AbortSignal) => {
-      const { orgId } = input;
-      const after = input.after ?? null;
-      const database = get(db$);
-      const at = nowDate();
-      const [row] = await database
-        .select({
-          chatThreadId: queuedChatThreads.chatThreadId,
-          queuedAt: queuedChatThreads.queuedAt,
-        })
-        .from(queuedChatThreads)
-        .where(
-          and(
-            eq(queuedChatThreads.orgId, orgId),
-            or(
-              isNull(queuedChatThreads.claimExpiresAt),
-              lte(queuedChatThreads.claimExpiresAt, at),
-            ),
-            after === null
-              ? undefined
-              : or(
-                  gt(queuedChatThreads.queuedAt, after.queuedAt),
-                  and(
-                    eq(queuedChatThreads.queuedAt, after.queuedAt),
-                    gt(queuedChatThreads.chatThreadId, after.chatThreadId),
-                  ),
-                ),
-            after === null
-              ? undefined
-              : notInArray(queuedChatThreads.chatThreadId, [
-                  ...after.visitedThreadIds,
-                ]),
-            notExists(
-              database
-                .select({ runId: activeAgentRuns.runId })
-                .from(activeAgentRuns)
-                .where(
-                  eq(
-                    activeAgentRuns.chatThreadId,
-                    queuedChatThreads.chatThreadId,
-                  ),
-                ),
-            ),
-          ),
-        )
-        .orderBy(
-          asc(queuedChatThreads.queuedAt),
-          asc(queuedChatThreads.chatThreadId),
-        )
-        .limit(1);
-      signal.throwIfAborted();
-      return row ?? null;
-    },
-  );
-
   const claim$ = command(
     async ({ set }, input: PickInput, signal: AbortSignal) => {
       const { orgId } = input;
@@ -243,57 +335,14 @@ function createPickObjects() {
         signal.throwIfAborted();
         return { claim, cursor: input.after ?? null };
       }
-      let threadId = input.chatThreadId;
-      let cursor = input.after ?? null;
-      if (threadId === undefined) {
-        const candidate = await set(nextOrgThread$, input, signal);
-        if (!candidate) {
-          return { claim: null, cursor };
-        }
-        cursor = {
-          ...candidate,
-          visitedThreadIds: [
-            ...(cursor?.visitedThreadIds ?? []),
-            candidate.chatThreadId,
-          ],
-        };
-        threadId = candidate.chatThreadId;
-      }
-      const database = set(writeDb$);
-      const at = nowDate();
       const claimId = randomUUID();
-      const row = (
-        await database
-          .update(queuedChatThreads)
-          .set({
-            claimId,
-            claimExpiresAt: new Date(at.getTime() + CHAT_THREAD_LEASE_MS),
-          })
-          .from(chatThreads)
-          .where(
-            and(
-              eq(chatThreads.id, queuedChatThreads.chatThreadId),
-              eq(chatThreads.orgId, orgId),
-              eq(queuedChatThreads.orgId, orgId),
-              eq(queuedChatThreads.chatThreadId, threadId),
-              or(
-                isNull(queuedChatThreads.claimExpiresAt),
-                lte(queuedChatThreads.claimExpiresAt, at),
-              ),
-              notExists(
-                database
-                  .select({ runId: activeAgentRuns.runId })
-                  .from(activeAgentRuns)
-                  .where(eq(activeAgentRuns.chatThreadId, threadId)),
-              ),
-            ),
-          )
-          .returning({
-            chatThreadId: queuedChatThreads.chatThreadId,
-            queuedAt: queuedChatThreads.queuedAt,
-            userId: chatThreads.userId,
-          })
-      )[0];
+      // eslint-disable-next-line api/signal-check-await -- Keep the committed lease receipt before propagating cancellation.
+      const { row, cursor } = await leaseQueuedThread(
+        set(writeDb$),
+        input,
+        nowDate(),
+        claimId,
+      );
       const claim: LeasedThreadClaim | null = row
         ? captureThreadClaim(
             {
