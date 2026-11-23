@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="auth_checking_workspace">ワークスペースを確認しています…</string>
+    <string name="auth_check_failed">アクセス権を確認できませんでした。</string>
+    <string name="auth_selection_failed">このワークスペースを開けませんでした。</string>
+    <string name="auth_sign_out_failed">ログアウトできませんでした。</string>
     <string name="composer_sync_loading">保存済みの下書きを読み込み中…</string>
     <string name="composer_sync_saving">下書きを同期中…</string>
     <string name="composer_sync_failed">下書きを同期できませんでした。入力内容はこの端末に保存されています。</string>
@@ -29,7 +33,6 @@
     <string name="appearance_dark">ダーク</string>
     <string name="on_this_device">このデバイス</string>
     <string name="retry">再試行</string>
-    <string name="auth_restoring">ログイン状態を復元しています…</string>
     <string name="auth_preparing_workspace">ワークスペースを準備しています…</string>
     <string name="auth_choose_workspace">ワークスペースを選択</string>
     <string name="auth_no_workspace">アクセスできるワークスペースがありません</string>
