@@ -673,3 +673,15 @@ export const composerDraftSchema = object({
   draftUserMessage: userMessageInputDocumentSchema.nullable(),
   draftAttachments: array(persistedAttachmentSchema).nullable(),
 }).superRefine(requireUserMessageForDraftAttachments);
+
+export const suggestionPresetSchema = object({
+  suggestion_id: uuid(),
+  impression_id: uuid(),
+  option_id: string().min(1).max(64),
+  option_position: number().int().positive(),
+});
+export type SuggestionPreset = zInfer<typeof suggestionPresetSchema>;
+
+export const chatThreadDraftSchema = composerDraftSchema.safeExtend({
+  suggestionPreset: suggestionPresetSchema.optional(),
+});

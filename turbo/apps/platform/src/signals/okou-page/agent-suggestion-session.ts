@@ -9,6 +9,11 @@ import type {
 } from "@okouai/api-contracts/contracts/feed";
 import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import {
+  captureSuggestionCard,
+  type SuggestionImpression,
+  type SuggestionFeedbackKind as FeedbackKind,
+} from "../../lib/posthog.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
 
@@ -21,19 +26,68 @@ import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 import { createPlatformEventEntry } from "./platform-feed-events.ts";
 import {
+  activeSuggestionImpression$,
   createForYouReadRef,
   reloadForYouSources$,
 } from "./for-you-sources.ts";
 
-type FeedbackKind =
-  | "already_done"
-  | "not_planned"
-  | "dont_nudge"
-  | "less_like_this"
-  | "dismissed";
 type SuggestionMutation =
-  | { readonly type: "feedback"; readonly request: SuggestionFeedbackRequest }
+  | {
+      readonly type: "feedback";
+      readonly request: SuggestionFeedbackRequest;
+      readonly impression: SuggestionImpression;
+      readonly kind: FeedbackKind;
+    }
   | { readonly type: "consume"; readonly optionId: string };
+
+function createSuggestionImpression(item: Suggestion) {
+  // A click can precede the first intersection notification. Both paths use
+  // the same impression for the lifetime of the active card.
+  const show$ = command(({ get, set }) => {
+    const activeImpression$ = get(activeSuggestionImpression$);
+    const previous = get(activeImpression$);
+    if (previous?.suggestion_id === item.id) {
+      return previous;
+    }
+    const impression = {
+      suggestion_id: item.id,
+      impression_id: crypto.randomUUID(),
+    };
+    const ids = item.content.options.map((option) => {
+      return option.id;
+    });
+    set(activeImpression$, impression);
+    captureSuggestionCard({
+      name: "suggestion_card_shown",
+      properties: { ...impression, option_ids: ids, option_count: ids.length },
+    });
+    return impression;
+  });
+  const observe$ = command(
+    ({ set }, element: HTMLElement, signal: AbortSignal) => {
+      let intersecting = false;
+      const report = () => {
+        if (intersecting && !document.hidden && !signal.aborted) {
+          set(show$);
+        }
+      };
+      const observer = new IntersectionObserver(([entry]) => {
+        intersecting = entry?.isIntersecting === true;
+        report();
+      });
+      observer.observe(element);
+      document.addEventListener("visibilitychange", report, { signal });
+      signal.addEventListener(
+        "abort",
+        () => {
+          observer.disconnect();
+        },
+        { once: true },
+      );
+    },
+  );
+  return { show$, readOnRef$: createForYouReadRef(item.id, observe$) };
+}
 
 function createSuggestionEntry(item: Suggestion) {
   const hidden$ = state(false);
@@ -81,6 +135,18 @@ function createSuggestionEntry(item: Suggestion) {
         );
         if (result.status === 409) {
           set(unavailable$, true);
+        } else {
+          captureSuggestionCard(
+            {
+              name: "suggestion_card_feedback_recorded",
+              properties: {
+                ...mutation.impression,
+                feedback_kind: mutation.kind,
+                operation: kind === "undo" ? "undo" : "apply",
+              },
+            },
+            mutation.request.id,
+          );
         }
       } else {
         // The cached option has already prepared a draft. Another session
@@ -135,7 +201,7 @@ function createSuggestionEntry(item: Suggestion) {
   const sending$ = state<Promise<void> | undefined>(undefined);
   return {
     item,
-    readOnRef$: createForYouReadRef(item.id),
+    ...createSuggestionImpression(item),
     hidden$,
     unavailable$,
     acted$,
@@ -152,6 +218,7 @@ interface SuggestionFeedbackOutcome {
   readonly type: "feedback";
   readonly id: string;
   readonly undoId: string;
+  readonly impression: SuggestionImpression;
   readonly kind: FeedbackKind;
 }
 interface SuggestionSentOutcome {
@@ -438,6 +505,10 @@ export const settleAgentSuggestion$ = command(
       return;
     }
     const session = get(session$);
+    const impression$ = get(activeSuggestionImpression$);
+    if (get(impression$)?.suggestion_id === entry.item.id) {
+      set(impression$, null);
+    }
     set(entry.hidden$, true);
     set(session.settledOrder$, (ids) => {
       return [
@@ -531,6 +602,7 @@ const submitAgentSuggestionFeedback$ = command(
     if (!entry || get(entry.hidden$)) {
       return;
     }
+    const impression = set(entry.show$);
     const id = crypto.randomUUID();
     set(
       settleAgentSuggestion$,
@@ -539,6 +611,7 @@ const submitAgentSuggestionFeedback$ = command(
         type: "feedback",
         id,
         undoId: crypto.randomUUID(),
+        impression,
         kind,
       },
       pageSignal,
@@ -547,6 +620,8 @@ const submitAgentSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
+        impression,
+        kind,
         request: {
           id,
           kind: kind === "dont_nudge" ? "not_planned" : kind,
@@ -577,6 +652,8 @@ const undoSuggestionFeedback$ = command(
       entry.enqueue$,
       {
         type: "feedback",
+        impression: feedback.impression,
+        kind: feedback.kind,
         request: {
           id: feedback.undoId,
           kind: "undo",

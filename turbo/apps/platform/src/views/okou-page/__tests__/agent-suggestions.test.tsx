@@ -24,6 +24,7 @@ import {
   chatThreadDraftContract,
   chatThreadMetadataContract,
   chatThreadByIdContract,
+  type ChatThreadDraft,
   type UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
@@ -47,6 +48,33 @@ import {
 } from "./chat-attachment-test-helpers.ts";
 import { nowDate } from "../../../lib/time.ts";
 import { forYouCovers } from "../../../lib/for-you-artwork.ts";
+const { posthog } = vi.hoisted(() => {
+  vi.stubEnv("VITE_POSTHOG_KEY", "phc_suggestion_card_test");
+  window.location.href = "https://app.okou.ai/";
+  return {
+    posthog: {
+      capture:
+        vi.fn<(name: string, properties?: Record<string, unknown>) => void>(),
+      identify: vi.fn<() => void>(),
+      init: vi.fn<() => void>(),
+      register: vi.fn<() => void>(),
+      unregister: vi.fn<() => void>(),
+      reset: vi.fn<() => void>(),
+    },
+  };
+});
+vi.mock("posthog-js/dist/module.slim", () => {
+  return { posthog };
+});
+function cardEvents(name: string) {
+  return posthog.capture.mock.calls
+    .filter(([event]) => {
+      return event === name;
+    })
+    .map(([, properties]) => {
+      return properties;
+    });
+}
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const threadId = "b0000000-0000-4000-a000-000000000811";
@@ -585,6 +613,25 @@ test("Choosing an action sends it to a new thread and keeps the homepage draft",
       { id: suggestion.id, optionId: selected.id },
     ]);
   });
+  const [shown] = cardEvents("suggestion_card_shown");
+  const impression = {
+    suggestion_id: suggestion.id,
+    impression_id: shown?.impression_id,
+    surface: "home_suggestions",
+  };
+  expect(shown).toStrictEqual({
+    ...impression,
+    impression_id: expect.any(String),
+    option_ids: ["review", "prepare", "summarize"],
+    option_count: 3,
+  });
+  const preset = { ...impression, option_id: "prepare", option_position: 2 };
+  expect(cardEvents("suggestion_card_action_clicked")).toStrictEqual([
+    { ...preset, action: "select_option" },
+  ]);
+  expect(cardEvents("suggestion_card_message_sent")).toStrictEqual([
+    { ...preset, direction_type: "preset" },
+  ]);
   const { threadId: sentThreadId, title, userMessage: message } = await sent;
   expect(title).toBe(suggestion.content.title);
   expect(link(`/chats/${sentThreadId}`)).toHaveTextContent(
@@ -745,7 +792,7 @@ test("A choice is still sent when another session consumed the card", async () =
   expect(pathname()).toBe(suggestionPath);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
-test("A suggestion uses the ordinary composer to join a running target chat", async () => {
+test("A saved suggestion keeps its attribution when the reloaded composer joins a running chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";
   const queued: UserMessageDocument[] = [];
   mockPool([
@@ -780,7 +827,24 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
       },
     ],
   });
-  await openSuggestions();
+  let saved: ChatThreadDraft = {
+    draftUserMessage: null,
+    draftAttachments: null,
+  };
+  context.mocks.api(chatThreadByIdContract.patch, ({ body, respond }) => {
+    saved = { ...body, draftAttachments: body.draftAttachments ?? null };
+    return respond(204);
+  });
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, saved);
+  });
+  const resetPage$ = resetSignal();
+  const signal = context.store.set(resetPage$, context.signal);
+  await setupPage({
+    context: { ...context, signal },
+    path: suggestionPath,
+    featureSwitches: features,
+  });
   await screen.findByText(makeSuggestion().content.title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -791,9 +855,43 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
   await waitFor(() => {
     expect(button("Send")).toBeEnabled();
   });
+  await waitFor(() => {
+    expect(saved.suggestionPreset?.option_id).toBe("review");
+  });
+  expect(cardEvents("suggestion_card_message_sent")).toHaveLength(0);
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  context.store.set(resetPage$);
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+  vi.mocked(window.history.forward).mockRestore();
+  await setupPage({
+    context: reloadedContext,
+    path: `/chats/${threadId}`,
+    featureSwitches: features,
+  });
+  await screen.findByText("Referenced decision");
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
   click(button("Send"));
   await waitFor(() => {
     return expect(queued).toHaveLength(1);
+  });
+  const [selection] = cardEvents("suggestion_card_action_clicked");
+  await waitFor(() => {
+    expect(cardEvents("suggestion_card_message_sent")).toStrictEqual([
+      {
+        surface: "home_suggestions",
+        suggestion_id: makeSuggestion().id,
+        impression_id: selection?.impression_id,
+        direction_type: "preset",
+        option_id: "review",
+        option_position: 1,
+      },
+    ]);
   });
   expect(queued[0]?.parts).toContainEqual({
     type: "chat_thread",
@@ -1142,6 +1240,7 @@ test("A custom follow-up retains its editor on failure and reuses its identities
   expect(JSON.stringify(quote.part.note)).toContain(
     "Assess the budget risk first",
   );
+  expect(cardEvents("suggestion_card_message_sent")).toStrictEqual([]);
   acceptRetry.resolve();
   await screen.findByText(SENT);
   await waitFor(() => {
@@ -1152,6 +1251,16 @@ test("A custom follow-up retains its editor on failure and reuses its identities
     screen.queryByRole("article", { name: makeSuggestion().content.title }),
   ).not.toBeInTheDocument();
   await screen.findByRole("heading", { name: "All caught up" });
+  const [open] = cardEvents("suggestion_card_action_clicked");
+  expect(open?.action).toBe("open_custom");
+  expect(cardEvents("suggestion_card_message_sent")).toStrictEqual([
+    {
+      surface: "home_suggestions",
+      suggestion_id: makeSuggestion().id,
+      impression_id: open?.impression_id,
+      direction_type: "custom",
+    },
+  ]);
   // The API records the custom follow-up when it accepts the input.
   expect(pool.consumed).toStrictEqual([]);
 });
@@ -1980,6 +2089,31 @@ test("For you handles a suggestion and a platform event in the same deck", async
 test("A hidden For you page leaves its card unread until the member sees it", async () => {
   mockPool();
   const visibility = context.mocks.browser.visibilityState("hidden");
+  const Observer = window.IntersectionObserver;
+  vi.spyOn(window, "IntersectionObserver").mockImplementation(
+    class extends Observer {
+      constructor(private readonly notify: IntersectionObserverCallback) {
+        super(notify);
+      }
+      override observe(target: Element) {
+        const bounds = target.getBoundingClientRect();
+        this.notify(
+          [
+            {
+              target,
+              isIntersecting: true,
+              intersectionRatio: 1,
+              boundingClientRect: bounds,
+              intersectionRect: bounds,
+              rootBounds: null,
+              time: 0,
+            },
+          ],
+          this,
+        );
+      }
+    },
+  );
   await setupPage({
     context,
     path: suggestionPath,
@@ -1991,13 +2125,35 @@ test("A hidden For you page leaves its card unread until the member sees it", as
   await within(link(suggestionPath)).findByText("Unread");
   click(link(suggestionPath));
   await activeForYouCard("Review the pending decision");
+  expect(cardEvents("suggestion_card_shown")).toHaveLength(0);
   visibility.changeTo("visible");
   await waitFor(() => {
     return expect(
       within(link(suggestionPath)).queryByText("Unread"),
     ).not.toBeInTheDocument();
   });
+  const [first] = cardEvents("suggestion_card_shown");
+  expect(first?.impression_id).toStrictEqual(expect.any(String));
+  visibility.changeTo("hidden");
+  visibility.changeTo("visible");
+  expect(cardEvents("suggestion_card_shown")).toHaveLength(1);
+  click(link("/workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  click(link(suggestionPath));
+  await activeForYouCard("Review the pending decision");
+  const impressions = cardEvents("suggestion_card_shown");
+  expect(impressions).toHaveLength(2);
+  expect(impressions[1]?.impression_id).not.toBe(first?.impression_id);
   expect(screen.getByText("1 to go")).toBeInTheDocument();
+  click(screen.getByLabelText("View source"));
+  expect(cardEvents("suggestion_card_action_clicked")).toStrictEqual([
+    {
+      surface: "home_suggestions",
+      suggestion_id: makeSuggestion().id,
+      impression_id: impressions[1]?.impression_id,
+      action: "view_source",
+    },
+  ]);
 });
 
 async function openSourceSettings() {
@@ -2240,6 +2396,17 @@ test("Don't nudge records the no-repeat direction and Undo targets that feedback
   await activeForYouCard(items[0].content.title);
   await waitFor(() => {
     expect(writes[1]).toMatchObject({ kind: "undo", targetId: writes[0].id });
+    const [shown] = cardEvents("suggestion_card_shown");
+    const context = {
+      surface: "home_suggestions",
+      suggestion_id: items[0].id,
+      impression_id: shown?.impression_id,
+      feedback_kind: "dont_nudge",
+    };
+    expect(cardEvents("suggestion_card_feedback_recorded")).toStrictEqual([
+      { ...context, operation: "apply" },
+      { ...context, operation: "undo" },
+    ]);
   });
 });
 

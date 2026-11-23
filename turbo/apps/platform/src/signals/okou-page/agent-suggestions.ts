@@ -1,3 +1,9 @@
+import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  captureSuggestionCard,
+  type SuggestionDirection,
+  type SuggestionImpression,
+} from "../../lib/posthog.ts";
 import { command, computed, state } from "ccstate";
 import type {
   Suggestion,
@@ -18,7 +24,6 @@ import {
 } from "../chat-page/create-chat-thread.ts";
 import { sendNewThreadWithoutNavigation$ } from "../chat-page/optimistic-chat-thread-page.ts";
 import {
-  agentSuggestionEntries$,
   type AgentSuggestionEntry,
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
@@ -115,6 +120,7 @@ type SuggestionDirectionTarget =
 interface SuggestionDirectionSession {
   readonly entry: AgentSuggestionEntry;
   readonly target: SuggestionDirectionTarget;
+  readonly impression: SuggestionImpression;
   /** Closes the composer and settles the card once a send is accepted. */
   readonly finish: (threadId: string, submission: ComposerSubmission) => void;
 }
@@ -247,6 +253,10 @@ const prepareDirectionComposer$ = command(
       {
         content,
         userMessage: document,
+        suggestionDirection: {
+          ...session.impression,
+          direction_type: "custom",
+        },
         generationTemplate: undefined,
         attachments: files.map(createRestoredAttachment),
       },
@@ -268,6 +278,11 @@ export const openSuggestionDirection$ = command(
     entry: AgentSuggestionEntry,
     pageSignal: AbortSignal,
   ): Promise<void> => {
+    const impression = set(entry.show$);
+    captureSuggestionCard({
+      name: "suggestion_card_action_clicked",
+      properties: { ...impression, action: "open_custom" },
+    });
     const signal = set(resetDirection$, pageSignal);
     set(internalDirectionComposer$, null);
     signal.throwIfAborted();
@@ -284,6 +299,7 @@ export const openSuggestionDirection$ = command(
     }
     const session: SuggestionDirectionSession = {
       entry,
+      impression,
       target:
         threadId !== null && thread
           ? {
@@ -327,6 +343,7 @@ const sendAgentSuggestionOption$ = command(
     { set },
     entry: AgentSuggestionEntry,
     option: SuggestionOption,
+    direction: SuggestionDirection,
     signal: AbortSignal,
   ): Promise<void> => {
     const userMessage = option.draft.draftUserMessage;
@@ -342,6 +359,7 @@ const sendAgentSuggestionOption$ = command(
       draft.seed$,
       {
         content: prompt,
+        suggestionDirection: direction,
         userMessage,
         generationTemplate: undefined,
         attachments: (option.draft.draftAttachments ?? []).map(
@@ -384,13 +402,18 @@ const openAgentSuggestionThread$ = command(
   async (
     { get, set },
     option: SuggestionOption,
+    preset: SuggestionPreset,
     threadId: string,
     signal: AbortSignal,
   ) => {
     const draft = set(ensureDraft$, threadId);
     // Installing the draft is synchronous; attachment reconciliation and
     // persistence must not delay navigation.
-    const installed = set(draft.prependComposerDraft$, option.draft, signal);
+    const installed = set(
+      draft.prependComposerDraft$,
+      { ...option.draft, suggestionPreset: preset },
+      signal,
+    );
     await Promise.all([
       installed,
       set(
@@ -414,24 +437,25 @@ const openAgentSuggestionThread$ = command(
 export const startAgentSuggestion$ = command(
   async (
     { get, set },
-    suggestionId: string,
-    optionId: string,
+    entry: AgentSuggestionEntry,
+    option: SuggestionOption,
+    position: number,
     pageSignal: AbortSignal,
   ): Promise<void> => {
-    const entries = await get(agentSuggestionEntries$);
     pageSignal.throwIfAborted();
-    const entry = entries.find((candidate) => {
-      return candidate.item.id === suggestionId;
-    });
-    if (!entry || get(entry.hidden$)) {
+    if (get(entry.hidden$)) {
       return;
     }
-    const option = entry.item.content.options.find((candidate) => {
-      return candidate.id === optionId;
+    const preset = {
+      ...set(entry.show$),
+      option_id: option.id,
+      option_position: position,
+    };
+    captureSuggestionCard({
+      name: "suggestion_card_action_clicked",
+      properties: { ...preset, action: "select_option" },
     });
-    if (!option) {
-      throw new Error("Suggestion option is unavailable");
-    }
+    const direction = { ...preset, direction_type: "preset" as const };
     set(closeSuggestionDirection$);
     // The send and the recorded choice outlive the home visit.
     const signal = get(rootSignal$);
@@ -444,7 +468,13 @@ export const startAgentSuggestion$ = command(
         { type: "sent", threadId: null },
         pageSignal,
       );
-      const sending = set(sendAgentSuggestionOption$, entry, option, signal);
+      const sending = set(
+        sendAgentSuggestionOption$,
+        entry,
+        option,
+        direction,
+        signal,
+      );
       set(entry.sending$, sending);
       await sending;
       return;
@@ -453,8 +483,8 @@ export const startAgentSuggestion$ = command(
     // The loaded card owns this visit's choice and draft. Recording the choice
     // cannot replace it with a later server version or hold the card in place.
     await Promise.all([
-      set(entry.enqueue$, { type: "consume", optionId }, signal),
-      set(openAgentSuggestionThread$, option, option.threadId, signal),
+      set(entry.enqueue$, { type: "consume", optionId: option.id }, signal),
+      set(openAgentSuggestionThread$, option, preset, option.threadId, signal),
     ]);
   },
 );
