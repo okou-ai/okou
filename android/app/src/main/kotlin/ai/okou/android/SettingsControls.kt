@@ -202,14 +202,19 @@ internal fun SettingsSwitchRow(
     leading: @Composable () -> Unit,
     checked: Boolean?,
     onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
     val action =
-        if (checked == null || onCheckedChange == null) {
+        if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
-        } else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
+        } else
+            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                onCheckedChange?.invoke(it)
+            }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),

@@ -13002,6 +13002,61 @@ data class FeatureSwitches(
 )
 
 @Serializable
+enum class MorningBriefPreferenceStatus {
+    @SerialName("preparing") PREPARING,
+    @SerialName("enabled") ENABLED,
+    @SerialName("paused") PAUSED,
+    @SerialName("error") ERROR,
+}
+
+@Serializable
+enum class MorningBriefPreferenceUnavailableReason {
+    @SerialName("missing-timezone") MISSING_TIMEZONE,
+}
+
+@Serializable
+data class MorningBriefPreference(
+    val `status`: MorningBriefPreferenceStatus,
+    val `enabled`: Boolean,
+    val `unavailableReason`: MorningBriefPreferenceUnavailableReason?,
+)
+
+@Serializable
+data class SetMorningBriefPreference(
+    val `enabled`: Boolean,
+)
+
+@Serializable
+enum class ProactiveSuggestionsPreferenceStatus {
+    @SerialName("preparing") PREPARING,
+    @SerialName("enabled") ENABLED,
+    @SerialName("paused") PAUSED,
+    @SerialName("error") ERROR,
+}
+
+@Serializable
+enum class ProactiveSuggestionsPreferenceUnavailableReason {
+    @SerialName("missing-timezone") MISSING_TIMEZONE,
+}
+
+@Serializable
+data class ProactiveSuggestionsPreference(
+    val `enabled`: Boolean,
+    val `status`: ProactiveSuggestionsPreferenceStatus,
+    val `unavailableReason`: ProactiveSuggestionsPreferenceUnavailableReason?,
+)
+
+@Serializable
+data class SetProactiveSuggestionsPreference(
+    val `enabled`: Boolean,
+)
+
+@Serializable
+data class SuggestionFeedSources(
+    val `suggestions`: Boolean,
+)
+
+@Serializable
 enum class RecoverySubscriptionsSubscriptionsItemType {
     @SerialName("claude-code-oauth-token") CLAUDE_CODE_OAUTH_TOKEN,
     @SerialName("openrouter-codex") OPENROUTER_CODEX,

@@ -88,6 +88,7 @@ data class MemberPreferencesState(
     val pending: PreferenceChange? = null,
     val status: PreferenceStatus = PreferenceStatus.Ready,
     val recovering: Boolean = false,
+    internal val timezoneConfirmation: Long = 0,
 ) {
     val busy: Boolean
         get() = status == PreferenceStatus.Saving || status == PreferenceStatus.Refreshing
@@ -131,6 +132,7 @@ private fun MemberPreferencesState.afterTimezoneConflict(
                     sent.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault,
             ),
         pending = remaining.copy(timezoneToReconcile = timezone),
+        timezoneConfirmation = timezoneConfirmation + 1,
     )
 }
 
@@ -196,9 +198,9 @@ class MemberPreferencesModel(
             select((state.pending ?: PreferenceChange()).copy(locale = value))
     }
 
-    fun selectTimezone(value: String) {
+    fun selectTimezone(value: String, missingOnServer: Boolean = false) {
         val state = mutable.value
-        if (state.timezone != value)
+        if (state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer))
             select((state.pending ?: PreferenceChange()).copy(timezone = value))
     }
 
@@ -273,7 +275,8 @@ class MemberPreferencesModel(
                         }
                     currentCoroutineContext().ensureActive()
                     if (current()) {
-                        val latest = mutable.value.pending
+                        val state = mutable.value
+                        val latest = state.pending
                         val pending =
                             when {
                                 verifying -> latest?.afterReadback(confirmed)
@@ -281,7 +284,16 @@ class MemberPreferencesModel(
                                 else -> latest
                             }
                         needsWriteReadback = false
-                        mutable.value = MemberPreferencesState(confirmed, pending)
+                        val timezoneSaved =
+                            change?.timezoneToWrite?.let { it == confirmed.timezone } == true
+                        mutable.value =
+                            MemberPreferencesState(
+                                confirmed,
+                                pending,
+                                timezoneConfirmation =
+                                    if (timezoneSaved) state.timezoneConfirmation + 1
+                                    else state.timezoneConfirmation,
+                            )
                         retryDelay = 5_000L
                         success = true
                     }

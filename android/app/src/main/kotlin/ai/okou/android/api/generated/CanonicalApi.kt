@@ -313,6 +313,33 @@ internal interface CanonicalApi {
     @GET("/api/feature-switches")
     suspend fun `featureSwitches`(@Header("Authorization") token: String): Response<FeatureSwitches>
 
+    @GET("/api/preferences/morning-brief")
+    suspend fun `morningBriefPreference`(
+        @Header("Authorization") token: String,
+    ): Response<MorningBriefPreference>
+
+    @PUT("/api/preferences/morning-brief")
+    suspend fun `updateMorningBriefPreference`(
+        @Header("Authorization") token: String,
+        @Body body: SetMorningBriefPreference,
+    ): Response<MorningBriefPreference>
+
+    @GET("/api/preferences/proactive-suggestions")
+    suspend fun `proactiveSuggestionsPreference`(
+        @Header("Authorization") token: String,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @PUT("/api/preferences/proactive-suggestions/with-feed")
+    suspend fun `updateProactiveSuggestionsWithFeed`(
+        @Header("Authorization") token: String,
+        @Body body: SetProactiveSuggestionsPreference,
+    ): Response<ProactiveSuggestionsPreference>
+
+    @GET("/api/feed/sources")
+    suspend fun `suggestionFeedSources`(
+        @Header("Authorization") token: String,
+    ): Response<SuggestionFeedSources>
+
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
         @Header("Authorization") token: String,

@@ -73,4 +73,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Actualisation des comptes de modèles</string>
     <string name="settings_refreshing_credit_balance">Actualisation du solde de crédits</string>
+    <string name="settings_proactive_services">Services proactifs</string>
+    <string name="settings_proactive_scope">Ces paramètres s’appliquent dans « %1$s ».</string>
+    <string name="settings_proactive_loading">Chargement des services proactifs</string>
+    <string name="settings_proactive_offline">Hors connexion. Connectez-vous pour modifier ce paramètre.</string>
+    <string name="settings_proactive_needs_timezone">Choisissez un fuseau horaire pour programmer l’envoi.</string>
+    <string name="settings_proactive_read_failed">Impossible de charger ce paramètre pour le moment.</string>
+    <string name="settings_proactive_refresh_failed">Échec de la synchronisation. Le dernier paramètre confirmé est affiché.</string>
+    <string name="settings_proactive_preparing">Préparation de la planification…</string>
+    <string name="settings_proactive_schedule_failed">Votre choix a été enregistré. Vérifiez la planification.</string>
+    <string name="settings_proactive_save_unconfirmed">L’enregistrement n’est pas encore confirmé.</string>
+    <string name="settings_morning_brief">Résumé matinal</string>
+    <string name="settings_morning_brief_detail">Livré avant 7 h dans le fuseau horaire choisi</string>
+    <string name="settings_morning_brief_save_failed">Impossible d’enregistrer le résumé matinal. Le paramètre précédent a été rétabli.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Consulter le contenu connecté, mettre à jour votre profil et proposer des suggestions</string>
+    <string name="settings_suggestions_partial">Activation partielle</string>
+    <string name="settings_suggestions_hourly_only">Actuellement, seuls le contenu et le profil sont vérifiés et mis à jour.</string>
+    <string name="settings_suggestions_cards_only">Actuellement, seules les cartes de suggestions sont envoyées.</string>
+    <string name="settings_suggestions_enable_both">Activer les deux</string>
+    <string name="settings_suggestions_disable_both">Désactiver les deux</string>
+    <string name="settings_suggestions_save_failed">Impossible d’enregistrer les suggestions. Le paramètre précédent a été rétabli.</string>
 </resources>

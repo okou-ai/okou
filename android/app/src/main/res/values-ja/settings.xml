@@ -73,4 +73,25 @@
     <string name="settings_model_effort_ultra">ウルトラ</string>
     <string name="settings_refreshing_model_accounts">モデルアカウントを更新中</string>
     <string name="settings_refreshing_credit_balance">クレジット残高を更新中</string>
+    <string name="settings_proactive_services">プロアクティブサービス</string>
+    <string name="settings_proactive_scope">この設定は「%1$s」に適用されます。</string>
+    <string name="settings_proactive_loading">プロアクティブサービスを読み込み中</string>
+    <string name="settings_proactive_offline">オフラインです。設定を変更するには接続してください。</string>
+    <string name="settings_proactive_needs_timezone">配信を予約するにはタイムゾーンを選択してください。</string>
+    <string name="settings_proactive_read_failed">現在、この設定を読み込めません。</string>
+    <string name="settings_proactive_refresh_failed">同期できませんでした。最後に確認した設定を表示しています。</string>
+    <string name="settings_proactive_preparing">スケジュールを準備中…</string>
+    <string name="settings_proactive_schedule_failed">設定を保存しました。スケジュールを確認してください。</string>
+    <string name="settings_proactive_save_unconfirmed">保存結果はまだ確認できていません。</string>
+    <string name="settings_morning_brief">朝のブリーフィング</string>
+    <string name="settings_morning_brief_detail">選択したタイムゾーンの午前7時までに配信</string>
+    <string name="settings_morning_brief_save_failed">朝のブリーフィングを保存できませんでした。以前の設定に戻しました。</string>
+    <string name="settings_suggestions">提案</string>
+    <string name="settings_suggestions_detail">連携先のコンテンツを確認し、プロフィールを更新して提案します</string>
+    <string name="settings_suggestions_partial">一部有効</string>
+    <string name="settings_suggestions_hourly_only">現在はコンテンツの確認とプロフィールの更新のみ行います。</string>
+    <string name="settings_suggestions_cards_only">現在は提案カードのみ配信します。</string>
+    <string name="settings_suggestions_enable_both">両方をオンにする</string>
+    <string name="settings_suggestions_disable_both">両方をオフにする</string>
+    <string name="settings_suggestions_save_failed">提案の設定を保存できませんでした。以前の設定に戻しました。</string>
 </resources>

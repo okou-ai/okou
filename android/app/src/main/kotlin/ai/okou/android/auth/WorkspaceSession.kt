@@ -55,6 +55,7 @@ import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.settings.ProactivePreferencesService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
 import java.io.IOException
@@ -94,6 +95,9 @@ interface WorkspaceSession :
         get() = null
 
     val workflowService: WorkflowService?
+        get() = null
+
+    val proactivePreferences: ProactivePreferencesService?
         get() = null
 
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
@@ -139,6 +143,7 @@ class CanonicalWorkspaceSession(
 
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
+    override val proactivePreferences = ProactivePreferencesService(api)
     override val connectors = ConnectorService(api)
     private val transfers = SignedTransferClient()
     override val artifacts = ArtifactService(api, transfers, identity.apiOrigin)

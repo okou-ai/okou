@@ -74,4 +74,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Refreshing model accounts</string>
     <string name="settings_refreshing_credit_balance">Refreshing credit balance</string>
+    <string name="settings_proactive_services">Proactive services</string>
+    <string name="settings_proactive_scope">These settings apply in “%1$s”.</string>
+    <string name="settings_proactive_loading">Loading proactive services</string>
+    <string name="settings_proactive_offline">Offline. Connect to change this setting.</string>
+    <string name="settings_proactive_needs_timezone">Choose a timezone to schedule delivery.</string>
+    <string name="settings_proactive_read_failed">Unable to load this setting right now.</string>
+    <string name="settings_proactive_refresh_failed">Unable to sync. Showing the last confirmed setting.</string>
+    <string name="settings_proactive_preparing">Preparing the schedule…</string>
+    <string name="settings_proactive_schedule_failed">Your choice was saved. The schedule needs attention.</string>
+    <string name="settings_proactive_save_unconfirmed">The save is still unconfirmed.</string>
+    <string name="settings_morning_brief">Morning Brief</string>
+    <string name="settings_morning_brief_detail">Delivered before 7:00 AM in your selected timezone</string>
+    <string name="settings_morning_brief_save_failed">Couldn’t save Morning Brief. Restored the previous setting.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Check connected content, update your profile, and offer suggestions</string>
+    <string name="settings_suggestions_partial">Partially enabled</string>
+    <string name="settings_suggestions_hourly_only">Currently only checks content and updates your profile.</string>
+    <string name="settings_suggestions_cards_only">Currently only delivers suggestion cards.</string>
+    <string name="settings_suggestions_enable_both">Turn both on</string>
+    <string name="settings_suggestions_disable_both">Turn both off</string>
+    <string name="settings_suggestions_save_failed">Couldn’t save Suggestions. Restored the previous setting.</string>
 </resources>

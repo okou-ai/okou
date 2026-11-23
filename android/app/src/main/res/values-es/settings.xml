@@ -73,4 +73,25 @@
     <string name="settings_model_effort_ultra">Ultra</string>
     <string name="settings_refreshing_model_accounts">Actualizando cuentas de modelos</string>
     <string name="settings_refreshing_credit_balance">Actualizando saldo de créditos</string>
+    <string name="settings_proactive_services">Servicios proactivos</string>
+    <string name="settings_proactive_scope">Estos ajustes se aplican en «%1$s».</string>
+    <string name="settings_proactive_loading">Cargando servicios proactivos</string>
+    <string name="settings_proactive_offline">Sin conexión. Conéctate para cambiar este ajuste.</string>
+    <string name="settings_proactive_needs_timezone">Selecciona una zona horaria para programar el envío.</string>
+    <string name="settings_proactive_read_failed">No se puede cargar este ajuste en este momento.</string>
+    <string name="settings_proactive_refresh_failed">No se pudo sincronizar. Se muestra el último ajuste confirmado.</string>
+    <string name="settings_proactive_preparing">Preparando la programación…</string>
+    <string name="settings_proactive_schedule_failed">Se guardó tu elección. Revisa la programación.</string>
+    <string name="settings_proactive_save_unconfirmed">El guardado aún no se ha confirmado.</string>
+    <string name="settings_morning_brief">Resumen matutino</string>
+    <string name="settings_morning_brief_detail">Se entrega antes de las 7:00 en la zona horaria seleccionada</string>
+    <string name="settings_morning_brief_save_failed">No se pudo guardar el resumen matutino. Se restauró el ajuste anterior.</string>
+    <string name="settings_suggestions">Sugerencias</string>
+    <string name="settings_suggestions_detail">Revisa contenido conectado, actualiza tu perfil y ofrece sugerencias</string>
+    <string name="settings_suggestions_partial">Activación parcial</string>
+    <string name="settings_suggestions_hourly_only">Actualmente solo revisa contenido y actualiza tu perfil.</string>
+    <string name="settings_suggestions_cards_only">Actualmente solo entrega tarjetas de sugerencias.</string>
+    <string name="settings_suggestions_enable_both">Activar ambas opciones</string>
+    <string name="settings_suggestions_disable_both">Desactivar ambas opciones</string>
+    <string name="settings_suggestions_save_failed">No se pudieron guardar las sugerencias. Se restauró el ajuste anterior.</string>
 </resources>
