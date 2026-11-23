@@ -68,7 +68,7 @@ async function openReport(): Promise<{
   click(await findArtifactAction("report.txt"));
   const preview = await screen.findByTestId("artifact-sidebar");
   const trigger = await waitFor(() => {
-    const found = getButtonByName("Delete", preview);
+    const found = getButtonByName("More artifact actions", preview);
     expect(found).toBeEnabled();
     return found;
   });
@@ -80,6 +80,11 @@ function reportCard(): Element | null {
   return getCatalogViewport().querySelector(
     'button[aria-label="Preview report.txt"]',
   );
+}
+
+async function pickDelete() {
+  const menu = await screen.findByRole("menu");
+  click(within(menu).getByRole("menuitem", { name: "Delete" }));
 }
 
 async function findConfirmation(): Promise<HTMLElement> {
@@ -108,6 +113,7 @@ test("preview cancellation and deletion keep the catalog consistent in the catal
   const user = userEvent.setup({ delay: null });
 
   click(trigger);
+  await pickDelete();
   const cancelled = await findConfirmation();
   expect(cancelled).toHaveTextContent(
     "Copies already downloaded or saved to other services will remain.",
@@ -119,6 +125,9 @@ test("preview cancellation and deletion keep the catalog consistent in the catal
   expect(trigger).toHaveFocus();
 
   await user.keyboard("{Enter}");
+  const actions = await screen.findByRole("menu");
+  await waitFor(() => expect(within(actions).getByRole("menuitem", { name: "Delete" })).toHaveFocus());
+  await user.keyboard("{Enter}");
   const escaped = await findConfirmation();
   await user.keyboard("{Escape}");
   await waitFor(() => {
@@ -127,6 +136,7 @@ test("preview cancellation and deletion keep the catalog consistent in the catal
   expect(trigger).toHaveFocus();
 
   click(trigger);
+  await pickDelete();
   const confirmation = await findConfirmation();
   click(getButtonByName("Delete", confirmation));
   await requested.promise;
@@ -174,6 +184,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   await setupPage({ context, path: "/artifacts" });
   const first = await openReport();
   click(first.trigger);
+  await pickDelete();
   const failed = await findConfirmation();
 
   click(getButtonByName("Delete", failed));
@@ -198,6 +209,7 @@ test("a failed deletion can be cancelled, reopened, and retried", async () => {
   });
   const second = await openReport();
   click(second.trigger);
+  await pickDelete();
   click(getButtonByName("Delete", await findConfirmation()));
 
   await expect(
@@ -236,6 +248,7 @@ test("deleting a later-page artifact discards stale pages when the catalog refre
   const report = await findArtifactAction("report.txt");
   const { trigger } = await openReport();
   click(trigger);
+  await pickDelete();
   click(getButtonByName("Delete", await findConfirmation()));
 
   await expect(

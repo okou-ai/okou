@@ -2,7 +2,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -124,9 +123,6 @@ async function route(other = false) {
       "/chats/" +
       ATTACHMENT_THREAD_ID +
       (other ? "?sidebar=" + SECOND_ATTACHMENT_THREAD_ID : ""),
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: true,
-    },
   });
 }
 async function page(
@@ -328,6 +324,13 @@ test("The owned sidebar offers Delete on More and downloads the original PDF", a
   expect(item.title).not.toBe(file.filename);
   expect(panel).toHaveTextContent(item.title);
   const more = await findAction("button", "More artifact actions", panel);
+  const separator = within(panel).getByRole("separator");
+  const full = getAction("button", "Enter fullscreen", panel);
+  const close = getAction("button", "Close artifact", panel);
+  expect(separator).toHaveAttribute("aria-orientation", "vertical");
+  for (const [before, after] of [[more, separator], [separator, full], [full, close]] as const) {
+    expect(before.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }
   click(more);
   const menu = await screen.findByRole("menu");
   expect(

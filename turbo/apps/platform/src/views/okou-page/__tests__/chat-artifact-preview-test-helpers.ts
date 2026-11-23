@@ -1,5 +1,4 @@
 import type { ChatThreadArtifactFile } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen } from "@testing-library/react";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -17,11 +16,9 @@ export async function openMessageFile(
   file: ChatThreadArtifactFile,
   {
     host = "localhost",
-    groupedActions = false,
     relatedFiles = [],
   }: {
     host?: string;
-    groupedActions?: boolean;
     relatedFiles?: readonly ChatThreadArtifactFile[];
   } = {},
 ) {
@@ -47,9 +44,6 @@ export async function openMessageFile(
     context,
     host,
     path: chatPath,
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
-    },
   });
   click(await findNamedLink("Inspect attachment"));
   return await screen.findByTestId("artifact-sidebar");

@@ -125,8 +125,6 @@ export async function openSharing(
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteShareRows]: true,
       [FeatureSwitchKey.HostedSiteEmailSharing]: options.emailSharing ?? false,
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]:
-        options.refreshPreview !== undefined,
       [FeatureSwitchKey.FreePlanArtifactPaywall]: options.free ?? false,
     },
   });

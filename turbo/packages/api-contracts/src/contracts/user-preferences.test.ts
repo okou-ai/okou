@@ -150,4 +150,71 @@ describe("user preferences contract", () => {
       ...SUPPORTED_USER_LOCALES,
     ]);
   });
+
+  describe("presentation format", () => {
+    const preferences = {
+      timezone: null,
+      locale: null,
+      supportedLocales: ["en-US"],
+      sendMode: "enter",
+      cloudBrowserEnabledByDefault: true,
+      chatResourcesEnabledByDefault: false,
+      forYouCoverId: null,
+      theme: null,
+      colorTheme: null,
+      captureNetworkBodiesRemaining: 0,
+      memoryInitialized: true,
+    };
+
+    it.each(["html", "pptx", null] as const)(
+      "preserves the presentation format %s in responses",
+      (presentationFormat) => {
+        const response = { ...preferences, presentationFormat };
+
+        expect(userPreferencesResponseSchema.parse(response)).toStrictEqual(
+          response,
+        );
+      },
+    );
+
+    it("accepts an older response without choosing a default format", () => {
+      expect(userPreferencesResponseSchema.parse(preferences)).toStrictEqual(
+        preferences,
+      );
+    });
+
+    it.each(["html", "pptx"] as const)(
+      "accepts %s as the only preference update",
+      (presentationFormat) => {
+        expect(
+          updateUserPreferencesRequestSchema.parse({ presentationFormat }),
+        ).toStrictEqual({ presentationFormat });
+      },
+    );
+
+    it("keeps the format optional for existing preference updates", () => {
+      expect(
+        updateUserPreferencesRequestSchema.parse({ theme: "dark" }),
+      ).toStrictEqual({ theme: "dark" });
+    });
+
+    it("does not allow clearing the format or writing an unsupported one", () => {
+      expect(
+        updateUserPreferencesRequestSchema.safeParse({
+          presentationFormat: null,
+        }).success,
+      ).toBe(false);
+      expect(
+        updateUserPreferencesRequestSchema.safeParse({
+          presentationFormat: "pdf",
+        }).success,
+      ).toBe(false);
+    });
+
+    it("still requires at least one preference to update", () => {
+      expect(updateUserPreferencesRequestSchema.safeParse({}).success).toBe(
+        false,
+      );
+    });
+  });
 });

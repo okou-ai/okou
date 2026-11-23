@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Atualizações por e-mail</string>
+    <string name="settings_email_scope">Receba resumos, lembretes e atualizações de todos os espaços de trabalho.</string>
+    <string name="settings_email_receive">Receber e-mails</string>
+    <string name="settings_email_unavailable">E-mail indisponível</string>
+    <string name="settings_email_check_address">Verificar o e-mail da conta</string>
+    <string name="settings_email_load_failed">As configurações de e-mail estão temporariamente indisponíveis.</string>
+    <string name="settings_email_refresh_failed">Não foi possível sincronizar. Exibindo a última assinatura salva.</string>
+    <string name="settings_email_refreshing">Sincronizando a assinatura por e-mail</string>
+    <string name="settings_email_save_failed">Não foi possível atualizar a assinatura por e-mail.</string>
+    <string name="settings_email_save_unconfirmed">A atualização da assinatura por e-mail ainda não foi confirmada.</string>
     <string name="settings_models">Modelos</string>
     <string name="settings_tools">Ferramentas</string>
     <string name="settings_my_okou">Meu Okou</string>
@@ -30,7 +40,7 @@
     <string name="settings_account_reconnect">Reconexão necessária</string>
     <string name="settings_account_switching">Trocando…</string>
     <string name="settings_account_switch_unconfirmed">Mudança não confirmada</string>
-    <string name="settings_account_switch_failed">Não foi possível trocar de conta.</string>
+    <string name="settings_account_switch_failed">Não foi possível trocar de conta do modelo.</string>
     <string name="settings_quota">Cota</string>
     <string name="settings_hour_quota">Cota de %1$d h</string>
     <string name="settings_day_quota">Cota de %1$d dias</string>

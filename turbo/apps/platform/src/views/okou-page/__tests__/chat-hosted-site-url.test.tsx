@@ -1,5 +1,4 @@
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -112,9 +111,6 @@ async function publishedReport() {
     context,
     path: "/chats/" + NAVIGATION_ARTIFACT_THREAD_ID,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: false,
-    },
   });
   click(await findNamedLink("Read the launch report"));
   const preview = await screen.findByTestId("artifact-sidebar");

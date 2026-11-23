@@ -68,17 +68,20 @@ test("chat-artifact-deletion-001 returns focus after Cancel and removes the owne
       ],
     });
   });
-  click(await findNamedButton("Delete", viewer));
+  const more = await findNamedButton("More artifact actions", viewer);
+  click(more);
+  click(await findNamedMenuItem("Delete"));
   const prompt = { name: "Delete Cove survey?" };
   click(getNamedButton("Cancel", await screen.findByRole("dialog", prompt)));
   await waitFor(() => {
-    return expect(getNamedButton("Delete", viewer)).toHaveFocus();
+    return expect(more).toHaveFocus();
   });
   expect(within(viewer).getByAltText(file.filename)).toHaveAttribute(
     "src",
     file.url,
   );
-  click(getNamedButton("Delete", viewer));
+  click(more);
+  click(await findNamedMenuItem("Delete"));
   click(getNamedButton("Delete", await screen.findByRole("dialog", prompt)));
   await expect(
     screen.findByText("Artifact deleted"),
@@ -102,7 +105,8 @@ test("chat-artifact-deletion-001 returns focus after Cancel and removes the owne
     return expect(within(reopened).getByAltText(file.filename)).toBeVisible();
   });
   await within(reopened).findByText("shore.png");
-  expect(queryNamedButton("Delete", reopened)).toBeNull();
+  await expect(findNamedButton("Download artifact", reopened)).resolves.toBeVisible();
+  expect(queryNamedButton("More artifact actions", reopened)).toBeNull();
 });
 
 test("chat-artifact-deletion-004 shares a read-only attachment and offers its download", async () => {
@@ -119,7 +123,7 @@ test("chat-artifact-deletion-004 shares a read-only attachment and offers its do
     });
   });
   const clipboard = context.mocks.browser.clipboardWriteText();
-  const viewer = await openMessageFile(context, file, { groupedActions: true });
+  const viewer = await openMessageFile(context, file);
   const share = within(viewer).getByLabelText("Share artifact");
   expect(share).not.toBeVisible();
   decision.resolve();

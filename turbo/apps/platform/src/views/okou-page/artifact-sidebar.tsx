@@ -16,7 +16,6 @@ import {
   ArrowLeft,
   Maximize2,
   Minimize2,
-  Ellipsis,
   ExternalLink,
   Loader2,
   X,
@@ -36,10 +35,6 @@ import {
 import {
   Button,
   buttonVariants,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
   FullscreenPanel,
   cn,
   useMediaQuery,
@@ -294,10 +289,6 @@ export function ArtifactSidebarContent({
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   const share = useLoadable(artifactRef.shareUrl$);
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
     ...resolvedDisplay,
@@ -348,7 +339,7 @@ export function ArtifactSidebarContent({
         <ArtifactDeleteButton
           artifactId={artifactId ?? syncTarget?.artifactId}
           origin={deletionOrigin}
-          menu={groupedActions}
+          menu
         />
       }
       recovery={recovery}
@@ -606,7 +597,6 @@ function ArtifactSidebarHeader({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const compactActions = onBack !== undefined;
 
   return (
     <div className="flex min-h-14 shrink-0 items-center gap-3 border-b border-border/60 px-4 py-2">
@@ -642,7 +632,6 @@ function ArtifactSidebarHeader({
         sharePending={sharePending}
         managementAction={managementAction}
         shareUrl={shareUrl}
-        compactActions={compactActions}
         artifactKind={artifactKind}
         contentType={contentType}
         fullscreen={fullscreen}
@@ -666,7 +655,6 @@ function ArtifactSidebarActions({
   shareUrl,
   artifactKind,
   contentType,
-  compactActions,
   fullscreen,
   kind,
   onClose,
@@ -683,7 +671,6 @@ function ArtifactSidebarActions({
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   contentType?: string | undefined;
-  compactActions: boolean;
   fullscreen: boolean;
   kind?: ArtifactKindForBody;
   onClose: () => void;
@@ -693,15 +680,10 @@ function ArtifactSidebarActions({
   filename: string;
   url: string;
 }) {
-  const groupedActions =
-    useLastResolved(featureSwitches$)?.[
-      FeatureSwitchKey.ArtifactPreviewActionGroup
-    ] ?? false;
   return (
     <div className="flex shrink-0 items-center gap-1">
       <ArtifactPreviewActionGroup
         key={url}
-        enabled={groupedActions}
         artifactId={artifactId}
         metadataPending={actionsPending}
         shareAvailable={shareAvailable}
@@ -718,23 +700,18 @@ function ArtifactSidebarActions({
             contentType={contentType}
             kind={kind}
             shareAvailable={shareAvailable}
-            showSeparator={!groupedActions}
             syncTarget={syncTarget}
             filename={filename}
             url={url}
           />
         )}
-        {groupedActions && <ArtifactActionSeparator />}
+        <ArtifactActionSeparator />
         <ArtifactFullscreenAction
           fullscreen={fullscreen}
           onToggleFullscreen={onToggleFullscreen}
         />
       </ArtifactPreviewActionGroup>
-      {compactActions && !groupedActions ? (
-        <ArtifactMoreActions onClose={onClose} />
-      ) : (
-        <ArtifactCloseAction onClose={onClose} />
-      )}
+      <ArtifactCloseAction onClose={onClose} />
     </div>
   );
 }
@@ -746,7 +723,6 @@ function ArtifactSidebarPreviewActions({
   contentType,
   kind,
   shareAvailable,
-  showSeparator,
   syncTarget,
   filename,
   url,
@@ -757,7 +733,6 @@ function ArtifactSidebarPreviewActions({
   contentType?: string | undefined;
   kind?: ArtifactKindForBody;
   shareAvailable: boolean;
-  showSeparator: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   filename: string;
   url: string;
@@ -789,7 +764,6 @@ function ArtifactSidebarPreviewActions({
         url={url}
       />
       {managementAction}
-      {showSeparator && <ArtifactActionSeparator />}
     </>
   );
 }
@@ -848,42 +822,6 @@ function ArtifactFullscreenAction({
     >
       {fullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
     </Button>
-  );
-}
-
-function ArtifactMoreActions({ onClose }: { onClose: () => void }) {
-  const { t } = useTranslation();
-  return (
-    <DropdownMenu>
-      <ArtifactActionTooltip
-        label={t(($) => {
-          return $.artifacts.actions.more;
-        })}
-      >
-        <DropdownMenuTrigger
-          render={
-            <Button
-              type="button"
-              aria-label={t(($) => {
-                return $.artifacts.actions.more;
-              })}
-              variant="quiet"
-              size="icon-sm"
-              highlightWhenOpen
-            />
-          }
-        >
-          <Ellipsis size={16} />
-        </DropdownMenuTrigger>
-      </ArtifactActionTooltip>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onClose}>
-          {t(($) => {
-            return $.artifacts.actions.closePreviewMenu;
-          })}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

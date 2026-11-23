@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { ModelSettings } from "@okouai/db/jsonb-contracts/chat-model-settings";
 import type { ChatThreadServiceTier } from "@okouai/api-contracts/contracts/chat-threads";
+import type { PresentationOutputFormat } from "@okouai/api-contracts/validators/presentation-output-format";
 import type {
   ColorTheme,
   ThemePreference,
@@ -45,6 +46,10 @@ export function orgMembersMetadataColumns() {
     }).$type<ChatThreadServiceTier>(),
     /** Member setting for built-in image generation; null uses the default. */
     selectedImageModel: varchar("selected_image_model", { length: 255 }),
+    /** Workspace member's presentation preference; null means unselected. */
+    presentationFormat: text(
+      "presentation_format",
+    ).$type<PresentationOutputFormat>(),
     onboardingDone: boolean("onboarding_done").notNull().default(false),
     /**
      * When this member finished the source-first onboarding in this org.

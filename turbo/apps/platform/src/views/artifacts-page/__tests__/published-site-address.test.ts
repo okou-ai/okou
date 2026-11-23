@@ -90,7 +90,9 @@ async function openSite(
     featureSwitches: { [FeatureSwitchKey.HostedSiteShareRows]: true },
   });
   click(await findArtifactAction("Planning board"));
-  click(await findFastControl("button", "Share artifact"));
+  if (!options.gate) {
+    click(await findFastControl("button", "Share artifact"));
+  }
 }
 const shareDialog = () => {
   return screen.getByRole("dialog", { name: "Share artifact" });
@@ -127,15 +129,11 @@ test("hosted-site-sharing-001 Copy waits for the current published address and i
   const gate = context.mocks.deferred<void>();
   const clip = context.mocks.browser.clipboardWriteText();
   await openSite({ gate: gate.promise });
-  expect(queryFastControl("button", "Copy link", shareDialog())).toBeNull();
-  await waitFor(() => {
-    expect(shareDialog().querySelector('[aria-busy="true"]')).toBeVisible();
-  });
-  expect(queryFastControl("button", "Customize URL", shareDialog())).toBeNull();
+  await screen.findByTestId("artifact-sidebar");
+  expect(screen.getByLabelText("Share artifact")).not.toBeVisible();
+  expect(await findFastControl("button", "Close artifact")).toBeEnabled();
   gate.resolve();
-  await waitFor(() => {
-    return expect(button("Copy link")).toBeEnabled();
-  });
+  click(await findFastControl("button", "Share artifact"));
   await verifyCopy(clip.writes, link("planning-board"));
 });
 test("hosted-site-sharing-010 The share row and clipboard both expose the current site URL before editing", async () => {
