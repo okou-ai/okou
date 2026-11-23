@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.59.0](https://github.com/okou-ai/okou/compare/ios-v0.58.0...ios-v0.59.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** follow the finger through the for you deck ([#50252](https://github.com/okou-ai/okou/issues/50252)) ([b5cfa65](https://github.com/okou-ai/okou/commit/b5cfa6513ee993e11a9e436c6b0a1bd883fe99ea))
+
+
+### Bug Fixes
+
+* **ios:** hide unavailable image preview navigation ([#50226](https://github.com/okou-ai/okou/issues/50226)) ([8e503c2](https://github.com/okou-ai/okou/commit/8e503c2c908538eea5b470b2b1111e9d7fdea908)) [#50204](https://github.com/okou-ai/okou/issues/50204)
+* **ios:** match draft attachment glass to the composer ([#50244](https://github.com/okou-ai/okou/issues/50244)) ([8b3f19c](https://github.com/okou-ai/okou/commit/8b3f19c2a7346b8c05966fa0457b8d78952539ee))
+
 ## [0.58.0](https://github.com/okou-ai/okou/compare/ios-v0.57.0...ios-v0.58.0) (2026-11-23)
 
 
