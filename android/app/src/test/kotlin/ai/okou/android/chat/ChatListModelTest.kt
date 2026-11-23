@@ -161,6 +161,7 @@ internal abstract class ChatListModelTestFixture {
         connectivity: MutableStateFlow<Boolean> = MutableStateFlow(true),
         authorized: () -> Boolean = { true },
         chatCache: ChatCacheStore? = null,
+        wallMillis: () -> Long = System::currentTimeMillis,
         exercise: suspend (ChatListModel) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -180,6 +181,7 @@ internal abstract class ChatListModelTestFixture {
                                 {},
                                 dispatcher,
                                 realtime,
+                                wallMillis = wallMillis,
                                 monotonicMillis = { testScheduler.currentTime },
                                 connectivity = connectivity,
                             )
@@ -218,7 +220,10 @@ internal abstract class ChatListModelTestFixture {
             },
         )[ChatListModel::class.java]
 
-    protected fun tiedPinEvents(vararg threads: String): List<String> {
+    protected fun pinnedEvents(
+        vararg threads: String,
+        pinOrder: (Int) -> String = { "a0" },
+    ): List<String> {
         fun id(seq: Long) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
         return threads.flatMapIndexed { index, thread ->
             val created = 17L + 2 * index
@@ -230,7 +235,7 @@ internal abstract class ChatListModelTestFixture {
                     seq = pinned,
                     thread = thread,
                     kind = "pinned",
-                    extra = ""","pinOrder":"a0"""",
+                    extra = ""","pinOrder":"${pinOrder(index)}"""",
                 ),
             )
         }
@@ -435,154 +440,6 @@ internal abstract class ChatListModelTestFixture {
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListModelTest : ChatListModelTestFixture() {
     @Test
-    fun listRefreshNoticeUsesCompletedFailuresAndReconnectResetsTheAttemptWindow() = runTest {
-        val connected = MutableStateFlow(true)
-        var failing = false
-        var attempts = 0
-        val service =
-            Service().apply {
-                listRead = {
-                    attempts++
-                    if (failing) throw ApiFailure.Http(503, null, null, null)
-                    page()
-                }
-            }
-        withCatchUpModel(service, connectivity = connected) { model ->
-            model.refresh()
-            runCurrent()
-            val cachedRows = model.uiState.value.threads
-            assertTrue(cachedRows.isNotEmpty())
-            failing = true
-            val first = attempts
-            model.refreshList()
-            runCurrent()
-            assertEquals(first + 1, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 2, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(10_000)
-            runCurrent()
-            assertEquals(first + 3, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(14_999)
-            runCurrent()
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(first + 3, attempts)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 4, attempts)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            assertEquals(cachedRows, model.uiState.value.threads)
-
-            model.selectFilter(ChatListFilter.Inbox)
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-            model.selectFilter(ChatListFilter.Unread)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-
-            connected.value = false
-            runCurrent()
-            assertTrue(model.uiState.value.offline)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            model.refresh()
-            advanceTimeBy(40_000)
-            runCurrent()
-            assertEquals(first + 4, attempts)
-
-            connected.value = true
-            runCurrent()
-            assertFalse(model.uiState.value.offline)
-            assertEquals(first + 5, attempts)
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-            failing = false
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertEquals(first + 6, attempts)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertNull(model.uiState.value.listReadFailure)
-        }
-    }
-
-    @Test
-    fun listRetryKeepsTheServerDeadlineAfterHidingTheList() = runTest {
-        var attempts = 0
-        var indicatorsAvailable = false
-        val service =
-            object : Service() {
-                override suspend fun chatSnapshot() =
-                    ChatSnapshotVariant1("https://example.test/archive", 60, null, null)
-
-                override suspend fun chatArchive(url: String): ChatArchive {
-                    attempts++
-                    if (attempts == 1) throw ChatSnapshotUnavailable(429, retryAfterSeconds = 20)
-                    return ChatArchive(emptyList())
-                }
-
-                override suspend fun indicators(): Indicators {
-                    if (!indicatorsAvailable) throw ApiFailure.Http(503, null, null, null)
-                    return super.indicators()
-                }
-            }
-        withCatchUpModel(service) { model ->
-            model.refresh()
-            runCurrent()
-            assertEquals(1, attempts)
-            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-
-            model.listVisibilityChanged(false)
-            advanceTimeBy(15_000)
-            runCurrent()
-            assertEquals(1, attempts)
-
-            model.listVisibilityChanged(true)
-            model.refreshList()
-            advanceTimeBy(4_999)
-            runCurrent()
-            assertEquals(1, attempts)
-
-            indicatorsAvailable = true
-            advanceTimeBy(1)
-            runCurrent()
-            assertEquals(2, attempts)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
-        }
-    }
-
-    @Test
-    fun anInFlightFailureDoesNotCountAfterSwitchingAwayAndBackToTheSameFilter() = runTest {
-        val first = CompletableDeferred<ChatEvents>()
-        val service = Service()
-        withCatchUpModel(service) { model ->
-            model.refresh()
-            runCurrent()
-            val unavailable = ApiFailure.Http(503, null, null, null)
-            service.listRead = { first.await() }
-            model.refreshList()
-            runCurrent()
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
-            model.selectFilter(ChatListFilter.Unread)
-            model.selectFilter(ChatListFilter.Inbox)
-
-            service.listRead = { throw unavailable }
-            first.completeExceptionally(unavailable)
-            runCurrent()
-            advanceTimeBy(30_000)
-            runCurrent()
-            assertFalse(model.uiState.value.sustainedRefreshFailure)
-
-            advanceTimeBy(5_000)
-            runCurrent()
-            assertTrue(model.uiState.value.sustainedRefreshFailure)
-        }
-    }
-
-    @Test
     fun sendReceiptKeepsActivityUntilTheSortEventOrAnExplicitReconciliation() = runTest {
         val other =
             chatEventWire(
@@ -707,7 +564,7 @@ internal class ChatListModelTest : ChatListModelTestFixture() {
                 runCurrent()
                 assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
                 if (requestDuringBackoff) model.refresh()
-                advanceTimeBy(4_999)
+                advanceTimeBy(2_999)
                 assertEquals(1, reads)
                 assertEquals(CHAT_PERSONAL, model.uiState.value.threads.first().id)
                 advanceTimeBy(1)
@@ -874,130 +731,6 @@ internal class ChatListModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun reconnectRetainsTrailingListDemandAndDoesNotBlockProjectsOrIndicators() = runTest {
-        val realtime = TestRealtimeService()
-        val events = mutableListOf(chatEventWire())
-        val olderRead = CompletableDeferred<Unit>()
-        var listReads = 0
-        var projectReads = 0
-        var indicatorReads = 0
-        val source =
-            Service().apply {
-                listRead = {
-                    listReads++
-                    page(events)
-                }
-                statusRead = {
-                    indicatorReads++
-                    Indicators(emptyMap(), emptyMap())
-                }
-            }
-        val service =
-            object : ChatListService by source {
-                override suspend fun projectEvents(since: Long): ProjectEvents {
-                    projectReads++
-                    return ProjectEvents(emptyList(), false)
-                }
-            }
-        withCatchUpModel(service, realtime) { model ->
-            model.refresh()
-            model.updates.foreground(true)
-            advanceUntilIdle()
-            val initialList = listReads
-            val initialProjects = projectReads
-            val initialIndicators = indicatorReads
-            source.listRead = {
-                listReads++
-                val captured = page(events)
-                if (listReads == initialList + 1) olderRead.await()
-                captured
-            }
-            model.refreshList()
-            runCurrent()
-
-            events.add(
-                chatEventWire(
-                    id = "77777777-7777-4777-8777-777777777777",
-                    seq = 18,
-                    kind = "renamed",
-                    title = "Seen after reconnect",
-                ),
-            )
-            model.updates.retry()
-            model.refresh()
-            runCurrent()
-            assertEquals(initialList + 1, listReads)
-            assertTrue(projectReads > initialProjects)
-            assertTrue(indicatorReads > initialIndicators)
-
-            olderRead.complete(Unit)
-            advanceUntilIdle()
-            assertEquals(initialList + 2, listReads)
-            assertEquals("Seen after reconnect", model.uiState.value.threads.single().title)
-        }
-    }
-
-    @Test
-    fun heldListDoesNotBlockMetadataStatusRefreshAndItsFailureCanRetry() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val store = ViewModelStore()
-        val gate = CompletableDeferred<ChatEvents>()
-        val service = Service().apply { listRead = { gate.await() } }
-        val cache = cache(temporary.newFolder(), dispatcher)
-        try {
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            model.refresh()
-            runCurrent()
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
-            assertEquals(
-                IndicatorsThreadsValue.UNREAD,
-                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
-            )
-            service.statusRead = {
-                Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE), emptyMap())
-            }
-            model.refreshIndicators()
-            runCurrent()
-            assertEquals(
-                IndicatorsThreadsValue.ACTIVE,
-                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
-            )
-            service.statusRead = { throw IOException("offline") }
-            model.refreshIndicators()
-            runCurrent()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-            assertEquals(
-                IndicatorsThreadsValue.ACTIVE,
-                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
-            )
-            gate.completeExceptionally(IOException("offline"))
-            advanceUntilIdle()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
-            assertNull(model.uiState.value.confirmedAt)
-            service.listRead = { page() }
-            model.refreshList()
-            advanceUntilIdle()
-            assertEquals("Personal chat", model.uiState.value.threads.single().title)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertFalse(model.uiState.value.cacheUnavailable)
-        } finally {
-            gate.complete(page())
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
     fun nonCooperativeRetiredResponseCannotPublishOrOverwriteTheReplacementCache() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -1102,325 +835,6 @@ internal class ChatListModelTest : ChatListModelTestFixture() {
             assertEquals(ChatListSource.Cache, model.uiState.value.source)
         } finally {
             gate.complete(page())
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun unchangedRefreshAvoidsDiskWritesAndAnUnsavedUpdateRetriesPersistence() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val root = temporary.newFolder()
-        val cache = cache(root, dispatcher)
-        val store = ViewModelStore()
-        try {
-            val service = Service()
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            model.refresh()
-            advanceUntilIdle()
-            val initial = model.uiState.value
-            assertEquals(ChatReadPhase.Ready, initial.listPhase)
-            assertFalse(initial.cacheUnavailable)
-            execute(
-                root,
-                "CREATE TRIGGER fail_chat_write BEFORE INSERT ON chat_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
-            )
-            model.refresh()
-            advanceUntilIdle()
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertFalse(model.uiState.value.cacheUnavailable)
-            assertEquals(initial.confirmedAt, model.uiState.value.confirmedAt)
-            assertSame(initial.threads, model.uiState.value.threads)
-            assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
-            service.listRead = {
-                json.decodeFromString<ChatEvents>(
-                    """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}""",
-                )
-            }
-            model.refreshList()
-            advanceUntilIdle()
-            val unsaved = model.uiState.value
-            assertEquals("Updated", unsaved.threads.single().title)
-            assertTrue(unsaved.cacheUnavailable)
-            execute(root, "DROP TRIGGER fail_chat_write")
-            model.refreshList()
-            advanceUntilIdle()
-            assertSame(unsaved.threads, model.uiState.value.threads)
-            assertEquals(unsaved.confirmedAt, model.uiState.value.confirmedAt)
-            assertFalse(model.uiState.value.cacheUnavailable)
-            model.refreshMetadata()
-            advanceUntilIdle()
-            store.clear()
-            runCurrent()
-            cache
-                .open(identity) { true }
-                .use {
-                    val saved = checkNotNull(it.load())
-                    assertEquals(23L, saved.checkpoint.cursor.seqId)
-                    assertEquals("Updated", replayChats(saved.checkpoint).single().title)
-                }
-        } finally {
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun cacheRejectionUsesNewerStoredCheckpointBeforePublishing() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val root = temporary.newFolder()
-        val cache = cache(root, dispatcher)
-        val store = ViewModelStore()
-        try {
-            val newer = page(listOf(chatEventWire(seq = 23, title = "Newer on disk"))).events
-            val checkpoint =
-                ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), newer, newer.last().cursor())
-            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(Service(), cache, identity, { true }, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-
-            model.refreshList()
-            advanceUntilIdle()
-
-            val state = model.uiState.value
-            assertEquals(ChatReadPhase.Ready, state.listPhase)
-            assertEquals(listOf("Newer on disk"), state.threads.map { it.title })
-            assertEquals(1234L, state.confirmedAt)
-            assertFalse(state.cacheUnavailable)
-        } finally {
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun backgroundRebaseYieldsToNewerReadsAndPreservesPendingMutationConfirmation() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val cache = cache(temporary.newFolder(), dispatcher)
-        val store = ViewModelStore()
-        val superseded = CompletableDeferred<ChatSnapshot>()
-        val current = CompletableDeferred<ChatSnapshot>()
-        val renameEventId = CompletableDeferred<String>()
-        val renameResponse = CompletableDeferred<Unit>()
-        fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
-        fun renamed(seq: Int, title: String, id: String = eventId(seq)) =
-            chatEventWire(id = id, seq = seq.toLong(), kind = "renamed", title = title)
-        val tail =
-            page(listOf(chatEventWire(seq = 1)) + (2..101).map { renamed(it, "Cached") }).events
-        val checkpoint =
-            ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), tail, tail.last().cursor())
-        val row = replayChats(checkpoint).single()
-        val oldSnapshot = ChatSnapshotVariant1("https://fixture.test/old", 60, eventId(103), 103)
-        val newSnapshot = ChatSnapshotVariant1("https://fixture.test/new", 60, eventId(105), 105)
-        var snapshotReads = 0
-        val service =
-            object : TestChatService() {
-                override suspend fun chatSnapshot() =
-                    if (++snapshotReads == 1) withContext(NonCancellable) { superseded.await() }
-                    else current.await()
-
-                override suspend fun chatArchive(url: String) =
-                    ChatArchive(
-                        listOf(
-                            row.copy(
-                                title =
-                                    if (url == oldSnapshot.url) "Superseded" else "Other device",
-                            ),
-                        ),
-                    )
-
-                override suspend fun renameThread(
-                    threadId: String,
-                    title: String,
-                    eventId: String,
-                ) {
-                    renameEventId.complete(eventId)
-                    renameResponse.await()
-                }
-
-                override suspend fun chatEvents(since: Long?) =
-                    when (since) {
-                        101L -> page(listOf(renamed(102, "First increment")))
-                        102L -> page(listOf(renamed(103, "Newest")))
-                        103L ->
-                            if (renameEventId.isCompleted)
-                                page(
-                                    listOf(
-                                        renamed(104, "Local rename", renameEventId.await()),
-                                        renamed(105, "Other device"),
-                                    ),
-                                )
-                            else page(emptyList())
-                        105L -> page(emptyList())
-                        else -> error("Unexpected cursor $since")
-                    }
-            }
-        try {
-            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            model.refresh()
-            runCurrent()
-            assertEquals(1, snapshotReads)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertEquals("First increment", model.uiState.value.threads.single().title)
-
-            model.refreshList()
-            runCurrent()
-            assertEquals(2, snapshotReads)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertEquals("Newest", model.uiState.value.threads.single().title)
-            superseded.complete(oldSnapshot)
-            runCurrent()
-            assertEquals("Newest", model.uiState.value.threads.single().title)
-
-            model.renameThread(CHAT_PERSONAL, "Local rename")
-            runCurrent()
-            assertTrue(renameEventId.isCompleted)
-            current.complete(newSnapshot)
-            runCurrent()
-            assertEquals("Local rename", model.uiState.value.threads.single().title)
-
-            renameResponse.complete(Unit)
-            advanceUntilIdle()
-            assertNull(model.uiState.value.failedRowAction)
-            assertEquals("Other device", model.uiState.value.threads.single().title)
-            store.clear()
-            runCurrent()
-            cache
-                .open(identity) { true }
-                .use {
-                    val saved = checkNotNull(it.load()).checkpoint
-                    assertEquals(ChatCursor(eventId(105), 105), saved.snapshotCursor)
-                    assertTrue(saved.events.isEmpty())
-                    assertEquals("Other device", replayChats(saved).single().title)
-                }
-        } finally {
-            superseded.complete(oldSnapshot)
-            current.complete(newSnapshot)
-            renameResponse.complete(Unit)
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun networkListBecomesVisibleOnlyAfterTheDiskWriteCommits() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val cache = cache(temporary.newFolder())
-        val store = ViewModelStore()
-        val entered = CompletableDeferred<Unit>()
-        val release = CountDownLatch(1)
-        val holdWrite = AtomicBoolean(false)
-        var owner: Job? = null
-        try {
-            val service = Service().apply { listRead = { page().also { holdWrite.set(true) } } }
-            val authorized = {
-                if (
-                    Thread.currentThread().name.startsWith("DefaultDispatcher") &&
-                        holdWrite.compareAndSet(true, false)
-                ) {
-                    entered.complete(Unit)
-                    release.await()
-                }
-                true
-            }
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, authorized, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            owner = model.viewModelScope.coroutineContext[Job]
-            model.refreshList()
-            entered.await()
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
-            assertNull(model.uiState.value.source)
-            assertTrue(model.uiState.value.threads.isEmpty())
-            release.countDown()
-            val published = model.uiState.first { it.listPhase == ChatReadPhase.Ready }
-            assertEquals(ChatListSource.Network, published.source)
-            assertEquals("Personal chat", published.threads.single().title)
-            store.clear()
-            owner?.join()
-            cache
-                .open(identity) { true }
-                .use {
-                    assertEquals(published.confirmedAt, it.load()?.confirmedAt)
-                    assertEquals(published.threads, replayChats(checkNotNull(it.load()).checkpoint))
-                }
-        } finally {
-            release.countDown()
-            store.clear()
-            owner?.join()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
-
-    @Test
-    fun persistenceFailureLeavesTheConfirmedNetworkListUsableAndExplicitlyUnsaved() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val store = ViewModelStore()
-        try {
-            val cache = cache(temporary.newFile(), dispatcher)
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(
-                                Service(),
-                                cache,
-                                identity,
-                                { true },
-                                { fail("Cache failure must not retire the workspace") },
-                                dispatcher,
-                            )
-                        }
-                    },
-                )[ChatListModel::class.java]
-            model.refresh()
-            advanceUntilIdle()
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertEquals("Personal chat", model.uiState.value.threads.single().title)
-            assertTrue(model.uiState.value.cacheUnavailable)
-            assertEquals(ChatListSource.Network, model.uiState.value.source)
-        } finally {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()
@@ -1882,91 +1296,6 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
-        val unreadReadback = CompletableDeferred<Indicators>()
-        val readWrite = CompletableDeferred<ReadState>()
-        val read = Indicators(emptyMap(), emptyMap())
-        val unread =
-            Indicators(
-                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                mapOf(CHAT_PERSONAL to CHAT_DATE),
-            )
-        val source =
-            object : Service() {
-                    override suspend fun markUnread(threadId: String) = ReadState(null)
-
-                    override suspend fun markRead(threadId: String) = readWrite.await()
-                }
-                .apply { statusRead = { read } }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            advanceUntilIdle()
-            source.statusRead = { unreadReadback.await() }
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
-            runCurrent()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
-            runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-            unreadReadback.complete(unread)
-            runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            source.statusRead = { unread }
-            readWrite.completeExceptionally(ApiFailure.Http(404, null, null, null))
-            advanceUntilIdle()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-        }
-    }
-
-    @Test
-    fun rejectedUnreadKeepsAnEarlierReadReceiptWhileIndicatorsArePending() = runTest {
-        val readback = CompletableDeferred<Indicators>()
-        val source =
-            object : Service() {
-                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
-
-                    override suspend fun markUnread(threadId: String): ReadState =
-                        throw ApiFailure.Http(404, null, null, null)
-                }
-                .apply {
-                    statusRead = {
-                        Indicators(
-                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                            mapOf(CHAT_PERSONAL to CHAT_DATE),
-                        )
-                    }
-                }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            advanceUntilIdle()
-            source.statusRead = { readback.await() }
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
-            runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-            runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction?.action)
-
-            model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
-            readback.completeExceptionally(IOException("status unavailable"))
-            advanceUntilIdle()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-            assertNull(model.uiState.value.failedRowAction)
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
-            model.refreshIndicators()
-            advanceUntilIdle()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-        }
-    }
-
-    @Test
     fun bulkReadShowsNewerUnreadActivityWhileWriteAndReadbackArePending() = runTest {
         val write = CompletableDeferred<ReadState>()
         val readback = CompletableDeferred<Indicators>()
@@ -2131,257 +1460,92 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
-
-    @Test
-    fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
-        val response = CompletableDeferred<ReadState>()
-        val source =
-            object : Service() {
-                    override suspend fun markUnread(threadId: String) = response.await()
-                }
-                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            advanceUntilIdle()
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
-            runCurrent()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-            source.statusRead = { throw IOException("offline") }
-            response.completeExceptionally(IOException("response lost"))
-            advanceUntilIdle()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
-            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction?.action)
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            source.statusRead = {
-                Indicators(
-                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
-                    mapOf(CHAT_PERSONAL to CHAT_DATE),
-                )
-            }
-            model.refreshIndicators()
-            advanceUntilIdle()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-            assertTrue(model.uiState.value.readIntents.isEmpty())
-        }
-    }
-
-    @Test
-    fun realtimeReadStartedBeforeWriteResponseCanConfirmWithoutAnotherListRead() = runTest {
-        val realtime = TestRealtimeService()
-        val events = mutableListOf(chatEventWire())
-        val writeResponse = CompletableDeferred<Unit>()
-        val readResponse = CompletableDeferred<Unit>()
-        val statusResponse = CompletableDeferred<Indicators>()
-        var reads = 0
-        val source =
-            Service().apply {
-                listRead = {
-                    reads++
-                    page(events)
-                }
-            }
-        val service =
-            object : ChatListService by source {
-                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
-                    events.add(
-                        chatEventWire(
-                            id = eventId,
-                            seq = 18,
-                            thread = threadId,
-                            kind = "sort_touched",
-                            extra = ",\"muted\":$muted",
-                        ),
-                    )
-                    writeResponse.await()
-                }
-            }
-        withCatchUpModel(service, realtime) { model ->
-            model.refresh()
-            model.updates.foreground(true)
-            advanceUntilIdle()
-            val initialReads = reads
-
-            source.statusRead = { statusResponse.await() }
-            model.refreshIndicators()
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Mute)
-            runCurrent()
-
-            source.listRead = {
-                reads++
-                val captured = page(events)
-                readResponse.await()
-                captured
-            }
-            realtime.invalidate(ChatChanges(list = true))
-            runCurrent()
-            assertEquals(initialReads + 1, reads)
-            writeResponse.complete(Unit)
-            runCurrent()
-            readResponse.complete(Unit)
-            runCurrent()
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
-
-            statusResponse.complete(Indicators(emptyMap(), emptyMap()))
-            advanceUntilIdle()
-            assertEquals(initialReads + 1, reads)
-            val state = model.uiState.value
-            assertEquals(true, state.threads.single().muted)
-            assertTrue(state.pendingRowActions.isEmpty())
-            assertNull(state.failedRowAction)
-        }
-    }
-
-    @Test
-    fun aRejectedUnmuteKeepsItsReadReceiptWhileIndicatorsAreHeld() = runTest {
-        val refresh = CompletableDeferred<Indicators>()
-        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
-        val source =
-            object : Service() {
-                override suspend fun chatEvents(since: Long?) =
-                    page(
-                        listOf(
-                            chatEventWire(),
-                            chatEventWire(
-                                id = HISTORY_LAST_EVENT,
-                                seq = 18,
-                                kind = "sort_touched",
-                                extra = ""","muted":true""",
-                            ),
-                        ),
-                    )
-
-                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
-
-                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
-                    throw ApiFailure.Http(400, null, null, null)
-                }
-            }
-        source.statusRead = { unread }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            runCurrent()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
-
-            source.statusRead = { refresh.await() }
-            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unmute))
-            runCurrent()
-            val state = model.uiState.value
-            assertTrue(state.threads.single().muted == true)
-            assertFalse(state.isUnread(CHAT_PERSONAL))
-            assertTrue(state.pendingRowActions.isEmpty())
-            assertEquals(ChatReadPhase.Loading, state.indicatorsPhase)
-            assertTrue(checkNotNull(state.failedRowAction).rejected)
-
-            refresh.complete(unread.copy(unreadAt = emptyMap()))
-            runCurrent()
-            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
-        }
-    }
-
-    @Test
-    fun unmuteConfirmsListIndependentlyOfIndicatorReadbackFailure() = runTest {
-        val dispatcher = StandardTestDispatcher(testScheduler)
-        Dispatchers.setMain(dispatcher)
-        val store = ViewModelStore()
-        val oldStatus = CompletableDeferred<Indicators>()
-        val tail =
-            mutableListOf(
-                chatEventWire(),
-                chatEventWire(
-                    id = "77777777-7777-4777-8777-777777777777",
-                    seq = 18,
-                    kind = "sort_touched",
-                    extra = ",\"muted\":true",
-                ),
-            )
-        val source =
-            Service().apply {
-                listRead = {
-                    json.decodeFromString(
-                        """{"events":[${tail.joinToString(",")}],"hasMore":false}""",
-                    )
-                }
-                statusRead = { Indicators(emptyMap(), emptyMap()) }
-            }
-        val service =
-            object : ChatListService by source {
-                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
-
-                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
-                    tail.add(
-                        chatEventWire(
-                            id = eventId,
-                            seq = 19,
-                            thread = threadId,
-                            kind = "sort_touched",
-                            extra = ",\"muted\":$muted",
-                        ),
-                    )
-                }
-            }
-        val cache = cache(temporary.newFolder(), dispatcher)
-        try {
-            val model =
-                ViewModelProvider(
-                    store,
-                    viewModelFactory {
-                        initializer {
-                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
-                        }
-                    },
-                )[ChatListModel::class.java]
-            model.refresh()
-            advanceUntilIdle()
-
-            source.statusRead = { oldStatus.await() }
-            model.refreshIndicators()
-            runCurrent()
-            source.statusRead = { throw IOException("offline") }
-
-            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unmute)
-            runCurrent()
-            assertEquals(ChatRowAction.Unmute, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
-            assertEquals(false, model.uiState.value.threads.single().muted)
-            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
-            source.listRead = { throw IOException("offline") }
-
-            oldStatus.complete(
-                Indicators(
-                    mapOf(
-                        CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
-                        CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
-                    ),
-                    mapOf(CHAT_PERSONAL to CHAT_DATE),
-                ),
-            )
-            advanceUntilIdle()
-
-            val state = model.uiState.value
-            assertEquals(false, state.threads.single().muted)
-            assertTrue(state.pendingRowActions.isEmpty())
-            assertEquals(ChatReadPhase.Ready, state.listPhase)
-            assertEquals(ChatReadPhase.Failed, state.indicatorsPhase)
-            assertNull(state.failedRowAction)
-            val indicators = checkNotNull(state.indicators)
-            assertEquals(
-                mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE),
-                indicators.threads,
-            )
-            assertTrue(indicators.unreadAt.isEmpty())
-        } finally {
-            store.clear()
-            runCurrent()
-            Dispatchers.resetMain()
-        }
-    }
 }
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
+    @Test
+    fun archiveRetriesUndeliveredWritesAtThreeSecondIntervalsUsingTheSameEvent() = runTest {
+        val events = mutableListOf(chatEventWire())
+        val writes = mutableListOf<Pair<Long, String>>()
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = page(events)
+
+                override suspend fun setArchived(
+                    threadId: String,
+                    archived: Boolean,
+                    eventId: String,
+                ) {
+                    writes.add(testScheduler.currentTime to eventId)
+                    if (writes.size < 3) throw ApiFailure.Network(ConnectException())
+                    events.add(chatEventWire(id = eventId, seq = 18, kind = "archived"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            val started = testScheduler.currentTime
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            runCurrent()
+            assertTrue(model.uiState.value.threads.single().archived)
+            assertEquals(
+                ChatRowAction.Archive,
+                model.uiState.value.pendingRowActions[CHAT_PERSONAL],
+            )
+            assertNull(model.uiState.value.rowUndo)
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(1, writes.size)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, writes.size)
+            assertFalse(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive))
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 6_000L), writes.map { it.first - started })
+            assertEquals(1, writes.map { it.second }.distinct().size)
+            assertEquals(ChatRowAction.Archive, model.uiState.value.rowUndo?.action)
+        }
+    }
+
+    @Test
+    fun crossClientArchiveDuringRetrySettlesWithoutAnotherWriteOrUndo() = runTest {
+        val events = mutableListOf(chatEventWire())
+        var writes = 0
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = page(events)
+
+                override suspend fun setArchived(
+                    threadId: String,
+                    archived: Boolean,
+                    eventId: String,
+                ) {
+                    writes++
+                    throw ApiFailure.Network(ConnectException())
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive)
+            runCurrent()
+            events.add(chatEventWire(id = HISTORY_LAST_EVENT, seq = 18, kind = "archived"))
+            model.refreshList()
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(1, writes)
+            assertTrue(model.uiState.value.threads.single().archived)
+            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
+            assertNull(model.uiState.value.rowUndo)
+            assertNull(model.uiState.value.failedRowAction)
+        }
+    }
+
     @Test
     fun aLaterRejectedArchiveDoesNotHideAnEarlierConfirmedUndo() = runTest {
         val firstArchive = CompletableDeferred<Unit>()
@@ -2486,15 +1650,14 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun undoKeepsItsOfferAfterConnectionFailureAndChecksAnAmbiguousRetryByReceipt() = runTest {
+    fun undoClosesTheOfferAfterAConnectionFailure() = runTest {
         val connectivity = MutableStateFlow(true)
         val source = ArchiveService()
         var inverseWrites = 0
         source.beforeUnarchive = {
             inverseWrites++
-            if (inverseWrites == 1) throw ApiFailure.Network(ConnectException("Unreachable"))
+            throw ApiFailure.Network(ConnectException("Unreachable"))
         }
-        source.afterUnarchive = { throw ApiFailure.Network(IOException("Lost response")) }
         withCatchUpModel(source, connectivity = connectivity) { model ->
             model.refresh()
             advanceUntilIdle()
@@ -2507,29 +1670,47 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             model.undoRowAction(offer)
             advanceUntilIdle()
             val failed = checkNotNull(model.uiState.value.rowUndo)
-            assertEquals(ChatUndoPhase.ConnectionFailed, failed.phase)
-            assertTrue(failed.canRetry)
+            assertEquals(ChatUndoPhase.Failed, failed.phase)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
             assertEquals(1, inverseWrites)
 
             connectivity.value = true
             advanceUntilIdle()
             assertSame(failed, model.uiState.value.rowUndo)
-            assertEquals(1, inverseWrites)
-            source.beforeEvents = { throw IOException("Readback unavailable") }
             model.undoRowAction(failed)
+            model.undoRowAction(offer)
+            advanceUntilIdle()
+            assertEquals(1, inverseWrites)
+        }
+    }
+
+    @Test
+    fun undoChecksAnAmbiguousResultByReceipt() = runTest {
+        val source = ArchiveService()
+        var inverseWrites = 0
+        source.beforeUnarchive = { inverseWrites++ }
+        source.afterUnarchive = { throw ApiFailure.Network(IOException("Lost response")) }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            advanceUntilIdle()
+
+            val offer = checkNotNull(model.uiState.value.rowUndo)
+            source.beforeEvents = { throw IOException("Readback unavailable") }
+            model.undoRowAction(offer)
             advanceUntilIdle()
             val unconfirmed = checkNotNull(model.uiState.value.rowUndo)
             assertEquals(ChatUndoPhase.Unconfirmed, unconfirmed.phase)
             assertTrue(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(2, inverseWrites)
+            assertEquals(1, inverseWrites)
 
             source.beforeEvents = {}
             model.checkRowUndo(unconfirmed)
             advanceUntilIdle()
             assertNull(model.uiState.value.rowUndo)
             assertFalse(model.uiState.value.threads.first { it.id == CHAT_PERSONAL }.archived)
-            assertEquals(2, inverseWrites)
+            assertEquals(1, inverseWrites)
         }
     }
 
@@ -2770,7 +1951,7 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
                     title = "Newer title",
                 ),
             )
-            advanceTimeBy(5_000)
+            advanceTimeBy(3_000)
             runCurrent()
             val settled = model.uiState.value
             assertEquals(ChatReadPhase.Ready, settled.listPhase)
@@ -2815,136 +1996,6 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
             } finally {
                 response.complete(Unit)
             }
-        }
-    }
-
-    @Test
-    fun rejectedPinReorderKeepsTheSubmittedStepAndDiscardsTheUnsentStep() = runTest {
-        val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-        val next = CHAT_IN_PROJECT
-        val rejected = "33333333-3333-4333-8333-333333333333"
-        val submitted = CHAT_PERSONAL
-        val events = tiedPinEvents(moved, next, rejected, submitted).toMutableList()
-        val hold = CompletableDeferred<Unit>()
-        val readback = CompletableDeferred<Unit>()
-        val requested = mutableListOf<String>()
-        val source =
-            object : Service() {
-                override suspend fun chatEvents(since: Long?): ChatEvents {
-                    if (since != null) readback.await()
-                    return page(events)
-                }
-
-                override suspend fun reorderPinnedThread(
-                    threadId: String,
-                    pinOrder: String,
-                    eventId: String,
-                ) {
-                    requested.add(threadId)
-                    if (threadId == rejected) {
-                        hold.await()
-                        throw ApiFailure.Http(400, null, null, null)
-                    }
-                    events.add(
-                        chatEventWire(
-                            id = eventId,
-                            seq = 25,
-                            thread = threadId,
-                            kind = "sort_touched",
-                            extra = ""","pinOrder":"$pinOrder"""",
-                        ),
-                    )
-                }
-            }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            runCurrent()
-            assertTrue(model.performRowAction(moved, ChatRowAction.MovePinDown))
-            runCurrent()
-            assertEquals(
-                listOf(next, moved, rejected, submitted),
-                model.uiState.value.threads.map { it.id },
-            )
-
-            hold.complete(Unit)
-            runCurrent()
-            val partial = model.uiState.value
-            assertEquals(ChatReadPhase.Loading, partial.listPhase)
-            assertEquals(ChatRowAction.MovePinDown, partial.failedRowAction?.action)
-            assertTrue(checkNotNull(partial.failedRowAction).rejected)
-            assertEquals(listOf(submitted, rejected), requested)
-            assertEquals(
-                mapOf(moved to "a0", next to "a0", rejected to "a0", submitted to "a3"),
-                partial.threads.associate { it.id to it.pinOrder },
-            )
-
-            events.add(
-                chatEventWire(
-                    id = HISTORY_LAST_EVENT,
-                    seq = 26,
-                    thread = submitted,
-                    kind = "sort_touched",
-                    extra = ""","pinOrder":"a4"""",
-                ),
-            )
-            readback.complete(Unit)
-            runCurrent()
-            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
-            assertEquals("a4", model.uiState.value.threads.single { it.id == submitted }.pinOrder)
-        }
-    }
-
-    @Test
-    fun unconfirmedPinReorderCanRecoverWhenExplicitRefreshFailsTemporarily() = runTest {
-        val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-        val submitted = CHAT_PERSONAL
-        val events = tiedPinEvents(moved, CHAT_IN_PROJECT, submitted)
-        val attempted = mutableListOf<String>()
-        var readUnavailable = false
-        val source =
-            object : Service() {
-                override suspend fun chatEvents(since: Long?): ChatEvents {
-                    if (since != null && readUnavailable)
-                        throw ApiFailure.Http(503, null, null, null)
-                    return page(events)
-                }
-
-                override suspend fun reorderPinnedThread(
-                    threadId: String,
-                    pinOrder: String,
-                    eventId: String,
-                ) {
-                    attempted.add(threadId)
-                    throw ApiFailure.Network(IOException("Response lost"))
-                }
-            }
-        withCatchUpModel(source) { model ->
-            model.refresh()
-            runCurrent()
-            assertTrue(model.performRowAction(moved, ChatRowAction.MovePinDown))
-            runCurrent()
-            val partial = model.uiState.value
-            val failure = checkNotNull(partial.failedRowAction)
-            assertEquals(ChatRowAction.MovePinDown, failure.action)
-            assertFalse(failure.rejected)
-            assertEquals("a0", partial.threads.single { it.id == moved }.pinOrder)
-            assertEquals("a2", partial.threads.single { it.id == submitted }.pinOrder)
-
-            readUnavailable = true
-            model.reloadAfterRowActionFailure()
-            model.dismissRowActionFailure(failure)
-            runCurrent()
-            val retrying = model.uiState.value
-            assertEquals(ChatListReadFailure.Retrying, retrying.listReadFailure)
-            assertEquals("a2", retrying.threads.single { it.id == submitted }.pinOrder)
-
-            readUnavailable = false
-            advanceTimeBy(5_000)
-            runCurrent()
-            val recovered = model.uiState.value
-            assertEquals(ChatReadPhase.Ready, recovered.listPhase)
-            assertTrue(recovered.threads.all { it.pinOrder == "a0" })
-            assertEquals(listOf(submitted), attempted)
         }
     }
 
@@ -3011,7 +2062,50 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
 
             model.reloadAfterRowActionFailure()
             advanceUntilIdle()
+            assertTrue(model.uiState.value.threads.single().archived)
+            assertFalse(model.uiState.value.confirmedThreads.single().archived)
+        }
+    }
+
+    @Test
+    fun anUnconfirmedInverseNeedsEvidenceBeyondTheOriginalBaseline() = runTest {
+        val events = mutableListOf(chatEventWire())
+        val requests = mutableListOf<String>()
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = page(events)
+
+                override suspend fun setArchived(
+                    threadId: String,
+                    archived: Boolean,
+                    eventId: String,
+                ) {
+                    requests.add(eventId)
+                    throw ApiFailure.Network(IOException("Response lost"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Archive))
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unarchive))
+            runCurrent()
+            assertEquals(ChatRowAction.Unarchive, model.uiState.value.failedRowAction?.action)
+
+            events.add(chatEventWire(id = requests.first(), seq = 18, kind = "archived"))
+            model.refreshList()
+            runCurrent()
+            assertTrue(model.uiState.value.confirmedThreads.single().archived)
             assertFalse(model.uiState.value.threads.single().archived)
+
+            events.add(chatEventWire(id = HISTORY_LAST_EVENT, seq = 19, kind = "unarchived"))
+            model.refreshList()
+            runCurrent()
+            assertFalse(model.uiState.value.confirmedThreads.single().archived)
+            assertNull(model.uiState.value.failedRowAction)
+            assertNull(model.uiState.value.rowUndo)
+            assertEquals(2, requests.size)
         }
     }
 
@@ -4037,7 +3131,8 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.canRenameProject)
             assertTrue(model.moveThreadToProject(CHAT_PERSONAL, CHAT_PROJECT))
             advanceUntilIdle()
-            assertEquals(1, source.moveIds.size)
+            assertEquals(3, source.moveIds.size)
+            assertEquals(1, source.moveIds.distinct().size)
             val personal = model.uiState.value.threads.single { it.id == CHAT_PERSONAL }
             assertNull(personal.projectId)
             assertTrue(model.uiState.value.failedRowAction?.connectionFailed == true)
@@ -4278,6 +3373,1592 @@ internal class ChatListProjectMetadataModelTest : ChatListModelTestFixture() {
                 }
         } finally {
             snapshot.cancel()
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatListPinModelTest : ChatListModelTestFixture() {
+    @Test
+    fun unreadFilterMovesNextToTheVisiblePinAndPreservesOtherRanks() = runTest {
+        val first = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val hidden = CHAT_IN_PROJECT
+        val last = CHAT_PERSONAL
+        val events = pinnedEvents(first, hidden, last).toMutableList()
+        val writes = mutableListOf<String>()
+        val source =
+            object : Service() {
+                    override suspend fun chatEvents(since: Long?) = page(events)
+
+                    override suspend fun reorderPinnedThread(
+                        threadId: String,
+                        pinOrder: String,
+                        eventId: String,
+                    ) {
+                        writes.add(threadId)
+                        events.add(
+                            chatEventWire(
+                                id = eventId,
+                                seq = 23,
+                                thread = threadId,
+                                kind = "sort_touched",
+                                extra = ""","pinOrder":"$pinOrder"""",
+                            ),
+                        )
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(
+                                first to IndicatorsThreadsValue.UNREAD,
+                                last to IndicatorsThreadsValue.UNREAD,
+                            ),
+                            mapOf(first to CHAT_DATE, last to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            assertEquals(
+                listOf(first, last),
+                chatListGroups(model.uiState.value).single().threads.map { it.id },
+            )
+            assertTrue(model.performRowAction(last, ChatRowAction.MovePinUp))
+            advanceUntilIdle()
+            val state = model.uiState.value
+            assertEquals(listOf(last), writes)
+            assertEquals(listOf(last, first), chatListGroups(state).single().threads.map { it.id })
+            assertEquals(listOf(last, first, hidden), state.threads.map { it.id })
+            assertEquals("a0", state.threads.single { it.id == hidden }.pinOrder)
+        }
+    }
+
+    @Test
+    fun aConfirmedNewerPinMoveSettlesTheEarlierUnconfirmedRank() = runTest {
+        val first = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val middle = CHAT_IN_PROJECT
+        val last = CHAT_PERSONAL
+        val events = pinnedEvents(first, middle, last, pinOrder = { "a$it" }).toMutableList()
+        val requested = mutableListOf<String>()
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = page(events)
+
+                override suspend fun reorderPinnedThread(
+                    threadId: String,
+                    pinOrder: String,
+                    eventId: String,
+                ) {
+                    assertEquals(first, threadId)
+                    requested.add(pinOrder)
+                    if (requested.size == 1) throw ApiFailure.Network(IOException("Response lost"))
+                    throw ApiFailure.Network(ConnectException("Request not delivered"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
+            runCurrent()
+            assertEquals(listOf(middle, first, last), model.uiState.value.threads.map { it.id })
+            assertEquals(ChatRowAction.MovePinDown, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
+            runCurrent()
+            events.add(
+                chatEventWire(
+                    id = HISTORY_LAST_EVENT,
+                    seq = 23,
+                    thread = first,
+                    kind = "sort_touched",
+                    extra = ""","pinOrder":"a3"""",
+                ),
+            )
+            model.refreshList()
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+
+            val confirmed = model.uiState.value
+            assertEquals(listOf("a1V", "a3"), requested)
+            assertEquals(listOf(middle, last, first), confirmed.threads.map { it.id })
+            assertNull(confirmed.failedRowAction)
+        }
+    }
+
+    @Test
+    fun rejectedPinReorderKeepsTheSubmittedStepAndDiscardsTheUnsentStep() = runTest {
+        val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val next = CHAT_IN_PROJECT
+        val rejected = "33333333-3333-4333-8333-333333333333"
+        val submitted = CHAT_PERSONAL
+        val events = pinnedEvents(moved, next, rejected, submitted).toMutableList()
+        val hold = CompletableDeferred<Unit>()
+        val readback = CompletableDeferred<Unit>()
+        val requested = mutableListOf<String>()
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    if (since != null) readback.await()
+                    return page(events)
+                }
+
+                override suspend fun reorderPinnedThread(
+                    threadId: String,
+                    pinOrder: String,
+                    eventId: String,
+                ) {
+                    requested.add(threadId)
+                    if (threadId == rejected) {
+                        hold.await()
+                        throw ApiFailure.Http(400, null, null, null)
+                    }
+                    events.add(
+                        chatEventWire(
+                            id = eventId,
+                            seq = 25,
+                            thread = threadId,
+                            kind = "sort_touched",
+                            extra = ""","pinOrder":"$pinOrder"""",
+                        ),
+                    )
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(moved, ChatRowAction.MovePinDown))
+            runCurrent()
+            assertEquals(
+                listOf(next, moved, rejected, submitted),
+                model.uiState.value.threads.map { it.id },
+            )
+
+            hold.complete(Unit)
+            runCurrent()
+            val partial = model.uiState.value
+            assertEquals(ChatReadPhase.Loading, partial.listPhase)
+            assertEquals(ChatRowAction.MovePinDown, partial.failedRowAction?.action)
+            assertTrue(checkNotNull(partial.failedRowAction).rejected)
+            assertEquals(listOf(submitted, rejected), requested)
+            assertEquals(
+                mapOf(moved to "a0", next to "a0", rejected to "a0", submitted to "a3"),
+                partial.threads.associate { it.id to it.pinOrder },
+            )
+
+            events.add(
+                chatEventWire(
+                    id = HISTORY_LAST_EVENT,
+                    seq = 26,
+                    thread = submitted,
+                    kind = "sort_touched",
+                    extra = ""","pinOrder":"a4"""",
+                ),
+            )
+            readback.complete(Unit)
+            runCurrent()
+            assertTrue(model.uiState.value.pendingRowActions.isEmpty())
+            assertEquals("a4", model.uiState.value.threads.single { it.id == submitted }.pinOrder)
+        }
+    }
+
+    @Test
+    fun aPartialPinMoveCanSettleItsSubmittedRankAfterAReadFailure() = runTest {
+        val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val submitted = CHAT_PERSONAL
+        val events = pinnedEvents(moved, CHAT_IN_PROJECT, submitted).toMutableList()
+        val attempted = mutableListOf<String>()
+        var readUnavailable = false
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?): ChatEvents {
+                    if (since != null && readUnavailable)
+                        throw ApiFailure.Http(503, null, null, null)
+                    return page(events)
+                }
+
+                override suspend fun reorderPinnedThread(
+                    threadId: String,
+                    pinOrder: String,
+                    eventId: String,
+                ) {
+                    attempted.add(threadId)
+                    throw ApiFailure.Network(IOException("Response lost"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(moved, ChatRowAction.MovePinDown))
+            runCurrent()
+            val partial = model.uiState.value
+            val failure = checkNotNull(partial.failedRowAction)
+            assertEquals(ChatRowAction.MovePinDown, failure.action)
+            assertTrue(failure.rejected)
+            assertEquals("a0", partial.threads.single { it.id == moved }.pinOrder)
+            assertEquals("a2", partial.threads.single { it.id == submitted }.pinOrder)
+
+            readUnavailable = true
+            model.refreshList()
+            model.dismissRowActionFailure(failure)
+            runCurrent()
+            val retrying = model.uiState.value
+            assertEquals(ChatListReadFailure.Retrying, retrying.listReadFailure)
+            assertEquals("a2", retrying.threads.single { it.id == submitted }.pinOrder)
+
+            readUnavailable = false
+            advanceTimeBy(3_000)
+            runCurrent()
+            val recovered = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, recovered.listPhase)
+            assertEquals("a2", recovered.threads.single { it.id == submitted }.pinOrder)
+            assertEquals("a0", recovered.confirmedThreads.single { it.id == submitted }.pinOrder)
+
+            events.add(
+                chatEventWire(
+                    id = HISTORY_LAST_EVENT,
+                    seq = 23,
+                    thread = submitted,
+                    kind = "sort_touched",
+                    extra = ""","pinOrder":"a2"""",
+                ),
+            )
+            model.refreshList()
+            runCurrent()
+            assertEquals(
+                "a2",
+                model.uiState.value.confirmedThreads.single { it.id == submitted }.pinOrder,
+            )
+            assertEquals(listOf(submitted), attempted)
+        }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture() {
+    @Test
+    fun earlierUnreadReadbackCannotUndoAReadWithoutAPreviousWatermark() = runTest {
+        val unreadReadback = CompletableDeferred<Indicators>()
+        val readWrite = CompletableDeferred<ReadState>()
+        val read = Indicators(emptyMap(), emptyMap())
+        val unread =
+            Indicators(
+                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                mapOf(CHAT_PERSONAL to CHAT_DATE),
+            )
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = ReadState(null)
+
+                    override suspend fun markRead(threadId: String) = readWrite.await()
+                }
+                .apply { statusRead = { read } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { unreadReadback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            unreadReadback.complete(unread)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { unread }
+            readWrite.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun rejectedUnreadKeepsAnEarlierReadReceiptWhileIndicatorsArePending() = runTest {
+        val readback = CompletableDeferred<Indicators>()
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                    override suspend fun markUnread(threadId: String): ReadState =
+                        throw ApiFailure.Http(404, null, null, null)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            source.statusRead = { readback.await() }
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead)
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction?.action)
+
+            model.dismissRowActionFailure(checkNotNull(model.uiState.value.failedRowAction))
+            readback.completeExceptionally(IOException("status unavailable"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertNull(model.uiState.value.failedRowAction)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { Indicators(emptyMap(), emptyMap()) }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun lostReadResponseStaysPendingUntilAnAuthoritativeWatermarkCoversIt() = runTest {
+        val realtime = TestRealtimeService()
+        var confirmedAt: String? = null
+        var writes = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        writes++
+                        throw ApiFailure.Network(IOException("Response lost"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String) =
+                        ThreadDetail(confirmedAt, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source, realtime) { model ->
+            model.refresh()
+            model.updates.foreground(true)
+            advanceUntilIdle()
+            model.selectFilter(ChatListFilter.Unread)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            advanceUntilIdle()
+            val pending = model.uiState.value
+            assertFalse(pending.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkRead, pending.failedRowAction?.action)
+            assertNull(pending.rowUndo)
+
+            model.retryIndicators()
+            advanceUntilIdle()
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            confirmedAt = CHAT_DATE
+            realtime.invalidate(ChatChanges(readCursor = true))
+            advanceUntilIdle()
+            val confirmed = model.uiState.value
+            assertEquals(1, writes)
+            assertFalse(confirmed.isUnread(CHAT_PERSONAL))
+            assertTrue(confirmed.readIntents.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertNull(confirmed.rowUndo)
+        }
+    }
+
+    @Test
+    fun lostUnreadResponseCanBeConfirmedOutsideTheUnreadIndicatorWindow() = runTest {
+        var lastReadAt: String? = CHAT_DATE
+        var writes = 0
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        writes++
+                        throw ApiFailure.Network(IOException("Response lost"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String) =
+                        ThreadDetail(lastReadAt, false)
+                }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            val pending = model.uiState.value
+            assertTrue(pending.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkUnread, pending.failedRowAction?.action)
+
+            lastReadAt = null
+            model.checkRowActionFailure(checkNotNull(pending.failedRowAction))
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.readIntents.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertNull(confirmed.rowUndo)
+            assertEquals(1, writes)
+        }
+    }
+
+    @Test
+    fun anOldUnreadSnapshotCannotConfirmTheInverseOfAnUnconfirmedRead() = runTest {
+        var lastReadAt: String? = null
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Read response lost"))
+
+                    override suspend fun markUnread(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Unread response lost"))
+
+                    override suspend fun threadDetail(threadId: String) =
+                        ThreadDetail(lastReadAt, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            val pending = checkNotNull(model.uiState.value.failedRowAction)
+            assertEquals(ChatRowAction.MarkUnread, pending.action)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            // The first write appears after the indicator snapshot was taken.
+            lastReadAt = CHAT_DATE
+            model.checkRowActionFailure(pending)
+            runCurrent()
+            assertSame(pending, model.uiState.value.failedRowAction)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            lastReadAt = null
+            model.checkRowActionFailure(pending)
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertTrue(confirmed.isUnread(CHAT_PERSONAL))
+            assertTrue(confirmed.readIntents.isEmpty())
+            assertNull(confirmed.failedRowAction)
+            assertNull(confirmed.rowUndo)
+        }
+    }
+
+    @Test
+    fun aConfirmedUnreadWriteRetiresTheEarlierUnknownReadFeedback() = runTest {
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Response lost"))
+
+                    override suspend fun markUnread(threadId: String) = ReadState(null)
+
+                    override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.readIntents.isEmpty())
+            assertNull(model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun anUnconfirmedReadCannotCancelAnUndeliveredUnreadWrite() = runTest {
+        var unreadWrites = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Response lost"))
+
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        if (++unreadWrites == 1)
+                            throw ApiFailure.Network(ConnectException("Request not delivered"))
+                        return ReadState(null)
+                    }
+
+                    override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            assertEquals(1, unreadWrites)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, unreadWrites)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertNull(model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun aRetryPreflightCannotEraseANewerUnreadSnapshot() = runTest {
+        var confirmedReadAt: String? = null
+        var writes = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        writes++
+                        throw ApiFailure.Network(ConnectException("Request not delivered"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        val snapshot = ThreadDetail(confirmedReadAt, false)
+                        // Another client marks unread before the trailing indicators request.
+                        confirmedReadAt = null
+                        return snapshot
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        if (confirmedReadAt == null)
+                            Indicators(
+                                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                                mapOf(CHAT_PERSONAL to CHAT_DATE),
+                            )
+                        else Indicators(emptyMap(), emptyMap())
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            model.selectFilter(ChatListFilter.Unread)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            confirmedReadAt = CHAT_DATE
+            advanceTimeBy(3_000)
+            runCurrent()
+
+            val settled = model.uiState.value
+            assertEquals(1, writes)
+            assertTrue(settled.isUnread(CHAT_PERSONAL))
+            assertTrue(settled.readIntents.isEmpty())
+            assertNull(settled.rowUndo)
+        }
+    }
+
+    @Test
+    fun ambiguousUnreadWriteKeepsTheProjectionOfflineAndReconcilesAfterReconnect() = runTest {
+        val response = CompletableDeferred<ReadState>()
+        val source =
+            object : Service() {
+                    override suspend fun markUnread(threadId: String) = response.await()
+                }
+                .apply { statusRead = { Indicators(emptyMap(), emptyMap()) } }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            advanceUntilIdle()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread)
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            source.statusRead = { throw IOException("offline") }
+            response.completeExceptionally(IOException("response lost"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(ChatRowAction.MarkUnread, model.uiState.value.failedRowAction?.action)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = {
+                Indicators(
+                    mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                    mapOf(CHAT_PERSONAL to CHAT_DATE),
+                )
+            }
+            model.refreshIndicators()
+            advanceUntilIdle()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.readIntents.isEmpty())
+        }
+    }
+
+    @Test
+    fun realtimeReadStartedBeforeWriteResponseCanConfirmWithoutAnotherListRead() = runTest {
+        val realtime = TestRealtimeService()
+        val events = mutableListOf(chatEventWire())
+        val writeResponse = CompletableDeferred<Unit>()
+        val readResponse = CompletableDeferred<Unit>()
+        val statusResponse = CompletableDeferred<Indicators>()
+        var reads = 0
+        val source =
+            Service().apply {
+                listRead = {
+                    reads++
+                    page(events)
+                }
+            }
+        val service =
+            object : ChatListService by source {
+                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
+                    events.add(
+                        chatEventWire(
+                            id = eventId,
+                            seq = 18,
+                            thread = threadId,
+                            kind = "sort_touched",
+                            extra = ",\"muted\":$muted",
+                        ),
+                    )
+                    writeResponse.await()
+                }
+            }
+        withCatchUpModel(service, realtime) { model ->
+            model.refresh()
+            model.updates.foreground(true)
+            advanceUntilIdle()
+            val initialReads = reads
+
+            source.statusRead = { statusResponse.await() }
+            model.refreshIndicators()
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Mute)
+            runCurrent()
+
+            source.listRead = {
+                reads++
+                val captured = page(events)
+                readResponse.await()
+                captured
+            }
+            realtime.invalidate(ChatChanges(list = true))
+            runCurrent()
+            assertEquals(initialReads + 1, reads)
+            writeResponse.complete(Unit)
+            runCurrent()
+            readResponse.complete(Unit)
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+
+            statusResponse.complete(Indicators(emptyMap(), emptyMap()))
+            advanceUntilIdle()
+            assertEquals(initialReads + 1, reads)
+            val state = model.uiState.value
+            assertEquals(true, state.threads.single().muted)
+            assertTrue(state.pendingRowActions.isEmpty())
+            assertNull(state.failedRowAction)
+        }
+    }
+
+    @Test
+    fun aRejectedUnmuteKeepsItsReadReceiptWhileIndicatorsAreHeld() = runTest {
+        val refresh = CompletableDeferred<Indicators>()
+        val unread = Indicators(emptyMap(), mapOf(CHAT_PERSONAL to CHAT_DATE))
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) =
+                    page(
+                        listOf(
+                            chatEventWire(),
+                            chatEventWire(
+                                id = HISTORY_LAST_EVENT,
+                                seq = 18,
+                                kind = "sort_touched",
+                                extra = ""","muted":true""",
+                            ),
+                        ),
+                    )
+
+                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
+                    throw ApiFailure.Http(400, null, null, null)
+                }
+            }
+        source.statusRead = { unread }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            source.statusRead = { refresh.await() }
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unmute))
+            runCurrent()
+            val state = model.uiState.value
+            assertTrue(state.threads.single().muted == true)
+            assertFalse(state.isUnread(CHAT_PERSONAL))
+            assertTrue(state.pendingRowActions.isEmpty())
+            assertEquals(ChatReadPhase.Loading, state.indicatorsPhase)
+            assertTrue(checkNotNull(state.failedRowAction).rejected)
+
+            refresh.complete(unread.copy(unreadAt = emptyMap()))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+        }
+    }
+
+    @Test
+    fun unmuteConfirmsListIndependentlyOfIndicatorReadbackFailure() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        val oldStatus = CompletableDeferred<Indicators>()
+        val tail =
+            mutableListOf(
+                chatEventWire(),
+                chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    kind = "sort_touched",
+                    extra = ",\"muted\":true",
+                ),
+            )
+        val source =
+            Service().apply {
+                listRead = {
+                    json.decodeFromString(
+                        """{"events":[${tail.joinToString(",")}],"hasMore":false}""",
+                    )
+                }
+                statusRead = { Indicators(emptyMap(), emptyMap()) }
+            }
+        val service =
+            object : ChatListService by source {
+                override suspend fun markRead(threadId: String) = ReadState(CHAT_DATE)
+
+                override suspend fun setMuted(threadId: String, muted: Boolean, eventId: String) {
+                    tail.add(
+                        chatEventWire(
+                            id = eventId,
+                            seq = 19,
+                            thread = threadId,
+                            kind = "sort_touched",
+                            extra = ",\"muted\":$muted",
+                        ),
+                    )
+                }
+            }
+        val cache = cache(temporary.newFolder(), dispatcher)
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+
+            source.statusRead = { oldStatus.await() }
+            model.refreshIndicators()
+            runCurrent()
+            source.statusRead = { throw IOException("offline") }
+
+            model.performRowAction(CHAT_PERSONAL, ChatRowAction.Unmute)
+            runCurrent()
+            assertEquals(ChatRowAction.Unmute, model.uiState.value.pendingRowActions[CHAT_PERSONAL])
+            assertEquals(false, model.uiState.value.threads.single().muted)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            source.listRead = { throw IOException("offline") }
+
+            oldStatus.complete(
+                Indicators(
+                    mapOf(
+                        CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD,
+                        CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE,
+                    ),
+                    mapOf(CHAT_PERSONAL to CHAT_DATE),
+                ),
+            )
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(false, state.threads.single().muted)
+            assertTrue(state.pendingRowActions.isEmpty())
+            assertEquals(ChatReadPhase.Ready, state.listPhase)
+            assertEquals(ChatReadPhase.Failed, state.indicatorsPhase)
+            assertNull(state.failedRowAction)
+            val indicators = checkNotNull(state.indicators)
+            assertEquals(
+                mapOf(CHAT_IN_PROJECT to IndicatorsThreadsValue.ACTIVE),
+                indicators.threads,
+            )
+            assertTrue(indicators.unreadAt.isEmpty())
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
+    @Test
+    fun listRetriesUseTheDesignScheduleAndResetAfterSuccess() = runTest {
+        val service = Service()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            val cachedRows = model.uiState.value.threads
+            assertTrue(cachedRows.isNotEmpty())
+
+            val recovery = CompletableDeferred<ChatEvents>()
+            val attempts = mutableListOf<Long>()
+            val retryTimes =
+                listOf(3_000L, 6_000L, 12_000L, 24_000L, 48_000L, 96_000L, 144_000L, 192_000L)
+            val startedAt = testScheduler.currentTime
+            service.listRead = {
+                attempts.add(testScheduler.currentTime - startedAt)
+                if (attempts.size <= retryTimes.size) throw ApiFailure.Http(503, null, null, null)
+                recovery.await()
+            }
+            model.refreshList()
+            runCurrent()
+            assertEquals(listOf(0L), attempts)
+            for ((index, time) in retryTimes.withIndex()) {
+                val state = model.uiState.value
+                assertEquals(ChatListReadFailure.Retrying, state.listReadFailure)
+                assertEquals(index >= 2, state.listRetryProgressVisible)
+                assertEquals(cachedRows, state.threads)
+
+                advanceTimeBy(startedAt + time - testScheduler.currentTime - 1)
+                runCurrent()
+                assertEquals(index + 1, attempts.size)
+                advanceTimeBy(1)
+                runCurrent()
+                assertEquals(index + 2, attempts.size)
+            }
+            assertEquals(listOf(0L) + retryTimes, attempts)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+
+            recovery.complete(page())
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertNull(model.uiState.value.listReadFailure)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+
+            var subsequentAttempts = 0
+            service.listRead = {
+                if (++subsequentAttempts == 1) throw ApiFailure.Http(503, null, null, null)
+                page()
+            }
+            model.refreshList()
+            runCurrent()
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, subsequentAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+        }
+    }
+
+    @Test
+    fun aStaleConfirmedEmptyListKeepsProgressAfterTheFirstFailure() = runTest {
+        var now = 1_000L
+        val firstAttempt = CompletableDeferred<ChatEvents>()
+        val recovery = CompletableDeferred<ChatEvents>()
+        val service = Service().apply { listRead = { page(emptyList()) } }
+        withCatchUpModel(service, wallMillis = { now }) { model ->
+            model.refresh()
+            runCurrent()
+            val confirmed = model.uiState.value
+            assertEquals(now, confirmed.confirmedAt)
+            assertTrue(confirmed.threads.isEmpty())
+            now += 600_000L
+
+            service.listRead = { firstAttempt.await() }
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+
+            now++
+            service.listRead = { recovery.await() }
+            firstAttempt.completeExceptionally(ApiFailure.Http(503, null, null, null))
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            assertTrue(model.uiState.value.threads.isEmpty())
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+
+            recovery.complete(page(emptyList()))
+            runCurrent()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(now, model.uiState.value.confirmedAt)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+        }
+    }
+
+    @Test
+    fun aColdListKeepsRetryingWithoutShowingRefreshProgress() = runTest {
+        var attempts = 0
+        val service =
+            Service().apply {
+                listRead = {
+                    if (++attempts <= 3) throw ApiFailure.Http(503, null, null, null)
+                    page()
+                }
+            }
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+            assertNull(model.uiState.value.confirmedAt)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(4, attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertTrue(model.uiState.value.threads.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun listRetryKeepsTheServerDeadlineAfterHidingAndReconnecting() = runTest {
+        val connected = MutableStateFlow(true)
+        var attempts = 0
+        var indicatorsAvailable = false
+        val service =
+            object : Service() {
+                override suspend fun chatSnapshot() =
+                    ChatSnapshotVariant1("https://example.test/archive", 60, null, null)
+
+                override suspend fun chatArchive(url: String): ChatArchive {
+                    attempts++
+                    if (attempts == 1) throw ChatSnapshotUnavailable(429, retryAfterSeconds = 20)
+                    return ChatArchive(emptyList())
+                }
+
+                override suspend fun indicators(): Indicators {
+                    if (!indicatorsAvailable) throw ApiFailure.Http(503, null, null, null)
+                    return super.indicators()
+                }
+            }
+        withCatchUpModel(service, connectivity = connected) { model ->
+            model.refresh()
+            runCurrent()
+            assertEquals(1, attempts)
+            assertEquals(ChatListReadFailure.Retrying, model.uiState.value.listReadFailure)
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+
+            model.listVisibilityChanged(false)
+            connected.value = false
+            runCurrent()
+            advanceTimeBy(15_000)
+            runCurrent()
+            assertEquals(1, attempts)
+
+            connected.value = true
+            runCurrent()
+            model.listVisibilityChanged(true)
+            model.refreshList()
+            advanceTimeBy(4_999)
+            runCurrent()
+            assertEquals(1, attempts)
+
+            indicatorsAvailable = true
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, attempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
+        }
+    }
+
+    @Test
+    fun aConfirmedWorkspaceAccessFailureStopsListRetries() = runTest {
+        val service = Service()
+        withCatchUpModel(service) { model ->
+            model.refresh()
+            runCurrent()
+            var attempts = 0
+            service.listRead = {
+                val status = if (++attempts <= 3) 503 else 403
+                throw ApiFailure.Http(status, null, null, null)
+            }
+            model.refreshList()
+            runCurrent()
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(ChatListReadFailure.NeedsRetry, model.uiState.value.listReadFailure)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(4, attempts)
+        }
+    }
+
+    @Test
+    fun listRetriesSurviveFilterAndConnectivityChanges() = runTest {
+        val connected = MutableStateFlow(true)
+        val first = CompletableDeferred<ChatEvents>()
+        val service = Service()
+        withCatchUpModel(service, connectivity = connected) { model ->
+            model.refresh()
+            runCurrent()
+            val unavailable = ApiFailure.Http(503, null, null, null)
+            service.listRead = { first.await() }
+            model.refreshList()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            model.selectFilter(ChatListFilter.Unread)
+            model.selectFilter(ChatListFilter.Inbox)
+
+            var attempts = 1
+            service.listRead = {
+                attempts++
+                throw unavailable
+            }
+            first.completeExceptionally(unavailable)
+            runCurrent()
+            advanceTimeBy(5_999)
+            runCurrent()
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(3, attempts)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            model.selectFilter(ChatListFilter.Archived)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+
+            connected.value = false
+            runCurrent()
+            assertTrue(model.uiState.value.offline)
+            assertTrue(model.uiState.value.listRetryProgressVisible)
+            advanceTimeBy(60_000)
+            runCurrent()
+            assertEquals(3, attempts)
+
+            service.listRead = {
+                attempts++
+                page()
+            }
+            connected.value = true
+            runCurrent()
+            assertEquals(4, attempts)
+            assertFalse(model.uiState.value.offline)
+            assertEquals(ChatListFilter.Archived, model.uiState.value.filter)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.listRetryProgressVisible)
+        }
+    }
+
+    @Test
+    fun reconnectRetainsTrailingListDemandAndDoesNotBlockProjectsOrIndicators() = runTest {
+        val realtime = TestRealtimeService()
+        val events = mutableListOf(chatEventWire())
+        val olderRead = CompletableDeferred<Unit>()
+        var listReads = 0
+        var projectReads = 0
+        var indicatorReads = 0
+        val source =
+            Service().apply {
+                listRead = {
+                    listReads++
+                    page(events)
+                }
+                statusRead = {
+                    indicatorReads++
+                    Indicators(emptyMap(), emptyMap())
+                }
+            }
+        val service =
+            object : ChatListService by source {
+                override suspend fun projectEvents(since: Long): ProjectEvents {
+                    projectReads++
+                    return ProjectEvents(emptyList(), false)
+                }
+            }
+        withCatchUpModel(service, realtime) { model ->
+            model.refresh()
+            model.updates.foreground(true)
+            advanceUntilIdle()
+            val initialList = listReads
+            val initialProjects = projectReads
+            val initialIndicators = indicatorReads
+            source.listRead = {
+                listReads++
+                val captured = page(events)
+                if (listReads == initialList + 1) olderRead.await()
+                captured
+            }
+            model.refreshList()
+            runCurrent()
+
+            events.add(
+                chatEventWire(
+                    id = "77777777-7777-4777-8777-777777777777",
+                    seq = 18,
+                    kind = "renamed",
+                    title = "Seen after reconnect",
+                ),
+            )
+            model.updates.retry()
+            model.refresh()
+            runCurrent()
+            assertEquals(initialList + 1, listReads)
+            assertTrue(projectReads > initialProjects)
+            assertTrue(indicatorReads > initialIndicators)
+
+            olderRead.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(initialList + 2, listReads)
+            assertEquals("Seen after reconnect", model.uiState.value.threads.single().title)
+        }
+    }
+
+    @Test
+    fun heldListDoesNotBlockMetadataStatusRefreshAndItsFailureCanRetry() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        val gate = CompletableDeferred<ChatEvents>()
+        val service = Service().apply { listRead = { gate.await() } }
+        val cache = cache(temporary.newFolder(), dispatcher)
+        try {
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            runCurrent()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertEquals(
+                IndicatorsThreadsValue.UNREAD,
+                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
+            )
+            service.statusRead = {
+                Indicators(mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.ACTIVE), emptyMap())
+            }
+            model.refreshIndicators()
+            runCurrent()
+            assertEquals(
+                IndicatorsThreadsValue.ACTIVE,
+                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
+            )
+            service.statusRead = { throw IOException("offline") }
+            model.refreshIndicators()
+            runCurrent()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(
+                IndicatorsThreadsValue.ACTIVE,
+                model.uiState.value.indicators?.threads?.get(CHAT_PERSONAL),
+            )
+            gate.completeExceptionally(IOException("offline"))
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Failed, model.uiState.value.listPhase)
+            assertNull(model.uiState.value.confirmedAt)
+            service.listRead = { page() }
+            model.refreshList()
+            advanceUntilIdle()
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.cacheUnavailable)
+        } finally {
+            gate.complete(page())
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun unchangedRefreshRenewsTimeAndRetriesUnsavedRows() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        var confirmedAt = 10_000L
+        try {
+            val service = Service()
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(
+                                service,
+                                cache,
+                                identity,
+                                { true },
+                                {},
+                                dispatcher,
+                                wallMillis = { confirmedAt },
+                            )
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+            val initial = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, initial.listPhase)
+            assertFalse(initial.cacheUnavailable)
+            execute(
+                root,
+                "CREATE TRIGGER fail_chat_write BEFORE INSERT ON chat_scopes BEGIN SELECT RAISE(ABORT, 'disk failure fixture'); END",
+            )
+            confirmedAt += 1_000L
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertFalse(model.uiState.value.cacheUnavailable)
+            assertEquals(confirmedAt, model.uiState.value.confirmedAt)
+            assertSame(initial.threads, model.uiState.value.threads)
+            assertSame(initial.threadsByRecency, model.uiState.value.threadsByRecency)
+            cache(root, dispatcher)
+                .open(identity) { true }
+                .use { assertEquals(confirmedAt, it.load()?.confirmedAt) }
+            service.listRead = {
+                json.decodeFromString<ChatEvents>(
+                    """{"events":[${chatEventWire(id = "77777777-7777-4777-8777-777777777777", seq = 23, kind = "renamed", title = "Updated")}],"hasMore":false}""",
+                )
+            }
+            model.refreshList()
+            advanceUntilIdle()
+            val unsaved = model.uiState.value
+            assertEquals("Updated", unsaved.threads.single().title)
+            assertTrue(unsaved.cacheUnavailable)
+            execute(root, "DROP TRIGGER fail_chat_write")
+            confirmedAt += 1_000L
+            model.refreshList()
+            advanceUntilIdle()
+            assertSame(unsaved.threads, model.uiState.value.threads)
+            assertEquals(confirmedAt, model.uiState.value.confirmedAt)
+            assertFalse(model.uiState.value.cacheUnavailable)
+            model.refreshMetadata()
+            advanceUntilIdle()
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.load())
+                    assertEquals(23L, saved.checkpoint.cursor.seqId)
+                    assertEquals("Updated", replayChats(saved.checkpoint).single().title)
+                }
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun cacheRejectionUsesNewerStoredCheckpointBeforePublishing() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val root = temporary.newFolder()
+        val cache = cache(root, dispatcher)
+        val store = ViewModelStore()
+        try {
+            val newer = page(listOf(chatEventWire(seq = 23, title = "Newer on disk"))).events
+            val checkpoint =
+                ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), newer, newer.last().cursor())
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(Service(), cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+
+            model.refreshList()
+            advanceUntilIdle()
+
+            val state = model.uiState.value
+            assertEquals(ChatReadPhase.Ready, state.listPhase)
+            assertEquals(listOf("Newer on disk"), state.threads.map { it.title })
+            assertEquals(1234L, state.confirmedAt)
+            assertFalse(state.cacheUnavailable)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun backgroundRebaseYieldsToNewerReadsAndPreservesPendingMutationConfirmation() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder(), dispatcher)
+        val store = ViewModelStore()
+        val superseded = CompletableDeferred<ChatSnapshot>()
+        val current = CompletableDeferred<ChatSnapshot>()
+        val renameEventId = CompletableDeferred<String>()
+        val renameResponse = CompletableDeferred<Unit>()
+        fun eventId(seq: Int) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
+        fun renamed(seq: Int, title: String, id: String = eventId(seq)) =
+            chatEventWire(id = id, seq = seq.toLong(), kind = "renamed", title = title)
+        val tail =
+            page(listOf(chatEventWire(seq = 1)) + (2..101).map { renamed(it, "Cached") }).events
+        val checkpoint =
+            ChatCheckpoint(ChatArchive(emptyList()), ChatCursor(), tail, tail.last().cursor())
+        val row = replayChats(checkpoint).single()
+        val oldSnapshot = ChatSnapshotVariant1("https://fixture.test/old", 60, eventId(103), 103)
+        val newSnapshot = ChatSnapshotVariant1("https://fixture.test/new", 60, eventId(105), 105)
+        var snapshotReads = 0
+        val service =
+            object : TestChatService() {
+                override suspend fun chatSnapshot() =
+                    if (++snapshotReads == 1) withContext(NonCancellable) { superseded.await() }
+                    else current.await()
+
+                override suspend fun chatArchive(url: String) =
+                    ChatArchive(
+                        listOf(
+                            row.copy(
+                                title =
+                                    if (url == oldSnapshot.url) "Superseded" else "Other device",
+                            ),
+                        ),
+                    )
+
+                override suspend fun renameThread(
+                    threadId: String,
+                    title: String,
+                    eventId: String,
+                ) {
+                    renameEventId.complete(eventId)
+                    renameResponse.await()
+                }
+
+                override suspend fun chatEvents(since: Long?) =
+                    when (since) {
+                        101L -> page(listOf(renamed(102, "First increment")))
+                        102L -> page(listOf(renamed(103, "Newest")))
+                        103L ->
+                            if (renameEventId.isCompleted)
+                                page(
+                                    listOf(
+                                        renamed(104, "Local rename", renameEventId.await()),
+                                        renamed(105, "Other device"),
+                                    ),
+                                )
+                            else page(emptyList())
+                        105L -> page(emptyList())
+                        else -> error("Unexpected cursor $since")
+                    }
+            }
+        try {
+            cache.open(identity) { true }.use { it.save(checkpoint, 1234) }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, { true }, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            runCurrent()
+            assertEquals(1, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("First increment", model.uiState.value.threads.single().title)
+
+            model.refreshList()
+            runCurrent()
+            assertEquals(2, snapshotReads)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+            superseded.complete(oldSnapshot)
+            runCurrent()
+            assertEquals("Newest", model.uiState.value.threads.single().title)
+
+            model.renameThread(CHAT_PERSONAL, "Local rename")
+            runCurrent()
+            assertTrue(renameEventId.isCompleted)
+            current.complete(newSnapshot)
+            runCurrent()
+            assertEquals("Local rename", model.uiState.value.threads.single().title)
+
+            renameResponse.complete(Unit)
+            advanceUntilIdle()
+            assertNull(model.uiState.value.failedRowAction)
+            assertEquals("Other device", model.uiState.value.threads.single().title)
+            store.clear()
+            runCurrent()
+            cache
+                .open(identity) { true }
+                .use {
+                    val saved = checkNotNull(it.load()).checkpoint
+                    assertEquals(ChatCursor(eventId(105), 105), saved.snapshotCursor)
+                    assertTrue(saved.events.isEmpty())
+                    assertEquals("Other device", replayChats(saved).single().title)
+                }
+        } finally {
+            superseded.complete(oldSnapshot)
+            current.complete(newSnapshot)
+            renameResponse.complete(Unit)
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun networkListBecomesVisibleOnlyAfterTheDiskWriteCommits() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val cache = cache(temporary.newFolder())
+        val store = ViewModelStore()
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val holdWrite = AtomicBoolean(false)
+        var owner: Job? = null
+        try {
+            val service = Service().apply { listRead = { page().also { holdWrite.set(true) } } }
+            val authorized = {
+                if (
+                    Thread.currentThread().name.startsWith("DefaultDispatcher") &&
+                        holdWrite.compareAndSet(true, false)
+                ) {
+                    entered.complete(Unit)
+                    release.await()
+                }
+                true
+            }
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(service, cache, identity, authorized, {}, dispatcher)
+                        }
+                    },
+                )[ChatListModel::class.java]
+            owner = model.viewModelScope.coroutineContext[Job]
+            model.refreshList()
+            entered.await()
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.listPhase)
+            assertNull(model.uiState.value.source)
+            assertTrue(model.uiState.value.threads.isEmpty())
+            release.countDown()
+            val published = model.uiState.first { it.listPhase == ChatReadPhase.Ready }
+            assertEquals(ChatListSource.Network, published.source)
+            assertEquals("Personal chat", published.threads.single().title)
+            store.clear()
+            owner?.join()
+            cache
+                .open(identity) { true }
+                .use {
+                    assertEquals(published.confirmedAt, it.load()?.confirmedAt)
+                    assertEquals(published.threads, replayChats(checkNotNull(it.load()).checkpoint))
+                }
+        } finally {
+            release.countDown()
+            store.clear()
+            owner?.join()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun persistenceFailureLeavesTheConfirmedNetworkListUsableAndExplicitlyUnsaved() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(dispatcher)
+        val store = ViewModelStore()
+        try {
+            val cache = cache(temporary.newFile(), dispatcher)
+            val model =
+                ViewModelProvider(
+                    store,
+                    viewModelFactory {
+                        initializer {
+                            ChatListModel(
+                                Service(),
+                                cache,
+                                identity,
+                                { true },
+                                { fail("Cache failure must not retire the workspace") },
+                                dispatcher,
+                            )
+                        }
+                    },
+                )[ChatListModel::class.java]
+            model.refresh()
+            advanceUntilIdle()
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.listPhase)
+            assertEquals("Personal chat", model.uiState.value.threads.single().title)
+            assertTrue(model.uiState.value.cacheUnavailable)
+            assertEquals(ChatListSource.Network, model.uiState.value.source)
+        } finally {
             store.clear()
             runCurrent()
             Dispatchers.resetMain()

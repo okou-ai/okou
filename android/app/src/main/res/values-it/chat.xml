@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Sincronizzazione delle chat…</string>
     <string name="workspace_workflows">Flussi di lavoro</string>
     <string name="workspace_connectors">Connettori</string>
     <string name="workspace_artifacts">Artefatti</string>
@@ -6,7 +7,6 @@
     <string name="chat_undo_unarchived">Chat rimossa dall’archivio</string>
     <string name="chat_undo_marked_read">Chat contrassegnata come letta</string>
     <string name="chat_undo">Annulla</string>
-    <string name="chat_undo_connection_failed">Impossibile annullare la modifica. Controlla la connessione e riprova.</string>
     <string name="chat_action_connection_failed">Impossibile connettersi. Controlla la connessione e riprova.</string>
     <string name="chat_undo_checking">Verifica dell’annullamento…</string>
     <string name="chat_undo_failed">Impossibile annullare la modifica.</string>
@@ -74,6 +74,7 @@
     <string name="chat_rename_confirm">Rinomina</string>
     <string name="chat_rename_cancel">Annulla</string>
     <string name="chat_delete">Elimina la chat</string>
+    <string name="chat_delete_rejected">Impossibile eliminare la chat.</string>
     <string name="chat_delete_title">Eliminare la chat?</string>
     <string name="chat_delete_description">I messaggi e le bozze di «%1$s» verranno eliminati definitivamente. Le attività in corso verranno interrotte e le automazioni collegate verranno sospese.</string>
     <string name="chat_delete_confirm">Elimina</string>
@@ -96,4 +97,6 @@
     <string name="chat_project_deleted">Il progetto è stato eliminato e le sue chat sono state spostate fuori dai progetti.</string>
     <string name="chat_project_delete_rejected">Impossibile eliminare il progetto.</string>
     <string name="chat_project_delete_unconfirmed">Impossibile confermare l’eliminazione del progetto.</string>
+    <string name="chat_row_action_rejected_named">Impossibile completare «%1$s».</string>
+    <string name="chat_row_action_offline_named">Impossibile completare «%1$s». Controlla la connessione e riprova.</string>
 </resources>
