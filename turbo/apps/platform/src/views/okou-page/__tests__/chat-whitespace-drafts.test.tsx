@@ -155,7 +155,7 @@ test("An active workspace draft save is cancelled when the writer replaces its t
   const signal = await prior.promise;
   await fill(editor, "new");
   await expect(saved.promise).resolves.toBe("new");
-  expect(signal.aborted).toBe(true);
+  expect(signal.aborted).toBeTruthy();
   finish.resolve();
   expect(editor).toHaveTextContent("new");
 });

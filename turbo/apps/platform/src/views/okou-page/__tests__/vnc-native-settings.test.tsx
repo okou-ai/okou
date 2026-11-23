@@ -400,93 +400,102 @@ test("Detached native editing preserves both trust layers and requires explicit 
   });
 });
 
-test.each([
-  "owner change with delivery",
-  "owner change without delivery",
-  "original owner with delivery",
-] as const)(
-  "A reviewed desktop login belongs to its signing-in owner (%s)",
-  async (mode) => {
-    const inventory = mockRemoteInventory(context);
-    context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
-      const host = vncHost(54, body.displayName, {
-        id: body.id,
-        host: body.host,
-        port: body.port,
-      });
-      inventory.vnc.push(host);
-      return respond(201, host);
+async function reviewedLogin() {
+  const inventory = mockRemoteInventory(context);
+  context.mocks.api(vncConnectionsContract.create, ({ body, respond }) => {
+    const host = vncHost(54, body.displayName, {
+      id: body.id,
+      host: body.host,
+      port: body.port,
     });
-    await startVncSetup();
-    await continueTo("Connect a device");
-    await fill(screen.getByLabelText("Device address"), "desktop.example.net");
-    await continueTo("Enter device login information");
-    await fill(
-      screen.getByLabelText("VNC password", { selector: "input" }),
-      "old-pass",
-    );
-    await fill(screen.getByLabelText(/^Connection name/), "Survey console");
-    await continueTo("Review and save");
-    const token = context.mocks.deferred<string>();
-    const asked = context.mocks.deferred<void>();
-    const returned = context.mocks.deferred<void>();
-    mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
-      asked.resolve();
-      const value = await token.promise;
-      returned.resolve();
-      return value;
-    });
-    click(getConnectorAction("button", "Save"));
-    await asked.promise;
-    if (mode.startsWith("owner change")) {
-      act(() => {
-        context.mocks
-          .clerk()
-          .user(
-            { id: "survey-manager", fullName: "Survey Manager" },
-            { id: "other-session", token: "fixture-new" },
-          );
-        context.mocks.clerk().stateChanged();
-      });
-      await waitFor(() => {
-        expect(
-          screen.queryByRole("heading", { name: "Review and save" }),
-        ).toBeNull();
-      });
-    }
-    if (mode !== "owner change without delivery") {
+    inventory.vnc.push(host);
+    return respond(201, host);
+  });
+  await startVncSetup();
+  await continueTo("Connect a device");
+  await fill(screen.getByLabelText("Device address"), "desktop.example.net");
+  await continueTo("Enter device login information");
+  await fill(
+    screen.getByLabelText("VNC password", { selector: "input" }),
+    "old-pass",
+  );
+  await fill(screen.getByLabelText(/^Connection name/), "Survey console");
+  await continueTo("Review and save");
+  const token = context.mocks.deferred<string>();
+  const asked = context.mocks.deferred<void>();
+  const returned = context.mocks.deferred<void>();
+  mockedClerk.sessionGetToken.mockImplementationOnce(async () => {
+    asked.resolve();
+    const value = await token.promise;
+    returned.resolve();
+    return value;
+  });
+  click(getConnectorAction("button", "Save"));
+  await asked.promise;
+  return {
+    inventory,
+    deliver: async () => {
       await act(async () => {
         token.resolve("fixture-previous");
         await returned.promise;
       });
-    }
-    if (mode === "original owner with delivery") {
-      await screen.findByRole("heading", { name: "Connection added" });
+    },
+  };
+}
+
+test.each([
+  "owner change with delivery",
+  "owner change without delivery",
+] as const)(
+  "A reviewed desktop login belongs to its signing-in owner (%s)",
+  async (mode) => {
+    const { inventory, deliver } = await reviewedLogin();
+    act(() => {
+      context.mocks
+        .clerk()
+        .user(
+          { id: "survey-manager", fullName: "Survey Manager" },
+          { id: "other-session", token: "fixture-new" },
+        );
+      context.mocks.clerk().stateChanged();
+    });
+    await waitFor(() => {
       expect(
-        inventory.vnc.map((h) => {
-          return h.displayName;
-        }),
-      ).toEqual(["Survey console"]);
-    } else {
-      await screen.findByLabelText("Survey Manager");
-      click(await findFastControl("link", "Connectors"));
-      click(await screen.findByTestId("connectors-scope-remote-control"));
-      await waitFor(() => {
-        expect(getConnectorAction("button", "Add connection")).toBeEnabled();
-      });
-      click(getConnectorAction("button", "Add connection"));
-      await waitFor(() => {
-        expect(vncChoice()).toBeEnabled();
-      });
-      click(vncChoice());
-      await screen.findByRole("heading", { name: "Choose a VNC login method" });
-      await continueTo("Connect a device");
-      await fill(screen.getByLabelText("Device address"), "survey.example.net");
-      await continueTo("Enter device login information");
-      expect(
-        screen.getByLabelText("VNC password", { selector: "input" }),
-      ).toHaveValue("");
-      expect(inventory.vnc).toEqual([]);
+        screen.queryByRole("heading", { name: "Review and save" }),
+      ).toBeNull();
+    });
+    if (mode === "owner change with delivery") {
+      await deliver();
     }
+    await screen.findByLabelText("Survey Manager");
+    click(await findFastControl("link", "Connectors"));
+    click(await screen.findByTestId("connectors-scope-remote-control"));
+    await waitFor(() => {
+      expect(getConnectorAction("button", "Add connection")).toBeEnabled();
+    });
+    click(getConnectorAction("button", "Add connection"));
+    await waitFor(() => {
+      expect(vncChoice()).toBeEnabled();
+    });
+    click(vncChoice());
+    await screen.findByRole("heading", { name: "Choose a VNC login method" });
+    await continueTo("Connect a device");
+    await fill(screen.getByLabelText("Device address"), "survey.example.net");
+    await continueTo("Enter device login information");
+    expect(
+      screen.getByLabelText("VNC password", { selector: "input" }),
+    ).toHaveValue("");
+    expect(inventory.vnc).toStrictEqual([]);
   },
 );
+
+test("A reviewed desktop login belongs to its signing-in owner (original owner with delivery)", async () => {
+  const { inventory, deliver } = await reviewedLogin();
+  await deliver();
+  await screen.findByRole("heading", { name: "Connection added" });
+  expect(
+    inventory.vnc.map((h) => {
+      return h.displayName;
+    }),
+  ).toStrictEqual(["Survey console"]);
+});

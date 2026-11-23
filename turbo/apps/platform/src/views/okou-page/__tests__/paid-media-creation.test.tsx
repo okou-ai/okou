@@ -92,7 +92,7 @@ test("An image prompt reaches the new conversation after the disabled tool is en
   await waitFor(() => {
     expect(chat.runPrompts).toContainEqual(expect.stringContaining(prompt));
   });
-  expect(
-    await screen.findByText(prompt, { selector: "[data-role=user] *" }),
-  ).toBeVisible();
+  await expect(
+    screen.findByText(prompt, { selector: "[data-role=user] *" }),
+  ).resolves.toBeVisible();
 });

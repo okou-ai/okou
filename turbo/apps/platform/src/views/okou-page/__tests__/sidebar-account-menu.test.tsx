@@ -148,10 +148,10 @@ test("sidebar-account-menu-001 A successful session switch releases the outgoing
   await expect(chosen.promise).resolves.toBe("session_jamie");
   await waitFor(() => {
     expect(rail).not.toBeInTheDocument();
-    expect(pending.aborted).toBe(true);
+    expect(pending.aborted).toBeTruthy();
   });
-  expect(context.signal.aborted).toBe(false);
-  expect(redirects.calls).toEqual([]);
+  expect(context.signal.aborted).toBeFalsy();
+  expect(redirects.calls).toStrictEqual([]);
   leave.resolve();
   approve.resolve();
   await waitFor(() => {
@@ -162,5 +162,5 @@ test("sidebar-account-menu-001 A successful session switch releases the outgoing
     reports.reports.filter((r) => {
       return r.type === "exception";
     }),
-  ).toEqual([]);
+  ).toStrictEqual([]);
 });

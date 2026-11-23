@@ -164,5 +164,5 @@ test("Reopening the browser while the original keyboard release is pending resum
     });
     expect(q?.params?.key ?? q?.params?.text).toBe("q");
   });
-  expect(errors.reports).toEqual([]);
+  expect(errors.reports).toStrictEqual([]);
 });

@@ -92,15 +92,7 @@ test("A chat event starts demand for the newly active run", async () => {
   });
 });
 
-test.each([
-  ["A completed run cannot revive the previous indicator", true, true],
-  [
-    "A completed run stays ready while its last summary is withheld",
-    true,
-    false,
-  ],
-  ["An active run displays the same delivered summary", false, true],
-] as const)("%s", async (_title, completed, deliver) => {
+async function startPendingSummary() {
   const active = [RUN_ID];
   const events = [...finishedExchange(), checklistPrompt()];
   installRunChat({ activeRunIds: active, chatEvents: events });
@@ -120,37 +112,52 @@ test.each([
   await setupPage({ context, path: RUN_PATH });
   await boundary.received.promise;
   await screen.findByText("Thinking...");
-  if (completed) {
-    events.push(
-      assistantEvent({
-        id: "field-answer",
-        runId: RUN_ID,
-        seqId: 5,
-        text: "The overnight forecast is ready",
-      }),
-      completedEvent({ id: "field-done", runId: RUN_ID, seqId: 6 }),
-    );
-    active.splice(0);
-    publishRunUpdate();
-    changeChatIndicators();
-    await screen.findByText("The overnight forecast is ready");
-  }
+  return {
+    complete: async () => {
+      events.push(
+        assistantEvent({
+          id: "field-answer",
+          runId: RUN_ID,
+          seqId: 5,
+          text: "The overnight forecast is ready",
+        }),
+        completedEvent({ id: "field-done", runId: RUN_ID, seqId: 6 }),
+      );
+      active.splice(0);
+      publishRunUpdate();
+      changeChatIndicators();
+      await screen.findByText("The overnight forecast is ready");
+    },
+    deliver: async () => {
+      await act(async () => {
+        boundary.release.resolve();
+        await boundary.consumed.promise;
+      });
+    },
+  };
+}
+
+test.each([
+  ["A completed run cannot revive the previous indicator", true],
+  ["A completed run stays ready while its last summary is withheld", false],
+] as const)("%s", async (_title, deliver) => {
+  const summary = await startPendingSummary();
+  await summary.complete();
   if (deliver) {
-    await act(async () => {
-      boundary.release.resolve();
-      await boundary.consumed.promise;
-    });
+    await summary.deliver();
   }
-  if (completed) {
-    const composer = await screen.findByRole("textbox", { name: "Message" });
-    await fill(composer, "Send today’s field report");
-    await waitFor(() => {
-      expect(queryButton("Send")).toBeEnabled();
-    });
-    await expect(findButton("Send")).resolves.toBeVisible();
-    expect(screen.queryByText("Thinking...")).toBeNull();
-    expect(screen.queryByText(SUMMARY)).toBeNull();
-  } else {
-    await expect(screen.findByText(SUMMARY)).resolves.toBeVisible();
-  }
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  await fill(composer, "Send today’s field report");
+  await waitFor(() => {
+    expect(queryButton("Send")).toBeEnabled();
+  });
+  await expect(findButton("Send")).resolves.toBeVisible();
+  expect(screen.queryByText("Thinking...")).toBeNull();
+  expect(screen.queryByText(SUMMARY)).toBeNull();
+});
+
+test("An active run displays the same delivered summary", async () => {
+  const summary = await startPendingSummary();
+  await summary.deliver();
+  await expect(screen.findByText(SUMMARY)).resolves.toBeVisible();
 });

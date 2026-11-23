@@ -168,11 +168,13 @@ test("Only the updated conversation gains a message when the worker warms two op
   context.mocks.api(
     chatThreadEventsContract.catchUp,
     async ({ body, respond }) => {
-      const targets = body.map(([id]) => {
-        return id;
-      });
+      const targets = new Set(
+        body.map(([id]) => {
+          return id;
+        }),
+      );
       const matching =
-        supply && targets.includes(stable.id) && targets.includes(changed.id);
+        supply && targets.has(stable.id) && targets.has(changed.id);
       if (matching) {
         if (!batch.settled()) {
           batch.resolve();

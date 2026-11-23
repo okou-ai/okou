@@ -332,7 +332,7 @@ test("The owned sidebar offers Delete on More and downloads the original PDF", a
     queryAllByRoleFast("menuitem", menu).map((row) => {
       return row.textContent?.trim();
     }),
-  ).toEqual(["Delete"]);
+  ).toStrictEqual(["Delete"]);
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(menu).not.toBeInTheDocument();

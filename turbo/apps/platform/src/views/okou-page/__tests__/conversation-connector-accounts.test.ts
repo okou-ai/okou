@@ -422,7 +422,7 @@ test("A new chat inherits both account choices after leaving a pending thread ov
   await waitFor(() => {
     expect(location.pathname).toBe("/");
   });
-  expect(signal.aborted).toBe(true);
+  expect(signal.aborted).toBeTruthy();
   release.resolve();
   const fresh = await choices();
   await expect(toggle(fresh.panel, "Personal")).resolves.toBeChecked();
@@ -483,7 +483,7 @@ test("A rejected Personal selection leaves the attached field report and message
   await expect(
     findFastControl("button", "Remove field-report.txt"),
   ).resolves.toBeEnabled();
-  expect(atRun).toEqual([]);
+  expect(atRun).toStrictEqual([]);
   const retry = await choices();
   await expect(toggle(retry.panel, "Personal")).resolves.toBeChecked();
   await expect(toggle(retry.panel, "Work")).resolves.not.toBeChecked();

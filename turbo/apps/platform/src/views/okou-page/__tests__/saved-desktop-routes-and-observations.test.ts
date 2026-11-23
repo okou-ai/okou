@@ -357,9 +357,9 @@ test("vnc-settings-004 A VNC host keeps its timed warning after a foreign update
     document.querySelector('time[datetime="2026-10-28T12:34:00.000Z"]'),
   ).toBeVisible();
   await waitFor(() => {
-    expect(context.mocks.ably.hasSubscription("vnc:observations-changed")).toBe(
-      true,
-    );
+    expect(
+      context.mocks.ably.hasSubscription("vnc:observations-changed"),
+    ).toBeTruthy();
   });
   recovered = true;
   context.mocks.ably.trigger("vnc:observations-changed", {
