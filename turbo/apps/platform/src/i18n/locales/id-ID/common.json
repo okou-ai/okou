@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "Bilah samping",
-      "chat": "Chat",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",

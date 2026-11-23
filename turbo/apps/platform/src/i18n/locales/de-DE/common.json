@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "Seitenleiste",
-      "chat": "Chat",
       "hideChatList": "Chatliste ausblenden",
       "mobile": {
         "invite": "Einladen",

@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "側邊欄",
-      "chat": "聊天",
       "hideChatList": "隱藏聊天列表",
       "mobile": {
         "invite": "邀請",

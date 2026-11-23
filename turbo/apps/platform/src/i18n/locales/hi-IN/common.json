@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "साइड बार",
-      "chat": "चैट",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",

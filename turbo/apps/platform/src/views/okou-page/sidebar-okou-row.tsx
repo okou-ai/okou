@@ -11,9 +11,7 @@ import {
   followForYouFeedOnRef$,
   suggestionsEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
-import { okouRailEntryEnabled$ } from "../../signals/okou-page/okou-rail-entry.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
 import { forYouHasUnread$ } from "../../signals/okou-page/for-you-sources.ts";
 import {
@@ -52,7 +50,6 @@ function RestingShortcutHint({ label }: { label: string | null }) {
 
 /** New chat leads the conversation list; suggestions have their own entry. */
 export function OkouChatListRow() {
-  const okouEntry = useLastResolved(okouRailEntryEnabled$) ?? false;
   const active = useGet(agentChatPageActive$);
   const { t } = useTranslation();
 
@@ -71,11 +68,7 @@ export function OkouChatListRow() {
     >
       <span className="flex w-8 shrink-0 items-center justify-center px-2">
         {/* The rail entry carries the Okou mark, so New chat reads as an action. */}
-        {okouEntry ? (
-          <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
-        ) : (
-          <OkouLogomark className="size-4 shrink-0 opacity-70" />
-        )}
+        <Edit aria-hidden className="size-4 shrink-0 opacity-70" />
       </span>
       <span className="min-w-0 flex-1 truncate">
         {t(($) => {
