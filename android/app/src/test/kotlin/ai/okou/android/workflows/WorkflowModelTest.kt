@@ -233,6 +233,63 @@ class WorkflowModelTest {
         }
 
     @Test
+    fun historyRefreshPreservesTheBoundaryForLoadingEarlierRuns() = check { service, model ->
+        val id = service.summary.id
+        val olderRun =
+            earlierRun.copy(
+                id = "4af530dc-2f2d-4be2-9e85-8fd801a20828",
+                createdAt = "2026-11-21T01:00:00.000Z",
+            )
+        val oldestRun =
+            earlierRun.copy(
+                id = "ebce6d58-1225-4eeb-80fb-861035eeac7d",
+                createdAt = "2026-11-20T01:00:00.000Z",
+            )
+        val runs = mutableListOf(recentRun, earlierRun, olderRun, oldestRun)
+        service.historyRead = { _, cursor ->
+            val start = if (cursor == null) 0 else runs.indexOfFirst { it.id == cursor } + 1
+            val page = runs.drop(start).take(2)
+            WorkflowRunHistory(page, page.last().id.takeIf { start + page.size < runs.size })
+        }
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+
+        val newRun =
+            recentRun.copy(
+                id = "0fdf0291-fad4-4896-a33e-c7931f51a086",
+                createdAt = "2026-11-23T02:00:00.000Z",
+            )
+        runs.add(0, newRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(newRun, recentRun, earlierRun), model.state.value.history?.runs)
+
+        val newestRun =
+            newRun.copy(
+                id = "c98de40b-6ac1-429d-989d-2b5be0b330f3",
+                createdAt = "2026-11-23T03:00:00.000Z",
+            )
+        runs.add(0, newestRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(
+            listOf(newestRun, newRun, recentRun, earlierRun),
+            model.state.value.history?.runs,
+        )
+        assertEquals(listOf(null, null, recentRun.id, null, newRun.id), service.historyCursors)
+
+        model.loadEarlierRuns()
+        runCurrent()
+        assertEquals(earlierRun.id, service.historyCursors.last())
+        assertEquals(runs, model.state.value.history?.runs)
+        assertNull(model.state.value.history?.nextCursor)
+    }
+
+    @Test
     fun revokedHistoryClearsTheCachedRange() = check { service, model ->
         val id = service.summary.id
         model.visibilityChanged(true)

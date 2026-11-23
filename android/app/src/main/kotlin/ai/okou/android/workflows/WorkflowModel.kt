@@ -542,9 +542,8 @@ internal constructor(
                             // Revalidate through the previous oldest row. Newer runs can push that
                             // row past the previous page boundary while the user's position
                             // remains.
-                            val through =
-                                if (cursor == null) cached?.page?.runs?.lastOrNull() else null
-                            fetchHistory(id, cursor, through)
+                            val previous = if (cursor == null) cached?.page else null
+                            fetchHistory(id, cursor, previous)
                         }
                         if (!authorized() || selected != id || tab != WorkflowTab.History)
                             return@retryReads null
@@ -596,19 +595,28 @@ internal constructor(
     private suspend fun fetchHistory(
         id: String,
         cursor: String?,
-        through: WorkflowRunHistoryEntry?,
+        previous: WorkflowRunHistory?,
     ): WorkflowRunHistory {
+        val oldest = previous?.runs?.lastOrNull()
+        val earlierCursor = previous?.nextCursor
         val runs = mutableListOf<WorkflowRunHistoryEntry>()
         val visited = mutableSetOf<String?>()
         var before = cursor
         while (visited.add(before)) {
             val page = service.workflowRunHistory(id, before)
+            val oldestIndex =
+                oldest?.let { run -> page.runs.indexOfFirst { it.id == run.id } } ?: -1
+            if (earlierCursor != null && oldestIndex in 0 until page.runs.lastIndex) {
+                // The original cursor still points past this row. Leave the rest for Load earlier.
+                runs.addAll(page.runs.take(oldestIndex + 1))
+                return WorkflowRunHistory(runs.distinctBy { it.id }, earlierCursor)
+            }
             runs.addAll(page.runs)
             if (
-                through == null ||
+                oldest == null ||
                     page.nextCursor == null ||
-                    page.runs.any { it.id == through.id } ||
-                    page.runs.lastOrNull()?.let { it.createdAt < through.createdAt } == true
+                    oldestIndex >= 0 ||
+                    page.runs.lastOrNull()?.let { it.createdAt < oldest.createdAt } == true
             ) {
                 return page.copy(runs = runs.distinctBy { it.id })
             }
