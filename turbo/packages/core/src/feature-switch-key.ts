@@ -14,7 +14,6 @@ export enum FeatureSwitchKey {
   MarkdownDocumentTypography = "markdownDocumentTypography",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
-  BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
   Dummy = "_dummy",
   TikTokOAuthConnector = "tiktokOAuthConnector",

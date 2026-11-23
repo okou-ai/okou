@@ -162,7 +162,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(
       requests[..<firstWrite].map { $0.url!.path }.sorted(),
       [
-        metadata, "/api/feature-switches", "/api/connector-permissions",
+        metadata, "/api/connector-permissions",
         "/api/connector-permissions"
       ]
       .sorted())

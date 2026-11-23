@@ -153,13 +153,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.BatchConnectorPermissions]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Batch connector permissions",
-    description: "Approve up to 20 connector permissions together.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.DesktopShell]: {
     maintainer: "lancy@okou.ai",
     displayName: "Desktop Shell",
