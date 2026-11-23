@@ -88,11 +88,12 @@ internal fun ChatComposerField(
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
+    val wide = workspaceListPaneWidth(window.width, window.height) != null
     val horizontalInset = composerHorizontalInset(window)
     val bottomInset =
         when {
             shortWindow -> 8.dp
-            workspaceListPaneWidth(window.width, window.height) != null -> ChatPaneBottomInset
+            wide -> ChatPaneBottomInset
             else -> 14.dp
         }
     val colors = MaterialTheme.colorScheme
@@ -126,7 +127,9 @@ internal fun ChatComposerField(
         open()
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val cardVerticalPadding = 5.dp
+    val cardOutline = 1.dp
+    // The normal outline is drawn inside the measured card, along with the inner padding.
+    val cardVerticalPadding = if (wide) cardOutline + 3.dp else 5.dp
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
@@ -146,9 +149,10 @@ internal fun ChatComposerField(
             ComposerFeedback(model, target, state, entry)
             Row(
                 Modifier.fillMaxWidth()
+                    .testTag("chat_input_card")
                     .background(colors.surface, cardShape)
                     .border(
-                        width = if (inputFocused) 2.dp else 1.dp,
+                        width = if (inputFocused) 2.dp else cardOutline,
                         color =
                             if (inputFocused) LocalActivityStatusColor.current else colors.outline,
                         shape = cardShape,

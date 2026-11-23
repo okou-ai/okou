@@ -4247,6 +4247,23 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
 @Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     @Test
+    fun savedLocalDraftsFillTheListUntilTheIndexBecomesAuthoritative() {
+        val drafts =
+            mapOf(
+                "thread:$CHAT_PERSONAL" to EditableComposerDraft("Cached draft"),
+                "thread:$CHAT_IN_PROJECT" to EditableComposerDraft("\u00a0", dirty = true),
+                "thread:edited" to EditableComposerDraft("New edits", dirty = true),
+                "new:" to EditableComposerDraft("New chat draft", dirty = true),
+            )
+        assertEquals(setOf(CHAT_PERSONAL, "edited"), draftThreadIdsForList(null, drafts))
+        assertEquals(
+            setOf("remote-draft", "edited"),
+            draftThreadIdsForList(setOf(CHAT_IN_PROJECT, "remote-draft"), drafts),
+        )
+        assertEquals(setOf("edited"), draftThreadIdsForList(emptySet(), drafts))
+    }
+
+    @Test
     fun draftIndexDoesNotGateRowsAndKeepsSavesMadeDuringTheRead() = runTest {
         val reply = CompletableDeferred<List<String>>()
         var requests = 0
@@ -4261,7 +4278,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             model.refresh()
             runCurrent()
             assertTrue(model.uiState.value.threads.isNotEmpty())
-            assertTrue(model.uiState.value.draftThreadIds.isEmpty())
+            assertNull(model.uiState.value.draftThreadIds)
             model.refresh()
             runCurrent()
             assertEquals(1, requests)

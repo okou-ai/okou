@@ -140,15 +140,10 @@ internal fun ChatListScreen(
     val draftIds by
         remember(composer, state.draftThreadIds) {
             derivedStateOf(structuralEqualityPolicy()) {
-                val drafts = composer?.value?.journal?.drafts.orEmpty()
-                buildSet {
-                    addAll(state.draftThreadIds)
-                    for ((key, draft) in drafts) {
-                        if (!draft.dirty || !key.startsWith("thread:")) continue
-                        val id = key.removePrefix("thread:")
-                        if (draft.text.isBlankWebDraft()) remove(id) else add(id)
-                    }
-                }
+                draftThreadIdsForList(
+                    state.draftThreadIds,
+                    composer?.value?.journal?.drafts.orEmpty(),
+                )
             }
         }
     var renamingId by remember { mutableStateOf<String?>(null) }

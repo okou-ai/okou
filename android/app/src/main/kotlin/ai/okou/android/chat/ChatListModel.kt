@@ -180,7 +180,7 @@ data class ChatListUiState(
     val projectList: ProjectListUiState = ProjectListUiState(),
     internal val chatMoveNotice: ChatMoveNotice? = null,
     val indicators: Indicators? = null,
-    internal val draftThreadIds: Set<String> = emptySet(),
+    internal val draftThreadIds: Set<String>? = null,
     val indicatorsPhase: ChatReadPhase = ChatReadPhase.Idle,
     internal val indicatorsNonRetryableFailure: Boolean = false,
     internal val indicatorsConfirmedAt: Long? = null,
@@ -1825,10 +1825,10 @@ class ChatListModel(
         // A response from an index read in flight may precede the acknowledged save.
         draftIndexEdits?.set(threadId, present)
         val state = mutable.value
-        if ((threadId in state.draftThreadIds) != present) {
-            val ids =
-                if (present) state.draftThreadIds + threadId else state.draftThreadIds - threadId
-            mutable.value = state.copy(draftThreadIds = ids)
+        val ids = state.draftThreadIds ?: return
+        if ((threadId in ids) != present) {
+            val updated = if (present) ids + threadId else ids - threadId
+            mutable.value = state.copy(draftThreadIds = updated)
         }
     }
 
