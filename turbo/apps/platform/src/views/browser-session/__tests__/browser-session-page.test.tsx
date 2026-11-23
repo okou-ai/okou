@@ -230,11 +230,6 @@ function expectDenied() {
   expect(panel.queryByText("Browser not live")).toBeNull();
   expect(panel.queryByText("Start browser")).toBeNull();
   expect(panel.queryByText("Browser not found")).toBeNull();
-  expect(
-    panel.queryByText(
-      "This browser does not belong to this chat or has been removed.",
-    ),
-  ).toBeNull();
 }
 
 test.each(["denied", "allowed"] as const)(
@@ -259,6 +254,12 @@ test.each(["denied", "allowed"] as const)(
         await pending.arrival.promise;
         await expectStreamingAt(address);
       }
+      const panel = within(screen.getByTestId("browser-session-page"));
+      expect(
+        panel.queryByText(
+          "This browser does not belong to this chat or has been removed.",
+        ),
+      ).toBeNull();
     } finally {
       pending.reply.resolve(session.viewer.browser);
     }

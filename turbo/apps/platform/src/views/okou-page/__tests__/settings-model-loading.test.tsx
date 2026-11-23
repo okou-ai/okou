@@ -1,5 +1,5 @@
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
-import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/client/third-party-subscriptions";
+import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { personalAccount } from "./personal-account-settings-fixtures.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockNow } from "../../../lib/time.ts";
