@@ -430,7 +430,6 @@
       "close": "關閉",
       "closeArtifact": "關閉成果",
       "closeNamed": "關閉 {{title}}",
-      "closePreviewMenu": "關閉預覽選單",
       "download": "下載",
       "downloadArtifact": "下載成果",
       "downloadMarkdownAs": "下載為 {{format}}",

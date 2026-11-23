@@ -11,11 +11,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
-import {
-  click,
-  queryAllByRoleFast,
-  setupPage,
-} from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   testContext,
   warmMermaidParser,
@@ -74,16 +70,6 @@ function artifactPreview(): HTMLElement {
 
 function resourcesControl(): HTMLElement {
   return buttonNamed("Artifacts and chats");
-}
-
-function menuItemNamed(name: string): HTMLElement {
-  const item = queryAllByRoleFast("menuitem").find((candidate) => {
-    return candidate.textContent?.trim() === name;
-  });
-  if (!item) {
-    throw new Error(`Expected menu item ${name}`);
-  }
-  return item;
 }
 
 function officeFileEvents(
@@ -633,12 +619,7 @@ test("Preview site", async () => {
   await waitFor(() => {
     expect(buttonNamed("Exit fullscreen", artifactPreview())).toBeVisible();
   });
-  click(buttonNamed("More artifact actions", artifactPreview()));
-  click(
-    await waitFor(() => {
-      return menuItemNamed("Close preview menu");
-    }),
-  );
+  click(buttonNamed("Close artifact", artifactPreview()));
   await waitFor(() => {
     expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();

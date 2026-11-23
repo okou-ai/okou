@@ -166,14 +166,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ArtifactPreviewActionGroup]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Artifact preview action group",
-    description:
-      "Reveal preview actions together after loading, keep the original download menu visible, and place only deletion in More.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.WorkflowRecencySync]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Workflow recency sync",

@@ -51,11 +51,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({
-  shareRows = false,
-  groupedActions = false,
-  emailSharing = false,
-} = {}) {
+async function openSite({ shareRows = false, emailSharing = false } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -83,7 +79,6 @@ async function openSite({
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
       [FeatureSwitchKey.HostedSiteEmailSharing]: emailSharing,
     },
   });
@@ -103,13 +98,13 @@ beforeEach(() => {
 
 async function openShare(label = "Share artifact") {
   await waitFor(() => {
-    expect(queryButtonByName(label)).toBeDefined();
+    expect(getButtonByName(label)).toBeVisible();
   });
   click(getButtonByName(label));
   await screen.findByRole("dialog", { name: label });
 }
 
-test("opening a site preloads its share URL and shows a skeleton until the current address is ready", async () => {
+test("opening a site waits for its current address before revealing Share", async () => {
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const currentSite = {
@@ -126,14 +121,13 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
 
   await openSite();
   await requested.promise;
-  await openShare();
   try {
-    const menu = await screen.findByRole("dialog", { name: "Share artifact" });
-    expect(menu.querySelector('[aria-busy="true"]')).toBeInTheDocument();
+    expect(screen.getByLabelText("Share artifact")).not.toBeVisible();
+    expect(getButtonByName("Close artifact")).toBeEnabled();
   } finally {
     response.resolve();
   }
-
+  await openShare();
   await waitFor(() => {
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
@@ -555,7 +549,7 @@ test("the grouped toolbar does not wait for banner settings", async () => {
     return respond(200, { siteId, showBanner: false, revision: null });
   });
 
-  await openSite({ groupedActions: true });
+  await openSite();
   const preview = await screen.findByTestId("artifact-sidebar");
   const shareLabel = "Share artifact";
   await waitFor(() => {
@@ -975,7 +969,7 @@ test.each([{ refreshFails: false }, { refreshFails: true }])(
         expiresAt: "2099-01-01T00:00:00Z",
       });
     });
-    await openSite({ groupedActions: true });
+    await openSite();
     const label = "Share artifact";
     await openShare(label);
     await expectPermission("Only me");
@@ -1020,7 +1014,7 @@ test("the grouped toolbar waits for website permissions before revealing Share",
     await response.promise;
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  await openSite({ groupedActions: true });
+  await openSite();
   await requested.promise;
   const label = "Share artifact";
   try {
@@ -1032,28 +1026,6 @@ test("the grouped toolbar waits for website permissions before revealing Share",
     expect(getButtonByName(label)).toBeVisible();
   });
   await openShare(label);
-  await expectPermission("Only me");
-});
-
-test("permissions preload without claiming public access while their read is pending", async () => {
-  mockSiteAlias();
-  const requested = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(200, { siteId, visibility: "private", revision: null });
-  });
-  await openSite();
-  await requested.promise;
-  await openShare();
-  try {
-    await screen.findByRole("status", { name: "Loading permissions" });
-    expect(queryAllByRoleFast("radio")).toHaveLength(0);
-    expect(screen.queryByText("Anyone with the link")).not.toBeInTheDocument();
-  } finally {
-    response.resolve();
-  }
   await expectPermission("Only me");
 });
 
@@ -1162,30 +1134,6 @@ test("Share directly copies non-owners' website links without a settings popover
   await screen.findByText("Link copied");
   expect(clipboard.writes).toStrictEqual([site.url]);
   expect(screen.queryByRole("dialog", { name: label })).not.toBeInTheDocument();
-});
-
-test("a pending Share copies the link once ownership resolves without owner settings", async () => {
-  mockSiteAlias();
-  const requested = createDeferredPromise<void>(context.signal);
-  const response = createDeferredPromise<void>(context.signal);
-  const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(hostContract.siteUrl, async ({ respond }) => {
-    requested.resolve();
-    await response.promise;
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Published website not found" },
-    });
-  });
-  await openSite();
-  await requested.promise;
-  await openShare();
-  await screen.findByRole("status", { name: "Loading permissions" });
-  response.resolve();
-  await screen.findByText("Link copied");
-  expect(clipboard.writes).toStrictEqual([site.url]);
-  expect(
-    screen.queryByRole("dialog", { name: "Share artifact" }),
-  ).not.toBeInTheDocument();
 });
 
 test("rapid permission choices settle on the latest audience using the refreshed revision", async () => {

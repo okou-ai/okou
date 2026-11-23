@@ -444,7 +444,6 @@
       "close": "Chiudi",
       "closeArtifact": "Chiudi artefatto",
       "closeNamed": "Chiudi {{title}}",
-      "closePreviewMenu": "Chiudi il menu di anteprima",
       "download": "Scarica",
       "downloadArtifact": "Scarica artefatto",
       "downloadMarkdownAs": "Scarica come {{format}}",
