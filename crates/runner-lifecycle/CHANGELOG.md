@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.25](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.24...runner-lifecycle-v0.18.25) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share idle grant backing validation ([#50109](https://github.com/okou-ai/okou/issues/50109)) ([8983f6d](https://github.com/okou-ai/okou/commit/8983f6d56a3a61a4bbe930a1d27a5988f45c2dce))
+
 ## [0.18.24](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.23...runner-lifecycle-v0.18.24) (2026-11-22)
 
 ## [0.18.23](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.22...runner-lifecycle-v0.18.23) (2026-11-22)
