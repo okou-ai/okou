@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.settings.DefaultModelStore
@@ -60,6 +61,13 @@ open class OkouApplication : Application() {
         ProjectExpansionStore(
             PreferenceDataStoreFactory.create {
                 noBackupFilesDir.resolve("project-expansion.preferences_pb")
+            }
+        )
+    }
+    internal val searchRecents by lazy {
+        SearchRecentChatsStore(
+            PreferenceDataStoreFactory.create {
+                noBackupFilesDir.resolve("workspace-search-recents.preferences_pb")
             }
         )
     }

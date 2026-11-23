@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -128,6 +129,7 @@ internal fun WorkspaceSearchToolbar(
         leading()
         field(Modifier.weight(1f))
         if (actions != null) {
+            Spacer(Modifier.width(8.dp))
             Row(
                 Modifier.widthIn(min = 100.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
@@ -364,7 +366,9 @@ internal fun WorkspaceToolbarActions(
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
-        Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
+        Modifier.size(48.dp).focusRequester(settingsFocus).onFocusChanged {
+            anchorFocused = it.isFocused
+        }
     val colors = MaterialTheme.colorScheme
     val currentFilter = stringResource(list.filter.label())
     val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
@@ -455,9 +459,10 @@ internal fun WorkspaceToolbarActions(
                     enabled = selectFilter != null,
                     colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
                     modifier =
-                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
-                            stateDescription = currentFilter
-                        },
+                        Modifier.size(48.dp)
+                            .focusRequester(filterFocus)
+                            .then(filterTreatment)
+                            .semantics { stateDescription = currentFilter },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),

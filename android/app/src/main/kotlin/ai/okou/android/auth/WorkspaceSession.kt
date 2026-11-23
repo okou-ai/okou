@@ -28,6 +28,7 @@ import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.artifacts.ArtifactQuery
 import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
 import ai.okou.android.chat.AssistantRecoveryService
@@ -44,13 +45,20 @@ import ai.okou.android.chat.RealtimeSnapshot
 import ai.okou.android.chat.RunControlService
 import ai.okou.android.chat.RunOutputSignal
 import ai.okou.android.chat.RunOutputTarget
+import ai.okou.android.chat.SearchArtifactHit
+import ai.okou.android.chat.SearchArtifactPage
+import ai.okou.android.chat.SearchMessageHit
+import ai.okou.android.chat.SearchWorkflowHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
+import ai.okou.android.chat.WorkspaceSearchService
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
+import ai.okou.android.chat.toSearchHit
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.workflows.WorkflowService
+import ai.okou.android.workflows.workspaceCatalog
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
@@ -82,6 +90,7 @@ interface WorkspaceSession :
     ChatComposerService,
     RealtimeService,
     RunControlService,
+    WorkspaceSearchService,
     AssistantRecoveryService {
     val artifacts: ArtifactService
     val connectors: ConnectorService?
@@ -164,6 +173,37 @@ class CanonicalWorkspaceSession(
 
     override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
         api.setWorkflowAutomationEnabled(id, enabled)
+
+    override suspend fun searchableWorkflows(): List<SearchWorkflowHit> =
+        workspaceCatalog().map { it.toSearchHit() }
+
+    override suspend fun searchArtifacts(keyword: String, cursor: String?): SearchArtifactPage {
+        val page = artifacts.page(ArtifactQuery(keyword = keyword), cursor = cursor, limit = 25)
+        return SearchArtifactPage(
+            page.items.map { SearchArtifactHit(it.id, it.title, it.kind) },
+            page.nextCursor,
+        )
+    }
+
+    override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
+        api.searchChatMessages(keyword).results.mapNotNull { result ->
+            val match = result.matchedMessage
+            if (result.chatThreadId != match.chatThreadId) return@mapNotNull null
+            SearchMessageHit(
+                match.chatThreadId,
+                match.seqId,
+                match.content,
+                result.matchedRanges.mapNotNull { range ->
+                    if (
+                        range.start < 0 ||
+                            range.end <= range.start ||
+                            range.end > match.content.length
+                    )
+                        null
+                    else range.start.toInt() until range.end.toInt()
+                },
+            )
+        }
 
     override suspend fun observeRealtime(
         target: StateFlow<RunOutputTarget?>,

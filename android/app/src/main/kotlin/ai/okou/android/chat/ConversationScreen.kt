@@ -98,6 +98,8 @@ internal fun ConversationRoute(
     onLinkFocusRestored: () -> Unit = {},
     linkFocusKey: String? = null,
     onLinkUnavailable: (() -> Unit)? = null,
+    messageSequence: Long? = null,
+    onSearchMessageUnavailable: (Long) -> Unit = {},
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -236,7 +238,28 @@ internal fun ConversationRoute(
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
-    val readingTarget = findTarget ?: linkTarget
+    val searchEventId =
+        remember(transcript, messageSequence) {
+            messageSequence?.let { sequence ->
+                transcript
+                    ?.messages
+                    ?.firstOrNull { it.sourceSeqId == sequence && it.visibleInConversation() }
+                    ?.id
+            }
+        }
+    val searchTarget =
+        remember(messageSequence, searchEventId) {
+            searchEventId?.let { ConversationFindTarget(it, null) }
+        }
+    val readingTarget = findTarget ?: linkTarget ?: searchTarget
+    val waitingForSearch =
+        messageSequence != null && searchTarget == null && !list.offline && !missing
+    LaunchedEffect(model, thread?.id, messageSequence, list.offline) {
+        val sequence = messageSequence ?: return@LaunchedEffect
+        if (thread != null && !list.offline && model.searchMessageIsMissing(threadId, sequence)) {
+            onSearchMessageUnavailable(sequence)
+        }
+    }
     val targetMessageId =
         remember(readingTarget, content) {
             when {
@@ -272,7 +295,8 @@ internal fun ConversationRoute(
         val scope = rememberCoroutineScope()
         var restored by remember(linkPosition) { mutableStateOf(false) }
         var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
-        var positioned by remember(linkPosition) { mutableStateOf(false) }
+        var positioned by
+            remember(linkPosition, messageSequence, searchTarget) { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -320,8 +344,17 @@ internal fun ConversationRoute(
                     }
             }
         val pendingFind = readingTarget?.takeUnless { it.positioned }
-        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, readingTarget) {
-            if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
+        LaunchedEffect(
+            restored,
+            positioned,
+            timeline,
+            state.phase,
+            list.offline,
+            readingTarget,
+            waitingForSearch,
+        ) {
+            if (!restored || positioned || waitingForSearch || (!hasContent && !missing))
+                return@LaunchedEffect
             val anchor = restoredAnchor
             val index =
                 timeline.indexOfFirst { it is ConversationMessage && it.includes(anchor?.eventId) }
@@ -388,7 +421,7 @@ internal fun ConversationRoute(
         LaunchedEffect(readingTarget, pendingFind) {
             if (pendingFind == null) readingTarget?.expireHighlight()
         }
-        val readingReady = positioned && !awaitingFindPosition
+        val readingReady = positioned && !awaitingFindPosition && !waitingForSearch
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.

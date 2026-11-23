@@ -164,6 +164,18 @@ class NativeRealtimeTest {
                 ) {
                     "Native reply was not visible: $value"
                 }
+                if (!device.hasObject(target)) {
+                    val visible =
+                        object : Condition<UiObject2, Boolean> {
+                            // Compose exposes virtual descendants through the current window.
+                            override fun apply(unused: UiObject2) = device.hasObject(target)
+                        }
+                    // The timeline can stop scrolling as the updated reply is laid out.
+                    if (device.findObject(scrollable)?.scrollUntil(Direction.UP, visible) != true) {
+                        device.findObject(scrollable)?.scrollUntil(Direction.DOWN, visible)
+                    }
+                }
+                text(value)
             }
             fun condition(description: String = "Native realtime condition", check: () -> Boolean) {
                 step = description

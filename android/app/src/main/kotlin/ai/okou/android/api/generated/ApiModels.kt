@@ -9228,6 +9228,38 @@ object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAut
     }
 }
 
+@Serializable
+enum class ChatMessageSearchResponseResultsItemMatchedMessageRole {
+    @SerialName("user") USER,
+    @SerialName("assistant") ASSISTANT,
+}
+
+@Serializable
+data class ChatMessageSearchResponseResultsItemMatchedMessage(
+    val `chatThreadId`: String,
+    val `role`: ChatMessageSearchResponseResultsItemMatchedMessageRole,
+    val `content`: String,
+    val `createdAt`: String,
+    val `seqId`: Long,
+    val `runId`: String?,
+)
+
+@Serializable
+data class ChatMessageSearchResponseResultsItemMatchedRangesItem(
+    val `start`: Long,
+    val `end`: Long,
+)
+
+@Serializable
+data class ChatMessageSearchResponseResultsItem(
+    val `chatThreadId`: String,
+    val `matchedMessage`: ChatMessageSearchResponseResultsItemMatchedMessage,
+    val `matchedRanges`: List<ChatMessageSearchResponseResultsItemMatchedRangesItem>,
+)
+
+@Serializable
+data class ChatMessageSearchResponse(val `results`: List<ChatMessageSearchResponseResultsItem>)
+
 @Serializable data class RenameProjectRequest(val `eventId`: String, val `name`: String)
 
 @Serializable

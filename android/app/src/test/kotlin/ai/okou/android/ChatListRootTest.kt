@@ -36,6 +36,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
@@ -73,6 +74,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -102,6 +104,7 @@ class ChatListApplication : TestOkouApplication() {
         fixture = ChatListApiFixture()
         fixture.beforeResponse = { responseGate.await() }
         chatService = fixture.service
+        searchService = fixture.service
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
     }
@@ -574,6 +577,8 @@ class ChatListRootTest {
         val logo = compose.onNodeWithTag("workspace_search_leading")
         val initialBounds = entry.getUnclippedBoundsInRoot()
         assertEquals(8.dp, initialBounds.left - logo.getUnclippedBoundsInRoot().right)
+        val filter = compose.onNodeWithContentDescription("Filter")
+        assertEquals(8.dp, filter.getUnclippedBoundsInRoot().left - initialBounds.right)
         entry.performClick()
         val inputBounds = compose.onNodeWithTag("chat_search_query").getUnclippedBoundsInRoot()
         assertEquals(initialBounds.left, inputBounds.left)
@@ -599,6 +604,54 @@ class ChatListRootTest {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithTag("chat_list").assertExists()
         compose.onNodeWithText("Project chat").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h460dp")
+    fun returningToRecentSearchFocusesTheOpenedChatAfterItMovesUp() {
+        val app = compose.activity.application as ChatListApplication
+        val threads = List(8) { UUID.randomUUID().toString() }
+        val events =
+            threads.mapIndexed { index, id ->
+                chatEventWire(
+                    id = UUID.randomUUID().toString(),
+                    seq = 17L + index,
+                    thread = id,
+                    title = "Visit $index",
+                )
+            }
+        app.fixture.historyThreadIds = threads.toSet()
+        app.fixture.events = { request ->
+            val rows =
+                if (request.requestUrl?.queryParameter("sinceSeqId") == null) events
+                else emptyList()
+            jsonResponse("""{"events":[${rows.joinToString(",")}],"hasMore":false}""")
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val ready =
+            compose.runOnIdle {
+                checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                )
+            }
+        runBlocking { threads.forEach { app.searchRecents.record(ready.identity, it) } }
+
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Recently opened"), 5_000)
+        compose.onNodeWithTag("chat_search_results").performScrollToNode(hasText("Visit 0"))
+        compose.onNodeWithText("Visit 0").performClick()
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { ready.search.recentlyOpened.value.firstOrNull() == threads.first() }
+        }
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+        compose.waitUntilExactlyOneExists(hasText("Visit 0") and isFocused(), 5_000)
+        compose.onNodeWithText("Visit 0").assertIsDisplayed().assertIsFocused()
     }
 
     @Test
@@ -678,8 +731,12 @@ class ChatListRootTest {
         compose.onNodeWithText("Personal chat").performClick()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("conversation").assertExists()
+        compose.onNodeWithText("Chats").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput("missing")
         compose.onNodeWithText("No matching chats").assertExists()
+        compose.onNodeWithText("Search all types").performClick()
+        compose.onNodeWithText("All").assertIsSelected()
+        compose.onNodeWithTag("chat_search_query").assert(hasText("missing"))
         compose.onNodeWithContentDescription("Clear search").performClick()
         compose.onNodeWithTag("chat_search_query").assertIsFocused().performTextInput("CHAT")
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))
@@ -696,6 +753,176 @@ class ChatListRootTest {
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertDoesNotExist()
         setResearchExpanded(true)
         compose.onNodeWithTag("chat_$CHAT_IN_PROJECT").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchRestoresItsTypeAndOpensTheExactEvent() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.searchMessages = { request ->
+            assertEquals("history", request.requestUrl?.queryParameter("keyword"))
+            assertEquals("Bearer fixture-token", request.getHeader("Authorization"))
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":7,"end":14}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithText("Messages").performClick()
+        val field = compose.onNodeWithTag("chat_search_query")
+        field.performTextInput("history")
+        val match =
+            hasText("Native history reply") and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntilExactlyOneExists(match, 5_000)
+        compose.onNode(match).performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("message_output"), 5_000)
+        compose.onNodeWithTag("message_output").assertIsDisplayed()
+        compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 5_000)
+        compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        field.assert(hasText("history"))
+        compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
+        compose.onNode(match).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Clear search").performClick()
+        field.assertIsFocused()
+        compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
+        compose.onNodeWithText("Enter a keyword to search").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterRetry() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val chatEvents = fixture.events
+        fixture.events = { MockResponse().setResponseCode(400) }
+        fixture.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"Native history reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":7,"end":14}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("history")
+
+        val results = hasAnyAncestor(hasTestTag("chat_search_results"))
+        val unavailable = hasText(app.getString(R.string.chat_list_first_load_failed)) and results
+        compose.waitUntilExactlyOneExists(unavailable, 5_000)
+        compose.onNodeWithText("No matching messages").assertDoesNotExist()
+
+        val retry = hasText(app.getString(R.string.retry)) and results
+        val enabledRetry = retry and isEnabled()
+        compose.waitUntilExactlyOneExists(enabledRetry, 5_000)
+        val readStarted = CountDownLatch(1)
+        val finishRead = CountDownLatch(1)
+        fixture.events = { request ->
+            readStarted.countDown()
+            finishRead.await()
+            chatEvents(request)
+        }
+        try {
+            compose.onNode(enabledRetry).performClick()
+            compose.waitUntil(5_000) { readStarted.count == 0L }
+            compose.onNode(retry).assertIsNotEnabled()
+            compose.mainClock.advanceTimeBy(160)
+            compose.onNode(unavailable).assertIsDisplayed()
+            compose
+                .onNode(hasContentDescription(app.getString(R.string.chat_loading)) and results)
+                .assertDoesNotExist()
+        } finally {
+            finishRead.countDown()
+        }
+        val hit = hasText("Native history reply") and results
+        compose.waitUntilExactlyOneExists(hit, 5_000)
+        compose.onNode(hit).assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun workspaceMessageSearchCatchesUpAnAlreadyOpenHistoryBeforeRevealingTheHit() {
+        val app = compose.activity.application as ChatListApplication
+        val fixture = app.fixture
+        val text = "New search message"
+        val eventId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        fixture.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_PERSONAL","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_PERSONAL","role":"assistant",
+                    "content":"$text","createdAt":"$CHAT_DATE","seqId":41,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":4,"end":10}]}]}
+                """
+            )
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val history =
+            compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                    )
+                    .chats
+                    .history
+            }
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
+        }
+
+        val staleRead = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val oldRows = fixture.historyRows
+        val nextReadIsStale = AtomicBoolean(true)
+        fixture.historyRows = { request ->
+            val url = checkNotNull(request.requestUrl)
+            if (url.pathSegments[2] != CHAT_PERSONAL || url.queryParameter("sinceSeqId") != "37") {
+                oldRows(request)
+            } else if (nextReadIsStale.getAndSet(false)) {
+                staleRead.countDown()
+                release.await()
+                oldRows(request)
+            } else {
+                val event =
+                    historyEventWire(id = eventId, seq = 41, payload = """{"content":"$text"}""")
+                jsonResponse(
+                    """{"rows":[$event],"cursor":{"lastEventId":"$eventId","lastSeqId":41},"hasMore":false}"""
+                )
+            }
+        }
+        try {
+            compose.runOnIdle { history.invalidate(CHAT_PERSONAL) }
+            compose.waitUntil(10_000) { staleRead.count == 0L }
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            compose.onNodeWithTag("search_type_Messages").performClick()
+            compose.onNodeWithTag("chat_search_query").performTextInput("search")
+            val hit = hasText(text) and hasAnyAncestor(hasTestTag("chat_search_results"))
+            compose.waitUntilExactlyOneExists(hit, 5_000)
+            compose.onNode(hit).performClick()
+            compose.onNodeWithTag("chat_search").assertDoesNotExist()
+            release.countDown()
+
+            compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 10_000)
+            compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
+            compose.onNodeWithText(text).assertIsDisplayed()
+            compose.onNodeWithTag("chat_$CHAT_PERSONAL").assertIsSelected()
+        } finally {
+            release.countDown()
+        }
     }
 
     @Test
