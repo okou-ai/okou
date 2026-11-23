@@ -62,9 +62,9 @@ struct ForYouView: View {
       .onChange(of: store.direction?.cardID) { _, id in
         if let id { scroll.scrollTo("direction-" + id, anchor: .center) }
       }
-      .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification))
-      {
-        _ in
+      .onReceive(
+        NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)
+      ) { _ in
         // The keyboard reveals the caret. Keep the card's send controls visible with it.
         if let id = store.direction?.cardID { scroll.scrollTo("direction-" + id, anchor: .center) }
       }
