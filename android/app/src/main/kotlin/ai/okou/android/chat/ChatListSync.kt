@@ -133,7 +133,7 @@ class ChatListSync(
                 val next = event.cursor()
                 next.validate()
                 requireChatWire(
-                    next.seqId > cursor.seqId && identities.add(checkNotNull(next.eventId))
+                    next.seqId > cursor.seqId && identities.add(checkNotNull(next.eventId)),
                 )
                 events.add(event)
                 cursor = next

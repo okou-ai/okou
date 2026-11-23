@@ -61,7 +61,7 @@ internal class ChatRowMutationOwner(
                     }
                 ChatRowAction.MoveProject ->
                     return listOf(
-                        ChatRowEdit(threadId, newProjectOperationId(wallMillis()), action, value)
+                        ChatRowEdit(threadId, newProjectOperationId(wallMillis()), action, value),
                     )
                 else -> return listOf(ChatRowEdit(threadId, newEventId(), action, value))
             }

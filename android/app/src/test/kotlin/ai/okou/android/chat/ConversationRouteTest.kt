@@ -84,7 +84,7 @@ class ConversationRouteTest {
         fun message(reason: String): HistoryMessage {
             val row = HistoryEvent.decode(RecoveryApiFixture.failure(reason))
             return projectHistory(
-                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId))
+                    HistoryCheckpoint(CHAT_PERSONAL, listOf(row), HistoryCursor(row.id, row.seqId)),
                 )
                 .messages
                 .single()
@@ -444,7 +444,7 @@ class ConversationRouteTest {
         fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
                 )
             else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
@@ -560,7 +560,7 @@ class ConversationRouteTest {
                     )
                 }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"${scrollEventId(last)}","lastSeqId":$last},"hasMore":false}""",
             )
         }
         val model = createListModel()
@@ -678,7 +678,7 @@ class ConversationRouteTest {
             )
         val thread =
             Json.decodeFromString<ChatArchive>(
-                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}"""
+                    """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"History thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null}]}""",
                 )
                 .chatThreads
                 .single()

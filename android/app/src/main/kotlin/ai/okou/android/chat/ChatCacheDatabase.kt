@@ -34,7 +34,7 @@ internal data class ChatScopeRecord(
                 parentColumns = ["scope"],
                 childColumns = ["scope"],
                 onDelete = ForeignKey.CASCADE,
-            )
+            ),
         ],
 )
 internal data class ChatSnapshotRecord(
@@ -55,7 +55,7 @@ internal data class ChatSnapshotRecord(
                 parentColumns = ["scope"],
                 childColumns = ["scope"],
                 onDelete = ForeignKey.CASCADE,
-            )
+            ),
         ],
 )
 internal data class ChatEventRecord(
@@ -84,7 +84,7 @@ internal data class ProjectScopeRecord(
                 parentColumns = ["scope"],
                 childColumns = ["scope"],
                 onDelete = ForeignKey.CASCADE,
-            )
+            ),
         ],
 )
 internal data class ChatProjectRecord(
@@ -105,7 +105,7 @@ internal data class ChatProjectRecord(
                 parentColumns = ["scope"],
                 childColumns = ["scope"],
                 onDelete = ForeignKey.CASCADE,
-            )
+            ),
         ],
 )
 internal data class ProjectEventRecord(
@@ -137,7 +137,7 @@ internal data class HistoryScopeRecord(
                 parentColumns = ["scope", "threadId"],
                 childColumns = ["scope", "threadId"],
                 onDelete = ForeignKey.CASCADE,
-            )
+            ),
         ],
 )
 internal data class HistoryEventRecord(
@@ -156,7 +156,7 @@ internal interface ChatCacheDao {
     @Upsert suspend fun putHistoryScope(value: HistoryScopeRecord)
 
     @Query(
-        "SELECT * FROM history_events WHERE scope = :scope AND threadId = :threadId ORDER BY seqId"
+        "SELECT * FROM history_events WHERE scope = :scope AND threadId = :threadId ORDER BY seqId",
     )
     suspend fun historyEvents(scope: String, threadId: String): List<HistoryEventRecord>
 
@@ -179,7 +179,7 @@ internal interface ChatCacheDao {
         WHERE scope = :scope AND authorization = :authorization AND confirmedAt < :confirmedAt
           AND snapshotEventId IS :snapshotEventId AND snapshotSeqId = :snapshotSeqId
           AND COALESCE((SELECT MAX(seqId) FROM chat_thread_events WHERE scope = :scope), snapshotSeqId) = :seqId
-        """
+        """,
     )
     suspend fun renewChatConfirmation(
         scope: String,

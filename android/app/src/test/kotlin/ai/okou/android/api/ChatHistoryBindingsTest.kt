@@ -119,7 +119,7 @@ class ChatHistoryBindingsTest {
         assertEquals(
             explicitNullUsage,
             json.encodeToJsonElement<RawHistoryRow>(
-                json.decodeFromJsonElement<RawHistoryRow>(explicitNullUsage)
+                json.decodeFromJsonElement<RawHistoryRow>(explicitNullUsage),
             ),
         )
     }
@@ -132,14 +132,14 @@ class ChatHistoryBindingsTest {
             for (forbidden in listOf(JsonNull, JsonPrimitive(privateValue))) {
                 val error =
                     assertDecodeFails<RawHistoryRow>(
-                        JsonObject(row.jsonObject + ("failureReason" to forbidden))
+                        JsonObject(row.jsonObject + ("failureReason" to forbidden)),
                     )
                 assertFalse(error.message.orEmpty().contains(privateValue))
             }
         }
         val error =
             assertDecodeFails<RawHistoryRow>(
-                JsonObject(rows[1].jsonObject + ("eventType" to JsonPrimitive(privateValue)))
+                JsonObject(rows[1].jsonObject + ("eventType" to JsonPrimitive(privateValue))),
             )
         assertFalse(error.message.orEmpty().contains(privateValue))
         assertDecodeFails<RawHistoryRow>(JsonObject(rows[0].jsonObject - "contextType"))
@@ -169,7 +169,7 @@ class ChatHistoryBindingsTest {
                 warm.copy(limit = 51.0),
             )) assertThrows(IllegalArgumentException::class.java) { invalid.toQueryParameters() }
         assertDecodeFails<RowsQuery>(
-            JsonObject(wire("queryCold").jsonObject + ("sinceEventId" to JsonNull))
+            JsonObject(wire("queryCold").jsonObject + ("sinceEventId" to JsonNull)),
         )
         assertDecodeFails<RowsQuery>(JsonObject(wire("queryWarm").jsonObject - "sinceEventId"))
     }
@@ -185,14 +185,14 @@ class ChatHistoryBindingsTest {
                         .baseUrl(server.url("/"))
                         .client(http)
                         .addConverterFactory(
-                            json.asConverterFactory("application/json".toMediaType())
+                            json.asConverterFactory("application/json".toMediaType()),
                         )
                         .build()
                         .create(HistoryApi::class.java)
                 server.enqueue(MockResponse().setBody(wire("snapshotEmpty").toString()))
                 assertTrue(
                     api.snapshot("Bearer fixture", "thread/part ?").body()
-                        is HistorySnapshotVariant1
+                        is HistorySnapshotVariant1,
                 )
                 assertEquals(
                     "/api/chat-threads/thread%2Fpart%20%3F/event-snapshot",

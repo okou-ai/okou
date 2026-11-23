@@ -165,7 +165,7 @@ internal fun OkouApp(
     val listState =
         chats?.uiState?.collectAsStateWithLifecycle()
             ?: rememberUpdatedState(
-                remember(startupPhase) { ChatListUiState(listPhase = startupPhase) }
+                remember(startupPhase) { ChatListUiState(listPhase = startupPhase) },
             )
     val list by rememberWorkspaceChatNavigation(listState)
     var navigation by rememberWorkspaceNavigation()
@@ -596,12 +596,12 @@ internal fun OkouApp(
                 linkSnackbar.currentSnackbarData?.dismiss()
                 linkReturns =
                     (linkReturns + ConversationLinkReturn(navigation, current.id, source)).takeLast(
-                        16
+                        16,
                     )
                 linkPosition =
                     ConversationLinkPosition(
                         destination =
-                            link.anchor?.let { ConversationFindTarget(it.id, null, it.isRun) }
+                            link.anchor?.let { ConversationFindTarget(it.id, null, it.isRun) },
                     )
                 linkFocusKey = null
                 focus.clearFocus()
@@ -641,37 +641,36 @@ internal fun OkouApp(
         if (handoffPending) return
         handoffPending = true
         workflowDraftError = null
-        handoff =
-            scope.launch {
-                try {
-                    when (activeComposer.prefillNew(prefix)) {
-                        ComposerPrefillResult.Ready -> {
-                            clearConversationLinks()
-                            focus.clearFocus()
-                            keyboard?.hide()
-                            conversations.open(ComposerTarget().key)
-                            navigation =
-                                navigation.copy(
-                                    target = WorkspaceTarget.NewChat(null),
-                                    settings = null,
-                                    search = SearchRoute.Closed,
-                                )
-                            changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
-                        }
-                        ComposerPrefillResult.NetworkFailed ->
-                            workflowDraftError =
-                                WorkflowDraftError(
-                                    workflowId,
-                                    R.string.workflow_draft_network_failed,
-                                )
-                        ComposerPrefillResult.Unavailable ->
-                            workflowDraftError =
-                                WorkflowDraftError(workflowId, R.string.workflow_draft_unavailable)
+        handoff = scope.launch {
+            try {
+                when (activeComposer.prefillNew(prefix)) {
+                    ComposerPrefillResult.Ready -> {
+                        clearConversationLinks()
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        conversations.open(ComposerTarget().key)
+                        navigation =
+                            navigation.copy(
+                                target = WorkspaceTarget.NewChat(null),
+                                settings = null,
+                                search = SearchRoute.Closed,
+                            )
+                        changeWorkflowRoute(workflowRoute.copy(mode = WorkflowsMode.Chat))
                     }
-                } finally {
-                    handoffPending = false
+                    ComposerPrefillResult.NetworkFailed ->
+                        workflowDraftError =
+                            WorkflowDraftError(
+                                workflowId,
+                                R.string.workflow_draft_network_failed,
+                            )
+                    ComposerPrefillResult.Unavailable ->
+                        workflowDraftError =
+                            WorkflowDraftError(workflowId, R.string.workflow_draft_unavailable)
                 }
+            } finally {
+                handoffPending = false
             }
+        }
     }
 
     val pendingChats by
@@ -771,8 +770,9 @@ internal fun OkouApp(
             navigation = navigation.copy(target = WorkspaceTarget.NewChat(null))
         }
     }
-    val provisionalChat =
-        provisionalId?.let { id -> list.threads.firstOrNull { it.id == id && it.hidden != true } }
+    val provisionalChat = provisionalId?.let { id ->
+        list.threads.firstOrNull { it.id == id && it.hidden != true }
+    }
     val needsWorkflowSourceChats =
         showWorkflows &&
             workflowRoute.tab == WorkflowTab.History &&
@@ -914,7 +914,7 @@ internal fun OkouApp(
                 when (target) {
                     WorkspaceTarget.List ->
                         stringResource(
-                            if (wideWelcome) R.string.composer_new else R.string.app_name
+                            if (wideWelcome) R.string.composer_new else R.string.app_name,
                         )
                     is WorkspaceTarget.Chat ->
                         thread?.title?.takeIf { it.isNotBlank() }
@@ -1201,8 +1201,8 @@ internal fun OkouApp(
                                             344 -> 24.dp
                                             320 -> 16.dp
                                             else -> 16.dp
-                                        }
-                                )
+                                        },
+                                ),
                             ) {
                                 detailTitle()
                             }
@@ -1214,7 +1214,7 @@ internal fun OkouApp(
                         else TopAppBarDefaults.windowInsets,
                     colors =
                         TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
+                            containerColor = MaterialTheme.colorScheme.background,
                         ),
                     navigationIcon = {
                         if (settings != null || showWorkspaceBack || findVisit?.target != null)
@@ -1223,7 +1223,7 @@ internal fun OkouApp(
                                     focus.clearFocus()
                                     keyboard?.hide()
                                     back()
-                                }
+                                },
                             ) {
                                 Icon(
                                     painterResource(R.drawable.ic_arrow_back),
@@ -1234,7 +1234,7 @@ internal fun OkouApp(
                                                 findVisit?.target == null
                                         )
                                             R.string.artifact_return_preview
-                                        else R.string.back
+                                        else R.string.back,
                                     ),
                                 )
                             }
@@ -1374,7 +1374,7 @@ internal fun OkouApp(
                         ) detailPane@{
                             if (inlineArtifactLink != null && chatArtifacts != null) {
                                 inlineArtifactPageState.SaveableStateProvider(
-                                    "chat-artifact-link"
+                                    "chat-artifact-link",
                                 ) {
                                     ChatArtifactLinkPreview(
                                         chatArtifacts,
@@ -1416,18 +1416,17 @@ internal fun OkouApp(
                                 Modifier.widthIn(max = 768.dp)
                                     .fillMaxWidth()
                                     .weight(1f)
-                                    .imePadding()
+                                    .imePadding(),
                             ) {
                                 when (target) {
                                     is WorkspaceTarget.Chat ->
                                         conversations.Content(target.id) {
-                                            val composerTarget =
-                                                thread?.let {
-                                                    ComposerTarget(
-                                                        threadId = it.id,
-                                                        projectId = it.projectId,
-                                                    )
-                                                }
+                                            val composerTarget = thread?.let {
+                                                ComposerTarget(
+                                                    threadId = it.id,
+                                                    projectId = it.projectId,
+                                                )
+                                            }
                                             ConversationRoute(
                                                 chats.history,
                                                 target.id,
@@ -1456,7 +1455,7 @@ internal fun OkouApp(
                                                             restored = {
                                                                 navigation =
                                                                     navigation.copy(
-                                                                        chatArtifactFocusKey = null
+                                                                        chatArtifactFocusKey = null,
                                                                     )
                                                             },
                                                         ),
@@ -1601,7 +1600,7 @@ internal data class WorkspaceChatNavigation(
 
 @Composable
 internal fun rememberWorkspaceChatNavigation(
-    listState: State<ChatListUiState>
+    listState: State<ChatListUiState>,
 ): State<WorkspaceChatNavigation> =
     remember(listState) {
         derivedStateOf(structuralEqualityPolicy()) {

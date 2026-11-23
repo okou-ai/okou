@@ -90,7 +90,7 @@ private object FixtureTrust {
                                 override fun engineGetTrustManagers(): Array<TrustManager> =
                                     checkNotNull(managers).clone()
                             }
-                    }
+                    },
                 )
             }
         }

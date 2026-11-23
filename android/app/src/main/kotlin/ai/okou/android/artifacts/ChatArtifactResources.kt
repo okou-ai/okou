@@ -110,10 +110,10 @@ internal fun ChatArtifactResources(
             result?.nextCursor != null && state.reading == null && problem == null && !state.offline
         ) {
             snapshotFlow {
-                    val layout = position.layoutInfo
-                    val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    last >= 0 && last >= layout.totalItemsCount - 5
-                }
+                val layout = position.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                last >= 0 && last >= layout.totalItemsCount - 5
+            }
                 .collect { nearEnd -> if (nearEnd) model.loadNext() }
         }
     }
@@ -143,7 +143,7 @@ internal fun ChatArtifactResources(
                 item {
                     ResourceNotice(
                         if (result == null) R.string.artifact_offline_catalog
-                        else R.string.artifact_offline_cached
+                        else R.string.artifact_offline_cached,
                     )
                 }
             if (showSkeleton) {

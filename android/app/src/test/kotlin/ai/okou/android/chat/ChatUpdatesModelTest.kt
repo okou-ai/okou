@@ -85,7 +85,7 @@ class ChatUpdatesModelTest {
         val before = reads
         active = false
         observers.last()(
-            RealtimeSnapshot(RealtimePhase.Unavailable, 2, ApiFailure.Unauthenticated())
+            RealtimeSnapshot(RealtimePhase.Unavailable, 2, ApiFailure.Unauthenticated()),
         )
         runCurrent()
         assertEquals(before, reads)

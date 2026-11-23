@@ -202,7 +202,7 @@ class ChatListRootTest {
         compose.waitUntilExactlyOneExists(hasText("Project chat") and detailTitle, 10_000)
 
         remoteEvents.add(
-            24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted")
+            24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted"),
         )
         reconnectList(app)
         compose.waitUntil(10_000) {
@@ -351,7 +351,7 @@ class ChatListRootTest {
         assertEquals(28.sp, layout.style.lineHeight)
         val linkStyle =
             checkNotNull(
-                layout.text.getLinkAnnotations(0, layout.text.length).single().item.styles?.style
+                layout.text.getLinkAnnotations(0, layout.text.length).single().item.styles?.style,
             )
         assertEquals(FontWeight.SemiBold, linkStyle.fontWeight)
         assertEquals(TextDecoration.Underline, linkStyle.textDecoration)
@@ -389,7 +389,7 @@ class ChatListRootTest {
                         ViewModelProvider(compose.activity)[SessionModel::class.java]
                             .uiState
                             .value
-                            .ready
+                            .ready,
                     )
                     .chats
                     .viewModelScope
@@ -422,16 +422,15 @@ class ChatListRootTest {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
-        val expansion =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .projectExpansion
-            }
+        val expansion = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .projectExpansion
+        }
         compose.waitUntil(10_000) { expansion.state.value.expandedIds != null }
         val heading = hasText("Research")
         val project = compose.onNode(heading)
@@ -492,13 +491,12 @@ class ChatListRootTest {
         app.responseGate.countDown()
         awaitListAndNames()
         val labels = listOf("Workflows", "Connectors", "Artifacts")
-        val entries =
-            labels.map {
-                val entry = compose.onNodeWithContentDescription(it).assertIsDisplayed()
-                if (it == "Artifacts") entry.assertIsEnabled()
-                else entry.assertIsNotEnabled().assertHasNoClickAction()
-                entry
-            }
+        val entries = labels.map {
+            val entry = compose.onNodeWithContentDescription(it).assertIsDisplayed()
+            if (it == "Artifacts") entry.assertIsEnabled()
+            else entry.assertIsNotEnabled().assertHasNoClickAction()
+            entry
+        }
         val search = compose.onNodeWithContentDescription("Search workspace")
         val searchBounds = search.getUnclippedBoundsInRoot()
         val entryBounds = entries.map { it.getUnclippedBoundsInRoot() }
@@ -532,7 +530,7 @@ class ChatListRootTest {
         val connectorLabel = "Connectors"
         val connectorLayouts = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText(connectorLabel, useUnmergedTree = true).performSemanticsAction(
-            SemanticsActions.GetTextLayoutResult
+            SemanticsActions.GetTextLayoutResult,
         ) {
             it(connectorLayouts)
         }
@@ -566,7 +564,7 @@ class ChatListRootTest {
                         kind = "archived",
                     )
                 jsonResponse(
-                    """{"events":[${chatEventWire()},$project,$archived],"hasMore":false}"""
+                    """{"events":[${chatEventWire()},$project,$archived],"hasMore":false}""",
                 )
             }
         }
@@ -595,7 +593,7 @@ class ChatListRootTest {
             .onNodeWithTag("chat_search_query")
             .assert(hasText("project"))
             .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(3))
+                SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(3)),
             )
         compose.onNodeWithText("Project chat").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
@@ -623,7 +621,7 @@ class ChatListRootTest {
                         title = other,
                     )
                 jsonResponse(
-                    """{"events":[${chatEventWire(title = title)},$project],"hasMore":false}"""
+                    """{"events":[${chatEventWire(title = title)},$project],"hasMore":false}""",
                 )
             }
         }
@@ -689,7 +687,7 @@ class ChatListRootTest {
         val personal = compose.onNode(hasText("Personal chat") and results)
         assertTrue(
             project.fetchSemanticsNode().boundsInRoot.top <
-                personal.fetchSemanticsNode().boundsInRoot.top
+                personal.fetchSemanticsNode().boundsInRoot.top,
         )
         project.performClick()
         compose.onNodeWithTag("chat_search").assertDoesNotExist()
@@ -741,7 +739,7 @@ class ChatListRootTest {
                     .filter { (seq, _) -> seq > after }
                     .joinToString(",") { it.second }
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}""",
             )
         }
         app.responseGate.countDown()
@@ -886,7 +884,7 @@ class ChatListRootTest {
                     ViewModelProvider(compose.activity)[SessionModel::class.java]
                         .uiState
                         .value
-                        .ready
+                        .ready,
                 )
                 .chats
                 .history
@@ -929,17 +927,16 @@ class ChatListRootTest {
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").performClick()
-        val history =
-            compose.runOnIdle {
-                checkNotNull(
-                        ViewModelProvider(compose.activity)[SessionModel::class.java]
-                            .uiState
-                            .value
-                            .ready
-                    )
-                    .chats
-                    .history
-            }
+        val history = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+                .history
+        }
         compose.waitUntil(10_000) {
             compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
         }
@@ -1008,7 +1005,7 @@ class ChatListRootTest {
                         run = null,
                     )
             jsonResponse(
-                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}"""
+                """{"rows":[$rows],"cursor":{"lastEventId":"$HISTORY_LAST_EVENT","lastSeqId":37},"hasMore":false}""",
             )
         }
         app.responseGate.countDown()
@@ -1052,16 +1049,15 @@ class ChatListRootTest {
             compose.waitUntil(10_000) { compose.runOnIdle { entered.count == 0L } }
             compose.onNodeWithContentDescription("Chats").assertExists()
             org.junit.Assert.assertEquals(0, app.fixture.readRequests.get())
-            val chats =
-                compose.runOnIdle {
-                    checkNotNull(
-                            ViewModelProvider(compose.activity)[SessionModel::class.java]
-                                .uiState
-                                .value
-                                .ready
-                        )
-                        .chats
-                }
+            val chats = compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready,
+                    )
+                    .chats
+            }
             compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
             compose.onNodeWithText("Personal chat").performClick()
             compose.waitUntil(10_000) {
@@ -1105,7 +1101,7 @@ class ChatListRootTest {
             indicatorReads.incrementAndGet()
             if (fixture.readRequests.get() == 0) {
                 jsonResponse(
-                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
                 )
             } else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
@@ -1143,16 +1139,15 @@ class ChatListRootTest {
             compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
             compose.onNodeWithText("Display mode").assertExists()
             gate.countDown()
-            val chats =
-                compose.runOnIdle {
-                    checkNotNull(
-                            ViewModelProvider(compose.activity)[SessionModel::class.java]
-                                .uiState
-                                .value
-                                .ready
-                        )
-                        .chats
-                }
+            val chats = compose.runOnIdle {
+                checkNotNull(
+                        ViewModelProvider(compose.activity)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready,
+                    )
+                    .chats
+            }
             val model = chats.history
             compose.waitUntil(10_000) {
                 compose.runOnIdle {
@@ -1343,7 +1338,7 @@ class ChatListRootTest {
         app.fixture.snapshot = {
             val url = app.fixture.server.url("/archive?attempt=${descriptors.incrementAndGet()}")
             jsonResponse(
-                """{"url":"$url","expiresInSeconds":60,"latestEventId":null,"latestSeqId":null}"""
+                """{"url":"$url","expiresInSeconds":60,"latestEventId":null,"latestSeqId":null}""",
             )
         }
         app.fixture.archive = {
@@ -1388,7 +1383,7 @@ class ChatListRootTest {
         fun assertProjectWeight(expected: FontWeight) {
             val layouts = mutableListOf<TextLayoutResult>()
             compose.onNodeWithText("Research", useUnmergedTree = true).performSemanticsAction(
-                SemanticsActions.GetTextLayoutResult
+                SemanticsActions.GetTextLayoutResult,
             ) {
                 it(layouts)
             }
@@ -1502,7 +1497,7 @@ class ChatListRootTest {
         app.fixture.indicators = {
             if (unread.get()) {
                 jsonResponse(
-                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_IN_PROJECT":"unread"},"unreadAt":{"$CHAT_IN_PROJECT":"$CHAT_DATE"}}""",
                 )
             } else {
                 jsonResponse("""{"threads":{},"unreadAt":{}}""")
@@ -1616,7 +1611,7 @@ class ChatListRootTest {
             val markers = unread.entries.joinToString(",") { (id, time) -> "\"$id\":\"$time\"" }
             val personal = if (CHAT_PERSONAL in unread) ",\"$CHAT_PERSONAL\":\"unread\"" else ""
             jsonResponse(
-                """{"threads":{"$running":"active","$CHAT_IN_PROJECT":"active"$personal},"unreadAt":{$markers}}"""
+                """{"threads":{"$running":"active","$CHAT_IN_PROJECT":"active"$personal},"unreadAt":{$markers}}""",
             )
         }
         app.fixture.commandResponse = { request ->
@@ -1633,8 +1628,9 @@ class ChatListRootTest {
                 when (id) {
                     CHAT_PERSONAL -> {
                         // A newer reply finishes before the client receives the first receipt.
-                        val receipt =
-                            personalUnread.getAndUpdate { if (it == CHAT_DATE) newer else null }
+                        val receipt = personalUnread.getAndUpdate {
+                            if (it == CHAT_DATE) newer else null
+                        }
                         jsonResponse("""{"lastReadAt":"$receipt"}""")
                     }
                     CHAT_IN_PROJECT ->
@@ -1669,7 +1665,10 @@ class ChatListRootTest {
         compose
             .onNodeWithText("Project chat")
             .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Active, Unread")
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Active, Unread",
+                ),
             )
         setResearchExpanded(false)
         compose.waitUntil(10_000) {
@@ -1753,7 +1752,7 @@ class ChatListRootTest {
                     }
                     2 ->
                         jsonResponse(
-                            """{"id":"$CHAT_PROJECT","name":"Field notes","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}"""
+                            """{"id":"$CHAT_PROJECT","name":"Field notes","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE"}""",
                         )
                     else -> {
                         committed.set(eventId)
@@ -1839,7 +1838,7 @@ class ChatListRootTest {
                         ViewModelProvider(compose.activity)[SessionModel::class.java]
                             .uiState
                             .value
-                            .ready
+                            .ready,
                     )
                     .chats
                     .renameProject(CHAT_PROJECT, "Field notes")
@@ -1863,7 +1862,7 @@ class ChatListRootTest {
         val inList = hasAnyAncestor(hasTestTag("chat_list"))
         val notice = compose.onNode(hasText(failure).and(inList)).assertIsDisplayed()
         assertTrue(
-            notice.getUnclippedBoundsInRoot().top >= project.getUnclippedBoundsInRoot().bottom
+            notice.getUnclippedBoundsInRoot().top >= project.getUnclippedBoundsInRoot().bottom,
         )
         compose.onNodeWithText("Try again").assertDoesNotExist()
         val undo = compose.onNodeWithText("Undo").assertIsDisplayed().assertIsEnabled()
@@ -2084,7 +2083,7 @@ class ChatListRootTest {
             compose.onAllNodesWithText(deletionMessage).fetchSemanticsNodes().isNotEmpty()
         }
         assertNull(
-            checkNotNull(currentList()).threads.single { it.id == CHAT_IN_PROJECT }.projectId
+            checkNotNull(currentList()).threads.single { it.id == CHAT_IN_PROJECT }.projectId,
         )
         compose.onNodeWithText(deletionMessage).assertIsDisplayed()
     }
@@ -2119,7 +2118,7 @@ class ChatListRootTest {
                                     CHAT_IN_PROJECT,
                                     "sort_touched",
                                     ",\"muted\":true",
-                                )
+                                ),
                         )
                         MockResponse().setResponseCode(503)
                     }
@@ -2140,7 +2139,7 @@ class ChatListRootTest {
                                     CHAT_IN_PROJECT,
                                     "sort_touched",
                                     ",\"muted\":false",
-                                )
+                                ),
                         )
                         MockResponse().setResponseCode(204)
                     }
@@ -2220,7 +2219,7 @@ class ChatListRootTest {
         app.fixture.indicators = {
             if (unread.get())
                 jsonResponse(
-                    """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}"""
+                    """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$CHAT_DATE"}}""",
                 )
             else jsonResponse("""{"threads":{},"unreadAt":{}}""")
         }
@@ -2293,7 +2292,7 @@ class ChatListRootTest {
                                 seq = 25,
                                 kind = "renamed",
                                 title = body.getValue("title").jsonPrimitive.content,
-                            )
+                            ),
                     )
                     MockResponse().setResponseCode(204)
                 }
@@ -2351,7 +2350,7 @@ class ChatListRootTest {
                         ViewModelProvider(compose.activity)[SessionModel::class.java]
                             .uiState
                             .value
-                            .ready
+                            .ready,
                     )
                     .chats
                     .renameThread(CHAT_PERSONAL, "Weekly brief")
@@ -2671,13 +2670,12 @@ class ChatListRootTest {
         val fixture = app.fixture
         val readback = CountDownLatch(1)
         val release = CountDownLatch(1)
-        val events =
-            fixture.rowEventTail {
-                if (it == 23L) {
-                    readback.countDown()
-                    release.await()
-                }
+        val events = fixture.rowEventTail {
+            if (it == 23L) {
+                readback.countDown()
+                release.await()
             }
+        }
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         fixture.commandResponse = { request ->
             if (request.method != "POST") null
@@ -2781,11 +2779,10 @@ class ChatListRootTest {
         val release = CountDownLatch(1)
         val pinResponse = CountDownLatch(1)
         val fixture = app.fixture
-        val events =
-            fixture.rowEventTail {
-                readback.countDown()
-                release.await()
-            }
+        val events = fixture.rowEventTail {
+            readback.countDown()
+            release.await()
+        }
         val commands = CopyOnWriteArrayList<RecordedRequest>()
         fixture.commandResponse = { request ->
             if (request.method != "POST") null
@@ -2801,7 +2798,7 @@ class ChatListRootTest {
                                     seq = 24,
                                     kind = "renamed",
                                     title = body.getValue("title").jsonPrimitive.content,
-                                )
+                                ),
                         )
                         MockResponse().setResponseCode(503)
                     }
@@ -2816,7 +2813,7 @@ class ChatListRootTest {
                                     CHAT_PERSONAL,
                                     "pinned",
                                     ",\"pinOrder\":\"$rank\"",
-                                )
+                                ),
                         )
                         MockResponse().setResponseCode(204)
                     }
@@ -2845,7 +2842,7 @@ class ChatListRootTest {
                             ViewModelProvider(compose.activity)[SessionModel::class.java]
                                 .uiState
                                 .value
-                                .ready
+                                .ready,
                         )
                         .chats
                 model.renameThread(CHAT_PERSONAL, "   ")
@@ -2969,7 +2966,7 @@ class ChatListRootTest {
                                 thread = id,
                                 kind = "sort_touched",
                                 extra = ",\"pinOrder\":${body.getValue("pinOrder")}",
-                            )
+                            ),
                     )
                     MockResponse().setResponseCode(204)
                 }
@@ -2992,7 +2989,7 @@ class ChatListRootTest {
         }
         assertTrue(
             target.fetchSemanticsNode().boundsInRoot.top <
-                first.fetchSemanticsNode().boundsInRoot.top
+                first.fetchSemanticsNode().boundsInRoot.top,
         )
         compose.onNodeWithContentDescription("Dismiss").assertIsDisplayed()
         val readsBeforeRefresh = readbacks.get()
@@ -3005,7 +3002,7 @@ class ChatListRootTest {
         compose.onNodeWithText("Refresh chats").assertIsEnabled()
         assertTrue(
             target.fetchSemanticsNode().boundsInRoot.top <
-                first.fetchSemanticsNode().boundsInRoot.top
+                first.fetchSemanticsNode().boundsInRoot.top,
         )
         assertEquals(2, commands.size)
         val lost = commands.last().jsonCommandBody()
@@ -3016,7 +3013,7 @@ class ChatListRootTest {
                     seq = 26,
                     kind = "sort_touched",
                     extra = ",\"pinOrder\":${lost.getValue("pinOrder")}",
-                )
+                ),
         )
         reconnectList(app)
         compose.waitUntil(10_000) {
@@ -3033,7 +3030,8 @@ class ChatListRootTest {
         }
         val tied = compose.onNodeWithTag("chat_$CHAT_IN_PROJECT")
         assertTrue(
-            first.fetchSemanticsNode().boundsInRoot.top < tied.fetchSemanticsNode().boundsInRoot.top
+            first.fetchSemanticsNode().boundsInRoot.top <
+                tied.fetchSemanticsNode().boundsInRoot.top,
         )
         assertEquals(
             listOf(CHAT_IN_PROJECT to "a3", CHAT_PERSONAL to "a2", CHAT_PERSONAL to "a0"),
@@ -3085,16 +3083,15 @@ class ChatListRootTest {
         }
     }
 
-    private fun currentList() =
-        compose.runOnIdle {
-            ViewModelProvider(compose.activity)[SessionModel::class.java]
-                .uiState
-                .value
-                .ready
-                ?.chats
-                ?.uiState
-                ?.value
-        }
+    private fun currentList() = compose.runOnIdle {
+        ViewModelProvider(compose.activity)[SessionModel::class.java]
+            .uiState
+            .value
+            .ready
+            ?.chats
+            ?.uiState
+            ?.value
+    }
 
     private fun reconnectList(app: ChatListApplication) {
         compose.runOnIdle { app.connectivity.value = false }

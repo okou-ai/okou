@@ -18,7 +18,7 @@ class HistoryProjectionContractTest {
         val fixture =
             Json.parseToJsonElement(
                     checkNotNull(javaClass.getResource("/api-bindings/chat-history-semantics.json"))
-                        .readText()
+                        .readText(),
                 )
                 .jsonObject
         val threadId = fixture.getValue("threadId").jsonPrimitive.content
@@ -49,7 +49,7 @@ class HistoryProjectionContractTest {
                                     "id" to JsonPrimitive(message.id),
                                     "type" to JsonPrimitive(type),
                                     "queued" to JsonPrimitive(message.queued),
-                                )
+                                ),
                             )
                         }
                 assertEquals(label, expected.getValue("events"), JsonArray(events))

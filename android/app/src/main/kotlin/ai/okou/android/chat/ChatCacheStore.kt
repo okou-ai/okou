@@ -126,7 +126,7 @@ internal constructor(
                     throw IOException("Chat cache authorization changed")
                 val archive =
                     ChatArchive(
-                        dao.snapshot(key).map { json.decodeFromString<ConfirmedChat>(it.payload) }
+                        dao.snapshot(key).map { json.decodeFromString<ConfirmedChat>(it.payload) },
                     )
                 val events =
                     dao.events(key).map { json.decodeFromString<ChatEventsEventsItem>(it.payload) }
@@ -197,7 +197,7 @@ internal constructor(
                     val anchor =
                         try {
                             json.decodeFromString<ConversationAnchor>(
-                                readingFile(threadId).readFully().decodeToString()
+                                readingFile(threadId).readFully().decodeToString(),
                             )
                         } catch (_: FileNotFoundException) {
                             null
@@ -247,7 +247,7 @@ internal constructor(
                     val record =
                         try {
                             json.decodeFromString<UnreadCacheRecord>(
-                                unreadFile.readFully().decodeToString()
+                                unreadFile.readFully().decodeToString(),
                             )
                         } catch (_: FileNotFoundException) {
                             return@withLock null
@@ -309,7 +309,7 @@ internal constructor(
                                         ?: return@deferredTransaction null
                                 requireChatWire(
                                     stored.authorization == authorization &&
-                                        stored.eventVersion == ApiHeaders.CHAT_EVENT_SCHEMA_VERSION
+                                        stored.eventVersion == ApiHeaders.CHAT_EVENT_SCHEMA_VERSION,
                                 )
                                 val cursor = HistoryCursor(stored.eventId, stored.seqId)
                                 val reusable =
@@ -326,7 +326,7 @@ internal constructor(
                                                     HistoryEvent.decode(entry.payload).also {
                                                         requireChatWire(
                                                             it.id == entry.id &&
-                                                                it.seqId == entry.seqId
+                                                                it.seqId == entry.seqId,
                                                         )
                                                     }
                                                 }
@@ -386,11 +386,11 @@ internal constructor(
                     database().useReaderConnection { connection ->
                         connection.deferredTransaction {
                             buildMap {
-                                    for (id in threadIds) usableHistoryCursor(
-                                            database().chats().historyScope(key, id)
-                                        )
-                                        ?.let { put(id, it) }
-                                }
+                                for (id in threadIds) usableHistoryCursor(
+                                        database().chats().historyScope(key, id),
+                                    )
+                                    ?.let { put(id, it) }
+                            }
                                 .also { checkCurrent() }
                         }
                     }
@@ -433,12 +433,12 @@ internal constructor(
                                 confirmedAt,
                                 last.id,
                                 last.seqId,
-                            )
+                            ),
                         )
                         dao.putHistoryEvents(
                             rows.map {
                                 HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
-                            }
+                            },
                         )
                         written.add(threadId)
                     }
@@ -508,14 +508,14 @@ internal constructor(
                             confirmedAt,
                             checkpoint.cursor.eventId,
                             checkpoint.cursor.seqId,
-                        )
+                        ),
                     )
                     dao.putHistoryEvents(
                         checkpoint.rows
                             .filter { replacement || it.seqId > checkNotNull(stored).seqId }
                             .map {
                                 HistoryEventRecord(key, threadId, it.id, it.seqId, it.archiveJson())
-                            }
+                            },
                     )
                     true
                 }
@@ -588,7 +588,7 @@ internal constructor(
                                         ),
                                         dao.projectEvents(key).map {
                                             json.decodeFromString<ProjectEventsEventsItem>(
-                                                it.payload
+                                                it.payload,
                                             )
                                         },
                                     )
@@ -633,7 +633,7 @@ internal constructor(
                             confirmedAt,
                             checkpoint.snapshotCursor.eventId,
                             checkpoint.snapshotCursor.seqId,
-                        )
+                        ),
                     )
                     if (replacement) {
                         dao.clearEvents(key)
@@ -641,7 +641,7 @@ internal constructor(
                         dao.putSnapshot(
                             checkpoint.archive.chatThreads.mapIndexed { position, row ->
                                 ChatSnapshotRecord(key, row.id, position, json.encodeToString(row))
-                            }
+                            },
                         )
                     }
                     dao.putEvents(
@@ -655,7 +655,7 @@ internal constructor(
                                     cursor.seqId,
                                     json.encodeToString(it),
                                 )
-                            }
+                            },
                     )
                     true
                 }
@@ -716,7 +716,7 @@ internal constructor(
                             confirmedAt,
                             checkpoint.snapshotCursor.eventId,
                             checkpoint.snapshotCursor.seqId,
-                        )
+                        ),
                     )
                     if (replacement) {
                         dao.clearProjectEvents(key)
@@ -724,7 +724,7 @@ internal constructor(
                         dao.putProjects(
                             checkpoint.archive.projects.mapIndexed { position, row ->
                                 ChatProjectRecord(key, row.id, position, json.encodeToString(row))
-                            }
+                            },
                         )
                     }
                     dao.putProjectEvents(
@@ -732,7 +732,7 @@ internal constructor(
                             .filter { replacement || it.seqId > lastSeqId }
                             .map {
                                 ProjectEventRecord(key, it.id, it.seqId, json.encodeToString(it))
-                            }
+                            },
                     )
                     true
                 }
@@ -743,34 +743,33 @@ internal constructor(
             clear: suspend (ChatCacheDao) -> Unit,
             saved: () -> Unit,
             write: suspend (ChatCacheDao) -> Boolean,
-        ): Boolean =
-            lock.withLock {
-                checkCurrent()
-                val db = database()
-                val caller = currentCoroutineContext()
-                var writing = false
-                var committed = false
-                withContext(NonCancellable) {
-                    try {
-                        db.useWriterConnection { connection ->
-                            connection.immediateTransaction {
-                                caller.ensureActive()
-                                checkCurrent()
-                                writing = write(db.chats())
-                                caller.ensureActive()
-                                checkCurrent()
-                            }
+        ): Boolean = lock.withLock {
+            checkCurrent()
+            val db = database()
+            val caller = currentCoroutineContext()
+            var writing = false
+            var committed = false
+            withContext(NonCancellable) {
+                try {
+                    db.useWriterConnection { connection ->
+                        connection.immediateTransaction {
+                            caller.ensureActive()
+                            checkCurrent()
+                            writing = write(db.chats())
+                            caller.ensureActive()
+                            checkCurrent()
                         }
-                        committed = true
-                        if (writing) saved()
-                    } finally {
-                        if (writing && committed && !current()) clear(db.chats())
                     }
+                    committed = true
+                    if (writing) saved()
+                } finally {
+                    if (writing && committed && !current()) clear(db.chats())
                 }
-                currentCoroutineContext().ensureActive()
-                checkCurrent()
-                writing
             }
+            currentCoroutineContext().ensureActive()
+            checkCurrent()
+            writing
+        }
 
         override fun close() {
             retired = true

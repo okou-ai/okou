@@ -60,7 +60,7 @@ open class OkouApplication : Application() {
         ProjectExpansionStore(
             PreferenceDataStoreFactory.create {
                 noBackupFilesDir.resolve("project-expansion.preferences_pb")
-            }
+            },
         )
     }
     val memberAppearanceCache by lazy {

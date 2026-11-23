@@ -64,7 +64,7 @@ class SavedUiStateTest {
                 listOf(
                     searchResult("checklist", "Release checklist"),
                     searchResult("feedback", "Customer feedback"),
-                )
+                ),
             )
         compose.setContent {
             OkouTheme(false) {

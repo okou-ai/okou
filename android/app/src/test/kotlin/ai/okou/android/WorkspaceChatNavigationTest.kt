@@ -56,7 +56,8 @@ class WorkspaceChatNavigationTest {
                     pendingRowActions = mapOf(thread to ChatRowAction.MarkRead),
                     readIntents =
                         mapOf(
-                            thread to ChatReadIntent(ChatRowAction.MarkRead, "2026-11-22T00:00:00Z")
+                            thread to
+                                ChatReadIntent(ChatRowAction.MarkRead, "2026-11-22T00:00:00Z"),
                         ),
                     markAllReadResult = ChatMarkAllReadResult(1, 1),
                 )
@@ -78,6 +79,6 @@ class WorkspaceChatNavigationTest {
 private fun ListFeedback(list: State<ChatListUiState>, thread: String) {
     val state = list.value
     Text(
-        "${state.isUnread(thread)} ${state.pendingRowActions.size} ${state.markAllReadResult?.confirmed}"
+        "${state.isUnread(thread)} ${state.pendingRowActions.size} ${state.markAllReadResult?.confirmed}",
     )
 }

@@ -138,7 +138,7 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
     rows.replaceAll { _, row ->
         row.copy(
             serviceTier =
-                row.serviceTier?.takeIf { it == ChatArchiveChatThreadsItemServiceTier.PRIORITY }
+                row.serviceTier?.takeIf { it == ChatArchiveChatThreadsItemServiceTier.PRIORITY },
         )
     }
     val pending = mutableMapOf<String, MutableList<ChatEventsEventsItem>>()
@@ -178,9 +178,9 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
                             ChatArchiveChatThreadsItemModelSettingsValue(
                                 setting.effort?.let {
                                     ChatArchiveChatThreadsItemModelSettingsValueEffort.valueOf(
-                                        it.name
+                                        it.name,
                                     )
-                                }
+                                },
                             )
                         },
                 )
@@ -219,14 +219,14 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
                     event.muted != null -> row.copy(muted = event.muted)
                     event.pinOrder != null ->
                         row.copy(
-                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder
+                            pinOrder = if (row.pinnedAt != null) event.pinOrder else row.pinOrder,
                         )
                     else ->
                         row.copy(
                             sortAt =
                                 if (chatTimestamp(event.createdAt) > chatTimestamp(row.sortAt))
                                     event.createdAt
-                                else row.sortAt
+                                else row.sortAt,
                         )
                 }
             return
@@ -246,7 +246,7 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
                         serviceTier =
                             event.serviceTier?.let {
                                 ChatArchiveChatThreadsItemServiceTier.PRIORITY
-                            }
+                            },
                     )
                 ChatEventsEventsItemVariant1Kind.COMPUTER_USE_HOST_UPDATED ->
                     row.copy(
@@ -264,7 +264,7 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
                                     (patch.model to
                                         ChatArchiveChatThreadsItemModelSettingsValue(
                                             ChatArchiveChatThreadsItemModelSettingsValueEffort
-                                                .valueOf(patch.effort.name)
+                                                .valueOf(patch.effort.name),
                                         )),
                     )
                 }
@@ -275,7 +275,7 @@ internal fun replayChatList(checkpoint: ChatCheckpoint): ReplayedChats {
     val times = rows.values.associate { it.id to chatTimestamp(it.sortAt) }
     val byRecency =
         rows.values.sortedWith(
-            compareByDescending<ConfirmedChat> { times.getValue(it.id) }.thenByDescending { it.id }
+            compareByDescending<ConfirmedChat> { times.getValue(it.id) }.thenByDescending { it.id },
         )
     return ReplayedChats(orderChatPins(byRecency), byRecency)
 }
@@ -286,7 +286,7 @@ internal fun orderChatPins(byRecency: List<ConfirmedChat>): List<ConfirmedChat> 
     val ranks = pinned.associate { it.id to it.effectivePinOrder() }
     val orderedPins =
         pinned.sortedWith(
-            compareBy<ConfirmedChat> { ranks.getValue(it.id) }.thenByDescending { it.id }
+            compareBy<ConfirmedChat> { ranks.getValue(it.id) }.thenByDescending { it.id },
         )
     return orderedPins + byRecency.filter { it.pinnedAt == null }
 }

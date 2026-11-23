@@ -149,7 +149,7 @@ class UpdateRootTest {
                     SemanticsMatcher.expectValue(
                         SemanticsProperties.ProgressBarRangeInfo,
                         ProgressBarRangeInfo(0.5f, 0f..1f),
-                    )
+                    ),
                 )
             assertEquals(actionBounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
             assertEquals(titleBounds, title.getUnclippedBoundsInRoot())
@@ -184,7 +184,7 @@ class UpdateRootTest {
                 SemanticsMatcher.expectValue(
                     SemanticsProperties.ProgressBarRangeInfo,
                     ProgressBarRangeInfo.Indeterminate,
-                )
+                ),
             )
         assertEquals(bounds, progress.assertIsDisplayed().getUnclippedBoundsInRoot())
         compose.onNodeWithText("Preparing…").assertHasNoClickAction()
@@ -397,13 +397,13 @@ class UpdateRootTest {
 
     private fun updateDetailText(label: String) =
         compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(AnnotatedString(label)))
+            SemanticsMatcher.expectValue(SemanticsProperties.Text, listOf(AnnotatedString(label))),
         )
 
     private fun updateDetailsHeading() =
         compose.onNode(
             hasText(app.getString(R.string.updates_title)) and
-                SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading),
         )
 
     private fun allowInstallAndDiscoverUpdate() {
@@ -419,7 +419,7 @@ class UpdateRootTest {
                 app.packageManager.resolveContentProvider(
                     "${app.packageName}.updates",
                     PackageManager.GET_META_DATA,
-                )
+                ),
             )
         FileProvider().attachInfo(app, provider)
         val file = File(app.filesDir, "updates/install.apk")

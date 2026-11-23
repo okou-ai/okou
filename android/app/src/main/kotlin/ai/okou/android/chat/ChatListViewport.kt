@@ -90,8 +90,9 @@ internal fun ChatListViewport(
             subcompose(ListLayer.Feedback) { Box(Modifier.zIndex(2f)) { feedback() } }
                 .single()
                 .measure(loose)
-        val visibleStatus =
-            status.takeUnless { it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0 }
+        val visibleStatus = status.takeUnless {
+            it == ChatListStatus.RefreshFailed && feedbackLayer.height > 0
+        }
         val floating =
             if (short) null
             else
@@ -140,7 +141,7 @@ internal fun ChatListViewport(
                 subcompose(ListLayer.Sync) {
                         val label = stringResource(R.string.chat_syncing)
                         LinearProgressIndicator(
-                            Modifier.fillMaxWidth().semantics { contentDescription = label }
+                            Modifier.fillMaxWidth().semantics { contentDescription = label },
                         )
                     }
                     .single()
@@ -297,7 +298,7 @@ internal fun ChatSkeletonBlock(modifier: Modifier, cornerRadius: Dp = 8.dp) {
         modifier.background(
             MaterialTheme.colorScheme.surfaceVariant,
             RoundedCornerShape(cornerRadius),
-        )
+        ),
     )
 }
 

@@ -164,7 +164,7 @@ class ConnectorModelTest {
             assertFalse(
                 revisited.accountsFor(CONNECTOR_CALENDAR).any {
                     it.id == CONNECTOR_CALENDAR_PRIMARY
-                }
+                },
             )
             assertEquals(1, revisited.accountsFor(CONNECTOR_CALENDAR).size)
 
@@ -217,8 +217,9 @@ class ConnectorModelTest {
                 true
             }
             model.resume()
-            val pending =
-                model.await { it.action?.problem == ConnectorProblem.AuthorizationIncomplete }
+            val pending = model.await {
+                it.action?.problem == ConnectorProblem.AuthorizationIncomplete
+            }
             assertNull(pending.action?.result)
             assertFalse(pending.accountsFor("gmail").any { it.id == CONNECTOR_GMAIL_ACCOUNT })
 
@@ -287,11 +288,9 @@ class ConnectorModelTest {
             _,
             model ->
             model.startAuthorization(null, "device-auth", emptyMap())
-            val ready =
-                model.await {
-                    it.action?.busy == false &&
-                        it.action.authorization is ConnectorAuthorization.Device
-                }
+            val ready = model.await {
+                it.action?.busy == false && it.action.authorization is ConnectorAuthorization.Device
+            }
             val attempt = ready.action?.authorization as ConnectorAuthorization.Device
             assertEquals(CONNECTOR_EXAMPLE_DEVICE_CODE, attempt.code)
 
@@ -315,8 +314,9 @@ class ConnectorModelTest {
             model.await { it.offline }
             fixture.rejectConnection = true
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            val failed =
-                model.await { it.action?.problem == ConnectorProblem.Network && !it.action.busy }
+            val failed = model.await {
+                it.action?.problem == ConnectorProblem.Network && !it.action.busy
+            }
             assertTrue(failed.canChangeAccounts)
             assertEquals(0, fixture.renameRequests.get())
 
@@ -338,10 +338,9 @@ class ConnectorModelTest {
             model.await { it.offline }
             fixture.loseRenameReply = true
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            val pending =
-                model.await {
-                    it.action?.problem == ConnectorProblem.VerificationPending && !it.action.busy
-                }
+            val pending = model.await {
+                it.action?.problem == ConnectorProblem.VerificationPending && !it.action.busy
+            }
             assertFalse(pending.canChangeAccounts)
             assertEquals(1, fixture.renameRequests.get())
             model.rename(CONNECTOR_CALENDAR_PRIMARY, "Other name")
@@ -371,11 +370,9 @@ class ConnectorModelTest {
             fixture.loseManualReply = true
             val values = mapOf("workspace" to "example")
             model.startAuthorization(null, "manual", values)
-            val pending =
-                model.await {
-                    it.action?.problem == ConnectorProblem.AuthorizationUnconfirmed &&
-                        !it.action.busy
-                }
+            val pending = model.await {
+                it.action?.problem == ConnectorProblem.AuthorizationUnconfirmed && !it.action.busy
+            }
             assertNull(pending.action?.result)
             assertFalse(pending.canChangeAccounts)
             model.startAuthorization(null, "manual", values)
@@ -435,7 +432,9 @@ class ConnectorModelTest {
             val confirmed = model.await { it.action?.result == ConnectorResult.Renamed }
             assertEquals(
                 "Meeting calendar",
-                confirmed.accounts.data?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }?.displayName,
+                confirmed.accounts.data
+                    ?.single { it.id == CONNECTOR_CALENDAR_PRIMARY }
+                    ?.displayName,
             )
             assertEquals(1, fixture.renameRequests.get())
         }

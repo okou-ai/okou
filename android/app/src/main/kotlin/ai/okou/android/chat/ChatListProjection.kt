@@ -138,10 +138,9 @@ internal class ChatListProjection {
 
     private fun recordMembershipChanges(rows: ReplayedChats) {
         if (rowEdits.isEmpty()) return
-        val moves =
-            rowEdits.filter {
-                it.edit.action == ChatRowAction.MoveProject && !it.confirmedMembershipChanged
-            }
+        val moves = rowEdits.filter {
+            it.edit.action == ChatRowAction.MoveProject && !it.confirmedMembershipChanged
+        }
         if (moves.isEmpty()) return
         val threadIds = moves.mapTo(hashSetOf()) { it.edit.threadId }
         val previous = confirmedRows.membershipFor(threadIds)
@@ -182,8 +181,9 @@ internal class ChatListProjection {
         return false
     }
 
-    fun completedOutgoingAttempts(): Map<String, OutgoingAttempt> =
-        outgoingActivity.filterValues { !it.sending }
+    fun completedOutgoingAttempts(): Map<String, OutgoingAttempt> = outgoingActivity.filterValues {
+        !it.sending
+    }
 
     fun retainAcceptedNewChats(chats: List<ProvisionalChat>) {
         acceptedNewChats = unobservedNewChats((chats + acceptedNewChats).distinctBy { it.threadId })
@@ -268,11 +268,10 @@ internal class ChatListProjection {
             if (edit.eventId in observed) settledThrough[edit.threadId to edit.field] = index
         }
         if (settledThrough.isEmpty() && discarded.isEmpty()) return
-        rowEdits =
-            rowEdits.filterIndexed { index, pending ->
-                val edit = pending.edit
-                edit.eventId !in discarded &&
-                    index > (settledThrough[edit.threadId to edit.field] ?: -1)
-            }
+        rowEdits = rowEdits.filterIndexed { index, pending ->
+            val edit = pending.edit
+            edit.eventId !in discarded &&
+                index > (settledThrough[edit.threadId to edit.field] ?: -1)
+        }
     }
 }

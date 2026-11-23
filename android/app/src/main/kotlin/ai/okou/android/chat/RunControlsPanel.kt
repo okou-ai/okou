@@ -142,7 +142,7 @@ internal fun ConversationStatus(
                     enabled = stop.canStop,
                     colors =
                         ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurface
+                            contentColor = MaterialTheme.colorScheme.onSurface,
                         ),
                 ) {
                     Icon(painterResource(R.drawable.ic_stop), null, Modifier.size(16.dp))
@@ -205,8 +205,8 @@ internal fun RunControlsFeedback(controls: ConversationRunControls) {
                         RunControlPhase.Checking -> R.string.controls_checking
                         RunControlPhase.Unknown -> R.string.controls_unknown
                         RunControlPhase.Retryable -> R.string.controls_retryable
-                    }
-                )
+                    },
+                ),
             )
             if (phase == RunControlPhase.Retryable)
                 TextButton(onClick = { model.retry(intent.id) }, enabled = !controls.offline) {
@@ -238,8 +238,8 @@ internal fun RunControlsFeedback(controls: ConversationRunControls) {
                             RunControlNoticeKind.Recorded -> R.string.controls_recorded
                             RunControlNoticeKind.TargetSettled -> R.string.controls_target_settled
                             RunControlNoticeKind.ReadFailed -> R.string.controls_read_failed
-                        }
-                    )
+                        },
+                    ),
                 )
             }
         controls.confirmed?.let {

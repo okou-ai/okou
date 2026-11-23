@@ -44,7 +44,7 @@ fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
             output.messages
                 .takeIf { output.threadId == thread?.id }
                 .orEmpty()
-                .mapNotNull { it.runId }
+                .mapNotNull { it.runId },
         )
         .orEmpty()
 

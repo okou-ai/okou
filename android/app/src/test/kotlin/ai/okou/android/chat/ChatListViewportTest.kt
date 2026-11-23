@@ -71,7 +71,7 @@ class ChatListViewportTest {
                                 Modifier.fillMaxWidth()
                                     .height(52.dp)
                                     .clickable { clickedChat = index }
-                                    .testTag("chat_$index")
+                                    .testTag("chat_$index"),
                             ) {
                                 Text("Chat $index")
                             }

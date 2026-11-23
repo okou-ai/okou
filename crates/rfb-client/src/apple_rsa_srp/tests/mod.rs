@@ -1,10 +1,10 @@
 use super::*;
-use rsa::RsaPrivateKey;
+use rsa::{RsaPrivateKey, pkcs8::DecodePrivateKey};
 
 #[test]
 fn maximum_username_fits_the_rsa_plaintext_without_truncation() {
-    let mut rng = StdRng::try_from_rng(&mut SysRng).expect("OS entropy");
-    let private = RsaPrivateKey::new(&mut rng, 2048).expect("synthetic RSA key");
+    let der = include_bytes!("../../../tests/data/synthetic_rsa2048_pkcs8.der");
+    let private = RsaPrivateKey::from_pkcs8_der(der).expect("synthetic RSA key");
     let username = vec![b'a'; 234];
     let encrypted = encrypted_username(&RsaPublicKey::from(&private), &username)
         .expect("exact PKCS#1 v1.5 bound");
