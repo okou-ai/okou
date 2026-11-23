@@ -1,4 +1,4 @@
-import { command, state, type Command } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/validators/connector-accounts";
 
@@ -8,6 +8,21 @@ import { onRef } from "../utils.ts";
 export function createChatConnectorMenuNavigationSignals(
   closeTarget$: Command<void, []>,
 ) {
+  const anchorRect$ = state<DOMRect | undefined>(undefined);
+  const captureAnchor$ = command(({ set }, rect: DOMRect | undefined) => {
+    // Keep the opening position through scrolling and the closing animation.
+    set(anchorRect$, rect);
+  });
+  const anchor$ = computed((get) => {
+    const rect = get(anchorRect$);
+    return rect
+      ? {
+          getBoundingClientRect() {
+            return rect;
+          },
+        }
+      : undefined;
+  });
   const viewport$ = state<HTMLElement | null>(null);
   const setViewport$ = onRef<HTMLElement>(
     command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
@@ -62,5 +77,5 @@ export function createChatConnectorMenuNavigationSignals(
       return false;
     },
   );
-  return { setViewport$, restoreFocus$ };
+  return { anchor$, captureAnchor$, setViewport$, restoreFocus$ };
 }

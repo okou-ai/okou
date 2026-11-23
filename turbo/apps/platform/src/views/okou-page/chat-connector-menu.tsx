@@ -194,6 +194,7 @@ function ConnectorOverviewRow({
 }) {
   const { t } = useTranslation();
   const target = useGet(signals.connector.chatAccess.target$);
+  const anchor = useGet(signals.connector.chatAccess.navigation.anchor$);
   const openTarget = useSet(signals.connector.chatAccess.openTarget$);
   const closeTarget = useSet(signals.connector.chatAccess.closeTarget$);
   const restoreFocus = useSet(
@@ -211,9 +212,9 @@ function ConnectorOverviewRow({
   return (
     <Popover
       open={open}
-      onOpenChange={(nextOpen) => {
+      onOpenChange={(nextOpen, details) => {
         if (nextOpen) {
-          openTarget(entry, signal);
+          openTarget(entry, details.trigger?.getBoundingClientRect(), signal);
         } else if (open) {
           closeTarget();
         }
@@ -246,6 +247,7 @@ function ConnectorOverviewRow({
         <ChevronRight size={14} className="shrink-0 text-muted-foreground" />
       </PopoverTrigger>
       <PopoverContent
+        anchor={anchor}
         side="right"
         align="start"
         sideOffset={8}
