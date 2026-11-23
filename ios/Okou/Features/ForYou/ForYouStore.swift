@@ -102,10 +102,10 @@ final class ForYouStore {
 
   func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
 
-  func move(_ offset: Int) {
-    guard !busy, cards.count > 1 else { return }
-    direction?.composer.editor.dismissKeyboard()
-    position = (position + offset + cards.count) % cards.count
+  /// The pager came to rest on a card.
+  func show(_ id: String) {
+    guard let index = cards.firstIndex(where: { $0.id == id }), index != position else { return }
+    position = index
     error = nil
   }
 
@@ -213,6 +213,21 @@ final class ForYouStore {
       remove(card)
     }
     return openChat && error == nil
+  }
+
+  /// Opens the input at once when its chat needs no check: a new chat, or one the list already
+  /// holds. False leaves an unknown chat to `openDirection`, which checks it first.
+  func openListedDirection(_ card: ForYouCard) -> Bool {
+    guard case .suggestion(let suggestion) = card.content, let workspace else { return false }
+    let target = suggestion.customOption.threadId
+    guard target == nil || workspace.list.threads.contains(where: { $0.id == target }) else {
+      return false
+    }
+    guard !busy, current?.id == card.id, !workspace.isClosed else { return true }
+    closeDirection()
+    direction = ForYouDirection(
+      cardID: card.id, threadID: target, commands: commands, workspace: workspace)
+    return true
   }
 
   func openDirection(_ card: ForYouCard) async {
