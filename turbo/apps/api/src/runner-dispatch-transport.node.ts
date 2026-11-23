@@ -1,5 +1,6 @@
 import { monotonicNow } from "./lib/time";
 import type {
+  RunnerDispatchEncoding,
   RunnerDispatchTransport,
   TakenRunnerDispatch,
 } from "./signals/external/runner-dispatch-transport";
@@ -20,9 +21,10 @@ interface TransportOptions {
 }
 
 type TakeReservation = (
-  body: string,
+  body: string | Uint8Array<ArrayBuffer>,
   startedAt: number,
   signal: AbortSignal,
+  encoding: RunnerDispatchEncoding,
 ) => TakenRunnerDispatch | undefined;
 
 export function createRunnerDispatchTransport({
@@ -32,7 +34,7 @@ export function createRunnerDispatchTransport({
   const reservedOrigins = new Set<string>();
 
   return {
-    reserve(runId, url, start, signal) {
+    reserve(runId, url, start, signal, encoding = "identity") {
       const origin = new URL(url).origin;
       if (signal.aborted || reservedOrigins.has(origin)) {
         return;
@@ -83,7 +85,16 @@ export function createRunnerDispatchTransport({
       const onExpiry = () => {
         finish("expired");
       };
-      const take: TakeReservation = (body, dispatchStartedAt, deadline) => {
+      const take: TakeReservation = (
+        body,
+        dispatchStartedAt,
+        deadline,
+        bodyEncoding,
+      ) => {
+        if (bodyEncoding !== encoding) {
+          finish("cancelled");
+          return undefined;
+        }
         if (cancelled) {
           finish("failed");
           return undefined;
@@ -99,7 +110,9 @@ export function createRunnerDispatchTransport({
         if (deadline.aborted) {
           abortDispatch();
         } else {
-          controller.enqueue(new TextEncoder().encode(body));
+          controller.enqueue(
+            typeof body === "string" ? new TextEncoder().encode(body) : body,
+          );
           controller.close();
         }
         return {
@@ -125,8 +138,8 @@ export function createRunnerDispatchTransport({
         "Runner dispatch preconnection cleanup",
       );
     },
-    take(url, body, startedAt, signal) {
-      return reservations.get(url)?.(body, startedAt, signal);
+    take(url, body, startedAt, signal, encoding = "identity") {
+      return reservations.get(url)?.(body, startedAt, signal, encoding);
     },
   };
 }

@@ -220,6 +220,8 @@ case "${1:-}" in
       [ "${MOCK_WECHAT_WORKFLOWS_ONLY_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "dfff1605013103371cd90962ee5b54c80fc93140" ]; then
       [ "${MOCK_BUNDLED_CLI_RUNNER_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290" ] && [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+      [ "${MOCK_DIRECT_DISPATCH_GZIP_READER_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "37e6bb51029f05ff1d7a7a6c28b03f139dfd067c" ]; then
       [ "${MOCK_LINK_GRANT_WRITER_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "52525252525252525252525252525252525252ab" ]; then
@@ -1110,6 +1112,14 @@ run_resolver "${tmp_dir}/managed-data-runtime-exact.output" \
   >"${tmp_dir}/managed-data-runtime-exact.log"
 grep -qx "target_commit=b220a504c5e633de162791f1216c4458188ffe72" \
   "${tmp_dir}/managed-data-runtime-exact.output" || fail "exact Data runtime preparation must remain eligible"
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates gzip direct dispatch" \
+  run_resolver "${tmp_dir}/gzip-runner-floor.output" MOCK_DIRECT_DISPATCH_GZIP_READER_VALID=0
+[ ! -s "${tmp_dir}/gzip-runner-floor.output" ] || fail "old Runner must not publish rollback outputs"
+if grep -Eq '^curl .*releases/tags/|^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "old Runner must fail before Runner artifact or host access"
+fi
 
 : >"${tmp_dir}/boundaries.log"
 assert_failure "predates the independent finalizing source reader" \

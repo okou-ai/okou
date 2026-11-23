@@ -15,8 +15,10 @@ import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
 import {
+  gzipRunnerDispatchBody,
   postRunnerDispatch,
   reserveRunnerDispatch,
+  runnerDispatchEncoding,
 } from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
@@ -75,12 +77,6 @@ export const prepareDirectRunDispatch$ = command(
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();
-          const target = candidates[0];
-          if (target) {
-            safeSync(() => {
-              reserveRunnerDispatch(target, input.run.id, signal);
-            });
-          }
           return { candidates, candidatesReadyAt };
         })(),
       ]);
@@ -229,6 +225,8 @@ const offerToProcess$ = command(
     let retry = 0;
     let firstCandidateReadyAt = args.firstCandidateReadyAt;
     let offer: DispatchOffer | undefined;
+    let gzipBody:
+      Awaited<ReturnType<typeof gzipRunnerDispatchBody>> | undefined;
     for (;;) {
       // Runner reconciles cancellation asynchronously after binding the supplied
       // input. Check ownership immediately before the first offer and after waits.
@@ -242,6 +240,16 @@ const offerToProcess$ = command(
         args.target.preference,
         args.window,
       );
+      let gzipEncodeMs: number | undefined;
+      if (
+        runnerDispatchEncoding(offer.bodyBytes) === "gzip" &&
+        gzipBody === undefined &&
+        remainingDelivery(args.window) > 0
+      ) {
+        gzipBody = await gzipRunnerDispatchBody(offer.body, offer.bodyBytes);
+        gzipEncodeMs = gzipBody.elapsedMs;
+        signal.throwIfAborted();
+      }
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
@@ -253,8 +261,9 @@ const offerToProcess$ = command(
         {
           target: args.target,
           runId: args.runId,
-          body: offer.body,
+          body: gzipBody?.bytes ?? offer.body,
           bodyBytes: offer.bodyBytes,
+          gzipEncodeMs,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
           firstRankedTarget: args.firstCandidateReadyAt !== undefined,
@@ -342,6 +351,16 @@ export const dispatchPreparedRun$ = command(
         const body = serializeDispatch(envelope);
         if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
+        }
+        if (owner === null) {
+          safeSync(() => {
+            reserveRunnerDispatch(
+              target,
+              input.run.id,
+              signal,
+              runnerDispatchEncoding(body.bodyBytes),
+            );
+          });
         }
         const selected = await set(
           selectDirectRunOwner$,

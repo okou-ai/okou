@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { singleton } from "../../../../lib/singleton";
 import { runnerDispatchEnvelopeSchema } from "@okouai/api-contracts/contracts/runner-dispatch";
 import { http, HttpResponse } from "msw";
@@ -504,6 +505,7 @@ export function createRunsApi(context: TestContext) {
       readonly reply?: (
         envelope: DispatchEnvelope,
         bytes: string,
+        encoding: string | null,
       ) => Response | Promise<Response>;
     } = {},
   ) {
@@ -520,7 +522,13 @@ export function createRunsApi(context: TestContext) {
           if (request.headers.get("authorization") !== authorization) {
             return new HttpResponse(null, { status: 401 });
           }
-          const bytes = await request.text();
+          const encoding = request.headers.get("content-encoding");
+          const bytes =
+            encoding === "gzip"
+              ? gunzipSync(Buffer.from(await request.arrayBuffer())).toString(
+                  "utf8",
+                )
+              : await request.text();
           const envelope = runnerDispatchEnvelopeSchema.parse(
             JSON.parse(bytes),
           );
@@ -539,7 +547,7 @@ export function createRunsApi(context: TestContext) {
                 ?.observed ?? false,
           });
           if (options.reply) {
-            return await options.reply(envelope, bytes);
+            return await options.reply(envelope, bytes, encoding);
           }
           return HttpResponse.json({
             ...identity,
