@@ -277,11 +277,57 @@ class ChatConnectorOptionsTest {
     }
 
     @Test
+    fun rejectedChatCreationRestoresTheDraftConnectorChoices() {
+        openNewChat()
+        val message = "Summarize the saved calendar"
+        val field = compose.onNodeWithTag("message_input")
+        field.performTextReplacement(message)
+        openPicker()
+        compose.onNodeWithTag(primaryTag).assertIsOn().performClick()
+        closeOptions()
+
+        app.chats.rejectCreate = true
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        val restore = "Restore retained draft"
+        waitText(restore)
+        assertTrue(app.chats.created.isEmpty())
+        assertTrue(app.connectors.chatOverrideRequests.isEmpty())
+        compose.onNodeWithText(restore).performScrollTo().performClick()
+        field.assertTextContains(message)
+        openPicker()
+        compose.onNodeWithTag(primaryTag).assertIsOff()
+        closeOptions()
+
+        app.chats.rejectCreate = false
+        compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { app.chats.inputs.size == 1 }
+        assertEquals(false, app.connectors.chatOverrideRequests.single().enabled)
+        assertEquals(
+            message,
+            app.chats.inputs.values.single().getValue("prompt").jsonPrimitive.content,
+        )
+    }
+
+    @Test
     fun projectSendConfirmsTheAccountAndRecoversTheOriginalInputWithoutRewriting() {
+        openNewChat()
+        val message = "Summarize the Project calendar"
+        val field = compose.onNodeWithTag("message_input")
+        field.performTextReplacement(message)
+        openPicker()
+        compose.onNodeWithTag(primaryTag).assertIsOn().performClick()
+        closeOptions()
+        compose.onNodeWithContentDescription("Back").performClick()
+
         waitText("Research")
         compose.onNodeWithText("Research").performSemanticsAction(SemanticsActions.OnLongClick)
         compose.onNodeWithText("New chat in this Project").performClick()
         waitForComposer()
+        field.assertTextContains(message)
+        openPicker()
+        compose.onNodeWithTag(primaryTag).assertIsOff()
+        closeOptions()
+
         val application = app
         val observedAtSend = AtomicReference<Boolean?>()
         application.chats.beforeSendReturn = {
@@ -291,12 +337,6 @@ class ChatConnectorOptionsTest {
                 application.connectors.chatOverride(thread, CONNECTOR_CALENDAR_PRIMARY),
             )
         }
-        compose
-            .onNodeWithTag("message_input")
-            .performTextReplacement("Summarize the Project calendar")
-        openPicker()
-        compose.onNodeWithTag(primaryTag).assertIsOn().performClick()
-        closeOptions()
         val readback = CountDownLatch(1)
         application.connectors.loseChatOverrideReply = true
         application.connectors.chatOverrideReadReplyGate = readback
