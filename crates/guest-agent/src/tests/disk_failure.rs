@@ -293,7 +293,7 @@ async fn record_first_completion(
         workload_containment: None,
         process_control_endpoint: None,
     };
-    let actual_exit = complete_execution(
+    let (actual_exit, _) = complete_execution(
         &masker,
         exit_code,
         exit_code,

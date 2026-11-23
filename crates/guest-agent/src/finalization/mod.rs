@@ -68,6 +68,7 @@ impl<'a> FinalizationInputs<'a> {
 /// Native history and output metadata and local state awaiting atomic completion acknowledgement.
 pub struct PreparedFinalization {
     request: complete::RequestCompletion,
+    memory_published: bool,
     mode: FinalizationMode,
     retained_history: Option<session_history::RetainedSessionHistory>,
     framework: env::Framework,
@@ -76,6 +77,11 @@ pub struct PreparedFinalization {
 }
 
 impl PreparedFinalization {
+    /// Whether preparation committed a Memory version distinct from its parent.
+    pub fn memory_published(&self) -> bool {
+        self.memory_published
+    }
+
     pub(crate) fn request(&self) -> &complete::RequestCompletion {
         &self.request
     }
@@ -158,6 +164,7 @@ async fn prepare_finalization_for_mode(
     }
     result.map(|prepared| PreparedFinalization {
         request: prepared.request,
+        memory_published: prepared.memory_published,
         mode,
         retained_history: prepared.retained_history,
         framework: inputs.framework,
@@ -168,6 +175,7 @@ async fn prepare_finalization_for_mode(
 
 struct PreparedFinalizationParts {
     request: complete::RequestCompletion,
+    memory_published: bool,
     retained_history: Option<session_history::RetainedSessionHistory>,
 }
 
@@ -212,11 +220,12 @@ async fn prepare_finalization_impl(
         cli_agent_session_id,
         cli_agent_session_history_disposition:
             complete::RequestCompletionCliAgentSessionHistoryDisposition::NativeOnly,
-        storage_outputs,
+        storage_outputs: storage_outputs.outputs,
         volume_versions_snapshot: None,
     };
     Ok(PreparedFinalizationParts {
         request,
+        memory_published: storage_outputs.memory_published,
         retained_history,
     })
 }

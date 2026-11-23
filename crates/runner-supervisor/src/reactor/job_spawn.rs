@@ -258,6 +258,7 @@ impl ExecutorInvocation {
                         startup_report: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
+                        memory_published: false,
                     },
                     exit_code,
                     err,
@@ -361,6 +362,7 @@ impl FinalizationPhase {
             startup_report: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
+            memory_published: _,
         } = outcome;
         #[cfg(test)]
         test_observer.record(StartLoopEvent::ExecutorCompleted {
@@ -435,7 +437,7 @@ struct DeferredUploadPhase {
 }
 
 impl DeferredUploadPhase {
-    async fn flush(self, telemetry: JobTelemetry, succeeded: bool) {
+    async fn flush(self, telemetry: JobTelemetry, warm_memory: bool) {
         let Self {
             run_id,
             sandbox_token,
@@ -478,7 +480,7 @@ impl DeferredUploadPhase {
             exec_config.network_log_upload_health.observe(outcome);
         };
         let memory_archive = memory_archive_token
-            .filter(|_| succeeded)
+            .filter(|_| warm_memory)
             .map(|token| (token, StorageTelemetry::reporter(&telemetry)));
         let memory_archive_warm = async {
             if let Some((token, reporter)) = memory_archive {
@@ -765,7 +767,9 @@ pub(super) async fn run_job(
             active_sandbox.current(),
             completion_auth,
         );
-        let succeeded = executor_result.exit_code == 0 && !cancelled_for_log;
+        let warm_memory = executor_result.outcome.memory_published
+            && executor_result.exit_code == 0
+            && !cancelled_for_log;
         // Keep provider completion paired with the accepted job.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
@@ -779,7 +783,7 @@ pub(super) async fn run_job(
             .await;
         // Completion, reuse handoff, and capacity release precede ancillary
         // delivery. The existing job owner still drains both tasks on shutdown.
-        tokio::join!(deferred_upload.flush(telemetry, succeeded), async {
+        tokio::join!(deferred_upload.flush(telemetry, warm_memory), async {
             if let Some(report) = startup_report {
                 report.finish().await;
             }

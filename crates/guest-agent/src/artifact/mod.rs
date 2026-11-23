@@ -59,6 +59,7 @@ pub(crate) struct FileEntry {
 pub(crate) struct SnapshotResult {
     pub(crate) version_id: String,
     pub(crate) publication: SnapshotPublication,
+    pub(crate) changed_version: bool,
     archive: Option<ArchiveBundle>,
 }
 
@@ -241,6 +242,7 @@ pub(crate) async fn create_snapshot(
         validate_dedup_snapshot(request.mount_path, Arc::clone(&request.files)).await?;
         let publication = commit_snapshot_step(http, &request, &version_id, None).await?;
         return Ok(SnapshotResult {
+            changed_version: version_id != request.parent_version_id,
             version_id,
             publication,
             archive: None,
@@ -257,6 +259,7 @@ pub(crate) async fn create_snapshot(
     log_info!(LOG_TAG, "Direct upload snapshot created: {short_id}");
 
     Ok(SnapshotResult {
+        changed_version: version_id != request.parent_version_id,
         version_id,
         archive: matches!(publication, SnapshotPublication::Conflict(_)).then_some(archive),
         publication,

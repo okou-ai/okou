@@ -182,7 +182,9 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
             assert_eq!(requested_contexts.load(Ordering::SeqCst), allowed + 1);
             complete.assert_calls_async(0).await;
         } else {
-            report_prepared_finalization(&runtime, 0, result.unwrap())
+            let finalization = result.unwrap();
+            assert!(finalization.memory_published());
+            report_prepared_finalization(&runtime, 0, finalization)
                 .await
                 .unwrap();
             complete.assert_calls_async(1).await;

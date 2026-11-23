@@ -1,6 +1,6 @@
-//! Maximum retained-record sizes for CLI stdout framing.
+//! Shared framing for CLI records and guest-agent stdout.
 //!
-//! These limits are shared by guest-agent readers, mock producers, and
+//! The CLI limits are shared by guest-agent readers, mock producers, and
 //! integration tests so runtime policy and boundary fixtures stay in lockstep.
 
 /// Maximum retained bytes for one ordinary CLI stdout record before parsing.
@@ -9,3 +9,7 @@
 /// LF is excluded. A preceding CR counts before CRLF normalization, and an
 /// EOF-terminated final record is measured without an implicit terminator.
 pub const ORDINARY_CLI_STDOUT_MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
+
+/// Optional terminal guest-agent output after an acknowledged Memory publication.
+/// Runner treats it only as a hint to query the authoritative API.
+pub const MEMORY_PUBLISHED_MARKER: &str = "\n[okou:memory-published]\n";
