@@ -143,7 +143,7 @@
     <string name="realtime_unavailable">लाइव अपडेट उपलब्ध नहीं हैं। आप मैन्युअल रूप से रीफ़्रेश कर सकते हैं।</string>
     <string name="settings_account">खाता</string>
     <string name="chat_project_expansion_read_failed">इस डिवाइस पर प्रोजेक्ट के खुले या बंद होने की स्थिति लोड नहीं हो सकी।</string>
-    <string name="chat_project_expansion_save_failed">इस डिवाइस पर प्रोजेक्ट के खुले या बंद होने की स्थिति सहेजी नहीं जा सकी।</string>
+    <string name="chat_project_expansion_save_failed">अगली बार के लिए प्रोजेक्ट के खुले या बंद होने की स्थिति सहेजी नहीं जा सकी।</string>
     <string name="settings_cancel">रद्द करें</string>
     <string name="settings_saving">सेव हो रहा है…</string>
     <string name="settings_sign_out_title">साइन आउट करें?</string>
