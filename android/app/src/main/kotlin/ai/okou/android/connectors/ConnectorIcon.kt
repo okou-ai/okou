@@ -39,7 +39,7 @@ private val connectorIconInversion =
             this[0, 4] = 255f
             this[1, 4] = 255f
             this[2, 4] = 255f
-        }
+        },
     )
 
 @Composable

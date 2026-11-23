@@ -23,7 +23,7 @@ private val solidColor = Regex("#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
 internal val connectorSvgDecoder =
     SvgDecoder.Factory(
         parser =
-            Svg.Parser { source -> Svg.Parser.DEFAULT.parse(source.withCompatibleAlphaMasks()) }
+            Svg.Parser { source -> Svg.Parser.DEFAULT.parse(source.withCompatibleAlphaMasks()) },
     )
 
 private fun BufferedSource.withCompatibleAlphaMasks(): BufferedSource {

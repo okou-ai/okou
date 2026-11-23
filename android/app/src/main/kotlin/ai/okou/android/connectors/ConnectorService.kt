@@ -269,7 +269,11 @@ class ConnectorService(private val api: ApiClient) {
                 connector.description,
                 connector.category,
                 connector.popularityRank,
-                brandIcon(connector.icon.url, connector.icon.invertInDarkMode, connector.icon.scale),
+                brandIcon(
+                    connector.icon.url,
+                    connector.icon.invertInDarkMode,
+                    connector.icon.scale,
+                ),
             ),
             connector.authMethods.filter {
                 it.grantKind != ConnectorDetailConnectorAuthMethodsItemGrantKind.MANAGED

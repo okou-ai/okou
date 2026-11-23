@@ -43,7 +43,7 @@ class ConnectorSvgDecoderTest {
                         .data(svg)
                         .size(32)
                         .decoderFactory(connectorSvgDecoder)
-                        .build()
+                        .build(),
                 ) as SuccessResult
             val bitmap = (result.image as BitmapImage).bitmap
             assertEquals(Color.rgb(14, 188, 95), bitmap.getPixel(8, 16))
