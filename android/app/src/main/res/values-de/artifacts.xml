@@ -35,7 +35,8 @@
     <string name="artifact_missing">Dieses Artefakt ist nicht mehr verfügbar</string>
     <string name="artifact_unavailable">Vorübergehend nicht verfügbar</string>
     <string name="artifact_preview_unsupported">Für diese Datei ist keine Vorschau verfügbar</string>
-    <string name="artifact_online_preview">Online gehen, um die Vorschau zu laden</string>
+    <string name="artifact_preview_unavailable">Vorschau kann vorübergehend nicht geladen werden</string>
+    <string name="artifact_preview_source_unavailable">Quelle nicht verfügbar</string>
     <string name="artifact_preview_only">Nur Vorschau</string>
     <string name="artifact_source_name">Ursprüngliche Unterhaltung · %1$s</string>
     <string name="artifact_view_source">Ursprüngliche Unterhaltung ansehen</string>
