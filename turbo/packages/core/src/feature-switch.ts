@@ -196,6 +196,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ChatLatestTurnScrollRoom]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Start the latest chat turn at the top",
+    description:
+      "Leave room below a short reply so the latest question can scroll to the top of the conversation.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatReplyNameLine]: {
     maintainer: "tongx@okou.ai",
     displayName: "Agent name on replies",
