@@ -65,7 +65,7 @@ internal fun ArtifactsRoute(
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val selectedId = searchArtifactId ?: page.selectedId
 
-    LifecycleStartEffect(model) {
+    LifecycleStartEffect(model, searchArtifactId) {
         model.setActive(
             true,
             ArtifactQuery(page.filter, input.text.toString().trim()),

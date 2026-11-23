@@ -4,6 +4,7 @@ import ai.okou.android.chat.plainDraftDocument
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -168,14 +169,15 @@ internal class WorkflowApiFixture(
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 } else {
-                    previousDraft =
+                    val document =
                         Json.parseToJsonElement(request.body.clone().readUtf8())
                             .jsonObject["draftUserMessage"]
-                            ?.jsonObject
-                            ?.let { document -> document.toString() }
-                            ?.let { document ->
+                            as? JsonObject
+                    previousDraft =
+                        document
+                            ?.let {
                                 // Read through the same wire format as a normal draft response.
-                                Json.decodeFromString<DraftFixtureMessage>(document)
+                                Json.decodeFromString<DraftFixtureMessage>(it.toString())
                                     .parts
                                     .single()
                                     .text

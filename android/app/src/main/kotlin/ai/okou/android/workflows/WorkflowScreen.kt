@@ -115,7 +115,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.compose.LifecycleResumeEffect
 
 @Composable
 internal fun WorkflowScreen(
@@ -138,10 +137,6 @@ internal fun WorkflowScreen(
     onOpenChat: (String) -> Unit,
     fromSearch: Boolean = false,
 ) {
-    LifecycleResumeEffect(model) {
-        model.foregroundChanged(true)
-        onPauseOrDispose { model.foregroundChanged(false) }
-    }
     val wide = listWidth != null
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
