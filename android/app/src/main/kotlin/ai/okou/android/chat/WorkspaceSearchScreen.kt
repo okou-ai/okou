@@ -102,6 +102,7 @@ internal fun WorkspaceSearchScreen(
     refreshChats: () -> Unit = {},
     remote: WorkspaceSearchResults? = null,
     workflowResults: SearchRead<SearchWorkflowHit>? = null,
+    workspaceToolsRead: SearchRead<Nothing>? = null,
     recentlyOpened: List<String> = emptyList(),
     onOpenMessage: (SearchMessageHit) -> Unit = {},
     restoreResultFocus: Boolean = true,
@@ -247,6 +248,7 @@ internal fun WorkspaceSearchScreen(
             search,
             resultRemote,
             resultWorkflows,
+            workspaceToolsRead,
             resultRecents,
             contentWidth.weight(1f),
             onOpen,
@@ -406,6 +408,7 @@ private fun SearchResults(
     search: ChatSearchState,
     remote: WorkspaceSearchResults?,
     workflowResults: SearchRead<SearchWorkflowHit>?,
+    workspaceToolsRead: SearchRead<Nothing>?,
     recentlyOpened: List<String>,
     modifier: Modifier,
     onOpen: (ConfirmedChat) -> Unit,
@@ -461,14 +464,16 @@ private fun SearchResults(
             remoteActive && type.includes(WorkspaceSearchType.Messages)
         }
     val workflowRead =
-        workflowResults.takeIf {
-            keyword.isNotEmpty() &&
-                onOpenWorkflow != null &&
-                type.includes(WorkspaceSearchType.Workflows)
+        (workspaceToolsRead ?: workflowResults.takeIf { onOpenWorkflow != null }).takeIf {
+            keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Workflows)
+        }
+    val artifactResults =
+        (currentRemote?.artifacts ?: SearchRead.Loading).takeIf {
+            remoteActive && onOpenArtifact != null
         }
     val artifactRead =
-        (currentRemote?.artifacts ?: SearchRead.Loading).takeIf {
-            remoteActive && onOpenArtifact != null && type.includes(WorkspaceSearchType.Artifacts)
+        (workspaceToolsRead ?: artifactResults).takeIf {
+            keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Artifacts)
         }
     val reads = listOf(messageRead, workflowRead, artifactRead)
     val messageHits = (messageRead as? SearchRead.Ready)?.rows.orEmpty()
@@ -561,11 +566,16 @@ private fun SearchResults(
     val missingMessageChats = needsMessageChats && (listFailure != null || !waitingForList)
     val messageFailure = messageRead.hasFailure || missingMessageChats
     val workflowFailure =
-        workflowRead.hasFailure || onOpenWorkflow == null && type == WorkspaceSearchType.Workflows
+        workflowRead.hasFailure ||
+            workspaceToolsRead == null &&
+                onOpenWorkflow == null &&
+                type == WorkspaceSearchType.Workflows
     val artifactFailure =
         artifactRead.hasFailure ||
             moreArtifactsFailed ||
-            onOpenArtifact == null && type == WorkspaceSearchType.Artifacts
+            workspaceToolsRead == null &&
+                onOpenArtifact == null &&
+                type == WorkspaceSearchType.Artifacts
     val hasRemoteData = reads.any { it is SearchRead.Ready }
     val status =
         when {
