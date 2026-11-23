@@ -813,7 +813,7 @@ private fun WorkflowDetailPane(
                         item(key = "history_earlier") {
                             TextButton(
                                 onClick = onEarlierRuns,
-                                enabled = !handoffPending && state.historyRead == null,
+                                enabled = !handoffPending && state.historyRead?.loading != true,
                                 modifier = Modifier.testTag("workflow_earlier_runs"),
                             ) {
                                 Text(

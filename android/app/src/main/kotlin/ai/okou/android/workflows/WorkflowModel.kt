@@ -42,9 +42,10 @@ internal data class WorkflowState(
     val editor: WorkflowEdit? = null,
 )
 
-internal enum class WorkflowHistoryRead {
-    Latest,
-    Earlier,
+internal enum class WorkflowHistoryRead(val loading: Boolean) {
+    Latest(true),
+    Earlier(true),
+    EarlierPaused(false),
 }
 
 internal enum class WorkflowReadFailure {
@@ -102,7 +103,8 @@ internal constructor(
             if (current.rulesFailure.canRecheckOnReconnect()) rulesRead.cancel()
             if (current.connectionsFailure.canRecheckOnReconnect()) connectionsRead.cancel()
             if (current.detailFailure.canRecheckOnReconnect()) cancelDetailRead()
-            if (current.historyFailure.canRecheckOnReconnect()) cancelHistoryRead()
+            if (current.historyFailure.canRecheckOnReconnect())
+                cancelHistoryRead(keepEarlierRequest = true)
             mutable.value =
                 current.copy(
                     catalogFailure =
@@ -164,12 +166,12 @@ internal constructor(
         if (foreground == resumed) return
         foreground = resumed
         // Foreground changes retain the current visit, including the active editor.
-        if (resumed) refresh() else stopReads()
+        if (resumed) refresh() else stopReads(keepEarlierRequest = true)
     }
 
-    private fun stopReads() {
+    private fun stopReads(keepEarlierRequest: Boolean = false) {
         stopWorkflowReads()
-        cancelHistoryRead()
+        cancelHistoryRead(keepEarlierRequest)
         connectionsRead.cancel()
     }
 
@@ -184,11 +186,19 @@ internal constructor(
         detailLoad = null
     }
 
-    private fun cancelHistoryRead() {
+    private fun cancelHistoryRead(keepEarlierRequest: Boolean = false) {
         historyLoad?.cancel()
         historyLoad = null
-        if (mutable.value.historyRead != null)
-            mutable.value = mutable.value.copy(historyRead = null)
+        val current = mutable.value
+        val read =
+            when (current.historyRead) {
+                WorkflowHistoryRead.Earlier,
+                WorkflowHistoryRead.EarlierPaused ->
+                    WorkflowHistoryRead.EarlierPaused.takeIf { keepEarlierRequest }
+                WorkflowHistoryRead.Latest,
+                null -> null
+            }
+        if (read != current.historyRead) mutable.value = current.copy(historyRead = read)
     }
 
     internal fun select(id: String?, tab: WorkflowTab = WorkflowTab.Instructions) {
@@ -266,7 +276,16 @@ internal constructor(
         for (scope in scopes) when (scope) {
             WorkflowReadScope.Detail -> selected?.let(::loadDetail)
             WorkflowReadScope.History ->
-                if (tab == WorkflowTab.History) selected?.let { loadHistory(it, null) }
+                if (tab == WorkflowTab.History) {
+                    selected?.let { id ->
+                        val current = mutable.value
+                        val cursor =
+                            current.history?.nextCursor.takeIf {
+                                current.historyRead == WorkflowHistoryRead.EarlierPaused
+                            }
+                        loadHistory(id, cursor)
+                    }
+                }
             WorkflowReadScope.Catalog -> loadCatalog()
             WorkflowReadScope.Rules -> loadDirectoryRules()
             WorkflowReadScope.Connections -> loadConnections()
@@ -449,6 +468,7 @@ internal constructor(
 
     private fun loadDetail(id: String) {
         if (detailLoad?.isActive == true) return
+        val restoringAccess = mutable.value.detailFailure == WorkflowReadFailure.Unavailable
         detailLoad =
             viewModelScope.launch {
                 retryReads({ mutable.value = mutable.value.copy(detailFailure = it) }) {
@@ -485,6 +505,8 @@ internal constructor(
                         }
                         detail != null -> {
                             publishDetail(detail, sequence)
+                            if (restoringAccess && mutable.value.history == null)
+                                refresh(setOf(WorkflowReadScope.History))
                             null
                         }
                         else -> error
@@ -558,7 +580,15 @@ internal constructor(
                         null
                     }
                 } finally {
-                    if (isActive) mutable.value = mutable.value.copy(historyRead = null)
+                    if (isActive) {
+                        val current = mutable.value
+                        val paused =
+                            WorkflowHistoryRead.EarlierPaused.takeIf {
+                                cursor != null &&
+                                    current.historyFailure == WorkflowReadFailure.Offline
+                            }
+                        mutable.value = current.copy(historyRead = paused)
+                    }
                 }
             }
     }
