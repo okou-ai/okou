@@ -108,12 +108,12 @@ function detailClient() {
   );
 }
 
-async function readRunHistory(workflowId: string) {
+async function readRunHistory(workflowId: string, cursor?: string) {
   const response = await accept(
     detailClient().runHistory({
       headers: authHeaders(),
       params: { workflowId },
-      query: {},
+      query: { cursor },
     }),
     [200],
   );
@@ -4345,6 +4345,83 @@ describe("okou workflow automations", () => {
     expect(chatEventDisplayText(workflowMessage!)).toBe(
       "A manual run of this workflow was requested.",
     );
+  });
+
+  it("continues workflow run history across a timestamp shared by two runs", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const workflowId = await wf.createWorkflow(owned.actor, {
+        name: WORKFLOW_NAME,
+      });
+      async function createRule(intervalSeconds: number) {
+        const created = await accept(
+          automationsClient().create({
+            headers: authHeaders(),
+            params: { workflowId },
+            body: { schedule: { type: "loop", intervalSeconds } },
+          }),
+          [201],
+        );
+        return created.body.id;
+      }
+
+      const primaryRule = await createRule(3600);
+      const secondRule = await createRule(7200);
+      const startedAt = now();
+      await runs.heartbeatRunner(owned.runnerGroup);
+
+      const pageSize = 30;
+      const runIds: string[] = [];
+      const automations = automationsClient();
+      for (let index = 0; index <= pageSize; index += 1) {
+        // A different rule can run at the same instant without deduplicating.
+        mockNow(startedAt + Math.max(0, index - 1));
+        await accept(
+          automations.run({
+            headers: authHeaders(),
+            params: { id: index === 1 ? secondRule : primaryRule },
+          }),
+          [201],
+        );
+        const { runId, sandboxToken } = await runs.nextReceivedExecution(
+          owned.runnerGroup,
+        );
+        owned.rememberExecution(runId, sandboxToken);
+        await webhookCallbacks.requestAgentComplete(
+          { runId, exitCode: 1, error: "Test run failed" },
+          { authorization: `Bearer ${sandboxToken}` },
+          [200],
+        );
+        await flushWaitUntilForTest();
+        runIds.push(runId);
+      }
+
+      const tiedRunIds = runIds.slice(0, 2).sort().reverse();
+      const expected = [...runIds.slice(2).reverse(), ...tiedRunIds];
+      const firstPage = await readRunHistory(workflowId);
+      expect(
+        firstPage.runs.map(({ id }) => {
+          return id;
+        }),
+      ).toStrictEqual(expected.slice(0, pageSize));
+      if (firstPage.nextCursor === null) {
+        throw new Error("Expected a cursor for the earlier run");
+      }
+
+      const earlierPage = await readRunHistory(
+        workflowId,
+        firstPage.nextCursor,
+      );
+      expect(
+        earlierPage.runs.map(({ id }) => {
+          return id;
+        }),
+      ).toStrictEqual(expected.slice(pageSize));
+      expect(earlierPage.runs[0]?.createdAt).toBe(
+        firstPage.runs.at(-1)?.createdAt,
+      );
+      expect(earlierPage.nextCursor).toBeNull();
+    });
   });
 
   it("shares one lazy destination across concurrent and repeated Run now requests", async () => {

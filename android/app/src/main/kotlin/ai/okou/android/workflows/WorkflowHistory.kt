@@ -23,9 +23,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -80,11 +84,20 @@ internal fun WorkflowHistoryRow(
     timezone: String,
     sourceChatAvailable: (String) -> Boolean,
     sourceNavigationEnabled: Boolean,
-    onOpenChat: (String) -> Unit,
+    restoreFocus: Boolean,
+    onFocusRestored: () -> Unit,
+    onOpenChat: (runId: String, threadId: String) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val source = run.chatThreadId?.takeIf(sourceChatAvailable)
     val openChatLabel = stringResource(R.string.workflow_history_open_chat)
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(restoreFocus, source, sourceNavigationEnabled) {
+        if (restoreFocus) {
+            if (source != null && sourceNavigationEnabled) requester.requestFocus()
+            onFocusRestored()
+        }
+    }
     val statusColor =
         when (run.status) {
             WorkflowRunHistoryEntryStatus.RUNNING -> LocalActivityStatusColor.current
@@ -100,12 +113,13 @@ internal fun WorkflowHistoryRow(
             .then(
                 if (source == null) Modifier.semantics(mergeDescendants = true) {}
                 else
-                    Modifier.clickable(
-                        enabled = sourceNavigationEnabled,
-                        onClickLabel = openChatLabel,
-                        role = Role.Button,
-                        onClick = { onOpenChat(source) },
-                    )
+                    Modifier.focusRequester(requester)
+                        .clickable(
+                            enabled = sourceNavigationEnabled,
+                            onClickLabel = openChatLabel,
+                            role = Role.Button,
+                            onClick = { onOpenChat(run.id, source) },
+                        )
             )
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),

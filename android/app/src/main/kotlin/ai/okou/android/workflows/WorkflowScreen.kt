@@ -136,7 +136,9 @@ internal fun WorkflowScreen(
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    onOpenChat: (String) -> Unit,
+    restoreHistoryRunId: String?,
+    onHistoryFocusRestored: () -> Unit,
+    onOpenChat: (runId: String, threadId: String) -> Unit,
 ) {
     LifecycleResumeEffect(model) {
         model.foregroundChanged(true)
@@ -247,6 +249,8 @@ internal fun WorkflowScreen(
                             useError = useError,
                             onUse = { onUse(detail) },
                             sourceChatAvailable = sourceChatAvailable,
+                            restoreHistoryRunId = restoreHistoryRunId,
+                            onHistoryFocusRestored = onHistoryFocusRestored,
                             onOpenChat = onOpenChat,
                             onEarlierRuns = model::loadEarlierRuns,
                         )
@@ -722,7 +726,9 @@ private fun WorkflowDetailPane(
     useError: Int?,
     onUse: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    onOpenChat: (String) -> Unit,
+    restoreHistoryRunId: String?,
+    onHistoryFocusRestored: () -> Unit,
+    onOpenChat: (runId: String, threadId: String) -> Unit,
     onEarlierRuns: () -> Unit,
 ) {
     val padding = if (wide) 32.dp else 20.dp
@@ -806,6 +812,8 @@ private fun WorkflowDetailPane(
                             timezone = timezone,
                             sourceChatAvailable = sourceChatAvailable,
                             sourceNavigationEnabled = !handoffPending,
+                            restoreFocus = run.id == restoreHistoryRunId,
+                            onFocusRestored = onHistoryFocusRestored,
                             onOpenChat = onOpenChat,
                         )
                     }

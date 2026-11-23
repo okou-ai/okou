@@ -734,9 +734,14 @@ class WorkflowRootTest {
         compose.onNode(source).performClick()
         waitForTag("conversation")
 
-        val link = hasText("Project handoff", substring = true)
-        compose.waitUntil(10_000) { compose.onAllNodes(link).fetchSemanticsNodes().size == 1 }
-        compose.onNode(link).performFirstLinkClick()
+        val linkText = hasText("Project handoff", substring = true)
+        val link =
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
+                hasAnyAncestor(linkText)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(link, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        compose.onNode(linkText).performFirstLinkClick()
         val inSidebar = hasAnyAncestor(hasTestTag("chat_list"))
         val linkedChat = hasText("Project chat") and !inSidebar
         compose.waitUntil(10_000) { compose.onAllNodes(linkedChat).fetchSemanticsNodes().size == 1 }
@@ -754,6 +759,24 @@ class WorkflowRootTest {
 
         back()
         compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun sourceChatBackRestoresTheFocusedHistoryRow() = withHardwareKeyboard {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val run = app.fixture.firstRunHistory.runs.last()
+        val source = hasTestTag("workflow_run_${run.id}") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        val row = compose.onNode(source)
+        row.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+        row.performKeyInput { pressKey(Key.Enter) }
+        waitForTag("conversation")
+
+        back()
+        compose.onNodeWithTag("workflow_tab_history").assertIsSelected()
+        row.assertIsFocused()
     }
 
     @Test
