@@ -61,6 +61,7 @@ function mockServiceMetadata(
   respondFor: (connectorSlug: string) => Promise<"ok" | "forbidden"> = () => {
     return Promise.resolve("ok");
   },
+  scopes = SCOPES,
 ): void {
   context.mocks.api(
     connectorCatalogContract.permissions,
@@ -80,7 +81,7 @@ function mockServiceMetadata(
         permissions: permissionMetadata({
           connectorSlug: params.connectorSlug,
           label,
-          permissions: SCOPES[params.connectorSlug] ?? [],
+          permissions: scopes[params.connectorSlug] ?? [],
         }),
       });
     },
@@ -93,12 +94,17 @@ function mockServiceMetadata(
  */
 function mockSavedGrants(
   initial: readonly ConnectorPermissionFixture[] = [],
+  loaded?: Promise<void>,
 ): GrantWrites {
   let grants = [...initial];
   const writes: GrantWrites = {};
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, grants));
-  });
+  context.mocks.api(
+    connectorPermissionsContract.get,
+    async ({ query, respond }) => {
+      await loaded;
+      return respond(200, connectorPermissionsResponse(query, grants));
+    },
+  );
   context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
     if (body.target.kind !== "builtin") {
       throw new Error("Expected a built-in connector target");
@@ -157,11 +163,14 @@ function buttonNamed(
   });
 }
 
-async function openReview(card: HTMLElement): Promise<HTMLElement> {
+async function openReview(
+  card: HTMLElement,
+  label = "Review permissions",
+): Promise<HTMLElement> {
   const review = await waitFor(() => {
-    const found = buttonNamed("Review permissions", card);
+    const found = buttonNamed(label, card);
     if (!found) {
-      throw new Error("Expected the Review permissions button");
+      throw new Error("Expected the " + label + " button");
     }
     return found;
   });
@@ -190,9 +199,9 @@ async function allow(review: HTMLElement, name: string): Promise<void> {
     return found as HTMLElement;
   });
   click(button);
-  await expect(within(review).findByRole("status")).resolves.toHaveTextContent(
-    "Permissions allowed",
-  );
+  await waitFor(() => {
+    expect(review).not.toBeInTheDocument();
+  });
 }
 
 test("Review full scopes grouped by connector and apply the selected duration together", async () => {
@@ -261,6 +270,10 @@ test("Review full scopes grouped by connector and apply the selected duration to
     ],
   });
   expect(within(card).getByText("Permissions allowed")).toBeInTheDocument();
+  const details = await openReview(card, "View permission details");
+  await expect(within(details).findByRole("status")).resolves.toHaveTextContent(
+    "Permissions allowed",
+  );
 });
 
 test("Approve only missing scopes without reapplying or extending active grants", async () => {
@@ -306,9 +319,13 @@ test("Approve only missing scopes without reapplying or extending active grants"
 
 test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {
   // No grant write handler: any write would fail as an unhandled request.
-  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
-    return respond(200, connectorPermissionsResponse(query, []));
-  });
+  context.mocks.api(
+    connectorPermissionsContract.get,
+    async ({ query, respond }) => {
+      await loaded;
+      return respond(200, connectorPermissionsResponse(query, []));
+    },
+  );
   const release = context.mocks.deferred<void>();
   mockServiceMetadata(async (connectorSlug) => {
     await release.promise;
@@ -361,4 +378,105 @@ test("Reject the entire batch with an invalid original row", async () => {
     screen.queryByTestId("permission-batch-action-card"),
   ).not.toBeInTheDocument();
   expect(buttonNamed("Review permissions", document.body)).toBeUndefined();
+});
+
+test("A grant receipt missing one requested scope leaves review open with an error", async () => {
+  mockServiceMetadata();
+  mockSavedGrants();
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    return respond(
+      200,
+      connectorPermissionsResponse(body.target, [
+        { permission: "events:read", action: "allow", expiresAt: null },
+      ]),
+    );
+  });
+  const card = await openBatchCard(
+    batchLink([
+      { connectorSlug: CALENDAR, permission: "events:read" },
+      { connectorSlug: CALENDAR, permission: "events:write" },
+    ]),
+  );
+  const review = await openReview(card);
+  const confirm = getAction("button", "Allow all 2 permissions", review);
+  await waitFor(() => {
+    expect(confirm).toBeEnabled();
+  });
+  click(confirm);
+  await expect(within(review).findByRole("alert")).resolves.toHaveTextContent(
+    "Couldn't update permissions",
+  );
+  expect(review).toBeVisible();
+  expect(within(card).queryByText("Permissions allowed")).toBeNull();
+});
+
+test("Twenty permissions remain unavailable until both catalogs and saved grants arrive", async () => {
+  const catalog = context.mocks.deferred<void>();
+  const saved = context.mocks.deferred<void>();
+  const scopes = Object.fromEntries(
+    [CALENDAR, REPORTS].map((service) => {
+      return [
+        service,
+        Array.from({ length: 10 }, (_, index) => {
+          return service + ":view:sheet_" + String(index).padStart(2, "0");
+        }),
+      ];
+    }),
+  );
+  mockServiceMetadata(async () => {
+    await catalog.promise;
+    return "ok";
+  }, scopes);
+  const writes = mockSavedGrants([], saved.promise);
+  const rows = Object.entries(scopes).flatMap(([connectorSlug, names]) => {
+    return names.map((permission) => {
+      return { connectorSlug, permission };
+    });
+  });
+  const card = await openBatchCard(batchLink(rows));
+  const review = await openReview(card);
+  const panel = within(review);
+  await expect(
+    panel.findByLabelText("Loading permissions"),
+  ).resolves.toBeVisible();
+  expect(
+    getAction("button", "Allow all 20 permissions", review),
+  ).toBeDisabled();
+  catalog.resolve();
+  for (const [service, names] of Object.entries(scopes)) {
+    const section = within(await serviceGroup(review, SERVICES[service]!));
+    for (const name of names) {
+      expect(section.getByText(name)).toBeVisible();
+      expect(section.getByText("Use " + name + ".")).toBeVisible();
+    }
+  }
+  expect(
+    getAction("button", "Allow all 20 permissions", review),
+  ).toBeDisabled();
+  saved.resolve();
+  const duration = panel.getByRole("combobox", { name: "Permission duration" });
+  await waitFor(() => {
+    expect(duration).toBeEnabled();
+  });
+  await userEvent.click(duration);
+  await userEvent.click(await screen.findByRole("option", { name: "Always" }));
+  expect(duration).toHaveTextContent("Always");
+  await expect(
+    panel.findByText(
+      "These permissions stay allowed until you change or revoke them.",
+    ),
+  ).resolves.toBeVisible();
+  await allow(review, "Allow all 20 permissions");
+  expect(within(card).getByText("Permissions allowed")).toBeVisible();
+  for (const [service, names] of Object.entries(scopes)) {
+    expect(writes[service]).toStrictEqual(
+      names.map((permission) => {
+        return {
+          permission,
+          action: "allow",
+          expiresIn: "always",
+        };
+      }),
+    );
+  }
 });

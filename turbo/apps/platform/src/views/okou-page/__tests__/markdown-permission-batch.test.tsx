@@ -189,13 +189,10 @@ test("markdown-permission-batch-005 the approval dialog shows saved access back 
     screen.getByText("Saving...", { selector: "div" }),
   ).toBeInTheDocument();
   release.resolve();
-  await expect(
-    view.findByText("Permissions allowed"),
-  ).resolves.toBeInTheDocument();
-  click(getAction("button", "Close", dialog));
   await waitFor(() => {
-    return expect(screen.queryByRole("dialog")).toBeNull();
+    expect(dialog).not.toBeInTheDocument();
   });
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("Permissions allowed")).toBeInTheDocument();
   expect(getAction("button", "View permission details")).toBeEnabled();
 });

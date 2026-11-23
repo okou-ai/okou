@@ -3236,3 +3236,9 @@ Keyboard and pointer cancellation both preserve a concurrent account rename thro
 ### Project archive synchronization
 
 [Project archiving in the sidebar](https://github.com/okou-ai/okou/pull/50306) reached main after the initial batch checkpoint. The sidebar suite keeps the existing independent rebuild and exercises an archived project and a current project with both live and archived chats. The former projects suite remains split across the rebuilt files. Its editor fixture now distinguishes a rename from an archive update, and the routed editor tests cover a confirmed rename after a rejected draft. Both frozen project inventories remain open. These synchronization regressions leave the batch’s 45 ID decisions and 109-file backlog unchanged.
+
+### Batch permission dialog synchronization
+
+[The approval dialog change](https://github.com/okou-ai/okou/pull/50322) closes the review when the response confirms all requested grants. Three assertions in the original branch suites failed on the trial merge because they read status from the closing dialog. The chat card still reports success and members can reopen its details. The Markdown scenario’s manual-close step has been superseded. The rebuilt suites retain the pending state, duration, per-service grants and active-grant checks. Separate cases cover the 20-scope batch when metadata and grants resolve independently and a partial HTTP 200 response that keeps review open. These synchronization cases are outside the fixed 45 IDs.
+
+[Original batch GWT](../../../test-rebuild-evidence/50322/chat-batch-permissions.bdd.md) · [Original Markdown GWT](../../../test-rebuild-evidence/50322/markdown-permission-batch.bdd.md) · [Three observed failures](../../../test-rebuild-evidence/50322/pre-sync-failures.tsv)
