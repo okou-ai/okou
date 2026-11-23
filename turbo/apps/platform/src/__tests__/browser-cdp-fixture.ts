@@ -786,8 +786,10 @@ export function mockBrowserCdp(
     ) {
       receiptKey = `membership:${request.params?.targetId}`;
     }
-    const targeted =
-      request.params?.targetId && `${receiptKey}:${request.params.targetId}`;
+    const addressedTarget =
+      request.params?.targetId ??
+      (request.sessionId ? sessionTargets.get(request.sessionId) : undefined);
+    const targeted = addressedTarget && `${receiptKey}:${addressedTarget}`;
     if (targeted && heldReplies.has(targeted)) {
       receiptKey = targeted;
     }
@@ -1105,15 +1107,15 @@ export function mockBrowserCdp(
         get received() {
           return response.promise.then((reply) => reply.message);
         },
-        async release(result?: unknown) {
+        async release(result?: unknown, onRead?: () => void) {
           const reply = await response.promise;
           if (result === undefined) {
-            reply.peer.receive(reply.message);
+            reply.peer.receive(reply.message, onRead);
           } else {
             const { id } = object({ id: number() }).parse(
               JSON.parse(reply.message),
             );
-            reply.peer.receive(JSON.stringify({ id, result }));
+            reply.peer.receive(JSON.stringify({ id, result }), onRead);
           }
         },
       };

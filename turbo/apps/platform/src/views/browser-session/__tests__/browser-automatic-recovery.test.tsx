@@ -460,3 +460,52 @@ test("browser-automatic-recovery-033 Two transient descriptor errors recover the
     }),
   ).toStrictEqual([]);
 });
+
+test("An assigned window conflict ends recovery before the member reconnects", async () => {
+  const live = await online();
+  const interrupted = await nextImage(live, 1);
+  const requested = context.mocks.deferred<void>();
+  const answer = context.mocks.deferred<void>();
+  let missing = true;
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    if (!missing) {
+      return respond(200, {
+        browser: live.viewer.browser,
+        viewer: live.viewer,
+      });
+    }
+    requested.resolve();
+    await answer.promise;
+    return respond(409, {
+      error: { code: "CONFLICT", message: "Assigned window lost" },
+    });
+  });
+  context.mocks.ably.trigger("browserSessionChanged", {
+    threadId: live.viewer.browser.threadId,
+  });
+  await requested.promise;
+  answer.resolve();
+  interrupted.release("!invalid");
+  await screen.findByText("Browser view unavailable");
+  const telemetry = live.errors.reports.map((record) => {return {
+    error: String(record.error),
+    context: record.context,
+  }});
+  expect(telemetry).toContainEqual(
+    expect.objectContaining({
+      context: expect.objectContaining({
+        tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
+      }),
+    }),
+  );
+  missing = false;
+  await userEvent.click(screen.getByText("Reconnect", { selector: "button" }));
+  await expectStreamingAt(primary.url);
+  await write(live, "v");
+  expect(
+    live.errors.reports.map((record) => {return {
+      error: String(record.error),
+      context: record.context,
+    }}),
+  ).toStrictEqual(telemetry);
+});

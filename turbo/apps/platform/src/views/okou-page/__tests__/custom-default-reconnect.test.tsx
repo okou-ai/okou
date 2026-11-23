@@ -1,3 +1,4 @@
+import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { DetachedBrowserContext } from "happy-dom";
 import {
   customConnectorOAuth2Contract,
@@ -142,6 +143,36 @@ function providerSetup() {
     },
   });
 }
+function captureAuthorizationTabs() {
+  const pages = vi.spyOn(DetachedBrowserContext.prototype, "newPage");
+  const nativeOpen = window.open.bind(window);
+  vi.spyOn(window, "open").mockImplementation((url, target, features) => {
+    const child = nativeOpen(url, target, features);
+    // Happy DOM exposes opener as getter-only. Browsers allow removing it.
+    const page = pages.mock.results.at(-1)?.value;
+    if (child && page) {
+      Object.defineProperty(child, "opener", {
+        value: child.opener,
+        writable: true,
+        configurable: true,
+      });
+      // The WindowProxy stays open across document replacement until its page closes.
+      return new Proxy(child, {
+        get(documentWindow, property) {
+          if (property === "closed") {
+            return page.closed;
+          }
+          if (property === "close") {
+            return documentWindow.close.bind(documentWindow);
+          }
+          return Reflect.get(documentWindow, property, documentWindow);
+        },
+      });
+    }
+    return child;
+  });
+  return pages;
+}
 async function connect() {
   click(await findFastControl("button", "Connect"));
   return await screen.findByRole("dialog");
@@ -199,33 +230,7 @@ test("custom-default-reconnect-006 closing the provider tab releases the first-a
   await setupPage({ context, path: oauthPath });
   const prompt = await connect();
   const proceed = await findFastControl("button", "Continue", prompt);
-  const pages = vi.spyOn(DetachedBrowserContext.prototype, "newPage");
-  const nativeOpen = window.open.bind(window);
-  vi.spyOn(window, "open").mockImplementation((url, target, features) => {
-    const child = nativeOpen(url, target, features);
-    // Happy DOM exposes opener as getter-only. Browsers allow removing it.
-    const page = pages.mock.results.at(-1)?.value;
-    if (child && page) {
-      Object.defineProperty(child, "opener", {
-        value: child.opener,
-        writable: true,
-        configurable: true,
-      });
-      // The WindowProxy stays open across document replacement until its page closes.
-      return new Proxy(child, {
-        get(documentWindow, property) {
-          if (property === "closed") {
-            return page.closed;
-          }
-          if (property === "close") {
-            return documentWindow.close.bind(documentWindow);
-          }
-          return Reflect.get(documentWindow, property, documentWindow);
-        },
-      });
-    }
-    return child;
-  });
+  const pages = captureAuthorizationTabs();
   click(proceed);
   await waitFor(() => {
     return expect(intent.settled()).toBeTruthy();
@@ -251,3 +256,130 @@ test("custom-default-reconnect-006 closing the provider tab releases the first-a
     findFastControl("button", "Continue", prompt),
   ).resolves.toBeEnabled();
 });
+
+test("A directed Acme sign-in links the approved custom account and closes its dialog", async () => {
+  const authorizationUrl = "https://acme.example.test/consent/workspace";
+  const connector = providerSetup();
+  Object.assign(connector, {
+    slug: "_acme-consent",
+    displayName: "Acme OAuth",
+    oauthConfig: { ...connector.oauthConfig, authorizationUrl },
+  });
+  const account = customConnectorAccount(connector.id, {
+    authMethod: "oauth",
+    displayName: "Workspace Acme account",
+  });
+  const attemptId = crypto.randomUUID();
+  let accepted = false;
+  mockCustomConnectorStory(context, [{ connector }]);
+  mockSavedConnectorAccounts(context, () => {return (accepted ? [account] : [])});
+  const completions = mockOAuthCompletions(context);
+  context.mocks.api(
+    connectorAccountsContract.connection,
+    ({ params, respond }) => {
+      expect(params.connectionId).toBe(account.id);
+      return respond(200, account);
+    },
+  );
+  context.mocks.api(
+    customConnectorOAuth2Contract.start,
+    ({ params, body, respond }) => {
+      expect(params.id).toBe(connector.id);
+      expect(body.account).toMatchObject({ intent: "add" });
+      return respond(200, {
+        result: "authorization",
+        oauthAttemptId: attemptId,
+        authorizationUrl,
+      });
+    },
+  );
+  context.mocks.http.get(
+    authorizationUrl,
+    () =>
+      {return new Response("<title>Acme consent</title>", {
+        headers: { "content-type": "text/html" },
+      })},
+  );
+  await setupPage({
+    context,
+    path: "/connectors/_acme-consent/connect?agentId=" + crypto.randomUUID(),
+  });
+  const dialog = await connect();
+  const pages = captureAuthorizationTabs();
+  click(await findFastControl("button", "Continue", dialog));
+  const child = await waitFor(() => {
+    const entry = pages.mock.results.find(
+      (result) => {return result.value.url === authorizationUrl},
+    );
+    if (!entry) {
+      throw new Error("Waiting for Acme consent in the authorization tab");
+    }
+    return entry.value;
+  });
+  try {
+    accepted = true;
+    completions.set(attemptId, account.id);
+    await child.close();
+    await screen.findByText("Acme OAuth connected");
+    expect(screen.queryByRole("dialog")).toBeNull();
+  } finally {
+    if (!child.closed) {
+      await child.close();
+    }
+  }
+});
+
+test.each([
+  ["custom-default-reconnect-007", "deliver"],
+  ["Withheld control", "withhold"],
+] as const)(
+  "%s %s the pending default-account lookup after cancelling Continue",
+  async (_label, mode) => {
+    const service = providerSetup();
+    mockCustomConnectorStory(context, [{ connector: service }]);
+    const lookup = context.mocks.deferred<void>();
+    const finish = context.mocks.deferred<void>();
+    const delivered = context.mocks.deferred<void>();
+    let saving = false;
+    mockSavedConnectorAccounts(context, () => {return []});
+    const decode = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const payload: unknown = await decode.call(this);
+      if (
+        saving &&
+        new URL(this.url).pathname ===
+          connectorAccountsContract.connections.path &&
+        !lookup.settled()
+      ) {
+        lookup.resolve();
+        await finish.promise;
+        delivered.resolve();
+      }
+      return payload;
+    });
+    const changed = accountChanges();
+    await setupPage({ context, path: oauthPath });
+    const dialog = await connect();
+    const continueButton = await findFastControl("button", "Continue", dialog);
+    await waitFor(() => {return expect(continueButton).toBeEnabled()});
+    const tabs = captureAuthorizationTabs();
+    saving = true;
+    click(continueButton);
+    await lookup.promise;
+    const opened = tabs.mock.results.at(-1)?.value;
+    expect(opened?.url).toBe("about:blank");
+    const cancel = await findFastControl("button", "Cancel", dialog);
+    click(cancel);
+    await waitFor(() => {return expect(dialog).not.toBeInTheDocument()});
+    await waitFor(() => {return expect(opened?.closed).toBeTruthy()});
+    if (mode === "deliver") {
+      finish.resolve();
+      await delivered.promise;
+    }
+    expect(delivered.settled()).toBe(mode === "deliver");
+    await expect(findFastControl("button", "Connect")).resolves.toBeEnabled();
+    expect(changed.has(service.id)).toBeFalsy();
+  },
+);

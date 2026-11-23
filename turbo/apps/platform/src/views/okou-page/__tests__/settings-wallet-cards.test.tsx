@@ -1,9 +1,13 @@
-import type { WalletPaymentMethod } from "@okouai/api-contracts/contracts/wallet";
-import { fireEvent, screen, within } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  walletUserContract,
+  type WalletPaymentMethod,
+} from "@okouai/api-contracts/contracts/wallet";
+import { fireEvent, screen, within, waitFor } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  findAction,
   getAction,
   queryAction,
 } from "./connector-integrations-test-helpers.ts";
@@ -109,3 +113,75 @@ test("settings-wallet-cards-003 a failed Visa image and an unfamiliar brand keep
   expect(within(club!).queryByAltText("")).toBeNull();
   expect(manageCards()).toHaveAttribute("href", "https://app.link.com/wallet");
 });
+
+test.each([
+  ["settings-wallet-cards-010", "release"],
+  ["Withheld control", "withhold"],
+] as const)(
+  "%s %s the old card inventory after the wallet is disconnected",
+  async (_label, delivery) => {
+    let connected = true;
+    let refreshing = false;
+    const pending = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const consumed = context.mocks.deferred<void>();
+    serveWallet(context, () =>
+      {return linkStatus(connected ? "connected" : "not-connected")},
+    );
+    context.mocks.api(walletUserContract.disconnect, ({ respond }) => {
+      connected = false;
+      return respond(200, { disconnected: true });
+    });
+    const staleCard = card(
+      "closed-card",
+      "Card from the previous wallet",
+      "VISA",
+      "5148",
+    );
+    context.mocks.api(
+      walletUserContract.paymentMethods,
+      async ({ respond }) => {
+        if (!refreshing) {
+          return respond(200, {
+            data: [card("daily", "Everyday", "VISA", "7108")],
+          });
+        }
+        pending.resolve();
+        await release.promise;
+        return respond(200, { data: [staleCard] });
+      },
+    );
+    const original = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const value: unknown = await original.call(this);
+      if (
+        this.url.endsWith(walletUserContract.paymentMethods.path) &&
+        JSON.stringify(value).includes(staleCard.id)
+      ) {
+        consumed.resolve();
+      }
+      return value;
+    });
+    await setupPage({ context, path: "/?settings=wallet" });
+    await screen.findByText("Everyday");
+    refreshing = true;
+    context.mocks.ably.trigger("wallet:changed", { orgId: "org_default" });
+    await pending.promise;
+    const link = screen.getByRole("region", { name: "Link" });
+    click(await findAction("button", "More options", link));
+    click(within(await screen.findByRole("menu")).getByText("Disconnect"));
+    const connect = await findAction("button", "Connect", link);
+    if (delivery === "release") {
+      release.resolve();
+      await consumed.promise;
+    }
+    await waitFor(() => {return expect(connect).toBeEnabled()});
+    expect(
+      screen.queryByRole("region", { name: "Your cards in Link" }),
+    ).toBeNull();
+    expect(screen.queryByText("Everyday")).toBeNull();
+    expect(screen.queryByText(staleCard.name)).toBeNull();
+  },
+);

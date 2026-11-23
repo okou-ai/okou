@@ -112,3 +112,30 @@ test("artifact-sharing-007 returns to the full artifact link after the visitor e
     ).toBe("https://" + host + route);
   });
 });
+
+test("The owner copies the canonical link while moving access into and out of public sharing", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const amendments: ArtifactShareStatus["audience"][] = [];
+  context.mocks.api(artifactSharesContract.update, ({ body, respond }) => {
+    amendments.push(body.audience);
+    return respond(200, {
+      ...permissions(body.audience === "public" ? "public" : "private"),
+      audience: body.audience,
+    });
+  });
+  const menu = within(await openOwnerMenu("private"));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByText(/link copied/i)).toBeNull();
+  for (const [index, label] of [
+    "Anyone at Acme",
+    "Anyone with the link",
+    "Only me",
+  ].entries()) {
+    const option = menu.getByLabelText(label);
+    click(option);
+    await waitFor(() => {return expect(option).toHaveAttribute("aria-checked", "true")});
+    click(getButtonByName("Copy link"));
+    await waitFor(() => {return expect(clipboard.writes[index]).toBe(ownerUrl)});
+  }
+  expect(amendments).toStrictEqual(["organization", "public", "private"]);
+});

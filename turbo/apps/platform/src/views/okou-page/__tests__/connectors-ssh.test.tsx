@@ -82,3 +82,31 @@ test("connectors-ssh-005 an in-use SSH gateway explains how to change the depend
   ).not.toBeInTheDocument();
   expect(dialog).toBeInTheDocument();
 });
+
+test("A host detail can read diagnostics while its saved entry remains available on return", async () => {
+  const rejected = context.mocks.deferred<void>();
+  mockRemoteInventory(context, {
+    ssh: [sshHost(1, "Records gateway"), sshHost(2, "Archive gateway")],
+  });
+  context.mocks.api(sshConnectionsContract.observations, ({ respond }) => {
+    rejected.resolve();
+    return respond(500, {
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Private upstream diagnostic service",
+      },
+    });
+  });
+  await setupPage({ context, path });
+  const archived = await screen.findByRole("listitem", {
+    name: "Archive gateway",
+  });
+  click(await findFastControl("link", "Manage", archived));
+  await rejected.promise;
+  await findFastControl("button", "Delete connection");
+  expect(screen.queryByText("Private upstream diagnostic service")).toBeNull();
+  window.history.back();
+  await expect(
+    screen.findByRole("listitem", { name: "Archive gateway" }),
+  ).resolves.toBeInTheDocument();
+});

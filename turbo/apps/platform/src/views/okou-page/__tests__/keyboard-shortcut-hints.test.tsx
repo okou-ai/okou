@@ -46,3 +46,21 @@ test("keyboard-shortcut-hints-005 Command Shift F moves editing focus into works
     expect(within(dialog).getByRole("combobox")).toHaveFocus();
   });
 });
+
+test("The Mac toggle advertises its shortcut on the currently available list control", async () => {
+  const composer = await focusConversation();
+  const keyboard = userEvent.setup();
+  const hide = screen.queryByLabelText("Hide chat list");
+  if (hide) {
+    await keyboard.click(hide);
+  }
+  await screen.findByLabelText("Show chat list");
+  await keyboard.click(composer);
+  await keyboard.keyboard("{Meta>}b{/Meta}");
+  const collapse = await screen.findByLabelText("Hide chat list");
+  await keyboard.hover(collapse);
+  const tip = await screen.findByRole("tooltip");
+  expect(tip).toHaveTextContent("⌘B");
+  await keyboard.keyboard("{Meta>}b{/Meta}");
+  await screen.findByLabelText("Show chat list");
+});

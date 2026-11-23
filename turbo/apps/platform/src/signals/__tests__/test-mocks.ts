@@ -1517,7 +1517,7 @@ function mockImageDimensions(
 export interface BrowserWebSocketPeer {
   readonly id: number;
   readonly url: string;
-  receive(data: string): void;
+  receive(data: string, onRead?: () => void): void;
 }
 
 interface BrowserWebSocketOptions {
@@ -1575,9 +1575,18 @@ function mockBrowserWebSocket(
       });
     }
 
-    receive(data: string): void {
+    receive(data: string, onRead?: () => void): void {
       if (this.readyState === TestWebSocket.OPEN) {
-        this.dispatchEvent(new MessageEvent("message", { data }));
+        const incoming = new MessageEvent("message", { data });
+        if (onRead) {
+          Object.defineProperty(incoming, "data", {
+            get() {
+              onRead();
+              return data;
+            },
+          });
+        }
+        this.dispatchEvent(incoming);
       }
     }
 

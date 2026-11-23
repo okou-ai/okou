@@ -1,9 +1,13 @@
 import { sessionOutputChannelName } from "@okouai/api-contracts/contracts/realtime";
-import { screen, waitFor } from "@testing-library/react";
-import { expect, test } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { screen, waitFor, within } from "@testing-library/react";
+import { expect, test, vi } from "vitest";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { createMarkdownChatFixture } from "./markdown-page-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
+import {
+  completedMarkdownReply,
+  createMarkdownChatFixture,
+} from "./markdown-page-test-helpers.ts";
 
 const context = testContext();
 const flow = "```mermaid\nflowchart LR\n  Draft --> Review\n```";
@@ -65,4 +69,36 @@ test("markdown-mermaid-003 closing the live fence replaces readable source with 
   });
   expect(partial).not.toBeVisible();
   expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(2);
+});
+
+test("markdown-mermaid-001 A finished diagram opens from its inline image and returns to both sources", async () => {
+  const path = completedMarkdownReply(
+    context,
+    [flow, sequence + "\n```"].join("\n\n"),
+  );
+  await setupPage({ context, path });
+  await waitFor(() =>
+    {return expect(screen.getAllByLabelText("Expand diagram")).toHaveLength(2)},
+  );
+  click(screen.getAllByLabelText("Expand diagram")[0]!);
+  const preview = await screen.findByRole("dialog", {
+    name: "diagram.svg preview",
+  });
+  click(await findFastControl("button", "Open in split view", preview));
+  const close = await findFastControl("button", "Close artifact");
+  const side = screen.getByTestId("artifact-sidebar");
+  const image = await within(side).findByRole("img");
+  const url = image.getAttribute("src");
+  expect(url).toMatch(/^blob:/);
+  const revoked = vi.spyOn(URL, "revokeObjectURL");
+  click(close);
+  await waitFor(() => {return expect(revoked).toHaveBeenCalledWith(url)});
+  expect(side).not.toBeInTheDocument();
+  const diagrams = screen.getAllByRole("img", { name: "Diagram" });
+  expect(diagrams).toHaveLength(2);
+  const sources = screen.getAllByText("Diagram source");
+  expect(sources).toHaveLength(2);
+  for (const element of [...diagrams, ...sources]) {
+    expect(element).toBeVisible();
+  }
 });

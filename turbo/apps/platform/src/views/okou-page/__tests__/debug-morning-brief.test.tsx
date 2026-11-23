@@ -1,3 +1,4 @@
+import userEvent from "@testing-library/user-event";
 import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { debugMorningBriefContract } from "@okouai/api-contracts/contracts/debug-morning-brief";
 
@@ -72,4 +73,15 @@ test("debug-morning-brief-003 a failed brief links its conversation and allows a
   await expect(
     findFastControl("button", "Run another Morning Brief"),
   ).resolves.toBeEnabled();
+});
+
+test("Enter runs the focused Morning Brief action and exposes its completed chat", async () => {
+  const issued = briefs("completed");
+  await openDebug("admin");
+  const run = await findFastControl("button", "Run Morning Brief");
+  run.focus();
+  expect(run).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText("Morning Brief completed.");
+  await expect(displayedRequest(issued)).resolves.toBeTruthy();
 });

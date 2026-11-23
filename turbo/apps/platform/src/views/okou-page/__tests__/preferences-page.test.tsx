@@ -162,3 +162,26 @@ test.each([
     }
   },
 );
+
+test.each([
+  ["dark", null, null, "System", "Default"],
+  ["light", "dark", "golden-hour", "Dark", "Golden hour"],
+] as const)(
+  "Workspace appearance and palette after a %s first-paint cookie",
+  async (cookie, persisted, palette, mode, selected) => {
+    context.mocks.browser.cookie("__Secure-okou-theme=v1." + cookie);
+    workspace(persisted, palette);
+    await setupPage({ context, path: "/preferences" });
+    const selectedPalette = await findAction("button", selected);
+    await waitFor(() =>
+      {return expect(selectedPalette).toHaveAttribute("aria-pressed", "true")},
+    );
+    expect(getAction("button", mode)).toHaveAttribute("aria-pressed", "true");
+    const next = mode === "Dark" ? "Light" : "Dark";
+    click(getAction("button", next));
+    await waitFor(() =>
+      {return expect(document.documentElement.dataset.theme).toBe(next.toLowerCase())},
+    );
+    expect(selectedPalette).toHaveAttribute("aria-pressed", "true");
+  },
+);

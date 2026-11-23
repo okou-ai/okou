@@ -1,9 +1,10 @@
+import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { paidToolsContract } from "@okouai/api-contracts/contracts/paid-tools";
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import {
   click,
   holdElementAnimations,
@@ -283,4 +284,135 @@ test("paid-tools-settings-022 a model choice from another session replaces the d
   await waitFor(() => {
     return expect(model).toHaveTextContent(/^GPT Image 2$/u);
   });
+});
+
+async function pendingWorkspaceSave(field:"web search" | "image model") {
+    const held = context.mocks.deferred<void>();
+    const release = context.mocks.deferred<void>();
+    const returned = context.mocks.deferred<void>();
+    let saving = false;
+    let token = "research-member";
+    const toolWrites: string[] = [];
+    const modelWrites: string[] = [];
+    const disabled = new Set<string>();
+    let model: ImageModel | null = "fal-ai/flux-2-pro";
+    const clerk = context.mocks.clerk();
+    mockedClerk.sessionGetToken.mockImplementation(async () => {
+      const credential = token;
+      if (field === "web search" && saving && !held.settled()) {
+        held.resolve();
+        await release.promise;
+        returned.resolve();
+      }
+      return credential;
+    });
+    context.mocks.api(paidToolsContract.get, ({ respond }) =>
+      {return respond(200, { disabledTools: [...disabled] })},
+    );
+    context.mocks.api(
+      paidToolsContract.update,
+      ({ params, body, request, respond }) => {
+        toolWrites.push(request.headers.get("authorization") ?? "");
+        if (body.disabled) {
+          disabled.add(params.toolId);
+        }
+        return respond(200, { toolId: params.toolId, disabled: body.disabled });
+      },
+    );
+    context.mocks.api(userModelPreferenceContract.get, ({ respond }) =>
+      {return respond(200, {
+        selectedModel: null,
+        serviceTier: null,
+        modelSettings: {},
+        selectedImageModel: model,
+        updatedAt: null,
+      })},
+    );
+    context.mocks.api(
+      userModelPreferenceContract.update,
+      ({ body, request, respond }) => {
+        modelWrites.push(request.headers.get("authorization") ?? "");
+        model = body.selectedImageModel ?? null;
+        return respond(200, {
+          selectedModel: null,
+          serviceTier: null,
+          modelSettings: {},
+          selectedImageModel: model,
+          updatedAt: null,
+        });
+      },
+    );
+    const read = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const data: unknown = await read.call(this);
+      if (
+        saving &&
+        field === "image model" &&
+        !held.settled() &&
+        new URL(this.url).pathname === userModelPreferenceContract.get.path
+      ) {
+        held.resolve();
+        await release.promise;
+        returned.resolve();
+      }
+      return data;
+    });
+    const settings = await openTools();
+    const tools = within(settings);
+    const web = await tools.findByRole("switch", { name: "Web search" });
+    const modelControl = await tools.findByRole("combobox", { name: "Model" });
+    await waitFor(() => {return expect(modelControl).toHaveTextContent("FLUX.2 Pro")});
+    expect(web).toBeChecked();
+    saving = true;
+    if (field === "image model") {
+      await selectModel(settings, /Ideogram 4/);
+    } else {
+      click(web);
+    }
+    await held.promise;
+    await tools.findByText("Saving…");
+    async function switchToSecondWorkspace() {
+      token = "second-member";
+      clerk.organization({
+        activeOrg: { id: "org_second", name: "Second workspace" },
+        memberships: [{ id: "org_second" }],
+      });
+      clerk.stateChanged();
+      await tools.findByText(
+        "These settings apply only to you in Second workspace.",
+      );
+    }
+    async function deliver() {
+      release.resolve();
+      await returned.promise;
+    }
+    return {tools, toolWrites, modelWrites, returned, switchToSecondWorkspace, deliver};
+}
+
+test.each([
+ ["paid-tools-settings-014","web search","release"],
+ ["Withheld control","web search","hold"],
+ ["paid-tools-settings-023","image model","release"],
+ ["Withheld control","image model","hold"],
+] as const)("%s %s in the second workspace while the previous request is set to %s", async (_label, field, delivery) => {
+ const pending = await pendingWorkspaceSave(field);
+ await pending.switchToSecondWorkspace();
+ if (delivery === "release") await pending.deliver();
+ const current = pending.tools.getByRole("combobox",{name:"Model"});
+ await waitFor(()=>expect(current).toBeEnabled());
+ click(current);
+ await screen.findByRole("option",{name:/Ideogram 4/});
+ expect(pending.tools.getByRole("switch",{name:"Web search"})).toBeChecked();
+ expect(pending.toolWrites).toStrictEqual([]);
+ expect(pending.modelWrites).toStrictEqual([]);
+ expect(pending.returned.settled()).toBe(delivery==="release");
+});
+
+test.each(["web search","image model"] as const)("Original workspace control %s sends the held change with its own credential", async (field) => {
+ const pending = await pendingWorkspaceSave(field);
+ await pending.deliver();
+ const writes=field==="web search"?pending.toolWrites:pending.modelWrites;
+ await waitFor(()=>expect(writes).toContain("Bearer research-member"));
 });

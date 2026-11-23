@@ -214,3 +214,26 @@ test("feature-guides-008 no edition leaves the signed-in home composer available
   await expect(findComposerEditor()).resolves.toBeVisible();
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+test("The Discord guide shows the edition image and opens its advertised setup link", async () => {
+  const picture = "https://assets.example.test/guides/discord.png";
+  const { dialog, guide } = await openGuide([
+    {
+      featureId: "discord",
+      title: "Set up your server",
+      description: "Bring chat to Discord",
+      media: { type: "image", url: picture, alt: "Discord setup" },
+      action: { type: "connect-discord", label: "Explore Discord" },
+    },
+  ]);
+  expect(guide.getByAltText("Discord setup")).toHaveAttribute("src", picture);
+  expect(guide.queryByRole("group")).toBeNull();
+  const destination = await findFastControl("link", "Explore Discord", dialog);
+  expect(destination).toHaveAttribute(
+    "href",
+    "/settings/discord?featureGuidePreview=1",
+  );
+  click(destination);
+  await screen.findByRole("heading", { name: "Connect to Discord" });
+  expect(dialog).not.toBeInTheDocument();
+});

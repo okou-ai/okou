@@ -316,3 +316,14 @@ test("directed-connect-page-011 The invalid saved GitHub token opens its missing
     within(dialog).getByPlaceholderText("Enter your GitHub token"),
   ).toBeInTheDocument();
 });
+
+test("Stripe asks a returning chat member to authorize the connection", async () => {
+  const chat = chatReturn("Resume my invoices");
+  accounts(() => {return []});
+  await enter("/connectors/stripe/connect?" + chat.query.toString());
+  await action("Connect");
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent(/Stripe/u);
+  expect(dialog).toHaveTextContent(/API key|OAuth|Sign in/u);
+  expect(chat.deliveries).toStrictEqual([]);
+});

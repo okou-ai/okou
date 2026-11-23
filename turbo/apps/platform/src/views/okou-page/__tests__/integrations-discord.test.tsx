@@ -582,3 +582,69 @@ test("integrations-discord-039 the Works root becomes interactive only after Dis
   expect(bootstrapSkeleton()).toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
 });
+
+test("Returning to Works shows the Discord description while the membership refresh is pending", async () => {
+  const request = context.mocks.deferred<void>();
+  const publish = context.mocks.deferred<void>();
+  let refreshing = false;
+  statusService(context, async () => {
+    if (!refreshing) {
+      return { isAdmin: true, isConnected: false };
+    }
+    if (!request.settled()) {
+      request.resolve();
+    }
+    await publish.promise;
+    return {
+      isAdmin: true,
+      isConnected: true,
+      guildId: "123456789012345678",
+      guildName: "Review guild",
+      discordUserId: "456789012345678901",
+    };
+  });
+  await visit();
+  await expect(findDiscordButton("Connect")).resolves.toBeEnabled();
+  refreshing = true;
+  notifyStatusChanged();
+  await request.promise;
+  click(await findAction("link", "Chat"));
+  await waitFor(() => {return expect(location.pathname).toBe("/")});
+  window.history.back();
+  await waitFor(() => {return expect(location.pathname).toBe("/works")});
+  const returningCard = await screen.findByText(description);
+  expect(returningCard).toBeInTheDocument();
+  publish.resolve();
+  await waitFor(() => {return expect(card()).toHaveTextContent(/Connected/u)});
+  await expect(findDiscordButton("More options")).resolves.toBeEnabled();
+});
+
+test("A connected Discord callback reads the unverified account before offering setup", async () => {
+  const waiting = context.mocks.deferred<void>();
+  const reply = context.mocks.deferred<void>();
+  statusService(context, async () => {
+    if (!waiting.settled()) {
+      waiting.resolve();
+    }
+    await reply.promise;
+    return { isAdmin: true, isConnected: false };
+  });
+  const completions:unknown[] = [];
+  context.mocks.api(discordOauthContract.complete,({body,respond})=>{completions.push(body);return respond(200,{status:"connected"});});
+  const pending = await startPage({
+    context,
+    path: "/works?discord=connected&discord_error=provider-private&state=callback-check&completionToken=discarded-token",
+    auth: harbor.auth,
+  });
+  await waiting.promise;
+  reply.resolve();
+  await pending.ready;
+  await screen.findByRole("heading", { name: "Connect to Discord" });
+  expect(location.pathname + location.search).toBe(
+    "/settings/discord?status=connected",
+  );
+  expect(queryAction("link", "Open Discord")).toBeNull();
+  expect(await findAction("button","Connect")).toBeEnabled();
+  expect(screen.queryByText("provider-private")).toBeNull();
+  expect(completions).toStrictEqual([]);
+});

@@ -213,3 +213,48 @@ test("integrations-wechat-011 an expired reconnect link keeps the original desti
   expect(screen.queryByText(returnInstructions)).toBeNull();
   expect(new URL(location.href).searchParams.get("token")).toBe(reconnectToken);
 });
+
+test("An owner can confirm the workspace on a reconnect link with the keyboard", async () => {
+  let restored = false;
+  context.mocks.api(integrationsWechatContract.status, ({ respond }) =>
+    {return respond(200, {
+      configured: true,
+      status: restored ? "active" : "disconnected",
+      binding: restored
+        ? {
+            workspace: { id: "org_wechat", name: "WeChat Workspace" },
+            accountId: "wechat-owner",
+          }
+        : null,
+    })},
+  );
+  context.mocks.api(
+    integrationsWechatContract.reconnectStatus,
+    ({ query, respond }) =>
+      {return respond(200, { available: query.token === reconnectToken })},
+  );
+  const acknowledgment = context.mocks.deferred<void>();
+  const submitted = context.mocks.deferred<string>();
+  context.mocks.api(
+    integrationsWechatContract.reconnect,
+    async ({ body, respond }) => {
+      submitted.resolve(body.token);
+      await acknowledgment.promise;
+      restored = true;
+      return respond(204);
+    },
+  );
+  await connectionPage("/settings/wechat?token=" + reconnectToken);
+  const reconnect = await findAction("button", "Reconnect");
+  expect(screen.getByText("owner@example.com")).toBeInTheDocument();
+  expect(screen.getByText("WeChat Workspace")).toBeInTheDocument();
+  expect(screen.queryByTestId("wechat-connect-qr")).toBeNull();
+  reconnect.focus();
+  await userEvent.keyboard("{Enter}");
+  await expect(submitted.promise).resolves.toBe(reconnectToken);
+  acknowledgment.resolve();
+  await screen.findByText(returnInstructions);
+  expect(location.search).toBe("");
+  expect(screen.queryByText("Reconnect", { selector: "button" })).toBeNull();
+  expect(screen.queryByTestId("wechat-connect-qr")).toBeNull();
+});

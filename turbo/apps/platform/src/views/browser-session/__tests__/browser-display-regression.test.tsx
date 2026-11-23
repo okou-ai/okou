@@ -215,3 +215,42 @@ test("browser-display-regression-015 withholding the replacement leaves the earl
     frame.release();
   }
 });
+
+test.each([
+  ["browser-display-regression-007", "deliver"],
+  ["Withheld control", "withhold"],
+] as const)(
+  "%s %s the restore reply after the viewed page moves fullscreen",
+  async (_label, response) => {
+    const { cdp, openPage } = workstation();
+    await openPage();
+    await fitted(cdp);
+    cdp.setWindowState("fullscreen", 77);
+    await expectStreamingAt(home);
+    const painted = cdp.holdNext("Page.screencastFrameAck");
+    cdp.frame("AAAA", cdp.pageSession("reading"));
+    await painted.received;
+    await painted.release();
+    cdp.setWindowState("maximized", 12, { width: 1440, height: 900 });
+    const restore = cdp.holdNext("Browser.setWindowBounds");
+    await userEvent.click(await fitOption());
+    await restore.received;
+    const afterMove = cdp.requests.length;
+    cdp.move("reading", 77);
+    await screen.findByText("No tabs open");
+    const consumed = context.mocks.deferred<void>();
+    if (response === "deliver") {
+      await restore.release(undefined, () => {
+        if (!consumed.settled()) {
+          consumed.resolve();
+        }
+      });
+      await consumed.promise;
+    }
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(cdp.windowState(77)).toBe("fullscreen");
+    expect(
+      cdp.requests.slice(afterMove).map((command) => {return command.method}),
+    ).not.toContain("Emulation.clearDeviceMetricsOverride");
+  },
+);

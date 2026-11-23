@@ -545,3 +545,77 @@ test("browser-discovery-startup-030 The recovered quality setting survives a sec
   await expectStreamingAt(first.url);
   expect(cdp.captures.at(-1)).toMatchObject({ quality: 60 });
 });
+
+test("browser-discovery-startup-003 the readmitted tab accepts typing before its new neighbor appears", async () => {
+  const { cdp, openPage } = arrangeNativePage(
+    context,
+    { targets: [first] },
+    first.windowId,
+  );
+  await openPage();
+  await expectStreamingAt(first.url);
+  const visibility = context.mocks.browser.visibilityState("visible");
+  visibility.changeTo("hidden");
+  await screen.findByText("Viewing paused");
+  const foreground = cdp.holdNextMembership(first.targetId);
+  const neighbor = cdp.holdNextMembership("created-1");
+  cdp.duplicate(first.targetId);
+  visibility.changeTo("visible");
+  await foreground.received;
+  expect(input()).toBeDisabled();
+  await foreground.release();
+  await neighbor.received;
+  await waitFor(() => {return expect(input()).toBeEnabled()});
+  expect(
+    screen.queryByLabelText("New tab", { selector: "[role=tab]" }),
+  ).toBeNull();
+  await textTo(cdp, first.targetId, "during background discovery");
+  await neighbor.release();
+  await screen.findByLabelText("New tab", { selector: "[role=tab]" });
+  expect(
+    screen.getByLabelText(first.title, { selector: "[role=tab]" }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
+test.each([
+  ["browser-discovery-startup-027", "deliver"],
+  ["Withheld control", "withhold"],
+] as const)(
+  "%s %s the original tab's document after selecting Later",
+  async (_label, delivery) => {
+    const { cdp, openPage } = arrange();
+    const initial = cdp.holdNext("Page.getFrameTree", first.targetId);
+    await openPage();
+    await initial.received;
+    await screen.findByLabelText(later.title, { selector: "[role=tab]" });
+    const readmission = cdp.holdNextMembership(first.targetId);
+    cdp.duplicate(first.targetId);
+    await readmission.received;
+    const recheck = cdp.holdNext("Page.getFrameTree", first.targetId);
+    cdp.event(
+      "Page.navigatedWithinDocument",
+      {
+        frameId: "example-frame",
+        url: first.url + "/#section",
+        navigationType: "fragment",
+      },
+      cdp.pageSession(first.targetId),
+    );
+    await initial.release();
+    await recheck.received;
+    click(screen.getByLabelText(later.title, { selector: "[role=tab]" }));
+    await readmission.release();
+    await expectStreamingAt(later.url);
+    if (delivery === "deliver") {
+      const observed = context.mocks.deferred<void>();
+      await recheck.release(undefined, () => {
+        if (!observed.settled()) {
+          observed.resolve();
+        }
+      });
+      await observed.promise;
+    }
+    expect(screen.getByLabelText(later.title, {selector:"[role=tab]"})).toHaveAttribute("aria-selected","true");
+    await textTo(cdp, later.targetId, "read the later document");
+  },
+);

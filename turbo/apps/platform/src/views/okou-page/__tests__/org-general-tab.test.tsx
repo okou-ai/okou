@@ -2,7 +2,7 @@ import { orgContract } from "@okouai/api-contracts/contracts/org-routes";
 import { orgLogoContract } from "@okouai/api-contracts/contracts/org-logo";
 import { cleanup, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
@@ -161,3 +161,75 @@ test("org-general-tab-011 Only a literal confirm authorizes deleting the workspa
   ).resolves.toBeInTheDocument();
   expect(window.location.pathname).toBe("/sign-in/tasks/choose-organization");
 });
+
+test.each([
+  ["org-general-tab-004", "received"],
+  ["Withheld control", "pending"],
+] as const)(
+  "%s %s original logo read during an upload and a later visit",
+  async (_label, previous) => {
+    const first = context.mocks.deferred<void>();
+    const finish = context.mocks.deferred<void>();
+    const decoded = context.mocks.deferred<void>();
+    const placeholder = "https://assets.example.test/workspace-placeholder.png";
+    const accepted = "https://assets.example.test/uploaded-emblem.png";
+    let published: string | null = null;
+    const parse = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const payload: unknown = await parse.call(this);
+      if (
+        this.url.endsWith(orgLogoContract.get.path) &&
+        JSON.stringify(payload).includes(placeholder)
+      ) {
+        decoded.resolve();
+      }
+      return payload;
+    });
+    context.mocks.api(orgLogoContract.get, async ({ respond }) => {
+      if (published) {
+        return respond(200, { hasImage: true, logoUrl: published });
+      }
+      first.resolve();
+      await finish.promise;
+      return respond(200, { hasImage: false, logoUrl: placeholder });
+    });
+    context.mocks.api(orgLogoContract.post, ({ body, respond }) => {
+      const uploaded = body.get("file");
+      expect(typeof uploaded === "object" && uploaded?.name).toBe("emblem.png");
+      published = accepted;
+      return respond(200, { hasImage: true, logoUrl: accepted });
+    });
+    context.mocks.browser.imageDimensions([{ width: 256, height: 256 }]);
+    await general();
+    await first.promise;
+    const panel = screen.getByRole("dialog");
+    await userEvent.upload(
+      within(panel).getByLabelText("Upload logo"),
+      new File(["emblem"], "emblem.png", { type: "image/png" }),
+    );
+    click(await action("Save changes", panel));
+    await screen.findByText("Workspace updated");
+    if (previous === "received") {
+      finish.resolve();
+      await decoded.promise;
+    }
+    await waitFor(() =>
+      {return expect(
+        within(panel).getByRole("img", { name: workspace.name }),
+      ).toHaveAttribute("src", accepted)},
+    );
+    expect(within(panel).queryByRole("status", { name: /logo/i })).toBeNull();
+    published = "https://assets.example.test/new-published-emblem.png";
+    click(await action("Close", panel));
+    await waitFor(() => {return expect(screen.queryByRole("dialog")).toBeNull()});
+    window.history.back();
+    const reopened = await screen.findByRole("dialog");
+    await waitFor(() =>
+      {return expect(
+        within(reopened).getByRole("img", { name: workspace.name }),
+      ).toHaveAttribute("src", published)},
+    );
+  },
+);
