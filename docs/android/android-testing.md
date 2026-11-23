@@ -78,6 +78,10 @@ at the state-owner boundary. Add the JUnit `testsuite` durations for the top-lev
 class and its nested classes. Review groups over **30 seconds** for a split even
 when they meet the case limit.
 
+Each JVM shard checks case counts in its JUnit XML. The checker records a ceiling
+for each class that was already oversized and fails if the count grows. Lower or
+remove the recorded ceiling when splitting an existing oversized class.
+
 Debug device CI assigns individual cases to shards. Give each case its own setup and
 cleanup, and keep all steps needed to prove one end-to-end outcome together.
 Split independent outcomes that can run without sharing test order or state.

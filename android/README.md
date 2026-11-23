@@ -409,6 +409,9 @@ The local commands above run the full suites by default. See
 [test runtime and CI sharding](../docs/android/android-testing.md#test-runtime-and-ci-sharding)
 for case budgets and class boundaries.
 
+After running `:app:testDebugUnitTest`, check the JVM class size limit from
+`android/` with `python3 scripts/check-jvm-test-counts.py app/build/test-results/testDebugUnitTest`.
+
 ### Release Smoke Tests
 
 The smoke test installs the R8-optimized APK signed with a disposable key. The

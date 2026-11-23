@@ -123,6 +123,8 @@ jobs:
           else
             ./gradlew :app:testDebugUnitTest --no-daemon "${args[@]}"
           fi
+      - name: Check JVM test class size
+        run: python3 android/scripts/check-jvm-test-counts.py android/app/build/test-results/testDebugUnitTest
       - name: Retain JVM shard reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
