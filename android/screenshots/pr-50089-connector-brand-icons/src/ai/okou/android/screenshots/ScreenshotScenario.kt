@@ -15,6 +15,7 @@ import ai.okou.android.testPreferences
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Point
 import android.graphics.Rect
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.test.core.app.ActivityScenario
@@ -63,7 +64,7 @@ class ScreenshotScenario {
 
             fixture.icons = fixture.icons + ("google-drive" to designIcons.getValue("google-drive"))
             description("返回").click()
-            text("Google Drive").click()
+            clickRow("Google Drive")
             text("连接账号")
             awaitArtwork(detailTile("Google Drive"), 24, ::driveGreen)
             assertTrue("google-drive-v219" in fixture.iconRequests)
@@ -130,6 +131,32 @@ class ScreenshotScenario {
             val text = text(label)
             checkNotNull(generateSequence(text) { it.parent }.firstOrNull { it.isClickable })
                 .click()
+        }
+
+        fun clickRow(label: String) {
+            val point =
+                checkNotNull(
+                    device.wait(
+                        object : Condition<UiDevice, Point?> {
+                            override fun apply(device: UiDevice): Point? {
+                                val name =
+                                    device.findObject(By.pkg(app.packageName).text(label))
+                                        ?: return null
+                                return try {
+                                    generateSequence(name) { it.parent }
+                                        .firstOrNull { it.isClickable }
+                                        ?.visibleCenter
+                                } catch (_: StaleObjectException) {
+                                    null
+                                }
+                            }
+                        },
+                        12_000,
+                    )
+                ) {
+                    "Missing clickable service row: $label"
+                }
+            assertTrue(device.click(point.x, point.y))
         }
 
         fun rowTile(label: String): Rect {
