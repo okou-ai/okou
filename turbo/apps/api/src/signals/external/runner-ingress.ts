@@ -197,19 +197,21 @@ export function reserveRunnerDispatch(
   );
 }
 
+interface RunnerDispatchPost {
+  readonly target: DirectRunTarget;
+  readonly runId: string;
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  readonly bodyBytes: number;
+  readonly gzipEncodeMs: number | undefined;
+  readonly serviceToken: string;
+  readonly timeoutMs: number;
+  readonly firstRankedTarget: boolean;
+  readonly firstCandidateReadyAt: number | undefined;
+}
+
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
-  args: {
-    readonly target: DirectRunTarget;
-    readonly runId: string;
-    readonly body: string | Uint8Array<ArrayBuffer>;
-    readonly bodyBytes: number;
-    readonly gzipEncodeMs: number | undefined;
-    readonly serviceToken: string;
-    readonly timeoutMs: number;
-    readonly firstRankedTarget: boolean;
-    readonly firstCandidateReadyAt: number | undefined;
-  },
+  args: RunnerDispatchPost,
   signal: AbortSignal,
 ): Promise<DispatchObservation> {
   signal.throwIfAborted();
