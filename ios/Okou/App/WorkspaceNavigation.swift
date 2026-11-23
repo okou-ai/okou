@@ -68,11 +68,14 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     func install(on navigation: WorkspaceNavigationController) {
       self.navigation = navigation
       navigation.loadViewIfNeeded()
+      let direction = WorkspacePopDirectionRecognizer(target: nil, action: nil)
+      navigation.view.addGestureRecognizer(direction)
       popGestures = [
         navigation.interactivePopGestureRecognizer,
         navigation.interactiveContentPopGestureRecognizer
-      ].compactMap { $0 }.map {
-        WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: $0)
+      ].compactMap { $0 }.map { gesture in
+        gesture.require(toFail: direction)
+        return WorkspacePopGestureDelegate(navigation: navigation, gestureRecognizer: gesture)
       }
       navigation.delegate = self
       navigation.applySelection = { [weak self] in self?.applySelection() }

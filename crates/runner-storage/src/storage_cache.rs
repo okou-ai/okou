@@ -1111,6 +1111,33 @@ struct GuestStageRecorder<'a> {
     metrics: &'a mut StorageCacheStageMetrics,
 }
 
+impl GuestStageRecorder<'_> {
+    async fn write_batch<'write>(
+        &mut self,
+        writes: impl ExactSizeIterator<Item = &'write GuestStageWrite>,
+        content_bytes: usize,
+    ) -> RunnerResult<()> {
+        let started_at = Instant::now();
+        let mut timing = sandbox::FileWriteTiming::default();
+        let file_count = writes.len();
+        let (lock_wait, result) = {
+            let files = writes
+                .map(GuestStageWrite::as_file_entry)
+                .collect::<Vec<_>>();
+            self.guest_writes
+                .write_files(self.sandbox, &files, &mut timing)
+                .await
+        };
+        self.metrics.record_write_result(
+            self.telemetry,
+            started_at,
+            &result,
+            crate::StorageStageWrite::new(file_count, content_bytes, lock_wait, &timing),
+        );
+        result
+    }
+}
+
 struct ProcessedGroupTask {
     group: CacheTargetGroup,
     metrics: CacheProcessMetrics,
@@ -1414,26 +1441,9 @@ async fn flush_guest_stage_batch(
     if batch.writes.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .writes
-            .iter()
-            .map(GuestStageWrite::as_file_entry)
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.writes.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(batch.writes.iter(), batch.content_bytes)
+        .await?;
     batch.writes.clear();
     batch.content_bytes = 0;
     Ok(())
@@ -1462,26 +1472,12 @@ async fn flush_fresh_guest_stage_batch(
     if batch.entries.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .entries
-            .iter()
-            .map(|entry| entry.write.as_file_entry())
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.entries.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(
+            batch.entries.iter().map(|entry| &entry.write),
+            batch.content_bytes,
+        )
+        .await?;
     // Moving groups into outcomes must not release capacity while other
     // entries in this successful batch still need their bookkeeping.
     let mut retained_permits = Vec::with_capacity(batch.entries.len());
