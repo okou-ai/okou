@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
@@ -11,16 +11,43 @@ import { waitUntil } from "../context/wait-until";
 import { getHostedSiteVisibility$ } from "../services/hosted-site-access.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
-  hostedSiteSharingReads,
+  hostedSiteShareList,
   removeHostedSiteShare$,
   shareHostedSite$,
 } from "../services/hosted-site-sharing.service";
+import { hostedSiteWorkspaceAccounts } from "../services/hosted-site-share-directory.service";
 import { sendEmailOutboxItem$ } from "../services/email-common.service";
 import {
   consumeHostedSiteSharingQuota$,
   type SharingQuotaRequest,
 } from "../services/hosted-site-sharing-quota.service";
 import type { RouteEntry } from "../route-entry";
+
+const shares$ = hostedSiteShareList(
+  computed((get) => {
+    return get(pathParamsOf(hostedSiteSharingContract.list)).siteId;
+  }),
+);
+const searchAccounts$ = hostedSiteWorkspaceAccounts(
+  computed((get) => {
+    return {
+      orgId: get(organizationAuthContext$).orgId,
+      query: get(queryOf(hostedSiteSharingContract.search)).query,
+    };
+  }),
+);
+const recipientAccounts$ = hostedSiteWorkspaceAccounts(
+  computed(async (get) => {
+    const input = await get(bodyResultOf(hostedSiteSharingContract.share));
+    if (!input.ok) {
+      throw new Error("Website recipients require a validated invitation");
+    }
+    return {
+      orgId: get(organizationAuthContext$).orgId,
+      emailAddress: [input.data.email],
+    };
+  }),
+);
 
 const owner$ = command(
   async ({ get, set }, siteId: string, signal: AbortSignal) => {
@@ -65,7 +92,7 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!owner) {
     return notFound("Published website not found");
   }
-  const shares = await get(hostedSiteSharingReads(siteId, owner.orgId).shares$);
+  const shares = await get(shares$);
   signal.throwIfAborted();
   return { status: 200 as const, body: { shares } };
 });
@@ -76,14 +103,11 @@ const search$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!owner) {
     return notFound("Published website not found");
   }
-  const { query } = get(queryOf(hostedSiteSharingContract.search));
   const limited = await set(admission$, { ...owner, kind: "search" }, signal);
   if (limited) {
     return limited;
   }
-  const accounts = await get(
-    hostedSiteSharingReads(siteId, owner.orgId, query).accounts$,
-  );
+  const accounts = await get(searchAccounts$);
   signal.throwIfAborted();
   return {
     status: 200 as const,
@@ -114,9 +138,11 @@ const share$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (limited) {
     return limited;
   }
+  const recipients = await get(recipientAccounts$);
+  signal.throwIfAborted();
   const result = await set(
     shareHostedSite$,
-    { ...owner, ...input.data },
+    { ...owner, ...input.data, recipient: recipients[0] },
     signal,
   );
   if (result.status === "self") {

@@ -1,4 +1,4 @@
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { clerk$, type ClerkUser } from "../external/clerk";
 
@@ -26,12 +26,18 @@ function account(
     : null;
 }
 
+interface WorkspaceAccountLookup {
+  readonly orgId: string;
+  readonly query?: string;
+  readonly emailAddress?: string[];
+}
+
 /** Resolve profiles only after the current organization's live membership filter. */
 export function hostedSiteWorkspaceAccounts(
-  orgId: string,
-  filter: { readonly query?: string; readonly emailAddress?: string[] },
+  input$: Computed<WorkspaceAccountLookup | Promise<WorkspaceAccountLookup>>,
 ) {
   return computed(async (get) => {
+    const { orgId, ...filter } = await get(input$);
     const client = get(clerk$);
     const members = await client.organizations.getOrganizationMembershipList({
       organizationId: orgId,

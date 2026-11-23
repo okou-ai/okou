@@ -1,5 +1,6 @@
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, asc, eq, exists, isNull } from "drizzle-orm";
+import type { HostedSiteShareAccount } from "@okouai/api-contracts/contracts/hosted-site-sharing";
 import { hostedSiteShares } from "@okouai/db/schema/hosted-site-share";
 import { hostedSites } from "@okouai/db/runtime/hosted-site";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
@@ -9,7 +10,6 @@ import { findClerkUser } from "../external/clerk-users";
 import { hostedLinkOrigin } from "../../lib/link-layout";
 import { nowDate } from "../../lib/time";
 import { buildTeamFromAddress } from "./email-common.service";
-import { hostedSiteWorkspaceAccounts } from "./hosted-site-share-directory.service";
 
 interface Owner {
   readonly siteId: string;
@@ -27,37 +27,30 @@ function ownedSite(owner: Owner) {
   );
 }
 
-/** The route checks current ownership before reading either directory. */
-export function hostedSiteSharingReads(
-  siteId: string,
-  orgId: string,
-  query?: string,
-) {
-  const shares$ = computed(async (get) => {
+/** The route verifies current ownership before consuming the list. */
+export function hostedSiteShareList(siteId$: Computed<string>) {
+  return computed(async (get) => {
     return await get(db$)
       .select({
         id: hostedSiteShares.id,
         email: hostedSiteShares.email,
       })
       .from(hostedSiteShares)
-      .where(eq(hostedSiteShares.siteId, siteId))
+      .where(eq(hostedSiteShares.siteId, get(siteId$)))
       .orderBy(asc(hostedSiteShares.createdAt), asc(hostedSiteShares.id));
   });
-  const accounts$ = hostedSiteWorkspaceAccounts(orgId, { query });
-  return { shares$, accounts$ };
 }
 
 export const shareHostedSite$ = command(
   async (
     { get, set },
-    args: Owner & { readonly email: string },
+    args: Owner & {
+      readonly email: string;
+      readonly recipient: HostedSiteShareAccount | undefined;
+    },
     signal: AbortSignal,
   ) => {
-    const recipients = await get(
-      hostedSiteWorkspaceAccounts(args.orgId, { emailAddress: [args.email] }),
-    );
-    signal.throwIfAborted();
-    const recipient = recipients[0];
+    const { recipient } = args;
     if (recipient?.userId === args.userId) {
       return { status: "self" as const };
     }
