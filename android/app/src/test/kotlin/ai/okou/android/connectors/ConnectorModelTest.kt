@@ -43,7 +43,65 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class ConnectorModelTest {
+internal abstract class ConnectorModelTestFixture {
+    protected fun withModel(
+        slug: String,
+        configure: (ConnectorApiFixture) -> Unit = {},
+        connectivity: Flow<Boolean> = emptyFlow(),
+        includeGrantExamples: Boolean = false,
+        readClock: TimeSource = TimeSource.Monotonic,
+        exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
+    ) = runBlocking {
+        ConnectorApiFixture(includeGrantExamples).use { fixture ->
+            configure(fixture)
+            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { main ->
+                Dispatchers.setMain(main)
+                try {
+                    withContext(main) {
+                        val store = ViewModelStore()
+                        val model =
+                            ViewModelProvider.create(
+                                    store,
+                                    viewModelFactory {
+                                        initializer {
+                                            ConnectorModel(
+                                                fixture.service,
+                                                connectivity,
+                                                { true },
+                                                readClock,
+                                            ) {
+                                                throw AssertionError(
+                                                    "Unexpected session failure",
+                                                    it,
+                                                )
+                                            }
+                                        }
+                                    },
+                                )[ConnectorModel::class]
+                        val modelJob = model.viewModelScope.coroutineContext.job
+                        try {
+                            model.setOpen(true)
+                            model.select(slug)
+                            model.await { it.detail.data != null && it.accounts.data != null }
+                            exercise(fixture, model)
+                        } finally {
+                            store.clear()
+                            withContext(NonCancellable) { modelJob.join() }
+                        }
+                    }
+                } finally {
+                    Dispatchers.resetMain()
+                }
+            }
+        }
+    }
+
+    protected suspend fun ConnectorModel.await(predicate: (ConnectorUiState) -> Boolean) =
+        withTimeout(10.seconds) { uiState.first(predicate) }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class ConnectorModelTest : ConnectorModelTestFixture() {
     @Test
     fun catalogDenialClearsTheVisibleCategoryAndReportsUnavailable() =
         withModel(CONNECTOR_CALENDAR) { fixture, model ->
@@ -205,6 +263,134 @@ class ConnectorModelTest {
         }
     }
 
+    @Test
+    fun delayedAccountReadbackRestartsTheDirectoryLoad() {
+        val releaseDiscovery = CountDownLatch(1)
+        withModel(CONNECTOR_CALENDAR, configure = { it.discoveryGate = releaseDiscovery }) {
+            fixture,
+            model ->
+            fixture.loseRenameReply = true
+            fixture.failAccountReads = true
+            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
+            model.await {
+                it.action?.busy == false &&
+                    it.action.problem == ConnectorProblem.VerificationPending
+            }
+
+            fixture.failAccountReads = false
+            model.resume()
+            model.await { it.action?.result == ConnectorResult.Renamed }
+            releaseDiscovery.countDown()
+
+            val directory = model.await { it.browse.data != null }
+            val renamed =
+                directory.accountsFor(CONNECTOR_CALENDAR).single {
+                    it.id == CONNECTOR_CALENDAR_PRIMARY
+                }
+            assertEquals("Meeting calendar", renamed.displayName)
+        }
+    }
+
+    @Test
+    fun disconnectingTheLastAccountKeepsTheSelectedService() =
+        withModel("slack") { _, model ->
+            model.await { it.connected.data?.containsKey("slack") == true }
+            model.prepareDisconnect(CONNECTOR_SLACK_ACCOUNT)
+            model.await { it.impact?.read?.data != null }
+
+            model.disconnect(CONNECTOR_SLACK_ACCOUNT)
+
+            val disconnected = model.await { it.action?.result == ConnectorResult.Disconnected }
+            assertEquals("slack", disconnected.detail.data?.entry?.slug)
+            assertEquals(emptyList<ConnectorSavedAccount>(), disconnected.accountsFor("slack"))
+            assertFalse(requireNotNull(disconnected.connected.data).containsKey("slack"))
+        }
+
+    @Test
+    fun connectedAccountsRefreshWhileDiscoveryIsRetrying() =
+        withModel(CONNECTOR_CALENDAR, configure = { it.failDiscovery = true }) { fixture, model ->
+            model.await {
+                it.browse.failure != null &&
+                    it.accountsFor("slack").singleOrNull()?.status ==
+                        ConnectorAccountStatus.Reauthorize
+            }
+
+            fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
+            model.resume()
+
+            val refreshed = model.await { it.connected.data?.containsKey("slack") == false }
+            assertEquals(2, refreshed.accountsFor(CONNECTOR_CALENDAR).size)
+        }
+
+    @Test
+    fun accountReadKeepsNewArtworkFromTheConnectedOverview() =
+        withModel(CONNECTOR_CALENDAR) { fixture, model ->
+            val current = model.await { it.connected.data?.containsKey(CONNECTOR_CALENDAR) == true }
+            val previousIcon = checkNotNull(current.detail.data?.entry?.icon)
+            val updatedAsset = "calendar-v2"
+            fixture.icons = mapOf(CONNECTOR_CALENDAR to FixtureConnectorIcon(updatedAsset))
+            model.enterDirectoryTab(connected = true)
+            val updated = model.await {
+                it.connected.data
+                    ?.get(CONNECTOR_CALENDAR)
+                    ?.entry
+                    ?.icon
+                    ?.url
+                    ?.pathSegments
+                    ?.last() == "$updatedAsset.svg"
+            }
+            val updatedIcon =
+                checkNotNull(updated.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon)
+
+            val releaseDetail = CountDownLatch(1)
+            fixture.detailReplyGate = releaseDetail
+            try {
+                model.select(null)
+                model.select(CONNECTOR_CALENDAR)
+                val readback = model.await { it.accounts.data != null }
+                assertEquals(previousIcon, readback.detail.data?.entry?.icon)
+                assertEquals(
+                    updatedIcon,
+                    readback.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon,
+                )
+            } finally {
+                releaseDetail.countDown()
+            }
+            model.await { it.detail.data?.entry?.icon == updatedIcon }
+        }
+
+    @Test
+    fun reconnectClearsTheReadFailureWhileKeepingTheLastResultsDuringRefresh() {
+        val online = MutableStateFlow(true)
+        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
+            val cached = model.await { it.browse.data != null }.browse.data
+            fixture.failDiscovery = true
+            model.resume()
+            model.await { it.browse.failure != null }
+            online.value = false
+            model.await { it.offline }
+
+            val requested = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            fixture.discoveryRequested = requested
+            fixture.discoveryGate = release
+            fixture.failDiscovery = false
+            online.value = true
+            try {
+                withContext(Dispatchers.IO) { assertTrue(requested.await(10, TimeUnit.SECONDS)) }
+                val refreshing = model.uiState.value
+                assertFalse(refreshing.offline)
+                assertEquals(cached, refreshing.browse.data)
+                assertNull(refreshing.browse.failure)
+            } finally {
+                release.countDown()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
     @Test
     fun browserReturnPublishesOnlyTheConfirmedAccount() =
         withModel("gmail") { fixture, model ->
@@ -484,184 +670,4 @@ class ConnectorModelTest {
                     .displayName,
             )
         }
-
-    @Test
-    fun delayedAccountReadbackRestartsTheDirectoryLoad() {
-        val releaseDiscovery = CountDownLatch(1)
-        withModel(CONNECTOR_CALENDAR, configure = { it.discoveryGate = releaseDiscovery }) {
-            fixture,
-            model ->
-            fixture.loseRenameReply = true
-            fixture.failAccountReads = true
-            model.rename(CONNECTOR_CALENDAR_PRIMARY, "Meeting calendar")
-            model.await {
-                it.action?.busy == false &&
-                    it.action.problem == ConnectorProblem.VerificationPending
-            }
-
-            fixture.failAccountReads = false
-            model.resume()
-            model.await { it.action?.result == ConnectorResult.Renamed }
-            releaseDiscovery.countDown()
-
-            val directory = model.await { it.browse.data != null }
-            val renamed =
-                directory.accountsFor(CONNECTOR_CALENDAR).single {
-                    it.id == CONNECTOR_CALENDAR_PRIMARY
-                }
-            assertEquals("Meeting calendar", renamed.displayName)
-        }
-    }
-
-    @Test
-    fun disconnectingTheLastAccountKeepsTheSelectedService() =
-        withModel("slack") { _, model ->
-            model.await { it.connected.data?.containsKey("slack") == true }
-            model.prepareDisconnect(CONNECTOR_SLACK_ACCOUNT)
-            model.await { it.impact?.read?.data != null }
-
-            model.disconnect(CONNECTOR_SLACK_ACCOUNT)
-
-            val disconnected = model.await { it.action?.result == ConnectorResult.Disconnected }
-            assertEquals("slack", disconnected.detail.data?.entry?.slug)
-            assertEquals(emptyList<ConnectorSavedAccount>(), disconnected.accountsFor("slack"))
-            assertFalse(requireNotNull(disconnected.connected.data).containsKey("slack"))
-        }
-
-    @Test
-    fun connectedAccountsRefreshWhileDiscoveryIsRetrying() =
-        withModel(CONNECTOR_CALENDAR, configure = { it.failDiscovery = true }) { fixture, model ->
-            model.await {
-                it.browse.failure != null &&
-                    it.accountsFor("slack").singleOrNull()?.status ==
-                        ConnectorAccountStatus.Reauthorize
-            }
-
-            fixture.removeAccount(CONNECTOR_SLACK_ACCOUNT)
-            model.resume()
-
-            val refreshed = model.await { it.connected.data?.containsKey("slack") == false }
-            assertEquals(2, refreshed.accountsFor(CONNECTOR_CALENDAR).size)
-        }
-
-    @Test
-    fun accountReadKeepsNewArtworkFromTheConnectedOverview() =
-        withModel(CONNECTOR_CALENDAR) { fixture, model ->
-            val current = model.await { it.connected.data?.containsKey(CONNECTOR_CALENDAR) == true }
-            val previousIcon = checkNotNull(current.detail.data?.entry?.icon)
-            val updatedAsset = "calendar-v2"
-            fixture.icons = mapOf(CONNECTOR_CALENDAR to FixtureConnectorIcon(updatedAsset))
-            model.enterDirectoryTab(connected = true)
-            val updated = model.await {
-                it.connected.data
-                    ?.get(CONNECTOR_CALENDAR)
-                    ?.entry
-                    ?.icon
-                    ?.url
-                    ?.pathSegments
-                    ?.last() == "$updatedAsset.svg"
-            }
-            val updatedIcon =
-                checkNotNull(updated.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon)
-
-            val releaseDetail = CountDownLatch(1)
-            fixture.detailReplyGate = releaseDetail
-            try {
-                model.select(null)
-                model.select(CONNECTOR_CALENDAR)
-                val readback = model.await { it.accounts.data != null }
-                assertEquals(previousIcon, readback.detail.data?.entry?.icon)
-                assertEquals(
-                    updatedIcon,
-                    readback.connected.data?.get(CONNECTOR_CALENDAR)?.entry?.icon,
-                )
-            } finally {
-                releaseDetail.countDown()
-            }
-            model.await { it.detail.data?.entry?.icon == updatedIcon }
-        }
-
-    @Test
-    fun reconnectClearsTheReadFailureWhileKeepingTheLastResultsDuringRefresh() {
-        val online = MutableStateFlow(true)
-        withModel(CONNECTOR_CALENDAR, connectivity = online) { fixture, model ->
-            val cached = model.await { it.browse.data != null }.browse.data
-            fixture.failDiscovery = true
-            model.resume()
-            model.await { it.browse.failure != null }
-            online.value = false
-            model.await { it.offline }
-
-            val requested = CountDownLatch(1)
-            val release = CountDownLatch(1)
-            fixture.discoveryRequested = requested
-            fixture.discoveryGate = release
-            fixture.failDiscovery = false
-            online.value = true
-            try {
-                withContext(Dispatchers.IO) { assertTrue(requested.await(10, TimeUnit.SECONDS)) }
-                val refreshing = model.uiState.value
-                assertFalse(refreshing.offline)
-                assertEquals(cached, refreshing.browse.data)
-                assertNull(refreshing.browse.failure)
-            } finally {
-                release.countDown()
-            }
-        }
-    }
-
-    private fun withModel(
-        slug: String,
-        configure: (ConnectorApiFixture) -> Unit = {},
-        connectivity: Flow<Boolean> = emptyFlow(),
-        includeGrantExamples: Boolean = false,
-        readClock: TimeSource = TimeSource.Monotonic,
-        exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
-    ) = runBlocking {
-        ConnectorApiFixture(includeGrantExamples).use { fixture ->
-            configure(fixture)
-            Executors.newSingleThreadExecutor().asCoroutineDispatcher().use { main ->
-                Dispatchers.setMain(main)
-                try {
-                    withContext(main) {
-                        val store = ViewModelStore()
-                        val model =
-                            ViewModelProvider.create(
-                                    store,
-                                    viewModelFactory {
-                                        initializer {
-                                            ConnectorModel(
-                                                fixture.service,
-                                                connectivity,
-                                                { true },
-                                                readClock,
-                                            ) {
-                                                throw AssertionError(
-                                                    "Unexpected session failure",
-                                                    it,
-                                                )
-                                            }
-                                        }
-                                    },
-                                )[ConnectorModel::class]
-                        val modelJob = model.viewModelScope.coroutineContext.job
-                        try {
-                            model.setOpen(true)
-                            model.select(slug)
-                            model.await { it.detail.data != null && it.accounts.data != null }
-                            exercise(fixture, model)
-                        } finally {
-                            store.clear()
-                            withContext(NonCancellable) { modelJob.join() }
-                        }
-                    }
-                } finally {
-                    Dispatchers.resetMain()
-                }
-            }
-        }
-    }
-
-    private suspend fun ConnectorModel.await(predicate: (ConnectorUiState) -> Boolean) =
-        withTimeout(10.seconds) { uiState.first(predicate) }
 }
