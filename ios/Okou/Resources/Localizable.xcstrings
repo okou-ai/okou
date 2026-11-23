@@ -1,6 +1,111 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Sends now · new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "立即发送 · 新聊天" }
+        }
+      }
+    },
+    "Opens a draft in “%@”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "去「%@」编辑草稿" }
+        }
+      }
+    },
+    "Tell Okou why. It shapes what comes next.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "告诉 Okou 原因，之后的推荐会更准。" }
+        }
+      }
+    },
+    "Just dismiss": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "直接忽略" }
+        }
+      }
+    },
+    "Handled just now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "刚刚处理的" }
+        }
+      }
+    },
+    "Back to chats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "回到聊天" }
+        }
+      }
+    },
+    "System update": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "系统更新" }
+        }
+      }
+    },
+    "Enable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "启用" }
+        }
+      }
+    },
+    "We paused this automation after %lld consecutive run attempts didn’t complete successfully. This gives you time to review what happened before it runs again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这项自动化连续 %lld 次运行尝试未能成功完成，所以我们先暂停了它，方便你在恢复前查看发生了什么。" }
+        }
+      }
+    },
+    "An automatic recovery attempt was scheduled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "系统已安排一次自动恢复尝试。" }
+        }
+      }
+    },
+    "Paused on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@ 暂停" }
+        }
+      }
+    },
+    "Sent · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送 · %@" }
+        }
+      }
+    },
+    "Draft ready · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "草稿已备好 · %@" }
+        }
+      }
+    },
+    "Enabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已启用" }
+        }
+      }
+    },
+    "Dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略" }
+        }
+      }
+    },
     "What do you have in mind?": {
       "localizations": {
         "zh-Hans": {
@@ -96,20 +201,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "Okou 为你挑出的待处理事项" }
-        }
-      }
-    },
-    "Next suggestion": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "下一条建议" }
-        }
-      }
-    },
-    "Previous suggestion": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "上一条建议" }
         }
       }
     },
@@ -215,20 +306,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "自动化已暂停" }
-        }
-      }
-    },
-    "Re-enable automation": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "重新启用自动化" }
-        }
-      }
-    },
-    "Paused after %lld consecutive failures.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "连续失败 %lld 次后已暂停。" }
         }
       }
     },
