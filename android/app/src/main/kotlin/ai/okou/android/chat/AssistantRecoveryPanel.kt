@@ -33,7 +33,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.time.Instant
 
 @Composable
 fun AssistantRecoveryPanel(
@@ -123,7 +122,7 @@ fun AssistantRecoveryPanel(
                 data.resetTimes.forEach { value ->
                     val time =
                         remember(value) {
-                            runCatching { Instant.parse(value).toEpochMilli() }.getOrNull()
+                            runCatching { chatTime(value) }.getOrNull()
                         }
                     if (time != null) {
                         RecoveryNote(
