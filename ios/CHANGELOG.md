@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.60.0](https://github.com/okou-ai/okou/compare/ios-v0.59.2...ios-v0.60.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **ios:** slide chat feedback out from its drag position ([#50328](https://github.com/okou-ai/okou/issues/50328)) ([2b8f121](https://github.com/okou-ai/okou/commit/2b8f121778cb8bf819e69ac616bcc89ac3a23204))
+* **ios:** use touch displacement to arbitrate chat swipe back ([#50323](https://github.com/okou-ai/okou/issues/50323)) ([845fc22](https://github.com/okou-ai/okou/commit/845fc225c04e06afd813173ebd272d03193e553f))
+
 ## [0.59.2](https://github.com/okou-ai/okou/compare/ios-v0.59.1...ios-v0.59.2) (2026-11-23)
 
 
