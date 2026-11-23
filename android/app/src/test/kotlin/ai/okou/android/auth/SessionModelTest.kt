@@ -22,6 +22,7 @@ import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.preferences.MemberAppearanceCache
+import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testOrganization
 import ai.okou.android.testPreferences
@@ -73,6 +74,14 @@ class SessionModelTest {
         override val artifacts = canonical.artifacts
 
         override suspend fun usagePackCredits() = canonical.usagePackCredits()
+
+        override suspend fun defaultModelPreference() = canonical.defaultModelPreference()
+
+        override suspend fun featureSwitches() = canonical.featureSwitches()
+
+        override suspend fun updateDefaultModelPreference(
+            update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+        ) = canonical.updateDefaultModelPreference(update)
 
         override suspend fun activateModelAccount(accountId: String) =
             canonical.activateModelAccount(accountId)
@@ -147,6 +156,12 @@ class SessionModelTest {
             ProjectExpansionStore(
                 PreferenceDataStoreFactory.create(scope = backgroundScope) { expansionFile }
             )
+        val defaultModelFile = temporary.newFolder().resolve("default-model.preferences_pb")
+        val defaultModelStore =
+            DefaultModelStore(
+                PreferenceDataStoreFactory.create(scope = backgroundScope) { defaultModelFile },
+                backgroundScope,
+            )
         try {
             appearance.prepareAppearance()
             val model =
@@ -169,6 +184,7 @@ class SessionModelTest {
                                 controls,
                                 appearance,
                                 expansion,
+                                defaultModelStore,
                                 dispatcher,
                                 connectivity = connectivity,
                             )

@@ -33,6 +33,7 @@ import ai.okou.android.api.generated.ResolveArtifactReferenceQuery
 import ai.okou.android.api.generated.SaveThreadDraft
 import ai.okou.android.api.generated.SaveWorkspaceDraft
 import ai.okou.android.api.generated.SendRequest
+import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
@@ -392,6 +393,14 @@ class ApiClient(
     }
 
     suspend fun preferences(): UserPreferences = execute { reads.preferences(it) }
+
+    suspend fun defaultModelPreference() = execute { reads.defaultModelPreference(it) }
+
+    suspend fun updateDefaultModelPreference(update: UpdateDefaultModelPreference) = execute {
+        api.updateDefaultModelPreference(it, update)
+    }
+
+    suspend fun featureSwitches() = execute { reads.featureSwitches(it) }
 
     suspend fun initializePreferences(body: InitializePreferencesRequest): UserPreferences =
         execute {

@@ -694,9 +694,14 @@ class WorkflowRootTest {
         compose.onNode(source).performClick()
         waitForTag("conversation")
 
-        val link = hasText("Project handoff", substring = true)
-        compose.waitUntil(10_000) { compose.onAllNodes(link).fetchSemanticsNodes().size == 1 }
-        compose.onNode(link).performFirstLinkClick()
+        val linkText = hasText("Project handoff", substring = true)
+        val link =
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.LinkTestMarker) and
+                hasAnyAncestor(linkText)
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(link, useUnmergedTree = true).fetchSemanticsNodes().size == 1
+        }
+        compose.onNode(linkText).performFirstLinkClick()
         val inSidebar = hasAnyAncestor(hasTestTag("chat_list"))
         val linkedChat = hasText("Project chat") and !inSidebar
         compose.waitUntil(10_000) { compose.onAllNodes(linkedChat).fetchSemanticsNodes().size == 1 }

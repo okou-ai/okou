@@ -17,6 +17,8 @@ import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.PreferenceFeedback
+import ai.okou.android.settings.DefaultModelFeedback
+import ai.okou.android.settings.DefaultModelSetting
 import ai.okou.android.settings.WorkspaceSettingsDataPage
 import ai.okou.android.settings.settingsWebClick
 import ai.okou.android.state.SettingsDestination
@@ -42,6 +44,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -106,6 +109,9 @@ internal fun SessionRoot(
                 state.generation,
             ) {
                 if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
+                val snackbar = remember { SnackbarHostState() }
+                var feedbackInOverlay by remember { mutableStateOf(false) }
+                if (ready != null) DefaultModelFeedback(ready.settings.defaultModel, snackbar)
                 val startupRecovery: (@Composable () -> Unit)? =
                     if (state.stage == SessionStage.Unavailable && !state.working) {
                         { WorkspaceStartupRecovery(retry, signOut) }
@@ -132,6 +138,8 @@ internal fun SessionRoot(
                             signOut,
                             appUpdates,
                             retry,
+                            snackbar,
+                            { feedbackInOverlay = it },
                         )
                     },
                     recovery = ready?.recovery,
@@ -153,6 +161,9 @@ internal fun SessionRoot(
                     onUpdateEditingChanged = onUpdateEditingChanged,
                     workspaceReady = ready != null,
                     startupRecovery = startupRecovery,
+                    defaultModel = ready?.settings?.defaultModel,
+                    snackbar = snackbar,
+                    feedbackInOverlay = feedbackInOverlay,
                 )
             }
         } else if (state.stage == SessionStage.SignIn) {
@@ -238,6 +249,8 @@ private fun WorkspaceSettingsContent(
     signOut: () -> Unit,
     appUpdates: @Composable (() -> Unit)?,
     retry: () -> Unit,
+    snackbar: SnackbarHostState,
+    onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
     val ready = state.ready
     val rowFocus = remember { SettingsDestination.entries.associateWith { FocusRequester() } }
@@ -289,6 +302,11 @@ private fun WorkspaceSettingsContent(
                     }
                 },
                 models = {
+                    DefaultModelSetting(
+                        ready?.settings?.defaultModel,
+                        snackbar,
+                        onFeedbackInOverlay,
+                    )
                     SettingsRow(
                         stringResource(R.string.settings_model_accounts),
                         leading = { SettingsIcon(R.drawable.ic_account_circle) },

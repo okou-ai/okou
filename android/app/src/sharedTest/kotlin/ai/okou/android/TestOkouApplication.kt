@@ -150,6 +150,18 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun usagePackCredits() =
                 (fixture ?: canonical.value).usagePackCredits()
 
+            override suspend fun defaultModelPreference() =
+                fixture?.defaultModelPreference()
+                    ?: ai.okou.android.api.generated.DefaultModelPreference(null, null, emptyMap())
+
+            override suspend fun updateDefaultModelPreference(
+                update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+            ) = (fixture ?: canonical.value).updateDefaultModelPreference(update)
+
+            override suspend fun featureSwitches() =
+                fixture?.featureSwitches()
+                    ?: ai.okou.android.api.generated.FeatureSwitches(emptyMap())
+
             override suspend fun activateModelAccount(accountId: String) =
                 (fixture ?: canonical.value).activateModelAccount(accountId)
 
