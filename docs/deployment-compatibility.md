@@ -419,11 +419,14 @@ If the online iOS inventory is unavailable, the check uses the base branch
 contract when available. A TestFlight check or floor increase never proves an API contraction. Without
 public evidence, an unbounded response transform can still preserve compatibility.
 
-Before submitting an App Store build, run the TestFlight verification and
-register its exact `reviewCandidate` (`version`, `build`, `commit`) in a policy
-PR. With the actual build, verify production sign-in, sending a message and
-viewing the result. Keep this lock in effect for the duration of review. Both
-minimums are capped at the review version, including in a change that removes
+Use [Submit iOS for App Review](../ios/TESTFLIGHT.md#submit-an-existing-build-for-app-review)
+to select a TestFlight build and register its exact `reviewCandidate` (`version`,
+`build`, `commit`) in a policy PR. Verify production sign-in, sending a message
+and viewing the result on that build. The Action submits to Apple only after the
+candidate PR is merged and the serving API protects this candidate. A manually
+registered candidate can also be selected in the Action. Keep the lock in
+effect for the duration of review. Both minimums are capped at the review
+version, including in a change that removes
 or replaces the lock. On public release verify every launch storefront and
 enable or raise the App Store floor in a separate PR. To abandon a review,
 withdraw it in App Store Connect before clearing the lock. API deployment

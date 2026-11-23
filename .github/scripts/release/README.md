@@ -8,6 +8,7 @@ command. [Artifact tools](../artifacts/) own build, fetch, verification and smok
 | ---------------------------------------------- | -------------------------------------------- |
 | Immutable App asset publication                | `publish-okou-app-assets.sh`                 |
 | Release PR gates                               | `pass-release-pr-ci-gates.sh`                |
+| iOS App Review request and continuation       | `ios-app-review-request.mjs`, `ios-app-review-submit.mjs` |
 | Browser extension publication                  | `publish-browser-extension.mjs`              |
 | API deployment extension selection             | `resolve-browser-extension.mjs`              |
 | Desktop version decision                       | `resolve-desktop-version-change.sh`          |

@@ -4,7 +4,7 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { appleClientFromEnvironment, required } from "./testflight.mjs";
 
-const appId = "6815550027";
+export const appId = "6815550027";
 const bundleId = "ai.okou.ios";
 
 function one(resources, description) {
@@ -82,6 +82,18 @@ async function catalog(country) {
 }
 
 const marketingVersion = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){2}$/u;
+export function checkBuild(version, build) {
+  if (
+    typeof version !== "string" ||
+    !marketingVersion.test(version) ||
+    typeof build !== "string" ||
+    !/^[1-9]\d{0,3}$/u.test(build)
+  ) {
+    throw new Error(
+      "Supply a stable marketing version and an integer Apple build number",
+    );
+  }
+}
 const numericVersions = new Intl.Collator("en", { numeric: true });
 
 // App Store Connect uses three-letter territory IDs, the public catalog uses two.
@@ -155,6 +167,7 @@ export async function verifyDistribution(
     territoryCodes,
     internalGroup,
     externalGroups,
+    requireAppStoreEligible = false,
   },
   lookup = catalog,
 ) {
@@ -228,6 +241,14 @@ export async function verifyDistribution(
   ) {
     throw new Error("TestFlight build is invalid or expired");
   }
+  if (
+    requireAppStoreEligible &&
+    uploaded.attributes.buildAudienceType !== "APP_STORE_ELIGIBLE"
+  ) {
+    throw new Error(
+      "App Review requires an App Store eligible build; check its audience in App Store Connect",
+    );
+  }
   const detail = (
     await client.request(`/v1/builds/${uploaded.id}/buildBetaDetail`)
   ).data.attributes;
@@ -275,11 +296,7 @@ if (
     const version = required("IOS_VERSION");
     const build = required("IOS_BUILD_NUMBER");
     const channel = required("IOS_CHANNEL");
-    if (!marketingVersion.test(version) || !/^[1-9]\d{0,3}$/u.test(build)) {
-      throw new Error(
-        "Supply a stable marketing version and an integer Apple build number",
-      );
-    }
+    checkBuild(version, build);
     const prefix = `repos/${required("GITHUB_REPOSITORY")}/`;
     const read = (path, paginate) => {
       const raw = execFileSync(

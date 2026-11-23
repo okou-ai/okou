@@ -1,0 +1,74 @@
+name: Submit iOS for App Review
+run-name: Request App Review for iOS ${{ inputs.version }} (${{ inputs.build }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact iOS marketing version (x.y.z)
+        type: string
+        required: true
+      build:
+        description: Exact TestFlight build number
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: ios-app-review-request
+  cancel-in-progress: false
+
+jobs:
+  request:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    env:
+      IOS_VERSION: ${{ inputs.version }}
+      IOS_BUILD_NUMBER: ${{ inputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            ios/scripts
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.23.4
+      - name: Verify the selected release in TestFlight
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/release/ios-app-review-request.mjs verify
+      - name: Normalize the CI App private key
+        id: key
+        env:
+          SOURCE_PRIVATE_KEY_PEM: ${{ secrets.OKOU_CI_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key="$(printf '%s' "$SOURCE_PRIVATE_KEY_PEM" | bash .github/scripts/normalize-github-app-private-key.sh)"
+          printf '::add-mask::%s\n' "$key"
+          printf 'private-key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+      - name: Issue candidate PR token
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ vars.OKOU_CI_APP_ID }}
+          private-key: ${{ steps.key.outputs.private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Register candidate through a normal PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TOKEN: ${{ steps.app.outputs.token }}
+        run: node .github/scripts/release/ios-app-review-request.mjs register
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-app-review-request-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/request.json
+          if-no-files-found: error
+          retention-days: 30
