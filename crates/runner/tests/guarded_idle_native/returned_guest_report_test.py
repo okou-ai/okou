@@ -129,22 +129,7 @@ class ReturnedGuestTests(unittest.TestCase):
     def test_every_original_ownership_clock_byte_and_join_field_is_required(self):
         original = copy.deepcopy(self.witnesses)
         self.witnesses = original
-        def leaves(value, path=()):
-            if isinstance(value, dict):
-                for key, item in value.items(): yield from leaves(item, path+(key,))
-            elif isinstance(value, list):
-                for index, item in enumerate(value): yield from leaves(item, path+(index,))
-            else: yield path, value
-        for index, event in enumerate(original[:8]):
-            for path, value in leaves(event):
-                node = event
-                for key in path[:-1]: node = node[key]
-                try:
-                    node[path[-1]] = not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
-                    with self.subTest(index=index, path=path):
-                        with self.assertRaises((ValueError, KeyError, TypeError)): self.validate()
-                finally:
-                    node[path[-1]] = value
+        report_test.assert_scalar_refusals(self, original[:8], self.validate)
         self.validate()
 
     def test_all_missing_duplicate_and_out_of_order_phases_are_refused(self):
