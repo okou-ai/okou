@@ -17,6 +17,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.LocaleList
 import android.provider.Settings
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -24,6 +25,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
@@ -33,12 +35,16 @@ import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.text.AnnotatedString
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
+import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.After
@@ -145,6 +151,50 @@ class UpdateRootTest {
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Downloading · 50%").assertExists()
         compose.onNodeWithText("Sign out").assertDoesNotExist()
+    }
+
+    @Test
+    fun detailsKeepKeyboardFocusThroughProgressAndLeaveItOnCloseAfterMoving() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val release = updateRelease("99.0.0")
+            app.fixture.response = AndroidUpdates(null, release.copy(minimumSdk = 36))
+            checkNotNull(app.fixture.heldCheck).complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.available }
+            openUpdateSettings()
+            updateSettingsRow().performScrollTo().performClick()
+
+            val recheck = CompletableDeferred<Unit>()
+            compose.runOnIdle {
+                app.fixture.heldCheck = recheck
+                app.fixture.response = AndroidUpdates(null, release)
+            }
+            compose
+                .onNodeWithText("Check versions")
+                .performSemanticsAction(SemanticsActions.RequestFocus)
+                .assertIsFocused()
+                .performKeyInput { pressKey(Key.Enter) }
+            updateDetailText("Checking…").assertIsFocused().assertHasNoClickAction()
+            recheck.complete(Unit)
+            compose.waitUntil(10_000) { app.updates.state.value.canDownload }
+
+            val download = updateDetailText("Download update")
+            download.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+            updateDetailText("Preparing…")
+                .assertIsFocused()
+                .assertHasNoClickAction()
+                .performKeyInput { pressKey(Key.DirectionLeft) }
+            val close = updateDetailText("Close")
+            close.assertIsFocused()
+            app.fixture.transfer.completeExceptionally(IOException("download failed"))
+            compose.waitUntil(10_000) { app.updates.state.value.transfer is UpdateTransfer.Failed }
+            download.assertIsEnabled()
+            close.assertIsFocused()
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test

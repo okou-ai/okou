@@ -11,6 +11,7 @@ import ai.okou.android.state.rememberUpdateWorkspaceState
 import android.text.format.Formatter
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -641,18 +642,36 @@ private fun UpdateAction(
             checking -> stringResource(R.string.updates_check_in_progress)
             else -> null
         }
+    val enabled =
+        progress == null &&
+            (state.canInstall ||
+                !state.offline &&
+                    transfer !is UpdateTransfer.Waiting &&
+                    (state.check != UpdateCheck.Waiting || state.canDownload))
+    val showingProgress = progress != null
+    // Capture focus before the action target is replaced by a progress or waiting target.
+    val retainFocus = remember(showingProgress, enabled) { focus.isFocused }
+    LaunchedEffect(showingProgress, enabled) {
+        if (retainFocus) focus.requestFocus()
+    }
+    val controlModifier =
+        modifier
+            .heightIn(min = updateActionMinHeight)
+            .then(focus.modifier)
+            .updateFocusOutline(
+                shape,
+                if (enabled) colors.inverseOnSurface else LocalActivityStatusColor.current,
+            )
     if (progress != null) {
         val fraction = (transfer as? UpdateTransfer.Downloading)?.fraction()
         Box(
-            modifier
-                .heightIn(min = updateActionMinHeight)
-                .clip(shape)
-                .background(colors.surfaceVariant)
-                .semantics {
-                    progressBarRangeInfo =
-                        if (fraction == null) ProgressBarRangeInfo.Indeterminate
-                        else ProgressBarRangeInfo(fraction, 0f..1f)
-                },
+            controlModifier.focusable().clip(shape).background(colors.surfaceVariant).semantics(
+                mergeDescendants = true,
+            ) {
+                progressBarRangeInfo =
+                    if (fraction == null) ProgressBarRangeInfo.Indeterminate
+                    else ProgressBarRangeInfo(fraction, 0f..1f)
+            },
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -693,16 +712,8 @@ private fun UpdateAction(
             if (state.canInstall) focus.rememberTrigger()
             action()
         },
-        enabled =
-            state.canInstall ||
-                !state.offline &&
-                    transfer !is UpdateTransfer.Waiting &&
-                    (state.check != UpdateCheck.Waiting || state.canDownload),
-        modifier =
-            modifier
-                .heightIn(min = updateActionMinHeight)
-                .then(focus.modifier)
-                .updateFocusOutline(shape, colors.inverseOnSurface),
+        enabled = enabled,
+        modifier = controlModifier.focusable(enabled = !enabled),
         shape = shape,
         contentPadding = updateActionPadding,
         colors =
@@ -719,17 +730,22 @@ private fun UpdateAction(
 
 private class InstallControlFocus {
     private val requester = FocusRequester()
-    private var focused = false
     private var restore = false
+    var isFocused = false
+        private set
 
-    val modifier = Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused }
+    val modifier = Modifier.focusRequester(requester).onFocusChanged { isFocused = it.isFocused }
+
+    fun requestFocus() {
+        requester.requestFocus()
+    }
 
     fun rememberTrigger() {
-        restore = focused
+        restore = isFocused
     }
 
     fun restoreTrigger() {
-        if (restore) requester.requestFocus()
+        if (restore) requestFocus()
         restore = false
     }
 }
@@ -780,7 +796,7 @@ private data class UpdateSheetActionSize(val dismissWidth: Dp, val height: Dp)
 // Reserve room for both buttons and progress so localized wrapping cannot move the footer.
 @Composable
 private fun measureUpdateSheetActions(width: Dp): UpdateSheetActionSize {
-    val measurer = rememberTextMeasurer()
+    val measurer = rememberTextMeasurer(cacheSize = 16)
     val dismissLabel = stringResource(R.string.updates_close)
     val mainLabels =
         listOf(
