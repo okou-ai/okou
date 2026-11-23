@@ -246,7 +246,7 @@ internal fun rememberSearchWorkflowId(): MutableState<String?> = rememberSaveabl
 
 private const val MAX_SAVED_SEARCH_QUERY_CHARS = 256
 
-internal data class SearchResultAnchor(val key: String, val offset: Int)
+internal data class SearchResultAnchor(val key: String, val offset: Int, val index: Int)
 
 internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
@@ -331,7 +331,7 @@ internal class ChatSearchState(
             .firstOrNull { it.index == position.firstVisibleItemIndex }
             ?.let { item ->
                 (item.key as? String)?.let {
-                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset)
+                    SearchResultAnchor(it, position.firstVisibleItemScrollOffset, item.index)
                 }
             }
     }
@@ -365,6 +365,7 @@ internal fun rememberChatSearchState(): ChatSearchState =
                             anchor?.offset ?: 0,
                             it.type.name,
                             it.pendingFocus.orEmpty(),
+                            anchor?.index ?: 0,
                         )
                     } else emptyList()
                 },
@@ -374,7 +375,13 @@ internal fun rememberChatSearchState(): ChatSearchState =
                         TextFieldValue(text as String, TextRange(start as Int, end as Int)),
                         (key as String)
                             .takeIf { it.isNotEmpty() }
-                            ?.let { SearchResultAnchor(it, offset as Int) },
+                            ?.let {
+                                SearchResultAnchor(
+                                    it,
+                                    offset as Int,
+                                    fields.getOrNull(7) as? Int ?: 0,
+                                )
+                            },
                         WorkspaceSearchType.entries.firstOrNull { it.name == fields.getOrNull(5) }
                             ?: WorkspaceSearchType.All,
                         (fields.getOrNull(6) as? String)?.ifEmpty { null },

@@ -69,9 +69,11 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -87,6 +89,7 @@ private data class SearchSources(
     val chats: ChatListUiState,
     val remote: WorkspaceSearchResults?,
     val workflows: SearchRead<SearchWorkflowHit>?,
+    val workspacePreparation: SearchRead<Nothing>?,
     val recentlyOpened: List<String>,
 )
 
@@ -103,7 +106,7 @@ internal fun WorkspaceSearchScreen(
     refreshChats: () -> Unit = {},
     remote: WorkspaceSearchResults? = null,
     workflowResults: SearchRead<SearchWorkflowHit>? = null,
-    workspaceToolsRead: SearchRead<Nothing>? = null,
+    workspacePreparation: SearchRead<Nothing>? = null,
     recentlyOpened: List<String> = emptyList(),
     onOpenMessage: (SearchMessageHit) -> Unit = {},
     restoreResultFocus: Boolean = true,
@@ -112,7 +115,8 @@ internal fun WorkspaceSearchScreen(
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
 ) {
     val query = search.query
-    val incomingResults = SearchSources(state, remote, workflowResults, recentlyOpened)
+    val incomingResults =
+        SearchSources(state, remote, workflowResults, workspacePreparation, recentlyOpened)
     var presentedResults by
         remember(
             search,
@@ -126,7 +130,7 @@ internal fun WorkspaceSearchScreen(
         }
     val composing = query.composition != null
     if (!composing) SideEffect { presentedResults = incomingResults }
-    val (resultList, resultRemote, resultWorkflows, resultRecents) =
+    val (resultList, resultRemote, resultWorkflows, resultPreparation, resultRecents) =
         if (composing) presentedResults else incomingResults
     val colors = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current
@@ -234,7 +238,7 @@ internal fun WorkspaceSearchScreen(
             search,
             resultRemote,
             resultWorkflows,
-            workspaceToolsRead,
+            resultPreparation,
             resultRecents,
             contentWidth.weight(1f),
             onOpen,
@@ -402,7 +406,7 @@ private fun SearchResults(
     search: ChatSearchState,
     remote: WorkspaceSearchResults?,
     workflowResults: SearchRead<SearchWorkflowHit>?,
-    workspaceToolsRead: SearchRead<Nothing>?,
+    workspacePreparation: SearchRead<Nothing>?,
     recentlyOpened: List<String>,
     modifier: Modifier,
     onOpen: (ConfirmedChat) -> Unit,
@@ -453,11 +457,14 @@ private fun SearchResults(
     val remoteActive = keyword.isNotEmpty() && remote != null
     val currentRemote = remote?.takeIf { it.keyword == keyword }
     val messageRead =
-        (currentRemote?.messages ?: SearchRead.Loading).takeIf {
-            remoteActive && type.includes(WorkspaceSearchType.Messages)
+        when {
+            keyword.isEmpty() || !type.includes(WorkspaceSearchType.Messages) -> null
+            currentRemote != null -> currentRemote.messages
+            remoteActive -> SearchRead.Loading
+            else -> workspacePreparation
         }
     val workflowRead =
-        (workspaceToolsRead ?: workflowResults.takeIf { onOpenWorkflow != null }).takeIf {
+        (workspacePreparation ?: workflowResults.takeIf { onOpenWorkflow != null }).takeIf {
             keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Workflows)
         }
     val artifactResults =
@@ -465,7 +472,7 @@ private fun SearchResults(
             remoteActive && onOpenArtifact != null
         }
     val artifactRead =
-        (workspaceToolsRead ?: artifactResults).takeIf {
+        (workspacePreparation ?: artifactResults).takeIf {
             keyword.isNotEmpty() && type.includes(WorkspaceSearchType.Artifacts)
         }
     val reads = listOf(messageRead, workflowRead, artifactRead)
@@ -564,20 +571,19 @@ private fun SearchResults(
     val messageFailure = messageRead.hasFailure || missingMessageChats
     val workflowFailure =
         workflowRead.hasFailure ||
-            workspaceToolsRead == null &&
+            workspacePreparation == null &&
                 onOpenWorkflow == null &&
                 type == WorkspaceSearchType.Workflows
     val artifactFailure =
         artifactRead.hasFailure ||
             moreArtifactsFailed ||
-            workspaceToolsRead == null &&
+            workspacePreparation == null &&
                 onOpenArtifact == null &&
                 type == WorkspaceSearchType.Artifacts
     val hasRemoteResults =
         messages.isNotEmpty() || workflowRead is SearchRead.Ready || artifacts.isNotEmpty()
-    val status =
+    val readFailure =
         when {
-            remotePending -> null
             grouped &&
                 (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
                 if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
@@ -597,6 +603,12 @@ private fun SearchResults(
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
+    val status = readFailure.takeUnless { remotePending }
+    val showEmpty =
+        items.isEmpty() &&
+            !waitingForList &&
+            readFailure == null &&
+            (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
         key(keyword, type) {
             rememberChatWaitIndicator(
@@ -604,7 +616,7 @@ private fun SearchResults(
                 delayMillis = 250,
             )
         }
-    val showSkeleton = showPending && items.isEmpty() && status == null
+    val showSkeleton = showPending && items.isEmpty() && status == null && !showEmpty
     val showProgress = showPending && items.isNotEmpty() && remotePending
     val errorTitle =
         status
@@ -655,7 +667,8 @@ private fun SearchResults(
                     !waitingForAnchor ||
                     pendingFocus != null && items.any { it.key == pendingFocus }
             ) {
-                search.restorePosition(index)
+                val fallback = anchor.index.coerceAtMost(visibleItems.lastIndex).takeIf { it >= 0 }
+                search.restorePosition(index ?: fallback)
             }
         }
     }
@@ -683,7 +696,15 @@ private fun SearchResults(
         ) {
             items(visibleItems, key = { it.key }, contentType = { it.isResult }) { row ->
                 when (row) {
-                    is SearchItem.Notice -> ChatContentLoadNotice(row.message)
+                    is SearchItem.Notice ->
+                        Text(
+                            stringResource(row.message),
+                            Modifier.padding(12.dp).semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = searchSecondaryStyle(),
+                        )
                     is SearchItem.Group -> SearchGroup(row) { onSelectType(row.type) }
                     is SearchItem.Chat -> {
                         val chat = row.chat
@@ -784,7 +805,7 @@ private fun SearchResults(
                         Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
                     )
                 }
-            } else if (visibleItems.isEmpty() && !pending) {
+            } else if (showEmpty) {
                 item(key = "search_empty") {
                     if (keyword.isEmpty()) {
                         Text(
