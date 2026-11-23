@@ -32,12 +32,20 @@ internal const val CONNECTOR_DEVICE_EXAMPLE = "device-example"
 internal const val CONNECTOR_MANUAL_EXAMPLE = "manual-example"
 internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
+internal data class FixtureConnectorIcon(
+    val asset: String,
+    val invertInDarkMode: Boolean = false,
+    val scale: Double? = null,
+)
+
 internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Closeable {
     private val https = FixtureHttpsServer()
     private val api: ApiClient
     val service: ConnectorService
+    @Volatile var icons: Map<String, FixtureConnectorIcon> = emptyMap()
     @Volatile var discoveryRequested = CountDownLatch(1)
     @Volatile var discoveryGate: CountDownLatch? = null
+    @Volatile var detailReplyGate: CountDownLatch? = null
     @Volatile var omittedFromDefaultBrowse: Set<String> = emptySet()
     @Volatile var unavailableCatalogSlugs: Set<String> = emptySet()
     @Volatile var failDiscovery = false
@@ -63,7 +71,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 "查看日程、查找空闲时间和创建会议。",
                 "meetings-scheduling",
                 0,
-            )
+            ),
         )
         if (includeGrantExamples) {
             add(
@@ -74,7 +82,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     "engineering-team-execution",
                     null,
                     grantKind = "device-auth",
-                )
+                ),
             )
             add(
                 CatalogEntry(
@@ -84,7 +92,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     "engineering-team-execution",
                     null,
                     grantKind = "manual",
-                )
+                ),
             )
         }
         add(CatalogEntry("gmail", "Gmail", "查找邮件、整理往来记录和起草回复。", "email", 1))
@@ -96,7 +104,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 "找到文件并阅读已有资料。",
                 "docs-files-knowledge",
                 null,
-            )
+            ),
         )
         listOf("meetings-scheduling", "email", "communication-collaboration").forEachIndexed {
             categoryIndex,
@@ -109,7 +117,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         "A related service.",
                         category,
                         10 + categoryIndex * 3 + rank,
-                    )
+                    ),
                 )
             }
         }
@@ -134,6 +142,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
@@ -146,19 +155,18 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             return rejected(403)
                         val unavailable = unavailableCatalogSlugs
                         val available = entries.filterNot { it.slug in unavailable }
-                        val matched =
-                            available.filter {
-                                (category == null || it.category == category) &&
-                                    (keyword == null ||
-                                        it.name.contains(keyword, true) ||
-                                        it.slug.contains(keyword, true)) &&
-                                    (keyword != null ||
-                                        category != null ||
-                                        it.slug !in omittedFromDefaultBrowse)
-                            }
+                        val matched = available.filter {
+                            (category == null || it.category == category) &&
+                                (keyword == null ||
+                                    it.name.contains(keyword, true) ||
+                                    it.slug.contains(keyword, true)) &&
+                                (keyword != null ||
+                                    category != null ||
+                                    it.slug !in omittedFromDefaultBrowse)
+                        }
                         return json(
                             buildJsonObject {
-                                put("connectors", JsonArray(matched.map(CatalogEntry::body)))
+                                put("connectors", JsonArray(matched.map { it.body(icon(it.slug)) }))
                                 put("totalConnectorCount", available.size)
                                 put(
                                     "categoryConnectorCounts",
@@ -169,10 +177,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                         )
                                     },
                                 )
-                            }
+                            },
                         )
                     }
                     val response = synchronized(accounts) { respond(request) }
+                    if (url.pathSegments.size == 3 && url.pathSegments[1] == "connector-catalog")
+                        detailReplyGate?.await()
                     if (
                         request.method == "PATCH" &&
                             url.pathSegments.getOrNull(1) == "connector-accounts"
@@ -220,6 +230,15 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         }
     }
 
+    private fun icon(slug: String): JsonObject {
+        val artwork = icons[slug]
+        return buildJsonObject {
+            put("url", https.server.url("/fixture-icons/${artwork?.asset ?: slug}.svg").toString())
+            put("invertInDarkMode", artwork?.invertInDarkMode ?: false)
+            artwork?.scale?.let { put("scale", it) }
+        }
+    }
+
     private fun respond(request: RecordedRequest): MockResponse {
         val url = checkNotNull(request.requestUrl)
         val path = url.encodedPath
@@ -235,7 +254,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                 buildJsonObject {
                                     put("target", target(slug))
                                     put("label", entries.first { it.slug == slug }.name)
-                                    put("icon", Json.parseToJsonElement(icon))
+                                    put("icon", icon(slug))
                                     put("hasPermissions", true)
                                     put("currentConnectionId", Json.parseToJsonElement("null"))
                                     put(
@@ -266,12 +285,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                                     )
                                                     put("enabled", account.enabled)
                                                 }
-                                            }
+                                            },
                                         ),
                                     )
                                 }
-                            }
-                    )
+                            },
+                    ),
                 )
             parts.getOrNull(1) == "connector-catalog" -> {
                 val slug = parts.getOrNull(2)
@@ -281,9 +300,9 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":$icon,"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}"""
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
-                } else json(buildJsonObject { put("connector", entry.body()) })
+                } else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
             }
             path == "/api/connector-accounts/inspect" -> {
                 val selected = body(request).getValue("selections").jsonArray
@@ -320,12 +339,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                                             buildJsonObject {
                                                 put("kind", "available")
                                                 put("connectionId", id)
-                                            }
+                                            },
                                     )
-                                }
+                                },
                             ),
                         )
-                    }
+                    },
                 )
             }
             path == "/api/connector-accounts/connections" -> {
@@ -344,12 +363,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                             JsonArray(
                                 accounts
                                     .filterValues { it.slug == querySlug }
-                                    .map { (id, account) -> account.row(id) }
+                                    .map { (id, account) -> account.row(id) },
                             ),
                         )
                         put("nextCursor", Json.parseToJsonElement("null"))
                         put("defaultConnection", Json.parseToJsonElement("null"))
-                    }
+                    },
                 )
             }
             path == "/api/connector-account-access/defaults" ->
@@ -357,8 +376,8 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     JsonArray(
                         accounts
                             .filterValues { it.slug == querySlug }
-                            .map { (id, account) -> account.defaults(id) }
-                    )
+                            .map { (id, account) -> account.defaults(id) },
+                    ),
                 )
             parts.getOrNull(1) == "connector-account-access" &&
                 parts.getOrNull(3) == "default-enabled" -> {
@@ -390,7 +409,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 )
                     return rejected(400)
                 jsonResponse(
-                    """{"authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","oauthAttemptId":"$CONNECTOR_OAUTH_ATTEMPT"}"""
+                    """{"authorizationUrl":"$CONNECTOR_AUTHORIZATION_URL","oauthAttemptId":"$CONNECTOR_OAUTH_ATTEMPT"}""",
                 )
             }
             path == "/api/connectors/$CONNECTOR_DEVICE_EXAMPLE/oauth/device/sessions" &&
@@ -398,7 +417,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 if (body(request)["authMethod"]?.jsonPrimitive?.content != "device-auth")
                     return rejected(400)
                 jsonResponse(
-                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}"""
+                    """{"sessionId":"$CONNECTOR_OAUTH_ATTEMPT","sessionToken":"fixture-only","connectorSlug":"$CONNECTOR_DEVICE_EXAMPLE","status":"pending","userCode":"$CONNECTOR_EXAMPLE_DEVICE_CODE","verificationUri":"$CONNECTOR_AUTHORIZATION_URL","expiresIn":900,"interval":5}""",
                 )
             }
             path == "/api/connectors/$CONNECTOR_MANUAL_EXAMPLE/manual-grant" &&
@@ -433,7 +452,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (querySlug != account.slug) return rejected(404)
                         if (parts.last() == "deletion-impact") {
                             jsonResponse(
-                                """{"connectionId":"$id","explicitSelectionCount":2,"hasSibling":true}"""
+                                """{"connectionId":"$id","explicitSelectionCount":2,"hasSibling":true}""",
                             )
                         } else json(account.row(id))
                     }
@@ -453,7 +472,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         if (body(request)["target"] != target(account.slug)) return rejected(400)
                         accounts.remove(id)
                         jsonResponse(
-                            """{"deletedConnectionId":"$id","resolvedSelectionCount":2,"promotedDefaultConnectionId":null}"""
+                            """{"deletedConnectionId":"$id","resolvedSelectionCount":2,"promotedDefaultConnectionId":null}""",
                         )
                     }
                     else -> rejected(405)
@@ -465,6 +484,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
 
     override fun close() {
         discoveryGate?.countDown()
+        detailReplyGate?.countDown()
         renameReplyGate?.countDown()
         defaultReplyGate?.countDown()
         https.use { api.close() }
@@ -478,7 +498,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
         val rank: Int?,
         val grantKind: String = "auth-code",
     ) {
-        fun body(): JsonObject {
+        fun body(icon: JsonObject): JsonObject {
             val method = if (grantKind == "auth-code") "oauth" else grantKind
             val methodLabel = if (grantKind == "auth-code") "OAuth" else method
             val singleAuth = if (grantKind == "auth-code") "\"oauth\"" else "null"
@@ -501,7 +521,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                         .joinToString(",", "[", "]")
                 } else "[]"
             return Json.parseToJsonElement(
-                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}"""
+                    """{"slug":"$slug","label":"$name","description":"$description","icon":$icon,"category":"$category",${if (rank != null) """ "popularityRank":$rank,""" else ""}"generation":[],"tags":[],"authMethods":[{"id":"$method","label":"$methodLabel","description":null,"supportsRefresh":true,"grantKind":"$grantKind","manualFields":$fields,"startOptions":[]}],"singleAuthCodeAuthMethodId":$singleAuth,"permissionSummary":{"hasPermissions":true,"permissionCount":2,"hasCategories":false,"hasDefaultPolicyOverrides":false},"connectNotice":null}""",
                 )
                 .jsonObject
         }
@@ -545,9 +565,6 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     }
 
     companion object {
-        private const val icon =
-            """{"url":"https://static.example/icon.svg","invertInDarkMode":false}"""
-
         private fun body(request: RecordedRequest) =
             Json.parseToJsonElement(request.body.readUtf8()).jsonObject
 
@@ -556,7 +573,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                 .setResponseCode(code)
                 .setHeader("Content-Type", "application/json")
                 .setBody(
-                    """{"error":{"code":"TEST_REJECTED","message":"Fixture request rejected"}}"""
+                    """{"error":{"code":"TEST_REJECTED","message":"Fixture request rejected"}}""",
                 )
 
         private fun json(value: kotlinx.serialization.json.JsonElement) =

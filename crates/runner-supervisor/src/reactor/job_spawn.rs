@@ -7,8 +7,9 @@
 
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use api_contracts::generated::{routes, types};
 use futures_util::FutureExt;
 use sandbox::SandboxId;
 use tokio::sync::mpsc;
@@ -53,6 +54,7 @@ use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRunReusePublisher, Act
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_provider::{ExecutionJob, JobProvider};
 use runner_provider::{RunCancellationHandle, RunCancellationRegistration, RunCancellationSignals};
+use runner_storage::{SandboxOpReporter, StorageTelemetry};
 use runner_types::ids::RunId;
 use runner_types::types::{ExecutionContext, SandboxReuseResult};
 
@@ -256,6 +258,7 @@ impl ExecutorInvocation {
                         startup_report: None,
                         discovered_cli_agent_session_id: None,
                         restored_session_identity: None,
+                        memory_published: false,
                     },
                     exit_code,
                     err,
@@ -359,6 +362,7 @@ impl FinalizationPhase {
             startup_report: _,
             discovered_cli_agent_session_id,
             restored_session_identity,
+            memory_published: _,
         } = outcome;
         #[cfg(test)]
         test_observer.record(StartLoopEvent::ExecutorCompleted {
@@ -429,15 +433,17 @@ struct DeferredUploadPhase {
     sandbox_token: String,
     exec_config: Arc<ExecutorConfig>,
     mitm_log_flush: Option<crate::proxy::MitmRunLogFlush>,
+    memory_archive_token: Option<String>,
 }
 
 impl DeferredUploadPhase {
-    async fn flush(self, telemetry: JobTelemetry) {
+    async fn flush(self, telemetry: JobTelemetry, warm_memory: bool) {
         let Self {
             run_id,
             sandbox_token,
             exec_config,
             mitm_log_flush,
+            memory_archive_token,
         } = self;
 
         // Best-effort telemetry, deferred past `provider.complete` so the
@@ -473,7 +479,54 @@ impl DeferredUploadPhase {
             .await;
             exec_config.network_log_upload_health.observe(outcome);
         };
-        tokio::join!(telemetry.flush(), network_log_upload,);
+        let memory_archive = memory_archive_token
+            .filter(|_| warm_memory)
+            .map(|token| (token, StorageTelemetry::reporter(&telemetry)));
+        let memory_archive_warm = async {
+            if let Some((token, reporter)) = memory_archive {
+                warm_committed_memory(&exec_config, &token, reporter).await;
+            }
+        };
+        tokio::join!(telemetry.flush(), network_log_upload, memory_archive_warm);
+    }
+}
+
+async fn warm_committed_memory(
+    config: &ExecutorConfig,
+    firewall_token: &str,
+    reporter: SandboxOpReporter,
+) {
+    let Ok(response) = config
+        .http
+        .request_route(
+            routes::webhooks::run::storages::memory_archive::READ,
+            firewall_token,
+        )
+        .timeout(Duration::from_secs(2))
+        .send("committed-memory-archive")
+        .await
+    else {
+        return;
+    };
+    // Older API deployments can return 404. This optional path owns no
+    // foreground work and failure leaves the usual archive lookup available.
+    if !response.status().is_success() {
+        return;
+    }
+    let Ok(response) = response
+        .json::<types::webhooks::run::storages::memory_archive::Response>()
+        .await
+    else {
+        return;
+    };
+    if let Some(archive) = response.archive {
+        config.background_fill.warm_committed_memory(
+            config.home.clone(),
+            &archive.version_id,
+            &archive.archive_url,
+            archive.archive_size,
+            reporter,
+        );
     }
 }
 
@@ -581,6 +634,18 @@ pub(super) async fn run_job(
     // `telemetry.flush()`, and the network-log upload. `context` gets moved
     // into the executor phase, so snapshot the token before spawning.
     let sandbox_token = context.sandbox_token.clone();
+    let memory_archive_token = context
+        .firewall_token
+        .as_ref()
+        .filter(|_| {
+            context.storage_manifest.as_ref().is_some_and(|manifest| {
+                manifest
+                    .artifacts
+                    .iter()
+                    .any(|artifact| artifact.vas_storage_name == "memory")
+            })
+        })
+        .cloned();
     let reused = reuse_entry.is_some();
     let sandbox_prepared = if reused {
         None
@@ -662,6 +727,7 @@ pub(super) async fn run_job(
         run_id,
         sandbox_token,
         exec_config: Arc::clone(&exec_config),
+        memory_archive_token,
         mitm_log_flush: exec_config
             .mitm_jsonl_flush
             .as_ref()
@@ -701,6 +767,9 @@ pub(super) async fn run_job(
             active_sandbox.current(),
             completion_auth,
         );
+        let warm_memory = executor_result.outcome.memory_published
+            && executor_result.exit_code == 0
+            && !cancelled_for_log;
         // Keep provider completion paired with the accepted job.
         signal_usage_flush(run_id, &usage_flush_tx);
         let telemetry = completion_payload
@@ -714,7 +783,7 @@ pub(super) async fn run_job(
             .await;
         // Completion, reuse handoff, and capacity release precede ancillary
         // delivery. The existing job owner still drains both tasks on shutdown.
-        tokio::join!(deferred_upload.flush(telemetry), async {
+        tokio::join!(deferred_upload.flush(telemetry, warm_memory), async {
             if let Some(report) = startup_report {
                 report.finish().await;
             }

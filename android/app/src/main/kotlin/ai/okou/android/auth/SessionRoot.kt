@@ -85,7 +85,6 @@ internal fun SessionRoot(
     account: NativeAccount? = null,
     appUpdates: @Composable (() -> Unit)? = null,
     updateToolbarAction: UpdateToolbarAction? = null,
-    onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
     var switchTarget by rememberWorkspaceSwitchTarget()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -158,7 +157,6 @@ internal fun SessionRoot(
                         )
                     },
                     updateToolbarAction = updateToolbarAction,
-                    onUpdateEditingChanged = onUpdateEditingChanged,
                     workspaceReady = ready != null,
                     startupRecovery = startupRecovery,
                     defaultModel = ready?.settings?.defaultModel,
@@ -493,7 +491,7 @@ private fun AccountSettings(account: NativeAccount?, signOut: () -> Unit) {
                 ) {
                     Text(stringResource(R.string.settings_sign_out_body))
                 }
-            }
+            },
         ) { modifier, open ->
             SettingsRow(
                 stringResource(R.string.auth_sign_out),

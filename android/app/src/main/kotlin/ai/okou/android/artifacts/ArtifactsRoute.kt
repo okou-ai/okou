@@ -237,7 +237,7 @@ internal fun ArtifactSelectionPreview(
                                     file.contentType.substringBefore(';').takeIf { '/' in it }
                                         ?: "application/octet-stream"
                                 putExtra(Intent.EXTRA_TITLE, file.filename)
-                            }
+                            },
                         )
                     } catch (_: ActivityNotFoundException) {
                         page.pickerArtifactId = null

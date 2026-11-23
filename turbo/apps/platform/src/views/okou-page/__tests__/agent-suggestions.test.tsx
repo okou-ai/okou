@@ -1,5 +1,6 @@
 import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/proactive-suggestions";
 import { composerDraftContract } from "@okouai/api-contracts/contracts/composer-draft";
+import { userPreferencesContract } from "@okouai/api-contracts/contracts/user-preferences";
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import {
   act,
@@ -2295,9 +2296,10 @@ test("Cover and card artwork stay fixed through browsing, feedback and Undo", as
   );
 });
 
-test("The member picks a For you cover, keeps it after reload and can return to the default", async () => {
+test("The member's For you cover follows their workspace preferences after reload", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
+  context.mocks.data.userPreferences({ forYouCoverId: forYouCovers[4].id });
   const resetPage$ = resetSignal();
   const signal = context.store.set(resetPage$, context.signal);
   await setupPage({
@@ -2311,11 +2313,11 @@ test("The member picks a For you cover, keeps it after reload and can return to 
       .querySelector('[data-slot="for-you-cover"]')
       ?.getAttribute("src");
   };
-  expect(cover()).toBe(forYouCovers[0].src);
+  expect(cover()).toBe(forYouCovers[4].src);
 
   click(button("Change cover"));
   const picker = await screen.findByRole("dialog", { name: "Change cover" });
-  expect(button("Cover 1", "radio", picker)).toHaveAttribute(
+  expect(button("Cover 5", "radio", picker)).toHaveAttribute(
     "aria-checked",
     "true",
   );
@@ -2328,7 +2330,7 @@ test("The member picks a For you cover, keeps it after reload and can return to 
     "true",
   );
 
-  // A fresh app store reads the cover back from browser storage.
+  // A fresh app store reads the saved cover back from the API.
   context.store.set(resetPage$);
   cleanup();
   vi.mocked(window.history.pushState).mockRestore();
@@ -2358,6 +2360,41 @@ test("The member picks a For you cover, keeps it after reload and can return to 
     expect(cover()).toBe(forYouCovers[1].src);
   });
   expect(button("Cover 2", "radio", reopened)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+});
+
+test("A failed For you cover save keeps the saved cover selected", async () => {
+  const items = numberedSuggestions(1);
+  mockPool(items);
+  context.mocks.data.userPreferences({ forYouCoverId: forYouCovers[7].id });
+  context.mocks.api(userPreferencesContract.update, ({ respond }) => {
+    return respond(500, {
+      error: { code: "INTERNAL_SERVER_ERROR", message: "Cover save failed" },
+    });
+  });
+  await openForYou();
+  await activeForYouCard(items[0].content.title);
+
+  click(button("Change cover"));
+  const picker = await screen.findByRole("dialog", { name: "Change cover" });
+  expect(button("Cover 8", "radio", picker)).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  click(button("Cover 1", "radio", picker));
+  const error = await screen.findByText("Cover save failed");
+  expect(error).toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("Cover 1", "radio", picker)).toBeEnabled();
+  });
+  expect(document.querySelector('[data-slot="for-you-cover"]')).toHaveAttribute(
+    "src",
+    forYouCovers[7].src,
+  );
+
+  expect(button("Cover 8", "radio", picker)).toHaveAttribute(
     "aria-checked",
     "true",
   );

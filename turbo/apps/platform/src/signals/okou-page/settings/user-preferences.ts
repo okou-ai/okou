@@ -117,6 +117,9 @@ function confirmedFields(
     }),
     ...(update.theme !== undefined && { theme: result.theme }),
     ...(update.colorTheme !== undefined && { colorTheme: result.colorTheme }),
+    ...(update.forYouCoverId !== undefined && {
+      forYouCoverId: result.forYouCoverId,
+    }),
     ...(update.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: result.captureNetworkBodiesRemaining,
     }),

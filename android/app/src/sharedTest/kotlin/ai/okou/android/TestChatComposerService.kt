@@ -19,11 +19,11 @@ class TestChatComposerService : ChatComposerService {
         error("No draft backend in this fixture")
 
     override suspend fun createThread(
-        request: CreateThreadRequest
+        request: CreateThreadRequest,
     ): ai.okou.android.api.generated.CreatedThread = error("No command backend in this fixture")
 
     override suspend fun sendInput(
-        request: SendRequestVariant1
+        request: SendRequestVariant1,
     ): ai.okou.android.api.generated.AcceptedInput = error("No command backend in this fixture")
 
     override suspend fun observeInput(threadId: String, eventId: String): InputObservation =

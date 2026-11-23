@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.54.0](https://github.com/okou-ai/okou/compare/ios-v0.53.3...ios-v0.54.0) (2026-11-23)
+
+
+### Features
+
+* **api:** separate app store and testflight minimum versions ([#50101](https://github.com/okou-ai/okou/issues/50101)) ([fe33370](https://github.com/okou-ai/okou/commit/fe333701c6a92676741d61982e3aeadd99fd0f85))
+
+## [0.53.3](https://github.com/okou-ai/okou/compare/ios-v0.53.2...ios-v0.53.3) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** include apple sign-in in the app signature ([#50096](https://github.com/okou-ai/okou/issues/50096)) ([73ebcd1](https://github.com/okou-ai/okou/commit/73ebcd10dda7a8c787e2dfe5d0fec958c294d776))
+
 ## [0.53.2](https://github.com/okou-ai/okou/compare/ios-v0.53.1...ios-v0.53.2) (2026-11-22)
 
 

@@ -94,8 +94,8 @@ const sandboxTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("sandbox"),
 });
 
-// Only the host firewall resolver accepts this scope. Guest identities must
-// never authorize retrieval of reusable upstream credentials on their own.
+// The firewall resolver and post-Run Memory archive lookup require this
+// host-only scope before checking the Run's authority.
 const firewallTokenPayloadSchema = runIdentityPayloadSchema.extend({
   scope: literal("firewall"),
 });
@@ -482,8 +482,6 @@ function buildOkouTokenClaims(
     runId,
     orgId,
     capabilities,
-    // Older API rollback targets still require this signed claim.
-    ...(options?.personalExecution === true ? { singleAgent: true } : {}),
     ...phoneUseTokenClaims(capabilities, options),
     ...(capabilities.includes("computer-use:write") &&
     options?.computerUseHostId

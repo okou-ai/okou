@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   GOOGLE_WORKSPACE_MIME_TYPES,
   type GoogleDriveUploadMode,
@@ -726,17 +725,14 @@ test("Offer Drive reconnection after closing the document preview that started t
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.ArtifactSidebarPreview]: false },
   });
   click(await findNamedLink("Table report"));
-  const preview = await screen.findByRole("dialog", {
-    name: "table-report.md preview",
-  });
+  const preview = await screen.findByTestId("artifact-sidebar");
   await screen.findAllByRole("table");
   const menu = await openExportMenu();
   click(await findNamedMenuItem("Save to Google Drive", menu));
   await uploadStarted.promise;
-  click(buttonNamed("Close", preview));
+  click(buttonNamed("Close artifact", preview));
   await waitFor(() => {
     expect(preview).not.toBeInTheDocument();
   });
@@ -794,12 +790,7 @@ test("Interleaving two tables and Google destinations shows the matching success
   expect(tableExportButton(1)).toBeEnabled();
 });
 
-test.each([
-  "transcript",
-  "artifact sidebar",
-  "artifact dialog",
-  "artifact card",
-] as const)(
+test.each(["transcript", "artifact sidebar", "artifact card"] as const)(
   "Export a table from the right Chat's %s to its Drive account",
   async (surface) => {
     const leftThreadId = context.resourceId;
@@ -811,7 +802,6 @@ test.each([
     const content = {
       transcript: table,
       "artifact sidebar": link,
-      "artifact dialog": link,
       "artifact card": `!${link}`,
     }[surface];
     if (surface !== "transcript") {
@@ -862,10 +852,6 @@ test.each([
       context,
       path: `/chats/${leftThreadId}?sidebar=${rightThreadId}`,
       host: "app.okou.ai",
-      featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]:
-          surface === "artifact sidebar",
-      },
     });
 
     if (surface !== "transcript") {
@@ -874,11 +860,7 @@ test.each([
           ? await screen.findByTestId("attachment-preview-markdown")
           : await findNamedLink("Right document"),
       );
-      if (surface === "artifact sidebar") {
-        await screen.findByTestId("artifact-sidebar");
-      } else {
-        await screen.findByRole("dialog", { name: "right-table.md preview" });
-      }
+      await screen.findByTestId("artifact-sidebar");
     }
     await screen.findByText("Right table");
     const menu = await openExportMenu();

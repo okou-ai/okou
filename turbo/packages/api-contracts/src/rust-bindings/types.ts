@@ -17,6 +17,7 @@ import {
 import { fileEntryWithHashSchema } from "../contracts/storages";
 import {
   webhookCompleteContract,
+  webhookMemoryArchiveContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
 } from "../contracts/webhooks";
@@ -126,6 +127,18 @@ export const rustTypeModuleDocs = [
   {
     rustModulePath: ["webhooks", "agent", "storages", "prepare"],
     rustDoc: ["DTOs for preparing direct sandbox storage uploads."],
+  },
+  {
+    rustModulePath: ["webhooks", "run"],
+    rustDoc: ["Run-scoped webhook DTOs."],
+  },
+  {
+    rustModulePath: ["webhooks", "run", "storages"],
+    rustDoc: ["Run-scoped storage webhook DTOs."],
+  },
+  {
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustDoc: ["Host-only responses for warming committed Memory archives."],
   },
 ] satisfies readonly RustTypeModuleDoc[];
 
@@ -667,6 +680,34 @@ export const rustTypeBindings = [
             "The provider's model policy excluded every candidate endpoint.",
           ],
           usage_limit: ["The provider reported a usage limit."],
+        },
+      },
+    ],
+  },
+  {
+    schema: webhookMemoryArchiveContract.read.responses[200],
+    rustModulePath: ["webhooks", "run", "storages", "memory_archive"],
+    rustTypeName: "Response",
+    direction: "response",
+    sensitive: true,
+    fieldTypeOverrides: { archiveSize: "u64" },
+    declarations: [
+      {
+        rustTypeName: "Response",
+        rustDoc: ["Optional archive eligible for post-Run cache warming."],
+        fields: {
+          archive: [
+            "Authorized source, when the Run published the current head.",
+          ],
+        },
+      },
+      {
+        rustTypeName: "ResponseArchive",
+        rustDoc: ["The authorized, immutable member Memory archive."],
+        fields: {
+          versionId: ["Content-addressed version used as the cache key."],
+          archiveSize: ["Committed compressed byte count."],
+          archiveUrl: ["Scoped, presigned GET URL for the committed archive."],
         },
       },
     ],

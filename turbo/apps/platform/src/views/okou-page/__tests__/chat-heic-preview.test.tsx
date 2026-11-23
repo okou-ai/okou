@@ -20,15 +20,14 @@ const context = testContext();
 const R2_ORIGIN = `https://${"a".repeat(32)}.r2.cloudflarestorage.com`;
 
 test.each([
-  { contentType: "image/heic", storedName: "opaque", sidebarFirst: false },
+  { contentType: "image/heic", storedName: "opaque" },
   {
     contentType: "application/octet-stream",
     storedName: "photo.HEIC",
-    sidebarFirst: true,
   },
 ])(
-  "an iPhone photo opens at full resolution and downloads its original ($contentType, sidebar first=$sidebarFirst)",
-  async ({ contentType, storedName, sidebarFirst }) => {
+  "an iPhone photo opens at full resolution and downloads its original ($contentType)",
+  async ({ contentType, storedName }) => {
     const fileId = "iphone-photo";
     const filename = "photo.HEIC";
     const original = `${R2_ORIGIN}/private/${storedName}?X-Amz-Signature=signature&X-Amz-Credential=key%2Fauto%2Fs3`;
@@ -89,15 +88,10 @@ test.each([
     await setupPage({
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches: { artifactSidebarPreview: sidebarFirst },
     });
     click(await findNamedLink(`Preview ${filename}`));
-    let preview = await screen.findByTestId(
-      sidebarFirst ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    const imageTestId = sidebarFirst
-      ? "artifact-sidebar-body-image"
-      : "attachment-lightbox-image";
+    const preview = await screen.findByTestId("artifact-sidebar");
+    const imageTestId = "artifact-sidebar-body-image";
     await expect(
       within(preview).findByTestId(imageTestId),
     ).resolves.toHaveAttribute("src", converted);
@@ -116,10 +110,6 @@ test.each([
         converted,
       );
     });
-    if (!sidebarFirst) {
-      click(await findNamedButton("Open in split view", preview));
-      preview = await screen.findByTestId("artifact-sidebar");
-    }
     await expect(
       within(preview).findByTestId("artifact-sidebar-body-image"),
     ).resolves.toHaveAttribute("src", converted);
@@ -159,7 +149,7 @@ test("an inaccessible HEIC artifact keeps its access error in the image viewer",
 
   await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("iPhone photo"));
-  const dialog = await screen.findByTestId("attachment-lightbox");
+  const dialog = await screen.findByTestId("artifact-sidebar");
   await expect(
     within(dialog).findByRole("heading", {
       name: "You can’t view this artifact",

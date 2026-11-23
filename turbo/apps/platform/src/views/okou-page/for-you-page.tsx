@@ -7,7 +7,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon, Loader2 } from "lucide-react";
 import {
   Button,
   Card,
@@ -312,9 +312,15 @@ function ForYouNavigation() {
 
 function ForYouCover() {
   const { t } = useTranslation();
-  const cover = useGet(forYouCover$);
-  const select = useSet(selectForYouCover$);
+  const cover = useLastResolved(forYouCover$);
+  const [saving, select] = useLoadableSet(selectForYouCover$);
+  const signal = useGet(pageSignal$);
   const markPainted = useSet(markForYouCoverPainted$);
+  if (!cover) {
+    return (
+      <Skeleton className="-mx-4 h-58 shrink-0 rounded-none sm:-mx-8 sm:h-56" />
+    );
+  }
   return (
     <div className="group/cover relative -mx-4 h-58 shrink-0 sm:-mx-8 sm:h-56">
       <img
@@ -339,7 +345,11 @@ function ForYouCover() {
             />
           }
         >
-          <ImageIcon aria-hidden />
+          {saving.state === "loading" ? (
+            <Loader2 aria-hidden className="animate-spin" />
+          ) : (
+            <ImageIcon aria-hidden />
+          )}
           {t(($) => {
             return $.chat.agentSuggestions.forYou.cover.change;
           })}
@@ -356,53 +366,56 @@ function ForYouCover() {
               return $.chat.agentSuggestions.forYou.cover.gallery;
             })}
           </p>
-          <RadioGroup
-            value={cover.id}
-            onValueChange={(value) => {
-              select(String(value));
-            }}
-            aria-label={t(($) => {
-              return $.chat.agentSuggestions.forYou.cover.gallery;
-            })}
-            className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-1.5"
-          >
-            {forYouCovers.map((option, index) => {
-              return (
-                <label
-                  key={option.id}
-                  className={cn(
-                    "relative aspect-[5/2] cursor-default overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] has-focus-visible:outline-ring",
-                    option.id === cover.id && "outline-primary",
-                  )}
-                >
-                  <img
-                    src={option.thumbnail}
-                    alt=""
-                    draggable={false}
-                    loading="lazy"
-                    className="size-full object-cover"
-                  />
-                  {option.id === DEFAULT_FOR_YOU_COVER_ID && (
-                    <span className="absolute top-1.5 left-1.5 rounded-md bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
-                      {t(($) => {
-                        return $.chat.agentSuggestions.forYou.cover.default;
-                      })}
-                    </span>
-                  )}
-                  <Radio
-                    value={option.id}
-                    aria-label={t(
-                      ($) => {
-                        return $.chat.agentSuggestions.forYou.cover.option;
-                      },
-                      { index: index + 1 },
+          <div className="max-h-80 overflow-y-auto">
+            <RadioGroup
+              value={cover.id}
+              disabled={saving.state === "loading"}
+              onValueChange={(value) => {
+                detach(select(String(value), signal), Reason.DomCallback);
+              }}
+              aria-label={t(($) => {
+                return $.chat.agentSuggestions.forYou.cover.gallery;
+              })}
+              className="grid grid-cols-3 gap-2 p-1.5"
+            >
+              {forYouCovers.map((option, index) => {
+                return (
+                  <label
+                    key={option.id}
+                    className={cn(
+                      "relative aspect-[5/2] cursor-default overflow-hidden rounded-lg outline-2 outline-offset-2 outline-transparent transition-[outline-color] has-focus-visible:outline-ring",
+                      option.id === cover.id && "outline-primary",
                     )}
-                    className="absolute top-1.5 right-1.5 focus-visible:ring-0"
-                  />
-                </label>
-              );
-            })}
-          </RadioGroup>
+                  >
+                    <img
+                      src={option.thumbnail}
+                      alt=""
+                      draggable={false}
+                      loading="lazy"
+                      className="size-full object-cover"
+                    />
+                    {option.id === DEFAULT_FOR_YOU_COVER_ID && (
+                      <span className="absolute top-1.5 left-1.5 rounded-md bg-card/90 px-1.5 py-0.5 text-[10px] font-medium text-foreground">
+                        {t(($) => {
+                          return $.chat.agentSuggestions.forYou.cover.default;
+                        })}
+                      </span>
+                    )}
+                    <Radio
+                      value={option.id}
+                      aria-label={t(
+                        ($) => {
+                          return $.chat.agentSuggestions.forYou.cover.option;
+                        },
+                        { index: index + 1 },
+                      )}
+                      className="absolute top-1.5 right-1.5 focus-visible:ring-0"
+                    />
+                  </label>
+                );
+              })}
+            </RadioGroup>
+          </div>
         </PopoverContent>
       </Popover>
     </div>
@@ -462,7 +475,10 @@ function ForYouHeader() {
   const steps = cards.slice(firstStep, firstStep + 7);
   const browse = useSet(browseForYou$);
   const signal = useGet(pageSignal$);
-  const cover = useGet(forYouPaintedCover$);
+  const cover = useLastResolved(forYouPaintedCover$);
+  if (!cover) {
+    return null;
+  }
   return (
     <header
       style={headerInkVars(cover)}

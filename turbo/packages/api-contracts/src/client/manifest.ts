@@ -260,7 +260,11 @@ export const clientDescriptorManifest = [
   },
   {
     module: "data-router",
-    contracts: ["dataRouterHistoryContract", "dataRouterRequestContract"],
+    contracts: [
+      "dataRouterHistoryContract",
+      "dataRouterRequestContract",
+      "runDataRouterRequestContract",
+    ],
   },
   {
     module: "debug-morning-brief",
@@ -837,6 +841,7 @@ export const clientDescriptorManifest = [
       "webhookGoogleFormsContract",
       "webhookGoogleWorkspaceEventsContract",
       "webhookHeartbeatContract",
+      "webhookMemoryArchiveContract",
       "webhookNotionContract",
       "webhookSessionOutputContract",
       "webhookStoragesCommitContract",

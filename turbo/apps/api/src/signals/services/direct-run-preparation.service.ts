@@ -24,7 +24,6 @@ import {
 } from "./content-bundle-presigned-url-cache";
 import {
   buildExecutionContext,
-  prepareExecutionNetworkPolicy$,
   type ExecutionPublicationRun,
 } from "./run-execution-publication.service";
 import {
@@ -114,22 +113,8 @@ export const prepareDirectRun$ = command(
   ) => {
     signal.throwIfAborted();
     const { mounts, bundles } = input.packages;
-    const [runtime, publication] = await joinAll([
-      (async () => {
-        const prepared = await set(
-          prepareExecutionRuntimeContext$,
-          input,
-          mounts,
-          signal,
-        );
-        signal.throwIfAborted();
-        const readyAt = monotonicNow();
-        const networkPolicyInputs = await set(prepareExecutionNetworkPolicy$, {
-          connectorRuntimeTargets: prepared.context.connectorRuntimeTargets,
-          networkPolicyInputs: prepared.networkPolicyInputs,
-        });
-        return { prepared, readyAt, networkPolicyInputs };
-      })(),
+    const [prepared, publication] = await joinAll([
+      set(prepareExecutionRuntimeContext$, input, mounts, signal),
       (async () => {
         const snapshot = await bundleCache;
         signal.throwIfAborted();
@@ -151,10 +136,9 @@ export const prepareDirectRun$ = command(
       })(),
     ]);
     signal.throwIfAborted();
-    const { prepared } = runtime;
     const bundleCacheWaitMs = Math.max(
       0,
-      publication.timing.readyAt - runtime.readyAt,
+      publication.timing.readyAt - prepared.readyAt,
     );
     const { run } = input;
     const context = prepared.context;
@@ -162,7 +146,7 @@ export const prepareDirectRun$ = command(
       run,
       reuseKey: input.reuseKey,
       preparedContext: context,
-      networkPolicyInputs: runtime.networkPolicyInputs,
+      networkPolicyInputs: prepared.networkPolicyInputs,
       contentBundles: publication.signed.contentBundles,
     });
     return {

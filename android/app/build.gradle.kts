@@ -39,7 +39,7 @@ for (origin in listOf(apiOrigin, webOrigin)) {
             uri.userInfo == null &&
             uri.path in listOf("", "/") &&
             uri.query == null &&
-            uri.fragment == null
+            uri.fragment == null,
     ) {
         "Okou service configuration must use HTTPS origins"
     }
@@ -195,7 +195,7 @@ androidComponents.onVariants { variant ->
             argumentProviders.add(
                 CommandLineArgumentProvider {
                     listOf(manifest.get().asFile.absolutePath, applicationId.get())
-                }
+                },
             )
         }
     tasks.matching { it.name == "assemble$variantName" }.configureEach { dependsOn(audit) }
@@ -206,6 +206,9 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.browser)
     implementation(libs.clerk.ui)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.coil.svg)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.material3)
     implementation(libs.compose.foundation)
@@ -258,8 +261,8 @@ tasks.register("printRetraceClasspath") {
                     .protectionDomain
                     .codeSource
                     .location
-                    .toURI()
-            )
+                    .toURI(),
+            ),
         )
     }
 }

@@ -3759,4 +3759,34 @@ pub mod webhooks {
             }
         }
     }
+
+    /// Run-scoped webhook DTOs.
+    pub mod run {
+        /// Run-scoped storage webhook DTOs.
+        pub mod storages {
+            /// Host-only responses for warming committed Memory archives.
+            pub mod memory_archive {
+                /// The authorized, immutable member Memory archive.
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                pub struct ResponseArchive {
+                    /// Content-addressed version used as the cache key.
+                    pub version_id: String,
+                    /// Committed compressed byte count.
+                    pub archive_size: u64,
+                    /// Scoped, presigned GET URL for the committed archive.
+                    pub archive_url: String,
+                }
+
+                /// Optional archive eligible for post-Run cache warming.
+                #[derive(serde::Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                pub struct Response {
+                    /// Authorized source, when the Run published the current head.
+                    #[serde(default, skip_serializing_if = "Option::is_none")]
+                    pub archive: Option<ResponseArchive>,
+                }
+            }
+        }
+    }
 }

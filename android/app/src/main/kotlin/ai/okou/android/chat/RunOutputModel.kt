@@ -63,8 +63,9 @@ class RunOutputModel(
             if (visible && authorized() && thread != null && run != null) thread to run else null
         val previous = demand.value
         if (previous?.let { it.threadId to it.runId } != selected) epoch++
-        demand.value =
-            selected?.let { (threadId, runId) -> RunOutputTarget(threadId, runId, epoch) }
+        demand.value = selected?.let { (threadId, runId) ->
+            RunOutputTarget(threadId, runId, epoch)
+        }
         publish()
     }
 
@@ -116,7 +117,7 @@ class RunOutputModel(
         // Web derives demand from persisted events followed by retained optimistic blocks.
         return transcript
             .liveRunsIncluding(
-                buffers.values.filter { it.threadId == current.thread?.id }.map { it.runId }
+                buffers.values.filter { it.threadId == current.thread?.id }.map { it.runId },
             )
             .lastOrNull()
     }
@@ -134,7 +135,7 @@ class RunOutputModel(
                                 HistoryRole.Assistant,
                                 listOf(HistoryBlock(HistoryBlockKind.Text, value.text)),
                             )
-                        }
+                        },
             )
     }
 

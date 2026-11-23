@@ -3719,43 +3719,6 @@
         }
       }
     },
-    "Billing": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Abrechnung" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Facturación" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Facturation" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बिलिंग" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Penagihan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Fatturazione" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "請求" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "결제" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Faturamento" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "账单" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "帳單" }
-        }
-      }
-    },
     "Build a website for my business": {
       "extractionState": "stale",
       "localizations": {
@@ -7097,43 +7060,6 @@
         }
       }
     },
-    "Credit balance": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Credit-Guthaben" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Solde de crédits" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "क्रेडिट बैलेंस" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Saldo kredit" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Saldo crediti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "クレジット残高" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "크레딧 잔액" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Saldo de créditos" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "Credits 余额" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "Credits 餘額" }
-        }
-      }
-    },
     "Credits expire %@": {
       "extractionState": "manual",
       "localizations": {
@@ -7172,43 +7098,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "積分將於 %@ 過期" }
-        }
-      }
-    },
-    "Current plan": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Aktueller Tarif" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Plan actual" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Offre actuelle" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "मौजूदा प्लान" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Paket saat ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Piano attuale" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "現在のプラン" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "현재 요금제" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Plano atual" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "当前套餐" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "目前方案" }
         }
       }
     },
@@ -11592,80 +11481,6 @@
         }
       }
     },
-    "Loading credits": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Credits werden geladen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cargando créditos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Chargement des crédits" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "क्रेडिट लोड हो रहे हैं" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Memuat kredit" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Caricamento dei crediti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "クレジットを読み込み中" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "크레딧 로딩 중" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Carregando créditos" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在加载 Credits" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在載入 Credits" }
-        }
-      }
-    },
-    "Loading plan": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Tarif wird geladen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cargando plan" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Chargement de l’offre" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "प्लान लोड हो रहा है" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Memuat paket" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Caricamento del piano" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "プランを読み込み中" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "요금제 로딩 중" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Carregando plano" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在加载套餐" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在載入方案" }
-        }
-      }
-    },
     "Loading remote access…": {
       "localizations": {
         "de": {
@@ -12037,43 +11852,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "登入或建立你的帳號。" }
-        }
-      }
-    },
-    "Manage billing": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Abrechnung verwalten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Gestionar facturación" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Gérer la facturation" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बिलिंग प्रबंधित करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kelola penagihan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Gestisci fatturazione" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "請求を管理" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "결제 관리" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Gerenciar faturamento" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "管理账单" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "管理帳單" }
         }
       }
     },
@@ -14810,6 +14588,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "開啟來源" }
+        }
+      }
+    },
+    "Open App Store": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "App Store öffnen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abrir App Store" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouvrir App Store" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "App Store खोलें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Buka App Store" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apri App Store" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "App Store を開く" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "App Store 열기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abrir o App Store" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "打开 App Store" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "開啟 App Store" }
         }
       }
     },

@@ -42,7 +42,7 @@ class MainActivityTest {
         compose.onNodeWithText("Email").assertIsDisplayed()
         val layouts = mutableListOf<TextLayoutResult>()
         compose.onNodeWithText(email).performScrollTo().assertIsDisplayed().performSemanticsAction(
-            SemanticsActions.GetTextLayoutResult
+            SemanticsActions.GetTextLayoutResult,
         ) {
             it(layouts)
         }

@@ -234,6 +234,7 @@ import { webFileUrlRoutes } from "./routes/web-file-url";
 import { dataRouterHistoryRoutes } from "./routes/data-router-history";
 import { webhooksAgentDataRequestRoutes } from "./routes/webhooks-agent-data-request";
 import { webhooksAgentCompleteRoutes } from "./routes/webhooks-agent-complete";
+import { webhooksRunMemoryArchiveRoutes } from "./routes/webhooks-run-memory-archive";
 import { webhooksAgentEventsRoutes } from "./routes/webhooks-agent-events";
 import { webhooksAgentFirewallAuthRoutes } from "./routes/webhooks-agent-firewall-auth";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "./routes/webhooks-agent-health-usage-telemetry";
@@ -284,6 +285,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...webhooksStripeConnectRoutes,
   ...webhooksAgentHealthUsageTelemetryRoutes,
   ...webhooksAgentCompleteRoutes,
+  ...webhooksRunMemoryArchiveRoutes,
   ...webhooksAgentDataRequestRoutes,
   ...dataRouterHistoryRoutes,
   ...webhooksAgentEventsRoutes,

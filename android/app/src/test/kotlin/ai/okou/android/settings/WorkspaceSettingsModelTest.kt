@@ -59,7 +59,7 @@ class WorkspaceSettingsModelTest {
                     claude
                         .copy(
                             subscriptionUsage =
-                                usage.copy(fiveHour = shortWindow.copy(resetAt = "unavailable"))
+                                usage.copy(fiveHour = shortWindow.copy(resetAt = "unavailable")),
                         )
                         .quotas()
                 assertEquals(invalidShortReset[1].resetAt, invalidShortReset[0].resetAt)

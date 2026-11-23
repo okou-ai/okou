@@ -488,6 +488,16 @@ pub mod webhooks {
                 };
             }
 
+            /// Generated route bindings under `webhooks::run::storages::memory_archive`.
+            pub mod memory_archive {
+                /// Read the current Memory archive published by a completed Run.
+                /// Route contract: `GET /api/webhooks/run/storages/memory-archive`.
+                pub const READ: crate::Route = crate::Route {
+                    method: crate::Method::Get,
+                    path: "/api/webhooks/run/storages/memory-archive",
+                };
+            }
+
             /// Generated route bindings under `webhooks::run::storages::prepare`.
             pub mod prepare {
                 /// Prepare for direct S3 upload from sandbox.

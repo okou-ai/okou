@@ -102,7 +102,7 @@ describe("Sandbox transient session output webhook", () => {
       context,
       routes: webhooksAgentSessionOutputRoutes,
     });
-    const response = await raw("/api/webhooks/agent/session-output", {
+    const response = await raw("/api/webhooks/run/session-output", {
       method: "POST",
       headers: {
         authorization: `Bearer ${args.token}`,

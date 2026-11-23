@@ -37,7 +37,8 @@ internal enum class KnownRunFailureReason(val wireValue: String) {
     USAGE_LIMIT("usage_limit");
 
     companion object {
-        fun fromWireValue(value: String?): KnownRunFailureReason? =
-            entries.firstOrNull { it.wireValue == value }
+        fun fromWireValue(value: String?): KnownRunFailureReason? = entries.firstOrNull {
+            it.wireValue == value
+        }
     }
 }

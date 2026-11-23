@@ -97,7 +97,7 @@ async fn snapshot_artifact_plan(
     http: &HttpClient,
     run_id: &str,
     plan: ArtifactSnapshotPlan<'_>,
-) -> Result<complete::RequestCompletionStorageOutput, AgentError> {
+) -> Result<(complete::RequestCompletionStorageOutput, bool), AgentError> {
     let (entry, files) = match plan {
         ArtifactSnapshotPlan::Snapshot { entry, files } => (entry, files),
         ArtifactSnapshotPlan::PreserveParentVersion { entry } => {
@@ -107,11 +107,14 @@ async fn snapshot_artifact_plan(
                 entry.name,
                 entry.version_id
             );
-            return Ok(build_artifact_snapshot_entry(
-                &entry.name,
-                &entry.version_id,
-                &entry.mount_path,
-                entry.missing_root_policy,
+            return Ok((
+                build_artifact_snapshot_entry(
+                    &entry.name,
+                    &entry.version_id,
+                    &entry.mount_path,
+                    entry.missing_root_policy,
+                ),
+                false,
             ));
         }
     };
@@ -135,11 +138,14 @@ async fn snapshot_artifact_plan(
             true,
             None,
         );
-        return Ok(build_artifact_snapshot_entry(
-            &entry.name,
-            &entry.version_id,
-            &entry.mount_path,
-            entry.missing_root_policy,
+        return Ok((
+            build_artifact_snapshot_entry(
+                &entry.name,
+                &entry.version_id,
+                &entry.mount_path,
+                entry.missing_root_policy,
+            ),
+            false,
         ));
     }
 
@@ -171,12 +177,20 @@ async fn snapshot_artifact_plan(
         entry.name,
         snapshot.version_id
     );
-    Ok(build_artifact_snapshot_entry(
-        &entry.name,
-        &snapshot.version_id,
-        &entry.mount_path,
-        entry.missing_root_policy,
+    Ok((
+        build_artifact_snapshot_entry(
+            &entry.name,
+            &snapshot.version_id,
+            &entry.mount_path,
+            entry.missing_root_policy,
+        ),
+        entry.name == MEMORY_ARTIFACT_NAME && snapshot.changed_archive_version,
     ))
+}
+
+pub(super) struct ArtifactSnapshots {
+    pub(super) outputs: Option<Vec<complete::RequestCompletionStorageOutput>>,
+    pub(super) memory_published: bool,
 }
 
 /// Snapshot artifact entries.
@@ -210,13 +224,16 @@ pub(super) async fn snapshot_artifact_entries(
     http: &HttpClient,
     run_id: &str,
     entries: &[env::ArtifactEnv],
-) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
+) -> Result<ArtifactSnapshots, AgentError> {
     if entries.is_empty() {
         log_info!(
             LOG_TAG,
             "No artifact configured, creating finalization without artifact snapshot"
         );
-        return Ok(None);
+        return Ok(ArtifactSnapshots {
+            outputs: None,
+            memory_published: false,
+        });
     }
 
     let mut indexed_plans = stream::iter(entries.iter().enumerate())
@@ -267,12 +284,16 @@ pub(super) async fn snapshot_artifact_entries(
     }
 
     indexed_results.sort_unstable_by_key(|(index, _)| *index);
-    Ok(Some(
-        indexed_results
-            .into_iter()
-            .map(|(_, result)| result)
-            .collect(),
-    ))
+    let memory_published = indexed_results.iter().any(|(_, (_, published))| *published);
+    Ok(ArtifactSnapshots {
+        outputs: Some(
+            indexed_results
+                .into_iter()
+                .map(|(_, (output, _))| output)
+                .collect(),
+        ),
+        memory_published,
+    })
 }
 
 #[cfg(test)]
@@ -281,7 +302,9 @@ async fn snapshot_artifact_entries_for_test(
     run_id: &str,
     entries: &[env::ArtifactEnv],
 ) -> Result<Option<Vec<complete::RequestCompletionStorageOutput>>, AgentError> {
-    snapshot_artifact_entries(http, run_id, entries).await
+    Ok(snapshot_artifact_entries(http, run_id, entries)
+        .await?
+        .outputs)
 }
 
 #[cfg(test)]

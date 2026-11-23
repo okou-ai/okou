@@ -206,6 +206,8 @@ impl IngressHandler {
             return self.dispatch_response(run_id, dispatch::Disposition::Busy);
         };
         let read_started = Instant::now();
+        let mut first_data_at = None;
+        let mut last_data_at = None;
         let read = async {
             let mut bytes = Vec::new();
             while let Some(frame) = request.body_mut().frame().await {
@@ -213,6 +215,11 @@ impl IngressHandler {
                 if let Ok(data) = frame.into_data() {
                     if bytes.len().saturating_add(data.len()) > dispatch::MAX_BODY {
                         return Err(StatusCode::PAYLOAD_TOO_LARGE);
+                    }
+                    if !data.is_empty() {
+                        let received_at = Instant::now();
+                        first_data_at.get_or_insert(received_at);
+                        last_data_at = Some(received_at);
                     }
                     bytes.extend_from_slice(&data);
                 } else {
@@ -223,11 +230,16 @@ impl IngressHandler {
         };
         let read = tokio::time::timeout(Duration::from_secs(5), read).await;
         timing.body_read_ms = Some(read_started.elapsed().as_secs_f64() * 1000.0);
+        timing.body_first_frame_ms =
+            first_data_at.map(|at| at.duration_since(read_started).as_secs_f64() * 1000.0);
         let bytes = match read {
             Ok(Ok(bytes)) => bytes,
             Ok(Err(status)) => return response(status, ""),
             Err(_) => return response(StatusCode::REQUEST_TIMEOUT, ""),
         };
+        timing.body_first_to_last_frame_ms = first_data_at
+            .zip(last_data_at)
+            .map(|(first, last)| last.duration_since(first).as_secs_f64() * 1000.0);
         let verdict = intake
             .submit(
                 self.identity,

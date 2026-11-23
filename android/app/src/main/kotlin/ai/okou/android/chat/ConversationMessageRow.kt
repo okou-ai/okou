@@ -196,7 +196,7 @@ internal fun ConversationMessageRow(
                         Icon(
                             painterResource(
                                 if (expanded) R.drawable.ic_expand_less
-                                else R.drawable.ic_expand_more
+                                else R.drawable.ic_expand_more,
                             ),
                             null,
                             Modifier.size(16.dp),
@@ -263,7 +263,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                     else
                         Modifier.pointerInput(message.id) {
                             detectTapGestures(onLongPress = { openMenu() })
-                        }
+                        },
                 ),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -314,7 +314,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                                                     }
                                                 }
                                             clipboard.setClipEntry(
-                                                ClipEntry(ClipData.newPlainText(null, copy))
+                                                ClipEntry(ClipData.newPlainText(null, copy)),
                                             )
                                             if (Build.VERSION.SDK_INT < 33)
                                                 Toast.makeText(
@@ -324,7 +324,7 @@ internal fun ConversationReplyHeader(message: HistoryMessage? = null) {
                                                     )
                                                     .show()
                                         }
-                                    }
+                                    },
                                 ),
                             close = { menuMessage = null },
                         )
@@ -434,8 +434,11 @@ internal fun Modifier.conversationFindHighlight(highlight: ConversationFindHighl
     var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     if (reveal != null) {
         LaunchedEffect(highlight.target) {
-            val bounds =
-                snapshotFlow { coordinates?.takeIf { it.isAttached } }.filterNotNull().first()
+            val bounds = snapshotFlow {
+                coordinates?.takeIf { it.isAttached }
+            }
+                .filterNotNull()
+                .first()
             reveal(bounds)
             if (bounds.isAttached) focus.requestFocus()
         }

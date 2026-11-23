@@ -33,11 +33,11 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    separate **App Store Connect** distribution profiles for `ai.okou.ios`,
    `ai.okou.ios.notifications` and `ai.okou.ios.widgets`. Register both
    extensions as explicit iOS App IDs. Enable the App Group `group.ai.okou.ios`
-   on all three identifiers and profiles; retain production Push Notifications
-   on the main app. The app and the notification extension request the
-   existing Keychain group `C5UWSXYB67.ai.okou.ios`, preserving installed
-   sessions; the widget extension only reads the App Group and requests no
-   Keychain group. Neither extension needs a separate APNs key or push topic.
+   on all three identifiers and profiles. The main app also requires production
+   Push Notifications and Sign in with Apple. The app and the notification
+   extension request the existing Keychain group `C5UWSXYB67.ai.okou.ios` to
+   preserve installed sessions. The widget extension reads the App Group and
+   requests no Keychain group. Neither extension needs a separate APNs key or push topic.
    The Desktop Developer ID Application certificate is not suitable for iOS.
    Store the following secrets in GitHub's existing `production` environment
    and retain recoverable copies in the Production vault:
@@ -46,7 +46,7 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
    | ------------------------------------------- | --------------------------------------------------------------------------------- |
    | `IOS_DISTRIBUTION_P12_BASE64`               | Base64 of the distribution identity exported as PKCS#12                           |
    | `IOS_DISTRIBUTION_P12_PASSWORD`             | Password protecting that export                                                   |
-   | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app distribution profile with the shared App Group             |
+   | `IOS_PROVISIONING_PROFILE_BASE64`           | Base64 of the main app profile with App Group, production APNs, and Apple sign-in |
    | `IOS_NOTIFICATION_EXTENSION_PROFILE_BASE64` | Base64 of the notification extension distribution profile with the same App Group |
    | `IOS_WIDGETS_EXTENSION_PROFILE_BASE64`      | Base64 of the widget extension distribution profile with the same App Group       |
 
@@ -142,9 +142,9 @@ required for the final archive.
 - The existing server rollback workflow does not roll back installed iOS apps.
   Ship a corrected build instead. The API's source-controlled
   [iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-  compares the marketing version advertised in `X-Client-Version`; it is
-  independent of the App Store Connect build number and TestFlight validity.
-  Check that policy separately when retiring an installed version.
+  compares the marketing version advertised in `X-Client-Version` against
+  the floor for the installation channel. Verify actual build availability
+  before raising either minimum. The App Store floor governs API compatibility.
 
 ## Archive promotion
 
@@ -178,3 +178,29 @@ cover JWT verification, pagination, internal-group enforcement, build selection,
 processing, persistent group assignment, access errors, and timeout behavior.
 They do not upload an app, read production data, or replace a signed CI archive
 and TestFlight installation check.
+
+## Verify a build for a compatibility policy change
+
+Run **iOS distribution availability** on `main` with the channel, exact
+marketing version and build number. It performs read-only Apple queries. The
+release publisher must already have recorded that exact upload and source
+commit. Select a build published after the publisher started recording this
+mapping.
+
+- For TestFlight, the build must be valid, unexpired and in testing for
+  `IOS_INTERNAL_GROUP_NAME` and each group in the optional newline-separated
+  `IOS_EXTERNAL_GROUP_NAMES` production variable.
+- For App Store, set the repository variable `IOS_APP_STORE_STOREFRONTS` to
+  the complete list of supported storefronts (comma-separated two-letter
+  country codes). Use the same repository variable in production and CI. The
+  workflow checks the exact build selected in App Store Connect, each
+  territory's download status, and the version served by Apple's public
+  catalog in every country. A previously published version that Apple marks
+  as replaced can still become the minimum when every storefront serves
+  the same newer release. The receipt identifies both versions.
+
+A successful run retains a JSON receipt. PRs and merge groups read the
+latest protected verification for each channel, valid for 24 hours or until
+TestFlight expiration, whichever comes first. Re-run verification before
+raising a floor. A failed or pending subsequent check invalidates the older
+receipt. Verification does not submit a build or change a minimum version.

@@ -38,11 +38,11 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
                 path == "/api/billing/status" -> read(billing)
                 path == "/api/run-models" ->
                     read(
-                        """{"models":[{"model":${model?.let { JsonPrimitive(it) } ?: JsonNull},"modelLabel":"Recovery model","modelProviderId":null,"memberEffective":{"providerType":"$provider","runtimeProviderType":null,"credentialScope":"member","availability":"available","accountSelection":"not_applicable"}}]}"""
+                        """{"models":[{"model":${model?.let { JsonPrimitive(it) } ?: JsonNull},"modelLabel":"Recovery model","modelProviderId":null,"memberEffective":{"providerType":"$provider","runtimeProviderType":null,"credentialScope":"member","availability":"available","accountSelection":"not_applicable"}}]}""",
                     )
                 path == "/api/me/3rd-party-subscriptions" ->
                     read(
-                        """{"subscriptions":[{"id":"$account","type":"codex-oauth-token","framework":"codex","isActive":true,"createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","accountEmail":"fixture@example.test","subscriptionResetCredits":$credits,"subscriptionUsage":{"fiveHour":{"usedPercent":100,"remainingPercent":0,"resetAt":"2026-11-18T00:00:00.000Z","windowSeconds":18000},"weekly":null},"needsReconnect":false,"lastRefreshErrorCode":null}]}"""
+                        """{"subscriptions":[{"id":"$account","type":"codex-oauth-token","framework":"codex","isActive":true,"createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","accountEmail":"fixture@example.test","subscriptionResetCredits":$credits,"subscriptionUsage":{"fiveHour":{"usedPercent":100,"remainingPercent":0,"resetAt":"2026-11-18T00:00:00.000Z","windowSeconds":18000},"weekly":null},"needsReconnect":false,"lastRefreshErrorCode":null}]}""",
                     )
                 path.endsWith("/subscription-reset") -> {
                     val body = request.bodyObject()
@@ -57,7 +57,7 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
                 path.contains("/inputs/") && path.endsWith("/status") -> {
                     val id = request.requestUrl!!.pathSegments[4]
                     jsonResponse(
-                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":null,"replacement":null,"status":"unavailable","runId":null,"terminal":null}"""
+                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":null,"replacement":null,"status":"unavailable","runId":null,"terminal":null}""",
                     )
                 }
                 else -> previous(request)
@@ -71,7 +71,7 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
             val last = selected.lastOrNull()
             val rawRows = tail.joinToString(",", "[", "]") { it.archiveJson() }
             jsonResponse(
-                """{"rows":$rawRows,"cursor":{"lastEventId":${last?.let { JsonPrimitive(it.id) } ?: JsonNull},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}"""
+                """{"rows":$rawRows,"cursor":{"lastEventId":${last?.let { JsonPrimitive(it.id) } ?: JsonNull},"lastSeqId":${last?.seqId ?: 0}},"hasMore":false}""",
             )
         }
     }
@@ -117,7 +117,7 @@ class RecoveryApiFixture(api: ChatListApiFixture) {
                             type = "run.failed",
                             payload = """{"error":"Provider diagnostic"}""",
                             run = run,
-                        )
+                        ),
                     )
                     .jsonObject
             return JsonObject(row + ("failureReason" to JsonPrimitive(reason))).toString()

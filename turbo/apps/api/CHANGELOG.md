@@ -10,6 +10,94 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.105.0](https://github.com/okou-ai/okou/compare/api-v2.104.5...api-v2.105.0) (2026-11-23)
+
+
+### Features
+
+* **android:** show confirmed workflow run history ([#50055](https://github.com/okou-ai/okou/issues/50055)) ([a3c5ba1](https://github.com/okou-ai/okou/commit/a3c5ba1c7418d75fa58233da2de637380ed1814b))
+* **api:** separate app store and testflight minimum versions ([#50101](https://github.com/okou-ai/okou/issues/50101)) ([fe33370](https://github.com/okou-ai/okou/commit/fe333701c6a92676741d61982e3aeadd99fd0f85))
+
+
+### Performance Improvements
+
+* **api:** overlap memory and network policy preparation ([#50090](https://github.com/okou-ai/okou/issues/50090)) ([717a564](https://github.com/okou-ai/okou/commit/717a564f4d61fb25b7bdbdf2876b6d158189a6b3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+    * @okouai/core bumped to 8.860.3
+    * @okouai/db bumped to 2.58.15
+    * @okouai/pi-agent-runtime bumped to 1.52.44
+
+## [2.104.5](https://github.com/okou-ai/okou/compare/api-v2.104.4...api-v2.104.5) (2026-11-23)
+
+
+### Bug Fixes
+
+* **api:** preserve drive scope recovery in conversion preflight ([#50079](https://github.com/okou-ai/okou/issues/50079)) ([495d69d](https://github.com/okou-ai/okou/commit/495d69dcf11f2db2bec4624ac71938d000a45f4b))
+
+
+### Refactoring
+
+* **api:** retire single-agent flags and migrate mitm callbacks ([#50073](https://github.com/okou-ai/okou/issues/50073)) ([b755712](https://github.com/okou-ai/okou/commit/b7557125818de8883c22704c19728207f5308428))
+
+
+### Performance Improvements
+
+* **runner:** measure dispatch body frame latency ([#50088](https://github.com/okou-ai/okou/issues/50088)) ([33b2a66](https://github.com/okou-ai/okou/commit/33b2a66c0f79129a3fe8e9940672014f3b2f826a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.2
+    * @okouai/core bumped to 8.860.2
+    * @okouai/db bumped to 2.58.14
+    * @okouai/pi-agent-runtime bumped to 1.52.43
+
+## [2.104.4](https://github.com/okou-ai/okou/compare/api-v2.104.3...api-v2.104.4) (2026-11-23)
+
+
+### Bug Fixes
+
+* persist for you cover preferences in the database ([#50069](https://github.com/okou-ai/okou/issues/50069)) ([c912fc4](https://github.com/okou-ai/okou/commit/c912fc4a238d3558ab6053520a1a63caf02f0ed5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.1
+    * @okouai/core bumped to 8.860.1
+    * @okouai/db bumped to 2.58.13
+    * @okouai/pi-agent-runtime bumped to 1.52.42
+
+## [2.104.3](https://github.com/okou-ai/okou/compare/api-v2.104.2...api-v2.104.3) (2026-11-23)
+
+
+### Bug Fixes
+
+* **billing:** retire canceled legacy plan conversions ([#49529](https://github.com/okou-ai/okou/issues/49529)) ([0a7f08d](https://github.com/okou-ai/okou/commit/0a7f08d090e9d8e407418f2f7da465288b0fb895)) [#49527](https://github.com/okou-ai/okou/issues/49527)
+
+
+### Refactoring
+
+* **api:** read custom connector skills from their owning rows ([#50060](https://github.com/okou-ai/okou/issues/50060)) ([6f0ea3d](https://github.com/okou-ai/okou/commit/6f0ea3d5f562bff447cfc7f0093fb44ea7acaaff))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.860.0
+    * @okouai/db bumped to 2.58.12
+    * @okouai/pi-agent-runtime bumped to 1.52.41
+
 ## [2.104.2](https://github.com/okou-ai/okou/compare/api-v2.104.1...api-v2.104.2) (2026-11-23)
 
 

@@ -163,7 +163,7 @@ internal fun ChatTitleSearch(
                                         search.reset()
                                         inputFocus.requestFocus()
                                         keyboard?.show()
-                                    }
+                                    },
                                 ) {
                                     Icon(
                                         painterResource(R.drawable.ic_close),
@@ -192,8 +192,9 @@ internal fun ChatTitleSearch(
             )
         }
         val failure = state.listReadFailure
-        val retryFailedRead =
-            retry.takeIf { !state.offline && failure == ChatListReadFailure.NeedsRetry }
+        val retryFailedRead = retry.takeIf {
+            !state.offline && failure == ChatListReadFailure.NeedsRetry
+        }
         val retryEnabled = state.listPhase != ChatReadPhase.Loading
         val awaitingResults =
             displayedState.confirmedAt == null && !state.offline && failure == null
@@ -263,7 +264,7 @@ internal fun ChatTitleSearch(
                             Text(
                                 stringResource(
                                     if (keyword.isEmpty()) R.string.chat_search_recent
-                                    else R.string.chat_list_title
+                                    else R.string.chat_list_title,
                                 ),
                                 Modifier.padding(horizontal = 12.dp, vertical = 8.dp).semantics {
                                     heading()

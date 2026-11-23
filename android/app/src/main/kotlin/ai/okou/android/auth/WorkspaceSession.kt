@@ -93,7 +93,7 @@ interface WorkspaceSession :
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
 
     suspend fun activateModelAccount(
-        accountId: String
+        accountId: String,
     ): ai.okou.android.api.generated.ActivatedModelAccount
 
     suspend fun organization(): Organization
@@ -103,7 +103,7 @@ interface WorkspaceSession :
     suspend fun defaultModelPreference(): DefaultModelPreference
 
     suspend fun updateDefaultModelPreference(
-        update: UpdateDefaultModelPreference
+        update: UpdateDefaultModelPreference,
     ): DefaultModelPreference
 
     suspend fun featureSwitches(): FeatureSwitches
@@ -146,6 +146,9 @@ class CanonicalWorkspaceSession(
     override suspend fun workflows() = api.workflows()
 
     override suspend fun workflow(id: String) = api.workflow(id)
+
+    override suspend fun workflowRunHistory(id: String, cursor: String?) =
+        api.workflowRunHistory(id, cursor)
 
     override suspend fun workflowAutomations() = api.workspaceWorkflowAutomations()
 
@@ -408,7 +411,7 @@ class CanonicalWorkspaceSession(
             if (existing != null && existing.initialized()) existing
             else {
                 api.initializePreferences(
-                    InitializePreferencesRequest(timezone = timezone, locale = locale)
+                    InitializePreferencesRequest(timezone = timezone, locale = locale),
                 )
             }
         check(preferences.initialized()) { "Workspace initialization is incomplete" }

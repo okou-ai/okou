@@ -68,7 +68,6 @@ fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
-    onInputFocusChanged: (Boolean) -> Unit = {},
     offline: Boolean = false,
     beforeSend: () -> Unit = {},
 ) {
@@ -127,7 +126,7 @@ fun ChatComposerField(
                 end = horizontalInset,
                 bottom = bottomInset,
             )
-            .testTag("chat_composer")
+            .testTag("chat_composer"),
     ) {
         val textSpace = maxHeight - cardVerticalPadding * 2
         val availableTextHeight =
@@ -161,10 +160,7 @@ fun ChatComposerField(
                     modifier =
                         Modifier.weight(1f)
                             .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                            .onFocusChanged {
-                                inputFocused = it.isFocused
-                                onInputFocusChanged(it.isFocused)
-                            }
+                            .onFocusChanged { inputFocused = it.isFocused }
                             .testTag("message_input")
                             .semantics { contentDescription = label },
                     enabled = state.journal != null,
@@ -296,8 +292,8 @@ private fun ComposerFeedback(
                 stringResource(
                     if (state.sync(target) == ComposerSync.Unsupported)
                         R.string.composer_sync_unsupported
-                    else R.string.composer_sync_failed
-                )
+                    else R.string.composer_sync_failed,
+                ),
             )
             TextButton(onClick = { model.retrySync(target) }, colors = actionColors) {
                 Text(stringResource(R.string.composer_sync_retry))
