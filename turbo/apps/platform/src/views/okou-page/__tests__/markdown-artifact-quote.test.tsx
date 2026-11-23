@@ -236,11 +236,10 @@ test.each([
     await setupPage({
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
-      featureSwitches: {
-        ...(enabled === undefined
+      featureSwitches:
+        enabled === undefined
           ? {}
-          : { [FeatureSwitchKey.MarkdownArtifactQuote]: enabled }),
-      },
+          : { [FeatureSwitchKey.MarkdownArtifactQuote]: enabled },
     });
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const attachment = getNamedButton("Open image preview for notes.png");

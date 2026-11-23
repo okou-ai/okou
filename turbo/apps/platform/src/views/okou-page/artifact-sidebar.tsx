@@ -252,6 +252,17 @@ function artifactSidebarSyncTargetForItem({
     : undefined;
 }
 
+function useMarkdownArtifactSelection(
+  selection: ArtifactMarkdownSelection | undefined,
+  fullscreen: boolean,
+): ArtifactMarkdownSelection | undefined {
+  const splitView = useMediaQuery(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY);
+  const enabled =
+    useResolved(featureSwitches$)?.[FeatureSwitchKey.MarkdownArtifactQuote] ===
+    true;
+  return enabled && splitView && !fullscreen ? selection : undefined;
+}
+
 export function ArtifactSidebarContent({
   actionsPending = false,
   artifactId,
@@ -273,10 +284,7 @@ export function ArtifactSidebarContent({
 }: ArtifactSidebarContentProps) {
   const { t } = useTranslation();
   const fullscreen = fullscreenState.active;
-  const splitView = useMediaQuery(THREAD_SIDEBAR_SPLIT_MEDIA_QUERY);
-  const markdownQuoteEnabled =
-    useResolved(featureSwitches$)?.[FeatureSwitchKey.MarkdownArtifactQuote] ===
-    true;
+  const selection = useMarkdownArtifactSelection(markdownSelection, fullscreen);
   const toggleFullscreen = fullscreenState.toggle;
   const resource = useLastLoadable(
     artifactRef.kind === "image"
@@ -353,11 +361,7 @@ export function ArtifactSidebarContent({
       imageCanvasSignals={imageCanvasSignals}
       imageNavigation={imageNavigation}
       markdownTree$={markdownTree$}
-      markdownSelection={
-        markdownQuoteEnabled && splitView && !fullscreen
-          ? markdownSelection
-          : undefined
-      }
+      markdownSelection={selection}
       onBack={onBack}
       syncTarget={syncTarget}
       text$={text$}
