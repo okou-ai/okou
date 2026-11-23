@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { getViewConfig } from "drizzle-orm/pg-core";
 import postgres from "postgres";
+import { orgCustomConnectorSkillPublications } from "../src/schema/org-custom-connector-skill-publication";
 import { applyPendingMigrations } from "./migration-runner";
 
 export async function validateCustomConnectorSkillCutover(
@@ -9,6 +11,9 @@ export async function validateCustomConnectorSkillCutover(
   retirementMillis: number,
 ): Promise<void> {
   const sql = postgres(databaseUrl, { max: 1 });
+  const { name: publicationView } = getViewConfig(
+    orgCustomConnectorSkillPublications,
+  );
   const id = randomUUID();
   const source = "a".repeat(64);
   const bundle = { sha256: "b".repeat(64), archiveBytes: 123 };
@@ -30,9 +35,8 @@ export async function validateCustomConnectorSkillCutover(
       constraint_name: "chk_custom_connector_skill_cutover_sources",
     });
     assert.equal(
-      (
-        await sql`SELECT id FROM org_custom_connector_skill_publications WHERE id = ${id}`
-      ).length,
+      (await sql`SELECT id FROM ${sql(publicationView)} WHERE id = ${id}`)
+        .length,
       0,
     );
     assert.equal(
@@ -44,9 +48,9 @@ export async function validateCustomConnectorSkillCutover(
 
     await sql`UPDATE org_custom_connectors SET skill_storage_version_id = ${source} WHERE id = ${id}`;
     const readPublication = () => {
-      return sql`SELECT 'org_custom_connector_skill_publications'::regclass::oid AS view_id,
+      return sql`SELECT ${publicationView}::regclass::oid AS view_id,
         skill_content_bundle, skill_content_bundle_source_version_id
-      FROM org_custom_connector_skill_publications WHERE id = ${id}`;
+      FROM ${sql(publicationView)} WHERE id = ${id}`;
     };
     const before = await readPublication();
     assert.equal(before.length, 1);
