@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.115](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.114...runner-rs-v0.249.115) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native scalar receipt refusal sweeps ([#50303](https://github.com/okou-ai/okou/issues/50303)) ([8d5dd5c](https://github.com/okou-ai/okou/commit/8d5dd5c0d4d648555ce75bfcea8f81286731d350))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.114](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.113...runner-rs-v0.249.114) (2026-11-23)
 
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.864.0](https://github.com/okou-ai/okou/compare/core-v8.863.0...core-v8.864.0) (2026-11-23)
+
+
+### Features
+
+* **platform:** give the latest chat prompt room to scroll to the top ([#50151](https://github.com/okou-ai/okou/issues/50151)) ([a738388](https://github.com/okou-ai/okou/commit/a738388b05000a471c4b11d52081cc492abe2704))
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+
 ## [8.863.0](https://github.com/okou-ai/okou/compare/core-v8.862.1...core-v8.863.0) (2026-11-23)
 
 
