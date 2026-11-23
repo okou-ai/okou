@@ -166,6 +166,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.ZipArtifactPreview]: {
+    maintainer: "liangyou@okou.ai",
+    displayName: "ZIP artifact preview",
+    description: "Browse and preview files inside ZIP artifacts up to 5 MiB.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
