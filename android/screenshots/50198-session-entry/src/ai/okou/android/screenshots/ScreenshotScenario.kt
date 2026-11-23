@@ -7,6 +7,7 @@ import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.AuthenticationState
+import ai.okou.android.auth.ClerkAuthentication
 import ai.okou.android.awaitChatList
 import ai.okou.android.testAuthenticationState
 import android.animation.ValueAnimator
@@ -49,7 +50,6 @@ class ScreenshotScenario {
         val memberships = auth.membershipsAction
         val refresh = auth.refreshAction
         val signOut = auth.signOutAction
-        val select = auth.selectAction
         val membershipGate = CompletableDeferred<Unit>()
         val exitGate = CompletableDeferred<Unit>()
         val scaleSettings =
@@ -96,10 +96,15 @@ class ScreenshotScenario {
                 val row = find(By.text(workspaces.first().name))
                 find(By.text(workspaces.last().name))
                 ScreenshotCapture.capture("choose-workspace.png")
-                auth.selectAction = { _, _ -> error("Fixture selection rejected") }
+                auth.refreshAction = { session ->
+                    if (session.workspaceId == workspaces.first().id) {
+                        throw ApiFailure.Http(503, null, null, null)
+                    }
+                }
                 row.click()
                 capture(R.string.auth_selection_failed, "selection-failed.png")
-                auth.selectAction = select
+                check(auth.state.value.session?.workspaceId == workspaces.first().id)
+                auth.refreshAction = refresh
                 find(By.text(workspaces.first().name)).click()
                 device.awaitChatList(app)
 
@@ -142,13 +147,37 @@ class ScreenshotScenario {
             auth.membershipsAction = memberships
             auth.refreshAction = refresh
             auth.signOutAction = signOut
-            auth.selectAction = select
             auth.available = workspaces
             auth.state.value = previous
             originalScales.forEach { (setting, value) ->
                 if (value == "null") device.executeShellCommand("settings delete global $setting")
                 else device.executeShellCommand("settings put global $setting $value")
             }
+        }
+    }
+
+    @Test
+    fun verifyRestorationContinuesToNativeClerkForm() {
+        val previous = auth.state.value
+        val identifier = By.res("clerk.auth.start.identifier")
+        try {
+            auth.state.value = AuthenticationState()
+            ActivityScenario.launch(MainActivity::class.java).use {
+                find(R.string.app_name)
+                check(!device.hasObject(identifier))
+                ScreenshotCapture.capture("restoring-brand.png")
+
+                instrumentation.runOnMainSync {
+                    ClerkAuthentication(app).initialize()
+                    auth.state.value = AuthenticationState(initialized = true)
+                }
+                find(identifier)
+                find(By.res("clerk.auth.start.continue"))
+                find(R.string.app_name)
+                ScreenshotCapture.capture("sign-in.png")
+            }
+        } finally {
+            auth.state.value = previous
         }
     }
 
@@ -199,6 +228,8 @@ class ScreenshotScenario {
                     it.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
                         Configuration.UI_MODE_NIGHT_YES
             }
+            find(R.string.auth_no_workspace)
+            ScreenshotCapture.capture("compact-dark-top.png")
             val signOut = By.text(app.getString(R.string.auth_sign_out))
             if (!device.hasObject(signOut)) {
                 find(By.scrollable(true)).scroll(Direction.DOWN, 0.8f)
