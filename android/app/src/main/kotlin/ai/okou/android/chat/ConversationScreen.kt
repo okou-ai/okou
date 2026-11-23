@@ -99,7 +99,7 @@ internal fun ConversationRoute(
     linkFocusKey: String? = null,
     onLinkUnavailable: (() -> Unit)? = null,
     messageSequence: Long? = null,
-    onSearchMessageUnavailable: (Long) -> Unit = {},
+    onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -247,17 +247,28 @@ internal fun ConversationRoute(
                     ?.id
             }
         }
-    val searchTarget =
+    val requestedSearchTarget =
         remember(messageSequence, searchEventId) {
             searchEventId?.let { ConversationFindTarget(it, null) }
         }
+    var revealedSearchTarget by
+        remember(model, threadId) { mutableStateOf<ConversationFindTarget?>(null) }
+    val searchTarget = if (messageSequence == null) revealedSearchTarget else requestedSearchTarget
     val readingTarget = findTarget ?: linkTarget ?: searchTarget
     val waitingForSearch =
         messageSequence != null && searchTarget == null && !list.offline && !missing
     LaunchedEffect(model, thread?.id, messageSequence, list.offline) {
         val sequence = messageSequence ?: return@LaunchedEffect
         if (thread != null && !list.offline && model.searchMessageIsMissing(threadId, sequence)) {
-            onSearchMessageUnavailable(sequence)
+            revealedSearchTarget = null
+            onSearchMessageResolved(sequence, false)
+        }
+    }
+    val searchPositioned = requestedSearchTarget?.positioned == true
+    LaunchedEffect(messageSequence, requestedSearchTarget, searchPositioned) {
+        if (messageSequence != null && requestedSearchTarget != null && searchPositioned) {
+            revealedSearchTarget = requestedSearchTarget
+            onSearchMessageResolved(messageSequence, true)
         }
     }
     val targetMessageId =
@@ -295,8 +306,7 @@ internal fun ConversationRoute(
         val scope = rememberCoroutineScope()
         var restored by remember(linkPosition) { mutableStateOf(false) }
         var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
-        var positioned by
-            remember(linkPosition, messageSequence, searchTarget) { mutableStateOf(false) }
+        var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }

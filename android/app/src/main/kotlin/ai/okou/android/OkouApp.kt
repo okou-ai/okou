@@ -1647,15 +1647,19 @@ internal fun OkouApp(
                                                         artifactSource == null &&
                                                             navigation.target == target
                                                     },
-                                                onSearchMessageUnavailable = { sequence ->
+                                                onSearchMessageResolved = { sequence, found ->
                                                     if (
                                                         navigation.target == target &&
                                                             navigation.messageSequence == sequence
                                                     ) {
                                                         navigation =
                                                             navigation.copy(messageSequence = null)
-                                                        scope.launch {
-                                                            snackbar.showSnackbar(missingMessage)
+                                                        if (!found) {
+                                                            scope.launch {
+                                                                snackbar.showSnackbar(
+                                                                    missingMessage
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                 },
