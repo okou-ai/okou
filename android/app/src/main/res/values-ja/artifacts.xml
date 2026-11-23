@@ -49,4 +49,6 @@
     <string name="artifact_open_website">ブラウザで開く</string>
     <string name="artifact_browser_unavailable">ブラウザを開けませんでした</string>
     <string name="artifact_play_media">メディア再生</string>
+    <string name="artifact_catalog_access_denied">この成果物カタログにアクセスする権限がありません</string>
+    <string name="artifact_catalog_missing">この成果物カタログは利用できなくなりました</string>
 </resources>

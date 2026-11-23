@@ -125,7 +125,7 @@ internal fun ChatArtifactResources(
         ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
         if (result == null && failure != null) {
             ArtifactInitialReadFailure(
-                R.string.chat_resources_load_failed,
+                failure.label(chatResources = true),
                 Modifier.widthIn(max = 768.dp),
             )
             return@Column
@@ -178,11 +178,10 @@ internal fun ChatArtifactResources(
                 }
                 if (failure != null) {
                     item(key = "resource-read-failure") {
-                        val label =
-                            if (failure == ArtifactCatalogRead.More)
-                                R.string.artifact_catalog_page_failed
-                            else R.string.artifact_catalog_refresh_failed
-                        ArtifactReadNotice(label, Modifier.padding(vertical = 8.dp))
+                        ArtifactReadNotice(
+                            failure.label(chatResources = true),
+                            Modifier.padding(vertical = 8.dp),
+                        )
                     }
                 }
                 if (reading == ArtifactCatalogRead.More) {

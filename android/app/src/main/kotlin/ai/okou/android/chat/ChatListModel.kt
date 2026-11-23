@@ -362,7 +362,7 @@ class ChatListModel(
     val uiState = mutable.asStateFlow()
     @Volatile private var retired = false
     internal val cache = cacheStore.open(identity) { current() }
-    private val artifactChanges = MutableSharedFlow<Set<String>>()
+    private val artifactChanges = MutableSharedFlow<ChatChanges>()
     internal val artifactCatalogChanges = artifactChanges.asSharedFlow()
     private val readWrites = mutableMapOf<String, Job>()
     val history =
@@ -523,8 +523,8 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
-                if (changes.artifactThreads.isNotEmpty()) {
-                    viewModelScope.launch { artifactChanges.emit(changes.artifactThreads) }
+                if (changes.resync || changes.artifactThreads.isNotEmpty()) {
+                    viewModelScope.launch { artifactChanges.emit(changes) }
                 }
             }
         }

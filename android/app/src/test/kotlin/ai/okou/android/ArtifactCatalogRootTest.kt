@@ -185,7 +185,7 @@ internal abstract class ArtifactCatalogRootTestFixture {
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
-internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
+internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     fun firstCatalogReadRetriesWhileConnectivityIsUnavailableAndUsesTerminalErrorMeasurements() {
         val fixture = ArtifactApiFixture(app.fixture)
@@ -219,7 +219,11 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         } finally {
             release.countDown()
         }
-        awaitText(failureText)
+        val mainLooper = shadowOf(Looper.getMainLooper())
+        compose.waitUntil(10_000) {
+            mainLooper.idleFor(250, TimeUnit.MILLISECONDS)
+            compose.onAllNodesWithText(failureText).fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithContentDescription("Search artifacts").assertIsDisplayed()
         assertTrue(
             compose.onAllNodes(hasTestTag("artifact_row_skeleton")).fetchSemanticsNodes().isEmpty(),
@@ -228,7 +232,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertTrue(attempts[1] - attempts[0] >= 4_000)
         assertTrue(attempts[2] - attempts[1] >= 3_000)
         assertInitialReadFeedback(failureText)
-        shadowOf(Looper.getMainLooper()).idleFor(12, TimeUnit.SECONDS)
+        mainLooper.idleFor(12, TimeUnit.SECONDS)
         assertEquals(3, attempts.size)
         app.fixture.commandResponse = respond
         compose.runOnIdle { app.connectivity.value = true }
@@ -338,7 +342,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
 
         deny.set(true)
         realtime.invalidate(ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)))
-        val firstReadError = "Temporarily unable to load chat resources"
+        val firstReadError = "You don’t have access to this artifact catalog"
         awaitText(firstReadError)
         assertInitialReadFeedback(firstReadError)
         compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
@@ -346,6 +350,28 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.waitUntil(10_000) {
             runBlocking { cache.loadArtifactCatalog(CHAT_PERSONAL) == null }
         }
+    }
+
+    @Test
+    fun chatResourcesRechecksAnOpenCatalogAfterRealtimeResync() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val removed = AtomicBoolean(false)
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifacts/catalog" && removed.get()) {
+                jsonResponse("""{"artifacts":[],"nextCursor":null}""")
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        openChatResources(fixture.sourceTitle)
+        awaitText(fixture.summary.title)
+
+        removed.set(true)
+        (app.realtimeService as TestRealtimeService).invalidate()
+
+        awaitText("No artifacts yet")
+        compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
     }
 
     private fun openChatResources(chat: String) {
@@ -395,7 +421,11 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertEquals(14.sp, style.fontSize)
         assertEquals(20.sp, style.lineHeight)
     }
+}
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
+internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     @Test
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
         val fixture = ArtifactApiFixture(app.fixture)

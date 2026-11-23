@@ -3,6 +3,7 @@ package ai.okou.android.artifacts
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.ResponseLimitExceeded
 import ai.okou.android.chat.ChatCacheStore
+import ai.okou.android.chat.ChatChanges
 import android.graphics.Bitmap
 import android.util.Log
 import android.util.LruCache
@@ -64,13 +65,22 @@ internal enum class ArtifactCatalogRead {
     More,
 }
 
+internal enum class ArtifactCatalogFailure {
+    Initial,
+    Refresh,
+    More,
+    Denied,
+    Missing,
+    ChatUnavailable,
+}
+
 internal data class ConfirmedArtifactCatalog(val page: ArtifactPage, val confirmedAt: Long)
 
 internal data class ArtifactCatalogState(
     val query: ArtifactQuery = ArtifactQuery(),
     val catalog: ConfirmedArtifactCatalog? = null,
     val offline: Boolean = false,
-    val failedRead: ArtifactCatalogRead? = null,
+    val failedRead: ArtifactCatalogFailure? = null,
     val reading: ArtifactCatalogRead? = null,
     val preview: ArtifactPreviewState? = null,
     val saveResult: Pair<String, ArtifactSaveResult>? = null,
@@ -88,7 +98,7 @@ internal constructor(
     private val service: ArtifactService,
     connectivity: Flow<Boolean>,
     private val cache: ChatCacheStore.Lease? = null,
-    catalogChanges: Flow<Set<String>> = emptyFlow(),
+    catalogChanges: Flow<ChatChanges> = emptyFlow(),
     unavailableChat: Flow<String?> = emptyFlow(),
     private val wallMillis: () -> Long = System::currentTimeMillis,
     private val onCatalogDenied: () -> Unit = {},
@@ -121,7 +131,7 @@ internal constructor(
                     )
                 if (online && active) {
                     if (catalogJob?.isActive != true) {
-                        readCatalog(append = current.failedRead == ArtifactCatalogRead.More)
+                        readCatalog(append = current.failedRead == ArtifactCatalogFailure.More)
                     }
                     if (previewJob?.isActive != true) {
                         mutable.value.preview?.let { readPreview(it.id) }
@@ -130,9 +140,9 @@ internal constructor(
             }
         }
         viewModelScope.launch {
-            catalogChanges.collect { threads ->
+            catalogChanges.collect { changes ->
                 val threadId = mutable.value.query.chatThreadId ?: return@collect
-                if (catalogVisible && threadId in threads) {
+                if (catalogVisible && (changes.resync || threadId in changes.artifactThreads)) {
                     readCatalog()
                     mutable.value.preview?.let { readPreview(it.id) }
                 }
@@ -278,7 +288,7 @@ internal constructor(
         val cursor = if (append) current.page?.nextCursor ?: return else null
         val threadId = query.chatThreadId
         if (threadId != null && threadId == missingThread) {
-            mutable.update { it.copy(failedRead = ArtifactCatalogRead.Refreshing) }
+            mutable.update { it.copy(failedRead = ArtifactCatalogFailure.ChatUnavailable) }
             return
         }
         catalogJob?.cancel()
@@ -369,7 +379,7 @@ internal constructor(
         val removed = problem == ArtifactProblem.Missing
         if (removed) {
             query.chatThreadId?.let {
-                evictChatCatalog(it)
+                evictChatCatalog(it, ArtifactCatalogFailure.Missing)
                 return
             }
             catalogs.remove(query)
@@ -378,14 +388,21 @@ internal constructor(
             it.copy(
                 catalog = it.catalog.takeUnless { removed },
                 failedRead =
-                    if (append && !removed) ArtifactCatalogRead.More
-                    else ArtifactCatalogRead.Refreshing,
+                    when {
+                        removed -> ArtifactCatalogFailure.Missing
+                        append -> ArtifactCatalogFailure.More
+                        it.catalog == null -> ArtifactCatalogFailure.Initial
+                        else -> ArtifactCatalogFailure.Refresh
+                    },
                 reading = null,
             )
         }
     }
 
-    private fun evictChatCatalog(threadId: String) {
+    private fun evictChatCatalog(
+        threadId: String,
+        failure: ArtifactCatalogFailure = ArtifactCatalogFailure.ChatUnavailable,
+    ) {
         val query = ArtifactQuery(chatThreadId = threadId)
         catalogs.remove(query)
         previews.clear()
@@ -407,7 +424,7 @@ internal constructor(
                         }
                     else it.preview,
                 reading = null,
-                failedRead = ArtifactCatalogRead.Refreshing,
+                failedRead = failure,
             )
         }
     }
@@ -426,7 +443,7 @@ internal constructor(
                     it.preview?.let { preview ->
                         ArtifactPreviewState(preview.id, null, problem = ArtifactProblem.Denied)
                     },
-                failedRead = ArtifactCatalogRead.Refreshing,
+                failedRead = ArtifactCatalogFailure.Denied,
                 reading = null,
             )
         }

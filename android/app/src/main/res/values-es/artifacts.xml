@@ -49,4 +49,6 @@
     <string name="artifact_open_website">Abrir en el navegador</string>
     <string name="artifact_browser_unavailable">No se pudo abrir el navegador</string>
     <string name="artifact_play_media">Reproducción multimedia</string>
+    <string name="artifact_catalog_access_denied">No tienes acceso a este catálogo de artefactos</string>
+    <string name="artifact_catalog_missing">Este catálogo de artefactos ya no está disponible</string>
 </resources>

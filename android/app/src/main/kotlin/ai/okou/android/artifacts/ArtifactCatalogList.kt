@@ -145,7 +145,7 @@ internal fun ArtifactCatalogList(
         }
         if (page == null && failure != null) {
             ArtifactInitialReadFailure(
-                R.string.artifact_catalog_load_failed,
+                failure.label(),
                 Modifier.widthIn(max = 730.dp),
             )
             return@Column
@@ -227,11 +227,7 @@ internal fun ArtifactCatalogList(
             }
             if (failure != null) {
                 item(key = "catalog-read-failure") {
-                    val label =
-                        if (failure == ArtifactCatalogRead.More)
-                            R.string.artifact_catalog_page_failed
-                        else R.string.artifact_catalog_refresh_failed
-                    ArtifactReadNotice(label, noticePadding)
+                    ArtifactReadNotice(failure.label(), noticePadding)
                 }
             }
             if (reading == ArtifactCatalogRead.More) item { ArtifactRowSkeleton() }
@@ -475,6 +471,19 @@ internal fun ArtifactInitialReadFailure(@StringRes label: Int, modifier: Modifie
         ArtifactReadNotice(label, Modifier.padding(start = 12.dp, end = 12.dp, top = 24.dp))
     }
 }
+
+@StringRes
+internal fun ArtifactCatalogFailure.label(chatResources: Boolean = false): Int =
+    when (this) {
+        ArtifactCatalogFailure.Initial ->
+            if (chatResources) R.string.chat_resources_load_failed
+            else R.string.artifact_catalog_load_failed
+        ArtifactCatalogFailure.Refresh -> R.string.artifact_catalog_refresh_failed
+        ArtifactCatalogFailure.More -> R.string.artifact_catalog_page_failed
+        ArtifactCatalogFailure.Denied -> R.string.artifact_catalog_access_denied
+        ArtifactCatalogFailure.Missing -> R.string.artifact_catalog_missing
+        ArtifactCatalogFailure.ChatUnavailable -> R.string.history_missing
+    }
 
 @Composable
 internal fun ArtifactReadNotice(@StringRes label: Int, modifier: Modifier = Modifier) {

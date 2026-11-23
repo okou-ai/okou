@@ -49,4 +49,6 @@
     <string name="artifact_open_website">브라우저에서 열기</string>
     <string name="artifact_browser_unavailable">브라우저를 열지 못했습니다</string>
     <string name="artifact_play_media">미디어 재생</string>
+    <string name="artifact_catalog_access_denied">이 결과물 카탈로그에 액세스할 권한이 없습니다</string>
+    <string name="artifact_catalog_missing">이 결과물 카탈로그는 더 이상 사용할 수 없습니다</string>
 </resources>
