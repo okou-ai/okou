@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -24,7 +25,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -68,6 +67,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+internal val ConversationContentMaxWidth = 768.dp
 
 private const val HistoryFeedbackDelayMillis = 250L
 private const val TimelineEnd = "conversation_end"
@@ -510,10 +511,12 @@ internal fun ConversationRoute(
                 onLinkFocusRestored,
             )
         }
-        Column(modifier.fillMaxSize()) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+        val contentWidth = Modifier.widthIn(max = ConversationContentMaxWidth)
+        Column(modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 LazyColumn(
-                    Modifier.fillMaxSize()
+                    contentWidth
+                        .fillMaxSize()
                         .testTag("conversation")
                         .then(
                             if (awaitingFindPosition)
@@ -618,7 +621,8 @@ internal fun ConversationRoute(
                 }
                 if (positioned && !atEnd && position.canScrollBackward) {
                     Box(
-                        Modifier.align(Alignment.BottomCenter)
+                        contentWidth
+                            .align(Alignment.BottomCenter)
                             .fillMaxWidth()
                             .height(24.dp)
                             .background(
@@ -629,24 +633,27 @@ internal fun ConversationRoute(
                     )
                 }
                 if (jump != null) {
-                    ConversationJump(
-                        jump,
-                        modifier =
-                            Modifier.align(
-                                    if (window.height < 480) Alignment.BottomEnd
-                                    else Alignment.BottomCenter,
-                                )
-                                .padding(
-                                    bottom = 4.dp,
-                                    end = if (window.height < 480) 12.dp else 0.dp,
-                                ),
-                        onClick = { scope.launch { position.scrollToItem(0) } },
-                    )
+                    Box(contentWidth.align(Alignment.BottomCenter).fillMaxWidth()) {
+                        ConversationJump(
+                            jump,
+                            modifier =
+                                Modifier.align(
+                                        if (window.height < 480) Alignment.BottomEnd
+                                        else Alignment.BottomCenter,
+                                    )
+                                    .padding(
+                                        bottom = 4.dp,
+                                        end = if (window.height < 480) 12.dp else 0.dp,
+                                    ),
+                            onClick = { scope.launch { position.scrollToItem(0) } },
+                        )
+                    }
                 }
                 if (positioned && findTarget != null && foundIndex < 0) {
                     Text(
                         stringResource(R.string.conversation_find_unavailable),
-                        Modifier.align(Alignment.TopCenter)
+                        contentWidth
+                            .align(Alignment.TopCenter)
                             .background(MaterialTheme.colorScheme.surface)
                             .padding(horizontal = 16.dp, vertical = 8.dp)
                             .semantics { liveRegion = LiveRegionMode.Polite },
@@ -654,22 +661,18 @@ internal fun ConversationRoute(
                     )
                 }
                 if (showHistoryProgress) {
-                    val label = stringResource(R.string.history_syncing)
-                    val colors = MaterialTheme.colorScheme
                     Box(Modifier.fillMaxWidth().testTag("history_sync_progress")) {
-                        LinearProgressIndicator(
-                            Modifier.fillMaxWidth().height(4.dp).semantics {
-                                contentDescription = label
-                            },
-                            color = colors.primary,
-                            trackColor =
-                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                        )
+                        ChatReadProgress(R.string.history_syncing)
                     }
                 }
             }
-            if (showComposerStatus) ConversationStatus(list.offline, controls, short = false)
-            if (!missing) ConversationQueue(queue, controls)
+            if (showComposerStatus || (!missing && queue.isNotEmpty())) {
+                Column(contentWidth) {
+                    if (showComposerStatus)
+                        ConversationStatus(list.offline, controls, short = false)
+                    if (!missing) ConversationQueue(queue, controls)
+                }
+            }
         }
     }
 }
