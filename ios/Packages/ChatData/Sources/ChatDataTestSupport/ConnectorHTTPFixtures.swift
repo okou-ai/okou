@@ -41,9 +41,6 @@ public enum ConnectorHTTPFixtures {
     grantKind: String = "none", customMode: String = "none"
   ) -> ChatHTTPResponse? {
     let path = request.url?.path ?? ""
-    if path == "/api/feature-switches" {
-      return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
-    }
     if path.hasSuffix("/metadata") { return ChatHTTPResponse(body: metadata) }
     if path == "/api/connector-catalog/slack" {
       return ChatHTTPResponse(body: catalog(grantKind: grantKind))

@@ -16,7 +16,6 @@ final class ConnectorAuthorizationFlow: Identifiable {
   var notice: String?
   var busy = false
   var browserURL: URL?
-  var usesSystemAuthenticationSession = false
   var session: ChatConnectorReceipt?
   var expiresAt: Date?
   var checking = false
@@ -31,6 +30,7 @@ final class ConnectorAuthorizationFlow: Identifiable {
       .id ?? ""
   }
   var method: ChatConnectorMethod? { status.builtin?.authMethods.first { $0.id == methodID } }
+  var usesSystemAuthenticationSession: Bool { session?.oauthAttemptId != nil }
   var waiting: Bool { session != nil }
   var isExternalCode: Bool { method?.grantKind == "external-code" && waiting }
   var needsConnection: Bool {
@@ -184,7 +184,6 @@ final class ConnectorActionStore {
   private func startAuthorization(
     _ flow: ConnectorAuthorizationFlow, status current: ChatConnectorStatus
   ) async throws {
-    flow.usesSystemAuthenticationSession = false
     let result = try await service.start(
       status: current, method: flow.method, values: flow.values, options: flow.options)
     try check(flow)
@@ -206,9 +205,6 @@ final class ConnectorActionStore {
     if let attemptID = result.oauthAttemptId {
       guard UUID(uuidString: attemptID) != nil else { throw APIClientError.invalidResponse }
       let url = try browserURL(result.authorizationUrl)
-      let usesSystemSession = try await service.usesSystemAuthenticationSession()
-      try check(flow)
-      flow.usesSystemAuthenticationSession = usesSystemSession
       flow.session = result
       flow.expiresAt = Date().addingTimeInterval(600)
       flow.browserURL = url

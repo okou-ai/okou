@@ -281,10 +281,6 @@ final class ConnectorAuthorizationSessionTests: XCTestCase {
     let connected = Mutex(false)
     let callbacks = Mutex(0)
     let fixture = ChatHTTPFixture { request in
-      if request.url!.path == "/api/feature-switches" {
-        return ChatHTTPResponse(
-          body: "{\"effectiveSwitches\":{\"iosConnectorAuthenticationSession\":true}}")
-      }
       if request.url!.path == "/api/connectors/slack/oauth/start" {
         return ChatHTTPResponse(
           body:
