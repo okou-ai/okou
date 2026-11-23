@@ -50,7 +50,7 @@ import {
  * A quest earns a dialog only when it carries something its row cannot: what a
  * connector may read and how to take it back, that Slack turns a personal
  * account into an organization one, and which workflows an invited teammate
- * inherits. `checkin` reports its result in the menu, so it is not introduced here.
+ * inherits. `checkin` confirms afterwards, so it is not introduced here.
  */
 const INTRODUCED_QUESTS = Object.freeze([
   "connector",

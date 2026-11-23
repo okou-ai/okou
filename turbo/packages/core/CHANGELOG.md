@@ -1,5 +1,62 @@
 # Changelog
 
+## [8.861.0](https://github.com/okou-ai/okou/compare/core-v8.860.4...core-v8.861.0) (2026-11-23)
+
+
+### Features
+
+* **core:** expand artifact timing to staff workspaces ([#50130](https://github.com/okou-ai/okou/issues/50130)) ([c1660c4](https://github.com/okou-ai/okou/commit/c1660c425117954b973d5439ccee5f866079787b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+
+## [8.860.4](https://github.com/okou-ai/okou/compare/core-v8.860.3...core-v8.860.4) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.1
+
+## [8.860.3](https://github.com/okou-ai/okou/compare/core-v8.860.2...core-v8.860.3) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+
+## [8.860.2](https://github.com/okou-ai/okou/compare/core-v8.860.1...core-v8.860.2) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.2
+
+## [8.860.1](https://github.com/okou-ai/okou/compare/core-v8.860.0...core-v8.860.1) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.1
+
+## [8.860.0](https://github.com/okou-ai/okou/compare/core-v8.859.10...core-v8.860.0) (2026-11-23)
+
+
+### Features
+
+* use the first follow-up as the composer placeholder behind a switch ([#50040](https://github.com/okou-ai/okou/issues/50040)) ([0d24270](https://github.com/okou-ai/okou/commit/0d24270d99eb810341fd81597c7c3e74ef718b07))
+
 ## [8.859.10](https://github.com/okou-ai/okou/compare/core-v8.859.9...core-v8.859.10) (2026-11-23)
 
 

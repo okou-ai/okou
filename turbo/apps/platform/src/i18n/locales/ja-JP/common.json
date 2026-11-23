@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "サイドバー",
-      "chat": "チャット",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",
@@ -2129,6 +2128,12 @@
         },
         "inReview": "確認中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} クレジット",
+            "confirm": "仕事に戻る",
+            "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
+            "title": "今日のぶんは完了です"
+          },
           "connector": {
             "confirm": "すべてのコネクターを見る",
             "connected": "接続済み",

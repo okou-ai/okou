@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Esecuzione della chat terminata</string>
     <string name="workflow_clear_search">Cancella ricerca</string>
     <string name="workflow_connect_provider">Collega %1$s per attivare questa regola.</string>
-    <string name="workflow_connection_unavailable">Impossibile aprire le connessioni.</string>
     <string name="workflow_create_uncertain">Impossibile confermare la creazione. Chiudi l’editor e controlla le regole prima di riprovare.</string>
     <string name="workflow_creation_prompt">Aiutami a creare un flusso di lavoro privato. Usa la competenza workflow-setup. Chiedimi quale attività voglio ripetere e mostrami le istruzioni da confermare prima di salvare. Crea un’automazione solo se te lo chiedo.</string>
     <string name="workflow_daily">Ogni giorno</string>
@@ -111,4 +110,17 @@
     <string name="workflow_rule_change_failed">Impossibile modificare questa regola.</string>
     <string name="workflow_rule_network_failed">Impossibile modificare questa regola. Controlla la connessione e riprova.</string>
     <string name="workflow_write_conflict">Questo workflow è cambiato durante il salvataggio. Le tue modifiche sono state conservate.</string>
+    <string name="workflow_history_earlier">Mostra le esecuzioni precedenti</string>
+    <string name="workflow_history_event">Evento</string>
+    <string name="workflow_history_failed">Impossibile caricare la cronologia delle esecuzioni</string>
+    <string name="workflow_history_loading">Caricamento della cronologia delle esecuzioni…</string>
+    <string name="workflow_history_offline">Connettiti per caricare la cronologia delle esecuzioni</string>
+    <string name="workflow_history_open_chat">Apri la chat di origine</string>
+    <string name="workflow_history_unavailable">Cronologia delle esecuzioni non disponibile</string>
+    <string name="workflow_run_pending">In attesa</string>
+    <string name="workflow_run_running">In esecuzione</string>
+    <string name="workflow_run_timeout">Tempo scaduto</string>
+    <string name="workflow_history_trigger_unavailable">Trigger non disponibile</string>
+    <string name="workflow_history_scheduled">Attivazione programmata</string>
+    <string name="workflow_history_manual">Esecuzione manuale</string>
 </resources>

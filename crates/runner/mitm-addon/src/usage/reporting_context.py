@@ -7,7 +7,7 @@ from platform_api import get_api_url
 
 from .underbilling import log_usage_underbilling
 
-USAGE_EVENT_WEBHOOK_PATH = "/api/webhooks/agent/usage-event"
+USAGE_EVENT_WEBHOOK_PATH = "/api/webhooks/run/usage-event"
 
 
 class UsageReportingContext:

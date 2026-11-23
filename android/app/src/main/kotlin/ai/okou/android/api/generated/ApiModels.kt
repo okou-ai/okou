@@ -34,7 +34,7 @@ data class ConnectorDiscoveryConnectorsItemIcon(
 
 @Serializable
 enum class ConnectorDiscoveryConnectorsItemMcpTransport {
-    @SerialName("streamable-http") STREAMABLE_HTTP
+    @SerialName("streamable-http") STREAMABLE_HTTP,
 }
 
 @Serializable
@@ -72,7 +72,7 @@ data class ConnectorDiscoveryConnectorsItemAuthMethodsItemManualFieldsItem(
 
 @Serializable
 enum class ConnectorDiscoveryConnectorsItemAuthMethodsItemStartOptionsItemKind {
-    @SerialName("select") SELECT
+    @SerialName("select") SELECT,
 }
 
 @Serializable
@@ -112,7 +112,7 @@ data class ConnectorDiscoveryConnectorsItemPermissionSummary(
 
 @Serializable
 enum class ConnectorDiscoveryConnectorsItemConnectNotice {
-    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING
+    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING,
 }
 
 @Serializable
@@ -148,7 +148,7 @@ data class ConnectorDetailConnectorIcon(
 
 @Serializable
 enum class ConnectorDetailConnectorMcpTransport {
-    @SerialName("streamable-http") STREAMABLE_HTTP
+    @SerialName("streamable-http") STREAMABLE_HTTP,
 }
 
 @Serializable
@@ -186,7 +186,7 @@ data class ConnectorDetailConnectorAuthMethodsItemManualFieldsItem(
 
 @Serializable
 enum class ConnectorDetailConnectorAuthMethodsItemStartOptionsItemKind {
-    @SerialName("select") SELECT
+    @SerialName("select") SELECT,
 }
 
 @Serializable
@@ -226,7 +226,7 @@ data class ConnectorDetailConnectorPermissionSummary(
 
 @Serializable
 enum class ConnectorDetailConnectorConnectNotice {
-    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING
+    @SerialName("google-security-warning") GOOGLE_SECURITY_WARNING,
 }
 
 @Serializable
@@ -246,7 +246,10 @@ data class ConnectorDetailConnector(
     val `connectNotice`: ConnectorDetailConnectorConnectNotice?,
 )
 
-@Serializable data class ConnectorDetail(val `connector`: ConnectorDetailConnector)
+@Serializable
+data class ConnectorDetail(
+    val `connector`: ConnectorDetailConnector,
+)
 
 @Serializable
 data class ConnectorPermissionsPermissionsIcon(
@@ -299,14 +302,17 @@ data class ConnectorPermissionsPermissions(
     val `defaultPolicy`: ConnectorPermissionsPermissionsDefaultPolicy,
 )
 
-@Serializable data class ConnectorPermissions(val `permissions`: ConnectorPermissionsPermissions)
+@Serializable
+data class ConnectorPermissions(
+    val `permissions`: ConnectorPermissionsPermissions,
+)
 
 @Serializable(with = ConnectorOverviewItemTargetSerializer::class)
 sealed interface ConnectorOverviewItemTarget
 
 @Serializable
 enum class ConnectorOverviewItemTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -317,7 +323,7 @@ data class ConnectorOverviewItemTargetVariant1(
 
 @Serializable
 enum class ConnectorOverviewItemTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -334,7 +340,7 @@ object ConnectorOverviewItemTargetSerializer : KSerializer<ConnectorOverviewItem
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorOverviewItemTarget"
+                    "Expected JSON object for ConnectorOverviewItemTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -437,7 +443,7 @@ sealed interface ConnectorAccountDefaultRequestTarget
 
 @Serializable
 enum class ConnectorAccountDefaultRequestTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -448,7 +454,7 @@ data class ConnectorAccountDefaultRequestTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountDefaultRequestTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -461,19 +467,19 @@ object ConnectorAccountDefaultRequestTargetSerializer :
     KSerializer<ConnectorAccountDefaultRequestTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountDefaultRequestTarget"
+            "ai.okou.android.api.generated.ConnectorAccountDefaultRequestTarget",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountDefaultRequestTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountDefaultRequestTarget"
+                    "Expected JSON object for ConnectorAccountDefaultRequestTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountDefaultRequestTarget"
+                    "Expected object for ConnectorAccountDefaultRequestTarget",
                 )
         val matches =
             listOf(
@@ -486,7 +492,7 @@ object ConnectorAccountDefaultRequestTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountDefaultRequestTarget variant"
+                "Unknown or ambiguous ConnectorAccountDefaultRequestTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -531,7 +537,7 @@ sealed interface ConnectorAccountsConnectionsItemTarget
 
 @Serializable
 enum class ConnectorAccountsConnectionsItemTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -542,7 +548,7 @@ data class ConnectorAccountsConnectionsItemTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountsConnectionsItemTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -555,19 +561,19 @@ object ConnectorAccountsConnectionsItemTargetSerializer :
     KSerializer<ConnectorAccountsConnectionsItemTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountsConnectionsItemTarget"
+            "ai.okou.android.api.generated.ConnectorAccountsConnectionsItemTarget",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountsConnectionsItemTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountsConnectionsItemTarget"
+                    "Expected JSON object for ConnectorAccountsConnectionsItemTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountsConnectionsItemTarget"
+                    "Expected object for ConnectorAccountsConnectionsItemTarget",
                 )
         val matches =
             listOf(
@@ -580,7 +586,7 @@ object ConnectorAccountsConnectionsItemTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountsConnectionsItemTarget variant"
+                "Unknown or ambiguous ConnectorAccountsConnectionsItemTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -595,7 +601,7 @@ object ConnectorAccountsConnectionsItemTargetSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountsConnectionsItemTarget variant"
+                    "Unknown ConnectorAccountsConnectionsItemTarget variant",
                 )
         }
     }
@@ -658,7 +664,7 @@ sealed interface ConnectorAccountsDefaultConnectionTarget
 
 @Serializable
 enum class ConnectorAccountsDefaultConnectionTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -669,7 +675,7 @@ data class ConnectorAccountsDefaultConnectionTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountsDefaultConnectionTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -682,19 +688,19 @@ object ConnectorAccountsDefaultConnectionTargetSerializer :
     KSerializer<ConnectorAccountsDefaultConnectionTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountsDefaultConnectionTarget"
+            "ai.okou.android.api.generated.ConnectorAccountsDefaultConnectionTarget",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountsDefaultConnectionTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountsDefaultConnectionTarget"
+                    "Expected JSON object for ConnectorAccountsDefaultConnectionTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountsDefaultConnectionTarget"
+                    "Expected object for ConnectorAccountsDefaultConnectionTarget",
                 )
         val matches =
             listOf(
@@ -707,7 +713,7 @@ object ConnectorAccountsDefaultConnectionTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountsDefaultConnectionTarget variant"
+                "Unknown or ambiguous ConnectorAccountsDefaultConnectionTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -722,7 +728,7 @@ object ConnectorAccountsDefaultConnectionTargetSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountsDefaultConnectionTarget variant"
+                    "Unknown ConnectorAccountsDefaultConnectionTarget variant",
                 )
         }
     }
@@ -792,7 +798,7 @@ sealed interface ConnectorAccountTarget
 
 @Serializable
 enum class ConnectorAccountTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -803,7 +809,7 @@ data class ConnectorAccountTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -895,7 +901,7 @@ sealed interface ConnectorAccountInspectionResultsItem
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant1Kind {
-    @SerialName("available") AVAILABLE
+    @SerialName("available") AVAILABLE,
 }
 
 @Serializable(with = ConnectorAccountInspectionResultsItemVariant1TargetSerializer::class)
@@ -903,7 +909,7 @@ sealed interface ConnectorAccountInspectionResultsItemVariant1Target
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant1TargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -914,7 +920,7 @@ data class ConnectorAccountInspectionResultsItemVariant1TargetVariant1(
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant1TargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -927,21 +933,21 @@ object ConnectorAccountInspectionResultsItemVariant1TargetSerializer :
     KSerializer<ConnectorAccountInspectionResultsItemVariant1Target> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1Target"
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant1Target",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ConnectorAccountInspectionResultsItemVariant1Target {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant1Target"
+                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant1Target",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountInspectionResultsItemVariant1Target"
+                    "Expected object for ConnectorAccountInspectionResultsItemVariant1Target",
                 )
         val matches =
             listOf(
@@ -954,7 +960,7 @@ object ConnectorAccountInspectionResultsItemVariant1TargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant1Target variant"
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant1Target variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -969,7 +975,7 @@ object ConnectorAccountInspectionResultsItemVariant1TargetSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountInspectionResultsItemVariant1Target variant"
+                    "Unknown ConnectorAccountInspectionResultsItemVariant1Target variant",
                 )
         }
     }
@@ -1027,7 +1033,7 @@ data class ConnectorAccountInspectionResultsItemVariant1(
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant2Kind {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable(with = ConnectorAccountInspectionResultsItemVariant2TargetSerializer::class)
@@ -1035,7 +1041,7 @@ sealed interface ConnectorAccountInspectionResultsItemVariant2Target
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant2TargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -1046,7 +1052,7 @@ data class ConnectorAccountInspectionResultsItemVariant2TargetVariant1(
 
 @Serializable
 enum class ConnectorAccountInspectionResultsItemVariant2TargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -1059,21 +1065,21 @@ object ConnectorAccountInspectionResultsItemVariant2TargetSerializer :
     KSerializer<ConnectorAccountInspectionResultsItemVariant2Target> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant2Target"
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItemVariant2Target",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ConnectorAccountInspectionResultsItemVariant2Target {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant2Target"
+                    "Expected JSON object for ConnectorAccountInspectionResultsItemVariant2Target",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountInspectionResultsItemVariant2Target"
+                    "Expected object for ConnectorAccountInspectionResultsItemVariant2Target",
                 )
         val matches =
             listOf(
@@ -1086,7 +1092,7 @@ object ConnectorAccountInspectionResultsItemVariant2TargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant2Target variant"
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItemVariant2Target variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1101,7 +1107,7 @@ object ConnectorAccountInspectionResultsItemVariant2TargetSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountInspectionResultsItemVariant2Target variant"
+                    "Unknown ConnectorAccountInspectionResultsItemVariant2Target variant",
                 )
         }
     }
@@ -1136,19 +1142,19 @@ object ConnectorAccountInspectionResultsItemSerializer :
     KSerializer<ConnectorAccountInspectionResultsItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItem"
+            "ai.okou.android.api.generated.ConnectorAccountInspectionResultsItem",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountInspectionResultsItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountInspectionResultsItem"
+                    "Expected JSON object for ConnectorAccountInspectionResultsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountInspectionResultsItem"
+                    "Expected object for ConnectorAccountInspectionResultsItem",
                 )
         val matches =
             listOf(
@@ -1161,7 +1167,7 @@ object ConnectorAccountInspectionResultsItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountInspectionResultsItem variant"
+                "Unknown or ambiguous ConnectorAccountInspectionResultsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1176,7 +1182,7 @@ object ConnectorAccountInspectionResultsItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountInspectionResultsItem variant"
+                    "Unknown ConnectorAccountInspectionResultsItem variant",
                 )
         }
     }
@@ -1198,14 +1204,16 @@ object ConnectorAccountInspectionResultsItemSerializer :
 }
 
 @Serializable
-data class ConnectorAccountInspection(val `results`: List<ConnectorAccountInspectionResultsItem>)
+data class ConnectorAccountInspection(
+    val `results`: List<ConnectorAccountInspectionResultsItem>,
+)
 
 @Serializable(with = ConnectorAccountInspectionRequestSelectionsItemTargetSerializer::class)
 sealed interface ConnectorAccountInspectionRequestSelectionsItemTarget
 
 @Serializable
 enum class ConnectorAccountInspectionRequestSelectionsItemTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -1216,7 +1224,7 @@ data class ConnectorAccountInspectionRequestSelectionsItemTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountInspectionRequestSelectionsItemTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -1229,21 +1237,21 @@ object ConnectorAccountInspectionRequestSelectionsItemTargetSerializer :
     KSerializer<ConnectorAccountInspectionRequestSelectionsItemTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountInspectionRequestSelectionsItemTarget"
+            "ai.okou.android.api.generated.ConnectorAccountInspectionRequestSelectionsItemTarget",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ConnectorAccountInspectionRequestSelectionsItemTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountInspectionRequestSelectionsItemTarget"
+                    "Expected JSON object for ConnectorAccountInspectionRequestSelectionsItemTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountInspectionRequestSelectionsItemTarget"
+                    "Expected object for ConnectorAccountInspectionRequestSelectionsItemTarget",
                 )
         val matches =
             listOf(
@@ -1256,7 +1264,7 @@ object ConnectorAccountInspectionRequestSelectionsItemTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountInspectionRequestSelectionsItemTarget variant"
+                "Unknown or ambiguous ConnectorAccountInspectionRequestSelectionsItemTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1271,7 +1279,7 @@ object ConnectorAccountInspectionRequestSelectionsItemTargetSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAccountInspectionRequestSelectionsItemTarget variant"
+                    "Unknown ConnectorAccountInspectionRequestSelectionsItemTarget variant",
                 )
         }
     }
@@ -1303,7 +1311,7 @@ data class ConnectorAccountInspectionRequestSelectionsItem(
 
 @Serializable
 data class ConnectorAccountInspectionRequest(
-    val `selections`: List<ConnectorAccountInspectionRequestSelectionsItem>
+    val `selections`: List<ConnectorAccountInspectionRequestSelectionsItem>,
 )
 
 @Serializable(with = ConnectorAccountRenameRequestTargetSerializer::class)
@@ -1311,7 +1319,7 @@ sealed interface ConnectorAccountRenameRequestTarget
 
 @Serializable
 enum class ConnectorAccountRenameRequestTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -1322,7 +1330,7 @@ data class ConnectorAccountRenameRequestTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountRenameRequestTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -1335,19 +1343,19 @@ object ConnectorAccountRenameRequestTargetSerializer :
     KSerializer<ConnectorAccountRenameRequestTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountRenameRequestTarget"
+            "ai.okou.android.api.generated.ConnectorAccountRenameRequestTarget",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountRenameRequestTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountRenameRequestTarget"
+                    "Expected JSON object for ConnectorAccountRenameRequestTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountRenameRequestTarget"
+                    "Expected object for ConnectorAccountRenameRequestTarget",
                 )
         val matches =
             listOf(
@@ -1360,7 +1368,7 @@ object ConnectorAccountRenameRequestTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountRenameRequestTarget variant"
+                "Unknown or ambiguous ConnectorAccountRenameRequestTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1419,7 +1427,7 @@ sealed interface ConnectorAccountTargetRequestTarget
 
 @Serializable
 enum class ConnectorAccountTargetRequestTargetVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -1430,7 +1438,7 @@ data class ConnectorAccountTargetRequestTargetVariant1(
 
 @Serializable
 enum class ConnectorAccountTargetRequestTargetVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -1443,19 +1451,19 @@ object ConnectorAccountTargetRequestTargetSerializer :
     KSerializer<ConnectorAccountTargetRequestTarget> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAccountTargetRequestTarget"
+            "ai.okou.android.api.generated.ConnectorAccountTargetRequestTarget",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAccountTargetRequestTarget {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountTargetRequestTarget"
+                    "Expected JSON object for ConnectorAccountTargetRequestTarget",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAccountTargetRequestTarget"
+                    "Expected object for ConnectorAccountTargetRequestTarget",
                 )
         val matches =
             listOf(
@@ -1468,7 +1476,7 @@ object ConnectorAccountTargetRequestTargetSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountTargetRequestTarget variant"
+                "Unknown or ambiguous ConnectorAccountTargetRequestTarget variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1503,9 +1511,14 @@ object ConnectorAccountTargetRequestTargetSerializer :
 }
 
 @Serializable
-data class ConnectorAccountTargetRequest(val `target`: ConnectorAccountTargetRequestTarget)
+data class ConnectorAccountTargetRequest(
+    val `target`: ConnectorAccountTargetRequestTarget,
+)
 
-@Serializable data class ConnectorOauthCompletion(val `connectionId`: String)
+@Serializable
+data class ConnectorOauthCompletion(
+    val `connectionId`: String,
+)
 
 @Serializable
 data class ConnectorOauthStart(
@@ -1516,7 +1529,7 @@ data class ConnectorOauthStart(
 
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
-    @SerialName("app") APP
+    @SerialName("app") APP,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1524,7 +1537,7 @@ sealed interface ConnectorOauthStartRequestAccount
 
 @Serializable
 enum class ConnectorOauthStartRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -1535,7 +1548,7 @@ data class ConnectorOauthStartRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorOauthStartRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -1548,19 +1561,19 @@ object ConnectorOauthStartRequestAccountSerializer :
     KSerializer<ConnectorOauthStartRequestAccount> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorOauthStartRequestAccount"
+            "ai.okou.android.api.generated.ConnectorOauthStartRequestAccount",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorOauthStartRequestAccount {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorOauthStartRequestAccount"
+                    "Expected JSON object for ConnectorOauthStartRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorOauthStartRequestAccount"
+                    "Expected object for ConnectorOauthStartRequestAccount",
                 )
         val matches =
             listOf(
@@ -1573,7 +1586,7 @@ object ConnectorOauthStartRequestAccountSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorOauthStartRequestAccount variant"
+                "Unknown or ambiguous ConnectorOauthStartRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1619,7 +1632,7 @@ sealed interface ConnectorOpenIdStartRequestAccount
 
 @Serializable
 enum class ConnectorOpenIdStartRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -1630,7 +1643,7 @@ data class ConnectorOpenIdStartRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorOpenIdStartRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -1643,19 +1656,19 @@ object ConnectorOpenIdStartRequestAccountSerializer :
     KSerializer<ConnectorOpenIdStartRequestAccount> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccount"
+            "ai.okou.android.api.generated.ConnectorOpenIdStartRequestAccount",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorOpenIdStartRequestAccount {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorOpenIdStartRequestAccount"
+                    "Expected JSON object for ConnectorOpenIdStartRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorOpenIdStartRequestAccount"
+                    "Expected object for ConnectorOpenIdStartRequestAccount",
                 )
         val matches =
             listOf(
@@ -1668,7 +1681,7 @@ object ConnectorOpenIdStartRequestAccountSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorOpenIdStartRequestAccount variant"
+                "Unknown or ambiguous ConnectorOpenIdStartRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1713,7 +1726,7 @@ sealed interface ConnectorAutomaticStart
 
 @Serializable
 enum class ConnectorAutomaticStartVariant1Result {
-    @SerialName("connected") CONNECTED
+    @SerialName("connected") CONNECTED,
 }
 
 @Serializable
@@ -1724,7 +1737,7 @@ data class ConnectorAutomaticStartVariant1(
 
 @Serializable
 enum class ConnectorAutomaticStartVariant2Result {
-    @SerialName("authorization") AUTHORIZATION
+    @SerialName("authorization") AUTHORIZATION,
 }
 
 @Serializable
@@ -1787,7 +1800,7 @@ sealed interface ConnectorAutomaticStartRequestAccount
 
 @Serializable
 enum class ConnectorAutomaticStartRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -1798,7 +1811,7 @@ data class ConnectorAutomaticStartRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorAutomaticStartRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -1811,19 +1824,19 @@ object ConnectorAutomaticStartRequestAccountSerializer :
     KSerializer<ConnectorAutomaticStartRequestAccount> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorAutomaticStartRequestAccount"
+            "ai.okou.android.api.generated.ConnectorAutomaticStartRequestAccount",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorAutomaticStartRequestAccount {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAutomaticStartRequestAccount"
+                    "Expected JSON object for ConnectorAutomaticStartRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorAutomaticStartRequestAccount"
+                    "Expected object for ConnectorAutomaticStartRequestAccount",
                 )
         val matches =
             listOf(
@@ -1836,7 +1849,7 @@ object ConnectorAutomaticStartRequestAccountSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAutomaticStartRequestAccount variant"
+                "Unknown or ambiguous ConnectorAutomaticStartRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1851,7 +1864,7 @@ object ConnectorAutomaticStartRequestAccountSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ConnectorAutomaticStartRequestAccount variant"
+                    "Unknown ConnectorAutomaticStartRequestAccount variant",
                 )
         }
     }
@@ -1878,14 +1891,17 @@ data class ConnectorAutomaticStartRequest(
     val `account`: ConnectorAutomaticStartRequestAccount,
 )
 
-@Serializable data class ConnectorGrant(val `connectionId`: String)
+@Serializable
+data class ConnectorGrant(
+    val `connectionId`: String,
+)
 
 @Serializable(with = ConnectorNoAuthRequestAccountSerializer::class)
 sealed interface ConnectorNoAuthRequestAccount
 
 @Serializable
 enum class ConnectorNoAuthRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -1896,7 +1912,7 @@ data class ConnectorNoAuthRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorNoAuthRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -1913,7 +1929,7 @@ object ConnectorNoAuthRequestAccountSerializer : KSerializer<ConnectorNoAuthRequ
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorNoAuthRequestAccount"
+                    "Expected JSON object for ConnectorNoAuthRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -1929,7 +1945,7 @@ object ConnectorNoAuthRequestAccountSerializer : KSerializer<ConnectorNoAuthRequ
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorNoAuthRequestAccount variant"
+                "Unknown or ambiguous ConnectorNoAuthRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1973,7 +1989,7 @@ sealed interface ConnectorManualRequestAccount
 
 @Serializable
 enum class ConnectorManualRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -1984,7 +2000,7 @@ data class ConnectorManualRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorManualRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -2001,7 +2017,7 @@ object ConnectorManualRequestAccountSerializer : KSerializer<ConnectorManualRequ
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorManualRequestAccount"
+                    "Expected JSON object for ConnectorManualRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -2017,7 +2033,7 @@ object ConnectorManualRequestAccountSerializer : KSerializer<ConnectorManualRequ
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorManualRequestAccount variant"
+                "Unknown or ambiguous ConnectorManualRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2059,7 +2075,7 @@ data class ConnectorManualRequest(
 
 @Serializable
 enum class ConnectorDeviceStartStatus {
-    @SerialName("pending") PENDING
+    @SerialName("pending") PENDING,
 }
 
 @Serializable
@@ -2080,7 +2096,7 @@ sealed interface ConnectorDeviceStartRequestAccount
 
 @Serializable
 enum class ConnectorDeviceStartRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -2091,7 +2107,7 @@ data class ConnectorDeviceStartRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorDeviceStartRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -2104,19 +2120,19 @@ object ConnectorDeviceStartRequestAccountSerializer :
     KSerializer<ConnectorDeviceStartRequestAccount> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorDeviceStartRequestAccount"
+            "ai.okou.android.api.generated.ConnectorDeviceStartRequestAccount",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorDeviceStartRequestAccount {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorDeviceStartRequestAccount"
+                    "Expected JSON object for ConnectorDeviceStartRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorDeviceStartRequestAccount"
+                    "Expected object for ConnectorDeviceStartRequestAccount",
                 )
         val matches =
             listOf(
@@ -2129,7 +2145,7 @@ object ConnectorDeviceStartRequestAccountSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorDeviceStartRequestAccount variant"
+                "Unknown or ambiguous ConnectorDeviceStartRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2174,7 +2190,7 @@ data class ConnectorDeviceStartRequest(
 
 @Serializable
 enum class ConnectorDevicePollVariant1Status {
-    @SerialName("pending") PENDING
+    @SerialName("pending") PENDING,
 }
 
 @Serializable
@@ -2185,7 +2201,7 @@ data class ConnectorDevicePollVariant1(
 
 @Serializable
 enum class ConnectorDevicePollVariant2Status {
-    @SerialName("complete") COMPLETE
+    @SerialName("complete") COMPLETE,
 }
 
 @Serializable
@@ -2196,7 +2212,7 @@ data class ConnectorDevicePollVariant2(
 
 @Serializable
 enum class ConnectorDevicePollVariant3Status {
-    @SerialName("denied") DENIED
+    @SerialName("denied") DENIED,
 }
 
 @Serializable
@@ -2208,7 +2224,7 @@ data class ConnectorDevicePollVariant3(
 
 @Serializable
 enum class ConnectorDevicePollVariant4Status {
-    @SerialName("expired") EXPIRED
+    @SerialName("expired") EXPIRED,
 }
 
 @Serializable
@@ -2220,7 +2236,7 @@ data class ConnectorDevicePollVariant4(
 
 @Serializable
 enum class ConnectorDevicePollVariant5Status {
-    @SerialName("error") ERROR
+    @SerialName("error") ERROR,
 }
 
 @Serializable
@@ -2287,11 +2303,14 @@ object ConnectorDevicePollSerializer : KSerializer<ConnectorDevicePoll> {
     }
 }
 
-@Serializable data class ConnectorDevicePollRequest(val `sessionToken`: String)
+@Serializable
+data class ConnectorDevicePollRequest(
+    val `sessionToken`: String,
+)
 
 @Serializable
 enum class ConnectorExternalStartStatus {
-    @SerialName("pending") PENDING
+    @SerialName("pending") PENDING,
 }
 
 @Serializable
@@ -2309,7 +2328,7 @@ sealed interface ConnectorExternalStartRequestAccount
 
 @Serializable
 enum class ConnectorExternalStartRequestAccountVariant1Intent {
-    @SerialName("add") ADD
+    @SerialName("add") ADD,
 }
 
 @Serializable
@@ -2320,7 +2339,7 @@ data class ConnectorExternalStartRequestAccountVariant1(
 
 @Serializable
 enum class ConnectorExternalStartRequestAccountVariant2Intent {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -2333,19 +2352,19 @@ object ConnectorExternalStartRequestAccountSerializer :
     KSerializer<ConnectorExternalStartRequestAccount> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ConnectorExternalStartRequestAccount"
+            "ai.okou.android.api.generated.ConnectorExternalStartRequestAccount",
         )
 
     override fun deserialize(decoder: Decoder): ConnectorExternalStartRequestAccount {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorExternalStartRequestAccount"
+                    "Expected JSON object for ConnectorExternalStartRequestAccount",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ConnectorExternalStartRequestAccount"
+                    "Expected object for ConnectorExternalStartRequestAccount",
                 )
         val matches =
             listOf(
@@ -2358,7 +2377,7 @@ object ConnectorExternalStartRequestAccountSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorExternalStartRequestAccount variant"
+                "Unknown or ambiguous ConnectorExternalStartRequestAccount variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2400,7 +2419,7 @@ data class ConnectorExternalStartRequest(
 
 @Serializable
 enum class ConnectorExternalCompleteStatus {
-    @SerialName("complete") COMPLETE
+    @SerialName("complete") COMPLETE,
 }
 
 @Serializable
@@ -2410,17 +2429,23 @@ data class ConnectorExternalComplete(
 )
 
 @Serializable
-data class ConnectorExternalCompleteRequest(val `sessionToken`: String, val `code`: String)
+data class ConnectorExternalCompleteRequest(
+    val `sessionToken`: String,
+    val `code`: String,
+)
 
 @Serializable(with = ArtifactCatalogArtifactsItemSerializer::class)
 sealed interface ArtifactCatalogArtifactsItem
 
 @Serializable
 enum class ArtifactCatalogArtifactsItemVariant1Kind {
-    @SerialName("shared-thread") SHARED_THREAD
+    @SerialName("shared-thread") SHARED_THREAD,
 }
 
-@Serializable data class ArtifactCatalogArtifactsItemVariant1Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactCatalogArtifactsItemVariant1Thumbnail(
+    val `url`: String,
+)
 
 @Serializable
 data class ArtifactCatalogArtifactsItemVariant1(
@@ -2446,7 +2471,10 @@ enum class ArtifactCatalogArtifactsItemVariant2Kind {
     @SerialName("presentation") PRESENTATION,
 }
 
-@Serializable data class ArtifactCatalogArtifactsItemVariant2Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactCatalogArtifactsItemVariant2Thumbnail(
+    val `url`: String,
+)
 
 @Serializable
 data class ArtifactCatalogArtifactsItemVariant2(
@@ -2470,7 +2498,7 @@ object ArtifactCatalogArtifactsItemSerializer : KSerializer<ArtifactCatalogArtif
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactCatalogArtifactsItem"
+                    "Expected JSON object for ArtifactCatalogArtifactsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -2488,7 +2516,7 @@ object ArtifactCatalogArtifactsItemSerializer : KSerializer<ArtifactCatalogArtif
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactCatalogArtifactsItem variant"
+                "Unknown or ambiguous ArtifactCatalogArtifactsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2531,17 +2559,20 @@ data class ArtifactCatalog(
 
 @Serializable
 enum class ArtifactDetailVariant1Kind {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
-@Serializable data class ArtifactDetailVariant1Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant1Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant1GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant1GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -2556,17 +2587,17 @@ data class ArtifactDetailVariant1GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant1GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant1GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant1GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant1GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant1GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -2574,17 +2605,17 @@ sealed interface ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -2595,33 +2626,33 @@ data class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant1GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant1GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -2637,7 +2668,7 @@ object ArtifactDetailVariant1GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2657,7 +2688,7 @@ object ArtifactDetailVariant1GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant1GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -2694,31 +2725,31 @@ data class ArtifactDetailVariant1GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant1GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant1GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant1GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant1GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant1GoogleDriveSync
 
 object ArtifactDetailVariant1GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant1GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant1GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant1GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant1GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant1GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant1GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant1GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant1GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -2737,7 +2768,7 @@ object ArtifactDetailVariant1GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant1GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant1GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2762,7 +2793,7 @@ object ArtifactDetailVariant1GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant1GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant1GoogleDriveSync variant",
                 )
         }
     }
@@ -2823,17 +2854,20 @@ data class ArtifactDetailVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant2Kind {
-    @SerialName("image") IMAGE
+    @SerialName("image") IMAGE,
 }
 
-@Serializable data class ArtifactDetailVariant2Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant2Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant2GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant2GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -2848,17 +2882,17 @@ data class ArtifactDetailVariant2GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant2GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant2GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant2GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant2GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant2GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -2866,17 +2900,17 @@ sealed interface ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -2887,33 +2921,33 @@ data class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant2GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant2GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -2929,7 +2963,7 @@ object ArtifactDetailVariant2GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -2949,7 +2983,7 @@ object ArtifactDetailVariant2GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant2GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -2986,31 +3020,31 @@ data class ArtifactDetailVariant2GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant2GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant2GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant2GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant2GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant2GoogleDriveSync
 
 object ArtifactDetailVariant2GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant2GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant2GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant2GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant2GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant2GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant2GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant2GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant2GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -3029,7 +3063,7 @@ object ArtifactDetailVariant2GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant2GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant2GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3054,7 +3088,7 @@ object ArtifactDetailVariant2GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant2GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant2GoogleDriveSync variant",
                 )
         }
     }
@@ -3117,17 +3151,20 @@ data class ArtifactDetailVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant3Kind {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
-@Serializable data class ArtifactDetailVariant3Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant3Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant3GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant3GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -3142,17 +3179,17 @@ data class ArtifactDetailVariant3GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant3GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant3GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant3GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant3GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant3GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -3160,17 +3197,17 @@ sealed interface ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -3181,33 +3218,33 @@ data class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant3GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant3GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -3223,7 +3260,7 @@ object ArtifactDetailVariant3GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3243,7 +3280,7 @@ object ArtifactDetailVariant3GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant3GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -3280,31 +3317,31 @@ data class ArtifactDetailVariant3GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant3GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant3GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant3GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant3GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant3GoogleDriveSync
 
 object ArtifactDetailVariant3GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant3GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant3GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant3GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant3GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant3GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant3GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant3GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant3GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -3323,7 +3360,7 @@ object ArtifactDetailVariant3GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant3GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant3GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3348,7 +3385,7 @@ object ArtifactDetailVariant3GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant3GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant3GoogleDriveSync variant",
                 )
         }
     }
@@ -3411,17 +3448,20 @@ data class ArtifactDetailVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant4Kind {
-    @SerialName("avatar") AVATAR
+    @SerialName("avatar") AVATAR,
 }
 
-@Serializable data class ArtifactDetailVariant4Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant4Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant4GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant4GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -3436,17 +3476,17 @@ data class ArtifactDetailVariant4GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant4GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant4GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant4GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant4GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant4GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -3454,17 +3494,17 @@ sealed interface ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -3475,33 +3515,33 @@ data class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant4GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant4GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -3517,7 +3557,7 @@ object ArtifactDetailVariant4GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3537,7 +3577,7 @@ object ArtifactDetailVariant4GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant4GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -3574,31 +3614,31 @@ data class ArtifactDetailVariant4GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant4GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant4GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant4GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant4GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant4GoogleDriveSync
 
 object ArtifactDetailVariant4GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant4GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant4GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant4GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant4GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant4GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant4GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant4GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant4GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -3617,7 +3657,7 @@ object ArtifactDetailVariant4GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant4GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant4GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3642,7 +3682,7 @@ object ArtifactDetailVariant4GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant4GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant4GoogleDriveSync variant",
                 )
         }
     }
@@ -3705,17 +3745,20 @@ data class ArtifactDetailVariant4(
 
 @Serializable
 enum class ArtifactDetailVariant5Kind {
-    @SerialName("hosted-site") HOSTED_SITE
+    @SerialName("hosted-site") HOSTED_SITE,
 }
 
-@Serializable data class ArtifactDetailVariant5Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant5Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant5GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant5GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -3730,17 +3773,17 @@ data class ArtifactDetailVariant5GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant5GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant5GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant5GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant5GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant5GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -3748,17 +3791,17 @@ sealed interface ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -3769,33 +3812,33 @@ data class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant5GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant5GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -3811,7 +3854,7 @@ object ArtifactDetailVariant5GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3831,7 +3874,7 @@ object ArtifactDetailVariant5GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant5GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -3868,31 +3911,31 @@ data class ArtifactDetailVariant5GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant5GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant5GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant5GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant5GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant5GoogleDriveSync
 
 object ArtifactDetailVariant5GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant5GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant5GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant5GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant5GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant5GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant5GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant5GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant5GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -3911,7 +3954,7 @@ object ArtifactDetailVariant5GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant5GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant5GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -3936,7 +3979,7 @@ object ArtifactDetailVariant5GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant5GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant5GoogleDriveSync variant",
                 )
         }
     }
@@ -3998,17 +4041,20 @@ data class ArtifactDetailVariant5(
 
 @Serializable
 enum class ArtifactDetailVariant6Kind {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
-@Serializable data class ArtifactDetailVariant6Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant6Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant6GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant6GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -4023,17 +4069,17 @@ data class ArtifactDetailVariant6GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant6GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant6GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant6GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant6GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant6GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -4041,17 +4087,17 @@ sealed interface ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -4062,33 +4108,33 @@ data class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant6GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant6GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -4104,7 +4150,7 @@ object ArtifactDetailVariant6GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -4124,7 +4170,7 @@ object ArtifactDetailVariant6GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant6GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -4161,31 +4207,31 @@ data class ArtifactDetailVariant6GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant6GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant6GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant6GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant6GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant6GoogleDriveSync
 
 object ArtifactDetailVariant6GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant6GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant6GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant6GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant6GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant6GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant6GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant6GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant6GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -4204,7 +4250,7 @@ object ArtifactDetailVariant6GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant6GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant6GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -4229,7 +4275,7 @@ object ArtifactDetailVariant6GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant6GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant6GoogleDriveSync variant",
                 )
         }
     }
@@ -4291,17 +4337,20 @@ data class ArtifactDetailVariant6(
 
 @Serializable
 enum class ArtifactDetailVariant7Kind {
-    @SerialName("shared-thread") SHARED_THREAD
+    @SerialName("shared-thread") SHARED_THREAD,
 }
 
-@Serializable data class ArtifactDetailVariant7Thumbnail(val `url`: String)
+@Serializable
+data class ArtifactDetailVariant7Thumbnail(
+    val `url`: String,
+)
 
 @Serializable(with = ArtifactDetailVariant7GoogleDriveSyncSerializer::class)
 sealed interface ArtifactDetailVariant7GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant1Status {
-    @SerialName("synced") SYNCED
+    @SerialName("synced") SYNCED,
 }
 
 @Serializable
@@ -4316,17 +4365,17 @@ data class ArtifactDetailVariant7GoogleDriveSyncVariant1(
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant2Status {
-    @SerialName("not_synced") NOT_SYNCED
+    @SerialName("not_synced") NOT_SYNCED,
 }
 
 @Serializable
 data class ArtifactDetailVariant7GoogleDriveSyncVariant2(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant2Status
+    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant2Status,
 ) : ArtifactDetailVariant7GoogleDriveSync
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant3Status {
-    @SerialName("disconnected") DISCONNECTED
+    @SerialName("disconnected") DISCONNECTED,
 }
 
 @Serializable(with = ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer::class)
@@ -4334,17 +4383,17 @@ sealed interface ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1Action {
-    @SerialName("connect") CONNECT
+    @SerialName("connect") CONNECT,
 }
 
 @Serializable
 data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1(
-    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1Action
+    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant1Action,
 ) : ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2Action {
-    @SerialName("reconnect") RECONNECT
+    @SerialName("reconnect") RECONNECT,
 }
 
 @Serializable
@@ -4355,33 +4404,33 @@ data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant2(
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3Action {
-    @SerialName("unavailable") UNAVAILABLE
+    @SerialName("unavailable") UNAVAILABLE,
 }
 
 @Serializable
 data class ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3(
-    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3Action
+    val `action`: ArtifactDetailVariant7GoogleDriveSyncVariant3RecoveryVariant3Action,
 ) : ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery
 
 object ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer :
     KSerializer<ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery"
+            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery"
+                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery"
+                    "Expected object for ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery",
                 )
         val matches =
             listOf(
@@ -4397,7 +4446,7 @@ object ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant"
+                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -4417,7 +4466,7 @@ object ArtifactDetailVariant7GoogleDriveSyncVariant3RecoverySerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant"
+                    "Unknown ArtifactDetailVariant7GoogleDriveSyncVariant3Recovery variant",
                 )
         }
     }
@@ -4454,31 +4503,31 @@ data class ArtifactDetailVariant7GoogleDriveSyncVariant3(
 
 @Serializable
 enum class ArtifactDetailVariant7GoogleDriveSyncVariant4Status {
-    @SerialName("unknown") UNKNOWN
+    @SerialName("unknown") UNKNOWN,
 }
 
 @Serializable
 data class ArtifactDetailVariant7GoogleDriveSyncVariant4(
-    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant4Status
+    val `status`: ArtifactDetailVariant7GoogleDriveSyncVariant4Status,
 ) : ArtifactDetailVariant7GoogleDriveSync
 
 object ArtifactDetailVariant7GoogleDriveSyncSerializer :
     KSerializer<ArtifactDetailVariant7GoogleDriveSync> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSync"
+            "ai.okou.android.api.generated.ArtifactDetailVariant7GoogleDriveSync",
         )
 
     override fun deserialize(decoder: Decoder): ArtifactDetailVariant7GoogleDriveSync {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSync"
+                    "Expected JSON object for ArtifactDetailVariant7GoogleDriveSync",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for ArtifactDetailVariant7GoogleDriveSync"
+                    "Expected object for ArtifactDetailVariant7GoogleDriveSync",
                 )
         val matches =
             listOf(
@@ -4497,7 +4546,7 @@ object ArtifactDetailVariant7GoogleDriveSyncSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSync variant"
+                "Unknown or ambiguous ArtifactDetailVariant7GoogleDriveSync variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -4522,7 +4571,7 @@ object ArtifactDetailVariant7GoogleDriveSyncSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown ArtifactDetailVariant7GoogleDriveSync variant"
+                    "Unknown ArtifactDetailVariant7GoogleDriveSync variant",
                 )
         }
     }
@@ -4553,7 +4602,10 @@ object ArtifactDetailVariant7GoogleDriveSyncSerializer :
     }
 }
 
-@Serializable data class ArtifactDetailVariant7SharedThread(val `id`: String)
+@Serializable
+data class ArtifactDetailVariant7SharedThread(
+    val `id`: String,
+)
 
 @Serializable
 data class ArtifactDetailVariant7(
@@ -4669,7 +4721,10 @@ enum class ArtifactReferenceTargetKind {
 }
 
 @Serializable
-data class ArtifactReferenceTarget(val `kind`: ArtifactReferenceTargetKind, val `id`: String)
+data class ArtifactReferenceTarget(
+    val `kind`: ArtifactReferenceTargetKind,
+    val `id`: String,
+)
 
 @Serializable
 data class ArtifactReference(
@@ -4688,7 +4743,7 @@ data class ArtifactReference(
 
 @Serializable
 enum class ArtifactDownloadVariant1Kind {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
 @Serializable
@@ -4701,7 +4756,7 @@ data class ArtifactDownloadVariant1(
 
 @Serializable
 enum class ArtifactDownloadVariant2Kind {
-    @SerialName("html") HTML
+    @SerialName("html") HTML,
 }
 
 @Serializable
@@ -4880,8 +4935,7 @@ sealed interface WorkflowAutomationRuleOriginParameterBindingsItemValue {
 
     data class Variant2(val value: Long) : WorkflowAutomationRuleOriginParameterBindingsItemValue
 
-    data class Variant3(val value: Boolean) :
-        WorkflowAutomationRuleOriginParameterBindingsItemValue
+    data class Variant3(val value: Boolean) : WorkflowAutomationRuleOriginParameterBindingsItemValue
 }
 
 object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
@@ -4889,12 +4943,12 @@ object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
     override val descriptor = JsonPrimitive.serializer().descriptor
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): WorkflowAutomationRuleOriginParameterBindingsItemValue {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue"
+                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue",
                 )
         val value = input.decodeJsonElement()
         return when {
@@ -4909,13 +4963,13 @@ object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
                         it <= 9007199254740991.0
                 } == true) ->
                 WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant2(
-                    value.double.toLong()
+                    value.double.toLong(),
                 )
             (value is JsonPrimitive && !value.isString && value.booleanOrNull != null) ->
                 WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant3(value.boolean)
             else ->
                 throw SerializationException(
-                    "Unknown WorkflowAutomationRuleOriginParameterBindingsItemValue variant"
+                    "Unknown WorkflowAutomationRuleOriginParameterBindingsItemValue variant",
                 )
         }
     }
@@ -4927,7 +4981,7 @@ object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
         val output =
             encoder as? JsonEncoder
                 ?: throw SerializationException(
-                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue"
+                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue",
                 )
         output.encodeJsonElement(
             when (value) {
@@ -4937,7 +4991,7 @@ object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
                     JsonPrimitive(value.value)
                 is WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant3 ->
                     JsonPrimitive(value.value)
-            }
+            },
         )
     }
 }
@@ -4969,7 +5023,7 @@ sealed interface WorkflowAutomation {
 
 @Serializable
 enum class WorkflowAutomationVariant1Kind {
-    @SerialName("schedule") SCHEDULE
+    @SerialName("schedule") SCHEDULE,
 }
 
 @Serializable(with = WorkflowAutomationVariant1ScheduleSerializer::class)
@@ -4977,7 +5031,7 @@ sealed interface WorkflowAutomationVariant1Schedule
 
 @Serializable
 enum class WorkflowAutomationVariant1ScheduleVariant1Type {
-    @SerialName("cron") CRON
+    @SerialName("cron") CRON,
 }
 
 @Serializable
@@ -4989,7 +5043,7 @@ data class WorkflowAutomationVariant1ScheduleVariant1(
 
 @Serializable
 enum class WorkflowAutomationVariant1ScheduleVariant2Type {
-    @SerialName("loop") LOOP
+    @SerialName("loop") LOOP,
 }
 
 @Serializable
@@ -5000,7 +5054,7 @@ data class WorkflowAutomationVariant1ScheduleVariant2(
 
 @Serializable
 enum class WorkflowAutomationVariant1ScheduleVariant3Type {
-    @SerialName("once") ONCE
+    @SerialName("once") ONCE,
 }
 
 @Serializable
@@ -5014,19 +5068,19 @@ object WorkflowAutomationVariant1ScheduleSerializer :
     KSerializer<WorkflowAutomationVariant1Schedule> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.WorkflowAutomationVariant1Schedule"
+            "ai.okou.android.api.generated.WorkflowAutomationVariant1Schedule",
         )
 
     override fun deserialize(decoder: Decoder): WorkflowAutomationVariant1Schedule {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for WorkflowAutomationVariant1Schedule"
+                    "Expected JSON object for WorkflowAutomationVariant1Schedule",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for WorkflowAutomationVariant1Schedule"
+                    "Expected object for WorkflowAutomationVariant1Schedule",
                 )
         val matches =
             listOf(
@@ -5042,7 +5096,7 @@ object WorkflowAutomationVariant1ScheduleSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous WorkflowAutomationVariant1Schedule variant"
+                "Unknown or ambiguous WorkflowAutomationVariant1Schedule variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -5102,22 +5156,22 @@ data class WorkflowAutomationVariant1(
 
 @Serializable
 enum class WorkflowAutomationVariant2Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant2EventType {
-    @SerialName("chat-run-finished") CHAT_RUN_FINISHED
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant2EventConfigProvider {
-    @SerialName("chat") CHAT
+    @SerialName("chat") CHAT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant2EventConfigEvent {
-    @SerialName("run_finished") RUN_FINISHED
+    @SerialName("run_finished") RUN_FINISHED,
 }
 
 @Serializable
@@ -5154,22 +5208,22 @@ data class WorkflowAutomationVariant2(
 
 @Serializable
 enum class WorkflowAutomationVariant3Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant3EventType {
-    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant3EventConfigProvider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant3EventConfigEvent {
-    @SerialName("new_message") NEW_MESSAGE
+    @SerialName("new_message") NEW_MESSAGE,
 }
 
 @Serializable
@@ -5247,22 +5301,22 @@ data class WorkflowAutomationVariant3(
 
 @Serializable
 enum class WorkflowAutomationVariant4Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant4EventType {
-    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant4EventConfigProvider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant4EventConfigEvent {
-    @SerialName("label_applied") LABEL_APPLIED
+    @SerialName("label_applied") LABEL_APPLIED,
 }
 
 @Serializable
@@ -5291,22 +5345,22 @@ data class WorkflowAutomationVariant4(
 
 @Serializable
 enum class WorkflowAutomationVariant5Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant5EventType {
-    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant5EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant5EventConfigEvent {
-    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED,
 }
 
 @Serializable
@@ -5357,22 +5411,22 @@ data class WorkflowAutomationVariant5(
 
 @Serializable
 enum class WorkflowAutomationVariant6Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant6EventType {
-    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant6EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant6EventConfigEvent {
-    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED,
 }
 
 @Serializable
@@ -5415,22 +5469,22 @@ data class WorkflowAutomationVariant6(
 
 @Serializable
 enum class WorkflowAutomationVariant7Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant7EventType {
-    @SerialName("github-pull-request") GITHUB_PULL_REQUEST
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant7EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant7EventConfigEvent {
-    @SerialName("pull_request") PULL_REQUEST
+    @SerialName("pull_request") PULL_REQUEST,
 }
 
 @Serializable
@@ -5483,22 +5537,22 @@ data class WorkflowAutomationVariant7(
 
 @Serializable
 enum class WorkflowAutomationVariant8Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant8EventType {
-    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant8EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant8EventConfigEvent {
-    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED,
 }
 
 @Serializable
@@ -5542,22 +5596,22 @@ data class WorkflowAutomationVariant8(
 
 @Serializable
 enum class WorkflowAutomationVariant9Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant9EventType {
-    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant9EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant9EventConfigEvent {
-    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED,
 }
 
 @Serializable
@@ -5609,22 +5663,22 @@ data class WorkflowAutomationVariant9(
 
 @Serializable
 enum class WorkflowAutomationVariant10Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant10EventType {
-    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant10EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant10EventConfigEvent {
-    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED,
 }
 
 @Serializable
@@ -5675,22 +5729,22 @@ data class WorkflowAutomationVariant10(
 
 @Serializable
 enum class WorkflowAutomationVariant11Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant11EventType {
-    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant11EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant11EventConfigEvent {
-    @SerialName("event_created") EVENT_CREATED
+    @SerialName("event_created") EVENT_CREATED,
 }
 
 @Serializable
@@ -5725,22 +5779,22 @@ data class WorkflowAutomationVariant11(
 
 @Serializable
 enum class WorkflowAutomationVariant12Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant12EventType {
-    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant12EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant12EventConfigEvent {
-    @SerialName("event_updated") EVENT_UPDATED
+    @SerialName("event_updated") EVENT_UPDATED,
 }
 
 @Serializable
@@ -5775,22 +5829,22 @@ data class WorkflowAutomationVariant12(
 
 @Serializable
 enum class WorkflowAutomationVariant13Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant13EventType {
-    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant13EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant13EventConfigEvent {
-    @SerialName("event_cancelled") EVENT_CANCELLED
+    @SerialName("event_cancelled") EVENT_CANCELLED,
 }
 
 @Serializable
@@ -5825,22 +5879,22 @@ data class WorkflowAutomationVariant13(
 
 @Serializable
 enum class WorkflowAutomationVariant14Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant14EventType {
-    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant14EventConfigProvider {
-    @SerialName("google-forms") GOOGLE_FORMS
+    @SerialName("google-forms") GOOGLE_FORMS,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant14EventConfigEvent {
-    @SerialName("response_submitted") RESPONSE_SUBMITTED
+    @SerialName("response_submitted") RESPONSE_SUBMITTED,
 }
 
 @Serializable
@@ -5877,32 +5931,32 @@ data class WorkflowAutomationVariant14(
 
 @Serializable
 enum class WorkflowAutomationVariant15Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant15EventType {
-    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant15EventConfigProvider {
-    @SerialName("google-meet") GOOGLE_MEET
+    @SerialName("google-meet") GOOGLE_MEET,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant15EventConfigEvent {
-    @SerialName("transcript_generated") TRANSCRIPT_GENERATED
+    @SerialName("transcript_generated") TRANSCRIPT_GENERATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant15EventConfigScopeType {
-    @SerialName("organizer_user") ORGANIZER_USER
+    @SerialName("organizer_user") ORGANIZER_USER,
 }
 
 @Serializable
 data class WorkflowAutomationVariant15EventConfigScope(
-    val `type`: WorkflowAutomationVariant15EventConfigScopeType
+    val `type`: WorkflowAutomationVariant15EventConfigScopeType,
 )
 
 @Serializable
@@ -5930,22 +5984,22 @@ data class WorkflowAutomationVariant15(
 
 @Serializable
 enum class WorkflowAutomationVariant16Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant16EventType {
-    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant16EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant16EventConfigEvent {
-    @SerialName("child_page_created") CHILD_PAGE_CREATED
+    @SerialName("child_page_created") CHILD_PAGE_CREATED,
 }
 
 @Serializable
@@ -5982,22 +6036,22 @@ data class WorkflowAutomationVariant16(
 
 @Serializable
 enum class WorkflowAutomationVariant17Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant17EventType {
-    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant17EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant17EventConfigEvent {
-    @SerialName("database_item_created") DATABASE_ITEM_CREATED
+    @SerialName("database_item_created") DATABASE_ITEM_CREATED,
 }
 
 @Serializable
@@ -6034,22 +6088,22 @@ data class WorkflowAutomationVariant17(
 
 @Serializable
 enum class WorkflowAutomationVariant18Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant18EventType {
-    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant18EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant18EventConfigEvent {
-    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED
+    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED,
 }
 
 @Serializable(with = WorkflowAutomationVariant18EventConfigScopeSerializer::class)
@@ -6057,7 +6111,7 @@ sealed interface WorkflowAutomationVariant18EventConfigScope
 
 @Serializable
 enum class WorkflowAutomationVariant18EventConfigScopeVariant1Type {
-    @SerialName("page") PAGE
+    @SerialName("page") PAGE,
 }
 
 @Serializable
@@ -6076,7 +6130,7 @@ data class WorkflowAutomationVariant18EventConfigScopeVariant1(
 
 @Serializable
 enum class WorkflowAutomationVariant18EventConfigScopeVariant2Type {
-    @SerialName("data_source") DATA_SOURCE
+    @SerialName("data_source") DATA_SOURCE,
 }
 
 @Serializable
@@ -6097,19 +6151,19 @@ object WorkflowAutomationVariant18EventConfigScopeSerializer :
     KSerializer<WorkflowAutomationVariant18EventConfigScope> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.WorkflowAutomationVariant18EventConfigScope"
+            "ai.okou.android.api.generated.WorkflowAutomationVariant18EventConfigScope",
         )
 
     override fun deserialize(decoder: Decoder): WorkflowAutomationVariant18EventConfigScope {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for WorkflowAutomationVariant18EventConfigScope"
+                    "Expected JSON object for WorkflowAutomationVariant18EventConfigScope",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for WorkflowAutomationVariant18EventConfigScope"
+                    "Expected object for WorkflowAutomationVariant18EventConfigScope",
                 )
         val matches =
             listOf(
@@ -6122,7 +6176,7 @@ object WorkflowAutomationVariant18EventConfigScopeSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous WorkflowAutomationVariant18EventConfigScope variant"
+                "Unknown or ambiguous WorkflowAutomationVariant18EventConfigScope variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -6137,7 +6191,7 @@ object WorkflowAutomationVariant18EventConfigScopeSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown WorkflowAutomationVariant18EventConfigScope variant"
+                    "Unknown WorkflowAutomationVariant18EventConfigScope variant",
                 )
         }
     }
@@ -6184,32 +6238,32 @@ data class WorkflowAutomationVariant18(
 
 @Serializable
 enum class WorkflowAutomationVariant19Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant19EventType {
-    @SerialName("webhook-received") WEBHOOK_RECEIVED
+    @SerialName("webhook-received") WEBHOOK_RECEIVED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant19EventConfigProvider {
-    @SerialName("webhook") WEBHOOK
+    @SerialName("webhook") WEBHOOK,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant19EventConfigEvent {
-    @SerialName("received") RECEIVED
+    @SerialName("received") RECEIVED,
 }
 
 @Serializable
 enum class WorkflowAutomationVariant19EventConfigAuthMode {
-    @SerialName("hmac-sha256") HMAC_SHA256
+    @SerialName("hmac-sha256") HMAC_SHA256,
 }
 
 @Serializable
 data class WorkflowAutomationVariant19EventConfigAuth(
-    val `mode`: WorkflowAutomationVariant19EventConfigAuthMode
+    val `mode`: WorkflowAutomationVariant19EventConfigAuthMode,
 )
 
 @Serializable
@@ -6221,7 +6275,7 @@ data class WorkflowAutomationVariant19EventConfig(
 
 @Serializable
 enum class WorkflowAutomationVariant19DisabledReason {
-    @SerialName("paid_plan_required") PAID_PLAN_REQUIRED
+    @SerialName("paid_plan_required") PAID_PLAN_REQUIRED,
 }
 
 @Serializable
@@ -6820,9 +6874,17 @@ enum class WorkflowDetailImportSource {
     @SerialName("codex") CODEX,
 }
 
-@Serializable data class WorkflowDetailFilesItem(val `path`: String, val `size`: Double)
+@Serializable
+data class WorkflowDetailFilesItem(
+    val `path`: String,
+    val `size`: Double,
+)
 
-@Serializable data class WorkflowDetailFileContentsItem(val `path`: String, val `content`: String)
+@Serializable
+data class WorkflowDetailFileContentsItem(
+    val `path`: String,
+    val `content`: String,
+)
 
 @Serializable
 data class WorkflowDetail(
@@ -6847,6 +6909,62 @@ data class WorkflowDetail(
     val `automations`: List<WorkflowAutomation>,
 )
 
+@Serializable
+enum class WorkflowRunHistoryEntryStatus {
+    @SerialName("queued") QUEUED,
+    @SerialName("pending") PENDING,
+    @SerialName("running") RUNNING,
+    @SerialName("completed") COMPLETED,
+    @SerialName("failed") FAILED,
+    @SerialName("timeout") TIMEOUT,
+    @SerialName("cancelled") CANCELLED,
+}
+
+@Serializable
+enum class WorkflowRunHistoryEntryTrigger {
+    @SerialName("schedule") SCHEDULE,
+    @SerialName("event") EVENT,
+    @SerialName("manual") MANUAL,
+}
+
+@Serializable
+enum class WorkflowRunHistoryEntryEventType {
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED,
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE,
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED,
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED,
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED,
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST,
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED,
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED,
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED,
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED,
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED,
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED,
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED,
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED,
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED,
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED,
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED,
+    @SerialName("webhook-received") WEBHOOK_RECEIVED,
+}
+
+@Serializable
+data class WorkflowRunHistoryEntry(
+    val `id`: String,
+    val `createdAt`: String,
+    val `status`: WorkflowRunHistoryEntryStatus,
+    val `trigger`: WorkflowRunHistoryEntryTrigger?,
+    val `eventType`: WorkflowRunHistoryEntryEventType?,
+    val `chatThreadId`: String?,
+)
+
+@Serializable
+data class WorkflowRunHistory(
+    val `runs`: List<WorkflowRunHistoryEntry>,
+    val `nextCursor`: String?,
+)
+
 @Serializable(with = CanonicalOptionalSerializer::class)
 sealed interface CanonicalOptional<out T> {
     data object Absent : CanonicalOptional<Nothing>
@@ -6869,7 +6987,11 @@ class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) :
     }
 }
 
-@Serializable data class UpdateWorkflowRequestFilesItem(val `path`: String, val `content`: String)
+@Serializable
+data class UpdateWorkflowRequestFilesItem(
+    val `path`: String,
+    val `content`: String,
+)
 
 @Serializable
 data class UpdateWorkflowRequest(
@@ -6893,7 +7015,7 @@ sealed interface CreateWorkflowAutomationRequest
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant1Kind {
-    @SerialName("schedule") SCHEDULE
+    @SerialName("schedule") SCHEDULE,
 }
 
 @Serializable(with = CreateWorkflowAutomationRequestVariant1ScheduleSerializer::class)
@@ -6901,7 +7023,7 @@ sealed interface CreateWorkflowAutomationRequestVariant1Schedule
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant1Type {
-    @SerialName("cron") CRON
+    @SerialName("cron") CRON,
 }
 
 @Serializable
@@ -6913,7 +7035,7 @@ data class CreateWorkflowAutomationRequestVariant1ScheduleVariant1(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant2Type {
-    @SerialName("loop") LOOP
+    @SerialName("loop") LOOP,
 }
 
 @Serializable
@@ -6924,7 +7046,7 @@ data class CreateWorkflowAutomationRequestVariant1ScheduleVariant2(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant3Type {
-    @SerialName("once") ONCE
+    @SerialName("once") ONCE,
 }
 
 @Serializable
@@ -6938,19 +7060,19 @@ object CreateWorkflowAutomationRequestVariant1ScheduleSerializer :
     KSerializer<CreateWorkflowAutomationRequestVariant1Schedule> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.CreateWorkflowAutomationRequestVariant1Schedule"
+            "ai.okou.android.api.generated.CreateWorkflowAutomationRequestVariant1Schedule",
         )
 
     override fun deserialize(decoder: Decoder): CreateWorkflowAutomationRequestVariant1Schedule {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for CreateWorkflowAutomationRequestVariant1Schedule"
+                    "Expected JSON object for CreateWorkflowAutomationRequestVariant1Schedule",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for CreateWorkflowAutomationRequestVariant1Schedule"
+                    "Expected object for CreateWorkflowAutomationRequestVariant1Schedule",
                 )
         val matches =
             listOf(
@@ -6966,7 +7088,7 @@ object CreateWorkflowAutomationRequestVariant1ScheduleSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous CreateWorkflowAutomationRequestVariant1Schedule variant"
+                "Unknown or ambiguous CreateWorkflowAutomationRequestVariant1Schedule variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -6986,7 +7108,7 @@ object CreateWorkflowAutomationRequestVariant1ScheduleSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown CreateWorkflowAutomationRequestVariant1Schedule variant"
+                    "Unknown CreateWorkflowAutomationRequestVariant1Schedule variant",
                 )
         }
     }
@@ -7024,22 +7146,22 @@ data class CreateWorkflowAutomationRequestVariant1(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant2Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant2EventType {
-    @SerialName("chat-run-finished") CHAT_RUN_FINISHED
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant2EventConfigProvider {
-    @SerialName("chat") CHAT
+    @SerialName("chat") CHAT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant2EventConfigEvent {
-    @SerialName("run_finished") RUN_FINISHED
+    @SerialName("run_finished") RUN_FINISHED,
 }
 
 @Serializable
@@ -7069,22 +7191,22 @@ data class CreateWorkflowAutomationRequestVariant2(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant3Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant3EventType {
-    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant3EventConfigProvider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant3EventConfigEvent {
-    @SerialName("new_message") NEW_MESSAGE
+    @SerialName("new_message") NEW_MESSAGE,
 }
 
 @Serializable
@@ -7154,22 +7276,22 @@ data class CreateWorkflowAutomationRequestVariant3(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant4Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant4EventType {
-    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant4EventConfigProvider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant4EventConfigEvent {
-    @SerialName("label_applied") LABEL_APPLIED
+    @SerialName("label_applied") LABEL_APPLIED,
 }
 
 @Serializable
@@ -7190,22 +7312,22 @@ data class CreateWorkflowAutomationRequestVariant4(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant5Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant5EventType {
-    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant5EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant5EventConfigEvent {
-    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED,
 }
 
 @Serializable
@@ -7248,22 +7370,22 @@ data class CreateWorkflowAutomationRequestVariant5(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant6Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant6EventType {
-    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant6EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant6EventConfigEvent {
-    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED,
 }
 
 @Serializable
@@ -7298,22 +7420,22 @@ data class CreateWorkflowAutomationRequestVariant6(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant7Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant7EventType {
-    @SerialName("github-pull-request") GITHUB_PULL_REQUEST
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant7EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant7EventConfigEvent {
-    @SerialName("pull_request") PULL_REQUEST
+    @SerialName("pull_request") PULL_REQUEST,
 }
 
 @Serializable
@@ -7358,22 +7480,22 @@ data class CreateWorkflowAutomationRequestVariant7(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant8Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant8EventType {
-    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant8EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant8EventConfigEvent {
-    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED,
 }
 
 @Serializable
@@ -7411,22 +7533,22 @@ data class CreateWorkflowAutomationRequestVariant8(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant9Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant9EventType {
-    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant9EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant9EventConfigEvent {
-    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED,
 }
 
 @Serializable
@@ -7472,22 +7594,22 @@ data class CreateWorkflowAutomationRequestVariant9(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant10Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant10EventType {
-    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant10EventConfigProvider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant10EventConfigEvent {
-    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED,
 }
 
 @Serializable
@@ -7532,22 +7654,22 @@ data class CreateWorkflowAutomationRequestVariant10(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant11Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant11EventType {
-    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant11EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant11EventConfigEvent {
-    @SerialName("event_created") EVENT_CREATED
+    @SerialName("event_created") EVENT_CREATED,
 }
 
 @Serializable
@@ -7567,22 +7689,22 @@ data class CreateWorkflowAutomationRequestVariant11(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant12Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant12EventType {
-    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant12EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant12EventConfigEvent {
-    @SerialName("event_updated") EVENT_UPDATED
+    @SerialName("event_updated") EVENT_UPDATED,
 }
 
 @Serializable
@@ -7602,22 +7724,22 @@ data class CreateWorkflowAutomationRequestVariant12(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant13Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant13EventType {
-    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant13EventConfigProvider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant13EventConfigEvent {
-    @SerialName("event_cancelled") EVENT_CANCELLED
+    @SerialName("event_cancelled") EVENT_CANCELLED,
 }
 
 @Serializable
@@ -7637,22 +7759,22 @@ data class CreateWorkflowAutomationRequestVariant13(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant14Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant14EventType {
-    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant14EventConfigProvider {
-    @SerialName("google-forms") GOOGLE_FORMS
+    @SerialName("google-forms") GOOGLE_FORMS,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant14EventConfigEvent {
-    @SerialName("response_submitted") RESPONSE_SUBMITTED
+    @SerialName("response_submitted") RESPONSE_SUBMITTED,
 }
 
 @Serializable
@@ -7672,32 +7794,32 @@ data class CreateWorkflowAutomationRequestVariant14(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant15Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant15EventType {
-    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant15EventConfigProvider {
-    @SerialName("google-meet") GOOGLE_MEET
+    @SerialName("google-meet") GOOGLE_MEET,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant15EventConfigEvent {
-    @SerialName("transcript_generated") TRANSCRIPT_GENERATED
+    @SerialName("transcript_generated") TRANSCRIPT_GENERATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant15EventConfigScopeType {
-    @SerialName("organizer_user") ORGANIZER_USER
+    @SerialName("organizer_user") ORGANIZER_USER,
 }
 
 @Serializable
 data class CreateWorkflowAutomationRequestVariant15EventConfigScope(
-    val `type`: CreateWorkflowAutomationRequestVariant15EventConfigScopeType
+    val `type`: CreateWorkflowAutomationRequestVariant15EventConfigScopeType,
 )
 
 @Serializable
@@ -7717,22 +7839,22 @@ data class CreateWorkflowAutomationRequestVariant15(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant16Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant16EventType {
-    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant16EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant16EventConfigEvent {
-    @SerialName("child_page_created") CHILD_PAGE_CREATED
+    @SerialName("child_page_created") CHILD_PAGE_CREATED,
 }
 
 @Serializable
@@ -7752,22 +7874,22 @@ data class CreateWorkflowAutomationRequestVariant16(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant17Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant17EventType {
-    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant17EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant17EventConfigEvent {
-    @SerialName("database_item_created") DATABASE_ITEM_CREATED
+    @SerialName("database_item_created") DATABASE_ITEM_CREATED,
 }
 
 @Serializable
@@ -7787,22 +7909,22 @@ data class CreateWorkflowAutomationRequestVariant17(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant18Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant18EventType {
-    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant18EventConfigProvider {
-    @SerialName("notion") NOTION
+    @SerialName("notion") NOTION,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant18EventConfigEvent {
-    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED
+    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED,
 }
 
 @Serializable
@@ -7823,32 +7945,32 @@ data class CreateWorkflowAutomationRequestVariant18(
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant19Kind {
-    @SerialName("event") EVENT
+    @SerialName("event") EVENT,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant19EventType {
-    @SerialName("webhook-received") WEBHOOK_RECEIVED
+    @SerialName("webhook-received") WEBHOOK_RECEIVED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant19EventConfigProvider {
-    @SerialName("webhook") WEBHOOK
+    @SerialName("webhook") WEBHOOK,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant19EventConfigEvent {
-    @SerialName("received") RECEIVED
+    @SerialName("received") RECEIVED,
 }
 
 @Serializable
 enum class CreateWorkflowAutomationRequestVariant19EventConfigAuthMode {
-    @SerialName("hmac-sha256") HMAC_SHA256
+    @SerialName("hmac-sha256") HMAC_SHA256,
 }
 
 @Serializable
 data class CreateWorkflowAutomationRequestVariant19EventConfigAuth(
-    val `mode`: CreateWorkflowAutomationRequestVariant19EventConfigAuthMode
+    val `mode`: CreateWorkflowAutomationRequestVariant19EventConfigAuthMode,
 )
 
 @Serializable
@@ -7874,12 +7996,12 @@ object CreateWorkflowAutomationRequestSerializer : KSerializer<CreateWorkflowAut
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for CreateWorkflowAutomationRequest"
+                    "Expected JSON object for CreateWorkflowAutomationRequest",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for CreateWorkflowAutomationRequest"
+                    "Expected object for CreateWorkflowAutomationRequest",
                 )
         val matches =
             listOf(
@@ -8128,7 +8250,7 @@ object CreateWorkflowAutomationRequestSerializer : KSerializer<CreateWorkflowAut
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous CreateWorkflowAutomationRequest variant"
+                "Unknown or ambiguous CreateWorkflowAutomationRequest variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -8339,7 +8461,7 @@ sealed interface UpdateWorkflowAutomationRequestVariant1Schedule
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant1Type {
-    @SerialName("cron") CRON
+    @SerialName("cron") CRON,
 }
 
 @Serializable
@@ -8351,7 +8473,7 @@ data class UpdateWorkflowAutomationRequestVariant1ScheduleVariant1(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant2Type {
-    @SerialName("loop") LOOP
+    @SerialName("loop") LOOP,
 }
 
 @Serializable
@@ -8362,7 +8484,7 @@ data class UpdateWorkflowAutomationRequestVariant1ScheduleVariant2(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant3Type {
-    @SerialName("once") ONCE
+    @SerialName("once") ONCE,
 }
 
 @Serializable
@@ -8376,19 +8498,19 @@ object UpdateWorkflowAutomationRequestVariant1ScheduleSerializer :
     KSerializer<UpdateWorkflowAutomationRequestVariant1Schedule> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant1Schedule"
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant1Schedule",
         )
 
     override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant1Schedule {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant1Schedule"
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant1Schedule",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for UpdateWorkflowAutomationRequestVariant1Schedule"
+                    "Expected object for UpdateWorkflowAutomationRequestVariant1Schedule",
                 )
         val matches =
             listOf(
@@ -8404,7 +8526,7 @@ object UpdateWorkflowAutomationRequestVariant1ScheduleSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant1Schedule variant"
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant1Schedule variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -8424,7 +8546,7 @@ object UpdateWorkflowAutomationRequestVariant1ScheduleSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown UpdateWorkflowAutomationRequestVariant1Schedule variant"
+                    "Unknown UpdateWorkflowAutomationRequestVariant1Schedule variant",
                 )
         }
     }
@@ -8455,7 +8577,7 @@ object UpdateWorkflowAutomationRequestVariant1ScheduleSerializer :
 
 @Serializable
 data class UpdateWorkflowAutomationRequestVariant1(
-    val `schedule`: UpdateWorkflowAutomationRequestVariant1Schedule
+    val `schedule`: UpdateWorkflowAutomationRequestVariant1Schedule,
 ) : UpdateWorkflowAutomationRequest
 
 @Serializable(with = UpdateWorkflowAutomationRequestVariant2EventConfigSerializer::class)
@@ -8463,12 +8585,12 @@ sealed interface UpdateWorkflowAutomationRequestVariant2EventConfig
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Provider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Event {
-    @SerialName("new_message") NEW_MESSAGE
+    @SerialName("new_message") NEW_MESSAGE,
 }
 
 @Serializable
@@ -8530,12 +8652,12 @@ data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Provider {
-    @SerialName("gmail") GMAIL
+    @SerialName("gmail") GMAIL,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Event {
-    @SerialName("label_applied") LABEL_APPLIED
+    @SerialName("label_applied") LABEL_APPLIED,
 }
 
 @Serializable
@@ -8550,19 +8672,19 @@ object UpdateWorkflowAutomationRequestVariant2EventConfigSerializer :
     KSerializer<UpdateWorkflowAutomationRequestVariant2EventConfig> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant2EventConfig"
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant2EventConfig",
         )
 
     override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant2EventConfig {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant2EventConfig"
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant2EventConfig",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for UpdateWorkflowAutomationRequestVariant2EventConfig"
+                    "Expected object for UpdateWorkflowAutomationRequestVariant2EventConfig",
                 )
         val matches =
             listOf(
@@ -8575,7 +8697,7 @@ object UpdateWorkflowAutomationRequestVariant2EventConfigSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant2EventConfig variant"
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant2EventConfig variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -8590,7 +8712,7 @@ object UpdateWorkflowAutomationRequestVariant2EventConfigSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown UpdateWorkflowAutomationRequestVariant2EventConfig variant"
+                    "Unknown UpdateWorkflowAutomationRequestVariant2EventConfig variant",
                 )
         }
     }
@@ -8616,7 +8738,7 @@ object UpdateWorkflowAutomationRequestVariant2EventConfigSerializer :
 
 @Serializable
 data class UpdateWorkflowAutomationRequestVariant2(
-    val `eventConfig`: UpdateWorkflowAutomationRequestVariant2EventConfig
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant2EventConfig,
 ) : UpdateWorkflowAutomationRequest
 
 @Serializable(with = UpdateWorkflowAutomationRequestVariant3EventConfigSerializer::class)
@@ -8624,12 +8746,12 @@ sealed interface UpdateWorkflowAutomationRequestVariant3EventConfig
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Event {
-    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED,
 }
 
 @Serializable
@@ -8666,12 +8788,12 @@ data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Event {
-    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED,
 }
 
 @Serializable
@@ -8698,12 +8820,12 @@ data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Event {
-    @SerialName("pull_request") PULL_REQUEST
+    @SerialName("pull_request") PULL_REQUEST,
 }
 
 @Serializable
@@ -8740,12 +8862,12 @@ data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Event {
-    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED,
 }
 
 @Serializable
@@ -8775,12 +8897,12 @@ data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Event {
-    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED,
 }
 
 @Serializable
@@ -8818,12 +8940,12 @@ data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Provider {
-    @SerialName("github") GITHUB
+    @SerialName("github") GITHUB,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Event {
-    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED,
 }
 
 @Serializable
@@ -8862,19 +8984,19 @@ object UpdateWorkflowAutomationRequestVariant3EventConfigSerializer :
     KSerializer<UpdateWorkflowAutomationRequestVariant3EventConfig> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant3EventConfig"
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant3EventConfig",
         )
 
     override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant3EventConfig {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant3EventConfig"
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant3EventConfig",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for UpdateWorkflowAutomationRequestVariant3EventConfig"
+                    "Expected object for UpdateWorkflowAutomationRequestVariant3EventConfig",
                 )
         val matches =
             listOf(
@@ -8899,7 +9021,7 @@ object UpdateWorkflowAutomationRequestVariant3EventConfigSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant3EventConfig variant"
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant3EventConfig variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -8934,7 +9056,7 @@ object UpdateWorkflowAutomationRequestVariant3EventConfigSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown UpdateWorkflowAutomationRequestVariant3EventConfig variant"
+                    "Unknown UpdateWorkflowAutomationRequestVariant3EventConfig variant",
                 )
         }
     }
@@ -8980,7 +9102,7 @@ object UpdateWorkflowAutomationRequestVariant3EventConfigSerializer :
 
 @Serializable
 data class UpdateWorkflowAutomationRequestVariant3(
-    val `eventConfig`: UpdateWorkflowAutomationRequestVariant3EventConfig
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant3EventConfig,
 ) : UpdateWorkflowAutomationRequest
 
 @Serializable(with = UpdateWorkflowAutomationRequestVariant4EventConfigSerializer::class)
@@ -8988,12 +9110,12 @@ sealed interface UpdateWorkflowAutomationRequestVariant4EventConfig
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Provider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event {
-    @SerialName("event_created") EVENT_CREATED
+    @SerialName("event_created") EVENT_CREATED,
 }
 
 @Serializable
@@ -9005,12 +9127,12 @@ data class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Provider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Event {
-    @SerialName("event_updated") EVENT_UPDATED
+    @SerialName("event_updated") EVENT_UPDATED,
 }
 
 @Serializable
@@ -9022,12 +9144,12 @@ data class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2(
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Provider {
-    @SerialName("google-calendar") GOOGLE_CALENDAR
+    @SerialName("google-calendar") GOOGLE_CALENDAR,
 }
 
 @Serializable
 enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Event {
-    @SerialName("event_cancelled") EVENT_CANCELLED
+    @SerialName("event_cancelled") EVENT_CANCELLED,
 }
 
 @Serializable
@@ -9041,19 +9163,19 @@ object UpdateWorkflowAutomationRequestVariant4EventConfigSerializer :
     KSerializer<UpdateWorkflowAutomationRequestVariant4EventConfig> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant4EventConfig"
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant4EventConfig",
         )
 
     override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant4EventConfig {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant4EventConfig"
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant4EventConfig",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for UpdateWorkflowAutomationRequestVariant4EventConfig"
+                    "Expected object for UpdateWorkflowAutomationRequestVariant4EventConfig",
                 )
         val matches =
             listOf(
@@ -9069,7 +9191,7 @@ object UpdateWorkflowAutomationRequestVariant4EventConfigSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant4EventConfig variant"
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant4EventConfig variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -9089,7 +9211,7 @@ object UpdateWorkflowAutomationRequestVariant4EventConfigSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown UpdateWorkflowAutomationRequestVariant4EventConfig variant"
+                    "Unknown UpdateWorkflowAutomationRequestVariant4EventConfig variant",
                 )
         }
     }
@@ -9120,7 +9242,7 @@ object UpdateWorkflowAutomationRequestVariant4EventConfigSerializer :
 
 @Serializable
 data class UpdateWorkflowAutomationRequestVariant4(
-    val `eventConfig`: UpdateWorkflowAutomationRequestVariant4EventConfig
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant4EventConfig,
 ) : UpdateWorkflowAutomationRequest
 
 object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAutomationRequest> {
@@ -9131,12 +9253,12 @@ object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAut
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for UpdateWorkflowAutomationRequest"
+                    "Expected JSON object for UpdateWorkflowAutomationRequest",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for UpdateWorkflowAutomationRequest"
+                    "Expected object for UpdateWorkflowAutomationRequest",
                 )
         val matches =
             listOf(
@@ -9175,7 +9297,7 @@ object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAut
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous UpdateWorkflowAutomationRequest variant"
+                "Unknown or ambiguous UpdateWorkflowAutomationRequest variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -9228,7 +9350,11 @@ object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAut
     }
 }
 
-@Serializable data class RenameProjectRequest(val `eventId`: String, val `name`: String)
+@Serializable
+data class RenameProjectRequest(
+    val `eventId`: String,
+    val `name`: String,
+)
 
 @Serializable
 data class RenamedProject(
@@ -9240,15 +9366,33 @@ data class RenamedProject(
 )
 
 @Serializable
-data class MoveThreadToProjectRequest(val `eventId`: String, val `projectId`: String?)
+data class MoveThreadToProjectRequest(
+    val `eventId`: String,
+    val `projectId`: String?,
+)
 
-@Serializable data class ProjectMembership(val `threadId`: String, val `projectId`: String?)
+@Serializable
+data class ProjectMembership(
+    val `threadId`: String,
+    val `projectId`: String?,
+)
 
-@Serializable data class DeleteProjectRequest(val `eventId`: String)
+@Serializable
+data class DeleteProjectRequest(
+    val `eventId`: String,
+)
 
-@Serializable data class RenameThreadRequest(val `title`: String, val `eventId`: String? = null)
+@Serializable
+data class RenameThreadRequest(
+    val `title`: String,
+    val `eventId`: String? = null,
+)
 
-@Serializable data class ReorderPinnedThreadRequest(val `pinOrder`: String, val `eventId`: String)
+@Serializable
+data class ReorderPinnedThreadRequest(
+    val `pinOrder`: String,
+    val `eventId`: String,
+)
 
 typealias ComposerDraft = Map<String, JsonElement>
 
@@ -9278,7 +9422,7 @@ sealed interface SaveWorkspaceDraftDraftUserMessagePartsItem
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -9289,7 +9433,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant1(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -9302,7 +9446,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant2(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer::class)
@@ -9310,7 +9454,7 @@ sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -9337,12 +9481,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant1(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -9353,7 +9497,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant2(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -9402,7 +9546,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant3(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -9413,12 +9557,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant4(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -9429,12 +9573,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant5(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -9445,12 +9589,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant6(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -9461,12 +9605,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant7(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -9479,21 +9623,21 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -9524,7 +9668,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -9577,7 +9721,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant3Template variant",
                 )
         }
     }
@@ -9648,7 +9792,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant3(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -9660,7 +9804,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant4(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
@@ -9685,12 +9829,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant5(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6Kind {
-    @SerialName("mcp") MCP
+    @SerialName("mcp") MCP,
 }
 
 @Serializable
@@ -9703,7 +9847,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant6(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
+    @SerialName("additional_info") ADDITIONAL_INFO,
 }
 
 @Serializable
@@ -9714,7 +9858,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant7(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8Type {
-    @SerialName("automation") AUTOMATION
+    @SerialName("automation") AUTOMATION,
 }
 
 @Serializable
@@ -9727,17 +9871,17 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant8(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9Type {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
 @Serializable(
-    with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
+    with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class,
 )
 sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
-    @SerialName("box") BOX
+    @SerialName("box") BOX,
 }
 
 @Serializable
@@ -9761,7 +9905,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
-    @SerialName("arrow") ARROW
+    @SerialName("arrow") ARROW,
 }
 
 @Serializable
@@ -9790,7 +9934,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
-    @SerialName("pen") PEN
+    @SerialName("pen") PEN,
 }
 
 @Serializable
@@ -9807,7 +9951,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
         SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape,
     val `points`:
         List<
-            SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem
+            SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem,
         >,
     val `ink`: String,
     val `note`: String? = null,
@@ -9815,7 +9959,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -9838,7 +9982,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
-    @SerialName("highlight") HIGHLIGHT
+    @SerialName("highlight") HIGHLIGHT,
 }
 
 @Serializable
@@ -9861,7 +10005,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksIt
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
-    @SerialName("redact") REDACT
+    @SerialName("redact") REDACT,
 }
 
 @Serializable
@@ -9885,21 +10029,21 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSe
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val matches =
             listOf(
@@ -9924,7 +10068,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSe
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -9965,7 +10109,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSe
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant",
                 )
         }
     }
@@ -10041,7 +10185,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant9(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Type {
-    @SerialName("feedback") FEEDBACK
+    @SerialName("feedback") FEEDBACK,
 }
 
 @Serializable(with = SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer::class)
@@ -10049,7 +10193,7 @@ sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -10060,7 +10204,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant1(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -10072,18 +10216,18 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant2(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(
     with =
-        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
+        SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class,
 )
 sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -10112,12 +10256,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -10130,7 +10274,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -10181,7 +10325,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -10193,12 +10337,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -10211,12 +10355,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -10229,12 +10373,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -10247,12 +10391,12 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3T
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -10267,21 +10411,21 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Templ
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -10312,7 +10456,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Templ
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -10365,7 +10509,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Templ
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant",
                 )
         }
     }
@@ -10436,7 +10580,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant3(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -10450,21 +10594,21 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem",
                 )
         val matches =
             listOf(
@@ -10483,7 +10627,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -10512,7 +10656,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10NoteItem variant",
                 )
         }
     }
@@ -10561,7 +10705,7 @@ sealed interface SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1Type {
-    @SerialName("mail") MAIL
+    @SerialName("mail") MAIL,
 }
 
 @Serializable
@@ -10580,7 +10724,7 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant1(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceVariant2Type {
-    @SerialName("artifact") ARTIFACT
+    @SerialName("artifact") ARTIFACT,
 }
 
 @Serializable
@@ -10595,21 +10739,21 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceSerializer :
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source",
                 )
         val matches =
             listOf(
@@ -10622,7 +10766,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -10637,7 +10781,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemVariant10SourceSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItemVariant10Source variant",
                 )
         }
     }
@@ -10673,11 +10817,13 @@ data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant10(
 
 @Serializable
 enum class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11Type {
-    @SerialName("voice") VOICE
+    @SerialName("voice") VOICE,
 }
 
 @Serializable
-data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
+data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11ClipsItem(
+    val `fileId`: String,
+)
 
 @Serializable
 data class SaveWorkspaceDraftDraftUserMessagePartsItemVariant11(
@@ -10689,19 +10835,19 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
     KSerializer<SaveWorkspaceDraftDraftUserMessagePartsItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItem"
+            "ai.okou.android.api.generated.SaveWorkspaceDraftDraftUserMessagePartsItem",
         )
 
     override fun deserialize(decoder: Decoder): SaveWorkspaceDraftDraftUserMessagePartsItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItem"
+                    "Expected JSON object for SaveWorkspaceDraftDraftUserMessagePartsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItem"
+                    "Expected object for SaveWorkspaceDraftDraftUserMessagePartsItem",
                 )
         val matches =
             listOf(
@@ -10801,7 +10947,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItem variant"
+                "Unknown or ambiguous SaveWorkspaceDraftDraftUserMessagePartsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -10861,7 +11007,7 @@ object SaveWorkspaceDraftDraftUserMessagePartsItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItem variant"
+                    "Unknown SaveWorkspaceDraftDraftUserMessagePartsItem variant",
                 )
         }
     }
@@ -10954,7 +11100,7 @@ sealed interface SaveThreadDraftDraftUserMessagePartsItem
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -10965,7 +11111,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant1(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -10978,7 +11124,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant2(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer::class)
@@ -10986,7 +11132,7 @@ sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant3Template
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -11013,12 +11159,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant1(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -11029,7 +11175,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant2(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -11078,7 +11224,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant3(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -11089,12 +11235,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant4(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -11105,12 +11251,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant5(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -11121,12 +11267,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant6(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -11137,12 +11283,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant7(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -11155,21 +11301,21 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
     KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveThreadDraftDraftUserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -11200,7 +11346,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -11245,7 +11391,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant3TemplateSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant3Template variant",
                 )
         }
     }
@@ -11308,7 +11454,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant3(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -11320,7 +11466,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant4(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant5Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
@@ -11345,12 +11491,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant5(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant6Kind {
-    @SerialName("mcp") MCP
+    @SerialName("mcp") MCP,
 }
 
 @Serializable
@@ -11363,7 +11509,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant6(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant7Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
+    @SerialName("additional_info") ADDITIONAL_INFO,
 }
 
 @Serializable
@@ -11374,7 +11520,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant7(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant8Type {
-    @SerialName("automation") AUTOMATION
+    @SerialName("automation") AUTOMATION,
 }
 
 @Serializable
@@ -11387,17 +11533,17 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant8(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9Type {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
 @Serializable(
-    with = SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
+    with = SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class,
 )
 sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
-    @SerialName("box") BOX
+    @SerialName("box") BOX,
 }
 
 @Serializable
@@ -11420,7 +11566,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
-    @SerialName("arrow") ARROW
+    @SerialName("arrow") ARROW,
 }
 
 @Serializable
@@ -11448,7 +11594,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
-    @SerialName("pen") PEN
+    @SerialName("pen") PEN,
 }
 
 @Serializable
@@ -11464,7 +11610,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
     val `shape`: SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape,
     val `points`:
         List<
-            SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem
+            SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant3PointsItem,
         >,
     val `ink`: String,
     val `note`: String? = null,
@@ -11472,7 +11618,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -11494,7 +11640,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
-    @SerialName("highlight") HIGHLIGHT
+    @SerialName("highlight") HIGHLIGHT,
 }
 
 @Serializable
@@ -11516,7 +11662,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemV
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
-    @SerialName("redact") REDACT
+    @SerialName("redact") REDACT,
 }
 
 @Serializable
@@ -11539,21 +11685,21 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSeria
     KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val matches =
             listOf(
@@ -11578,7 +11724,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSeria
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -11619,7 +11765,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItemSeria
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant9AnnotationsMarksItem variant",
                 )
         }
     }
@@ -11695,7 +11841,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant9(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10Type {
-    @SerialName("feedback") FEEDBACK
+    @SerialName("feedback") FEEDBACK,
 }
 
 @Serializable(with = SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer::class)
@@ -11703,7 +11849,7 @@ sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -11714,7 +11860,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant1(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -11726,18 +11872,18 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant2(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(
     with =
-        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
+        SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class,
 )
 sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -11766,12 +11912,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -11784,7 +11930,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -11835,7 +11981,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -11847,12 +11993,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -11865,12 +12011,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -11883,12 +12029,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -11901,12 +12047,12 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Temp
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -11921,21 +12067,21 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
     KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -11966,7 +12112,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -12019,7 +12165,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3Template variant",
                 )
         }
     }
@@ -12090,7 +12236,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant3(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -12104,21 +12250,21 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
     KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem",
                 )
         val matches =
             listOf(
@@ -12137,7 +12283,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -12162,7 +12308,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10NoteItem variant",
                 )
         }
     }
@@ -12207,7 +12353,7 @@ sealed interface SaveThreadDraftDraftUserMessagePartsItemVariant10Source
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1Type {
-    @SerialName("mail") MAIL
+    @SerialName("mail") MAIL,
 }
 
 @Serializable
@@ -12226,7 +12372,7 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant1(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant10SourceVariant2Type {
-    @SerialName("artifact") ARTIFACT
+    @SerialName("artifact") ARTIFACT,
 }
 
 @Serializable
@@ -12241,21 +12387,21 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10SourceSerializer :
     KSerializer<SaveThreadDraftDraftUserMessagePartsItemVariant10Source> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItemVariant10Source",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SaveThreadDraftDraftUserMessagePartsItemVariant10Source {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItemVariant10Source",
                 )
         val matches =
             listOf(
@@ -12268,7 +12414,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10SourceSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -12283,7 +12429,7 @@ object SaveThreadDraftDraftUserMessagePartsItemVariant10SourceSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItemVariant10Source variant",
                 )
         }
     }
@@ -12319,11 +12465,13 @@ data class SaveThreadDraftDraftUserMessagePartsItemVariant10(
 
 @Serializable
 enum class SaveThreadDraftDraftUserMessagePartsItemVariant11Type {
-    @SerialName("voice") VOICE
+    @SerialName("voice") VOICE,
 }
 
 @Serializable
-data class SaveThreadDraftDraftUserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
+data class SaveThreadDraftDraftUserMessagePartsItemVariant11ClipsItem(
+    val `fileId`: String,
+)
 
 @Serializable
 data class SaveThreadDraftDraftUserMessagePartsItemVariant11(
@@ -12335,19 +12483,19 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
     KSerializer<SaveThreadDraftDraftUserMessagePartsItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItem"
+            "ai.okou.android.api.generated.SaveThreadDraftDraftUserMessagePartsItem",
         )
 
     override fun deserialize(decoder: Decoder): SaveThreadDraftDraftUserMessagePartsItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItem"
+                    "Expected JSON object for SaveThreadDraftDraftUserMessagePartsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SaveThreadDraftDraftUserMessagePartsItem"
+                    "Expected object for SaveThreadDraftDraftUserMessagePartsItem",
                 )
         val matches =
             listOf(
@@ -12447,7 +12595,7 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItem variant"
+                "Unknown or ambiguous SaveThreadDraftDraftUserMessagePartsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -12507,7 +12655,7 @@ object SaveThreadDraftDraftUserMessagePartsItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SaveThreadDraftDraftUserMessagePartsItem variant"
+                    "Unknown SaveThreadDraftDraftUserMessagePartsItem variant",
                 )
         }
     }
@@ -12596,16 +12744,18 @@ data class SaveThreadDraft(
 )
 
 @Serializable
-data class RecoveryCatalogModelsItemRunOptionsFast(val `chatGptUsageMultiplier`: Double)
+data class RecoveryCatalogModelsItemRunOptionsFast(
+    val `chatGptUsageMultiplier`: Double,
+)
 
 @Serializable
 data class RecoveryCatalogModelsItemRunOptions(
-    val `fast`: RecoveryCatalogModelsItemRunOptionsFast? = null
+    val `fast`: RecoveryCatalogModelsItemRunOptionsFast? = null,
 )
 
 @Serializable
 enum class RecoveryCatalogModelsItemPiRouteClass {
-    @SerialName("gpt-codex") GPT_CODEX
+    @SerialName("gpt-codex") GPT_CODEX,
 }
 
 @Serializable
@@ -12657,7 +12807,7 @@ enum class RecoveryModelsModelsItemSubscriptionOptionsEffortsItem {
 
 @Serializable
 enum class RecoveryModelsModelsItemSubscriptionOptionsServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
 }
 
 @Serializable
@@ -12720,11 +12870,14 @@ data class RecoveryModelsModelsItem(
     val `memberEffective`: RecoveryModelsModelsItemMemberEffective,
 )
 
-@Serializable data class RecoveryModels(val `models`: List<RecoveryModelsModelsItem>)
+@Serializable
+data class RecoveryModels(
+    val `models`: List<RecoveryModelsModelsItem>,
+)
 
 @Serializable
 enum class DefaultModelPreferenceServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
 }
 
 @Serializable
@@ -12741,7 +12894,7 @@ enum class DefaultModelPreferenceModelSettingsValueEffort {
 
 @Serializable
 data class DefaultModelPreferenceModelSettingsValue(
-    val `effort`: DefaultModelPreferenceModelSettingsValueEffort? = null
+    val `effort`: DefaultModelPreferenceModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -12753,7 +12906,7 @@ data class DefaultModelPreference(
 
 @Serializable
 enum class UpdateDefaultModelPreferenceServiceTier {
-    @SerialName("priority") PRIORITY
+    @SerialName("priority") PRIORITY,
 }
 
 @Serializable
@@ -12800,7 +12953,10 @@ data class UpdateDefaultModelPreference(
         CanonicalOptional.Absent,
 )
 
-@Serializable data class FeatureSwitches(val `effectiveSwitches`: Map<String, Boolean>)
+@Serializable
+data class FeatureSwitches(
+    val `effectiveSwitches`: Map<String, Boolean>,
+)
 
 @Serializable
 enum class RecoverySubscriptionsSubscriptionsItemType {
@@ -12870,7 +13026,9 @@ data class RecoverySubscriptionsSubscriptionsItem(
 )
 
 @Serializable
-data class RecoverySubscriptions(val `subscriptions`: List<RecoverySubscriptionsSubscriptionsItem>)
+data class RecoverySubscriptions(
+    val `subscriptions`: List<RecoverySubscriptionsSubscriptionsItem>,
+)
 
 @Serializable
 enum class RecoveryBillingStatus {
@@ -12900,7 +13058,7 @@ data class RecoveryBillingScheduledChange(
 
 @Serializable
 enum class RecoveryBillingAutoRechargeDisabledReason {
-    @SerialName("consecutive_failures") CONSECUTIVE_FAILURES
+    @SerialName("consecutive_failures") CONSECUTIVE_FAILURES,
 }
 
 @Serializable
@@ -12999,9 +13157,16 @@ data class UsagePackCredits(
 
 @Serializable data object ActivateModelAccountRequest
 
-@Serializable data class ActivatedModelAccount(val `id`: String, val `isActive`: Boolean? = null)
+@Serializable
+data class ActivatedModelAccount(
+    val `id`: String,
+    val `isActive`: Boolean? = null,
+)
 
-@Serializable data class ResetSubscriptionRequest(val `idempotencyKey`: String)
+@Serializable
+data class ResetSubscriptionRequest(
+    val `idempotencyKey`: String,
+)
 
 @Serializable
 enum class ResetSubscriptionResultOutcome {
@@ -13011,7 +13176,10 @@ enum class ResetSubscriptionResultOutcome {
     @SerialName("alreadyRedeemed") ALREADYREDEEMED,
 }
 
-@Serializable data class ResetSubscriptionResult(val `outcome`: ResetSubscriptionResultOutcome)
+@Serializable
+data class ResetSubscriptionResult(
+    val `outcome`: ResetSubscriptionResultOutcome,
+)
 
 @Serializable
 data class SessionOutputDelta(
@@ -13025,7 +13193,10 @@ data class SessionOutputDelta(
 )
 
 @Serializable(with = HistoryCatchUpRequestItemSerializer::class)
-data class HistoryCatchUpRequestItem(val item1: String, val item2: Long)
+data class HistoryCatchUpRequestItem(
+    val item1: String,
+    val item2: Long,
+)
 
 object HistoryCatchUpRequestItemSerializer : KSerializer<HistoryCatchUpRequestItem> {
     override val descriptor = ListSerializer(JsonElement.serializer()).descriptor
@@ -13049,8 +13220,8 @@ object HistoryCatchUpRequestItemSerializer : KSerializer<HistoryCatchUpRequestIt
                 listOf(
                     output.json.encodeToJsonElement(value.item1),
                     output.json.encodeToJsonElement(value.item2),
-                )
-            )
+                ),
+            ),
         )
     }
 }
@@ -13178,7 +13349,7 @@ sealed interface SendRequestVariant1UserMessagePartsItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -13189,7 +13360,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -13202,7 +13373,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(with = SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer::class)
@@ -13210,7 +13381,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -13237,12 +13408,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -13253,7 +13424,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -13302,7 +13473,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -13313,12 +13484,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -13329,12 +13500,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -13345,12 +13516,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -13361,12 +13532,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -13379,21 +13550,21 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant3Template"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant3Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant3Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -13424,7 +13595,7 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant3Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -13469,7 +13640,7 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant3Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant3Template variant",
                 )
         }
     }
@@ -13532,7 +13703,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -13544,7 +13715,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant4(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant5Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
@@ -13569,12 +13740,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant5(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant6Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant6Kind {
-    @SerialName("mcp") MCP
+    @SerialName("mcp") MCP,
 }
 
 @Serializable
@@ -13587,7 +13758,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant6(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant7Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
+    @SerialName("additional_info") ADDITIONAL_INFO,
 }
 
 @Serializable
@@ -13598,7 +13769,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant7(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant8Type {
-    @SerialName("automation") AUTOMATION
+    @SerialName("automation") AUTOMATION,
 }
 
 @Serializable
@@ -13611,17 +13782,17 @@ data class SendRequestVariant1UserMessagePartsItemVariant8(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9Type {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
+    with = SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class,
 )
 sealed interface SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
-    @SerialName("box") BOX
+    @SerialName("box") BOX,
 }
 
 @Serializable
@@ -13644,7 +13815,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
-    @SerialName("arrow") ARROW
+    @SerialName("arrow") ARROW,
 }
 
 @Serializable
@@ -13672,7 +13843,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
-    @SerialName("pen") PEN
+    @SerialName("pen") PEN,
 }
 
 @Serializable
@@ -13694,7 +13865,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -13716,7 +13887,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
-    @SerialName("highlight") HIGHLIGHT
+    @SerialName("highlight") HIGHLIGHT,
 }
 
 @Serializable
@@ -13738,7 +13909,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
-    @SerialName("redact") REDACT
+    @SerialName("redact") REDACT,
 }
 
 @Serializable
@@ -13761,21 +13932,21 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val matches =
             listOf(
@@ -13800,7 +13971,7 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -13841,7 +14012,7 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant",
                 )
         }
     }
@@ -13917,7 +14088,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10Type {
-    @SerialName("feedback") FEEDBACK
+    @SerialName("feedback") FEEDBACK,
 }
 
 @Serializable(with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer::class)
@@ -13925,7 +14096,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -13936,7 +14107,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -13948,17 +14119,18 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
+    with =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class,
 )
 sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -13987,12 +14159,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -14005,7 +14177,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -14056,7 +14228,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -14068,12 +14240,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -14086,12 +14258,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -14104,12 +14276,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -14122,12 +14294,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -14142,21 +14314,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -14187,7 +14359,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -14240,7 +14412,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant",
                 )
         }
     }
@@ -14311,7 +14483,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -14325,21 +14497,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
                 )
         val matches =
             listOf(
@@ -14358,7 +14530,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -14383,7 +14555,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant",
                 )
         }
     }
@@ -14428,7 +14600,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant10Source
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type {
-    @SerialName("mail") MAIL
+    @SerialName("mail") MAIL,
 }
 
 @Serializable
@@ -14447,7 +14619,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type {
-    @SerialName("artifact") ARTIFACT
+    @SerialName("artifact") ARTIFACT,
 }
 
 @Serializable
@@ -14462,21 +14634,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10Source> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10Source"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItemVariant10Source",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10Source {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source",
                 )
         val matches =
             listOf(
@@ -14489,7 +14661,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -14504,7 +14676,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant",
                 )
         }
     }
@@ -14540,11 +14712,13 @@ data class SendRequestVariant1UserMessagePartsItemVariant10(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant11Type {
-    @SerialName("voice") VOICE
+    @SerialName("voice") VOICE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
+data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(
+    val `fileId`: String,
+)
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant11(
@@ -14554,7 +14728,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant11(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant12Type {
-    @SerialName("model") MODEL
+    @SerialName("model") MODEL,
 }
 
 @Serializable
@@ -14574,19 +14748,19 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItem"
+            "ai.okou.android.api.generated.SendRequestVariant1UserMessagePartsItem",
         )
 
     override fun deserialize(decoder: Decoder): SendRequestVariant1UserMessagePartsItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItem",
                 )
         val matches =
             listOf(
@@ -14692,7 +14866,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -14757,7 +14931,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItem variant",
                 )
         }
     }
@@ -14935,7 +15109,11 @@ object SendRequestSerializer : KSerializer<SendRequest> {
     }
 }
 
-@Serializable data class AcceptedInput(val `threadId`: String, val `createdAt`: String? = null)
+@Serializable
+data class AcceptedInput(
+    val `threadId`: String,
+    val `createdAt`: String? = null,
+)
 
 @Serializable(with = InputStatusSerializer::class) sealed interface InputStatus
 
@@ -14955,7 +15133,7 @@ data class InputStatusVariant1Replacement(
 
 @Serializable
 enum class InputStatusVariant1Status {
-    @SerialName("consumed") CONSUMED
+    @SerialName("consumed") CONSUMED,
 }
 
 @Serializable
@@ -15105,7 +15283,10 @@ data class PersonalInstructions(
 )
 
 @Serializable
-data class UpdateInstructionsRequest(val `content`: String, val `ifVersion`: String? = null)
+data class UpdateInstructionsRequest(
+    val `content`: String,
+    val `ifVersion`: String? = null,
+)
 
 @Serializable
 enum class OrganizationRole {
@@ -15189,6 +15370,7 @@ data class UserPreferences(
     val `chatResourcesEnabledByDefault`: Boolean,
     val `theme`: UserPreferencesTheme?,
     val `colorTheme`: UserPreferencesColorTheme?,
+    val `forYouCoverId`: String?,
     val `captureNetworkBodiesRemaining`: Long,
     val `memoryInitialized`: Boolean,
 )
@@ -15264,16 +15446,24 @@ data class UpdatePreferencesRequest(
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,
     val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
+    val `forYouCoverId`: CanonicalOptional<String?> = CanonicalOptional.Absent,
     val `captureNetworkBodiesRemaining`: Long? = null,
 )
 
-@Serializable data class ApiErrorError(val `message`: String, val `code`: String)
+@Serializable
+data class ApiErrorError(
+    val `message`: String,
+    val `code`: String,
+)
 
-@Serializable data class ApiError(val `error`: ApiErrorError)
+@Serializable
+data class ApiError(
+    val `error`: ApiErrorError,
+)
 
 @Serializable
 enum class AndroidUpgradeRequiredErrorCode {
-    @SerialName("ANDROID_UPDATE_REQUIRED") ANDROID_UPDATE_REQUIRED
+    @SerialName("ANDROID_UPDATE_REQUIRED") ANDROID_UPDATE_REQUIRED,
 }
 
 @Serializable
@@ -15388,7 +15578,7 @@ enum class ChatEventsEventsItemVariant1ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant1ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant1ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -15450,7 +15640,7 @@ data class ChatEventsEventsItemVariant1(
 
 @Serializable
 enum class ChatEventsEventsItemVariant2Kind {
-    @SerialName("project_updated") PROJECT_UPDATED
+    @SerialName("project_updated") PROJECT_UPDATED,
 }
 
 @Serializable
@@ -15467,7 +15657,7 @@ enum class ChatEventsEventsItemVariant2ModelSettingsValueEffort {
 
 @Serializable
 data class ChatEventsEventsItemVariant2ModelSettingsValue(
-    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null
+    val `effort`: ChatEventsEventsItemVariant2ModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -15581,7 +15771,10 @@ object ChatEventsEventsItemSerializer : KSerializer<ChatEventsEventsItem> {
 }
 
 @Serializable
-data class ChatEvents(val `events`: List<ChatEventsEventsItem>, val `hasMore`: Boolean)
+data class ChatEvents(
+    val `events`: List<ChatEventsEventsItem>,
+    val `hasMore`: Boolean,
+)
 
 @Serializable
 enum class IndicatorsThreadsValue {
@@ -15671,7 +15864,10 @@ data class ProjectEventsEventsItem(
 )
 
 @Serializable
-data class ProjectEvents(val `events`: List<ProjectEventsEventsItem>, val `hasMore`: Boolean)
+data class ProjectEvents(
+    val `events`: List<ProjectEventsEventsItem>,
+    val `hasMore`: Boolean,
+)
 
 @Serializable
 data class HistoryCatchUp(
@@ -15749,7 +15945,7 @@ object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -15796,12 +15992,16 @@ object HistorySnapshotSerializer : KSerializer<HistorySnapshot> {
 @Serializable(with = HistoryRowsCursorSerializer::class) sealed interface HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant1(val `lastEventId`: JsonNull, val `lastSeqId`: CanonicalZero) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant1(
+    val `lastEventId`: JsonNull,
+    val `lastSeqId`: CanonicalZero,
+) : HistoryRowsCursor
 
 @Serializable
-data class HistoryRowsCursorVariant2(val `lastEventId`: String, val `lastSeqId`: Long) :
-    HistoryRowsCursor
+data class HistoryRowsCursorVariant2(
+    val `lastEventId`: String,
+    val `lastSeqId`: Long,
+) : HistoryRowsCursor
 
 object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
     override val descriptor =
@@ -15826,7 +16026,7 @@ object HistoryRowsCursorSerializer : KSerializer<HistoryRowsCursor> {
                     (field is JsonPrimitive &&
                         field.isString &&
                         Regex(
-                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                             )
                             .containsMatchIn(field.content))
                 }) &&
@@ -15868,9 +16068,15 @@ data class HistoryRows(
 )
 
 @Serializable
-data class ThreadDetail(val `lastReadAt`: String?, val `cancellationRecoveryPending`: Boolean)
+data class ThreadDetail(
+    val `lastReadAt`: String?,
+    val `cancellationRecoveryPending`: Boolean,
+)
 
-@Serializable data class ReadState(val `lastReadAt`: String?)
+@Serializable
+data class ReadState(
+    val `lastReadAt`: String?,
+)
 
 typealias RawHistoryRow = Map<String, JsonElement>
 
@@ -15888,7 +16094,7 @@ enum class ChatArchiveChatThreadsItemModelSettingsValueEffort {
 
 @Serializable
 data class ChatArchiveChatThreadsItemModelSettingsValue(
-    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null
+    val `effort`: ChatArchiveChatThreadsItemModelSettingsValueEffort? = null,
 )
 
 @Serializable
@@ -15931,7 +16137,10 @@ data class ChatArchiveChatThreadsItem(
     val `cloudBrowserEnabled`: Boolean? = null,
 )
 
-@Serializable data class ChatArchive(val `chatThreads`: List<ChatArchiveChatThreadsItem>)
+@Serializable
+data class ChatArchive(
+    val `chatThreads`: List<ChatArchiveChatThreadsItem>,
+)
 
 @Serializable
 data class ProjectArchiveProjectsItem(
@@ -15954,7 +16163,7 @@ sealed interface ConnectorAccountDefaultsQuery
 
 @Serializable
 enum class ConnectorAccountDefaultsQueryVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -15965,7 +16174,7 @@ data class ConnectorAccountDefaultsQueryVariant1(
 
 @Serializable
 enum class ConnectorAccountDefaultsQueryVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -15982,7 +16191,7 @@ object ConnectorAccountDefaultsQuerySerializer : KSerializer<ConnectorAccountDef
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountDefaultsQuery"
+                    "Expected JSON object for ConnectorAccountDefaultsQuery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -15998,7 +16207,7 @@ object ConnectorAccountDefaultsQuerySerializer : KSerializer<ConnectorAccountDef
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorAccountDefaultsQuery variant"
+                "Unknown or ambiguous ConnectorAccountDefaultsQuery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -16036,12 +16245,12 @@ sealed interface ConnectorAccountsQuery
 
 @Serializable
 enum class ConnectorAccountsQueryVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
 enum class ConnectorAccountsQueryVariant1IncludeScopeMismatch {
-    @SerialName("true") TRUE
+    @SerialName("true") TRUE,
 }
 
 @Serializable
@@ -16056,7 +16265,7 @@ data class ConnectorAccountsQueryVariant1(
 
 @Serializable
 enum class ConnectorAccountsQueryVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -16113,7 +16322,7 @@ object ConnectorAccountsQuerySerializer : KSerializer<ConnectorAccountsQuery> {
 
 @Serializable
 enum class ConnectorAccountQueryVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -16124,7 +16333,7 @@ data class ConnectorAccountQueryVariant1(
 
 @Serializable
 enum class ConnectorAccountQueryVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -16177,7 +16386,7 @@ sealed interface ConnectorAccountImpactQuery
 
 @Serializable
 enum class ConnectorAccountImpactQueryVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -16188,7 +16397,7 @@ data class ConnectorAccountImpactQueryVariant1(
 
 @Serializable
 enum class ConnectorAccountImpactQueryVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -16205,7 +16414,7 @@ object ConnectorAccountImpactQuerySerializer : KSerializer<ConnectorAccountImpac
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorAccountImpactQuery"
+                    "Expected JSON object for ConnectorAccountImpactQuery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -16257,7 +16466,7 @@ sealed interface ConnectorOauthCompletionQuery
 
 @Serializable
 enum class ConnectorOauthCompletionQueryVariant1Kind {
-    @SerialName("builtin") BUILTIN
+    @SerialName("builtin") BUILTIN,
 }
 
 @Serializable
@@ -16268,7 +16477,7 @@ data class ConnectorOauthCompletionQueryVariant1(
 
 @Serializable
 enum class ConnectorOauthCompletionQueryVariant2Kind {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
@@ -16285,7 +16494,7 @@ object ConnectorOauthCompletionQuerySerializer : KSerializer<ConnectorOauthCompl
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for ConnectorOauthCompletionQuery"
+                    "Expected JSON object for ConnectorOauthCompletionQuery",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
@@ -16301,7 +16510,7 @@ object ConnectorOauthCompletionQuerySerializer : KSerializer<ConnectorOauthCompl
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous ConnectorOauthCompletionQuery variant"
+                "Unknown or ambiguous ConnectorOauthCompletionQuery variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -16356,7 +16565,7 @@ data class ArtifactCatalogQuery(
 
 @Serializable
 enum class ArtifactDetailQuerySourceKind {
-    @SerialName("shared-thread") SHARED_THREAD
+    @SerialName("shared-thread") SHARED_THREAD,
 }
 
 @Serializable
@@ -16373,20 +16582,27 @@ enum class ResolveArtifactReferenceQueryKind {
 }
 
 @Serializable
-data class ResolveArtifactReferenceQuery(val `kind`: ResolveArtifactReferenceQueryKind? = null)
+data class ResolveArtifactReferenceQuery(
+    val `kind`: ResolveArtifactReferenceQueryKind? = null,
+)
 
 @Serializable
 enum class WorkflowsQueryScope {
-    @SerialName("workspace") WORKSPACE
+    @SerialName("workspace") WORKSPACE,
 }
 
-@Serializable data class WorkflowsQuery(val `scope`: WorkflowsQueryScope? = null)
+@Serializable
+data class WorkflowsQuery(
+    val `scope`: WorkflowsQueryScope? = null,
+)
 
 @Serializable(with = HistoryRowsQuerySerializer::class) sealed interface HistoryRowsQuery
 
 @Serializable
-data class HistoryRowsQueryVariant1(val `sinceSeqId`: CanonicalZero, val `limit`: Double) :
-    HistoryRowsQuery
+data class HistoryRowsQueryVariant1(
+    val `sinceSeqId`: CanonicalZero,
+    val `limit`: Double,
+) : HistoryRowsQuery
 
 @Serializable
 data class HistoryRowsQueryVariant2(

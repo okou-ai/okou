@@ -686,7 +686,7 @@ extension XCTestCase {
     )
   }
 
-  fileprivate func session(_ configure: (inout AuthenticationHTTPFixture.State) -> Void = { _ in })
+  func session(_ configure: (inout AuthenticationHTTPFixture.State) -> Void = { _ in })
     async throws -> (AuthenticationHTTPFixture, AuthenticationService)
   {
     let provider = try AuthenticationHTTPFixture()
@@ -748,7 +748,7 @@ extension XCTestCase {
     return (refresh, observedRequest)
   }
 
-  fileprivate func assertToken(_ authentication: AuthenticationService) async throws {
+  func assertToken(_ authentication: AuthenticationService) async throws {
     let workspace = try XCTUnwrap(authentication.activeWorkspaceID)
     let scope = try XCTUnwrap(authentication.scopeID)
     let token = try await authentication.accessToken(workspaceID: workspace, scopeID: scope)

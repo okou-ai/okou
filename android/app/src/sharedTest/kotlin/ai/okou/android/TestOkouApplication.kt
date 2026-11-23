@@ -155,7 +155,7 @@ open class TestOkouApplication : OkouApplication() {
                     ?: ai.okou.android.api.generated.DefaultModelPreference(null, null, emptyMap())
 
             override suspend fun updateDefaultModelPreference(
-                update: ai.okou.android.api.generated.UpdateDefaultModelPreference
+                update: ai.okou.android.api.generated.UpdateDefaultModelPreference,
             ) = (fixture ?: canonical.value).updateDefaultModelPreference(update)
 
             override suspend fun featureSwitches() =
@@ -181,7 +181,7 @@ open class TestOkouApplication : OkouApplication() {
             override suspend fun preferences() = stored()
 
             override suspend fun updatePreferences(
-                update: UpdatePreferencesRequest
+                update: UpdatePreferencesRequest,
             ): UserPreferences {
                 val updated =
                     stored()
@@ -280,4 +280,4 @@ fun testOrganization(workspace: String = "org-a") =
 fun testPreferences() = Json.decodeFromString<UserPreferences>(TEST_PREFERENCES)
 
 const val TEST_PREFERENCES =
-    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""
+    """{"timezone":"UTC","locale":"en-US","supportedLocales":["en-US","pt-BR","ja-JP","ko-KR","id-ID","de-DE","es-ES","it-IT","fr-FR","hi-IN","zh-Hans","zh-Hant"],"sendMode":"enter","cloudBrowserEnabledByDefault":false,"chatResourcesEnabledByDefault":false,"theme":"system","colorTheme":"default","forYouCoverId":null,"captureNetworkBodiesRemaining":0,"memoryInitialized":true}"""

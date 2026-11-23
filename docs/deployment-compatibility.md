@@ -34,18 +34,17 @@ that App can make users reload into the same unsupported build. First deploy
 compatible API and App changes, then raise the floor and remove the old contract
 in a later cleanup release.
 
-Native iOS has an independent floor, enforced by the same API check. iOS
-clients advertise `X-Client-Type: iOS` (exact, case-sensitive) and their
-marketing version in `X-Client-Version`. The API rejects a parseable version
-below the floor in
-[`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-with `426 Upgrade Required`, `Cache-Control: no-store`, and the error envelope
-`{ "error": { "code": "IOS_UPDATE_REQUIRED", "message": "..." }, "minimumSupportedVersion": "x.y.z" }`,
-which iOS treats as a blocking update state. A `null` floor disables iOS
-enforcement. Like the web floor, it never rejects a missing or unparseable
-version, so builds that predate the client headers cannot be excluded. The floor
-must be a stable `x.y.z` version and changes only through a reviewed PR and an
-API release, never through environment configuration.
+Native iOS uses its marketing version in `X-Client-Version`, exact
+`X-Client-Type: iOS`, and `X-Client-Distribution: app-store|testflight|unknown`.
+The API enforces the corresponding floor in
+[`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json).
+Below it, the API returns `426 Upgrade Required`, `Cache-Control: no-store`, and
+`{ "error": { "code": "IOS_UPDATE_REQUIRED", "message": "..." }, "minimumSupportedVersion": "x.y.z" }`.
+Unknown distributors follow the App Store floor. Before the first public
+release that floor is null, and older clients without a distribution header
+retain the pre-migration cutoff of 0.51.12. Missing or unparsable versions
+keep their prior behavior. Request logs record the distribution, selected floor,
+client version and HTTP status.
 
 ### Backend
 
@@ -402,26 +401,33 @@ part of the compatibility comparison. The global `426` envelope is defined in
 and included for every iOS route. Error responses cannot be proven by a success
 body transform. The same two-proof policy applies independently to iOS:
 
-- **(A) Floor raise.** Raise
-  [`ios-client-compatibility.json`](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-  above the base branch floor, never above the verified TestFlight version.
-  Review must confirm that the selected build already tolerates the new shape.
+- **(A) App Store floor raise.** Raise `appStoreMinimumSupportedVersion`
+  in the source-controlled iOS policy. Verify the exact new minimum was
+  publicly released and every supported storefront offers that version
+  or the same newer public replacement. Review must verify that the client
+  at the new floor and any build under review tolerate the changed contract.
+  Enabling the first App Store floor is a separate change from breaking APIs.
 - **(B) Response transform.** Register the same method, path and `2xx` status in
-  [`client-transforms/ios.ts`](../turbo/packages/api-contracts/src/client-transforms/ios.ts),
-  with `maxVersion: null` or at least the verified published iOS version. Mount
-  each transform on its owning route; the production route-registration check
-  verifies the aggregate inventory against runtime wiring. Selection uses exact
-  `X-Client-Type: iOS` and stable versions, with inclusive `v <= maxVersion`.
-  Request or route changes still require proof A or preserving the old contract.
+  [`client-transforms/ios.ts`](../turbo/packages/api-contracts/src/client-transforms/ios.ts).
+  Use `maxVersion: null` or cover both the verified public App Store version
+  and any review candidate. Mount the transform on its owning route.
+  Request or route changes require proof A or preservation of the old API.
 
-The TestFlight oracle reads GitHub publication evidence with read-only contents
-and Actions permissions, without Apple signing credentials in PR jobs. A stable
-`ios-v*` release must match `MARKETING_VERSION` at its immutable commit and a
-main-branch release workflow at that commit whose `publish-ios-testflight` job
-and internal-availability verification step both succeeded. Upload-only tags,
-failed publication, and verification older than TestFlight's 90-day build
-lifetime do not establish availability. If this evidence cannot be read, a floor
-raise or a bounded transform proof fails; unrelated PRs remain unaffected.
+TestFlight may have a higher minimum. Both floors only move up, with separate
+[protected availability checks](../ios/TESTFLIGHT.md#verify-a-build-for-a-compatibility-policy-change).
+If the online iOS inventory is unavailable, the check uses the base branch
+contract when available. A TestFlight check or floor increase never proves an API contraction. Without
+public evidence, an unbounded response transform can still preserve compatibility.
+
+Before submitting an App Store build, run the TestFlight verification and
+register its exact `reviewCandidate` (`version`, `build`, `commit`) in a policy
+PR. With the actual build, verify production sign-in, sending a message and
+viewing the result. Keep this lock in effect for the duration of review. Both
+minimums are capped at the review version, including in a change that removes
+or replaces the lock. On public release verify every launch storefront and
+enable or raise the App Store floor in a separate PR. To abandon a review,
+withdraw it in App Store Connect before clearing the lock. API deployment
+activates a reviewed policy change.
 
 Lowered or removed floors and unreachable transforms fail even without schema
 findings. The base branch's already-proven findings remain inherited warnings,

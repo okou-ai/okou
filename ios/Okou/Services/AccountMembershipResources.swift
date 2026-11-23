@@ -5,6 +5,7 @@ import Foundation
 /// Account/session reads survive workspace switches, but never identity replacement.
 @MainActor
 final class AccountMembershipResources {
+  let setup = FirstWorkspaceSetup()
   let sessionID: String
   let userID: String
   var scopeID: String { "\(userID):\(sessionID)" }

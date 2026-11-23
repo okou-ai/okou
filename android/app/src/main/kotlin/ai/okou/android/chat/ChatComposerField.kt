@@ -68,7 +68,6 @@ fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
-    onInputFocusChanged: (Boolean) -> Unit = {},
     offline: Boolean = false,
     beforeSend: () -> Unit = {},
 ) {
@@ -127,7 +126,7 @@ fun ChatComposerField(
                 end = horizontalInset,
                 bottom = bottomInset,
             )
-            .testTag("chat_composer")
+            .testTag("chat_composer"),
     ) {
         val textSpace = maxHeight - cardVerticalPadding * 2
         val availableTextHeight =
@@ -161,10 +160,7 @@ fun ChatComposerField(
                     modifier =
                         Modifier.weight(1f)
                             .heightIn(min = minimumTextHeight, max = availableTextHeight)
-                            .onFocusChanged {
-                                inputFocused = it.isFocused
-                                onInputFocusChanged(it.isFocused)
-                            }
+                            .onFocusChanged { inputFocused = it.isFocused }
                             .testTag("message_input")
                             .semantics { contentDescription = label },
                     enabled = state.journal != null,
@@ -296,8 +292,8 @@ private fun ComposerFeedback(
                 stringResource(
                     if (state.sync(target) == ComposerSync.Unsupported)
                         R.string.composer_sync_unsupported
-                    else R.string.composer_sync_failed
-                )
+                    else R.string.composer_sync_failed,
+                ),
             )
             TextButton(onClick = { model.retrySync(target) }, colors = actionColors) {
                 Text(stringResource(R.string.composer_sync_retry))
@@ -315,36 +311,19 @@ private fun ComposerFeedback(
             Text(stringResource(R.string.composer_restore_draft))
         }
     }
-    if (entry.pending != null) {
+    val busy = target.key in state.busy
+    if (entry.pending != null && (!busy || target.key in state.checking)) {
         FlowRow {
             TextButton(
                 onClick = { model.observe(target) },
-                enabled = target.key !in state.busy,
+                enabled = !busy,
                 colors = actionColors,
             ) {
                 Text(stringResource(R.string.composer_check))
             }
-            TextButton(
-                onClick = { model.retry(target) },
-                enabled = target.key !in state.busy,
-                colors = actionColors,
-            ) {
+            TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
                 Text(stringResource(R.string.composer_retry))
             }
-        }
-    }
-    entry.receipt?.let {
-        if (it.eventId !in state.receiptMessages)
-            Text(
-                stringResource(it.disposition.label()),
-                modifier = Modifier.testTag("send_receipt"),
-            )
-        TextButton(
-            onClick = { model.observe(target) },
-            enabled = target.key !in state.busy,
-            colors = actionColors,
-        ) {
-            Text(stringResource(R.string.composer_check))
         }
     }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
@@ -352,15 +331,3 @@ private fun ComposerFeedback(
     if (state.persistence == ComposerPersistence.Pending)
         Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }
-
-internal fun TextDisposition.label() =
-    when (this) {
-        TextDisposition.Accepted -> R.string.composer_accepted
-        TextDisposition.Queued -> R.string.history_queued
-        TextDisposition.Consumed -> R.string.composer_consumed
-        TextDisposition.Completed -> R.string.history_completed
-        TextDisposition.Failed -> R.string.history_run_failed
-        TextDisposition.Cancelled -> R.string.history_cancelled
-        TextDisposition.Rejected -> R.string.history_rejected
-        TextDisposition.Revoked -> R.string.composer_revoked
-    }

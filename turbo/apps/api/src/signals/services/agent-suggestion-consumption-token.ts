@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   suggestionSchema,
   type Suggestion,
@@ -41,12 +41,19 @@ function consumptionSignature(owner: Owner, suggestion: Suggestion): Buffer {
     .digest();
 }
 
+export function customSuggestionContextVersion(suggestion: Suggestion): string {
+  return createHash("sha256")
+    .update(JSON.stringify(suggestion.content.customOption.draft))
+    .digest("hex");
+}
+
 export function withSuggestionConsumeToken(
   owner: Owner,
   suggestion: Suggestion,
 ) {
   return {
     ...suggestion,
+    customContextVersion: customSuggestionContextVersion(suggestion),
     consumeToken: consumptionSignature(owner, suggestion).toString("hex"),
   };
 }

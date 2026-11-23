@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.21...runner-supervisor-v0.28.0) (2026-11-23)
+
+
+### Features
+
+* **runner:** accept gzip direct dispatch bodies ([#50128](https://github.com/okou-ai/okou/issues/50128)) ([dcb3ce1](https://github.com/okou-ai/okou/commit/dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290))
+
+## [0.27.21](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.20...runner-supervisor-v0.27.21) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
+## [0.27.20](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.19...runner-supervisor-v0.27.20) (2026-11-23)
+
+## [0.27.19](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.18...runner-supervisor-v0.27.19) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** measure dispatch body frame latency ([#50088](https://github.com/okou-ai/okou/issues/50088)) ([33b2a66](https://github.com/okou-ai/okou/commit/33b2a66c0f79129a3fe8e9940672014f3b2f826a))
+
 ## [0.27.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.17...runner-supervisor-v0.27.18) (2026-11-22)
 
 

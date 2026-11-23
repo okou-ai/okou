@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Ejecución del chat finalizada</string>
     <string name="workflow_clear_search">Borrar búsqueda</string>
     <string name="workflow_connect_provider">Conecta %1$s para activar esta regla.</string>
-    <string name="workflow_connection_unavailable">No se pudieron abrir las conexiones.</string>
     <string name="workflow_create_uncertain">No se pudo confirmar la creación. Cierra el editor y revisa las reglas antes de volver a intentarlo.</string>
     <string name="workflow_creation_prompt">Ayúdame a crear un flujo de trabajo privado. Usa la habilidad workflow-setup. Pregúntame qué tarea quiero repetir y muéstrame las instrucciones para confirmarlas antes de guardar. Crea una automatización solo si te lo pido.</string>
     <string name="workflow_daily">Cada día</string>
@@ -111,4 +110,17 @@
     <string name="workflow_rule_change_failed">No se pudo cambiar esta regla.</string>
     <string name="workflow_rule_network_failed">No se pudo cambiar esta regla. Comprueba tu conexión e inténtalo de nuevo.</string>
     <string name="workflow_write_conflict">Este flujo de trabajo cambió durante el guardado. Tus cambios se conservan.</string>
+    <string name="workflow_history_earlier">Ver ejecuciones anteriores</string>
+    <string name="workflow_history_event">Evento</string>
+    <string name="workflow_history_failed">No se pudo cargar el historial de ejecuciones</string>
+    <string name="workflow_history_loading">Cargando el historial de ejecuciones…</string>
+    <string name="workflow_history_offline">Conéctate para cargar el historial de ejecuciones</string>
+    <string name="workflow_history_open_chat">Abrir el chat de origen</string>
+    <string name="workflow_history_unavailable">Historial de ejecuciones no disponible</string>
+    <string name="workflow_run_pending">Pendiente</string>
+    <string name="workflow_run_running">En ejecución</string>
+    <string name="workflow_run_timeout">Tiempo agotado</string>
+    <string name="workflow_history_trigger_unavailable">Activador no disponible</string>
+    <string name="workflow_history_scheduled">Activación programada</string>
+    <string name="workflow_history_manual">Ejecución manual</string>
 </resources>

@@ -93,14 +93,12 @@
     <string name="composer_local_failed">No se pudieron guardar los cambios del borrador en este dispositivo.</string>
     <string name="composer_unconfirmed">La entrega del mensaje no está confirmada.</string>
     <string name="composer_sending">Enviando…</string>
+    <string name="composer_checking_delivery">Comprobando la entrega…</string>
     <string name="composer_check">Comprobar entrega</string>
     <string name="composer_retry">Reintentar el mismo mensaje</string>
     <string name="composer_not_observed">El mensaje aún no es visible. La entrega sigue sin confirmar.</string>
     <string name="composer_request_failed">La solicitud falló. El borrador y el mensaje pendiente se conservan.</string>
     <string name="composer_saving">Guardando borrador en este dispositivo…</string>
-    <string name="composer_accepted">Mensaje aceptado; en espera de procesamiento.</string>
-    <string name="composer_consumed">La entrada se ha recogido; se desconoce el estado actual de ejecución.</string>
-    <string name="composer_revoked">Mensaje revocado</string>
     <string name="updates_title">Actualizaciones de la aplicación</string>
     <string name="updates_installed">Versión actual: %1$s</string>
     <string name="updates_current">Tienes la versión más reciente</string>

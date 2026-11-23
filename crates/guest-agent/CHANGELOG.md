@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.27](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.26...guest-agent-v0.110.27) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner:** prewarm committed memory archives ([#50072](https://github.com/okou-ai/okou/issues/50072)) ([9c7ce5a](https://github.com/okou-ai/okou/commit/9c7ce5ab35704edc606231b1976ab826fa8e4df3))
+
 ## [0.110.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.25...guest-agent-v0.110.26) (2026-11-23)
 
 

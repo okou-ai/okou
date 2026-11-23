@@ -226,6 +226,17 @@ export const workflowsDetailContract: ClientDescriptor<
       404: true,
     },
   },
+  runHistory: {
+    method: "GET",
+    path: "/api/workflows/:workflowId/run-history",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   update: {
     method: "PATCH",
     path: "/api/workflows/:workflowId",

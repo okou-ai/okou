@@ -140,7 +140,7 @@ class AssistantRecoveryModelTest {
                     owners.put("composer", composer)
                     val thread =
                         Json.decodeFromString<ChatArchive>(
-                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}"""
+                                """{"chatThreads":[{"id":"$CHAT_PERSONAL","projectId":null,"title":"Thread","sortAt":"$CHAT_DATE","createdAt":"$CHAT_DATE","updatedAt":"$CHAT_DATE","pinnedAt":null,"archived":false,"renamedAt":null,"selectedModel":"gpt-recovery","serviceTier":"priority"}]}""",
                             )
                             .chatThreads
                             .single()
@@ -167,7 +167,7 @@ class AssistantRecoveryModelTest {
                             retired,
                             controls,
                             list,
-                        )
+                        ),
                     )
                 } finally {
                     owners.clear()
@@ -250,7 +250,7 @@ class AssistantRecoveryModelTest {
                         reads.incrementAndGet() == 2
                 ) {
                     jsonResponse(
-                            """{"error":{"code":"UNAVAILABLE","message":"Final preflight failed"}}"""
+                            """{"error":{"code":"UNAVAILABLE","message":"Final preflight failed"}}""",
                         )
                         .setResponseCode(503)
                 } else previous(request)
@@ -500,7 +500,7 @@ class AssistantRecoveryModelTest {
                 if (path.getOrNull(3) == "inputs") {
                     val id = path[4]
                     jsonResponse(
-                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":3,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}"""
+                        """{"threadId":"$CHAT_PERSONAL","eventId":"$id","input":{"eventId":"$id","seqId":3,"createdAt":"$CHAT_DATE"},"replacement":null,"status":"queued","runId":null,"terminal":null}""",
                     )
                 } else previous(request)
             }
@@ -576,11 +576,11 @@ class AssistantRecoveryModelTest {
                     .persist(
                         api.identity,
                         ComposerJournal(
-                            entries = mapOf(target.key to ComposerEntry(text = "Old draft"))
+                            entries = mapOf(target.key to ComposerEntry(text = "Old draft")),
                         ),
                     )
                     .await()
-            }
+            },
         ) { f ->
             assertEquals(3, f.journal.load(f.api.identity).journal.format)
             f.composer.recover(target, RecoveryApiFixture.FAILURE)
@@ -603,7 +603,7 @@ class AssistantRecoveryModelTest {
             withRecovery(
                 before = { _, remote, _ ->
                     remote.set(RecoveryApiFixture.input(), RecoveryApiFixture.failure(reason))
-                }
+                },
             ) { f ->
                 val data = f.recovery.uiState.value.data!!
                 assertFalse(data.classification.canContinue)
@@ -628,7 +628,7 @@ class AssistantRecoveryModelTest {
                     RecoveryApiFixture.input(2),
                     RecoveryApiFixture.failure(seq = 3),
                 )
-            }
+            },
         ) { f ->
             val previous = f.api.commandResponse
             val hold = AtomicBoolean(true)
@@ -826,7 +826,7 @@ class AssistantRecoveryModelTest {
                     CHAT_PERSONAL,
                     rows,
                     HistoryCursor(rows.last().id, rows.last().seqId),
-                )
+                ),
             )
         }
         val input = RecoveryApiFixture.input()
@@ -869,7 +869,7 @@ class AssistantRecoveryModelTest {
                 input,
                 failure,
                 historyEventWire("answer", 3, payload = """{"content":"Later answer"}"""),
-            )
+            ),
         )
     }
 
@@ -886,11 +886,11 @@ class AssistantRecoveryModelTest {
             )) {
             assertFalse(
                 classifyFailure(AssistantFailure.Run("id", reason), RecoveryFramework.Codex)
-                    .canContinue
+                    .canContinue,
             )
         }
         assertTrue(
-            classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue
+            classifyFailure(AssistantFailure.Run("id", "provider_server_error"), null).canContinue,
         )
         val model =
             classifyFailure(

@@ -163,7 +163,7 @@ internal fun WorkspaceSearchField(
             .then(outline)
             .then(
                 if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
-                else Modifier
+                else Modifier,
             )
             .padding(start = 12.dp, end = if (hasTrailingAction) 0.dp else 12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -198,7 +198,7 @@ internal fun WorkspaceListToolbar(
                 if (avatar == null) {
                     Box(
                         Modifier.matchParentSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                     )
                 } else avatar()
             }
@@ -397,7 +397,7 @@ internal fun WorkspaceToolbarActions(
                                     enabled = selectFilter != null,
                                 ) {
                                     menu = WorkspaceMenuPage.Filter
-                                }
+                                },
                             )
                         }
                         add(
@@ -408,7 +408,7 @@ internal fun WorkspaceToolbarActions(
                             ) {
                                 menu = null
                                 openSettings?.invoke(restoreSettingsAnchor)
-                            }
+                            },
                         )
                     } else {
                         add(
@@ -419,7 +419,7 @@ internal fun WorkspaceToolbarActions(
                             ) {
                                 closeMenu()
                                 markAllRead()
-                            }
+                            },
                         )
                         for (choice in ChatListFilter.entries) {
                             add(
@@ -429,7 +429,7 @@ internal fun WorkspaceToolbarActions(
                                 ) {
                                     selectFilter?.invoke(choice)
                                     closeMenu()
-                                }
+                                },
                             )
                         }
                     }
@@ -613,7 +613,7 @@ private fun WorkspaceMenuItems(
             .focusRequester(popupFocus)
             .focusTarget()
             .verticalScroll(rememberScrollState())
-            .padding(7.dp)
+            .padding(7.dp),
     ) {
         val row: @Composable (Int) -> Unit = { index ->
             WorkspaceMenuRow(

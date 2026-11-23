@@ -50,11 +50,7 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({
-  sidebar = false,
-  shareRows = false,
-  groupedActions = false,
-} = {}) {
+async function openSite({ shareRows = false, groupedActions = false } = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -81,15 +77,12 @@ async function openSite({
     path: "/artifacts",
     host: "app.okou.ai",
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
       [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
     },
   });
   click(await findArtifactAction("Weekly report"));
-  await screen.findByTestId(
-    sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
-  );
+  await screen.findByTestId("artifact-sidebar");
 }
 
 beforeEach(() => {
@@ -102,7 +95,7 @@ beforeEach(() => {
   });
 });
 
-async function openShare(label = "Share") {
+async function openShare(label = "Share artifact") {
   await waitFor(() => {
     expect(queryButtonByName(label)).toBeDefined();
   });
@@ -129,7 +122,7 @@ test("opening a site preloads its share URL and shows a skeleton until the curre
   await requested.promise;
   await openShare();
   try {
-    const menu = await screen.findByRole("dialog", { name: "Share" });
+    const menu = await screen.findByRole("dialog", { name: "Share artifact" });
     expect(menu.querySelector('[aria-busy="true"]')).toBeInTheDocument();
   } finally {
     response.resolve();
@@ -192,7 +185,7 @@ test("published sites customize their address in Share and manually copy the sav
   expect(getButtonByName("Customize URL")).toHaveFocus();
   await waitFor(() => {
     expect(
-      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+      screen.getByTestId("artifact-sidebar").querySelector("iframe"),
     ).toHaveAttribute("src", "https://launch-report.okou.app/");
     expect(getButtonByName("Copy link")).toBeEnabled();
   });
@@ -278,7 +271,7 @@ test("on the free plan, Download opens the plans without fetching the site", asy
     return respond(404, { error: { code: "NOT_FOUND", message: "missing" } });
   });
   await openSite();
-  click(getButtonByName("Download options"));
+  click(getButtonByName("Download artifact"));
   const menu = await screen.findByRole("menu");
   const download = queryAllByRoleFast("menuitem", menu).find((item) => {
     return item.textContent?.startsWith("Download");
@@ -418,7 +411,7 @@ test("a failed save retains the draft and the current address", async () => {
   expect(screen.getByLabelText("Website URL")).toHaveValue("launch-report");
   expect(getButtonByName("Save")).toBeEnabled();
   expect(
-    screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    screen.getByTestId("artifact-sidebar").querySelector("iframe"),
   ).toHaveAttribute("src", site.url);
 });
 
@@ -482,7 +475,7 @@ test("restricted Site previews share the stable address", async () => {
   await openSite();
   await waitFor(() => {
     expect(
-      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+      screen.getByTestId("artifact-sidebar").querySelector("iframe"),
     ).toHaveAttribute("src", temporary);
   });
   await openShare();
@@ -492,7 +485,7 @@ test("restricted Site previews share the stable address", async () => {
     return expect(clipboard.writes).toStrictEqual([site.url]);
   });
   expect(
-    screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+    screen.getByTestId("artifact-sidebar").querySelector("iframe"),
   ).toHaveAttribute("src", temporary);
 });
 
@@ -506,7 +499,7 @@ test("Public Site previews render the anonymous URL", async () => {
   await openSite();
   await waitFor(() => {
     expect(
-      screen.getByTestId("artifact-dialog-site-frame").querySelector("iframe"),
+      screen.getByTestId("artifact-sidebar").querySelector("iframe"),
     ).toHaveAttribute("src", site.url);
   });
 });
@@ -541,48 +534,41 @@ test("Unavailable banner settings stay unknown when copying the site link", asyn
   expect(artifactActions(telemetry)).toStrictEqual([
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: "unknown",
     },
   ]);
 });
 
-test.each([false, true])(
-  "the grouped toolbar does not wait for banner settings (sidebar=%s)",
-  async (sidebar) => {
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    const response = context.mocks.deferred<void>();
-    context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
-      await response.promise;
-      return respond(200, { siteId, showBanner: false, revision: null });
-    });
+test("the grouped toolbar does not wait for banner settings", async () => {
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
+    await response.promise;
+    return respond(200, { siteId, showBanner: false, revision: null });
+  });
 
-    await openSite({ sidebar, groupedActions: true });
-    const preview = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
-    const shareLabel = sidebar ? "Share artifact" : "Share";
-    await waitFor(() => {
-      expect(getButtonByName(shareLabel, preview)).toBeVisible();
-    });
-    expect(getButtonByName(shareLabel, preview)).toBeEnabled();
-    expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      getButtonByName(sidebar ? "Close artifact" : "Close", preview),
-    ).toBeEnabled();
-    await openShare(shareLabel);
-    click(getButtonByName("Copy link"));
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([site.url]);
-    });
+  await openSite({ groupedActions: true });
+  const preview = await screen.findByTestId("artifact-sidebar");
+  const shareLabel = "Share artifact";
+  await waitFor(() => {
+    expect(getButtonByName(shareLabel, preview)).toBeVisible();
+  });
+  expect(getButtonByName(shareLabel, preview)).toBeEnabled();
+  expect(within(preview).queryByRole("status")).not.toBeInTheDocument();
+  expect(getButtonByName("Close artifact", preview)).toBeEnabled();
+  await openShare(shareLabel);
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
 
-    response.resolve();
-    await expect(
-      screen.findByRole("switch", { name: "Show Okou banner" }),
-    ).resolves.not.toBeChecked();
-  },
-);
+  response.resolve();
+  await expect(
+    screen.findByRole("switch", { name: "Show Okou banner" }),
+  ).resolves.not.toBeChecked();
+});
 
 test("Copy link snapshots a pending banner as unknown without delaying the copy", async () => {
   const telemetry = context.mocks.posthog();
@@ -605,7 +591,7 @@ test("Copy link snapshots a pending banner as unknown without delaying the copy"
   expect(artifactActions(telemetry)).toStrictEqual([
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: "unknown",
     },
@@ -623,13 +609,13 @@ test("Copy link snapshots a pending banner as unknown without delaying the copy"
   expect(artifactActions(telemetry)).toStrictEqual([
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: "unknown",
     },
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: false,
     },
@@ -653,7 +639,7 @@ test("Copy link records click intent even when the clipboard write fails", async
   expect(artifactActions(telemetry)).toStrictEqual([
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: true,
     },
@@ -688,17 +674,12 @@ test("Copy link succeeds even when the analytics SDK throws", async () => {
   expect(clipboard.writes).toStrictEqual([site.url]);
 });
 
-test.each([
-  { sidebar: false, shareRows: false },
-  { sidebar: true, shareRows: false },
-  { sidebar: false, shareRows: true },
-  { sidebar: true, shareRows: true },
-])(
-  "Copy link records the confirmed banner preference (sidebar: $sidebar, rows: $shareRows)",
-  async ({ sidebar, shareRows }) => {
+test.each([{ shareRows: false }, { shareRows: true }])(
+  "Copy link records the confirmed banner preference (rows: $shareRows)",
+  async ({ shareRows }) => {
     const telemetry = context.mocks.posthog();
     const clipboard = context.mocks.browser.clipboardWriteText();
-    const surface = sidebar ? "sidebar" : "dialog";
+    const surface = "sidebar";
     let banner = { siteId, showBanner: true, revision: null as string | null };
     context.mocks.api(hostContract.siteBanner, ({ respond }) => {
       return respond(200, banner);
@@ -712,8 +693,8 @@ test.each([
       };
       return respond(200, banner);
     });
-    await openSite({ sidebar, shareRows });
-    await openShare(sidebar ? "Share artifact" : "Share");
+    await openSite({ shareRows });
+    await openShare("Share artifact");
     const toggle = await screen.findByRole("switch", {
       name: "Show Okou banner",
     });
@@ -826,7 +807,7 @@ test("a stale banner edit preserves the confirmed preference when copying", asyn
   expect(artifactActions(telemetry)).toStrictEqual([
     {
       action: "banner_share",
-      surface: "dialog",
+      surface: "sidebar",
       target: "hosted_site",
       show_banner: true,
     },
@@ -872,95 +853,80 @@ async function expectPermission(name: string) {
   });
 }
 
-test.each([false, true])(
-  "owners change website visibility in the preview (sidebar: %s)",
-  async (sidebar) => {
-    mockSiteAlias();
-    let status: SiteVisibilityStatus = {
+test("owners change website visibility in the preview", async () => {
+  mockSiteAlias();
+  let status: SiteVisibilityStatus = {
+    siteId,
+    visibility: "private",
+    revision: null,
+  };
+  const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(
+      200,
+      status.visibility === "public"
+        ? { url: site.url, expiresAt: null }
+        : { url: temporary, expiresAt: "2099-01-01T00:00:00Z" },
+    );
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(200, status);
+  });
+  context.mocks.api(hostContract.updateSiteVisibility, ({ body, respond }) => {
+    if (body.expectedRevision !== status.revision) {
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Website visibility changed" },
+      });
+    }
+    status = {
       siteId,
-      visibility: "private",
-      revision: null,
+      visibility: body.visibility,
+      revision: crypto.randomUUID(),
     };
-    const temporary = `https://pv-${"c".repeat(48)}.okou.app/`;
-    context.mocks.api(hostContract.sitePreview, ({ respond }) => {
-      return respond(
-        200,
-        status.visibility === "public"
-          ? { url: site.url, expiresAt: null }
-          : { url: temporary, expiresAt: "2099-01-01T00:00:00Z" },
+    return respond(200, status);
+  });
+  await openSite();
+  await openShare("Share artifact");
+  await expectPermission("Only me");
+  const menu = await screen.findByRole("dialog", {
+    name: "Share artifact",
+  });
+  expect(getButtonByName("Customize URL", menu)).toBeInTheDocument();
+  expect(within(menu).getByText("Who can access")).toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([]);
+  click(getButtonByName("Copy link", menu));
+  await waitFor(() => {
+    expect(queryButtonByName("Copied", menu)).toBeDefined();
+  });
+
+  for (const name of [
+    "Anyone at Default Org",
+    "Anyone with the link",
+    "Only me",
+  ]) {
+    click(permission(name));
+    await expectPermission(name);
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("artifact-sidebar").querySelector("iframe"),
+      ).toHaveAttribute(
+        "src",
+        name === "Anyone with the link" ? site.url : temporary,
       );
     });
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-      return respond(200, status);
-    });
-    context.mocks.api(
-      hostContract.updateSiteVisibility,
-      ({ body, respond }) => {
-        if (body.expectedRevision !== status.revision) {
-          return respond(409, {
-            error: { code: "CONFLICT", message: "Website visibility changed" },
-          });
-        }
-        status = {
-          siteId,
-          visibility: body.visibility,
-          revision: crypto.randomUUID(),
-        };
-        return respond(200, status);
-      },
-    );
-    await openSite({ sidebar });
-    await openShare(sidebar ? "Share artifact" : "Share");
-    await expectPermission("Only me");
-    const menu = await screen.findByRole("dialog", {
-      name: sidebar ? "Share artifact" : "Share",
-    });
-    expect(getButtonByName("Customize URL", menu)).toBeInTheDocument();
-    expect(within(menu).getByText("Who can access")).toBeInTheDocument();
-    expect(clipboard.writes).toStrictEqual([]);
-    click(getButtonByName("Copy link", menu));
-    await waitFor(() => {
-      expect(queryButtonByName("Copied", menu)).toBeDefined();
-    });
+    expect(getButtonByName("Copy link", menu)).toBeEnabled();
+  }
+  expect(clipboard.writes).toStrictEqual([site.url]);
+  click(getButtonByName("Copy link", menu));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url, site.url]);
+  });
+});
 
-    for (const name of [
-      "Anyone at Default Org",
-      "Anyone with the link",
-      "Only me",
-    ]) {
-      click(permission(name));
-      await expectPermission(name);
-      await waitFor(() => {
-        expect(
-          screen
-            .getByTestId(
-              sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
-            )
-            .querySelector("iframe"),
-        ).toHaveAttribute(
-          "src",
-          name === "Anyone with the link" ? site.url : temporary,
-        );
-      });
-      expect(getButtonByName("Copy link", menu)).toBeEnabled();
-    }
-    expect(clipboard.writes).toStrictEqual([site.url]);
-    click(getButtonByName("Copy link", menu));
-    await waitFor(() => {
-      expect(clipboard.writes).toStrictEqual([site.url, site.url]);
-    });
-  },
-);
-
-test.each([
-  { sidebar: false, refreshFails: false },
-  { sidebar: true, refreshFails: false },
-  { sidebar: false, refreshFails: true },
-  { sidebar: true, refreshFails: true },
-])(
-  "grouped Share stays available during a permission preview refresh (sidebar: $sidebar, failure: $refreshFails)",
-  async ({ sidebar, refreshFails }) => {
+test.each([{ refreshFails: false }, { refreshFails: true }])(
+  "grouped Share stays available during a permission preview refresh (failure: $refreshFails)",
+  async ({ refreshFails }) => {
     const requested = createDeferredPromise<void>(context.signal);
     const response = createDeferredPromise<void>(context.signal);
     const clipboard = context.mocks.browser.clipboardWriteText();
@@ -1003,13 +969,11 @@ test.each([
         expiresAt: "2099-01-01T00:00:00Z",
       });
     });
-    await openSite({ sidebar, groupedActions: true });
-    const label = sidebar ? "Share artifact" : "Share";
+    await openSite({ groupedActions: true });
+    const label = "Share artifact";
     await openShare(label);
     await expectPermission("Only me");
-    const preview = screen.getByTestId(
-      sidebar ? "artifact-sidebar" : "artifact-dialog-site-frame",
-    );
+    const preview = screen.getByTestId("artifact-sidebar");
     await waitFor(() => {
       expect(preview.querySelector("iframe")).toHaveAttribute("src", temporary);
     });
@@ -1042,31 +1006,28 @@ test.each([
   },
 );
 
-test.each([false, true])(
-  "the grouped toolbar waits for website permissions before revealing Share (sidebar: %s)",
-  async (sidebar) => {
-    const requested = createDeferredPromise<void>(context.signal);
-    const response = createDeferredPromise<void>(context.signal);
-    context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
-      requested.resolve();
-      await response.promise;
-      return respond(200, { siteId, visibility: "private", revision: null });
-    });
-    await openSite({ sidebar, groupedActions: true });
-    await requested.promise;
-    const label = sidebar ? "Share artifact" : "Share";
-    try {
-      expect(screen.getByLabelText(label)).not.toBeVisible();
-    } finally {
-      response.resolve();
-    }
-    await waitFor(() => {
-      expect(getButtonByName(label)).toBeVisible();
-    });
-    await openShare(label);
-    await expectPermission("Only me");
-  },
-);
+test("the grouped toolbar waits for website permissions before revealing Share", async () => {
+  const requested = createDeferredPromise<void>(context.signal);
+  const response = createDeferredPromise<void>(context.signal);
+  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+    requested.resolve();
+    await response.promise;
+    return respond(200, { siteId, visibility: "private", revision: null });
+  });
+  await openSite({ groupedActions: true });
+  await requested.promise;
+  const label = "Share artifact";
+  try {
+    expect(screen.getByLabelText(label)).not.toBeVisible();
+  } finally {
+    response.resolve();
+  }
+  await waitFor(() => {
+    expect(getButtonByName(label)).toBeVisible();
+  });
+  await openShare(label);
+  await expectPermission("Only me");
+});
 
 test("permissions preload without claiming public access while their read is pending", async () => {
   mockSiteAlias();
@@ -1176,31 +1137,26 @@ test("a failed visibility save preserves the last confirmed audience", async () 
   await expectPermission("Only me");
 });
 
-test.each([false, true])(
-  "Share directly copies non-owners' website links without a settings popover (sidebar: %s)",
-  async (sidebar) => {
-    mockSiteAlias();
-    context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Published website not found" },
-      });
+test("Share directly copies non-owners' website links without a settings popover", async () => {
+  mockSiteAlias();
+  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
     });
-    const clipboard = context.mocks.browser.clipboardWriteText();
-    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-      return respond(404, {
-        error: { code: "NOT_FOUND", message: "Published website not found" },
-      });
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Published website not found" },
     });
-    await openSite({ sidebar });
-    const label = sidebar ? "Share artifact" : "Share";
-    click(getButtonByName(label));
-    await screen.findByText("Link copied");
-    expect(clipboard.writes).toStrictEqual([site.url]);
-    expect(
-      screen.queryByRole("dialog", { name: label }),
-    ).not.toBeInTheDocument();
-  },
-);
+  });
+  await openSite();
+  const label = "Share artifact";
+  click(getButtonByName(label));
+  await screen.findByText("Link copied");
+  expect(clipboard.writes).toStrictEqual([site.url]);
+  expect(screen.queryByRole("dialog", { name: label })).not.toBeInTheDocument();
+});
 
 test("a pending Share copies the link once ownership resolves without owner settings", async () => {
   mockSiteAlias();
@@ -1222,7 +1178,7 @@ test("a pending Share copies the link once ownership resolves without owner sett
   await screen.findByText("Link copied");
   expect(clipboard.writes).toStrictEqual([site.url]);
   expect(
-    screen.queryByRole("dialog", { name: "Share" }),
+    screen.queryByRole("dialog", { name: "Share artifact" }),
   ).not.toBeInTheDocument();
 });
 

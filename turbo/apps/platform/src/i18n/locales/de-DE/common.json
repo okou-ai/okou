@@ -373,7 +373,6 @@
     },
     "sidebar": {
       "ariaLabel": "Seitenleiste",
-      "chat": "Chat",
       "hideChatList": "Chatliste ausblenden",
       "mobile": {
         "invite": "Einladen",
@@ -2138,6 +2137,12 @@
         },
         "inReview": "In Prüfung",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} Credits",
+            "confirm": "Zurück an die Arbeit",
+            "description": "Credits bezahlen die Arbeit selbst: jeden Durchlauf, jedes Artefakt, jeden Workflow, der nach Zeitplan läuft.",
+            "title": "Für heute erledigt"
+          },
           "connector": {
             "confirm": "Alle Konnektoren ansehen",
             "connected": "Verbunden",

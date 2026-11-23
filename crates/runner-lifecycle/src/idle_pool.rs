@@ -1,10 +1,13 @@
 use std::collections::{HashMap, hash_map::Entry};
+use std::panic::AssertUnwindSafe;
 use std::time::{Duration, Instant};
 
 use sandbox::{DeviceRateLimits, SandboxId};
 use tokio::sync::watch;
 use uuid::Uuid;
 
+use crate::captured_backing::CapturedBacking;
+use crate::host_memory_operations::MemoryOperationError;
 use crate::resource_budget::ResourceBudget;
 use crate::status::{BlankSandbox, IdleSandbox};
 use runner_types::ids::RunId;
@@ -60,6 +63,18 @@ pub use parking_gate::ParkingState;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+
+/// Check the captured provider identity after admission waits, outside pool locks.
+fn validate_grant_backing(backing: &CapturedBacking) -> Result<(), MemoryOperationError> {
+    let valid = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        backing.process.identity() == backing.identity
+    }))
+    .map_err(|_| MemoryOperationError::ProducerLost)?;
+    if !valid {
+        return Err(MemoryOperationError::OwnershipInvariant);
+    }
+    Ok(())
+}
 
 /// Configuration for the idle sandbox pool.
 #[derive(Debug, Clone, Default)]

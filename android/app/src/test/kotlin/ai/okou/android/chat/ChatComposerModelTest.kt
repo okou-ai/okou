@@ -112,7 +112,9 @@ class ChatComposerModelTest {
         blockedDisk: Boolean = false,
         action:
             suspend TestScope.(
-                Service, ComposerJournalStore, (Boolean, WorkspaceIdentity) -> ChatComposerModel,
+                Service,
+                ComposerJournalStore,
+                (Boolean, WorkspaceIdentity) -> ChatComposerModel,
             ) -> Unit,
     ) = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -274,7 +276,7 @@ class ChatComposerModelTest {
         assertTrue(store.load(identity).journal.drafts[existing.key]!!.dirty)
         service.draftRead = {
             kotlinx.serialization.json.Json.parseToJsonElement(
-                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}"""
+                    """{"draftUserMessage":{"version":1,"parts":[{"type":"text","text":"Web rich","marks":["bold"]}]},"draftAttachments":null}""",
                 )
                 .let { it as kotlinx.serialization.json.JsonObject }
         }
@@ -321,7 +323,7 @@ class ChatComposerModelTest {
                         mapOf(
                             a.key to ComposerEntry(text = "A"),
                             b.key to ComposerEntry(text = "B"),
-                        )
+                        ),
                 ),
             )
             .await()
@@ -529,7 +531,7 @@ class ChatComposerModelTest {
             assertEquals(frozen.clientEventId, restored.eventId)
             assertEquals("immutable submission", restored.text)
             assertNull(restored.disposition)
-            assertFalse(restored.sending)
+            assertEquals(PendingDelivery.Unconfirmed, restored.pendingDelivery)
             assertTrue(existing.key in model.uiState.value.unobserved)
             service.write = { request ->
                 assertEquals(frozen, request)
@@ -736,7 +738,7 @@ class ChatComposerModelTest {
                     mapOf(
                         existing.key to ComposerEntry("saved existing"),
                         "new:$CHAT_PROJECT" to ComposerEntry("项目 draft"),
-                    )
+                    ),
             )
         store.persist(identity, journal)
         runCurrent()

@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Eksekusi chat selesai</string>
     <string name="workflow_clear_search">Hapus pencarian</string>
     <string name="workflow_connect_provider">Hubungkan %1$s untuk mengaktifkan aturan ini.</string>
-    <string name="workflow_connection_unavailable">Koneksi tidak dapat dibuka.</string>
     <string name="workflow_create_uncertain">Pembuatan tidak dapat dikonfirmasi. Tutup editor dan periksa aturan sebelum mencoba lagi.</string>
     <string name="workflow_creation_prompt">Bantu saya membuat alur kerja privat. Gunakan keterampilan workflow-setup. Tanyakan tugas apa yang ingin saya ulangi dan tunjukkan petunjuknya untuk dikonfirmasi sebelum menyimpan. Buat otomatisasi hanya jika saya memintanya.</string>
     <string name="workflow_daily">Setiap hari</string>
@@ -109,4 +108,17 @@
     <string name="workflow_rule_change_failed">Aturan ini tidak dapat diubah.</string>
     <string name="workflow_rule_network_failed">Aturan ini tidak dapat diubah. Periksa koneksi Anda dan coba lagi.</string>
     <string name="workflow_write_conflict">Alur kerja ini berubah saat disimpan. Perubahan Anda tetap ada.</string>
+    <string name="workflow_history_earlier">Tampilkan eksekusi sebelumnya</string>
+    <string name="workflow_history_event">Peristiwa</string>
+    <string name="workflow_history_failed">Riwayat eksekusi tidak dapat dimuat</string>
+    <string name="workflow_history_loading">Memuat riwayat eksekusi…</string>
+    <string name="workflow_history_offline">Sambungkan untuk memuat riwayat eksekusi</string>
+    <string name="workflow_history_open_chat">Buka chat terkait</string>
+    <string name="workflow_history_unavailable">Riwayat eksekusi tidak tersedia</string>
+    <string name="workflow_run_pending">Tertunda</string>
+    <string name="workflow_run_running">Sedang berjalan</string>
+    <string name="workflow_run_timeout">Waktu habis</string>
+    <string name="workflow_history_trigger_unavailable">Pemicu tidak tersedia</string>
+    <string name="workflow_history_scheduled">Pemicu terjadwal</string>
+    <string name="workflow_history_manual">Eksekusi manual</string>
 </resources>

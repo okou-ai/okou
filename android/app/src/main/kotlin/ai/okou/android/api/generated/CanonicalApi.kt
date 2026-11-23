@@ -205,7 +205,7 @@ internal interface CanonicalApi {
 
     @GET("/api/connectors/connected")
     suspend fun `connectedConnectors`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<ConnectedConnectors>
 
     @GET("/api/workflows")
@@ -220,6 +220,13 @@ internal interface CanonicalApi {
         @Path("workflowId") `pathWorkflowId`: String,
     ): Response<WorkflowDetail>
 
+    @GET("/api/workflows/{workflowId}/run-history")
+    suspend fun `workflowRunHistory`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+        @Query("cursor") `queryCursor`: String? = null,
+    ): Response<WorkflowRunHistory>
+
     @PATCH("/api/workflows/{workflowId}")
     suspend fun `updateWorkflow`(
         @Header("Authorization") token: String,
@@ -229,7 +236,7 @@ internal interface CanonicalApi {
 
     @GET("/api/workflow-automations")
     suspend fun `workspaceWorkflowAutomations`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<WorkspaceWorkflowAutomations>
 
     @POST("/api/workflows/{workflowId}/automations")
@@ -288,7 +295,7 @@ internal interface CanonicalApi {
 
     @GET("/api/user-model-preference")
     suspend fun `defaultModelPreference`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<DefaultModelPreference>
 
     @PUT("/api/user-model-preference")
@@ -302,7 +309,7 @@ internal interface CanonicalApi {
 
     @GET("/api/me/3rd-party-subscriptions")
     suspend fun `recoverySubscriptions`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<RecoverySubscriptions>
 
     @GET("/api/billing/status")
@@ -310,7 +317,7 @@ internal interface CanonicalApi {
 
     @GET("/api/billing/usage-pack-credits")
     suspend fun `usagePackCredits`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<UsagePackCredits>
 
     @POST("/api/me/model-provider-accounts/{id}/activate")
@@ -350,12 +357,12 @@ internal interface CanonicalApi {
 
     @GET("/api/onboarding/status")
     suspend fun `onboardingStatus`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<OnboardingStatus>
 
     @GET("/api/instructions")
     suspend fun `personalInstructions`(
-        @Header("Authorization") token: String
+        @Header("Authorization") token: String,
     ): Response<PersonalInstructions>
 
     @PUT("/api/instructions")
@@ -565,12 +572,12 @@ internal fun ConnectorAccountDefaultsQuery.toQueryParameters(): Map<String, Stri
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountDefaultsQuery"
     }
@@ -639,7 +646,7 @@ internal fun ConnectorAccountsQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     } &&
@@ -662,7 +669,7 @@ internal fun ConnectorAccountsQuery.toQueryParameters(): Map<String, String> {
                                 field.content.length <= 255)
                         })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountsQuery"
     }
@@ -699,12 +706,12 @@ internal fun ConnectorAccountQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountQuery"
     }
@@ -742,12 +749,12 @@ internal fun ConnectorAccountImpactQuery.toQueryParameters(): Map<String, String
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorAccountImpactQuery"
     }
@@ -785,12 +792,12 @@ internal fun ConnectorOauthCompletionQuery.toQueryParameters(): Map<String, Stri
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ConnectorOauthCompletionQuery"
     }
@@ -841,7 +848,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 Regex(
-                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                     )
                                     .containsMatchIn(field.content))
                         }) &&
@@ -851,9 +858,9 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                                 field.isString &&
                                 field.content.length >= 1 &&
                                 field.content.length <= 256)
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ArtifactCatalogQuery"
     }
@@ -883,12 +890,12 @@ internal fun ArtifactDetailQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 Regex(
-                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                        "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                     )
                                     .containsMatchIn(field.content))
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ArtifactDetailQuery"
     }
@@ -913,9 +920,9 @@ internal fun ResolveArtifactReferenceQuery.toQueryParameters(): Map<String, Stri
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 field.content in setOf("file", "html", "artifact"))
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid ResolveArtifactReferenceQuery"
     }
@@ -937,9 +944,9 @@ internal fun WorkflowsQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 field.content == "workspace")
-                        }))
+                        })),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid WorkflowsQuery"
     }
@@ -984,7 +991,7 @@ internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
                         (field is JsonPrimitive &&
                             field.isString &&
                             Regex(
-                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$"
+                                    "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)\$",
                                 )
                                 .containsMatchIn(field.content))
                     } &&
@@ -995,7 +1002,7 @@ internal fun HistoryRowsQuery.toQueryParameters(): Map<String, String> {
                                 true)
                     }),
             )
-            .count { it } == 1
+            .count { it } == 1,
     ) {
         "Invalid HistoryRowsQuery"
     }

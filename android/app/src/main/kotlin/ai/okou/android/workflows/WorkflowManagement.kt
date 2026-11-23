@@ -1,6 +1,5 @@
 package ai.okou.android.workflows
 
-import ai.okou.android.BuildConfig
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.api.ApiFailure
@@ -18,21 +17,18 @@ import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.chat.chatTime
 import ai.okou.android.preferences.timezoneLabel
 import ai.okou.android.state.rememberJournalEditor
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,7 +39,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -56,20 +51,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
@@ -92,12 +82,15 @@ internal fun WorkflowRuleRow(
     timezone: String,
     onEdit: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
+    onViewConnection: ((String, String?) -> Unit)?,
+    restoreConnectionFocus: Boolean,
+    onConnectionFocusRestored: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val connectionRequired = rule.needsConnection(state.connections)
     val status =
         stringResource(
-            if (rule.enabled) R.string.workflow_enabled else R.string.workflow_rule_paused
+            if (rule.enabled) R.string.workflow_enabled else R.string.workflow_rule_paused,
         )
     val badge =
         if (connectionRequired) stringResource(R.string.workflow_status_connection, status)
@@ -110,10 +103,10 @@ internal fun WorkflowRuleRow(
         }
     val editable = remember(rule, timezone) { rule.editableRule(timezone) }
     val titleMinWidth = with(LocalDensity.current) { 16.sp.toDp() * 10 }
-    val uriHandler = LocalUriHandler.current
-    var couldNotOpen by remember(rule.id) { mutableStateOf(false) }
+    val connector = rule.source.connector
+    val canOpenConnection = connector != null && onViewConnection != null
     fun viewConnections() {
-        couldNotOpen = !openWorkflowConnections(uriHandler)
+        if (connector != null) onViewConnection?.invoke(connector, rule.id)
     }
     Column(
         Modifier.fillMaxWidth().padding(vertical = 12.dp).testTag("workflow_rule_${rule.id}"),
@@ -162,11 +155,21 @@ internal fun WorkflowRuleRow(
         }
         if (rule.official == null) {
             val toggleFocus = remember { FocusRequester() }
+            val recoveryFocus = remember { FocusRequester() }
             var connectionFocused by remember { mutableStateOf(false) }
             val showSeparateConnection = connectionRequired && rule.enabled
             val restoreToggleFocus = !showSeparateConnection && connectionFocused
-            LaunchedEffect(showSeparateConnection) {
-                if (restoreToggleFocus) toggleFocus.requestFocus()
+            val needsRecovery = connectionRequired && !rule.enabled
+            val canToggle = rule.enabled || rule.canEnable(state.connections)
+            val toggleEnabled =
+                actionsEnabled && (if (needsRecovery) canOpenConnection else canToggle)
+            LaunchedEffect(showSeparateConnection, restoreConnectionFocus, toggleEnabled) {
+                if (restoreConnectionFocus && actionsEnabled) {
+                    val target =
+                        if (showSeparateConnection && canOpenConnection) recoveryFocus
+                        else if (toggleEnabled) toggleFocus else return@LaunchedEffect
+                    if (target.requestFocus()) onConnectionFocusRestored()
+                } else if (restoreToggleFocus && toggleEnabled) toggleFocus.requestFocus()
             }
             FlowRow(
                 Modifier.padding(top = 4.dp),
@@ -177,28 +180,28 @@ internal fun WorkflowRuleRow(
                     WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
                         ::viewConnections,
-                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
-                        enabled = actionsEnabled,
+                        Modifier.focusRequester(recoveryFocus).onFocusChanged {
+                            connectionFocused = it.isFocused
+                        },
+                        enabled = actionsEnabled && canOpenConnection,
                     )
-                val needsRecovery = connectionRequired && !rule.enabled
-                val canToggle = rule.enabled || rule.canEnable(state.connections)
                 WorkflowAction(
                     stringResource(
                         when {
                             rule.enabled -> R.string.workflow_pause
                             needsRecovery -> R.string.workflow_view_connection
                             else -> R.string.workflow_enable
-                        }
+                        },
                     ),
                     {
                         if (needsRecovery) viewConnections() else if (!state.writing) onToggle(rule)
                     },
-                    enabled = actionsEnabled && (needsRecovery || canToggle),
+                    enabled = toggleEnabled,
                     modifier =
                         Modifier.focusRequester(toggleFocus)
                             .then(
                                 if (needsRecovery) Modifier
-                                else Modifier.testTag("workflow_toggle_${rule.id}")
+                                else Modifier.testTag("workflow_toggle_${rule.id}"),
                             ),
                 )
                 if (editable != null)
@@ -209,7 +212,6 @@ internal fun WorkflowRuleRow(
                     )
             }
         }
-        if (couldNotOpen) WorkflowNotice(R.string.workflow_connection_unavailable)
     }
 }
 
@@ -265,45 +267,7 @@ private fun ruleScheduleZone(rule: WorkflowAutomation): String? =
     }
 
 @Composable
-internal fun WorkflowHistoryRow(
-    rule: WorkflowAutomation,
-    timezone: String,
-    sourceChatAvailable: (String) -> Boolean,
-    sourceNavigationEnabled: Boolean,
-    onOpenChat: (String) -> Unit,
-) {
-    val source = rule.chatThreadId?.takeIf(sourceChatAvailable)
-    Row(
-        Modifier.fillMaxWidth()
-            .heightIn(min = 52.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .then(
-                if (source != null)
-                    Modifier.clickable(enabled = sourceNavigationEnabled, role = Role.Button) {
-                        onOpenChat(source)
-                    }
-                else Modifier
-            )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(painterResource(R.drawable.ic_event), null, Modifier.size(18.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                workflowTimestamp(rule.lastRunAt.orEmpty(), timezone),
-                style = workflowBodyStyle(),
-                fontWeight = FontWeight.SemiBold,
-            )
-            WorkflowSecondary(ruleTitle(rule), small = true)
-        }
-        if (source != null)
-            Icon(painterResource(R.drawable.ic_chevron_right), null, Modifier.size(18.dp))
-    }
-}
-
-@Composable
-private fun workflowTimestamp(time: String, timezone: String): String {
+internal fun workflowTimestamp(time: String, timezone: String): String {
     val locale = LocalConfiguration.current.locales[0]
     return remember(time, timezone, locale) {
         try {
@@ -324,14 +288,16 @@ internal fun WorkflowEditor(
     model: WorkflowModel,
     wide: Boolean,
     onCancel: () -> Unit,
+    onViewConnection: ((String) -> Unit)?,
+    restoreConnectionFocus: Boolean,
+    onConnectionFocusRestored: () -> Unit,
 ) {
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
     val available = !state.writing && detail.canChange(activeRule?.id)
-    val uriHandler = LocalUriHandler.current
-    var couldNotOpen by remember { mutableStateOf(false) }
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
-    val showConnectionAction = connectionRequired != null && state.connections != null
+    val connector = connectionRequired?.connector
+    val showConnectionAction = connector != null && state.connections != null
     val connectionFeedback =
         state.connectionReadFeedback().takeIf {
             activeRule?.value?.trigger?.source?.connector != null
@@ -342,13 +308,23 @@ internal fun WorkflowEditor(
             connectionRequired == null &&
             state.issue?.failure != WorkflowWriteFailure.UncertainCreate
     val saveFocus = remember { FocusRequester() }
+    val recoveryFocus = remember { FocusRequester() }
+    val cancelFocus = remember { FocusRequester() }
     var connectionFocused by remember { mutableStateOf(false) }
     var saveFocused by remember { mutableStateOf(false) }
     var restoreSaveFocusAfterWrite by remember { mutableStateOf(false) }
     val restoreSaveFocus =
         !showConnectionAction && saveEnabled && (connectionFocused || restoreSaveFocusAfterWrite)
-    LaunchedEffect(showConnectionAction, saveEnabled) {
-        if (restoreSaveFocus) {
+    LaunchedEffect(showConnectionAction, saveEnabled, restoreConnectionFocus) {
+        if (restoreConnectionFocus && !state.writing) {
+            val target =
+                when {
+                    showConnectionAction && onViewConnection != null -> recoveryFocus
+                    saveEnabled -> saveFocus
+                    else -> cancelFocus
+                }
+            if (target.requestFocus()) onConnectionFocusRestored()
+        } else if (restoreSaveFocus) {
             restoreSaveFocusAfterWrite = false
             saveFocus.requestFocus()
         }
@@ -440,7 +416,6 @@ internal fun WorkflowEditor(
                     MaterialTheme.colorScheme.error,
                 )
             }
-            if (couldNotOpen) WorkflowNotice(R.string.workflow_connection_unavailable)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -448,14 +423,17 @@ internal fun WorkflowEditor(
                 WorkflowAction(
                     stringResource(R.string.workflow_cancel),
                     onCancel,
+                    Modifier.focusRequester(cancelFocus),
                     enabled = !state.writing,
                 )
                 if (showConnectionAction) {
                     WorkflowAction(
                         stringResource(R.string.workflow_view_connection),
-                        { couldNotOpen = !openWorkflowConnections(uriHandler) },
-                        Modifier.onFocusChanged { connectionFocused = it.isFocused },
-                        enabled = !state.writing,
+                        { onViewConnection?.invoke(connector) },
+                        Modifier.focusRequester(recoveryFocus).onFocusChanged {
+                            connectionFocused = it.isFocused
+                        },
+                        enabled = !state.writing && onViewConnection != null,
                     )
                 }
                 WorkflowAction(
@@ -492,14 +470,6 @@ internal fun WorkflowState.connectionReadFeedback(): Int? =
             null -> null
             else -> R.string.connector_accounts_failed
         }
-
-private fun openWorkflowConnections(uriHandler: UriHandler): Boolean =
-    try {
-        uriHandler.openUri("${BuildConfig.WEB_ORIGIN}/connectors")
-        true
-    } catch (_: IllegalArgumentException) {
-        false
-    }
 
 @Composable
 private fun WorkflowRuleFields(
@@ -557,7 +527,7 @@ private fun WorkflowRuleFields(
     WorkflowSecondary(
         stringResource(
             if (editor.enabled) R.string.workflow_rule_stays_enabled
-            else R.string.workflow_rule_stays_paused
+            else R.string.workflow_rule_stays_paused,
         ),
         small = true,
     )

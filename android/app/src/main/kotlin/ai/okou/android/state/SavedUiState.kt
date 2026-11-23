@@ -76,6 +76,26 @@ internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable 
     mutableStateOf(false)
 }
 
+internal data class WorkflowConnectorVisit(val slug: String, val ruleId: String?)
+
+@Composable
+internal fun rememberWorkflowConnectorVisit(): MutableState<WorkflowConnectorVisit?> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<WorkflowConnectorVisit?, String>(
+                save = { visit ->
+                    if (visit == null) emptyList() else listOf(visit.slug, visit.ruleId.orEmpty())
+                },
+                restore = { values ->
+                    values.firstOrNull()?.let {
+                        WorkflowConnectorVisit(it, values[1].ifEmpty { null })
+                    }
+                },
+            ),
+    ) {
+        mutableStateOf(null)
+    }
+
 internal class ConnectorDirectoryState(
     slug: String? = null,
     category: String? = null,
@@ -101,8 +121,9 @@ internal class ConnectorDirectoryState(
 }
 
 @Composable
-internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+internal fun rememberConnectorDirectory(initialSlug: String?): ConnectorDirectoryState =
     rememberSaveable(
+        initialSlug,
         saver =
             listSaver<ConnectorDirectoryState, Any>(
                 save = {
@@ -127,13 +148,16 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
                         TextFieldValue(it[3] as String, TextRange(it[4] as Int, it[5] as Int)),
                     )
                 },
-            )
+            ),
     ) {
-        ConnectorDirectoryState()
+        ConnectorDirectoryState(slug = initialSlug)
     }
 
 @Composable
 internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSaveableStateHolder()
+
+@Composable
+internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
@@ -238,7 +262,7 @@ internal fun rememberChatSearchState(): ChatSearchState =
                             ?.let { SearchResultAnchor(it, offset as Int) },
                     )
                 },
-            )
+            ),
     ) {
         ChatSearchState()
     }
@@ -268,7 +292,7 @@ internal fun rememberWorkspaceNavigation(): MutableState<WorkspaceNavigation> =
             listSaver<WorkspaceNavigation, Any>(
                 save = { it.savedFields() },
                 restore = ::restoreWorkspaceNavigation,
-            )
+            ),
     ) {
         mutableStateOf(WorkspaceNavigation())
     }
@@ -352,7 +376,7 @@ internal fun rememberConversationLinkReturns(): MutableState<List<ConversationLi
                         )
                     }
                 },
-            )
+            ),
     ) {
         mutableStateOf(emptyList())
     }
@@ -378,10 +402,10 @@ internal fun rememberConversationLinkPosition(): MutableState<ConversationLinkPo
                 restore = { (eventId, isRun) ->
                     ConversationLinkPosition(
                         destination =
-                            ConversationFindTarget(eventId as String, null, isRun as Boolean)
+                            ConversationFindTarget(eventId as String, null, isRun as Boolean),
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(null)
     }
@@ -424,7 +448,7 @@ internal fun rememberArtifactPageState(): ArtifactPageState =
                         (pickerArtifactId as String).ifEmpty { null },
                     )
                 },
-            )
+            ),
     ) {
         ArtifactPageState()
     }
@@ -476,7 +500,7 @@ internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
                         WorkflowScope.valueOf(scope),
                     )
                 },
-            )
+            ),
     ) {
         mutableStateOf(WorkflowsRoute())
     }

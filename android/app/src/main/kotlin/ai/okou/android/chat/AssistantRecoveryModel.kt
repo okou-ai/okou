@@ -33,13 +33,12 @@ data class FailureRecoveryData(
     val resetTimes: List<String> = emptyList(),
 ) {
     val resetAccount: RecoverySubscriptionsSubscriptionsItem?
-        get() =
-            account?.takeIf {
-                classification.kind == FailureKind.Usage &&
-                    classification.framework == RecoveryFramework.Codex &&
-                    classification.limit != RecoveryLimit.Model &&
-                    (it.subscriptionResetCredits?.let { credits -> credits > 0 } == true)
-            }
+        get() = account?.takeIf {
+            classification.kind == FailureKind.Usage &&
+                classification.framework == RecoveryFramework.Codex &&
+                classification.limit != RecoveryLimit.Model &&
+                (it.subscriptionResetCredits?.let { credits -> credits > 0 } == true)
+        }
 }
 
 data class FailureRecoveryState(
@@ -104,25 +103,24 @@ class AssistantRecoveryModel(
                 if (selected == null) ChatReadPhase.Idle else ChatReadPhase.Loading,
             )
         if (selected == null) return
-        job =
-            viewModelScope.launch {
-                try {
-                    val checkpoint =
-                        history.checkpoint(selected.threadId) ?: throw RecoveryUnavailable()
-                    val data = resources(selected, checkpoint)
-                    requireCurrent(selected)
-                    if (ticket == revision)
-                        mutable.value = FailureRecoveryState(selected, ChatReadPhase.Ready, data)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    if (selection() == selected && ticket == revision) {
-                        report(error)
-                        if (selection() == selected)
-                            mutable.value = FailureRecoveryState(selected, ChatReadPhase.Failed)
-                    }
+        job = viewModelScope.launch {
+            try {
+                val checkpoint =
+                    history.checkpoint(selected.threadId) ?: throw RecoveryUnavailable()
+                val data = resources(selected, checkpoint)
+                requireCurrent(selected)
+                if (ticket == revision)
+                    mutable.value = FailureRecoveryState(selected, ChatReadPhase.Ready, data)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (selection() == selected && ticket == revision) {
+                    report(error)
+                    if (selection() == selected)
+                        mutable.value = FailureRecoveryState(selected, ChatReadPhase.Failed)
                 }
             }
+        }
     }
 
     internal suspend fun requireCurrent(selected: RecoverySelection, generation: Long = revision) {

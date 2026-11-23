@@ -1,4 +1,6 @@
+import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
@@ -36,6 +38,11 @@ import {
   selectPassage,
   type CapturedChatSend,
 } from "./chat-capability-test-helpers.ts";
+
+import {
+  setupSharedThreadPage,
+  sharedThread,
+} from "../../shared-thread-page/__tests__/shared-thread-test-helpers.ts";
 
 const context = testContext();
 const PASSAGE = "Review the launch plan carefully.";
@@ -137,7 +144,6 @@ test("Quote multiple Markdown files without replacing the draft or attachment", 
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
       [FeatureSwitchKey.MarkdownArtifactQuote]: true,
     },
   });
@@ -207,13 +213,12 @@ test("Quote multiple Markdown files without replacing the draft or attachment", 
 });
 
 test.each([
-  { enabled: undefined, wide: true, sidebar: true },
-  { enabled: false, wide: true, sidebar: true },
-  { enabled: true, wide: false, sidebar: true },
-  { enabled: true, wide: true, sidebar: false },
+  { enabled: undefined, wide: true },
+  { enabled: false, wide: true },
+  { enabled: true, wide: false },
 ])(
   "Keep native text selection without Quote outside desktop split view: %j",
-  async ({ enabled, wide, sidebar }) => {
+  async ({ enabled, wide }) => {
     context.mocks.browser.matchMedia((query) => {
       return wide && query === SPLIT_QUERY;
     });
@@ -232,7 +237,6 @@ test.each([
       context,
       path: `/chats/${ATTACHMENT_THREAD_ID}`,
       featureSwitches: {
-        [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
         ...(enabled === undefined
           ? {}
           : { [FeatureSwitchKey.MarkdownArtifactQuote]: enabled }),
@@ -241,9 +245,7 @@ test.each([
     const composer = await screen.findByRole("textbox", { name: "Message" });
     const attachment = getNamedButton("Open image preview for notes.png");
     click(await findNamedLink("Launch plan"));
-    const preview = await screen.findByTestId(
-      sidebar ? "artifact-sidebar" : "attachment-lightbox",
-    );
+    const preview = await screen.findByTestId("artifact-sidebar");
     await within(preview).findByText(PASSAGE);
     within(preview).getByRole("document").focus();
     selectDocumentText(preview);
@@ -259,6 +261,60 @@ test.each([
   },
 );
 
+test("Keep Markdown quotes out of public modal previews when enabled", async () => {
+  context.mocks.browser.matchMedia((query) => {
+    return query === SPLIT_QUERY;
+  });
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  mockMarkdown();
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url: publicArtifactUrl("plan.md"),
+      downloadUrl: publicArtifactUrl("plan.md"),
+      filename: "plan.md",
+      contentType: "text/markdown",
+      expiresAt: "2099-01-01T00:00:00Z",
+      sharedThreadSnapshot: true,
+      target: { kind: "file", id: FILE_ID },
+    });
+  });
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [
+          {
+            messageIndex: 0,
+            role: "assistant",
+            content:
+              "![Launch plan](https://app.okou.ai/artifacts/lightnote1.md)",
+          },
+        ],
+      }),
+    );
+  });
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: {
+      user: { id: "markdown-modal-viewer", fullName: "Markdown Modal Viewer" },
+    },
+    featureSwitches: { [FeatureSwitchKey.MarkdownArtifactQuote]: true },
+  });
+  click(await screen.findByTestId("markdown-artifact-preview-markdown"));
+  const preview = await screen.findByRole("dialog");
+  await within(preview).findByText(PASSAGE);
+  within(preview).getByRole("document").focus();
+  selectDocumentText(preview);
+  await user.keyboard("cq");
+  expect(quoteAction()).toBeUndefined();
+  expect(queryNamedButton("Copy")).toBeNull();
+  expect(clipboard.writes).toStrictEqual([]);
+  expect(
+    screen.queryByRole("textbox", { name: "Message" }),
+  ).not.toBeInTheDocument();
+});
+
 test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off during refresh", async () => {
   context.mocks.browser.matchMedia((query) => {
     return query === SPLIT_QUERY || query === "(min-width: 48rem)";
@@ -270,7 +326,6 @@ test("Disabling Markdown quotes in Lab preserves drafts and keeps actions off du
   let refreshing = false;
   let switches: Record<string, boolean> = {
     [FeatureSwitchKey.Lab]: true,
-    [FeatureSwitchKey.ArtifactSidebarPreview]: true,
     [FeatureSwitchKey.MarkdownArtifactQuote]: true,
   };
   context.mocks.api(featureSwitchesContract.get, async ({ respond }) => {
@@ -383,7 +438,6 @@ test("Dismiss document actions on fullscreen and narrow layouts without removing
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
       [FeatureSwitchKey.MarkdownArtifactQuote]: true,
     },
   });
@@ -437,7 +491,6 @@ test("Quote a sidebar document into its viewing chat rather than its producing c
     context,
     path: `/chats/${ATTACHMENT_THREAD_ID}?sidebar=${SECOND_ATTACHMENT_THREAD_ID}`,
     featureSwitches: {
-      [FeatureSwitchKey.ArtifactSidebarPreview]: true,
       [FeatureSwitchKey.MarkdownArtifactQuote]: true,
     },
   });

@@ -234,7 +234,7 @@ private fun changedText(before: String, after: String): CanonicalOptional<String
 
 internal fun WorkflowDetail.editableInstructions() =
     WorkflowEdit.Instructions(
-        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty())
+        InstructionsFields(displayName ?: name, description.orEmpty(), instruction.orEmpty()),
     )
 
 internal enum class EditableTrigger(val source: RuleSource) {
@@ -291,8 +291,8 @@ internal data class RuleFields(
                             CreateWorkflowAutomationRequestVariant3EventConfigMatch(
                                 subject =
                                     CreateWorkflowAutomationRequestVariant3EventConfigMatchSubject(
-                                        contains = subject
-                                    )
+                                        contains = subject,
+                                    ),
                             ),
                     ),
                     enabled = false,
@@ -318,7 +318,7 @@ internal data class RuleFields(
                         UpdateWorkflowAutomationRequestVariant1ScheduleVariant1Type.CRON,
                         cron(),
                         timezone,
-                    )
+                    ),
                 )
             EditableTrigger.Gmail ->
                 UpdateWorkflowAutomationRequestVariant2(
@@ -329,10 +329,10 @@ internal data class RuleFields(
                             UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Match(
                                 subject =
                                     UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchSubject(
-                                        contains = subject
-                                    )
+                                        contains = subject,
+                                    ),
                             ),
-                    )
+                    ),
                 )
             EditableTrigger.Calendar ->
                 UpdateWorkflowAutomationRequestVariant4(
@@ -342,7 +342,7 @@ internal data class RuleFields(
                         UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event
                             .EVENT_CREATED,
                         trimmedCalendarId,
-                    )
+                    ),
                 )
         }
 }

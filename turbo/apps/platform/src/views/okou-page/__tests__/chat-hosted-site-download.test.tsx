@@ -138,8 +138,8 @@ function mockPublicPublication({
 async function downloadSite(host = "app.okou.ai"): Promise<void> {
   await setupPage({ context, host, path: `/chats/${ATTACHMENT_THREAD_ID}` });
   click(await findNamedLink("Launch site"));
-  const dialog = await screen.findByRole("dialog");
-  click(await findNamedButton("Download options", dialog));
+  const dialog = await screen.findByTestId("artifact-sidebar");
+  click(await findNamedButton("Download artifact", dialog));
   click(await findNamedMenuItem("Download"));
 }
 
@@ -232,7 +232,7 @@ test.each(["hosted-site", "presentation-html"] as const)(
         name: "artifact_action_clicked",
         properties: {
           action: "download",
-          surface: "dialog",
+          surface: "page",
           artifact_type:
             artifactKind === "presentation-html" ? "presentation" : "website",
         },

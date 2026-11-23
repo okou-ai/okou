@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Chat-Ausführung beendet</string>
     <string name="workflow_clear_search">Suche löschen</string>
     <string name="workflow_connect_provider">Verbinde %1$s, um die Regel zu aktivieren.</string>
-    <string name="workflow_connection_unavailable">Verbindungen konnten nicht geöffnet werden.</string>
     <string name="workflow_create_uncertain">Erstellung konnte nicht bestätigt werden. Schließe den Editor und prüfe die Regeln, bevor du es erneut versuchst.</string>
     <string name="workflow_creation_prompt">Hilf mir, einen privaten Workflow zu erstellen. Verwende den Skill workflow-setup. Frage mich nach der Aufgabe, die ich wiederholen möchte, und zeige mir vor dem Speichern die Anweisungen zur Bestätigung. Erstelle nur auf meine ausdrückliche Bitte eine Automatisierung.</string>
     <string name="workflow_daily">Täglich</string>
@@ -110,4 +109,17 @@
     <string name="workflow_rule_change_failed">Diese Regel konnte nicht geändert werden.</string>
     <string name="workflow_rule_network_failed">Diese Regel konnte nicht geändert werden. Prüfe deine Verbindung und versuche es erneut.</string>
     <string name="workflow_write_conflict">Dieser Workflow wurde während des Speicherns geändert. Deine Änderungen bleiben erhalten.</string>
+    <string name="workflow_history_earlier">Frühere Ausführungen anzeigen</string>
+    <string name="workflow_history_event">Ereignis</string>
+    <string name="workflow_history_failed">Verlauf konnte nicht geladen werden</string>
+    <string name="workflow_history_loading">Verlauf wird geladen…</string>
+    <string name="workflow_history_offline">Zum Laden des Verlaufs verbinden</string>
+    <string name="workflow_history_open_chat">Zugehörigen Chat öffnen</string>
+    <string name="workflow_history_unavailable">Verlauf nicht verfügbar</string>
+    <string name="workflow_run_pending">Ausstehend</string>
+    <string name="workflow_run_running">Läuft</string>
+    <string name="workflow_run_timeout">Zeitlimit erreicht</string>
+    <string name="workflow_history_trigger_unavailable">Auslöser nicht verfügbar</string>
+    <string name="workflow_history_scheduled">Zeitgesteuerter Auslöser</string>
+    <string name="workflow_history_manual">Manuelle Ausführung</string>
 </resources>

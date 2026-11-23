@@ -98,9 +98,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
 @Composable
-internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () -> Unit) {
+internal fun ConnectorsPage(
+    model: ConnectorModel,
+    listWidth: Int?,
+    initialSlug: String? = null,
+    close: () -> Unit,
+) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val route = rememberConnectorDirectory()
+    val route = rememberConnectorDirectory(initialSlug)
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
     val focus = LocalFocusManager.current
@@ -131,7 +136,7 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
-        if (!wide && selected != null) {
+        if (initialSlug == null && !wide && selected != null) {
             restoreRow = selected
             route.slug = null
         } else {
@@ -158,12 +163,12 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
         Modifier.fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .safeDrawingPadding()
-            .imePadding()
+            .imePadding(),
     ) {
         if (directoryVisible) {
             Column(
                 (if (listWidth == null) Modifier.weight(1f) else Modifier.width(listWidth.dp))
-                    .fillMaxHeight()
+                    .fillMaxHeight(),
             ) {
                 ConnectorTopBar(stringResource(R.string.connector_title), ::back)
                 ConnectorDirectory(
@@ -190,12 +195,26 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
                 if (!wide) ConnectorTopBar(stringResource(R.string.connector_title), ::back)
                 val matchingState = state.takeIf { it.slug == selected }
                 val entry =
-                    remember(state.browse.data, state.matches, state.connected.data, selected) {
-                        state.browse.data?.entries?.find { it.slug == selected }
-                            ?: state.matches?.entries?.data?.entries?.find { it.slug == selected }
-                            ?: state.connected.data?.get(selected)?.let {
-                                ConnectorEntry(selected, it.label, "", null, null)
-                            }
+                    remember(
+                        state.browse.data,
+                        state.matches,
+                        state.connected.data,
+                        route.connected,
+                        filter,
+                        selected,
+                    ) {
+                        val catalog =
+                            state.matches
+                                ?.takeIf { it.filter == filter }
+                                ?.entries
+                                ?.data
+                                ?.entries
+                                ?.find { it.slug == selected }
+                                ?: state.browse.data?.entries?.find { it.slug == selected }
+                        val connected = state.connected.data?.get(selected)?.entry
+                        if (route.connected && connected != null) {
+                            catalog?.copy(icon = connected.icon) ?: connected
+                        } else catalog ?: connected
                     }
                 key(selected) {
                     ConnectorDetails(
@@ -243,7 +262,9 @@ private fun ConnectorTopBar(title: String, back: () -> Unit) {
         expandedHeight = height,
         windowInsets = WindowInsets(0),
         colors =
-            TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+            ),
     )
     HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 }
@@ -303,9 +324,9 @@ private fun ConnectorDirectory(
                     connected
                         ?.mapNotNull { (slug, service) ->
                             val entry =
-                                bySlug[slug]
+                                bySlug[slug]?.copy(icon = service.entry.icon)
                                     ?: if (filtered != null) return@mapNotNull null
-                                    else ConnectorEntry(slug, service.label, "", null, null)
+                                    else service.entry
                             if (
                                 entry.matches(query) ||
                                     directory.accountsFor(slug).any { account ->
@@ -438,7 +459,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 Modifier.tabIndicatorOffset(selected, matchContentSize = true)
                     .height(3.dp)
                     .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
-                    .background(accent)
+                    .background(accent),
             )
         },
         divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline) },
@@ -512,7 +533,7 @@ private fun ConnectorFilters(
                     onSearch = {
                         editQuery(route.query.copy(composition = null))
                         keyboard?.hide()
-                    }
+                    },
                 ),
             textStyle = connectorBodyType().copy(color = colors.onSurface),
             cursorBrush = SolidColor(colors.onSurface),
@@ -583,7 +604,7 @@ private fun ConnectorFilters(
                         .clip(categoryShape)
                         .background(
                             if (route.category == null) colors.background
-                            else colors.secondaryContainer
+                            else colors.secondaryContainer,
                         )
                         .semantics { stateDescription = categoryLabel },
             ) {
@@ -606,7 +627,7 @@ private fun ConnectorFilters(
                         ) {
                             setCategory(null)
                             close()
-                        }
+                        },
                     ) +
                         entries.map { (category, title) ->
                             WorkspaceMenuItem(title, selected = route.category == category) {
@@ -647,7 +668,7 @@ private fun ConnectorDirectoryRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ConnectorIcon(entry, large = false, modifier = Modifier.align(Alignment.Top))
+        ConnectorIcon(entry.icon, large = false, modifier = Modifier.align(Alignment.Top))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(entry.name, style = connectorBodyType().copy(fontWeight = FontWeight.SemiBold))
             if (entry.description.isNotBlank()) {
@@ -698,7 +719,7 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                     .background(
                         if (attention) colors.error else LocalActivityStatusColor.current,
                         CircleShape,
-                    )
+                    ),
             )
         }
         Text(
@@ -711,27 +732,6 @@ private fun ConnectorDirectoryStatus(accounts: List<ConnectorSavedAccount>) {
                 ),
             color = colors.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-internal fun ConnectorIcon(entry: ConnectorEntry, large: Boolean, modifier: Modifier = Modifier) {
-    val icon =
-        when {
-            entry.slug in setOf("google-calendar", "outlook-calendar", "calendly") ->
-                R.drawable.ic_event
-            entry.slug in setOf("gmail", "outlook-mail", "resend") -> R.drawable.ic_mail
-            entry.category == "meetings-scheduling" -> R.drawable.ic_event
-            entry.category == "docs-files-knowledge" -> R.drawable.ic_folder
-            else -> R.drawable.ic_extension
-        }
-    Box(
-        modifier
-            .size(if (large) 48.dp else 40.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(painterResource(icon), null, Modifier.size(if (large) 24.dp else 20.dp))
     }
 }
 
@@ -754,7 +754,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                         .background(
                             MaterialTheme.colorScheme.surfaceVariant,
                             RoundedCornerShape(12.dp),
-                        )
+                        ),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
@@ -764,7 +764,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant,
                                 RoundedCornerShape(4.dp),
-                            )
+                            ),
                     )
                     Box(
                         Modifier.widthIn(max = 220.dp)
@@ -773,7 +773,7 @@ internal fun ConnectorSkeleton(label: String, rows: Int) {
                             .background(
                                 MaterialTheme.colorScheme.surfaceVariant,
                                 RoundedCornerShape(4.dp),
-                            )
+                            ),
                     )
                 }
             }
@@ -863,7 +863,7 @@ internal fun connectorAccountStatus(account: ConnectorSavedAccount): String =
                 if (account.defaultEnabled == true) R.string.connector_default_status
                 else R.string.connector_account_connected
             ConnectorAccountStatus.Unknown -> R.string.connector_account_unknown
-        }
+        },
     )
 
 internal val ConnectorAccountStatus.needsAttention: Boolean

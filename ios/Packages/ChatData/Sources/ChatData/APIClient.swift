@@ -29,7 +29,7 @@ public enum APIClientError: LocalizedError, Sendable {
   public var errorDescription: String? {
     switch self {
     case .http(401, _, _, _): "Your session expired. Sign in again."
-    case .http(426, _, _, _): "Update Okou in TestFlight to continue."
+    case .http(426, _, _, _): "Update Okou to continue."
     case .http(402, let message, _, _): "\(message) Manage your plan on the Okou website."
     case .http(403, let message, _, _):
       "\(message) Check your workspace access on the Okou website."
@@ -45,6 +45,12 @@ public enum APIClientError: LocalizedError, Sendable {
   }
 }
 
+public enum ClientDistribution: String, Sendable, CaseIterable {
+  case appStore = "app-store"
+  case testFlight = "testflight"
+  case unknown
+}
+
 public struct APIResponse: Sendable {
   public let data: Data
   public let response: HTTPURLResponse
@@ -55,6 +61,7 @@ public struct APIResponse: Sendable {
 public struct APIClient: Sendable {
   public let baseURL: URL
   public let member: WorkspaceMemberID?
+  private let distribution: @Sendable () async -> ClientDistribution
   private let clientVersion: String
   private let clientSessionId = UUID().uuidString.lowercased()
   private let bearerToken: @Sendable () async throws -> String
@@ -65,11 +72,13 @@ public struct APIClient: Sendable {
     clientVersion: String,
     session: URLSession = .shared,
     member: WorkspaceMemberID? = nil,
+    distribution: @escaping @Sendable () async -> ClientDistribution = { .unknown },
     bearerToken: @escaping @Sendable () async throws -> String
   ) {
     self.baseURL = baseURL
     self.member = member
     self.clientVersion = clientVersion
+    self.distribution = distribution
     self.session = session
     self.bearerToken = bearerToken
   }
@@ -146,6 +155,9 @@ public struct APIClient: Sendable {
     request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
     request.setValue(clientSessionId, forHTTPHeaderField: "X-Client-Session-Id")
     for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+    let channel = await distribution()
+    try Task.checkCancellation()
+    request.setValue(channel.rawValue, forHTTPHeaderField: "X-Client-Distribution")
     return try await execute(request)
   }
 

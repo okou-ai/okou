@@ -75,7 +75,7 @@ test("A deep-linked artifact preview opens over its catalog and closes back to i
   });
 
   await expect(
-    screen.findByTestId("attachment-lightbox-image"),
+    screen.findByTestId("artifact-sidebar-body-image"),
   ).resolves.toHaveAttribute(
     "src",
     "https://artifacts.example.com/selected-image.png",
@@ -89,10 +89,10 @@ test("A deep-linked artifact preview opens over its catalog and closes back to i
     within(getCatalogViewport()).findByText("selected-image.png"),
   ).resolves.toBeInTheDocument();
 
-  click(getButtonByName("Close"));
+  click(getButtonByName("Close artifact"));
 
   await waitFor(() => {
-    expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
     expect(new URLSearchParams(search()).has("artifact")).toBeFalsy();
   });
   expect(pathname()).toBe("/artifacts");

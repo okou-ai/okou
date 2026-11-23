@@ -124,10 +124,10 @@ internal fun ArtifactCatalogList(
                 !state.offline
         ) {
             snapshotFlow {
-                    val layout = position.layoutInfo
-                    val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
-                    last >= 0 && last >= layout.totalItemsCount - 5
-                }
+                val layout = position.layoutInfo
+                val last = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+                last >= 0 && last >= layout.totalItemsCount - 5
+            }
                 .collect { if (it) model.loadNext() }
         }
     }
@@ -319,7 +319,7 @@ private fun ArtifactSearch(input: TextFieldState, focus: FocusRequester) {
                         onClick = {
                             input.clearText()
                             focus.requestFocus()
-                        }
+                        },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_close),

@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
 import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
+import ai.okou.android.api.generated.WorkflowRunHistory
 import ai.okou.android.api.generated.Workflows
 import ai.okou.android.api.generated.WorkspaceWorkflowAutomations
 
@@ -12,6 +13,8 @@ interface WorkflowService {
     suspend fun workflows(): Workflows
 
     suspend fun workflow(id: String): WorkflowDetail
+
+    suspend fun workflowRunHistory(id: String, cursor: String?): WorkflowRunHistory
 
     suspend fun workflowAutomations(): WorkspaceWorkflowAutomations
 

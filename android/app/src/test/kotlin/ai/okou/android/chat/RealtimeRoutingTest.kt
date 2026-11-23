@@ -48,7 +48,7 @@ class RealtimeRoutingTest {
     @get:Rule val temporary = TemporaryFolder()
 
     private suspend fun TestScope.withReadyModel(
-        block: suspend TestScope.(ChatListApiFixture, ChatListModel, TestRealtimeService) -> Unit
+        block: suspend TestScope.(ChatListApiFixture, ChatListModel, TestRealtimeService) -> Unit,
     ) {
         val dispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(dispatcher)
@@ -120,7 +120,7 @@ class RealtimeRoutingTest {
     private fun indicators(api: ChatListApiFixture, stamp: String) {
         api.indicators = {
             jsonResponse(
-                """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$stamp"}}"""
+                """{"threads":{"$CHAT_PERSONAL":"unread"},"unreadAt":{"$CHAT_PERSONAL":"$stamp"}}""",
             )
         }
     }
@@ -142,38 +142,37 @@ class RealtimeRoutingTest {
             api.historyRows = { request ->
                 val since = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
                 val saved = persisted.get()
-                val rows =
-                    buildList {
-                            if (since < 41)
-                                add(
-                                    historyEventWire(
-                                        inputId,
-                                        41,
-                                        type = "input.prompt",
-                                        payload =
-                                            """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start routed output"}]}}""",
-                                        run = runId,
-                                    )
-                                )
-                            if (saved && since < 42)
-                                add(
-                                    historyEventWire(
-                                        eventId,
-                                        42,
-                                        payload = """{"content":"Saved routed answer"}""",
-                                        run = runId,
-                                    )
-                                )
-                        }
-                        .joinToString(",")
+                val rows = buildList {
+                    if (since < 41)
+                        add(
+                            historyEventWire(
+                                inputId,
+                                41,
+                                type = "input.prompt",
+                                payload =
+                                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":"Start routed output"}]}}""",
+                                run = runId,
+                            ),
+                        )
+                    if (saved && since < 42)
+                        add(
+                            historyEventWire(
+                                eventId,
+                                42,
+                                payload = """{"content":"Saved routed answer"}""",
+                                run = runId,
+                            ),
+                        )
+                }
+                    .joinToString(",")
                 val lastId = if (saved) eventId else inputId
                 val lastSeq = if (saved) 42 else 41
                 jsonResponse(
-                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}"""
+                    """{"rows":[$rows],"cursor":{"lastEventId":"$lastId","lastSeqId":$lastSeq},"hasMore":false}""",
                 )
             }
             checkNotNull(
-                model.history.beginVisit(CHAT_PERSONAL, model.history.uiState.value.generation)
+                model.history.beginVisit(CHAT_PERSONAL, model.history.uiState.value.generation),
             )
             model.history.uiState.first {
                 it.phase == HistoryPhase.Ready && it.detailPhase == ChatReadPhase.Ready
@@ -192,7 +191,7 @@ class RealtimeRoutingTest {
                         CHAT_DATE,
                         index,
                         text,
-                    )
+                    ),
                 )
             realtime.output(chunk(0, "Live routed "))
             realtime.output(chunk(2, "answer"))
@@ -237,7 +236,7 @@ class RealtimeRoutingTest {
                 paths.all {
                     it == "/api/chat/events/catch-up" ||
                         it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
-                }
+                },
             )
         }
     }
@@ -374,7 +373,7 @@ class RealtimeRoutingTest {
                     release.await()
                     answered.countDown()
                     jsonResponse(
-                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":true}"""
+                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":true}""",
                     )
                 } else null
             }
@@ -390,7 +389,7 @@ class RealtimeRoutingTest {
                 assertTrue(answered.await(10, TimeUnit.SECONDS))
                 api.historyDetail = {
                     jsonResponse(
-                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":false}"""
+                        """{"lastReadAt":"$CHAT_DATE","cancellationRecoveryPending":false}""",
                     )
                 }
                 realtime.invalidate(ChatChanges(detailThreads = setOf(CHAT_IN_PROJECT)))
@@ -444,12 +443,12 @@ class RealtimeRoutingTest {
                 val fresh =
                     (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < 41
                 jsonResponse(
-                    """{"events":[${if (fresh) chatEventWire(seq = 41, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "Changed title") else ""}],"hasMore":false}"""
+                    """{"events":[${if (fresh) chatEventWire(seq = 41, id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", kind = "renamed", title = "Changed title") else ""}],"hasMore":false}""",
                 )
             }
             api.projectEvents = {
                 jsonResponse(
-                    """{"events":[{"id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","seqId":41,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"Changed project","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}"""
+                    """{"events":[{"id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","seqId":41,"projectId":"$CHAT_PROJECT","kind":"renamed","name":"Changed project","createdAt":"2026-11-14T00:00:00Z"}],"hasMore":false}""",
                 )
             }
             realtime.invalidate(ChatChanges(list = true))
@@ -603,7 +602,7 @@ class RealtimeRoutingTest {
                     (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < seq
                 val row = historyEventWire(id, seq, payload = """{"content":"Message $seq"}""")
                 jsonResponse(
-                    """{"rows":[${if (fresh) row else ""}],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}"""
+                    """{"rows":[${if (fresh) row else ""}],"cursor":{"lastEventId":"$id","lastSeqId":$seq},"hasMore":false}""",
                 )
             }
             try {
@@ -629,7 +628,7 @@ class RealtimeRoutingTest {
                     paths.all {
                         it == "/api/chat/events/catch-up" ||
                             it.startsWith("/api/chat-threads/$CHAT_PERSONAL")
-                    }
+                    },
                 )
             } finally {
                 release.countDown()

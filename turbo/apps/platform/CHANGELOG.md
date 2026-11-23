@@ -13,6 +13,91 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1165.5](https://github.com/okou-ai/okou/compare/app-v0.1165.4...app-v0.1165.5) (2026-11-23)
+
+
+### Bug Fixes
+
+* **app:** restore immediate check-in reward confirmation ([#50136](https://github.com/okou-ai/okou/issues/50136)) ([94eae58](https://github.com/okou-ai/okou/commit/94eae5820c46b6cb0660c23b586b001d93c56420))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+    * @okouai/core bumped to 8.861.0
+    * @okouai/ui bumped to 1.21.103
+
+## [0.1165.4](https://github.com/okou-ai/okou/compare/app-v0.1165.3...app-v0.1165.4) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.1
+    * @okouai/core bumped to 8.860.4
+    * @okouai/ui bumped to 1.21.102
+
+## [0.1165.3](https://github.com/okou-ai/okou/compare/app-v0.1165.2...app-v0.1165.3) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+    * @okouai/core bumped to 8.860.3
+    * @okouai/ui bumped to 1.21.101
+
+## [0.1165.2](https://github.com/okou-ai/okou/compare/app-v0.1165.1...app-v0.1165.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* **app:** require pro for markdown pdf and docx exports ([#50070](https://github.com/okou-ai/okou/issues/50070)) ([02fb537](https://github.com/okou-ai/okou/commit/02fb537c69a87e080de82e139597ea0bb20b1583))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.2
+    * @okouai/core bumped to 8.860.2
+    * @okouai/ui bumped to 1.21.100
+
+## [0.1165.1](https://github.com/okou-ai/okou/compare/app-v0.1165.0...app-v0.1165.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* persist for you cover preferences in the database ([#50069](https://github.com/okou-ai/okou/issues/50069)) ([c912fc4](https://github.com/okou-ai/okou/commit/c912fc4a238d3558ab6053520a1a63caf02f0ed5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.1
+    * @okouai/core bumped to 8.860.1
+    * @okouai/ui bumped to 1.21.99
+
+## [0.1165.0](https://github.com/okou-ai/okou/compare/app-v0.1164.1...app-v0.1165.0) (2026-11-23)
+
+
+### Features
+
+* use the first follow-up as the composer placeholder behind a switch ([#50040](https://github.com/okou-ai/okou/issues/50040)) ([0d24270](https://github.com/okou-ai/okou/commit/0d24270d99eb810341fd81597c7c3e74ef718b07))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.860.0
+    * @okouai/ui bumped to 1.21.98
+
 ## [0.1164.1](https://github.com/okou-ai/okou/compare/app-v0.1164.0...app-v0.1164.1) (2026-11-23)
 
 

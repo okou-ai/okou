@@ -235,7 +235,7 @@ class TestAddonConfiguration:
             mitm_addon.configure({"okou_usage_flush_interval_seconds"})
 
         usage.buffer_usage_events(
-            "https://api.test/api/webhooks/agent/usage-event",
+            "https://api.test/api/webhooks/run/usage-event",
             "token-a",
             "run-1",
             [_usage_event("source-1")],

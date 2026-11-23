@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.249.110](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.109...runner-rs-v0.249.110) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share original history binding validation ([#50111](https://github.com/okou-ai/okou/issues/50111)) ([effce3c](https://github.com/okou-ai/okou/commit/effce3c694a66cacef04bf46145c72390755fbc7))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.109](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.108...runner-rs-v0.249.109) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.108](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.107...runner-rs-v0.249.108) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.107](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.106...runner-rs-v0.249.107) (2026-11-23)
+
+
+### Refactoring
+
+* **api:** retire single-agent flags and migrate mitm callbacks ([#50073](https://github.com/okou-ai/okou/issues/50073)) ([b755712](https://github.com/okou-ai/okou/commit/b7557125818de8883c22704c19728207f5308428))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.106](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.105...runner-rs-v0.249.106) (2026-11-23)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.105](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.104...runner-rs-v0.249.105) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share initial status receipt validation ([#50065](https://github.com/okou-ai/okou/issues/50065)) ([5ef5987](https://github.com/okou-ai/okou/commit/5ef5987ecc35a33626a0c9c96cafa9941b19301c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.104](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.103...runner-rs-v0.249.104) (2026-11-23)
 
 ### Release Dependencies

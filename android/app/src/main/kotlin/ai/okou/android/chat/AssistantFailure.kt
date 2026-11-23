@@ -168,16 +168,17 @@ private fun classifyOutputFailure(
         matches("selected model is at capacity\\.? please try a different model") ->
             FailureClassification(FailureKind.Capacity, RecoveryFramework.Codex)
         matches(
-            "\\bclaude\\b.*\\b(?:is overloaded|overloaded|at capacity)\\b|\\b529\\b.*\\boverload|\\boverloaded_error\\b"
+            "\\bclaude\\b.*\\b(?:is overloaded|overloaded|at capacity)\\b|\\b529\\b.*\\boverload|\\boverloaded_error\\b",
         ) -> FailureClassification(FailureKind.Capacity, RecoveryFramework.Claude)
         matches("you(?:'|’)ve hit your usage limit\\b") ->
             FailureClassification(
                 FailureKind.Usage,
                 RecoveryFramework.Codex,
-                if (matches("\\busage limit for\\b")) RecoveryLimit.Model else RecoveryLimit.Unknown,
+                if (matches("\\busage limit for\\b")) RecoveryLimit.Model
+                else RecoveryLimit.Unknown,
             )
         matches(
-            "you(?:'|’)ve hit your (?:session|weekly|5[- ]hour|opus(?:\\s+[\\w.-]+)?|sonnet(?:\\s+[\\w.-]+)?|haiku(?:\\s+[\\w.-]+)?) limit\\b|\\bclaude(?: code)? (?:rate|usage) limit reached\\b"
+            "you(?:'|’)ve hit your (?:session|weekly|5[- ]hour|opus(?:\\s+[\\w.-]+)?|sonnet(?:\\s+[\\w.-]+)?|haiku(?:\\s+[\\w.-]+)?) limit\\b|\\bclaude(?: code)? (?:rate|usage) limit reached\\b",
         ) ->
             FailureClassification(
                 FailureKind.Usage,
@@ -234,7 +235,7 @@ private fun unsupportedCodexModel(text: String): Boolean {
                         if (
                             error?.text("type") == "invalid_request_error" &&
                                 Regex(
-                                        "^The '[^']+' model is not supported when using Codex with a ChatGPT account\\.$"
+                                        "^The '[^']+' model is not supported when using Codex with a ChatGPT account\\.$",
                                     )
                                     .matches(error.text("message").orEmpty())
                         )

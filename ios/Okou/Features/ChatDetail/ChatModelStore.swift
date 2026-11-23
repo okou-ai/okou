@@ -180,8 +180,17 @@ final class ChatModelSelectionStore {
   private var metadataTask: Task<ChatModelSelection?, Error>?
   private var metadataID: UUID?
 
-  init(
+  convenience init(
     models: ChatModelStore, thread: ChatThread? = nil, lifecycleTasks: LifecycleTasks? = nil
+  ) {
+    self.init(
+      models: models, threadID: thread?.id, cachedSelection: thread.map(ChatModelSelection.init),
+      lifecycleTasks: lifecycleTasks)
+  }
+
+  init(
+    models: ChatModelStore, threadID: String?, cachedSelection: ChatModelSelection? = nil,
+    lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.models = models
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
@@ -194,11 +203,11 @@ final class ChatModelSelectionStore {
     clearMetadata = Command { context in try context.set(metadataDemand, nil) }
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: models.webURL, thread: thread, readRetrySleep: models.readRetrySleep,
+      webURL: models.webURL, threadID: threadID, readRetrySleep: models.readRetrySleep,
       didFail: models.report)
-    threadID = thread?.id
-    stored = thread.map(ChatModelSelection.init)
-    hasLoaded = thread == nil
+    self.threadID = threadID
+    stored = cachedSelection
+    hasLoaded = threadID == nil
   }
 
   /// The sheet, composer and background callers observe one conversation-scoped read.

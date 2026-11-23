@@ -1,5 +1,70 @@
 # Changelog
 
+## [1.9.196](https://github.com/okou-ai/okou/compare/host-worker-v1.9.195...host-worker-v1.9.196) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+    * @okouai/core bumped to 8.861.0
+    * @okouai/ui bumped to 1.21.103
+
+## [1.9.195](https://github.com/okou-ai/okou/compare/host-worker-v1.9.194...host-worker-v1.9.195) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.1
+    * @okouai/core bumped to 8.860.4
+    * @okouai/ui bumped to 1.21.102
+
+## [1.9.194](https://github.com/okou-ai/okou/compare/host-worker-v1.9.193...host-worker-v1.9.194) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.106.0
+    * @okouai/core bumped to 8.860.3
+    * @okouai/ui bumped to 1.21.101
+
+## [1.9.193](https://github.com/okou-ai/okou/compare/host-worker-v1.9.192...host-worker-v1.9.193) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.2
+    * @okouai/core bumped to 8.860.2
+    * @okouai/ui bumped to 1.21.100
+
+## [1.9.192](https://github.com/okou-ai/okou/compare/host-worker-v1.9.191...host-worker-v1.9.192) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.105.1
+    * @okouai/core bumped to 8.860.1
+    * @okouai/ui bumped to 1.21.99
+
+## [1.9.191](https://github.com/okou-ai/okou/compare/host-worker-v1.9.190...host-worker-v1.9.191) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.860.0
+    * @okouai/ui bumped to 1.21.98
+
 ## [1.9.190](https://github.com/okou-ai/okou/compare/host-worker-v1.9.189...host-worker-v1.9.190) (2026-11-23)
 
 

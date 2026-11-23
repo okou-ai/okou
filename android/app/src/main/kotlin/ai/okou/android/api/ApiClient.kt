@@ -146,7 +146,7 @@ class ApiClient(
                     check(
                         request.url.scheme == origin.scheme &&
                             request.url.host == origin.host &&
-                            request.url.port == origin.port
+                            request.url.port == origin.port,
                     ) {
                         "API request escaped its origin"
                     }
@@ -158,7 +158,7 @@ class ApiClient(
                             .header(ApiHeaders.SESSION_HEADER, sessionId)
                             .header(ApiHeaders.REQUEST_HEADER, UUID.randomUUID().toString())
                             .header("Accept", "application/json")
-                            .build()
+                            .build(),
                     )
                 }
                 .build()
@@ -184,12 +184,17 @@ class ApiClient(
 
     suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
 
+    internal suspend fun workflowRunHistory(id: String, cursor: String?) = execute {
+        reads.workflowRunHistory(it, id, cursor)
+    }
+
     suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
 
-    suspend fun workflowConnections() =
-        execute { reads.connectedConnectors(it) }
-            .builtinConnectors
-            .mapTo(mutableSetOf()) { it.slug }
+    suspend fun workflowConnections() = execute {
+        reads.connectedConnectors(it)
+    }
+        .builtinConnectors
+        .mapTo(mutableSetOf()) { it.slug }
 
     suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = execute {
         api.updateWorkflow(it, id, body)

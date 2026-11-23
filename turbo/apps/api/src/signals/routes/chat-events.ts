@@ -1,4 +1,5 @@
 /** Canonical ChatEvent route adapter. */
+import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
 import { command } from "ccstate";
 import {
   chatEventsContract,
@@ -13,6 +14,8 @@ import {
   notFound,
 } from "../../lib/error";
 import { bodyResultOf } from "../context/request";
+import { waitUntil } from "../context/wait-until";
+import { settleIncludingAbort } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import { measureChatEnqueue } from "../services/chat-enqueue-timing.service";
 import {
@@ -32,6 +35,65 @@ import {
 } from "../services/agent-suggestions.service";
 
 const sendEventBody$ = bodyResultOf(chatEventsContract.send);
+
+const prepareSuggestionSend$ = command(
+  async (
+    { get, set },
+    {
+      data,
+      bootstrap,
+    }: {
+      readonly data: ChatEventSendBody & {
+        readonly userMessage: UserMessageDocument;
+      };
+      readonly bootstrap: ReturnType<
+        (typeof startNormalSendBootstrap$)["write"]
+      >;
+    },
+    signal: AbortSignal,
+  ) => {
+    const auth = get(organizationAuthContext$);
+    const document = data.userMessage;
+    const timing = get(chatEnqueueTiming$);
+    const access = await measureChatEnqueue(
+      timing,
+      "suggestion_access",
+      async () => {
+        const flags = bootstrap
+          ? await get(bootstrap.context.featureSwitches$)
+          : undefined;
+        signal.throwIfAborted();
+        return set(suggestionAccess$, signal, flags?.overrides);
+      },
+    );
+    signal.throwIfAborted();
+    if ("status" in access) {
+      return null;
+    }
+    const { threadId, clientEventId: eventId } = data;
+    if (!threadId || !eventId || hasEmptySuggestionNote(document)) {
+      return badRequestMessage(
+        "Add your question or direction before sending this suggestion.",
+      );
+    }
+    const result = await measureChatEnqueue(
+      timing,
+      "suggestion_validation",
+      () => {
+        return set(
+          validateSuggestionFollowup$,
+          auth,
+          { threadId, eventId, document },
+          signal,
+        );
+      },
+    );
+    signal.throwIfAborted();
+    return result && "status" in result
+      ? result
+      : { eventId, acceptedDocument: result?.acceptedDocument };
+  },
+);
 
 export const sendValidatedChatEvent$ = command(
   async (
@@ -58,11 +120,27 @@ export const sendValidatedChatEvent$ = command(
     const referenceRead = measureChatEnqueue(timing, "references", () => {
       return get(captureProjectReferences(auth, data.userMessage, projectId));
     });
-    const bootstrap = set(startNormalSendBootstrap$, {
-      body: data,
-      auth,
-      requireVisibleThread,
-    });
+    const bootstrap = set(
+      startNormalSendBootstrap$,
+      { body: data, auth, requireVisibleThread },
+      signal,
+    );
+    const document = data.userMessage;
+    const suggestionRead =
+      auth.tokenType === "session" &&
+      document &&
+      suggestionFeedbacks(document).length
+        ? settleIncludingAbort(
+            set(
+              prepareSuggestionSend$,
+              { data: { ...data, userMessage: document }, bootstrap },
+              signal,
+            ),
+          )
+        : undefined;
+    if (suggestionRead) {
+      waitUntil(suggestionRead);
+    }
     const projectReferences = await referenceRead;
     signal.throwIfAborted();
     if (projectReferences === null) {
@@ -70,57 +148,40 @@ export const sendValidatedChatEvent$ = command(
         projectId ? "Project not found" : "Project or conversation not found",
       );
     }
-    const candidate =
-      auth.tokenType === "session" &&
-      data.userMessage &&
-      suggestionFeedbacks(data.userMessage).length > 0;
-    const access = candidate
-      ? await measureChatEnqueue(timing, "suggestion_access", () => {
-          return set(suggestionAccess$, signal);
-        })
-      : null;
-    const custom = access !== null && !("status" in access);
-    if (custom && data.userMessage) {
-      if (
-        !data.threadId ||
-        !data.clientEventId ||
-        hasEmptySuggestionNote(data.userMessage)
-      ) {
-        return badRequestMessage(
-          "Add your question or direction before sending this suggestion.",
-        );
-      }
-      const threadId = data.threadId;
-      const eventId = data.clientEventId;
-      const document = data.userMessage;
-      const invalid = await measureChatEnqueue(
-        timing,
-        "suggestion_validation",
-        () => {
-          return set(
-            validateSuggestionFollowup$,
-            auth,
-            { threadId, eventId, document },
-            signal,
-          );
-        },
-      );
-      signal.throwIfAborted();
-      if (invalid) {
-        return invalid;
-      }
+    const checkedSuggestion = await suggestionRead;
+    signal.throwIfAborted();
+    if (checkedSuggestion && !checkedSuggestion.ok) {
+      throw checkedSuggestion.error;
     }
+    const suggestion = checkedSuggestion?.value;
+    if (suggestion && "status" in suggestion) {
+      return suggestion;
+    }
+    let acceptedDocument = suggestion?.acceptedDocument;
     const result = await set(
       handleSendChatEvent$,
-      { body: data, projectId, projectReferences, bootstrap },
+      {
+        body: data,
+        projectId,
+        projectReferences,
+        bootstrap,
+        onAcceptedDocument: suggestion
+          ? (document) => {
+              acceptedDocument = document;
+            }
+          : undefined,
+      },
       signal,
     );
-    if (custom && result.status === 201 && data.clientEventId) {
+    if (suggestion && result.status === 201) {
       await set(
         recordAcceptedSuggestionFollowup$,
         auth,
-        result.body.threadId,
-        data.clientEventId,
+        {
+          threadId: result.body.threadId,
+          eventId: suggestion.eventId,
+          acceptedDocument,
+        },
         signal,
       );
     }

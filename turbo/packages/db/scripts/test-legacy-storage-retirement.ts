@@ -13,7 +13,6 @@ export async function validateRetiredStorageSchema(databaseUrl: string) {
       to_regclass('public.member_memories') IS NOT NULL AND
       to_regclass('public.memory_versions') IS NOT NULL AND
       to_regclass('public.memory_version_lineage') IS NOT NULL AND
-      to_regclass('public.org_custom_connector_skill_publications') IS NOT NULL AND
       to_regclass('public.artifacts') IS NOT NULL AND
       to_regclass('public.claimed_workflow_attachments') IS NOT NULL AND
       to_regclass('public.export_jobs') IS NOT NULL AS retained`;
@@ -59,6 +58,9 @@ export async function validateLegacyStorageRetirement(
     await sql`DROP VIEW storage_retirement_dependency_fixture`;
     await retire();
     await validateRetiredStorageSchema(databaseUrl);
+    const [publication] = await sql`SELECT
+      to_regclass('public.org_custom_connector_skill_publications') IS NOT NULL AS retained`;
+    assert.deepEqual(publication, { retained: true });
   } finally {
     await sql.end();
   }

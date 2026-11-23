@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Execução do chat encerrada</string>
     <string name="workflow_clear_search">Limpar pesquisa</string>
     <string name="workflow_connect_provider">Conecte %1$s para ativar esta regra.</string>
-    <string name="workflow_connection_unavailable">Não foi possível abrir as conexões.</string>
     <string name="workflow_create_uncertain">Não foi possível confirmar a criação. Feche o editor e verifique as regras antes de tentar novamente.</string>
     <string name="workflow_creation_prompt">Ajude-me a criar um fluxo de trabalho privado. Use a habilidade workflow-setup. Pergunte qual tarefa quero repetir e mostre as instruções para eu confirmar antes de salvar. Crie uma automação só se eu pedir.</string>
     <string name="workflow_daily">Todos os dias</string>
@@ -111,4 +110,17 @@
     <string name="workflow_rule_change_failed">Não foi possível alterar esta regra.</string>
     <string name="workflow_rule_network_failed">Não foi possível alterar esta regra. Verifique sua conexão e tente novamente.</string>
     <string name="workflow_write_conflict">Este fluxo de trabalho mudou durante o salvamento. Suas alterações foram preservadas.</string>
+    <string name="workflow_history_earlier">Mostrar execuções anteriores</string>
+    <string name="workflow_history_event">Evento</string>
+    <string name="workflow_history_failed">Não foi possível carregar o histórico de execuções</string>
+    <string name="workflow_history_loading">Carregando histórico de execuções…</string>
+    <string name="workflow_history_offline">Conecte-se para carregar o histórico de execuções</string>
+    <string name="workflow_history_open_chat">Abrir o chat de origem</string>
+    <string name="workflow_history_unavailable">Histórico de execuções indisponível</string>
+    <string name="workflow_run_pending">Pendente</string>
+    <string name="workflow_run_running">Em execução</string>
+    <string name="workflow_run_timeout">Tempo esgotado</string>
+    <string name="workflow_history_trigger_unavailable">Acionador indisponível</string>
+    <string name="workflow_history_scheduled">Acionamento programado</string>
+    <string name="workflow_history_manual">Execução manual</string>
 </resources>

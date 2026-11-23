@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
+import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
@@ -46,6 +47,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -134,8 +136,13 @@ internal fun WorkflowScreen(
     onClose: () -> Unit,
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    onOpenChat: (String) -> Unit,
+    restoreHistoryRunId: String?,
+    onHistoryFocusRestored: () -> Unit,
+    onOpenChat: (runId: String, threadId: String) -> Unit,
 ) {
     LifecycleResumeEffect(model) {
         model.foregroundChanged(true)
@@ -177,7 +184,7 @@ internal fun WorkflowScreen(
         Modifier.fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .imePadding()
+            .imePadding(),
     ) {
         if (wide || route.id == null) {
             WorkflowDirectory(
@@ -226,7 +233,19 @@ internal fun WorkflowScreen(
                         WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
-                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
+                        WorkflowEditor(
+                            detail,
+                            editor,
+                            state,
+                            model,
+                            wide,
+                            ::exitEditor,
+                            onViewConnection =
+                                onViewConnection?.let { open -> { slug -> open(slug, null) } },
+                            restoreConnectionFocus =
+                                connectionReturn != null && connectionReturn.ruleId == null,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
+                        )
                     else ->
                         WorkflowDetailPane(
                             detail = detail,
@@ -235,25 +254,24 @@ internal fun WorkflowScreen(
                             position = positions[route.tab.ordinal],
                             wide = wide,
                             timezone = timezone,
-                            onTab = {
-                                if (it != route.tab) {
-                                    changeRoute(route.copy(tab = it))
-                                    model.detailTabOpened(
-                                        checkConnections = it == WorkflowTab.Automations
-                                    )
-                                }
-                            },
+                            onTab = { if (it != route.tab) changeRoute(route.copy(tab = it)) },
                             onEdit = { model.edit(detail.editableInstructions()) },
                             onNewRule = {
                                 model.edit(WorkflowEdit.Rule(null, RuleFields(timezone = timezone)))
                             },
                             onEditRule = { model.edit(it) },
                             onToggle = model::toggle,
+                            onViewConnection = onViewConnection,
+                            connectionReturn = connectionReturn,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                             handoffPending = handoffPending,
                             useError = useError,
                             onUse = { onUse(detail) },
                             sourceChatAvailable = sourceChatAvailable,
+                            restoreHistoryRunId = restoreHistoryRunId,
+                            onHistoryFocusRestored = onHistoryFocusRestored,
                             onOpenChat = onOpenChat,
+                            onEarlierRuns = model::loadEarlierRuns,
                         )
                 }
             }
@@ -418,7 +436,7 @@ private fun WorkflowDirectory(
                 modifier = Modifier.heightIn(min = 48.dp).testTag("workflow_create"),
                 colors =
                     ButtonDefaults.textButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onBackground
+                        contentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
             ) {
@@ -451,7 +469,7 @@ private fun WorkflowDirectory(
                             .clip(RoundedCornerShape(12.dp))
                             .background(
                                 if (selected) MaterialTheme.colorScheme.secondaryContainer
-                                else MaterialTheme.colorScheme.background
+                                else MaterialTheme.colorScheme.background,
                             )
                             .selectable(
                                 selected,
@@ -499,7 +517,7 @@ private fun WorkflowDirectory(
             WorkflowReadFeedback(
                 state.catalogFailure.cachedReadFeedback()
                     ?: state.rulesFailure.cachedReadFeedback()
-                    ?: state.connectionReadFeedback()
+                    ?: state.connectionReadFeedback(),
             )
         }
     }
@@ -575,7 +593,7 @@ private fun WorkflowQuery(query: ChatSearchState) {
                             query.reset()
                             requester.requestFocus()
                             keyboard?.show()
-                        }
+                        },
                     ) {
                         Icon(
                             painterResource(R.drawable.ic_close),
@@ -632,7 +650,7 @@ private fun WorkflowRow(
     val scope =
         stringResource(
             if (item.visibility == WorkflowSummaryVisibility.PRIVATE) R.string.workflow_private
-            else R.string.workflow_shared
+            else R.string.workflow_shared,
         )
     val trigger =
         when {
@@ -723,21 +741,31 @@ private fun WorkflowDetailPane(
     onNewRule: () -> Unit,
     onEditRule: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     handoffPending: Boolean,
     useError: Int?,
     onUse: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
-    onOpenChat: (String) -> Unit,
+    restoreHistoryRunId: String?,
+    onHistoryFocusRestored: () -> Unit,
+    onOpenChat: (runId: String, threadId: String) -> Unit,
+    onEarlierRuns: () -> Unit,
 ) {
     val padding = if (wide) 32.dp else 20.dp
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
+    // An empty loading layout must not clamp the saved position of a long history.
+    val listState =
+        if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
+        else position
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         LazyColumn(
             contentWidth.weight(1f),
-            state = position,
+            state = listState,
             contentPadding =
                 PaddingValues(
                     start = padding,
@@ -782,28 +810,54 @@ private fun WorkflowDetailPane(
                             timezone = timezone,
                             onEdit = onEditRule,
                             onToggle = onToggle,
+                            onViewConnection = onViewConnection,
+                            restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                         )
                         if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                     }
                 }
                 WorkflowTab.History -> {
-                    val latest =
-                        detail.automations
-                            .filter { it.lastRunAt != null }
-                            .sortedByDescending { it.lastRunAt }
-                    item {
+                    val history = state.history
+                    item(key = "history_heading") {
                         WorkflowSectionHeader(R.string.workflow_recent_runs)
-                        if (latest.isEmpty())
-                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
                     }
-                    items(latest, key = { it.id }) {
+                    if (history == null) {
+                        item(key = "history_pending") {
+                            WorkflowHistoryPending(state.historyFailure)
+                        }
+                    } else if (history.runs.isEmpty()) {
+                        item(key = "history_empty") {
+                            WorkflowSecondary(stringResource(R.string.workflow_no_recent_runs))
+                        }
+                    }
+                    items(history?.runs.orEmpty(), key = { it.id }) { run ->
                         WorkflowHistoryRow(
-                            rule = it,
+                            run = run,
                             timezone = timezone,
                             sourceChatAvailable = sourceChatAvailable,
                             sourceNavigationEnabled = !handoffPending,
+                            restoreFocus = run.id == restoreHistoryRunId,
+                            onFocusRestored = onHistoryFocusRestored,
                             onOpenChat = onOpenChat,
                         )
+                    }
+                    if (history?.nextCursor != null) {
+                        item(key = "history_earlier") {
+                            TextButton(
+                                onClick = onEarlierRuns,
+                                enabled = !handoffPending && state.historyRead?.loading != true,
+                                modifier = Modifier.testTag("workflow_earlier_runs"),
+                            ) {
+                                Text(
+                                    stringResource(
+                                        if (state.historyRead == WorkflowHistoryRead.Earlier)
+                                            R.string.workflow_history_loading
+                                        else R.string.workflow_history_earlier,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -815,7 +869,13 @@ private fun WorkflowDetailPane(
             )
                 state.connectionReadFeedback()
             else null
-        WorkflowReadFeedback(state.detailFailure.cachedReadFeedback() ?: connectionFeedback)
+        val historyFeedback =
+            state.historyFailure.cachedReadFeedback().takeIf {
+                tab == WorkflowTab.History && state.history != null
+            }
+        WorkflowReadFeedback(
+            state.detailFailure.cachedReadFeedback() ?: historyFeedback ?: connectionFeedback,
+        )
         WorkflowUseBar(
             wide = wide,
             enabled = detail.shadowedBy == null && !handoffPending && !state.writing,
@@ -904,7 +964,7 @@ private fun WorkflowDetailHeader(detail: WorkflowDetail) {
                             R.string.workflow_private
                         detail.canManage -> R.string.workflow_shared_manageable
                         else -> R.string.workflow_shared_usable
-                    }
+                    },
                 ),
                 small = true,
             )
@@ -940,7 +1000,8 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                     selected = tab == current,
                     onClick = { pick(tab) },
                     modifier =
-                        Modifier.focusRequester(tabFocus[index])
+                        Modifier.heightIn(min = 48.dp)
+                            .focusRequester(tabFocus[index])
                             .updateFocusOutline(RoundedCornerShape(8.dp), accent)
                             .onPreviewKeyEvent { event ->
                                 val next =
@@ -962,25 +1023,25 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
                             .testTag("workflow_tab_${tab.name.lowercase()}"),
                     selectedContentColor = colors.onBackground,
                     unselectedContentColor = colors.onSurfaceVariant,
-                    text = {
-                        Text(
-                            stringResource(
-                                when (tab) {
-                                    WorkflowTab.Instructions -> R.string.workflow_instructions
-                                    WorkflowTab.Automations -> R.string.workflow_automations
-                                    WorkflowTab.History -> R.string.workflow_history
-                                }
+                ) {
+                    Text(
+                        stringResource(
+                            when (tab) {
+                                WorkflowTab.Instructions -> R.string.workflow_instructions
+                                WorkflowTab.Automations -> R.string.workflow_automations
+                                WorkflowTab.History -> R.string.workflow_history
+                            },
+                        ),
+                        Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        style =
+                            MaterialTheme.typography.bodyMedium.copy(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                fontWeight = FontWeight(550),
                             ),
-                            style =
-                                MaterialTheme.typography.bodyMedium.copy(
-                                    fontSize = 14.sp,
-                                    lineHeight = 20.sp,
-                                    fontWeight = FontWeight(550),
-                                ),
-                            textAlign = TextAlign.Center,
-                        )
-                    },
-                )
+                        textAlign = TextAlign.Center,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(16.dp))
@@ -1094,7 +1155,7 @@ private fun WorkflowSkeleton(directory: Boolean) {
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
                 contentDescription = label
                 progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
-            }
+            },
         ) {
             if (directory) {
                 repeat(5) {

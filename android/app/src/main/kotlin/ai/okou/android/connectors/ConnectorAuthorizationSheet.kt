@@ -439,8 +439,9 @@ private fun ConnectorInput(
     val shape = RoundedCornerShape(12.dp)
     val fieldColors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface)
     val padding = PaddingValues(12.dp)
-    val placeholderContent: (@Composable () -> Unit)? =
-        placeholder?.let { { Text(it, style = connectorBodyType()) } }
+    val placeholderContent: (@Composable () -> Unit)? = placeholder?.let {
+        { Text(it, style = connectorBodyType()) }
+    }
     Column(Modifier.fillMaxWidth()) {
         Text(label, style = connectorFeedbackType())
         Spacer(Modifier.height(8.dp))
@@ -510,7 +511,7 @@ private fun launchConnectorBrowser(context: Context, url: HttpUrl): Boolean =
     try {
         context.startActivity(
             Intent(Intent.ACTION_VIEW, url.toString().toUri())
-                .addCategory(Intent.CATEGORY_BROWSABLE)
+                .addCategory(Intent.CATEGORY_BROWSABLE),
         )
         true
     } catch (_: ActivityNotFoundException) {

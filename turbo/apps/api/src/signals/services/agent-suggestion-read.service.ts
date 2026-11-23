@@ -65,46 +65,6 @@ export const storedSuggestion$ = command(
     return row ? suggestionRow(row) : null;
   },
 );
-type StoredSuggestion = ReturnType<typeof suggestionRow>;
-/**
- * Reads several owned suggestions in one statement, keyed by each requested
- * id; absent ids map to null. PostgreSQL compares hyphenated UUID text
- * case-insensitively and returns stored ids in lowercase.
- */
-export const storedSuggestions$ = command(
-  async (
-    { get },
-    owner: Owner,
-    ids: readonly string[],
-    signal: AbortSignal,
-  ): Promise<ReadonlyMap<string, StoredSuggestion | null>> => {
-    const canonicalIds = [
-      ...new Set(
-        ids.map((id) => {
-          return id.toLowerCase();
-        }),
-      ),
-    ];
-    if (canonicalIds.length === 0) {
-      return new Map<string, StoredSuggestion | null>();
-    }
-    const rows = await get(db$)
-      .select()
-      .from(feedItems)
-      .where(and(suggestionOwner(owner), inArray(feedItems.id, canonicalIds)));
-    signal.throwIfAborted();
-    const stored = new Map(
-      rows.map((row) => {
-        return [row.id, suggestionRow(row)] as const;
-      }),
-    );
-    return new Map(
-      ids.map((id) => {
-        return [id, stored.get(id.toLowerCase()) ?? null] as const;
-      }),
-    );
-  },
-);
 const recentSuggestionReceipts$ = command(
   async ({ get }, owner: Owner, signal: AbortSignal) => {
     const cutoff = new Date(nowDate().getTime() - SUGGESTION_RETENTION_MS);

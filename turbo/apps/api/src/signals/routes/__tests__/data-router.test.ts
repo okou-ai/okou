@@ -3,6 +3,7 @@ import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
   dataRouterHistoryContract,
   dataRouterRequestContract,
+  runDataRouterRequestContract,
 } from "@okouai/api-contracts/contracts/data-router";
 import { DATA_ROUTER_PROTOCOL_VERSION } from "@okouai/api-contracts/contracts/data-router-tools";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -81,7 +82,7 @@ function register(
   requestId: string,
 ) {
   return setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
-    dataRouterRequestContract,
+    runDataRouterRequestContract,
   ).register({ headers: run.headers, body: { runId: run.runId, requestId } });
 }
 

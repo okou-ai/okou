@@ -387,7 +387,6 @@
     },
     "sidebar": {
       "ariaLabel": "Barra laterale",
-      "chat": "Chat",
       "hideChatList": "Nascondi elenco chat",
       "mobile": {
         "invite": "Invita",
@@ -2174,6 +2173,12 @@
         },
         "inReview": "In revisione",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} crediti",
+            "confirm": "Torna al lavoro",
+            "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
+            "title": "Per oggi è fatta"
+          },
           "connector": {
             "confirm": "Vedi tutti i connettori",
             "connected": "Connesso",

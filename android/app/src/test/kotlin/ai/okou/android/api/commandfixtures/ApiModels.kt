@@ -151,7 +151,7 @@ sealed interface SendRequestVariant1UserMessagePartsItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -162,7 +162,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -175,7 +175,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(with = SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer::class)
@@ -183,7 +183,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant3Template
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -210,12 +210,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -226,7 +226,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -275,7 +275,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -286,12 +286,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant4(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -302,12 +302,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant5(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -318,12 +318,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant6(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -334,12 +334,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant7(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -352,21 +352,21 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant3Template"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant3Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant3Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -397,7 +397,7 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant3Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -442,7 +442,7 @@ object SendRequestVariant1UserMessagePartsItemVariant3TemplateSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant3Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant3Template variant",
                 )
         }
     }
@@ -505,7 +505,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -517,7 +517,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant4(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant5Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
@@ -542,12 +542,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant5(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant6Type {
-    @SerialName("source") SOURCE
+    @SerialName("source") SOURCE,
 }
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant6Kind {
-    @SerialName("mcp") MCP
+    @SerialName("mcp") MCP,
 }
 
 @Serializable
@@ -560,7 +560,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant6(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant7Type {
-    @SerialName("additional_info") ADDITIONAL_INFO
+    @SerialName("additional_info") ADDITIONAL_INFO,
 }
 
 @Serializable
@@ -571,7 +571,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant7(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant8Type {
-    @SerialName("automation") AUTOMATION
+    @SerialName("automation") AUTOMATION,
 }
 
 @Serializable
@@ -584,17 +584,17 @@ data class SendRequestVariant1UserMessagePartsItemVariant8(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9Type {
-    @SerialName("file") FILE
+    @SerialName("file") FILE,
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class
+    with = SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerializer::class,
 )
 sealed interface SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant1Shape {
-    @SerialName("box") BOX
+    @SerialName("box") BOX,
 }
 
 @Serializable
@@ -617,7 +617,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant2Shape {
-    @SerialName("arrow") ARROW
+    @SerialName("arrow") ARROW,
 }
 
 @Serializable
@@ -645,7 +645,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant3Shape {
-    @SerialName("pen") PEN
+    @SerialName("pen") PEN,
 }
 
 @Serializable
@@ -667,7 +667,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant4Shape {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -689,7 +689,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant5Shape {
-    @SerialName("highlight") HIGHLIGHT
+    @SerialName("highlight") HIGHLIGHT,
 }
 
 @Serializable
@@ -711,7 +711,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVa
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemVariant6Shape {
-    @SerialName("redact") REDACT
+    @SerialName("redact") REDACT,
 }
 
 @Serializable
@@ -734,21 +734,21 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem",
                 )
         val matches =
             listOf(
@@ -773,7 +773,7 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -814,7 +814,7 @@ object SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItemSerial
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant9AnnotationsMarksItem variant",
                 )
         }
     }
@@ -890,7 +890,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant9(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10Type {
-    @SerialName("feedback") FEEDBACK
+    @SerialName("feedback") FEEDBACK,
 }
 
 @Serializable(with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer::class)
@@ -898,7 +898,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItem
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1Type {
-    @SerialName("text") TEXT
+    @SerialName("text") TEXT,
 }
 
 @Serializable
@@ -909,7 +909,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2Type {
-    @SerialName("chat_thread") CHAT_THREAD
+    @SerialName("chat_thread") CHAT_THREAD,
 }
 
 @Serializable
@@ -921,17 +921,18 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant2(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Type {
-    @SerialName("template") TEMPLATE
+    @SerialName("template") TEMPLATE,
 }
 
 @Serializable(
-    with = SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class
+    with =
+        SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateSerializer::class,
 )
 sealed interface SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant1Type {
-    @SerialName("presentation") PRESENTATION
+    @SerialName("presentation") PRESENTATION,
 }
 
 @Serializable
@@ -960,12 +961,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Type {
-    @SerialName("custom") CUSTOM
+    @SerialName("custom") CUSTOM,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant2Selection(
-    val `userTemplateId`: String
+    val `userTemplateId`: String,
 )
 
 @Serializable
@@ -978,7 +979,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant3Type {
-    @SerialName("video") VIDEO
+    @SerialName("video") VIDEO,
 }
 
 @Serializable
@@ -1029,7 +1030,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant4Type {
-    @SerialName("intro-video") INTRO_VIDEO
+    @SerialName("intro-video") INTRO_VIDEO,
 }
 
 @Serializable
@@ -1041,12 +1042,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Type {
-    @SerialName("illustration") ILLUSTRATION
+    @SerialName("illustration") ILLUSTRATION,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant5Selection(
-    val `illustrationStyleId`: String
+    val `illustrationStyleId`: String,
 )
 
 @Serializable
@@ -1059,12 +1060,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Type {
-    @SerialName("workflow") WORKFLOW
+    @SerialName("workflow") WORKFLOW,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant6Selection(
-    val `workflowTemplateId`: String
+    val `workflowTemplateId`: String,
 )
 
 @Serializable
@@ -1077,12 +1078,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Type {
-    @SerialName("website") WEBSITE
+    @SerialName("website") WEBSITE,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant7Selection(
-    val `websiteTemplateId`: String
+    val `websiteTemplateId`: String,
 )
 
 @Serializable
@@ -1095,12 +1096,12 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Templ
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Type {
-    @SerialName("document") DOCUMENT
+    @SerialName("document") DOCUMENT,
 }
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateVariant8Selection(
-    val `documentTemplateId`: String
+    val `documentTemplateId`: String,
 )
 
 @Serializable
@@ -1115,21 +1116,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template",
                 )
         val matches =
             listOf(
@@ -1160,7 +1161,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1213,7 +1214,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3TemplateS
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3Template variant",
                 )
         }
     }
@@ -1284,7 +1285,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant3(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10NoteItemVariant4Type {
-    @SerialName("project") PROJECT
+    @SerialName("project") PROJECT,
 }
 
 @Serializable
@@ -1298,21 +1299,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10NoteItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10NoteItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10NoteItem",
                 )
         val matches =
             listOf(
@@ -1331,7 +1332,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1356,7 +1357,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10NoteItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10NoteItem variant",
                 )
         }
     }
@@ -1401,7 +1402,7 @@ sealed interface SendRequestVariant1UserMessagePartsItemVariant10Source
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type {
-    @SerialName("mail") MAIL
+    @SerialName("mail") MAIL,
 }
 
 @Serializable
@@ -1420,7 +1421,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type {
-    @SerialName("artifact") ARTIFACT
+    @SerialName("artifact") ARTIFACT,
 }
 
 @Serializable
@@ -1435,21 +1436,21 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItemVariant10Source> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10Source"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10Source",
         )
 
     override fun deserialize(
-        decoder: Decoder
+        decoder: Decoder,
     ): SendRequestVariant1UserMessagePartsItemVariant10Source {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source"
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source",
                 )
         val matches =
             listOf(
@@ -1462,7 +1463,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1477,7 +1478,7 @@ object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant",
                 )
         }
     }
@@ -1513,11 +1514,13 @@ data class SendRequestVariant1UserMessagePartsItemVariant10(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant11Type {
-    @SerialName("voice") VOICE
+    @SerialName("voice") VOICE,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
+data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(
+    val `fileId`: String,
+)
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant11(
@@ -1527,7 +1530,7 @@ data class SendRequestVariant1UserMessagePartsItemVariant11(
 
 @Serializable
 enum class SendRequestVariant1UserMessagePartsItemVariant12Type {
-    @SerialName("model") MODEL
+    @SerialName("model") MODEL,
 }
 
 @Serializable
@@ -1547,19 +1550,19 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
     KSerializer<SendRequestVariant1UserMessagePartsItem> {
     override val descriptor =
         buildClassSerialDescriptor(
-            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItem"
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItem",
         )
 
     override fun deserialize(decoder: Decoder): SendRequestVariant1UserMessagePartsItem {
         val input =
             decoder as? JsonDecoder
                 ?: throw SerializationException(
-                    "Expected JSON object for SendRequestVariant1UserMessagePartsItem"
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItem",
                 )
         val value =
             input.decodeJsonElement() as? JsonObject
                 ?: throw SerializationException(
-                    "Expected object for SendRequestVariant1UserMessagePartsItem"
+                    "Expected object for SendRequestVariant1UserMessagePartsItem",
                 )
         val matches =
             listOf(
@@ -1665,7 +1668,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
             )
         if (matches.count { it } != 1)
             throw SerializationException(
-                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItem variant"
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItem variant",
             )
         return when (matches.indexOf(true)) {
             0 ->
@@ -1730,7 +1733,7 @@ object SendRequestVariant1UserMessagePartsItemSerializer :
                 )
             else ->
                 throw SerializationException(
-                    "Unknown SendRequestVariant1UserMessagePartsItem variant"
+                    "Unknown SendRequestVariant1UserMessagePartsItem variant",
                 )
         }
     }
@@ -1908,4 +1911,8 @@ object SendRequestSerializer : KSerializer<SendRequest> {
     }
 }
 
-@Serializable data class AcceptedInput(val `threadId`: String, val `createdAt`: String? = null)
+@Serializable
+data class AcceptedInput(
+    val `threadId`: String,
+    val `createdAt`: String? = null,
+)

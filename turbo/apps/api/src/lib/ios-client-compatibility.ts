@@ -1,43 +1,60 @@
-import type { IosUpgradeRequired } from "@okouai/api-contracts/contracts/ios-client-compatibility";
-import { object, string } from "zod";
-
+import {
+  iosCompatibilityPolicySchema,
+  type IosCompatibilityPolicy,
+  type IosUpgradeRequired,
+} from "@okouai/api-contracts/contracts/ios-client-compatibility";
 import { compareAppVersions } from "./app-version";
-import compatibilityConfig from "./ios-client-compatibility.json";
+import configuration from "./ios-client-compatibility.json";
 
-const iosClientCompatibilityConfigSchema = object({
-  minimumSupportedVersion: string()
-    .regex(/^\d+\.\d+\.\d+$/u, "The iOS floor must be a stable x.y.z version")
-    .nullable(),
-});
+// Before channels were reported, requests below this floor were already blocked.
+const legacyFloor = "0.51.12";
+iosCompatibilityPolicySchema.parse(configuration);
+const policy: IosCompatibilityPolicy = configuration;
 
-iosClientCompatibilityConfigSchema.parse(compatibilityConfig);
-
-// Global source-controlled policy; changes require a PR and an API release.
-// Never configure it through CI, GitHub Environments, Vercel variables, or
-// per-user overrides, and never derive it from the web floor. Keep null until
-// the header-sending iOS build is on TestFlight and request logs show adoption.
-export function iosMinimumSupportedVersion(): string | null {
-  return iosClientCompatibilityConfigSchema.parse(compatibilityConfig)
-    .minimumSupportedVersion;
+export function iosDistribution(value: string | undefined) {
+  if (value === undefined) {
+    return "legacy";
+  }
+  if (value === "app-store" || value === "testflight") {
+    return value;
+  }
+  return "unknown";
 }
 
-export function isSupportedIosClientVersion(version: string): boolean {
-  const minimumSupportedVersion = iosMinimumSupportedVersion();
-  if (minimumSupportedVersion === null) {
-    return true;
+type IosDistribution = ReturnType<typeof iosDistribution>;
+
+export function iosMinimumSupportedVersion(
+  channel: IosDistribution,
+): string | null {
+  if (channel === "testflight") {
+    return policy.testFlightMinimumSupportedVersion;
   }
-  const comparison = compareAppVersions(version, minimumSupportedVersion);
-  return comparison === null || comparison >= 0;
+  const storeFloor = policy.appStoreMinimumSupportedVersion;
+  if (
+    channel === "legacy" &&
+    (storeFloor === null ||
+      (compareAppVersions(storeFloor, legacyFloor) ?? 0) < 0)
+  ) {
+    return legacyFloor;
+  }
+  return storeFloor;
 }
 
 export function iosUpgradeRequired(
   minimumSupportedVersion: string,
+  channel: IosDistribution,
 ): IosUpgradeRequired {
+  let message = "Update Okou to continue.";
+  if (
+    channel === "testflight" ||
+    (channel === "legacy" && policy.appStoreMinimumSupportedVersion === null)
+  ) {
+    message = "Update Okou in TestFlight to continue.";
+  } else if (channel === "app-store") {
+    message = "Update Okou in the App Store to continue.";
+  }
   return {
-    error: {
-      code: "IOS_UPDATE_REQUIRED" as const,
-      message: "Update Okou in TestFlight to continue.",
-    },
+    error: { code: "IOS_UPDATE_REQUIRED", message },
     minimumSupportedVersion,
   };
 }

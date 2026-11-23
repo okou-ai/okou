@@ -40,7 +40,7 @@ class CanonicalReadTransportTest {
                             "/api/chat/events/catch-up" ->
                                 MockResponse()
                                     .setBody(
-                                        """{"events":{"$CHAT_PERSONAL":[$wire]},"notFoundThreads":[]}"""
+                                        """{"events":{"$CHAT_PERSONAL":[$wire]},"notFoundThreads":[]}""",
                                     )
                                     .throttleBody(32, 50, TimeUnit.MILLISECONDS)
                             "/archive" ->
@@ -72,7 +72,7 @@ class CanonicalReadTransportTest {
                         val returned = history.await().events.getValue(CHAT_PERSONAL).single()
                         val event =
                             HistoryEvent.decode(
-                                historyJson.encodeToJsonElement(returned).jsonObject
+                                historyJson.encodeToJsonElement(returned).jsonObject,
                             )
                         assertEquals("run.failed", event.type)
                         assertEquals(HistoryEvent.decode(wire), event)
@@ -90,7 +90,7 @@ class CanonicalReadTransportTest {
                 MockResponse()
                     .setResponseCode(426)
                     .setChunkedBody("x".repeat(1_024 * 1_024), 32)
-                    .throttleBody(32, 50, TimeUnit.MILLISECONDS)
+                    .throttleBody(32, 50, TimeUnit.MILLISECONDS),
             )
             server.start()
             ApiClient(
