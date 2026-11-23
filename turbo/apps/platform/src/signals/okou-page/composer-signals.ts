@@ -20,7 +20,8 @@ import {
 import { i18n } from "../../i18n/index.ts";
 import { createComputerUseGuideSignals } from "../computer-use-setup.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { onRef, settle } from "../utils.ts";
+import { detach, onRef, Reason } from "../utils.ts";
+import { rootSignal$ } from "../root-signal.ts";
 import {
   prepareRecentWorkflowUse$,
   recordRecentWorkflowUse$,
@@ -982,7 +983,6 @@ function createSubmitCurrentInput({
   readonly taskChips: ComposerTaskChipsSignals;
 }) {
   const draft = options.draft.signals;
-  const voiceState$ = voice.state$;
   const readTaskSelection$ = createReadComposerTaskSelection(create, taskChips);
   const submitMessage$ = createSubmitMessageWithVisualization(
     options.submitMessage$,
@@ -1003,7 +1003,7 @@ function createSubmitCurrentInput({
         return false;
       }
       signal.throwIfAborted();
-      const voiceState = await get(voiceState$);
+      const voiceState = await get(voice.state$);
       signal.throwIfAborted();
       if (voiceState.status !== "idle") {
         return false;
@@ -1076,21 +1076,24 @@ function createSubmitCurrentInput({
         workflowComposer.workflows$,
         signal,
       );
+      const recencySignal = get(rootSignal$);
       const submitted = await set(
         submitMessage$,
         action,
         nextSubmission,
         signal,
       );
+      if (submitted && workflowUse) {
+        // The send is already accepted. Optional persistence belongs to the
+        // authenticated root, not the composer that navigation may replace.
+        detach(
+          set(recordRecentWorkflowUse$, workflowUse, recencySignal),
+          Reason.Daemon,
+          "accepted send workflow recency",
+        );
+      }
       if (submitted) {
         await set(taskChips.home.dismissMenu$, menuRevision, signal);
-      }
-      if (submitted && workflowUse) {
-        // Browser history must never turn an accepted send into a send error.
-        // eslint-disable-next-line ccstate/no-settle -- Legacy 20261029: existing settle only; do not add new usages.
-        await settle(() => {
-          set(recordRecentWorkflowUse$, workflowUse, signal);
-        }, signal);
       }
       return submitted;
     },
