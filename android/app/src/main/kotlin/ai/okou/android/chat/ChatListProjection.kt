@@ -80,18 +80,22 @@ internal class ChatListProjection {
 
     fun hasUnsettledEdits(edits: List<ChatRowEdit>) = rowEdits.any { it.edit in edits }
 
-    fun matchesConfirmedTarget(edit: ChatRowEdit): Boolean {
-        val pending = rowEdits.firstOrNull { it.edit == edit } ?: return false
-        return confirmedRows.byRecency.any { it.id == edit.threadId && pending.matchesTarget(it) }
-    }
-
     fun settleConfirmedTargets(edits: List<ChatRowEdit>): Boolean {
-        val matched =
-            rowEdits.mapNotNull { pending ->
-                pending.edit.takeIf { it in edits && matchesConfirmedTarget(it) }?.eventId
+        if (edits.isEmpty() || rowEdits.isEmpty()) return false
+        val matched = buildSet {
+            for (pending in rowEdits) {
+                val edit = pending.edit
+                if (
+                    edit in edits &&
+                        confirmedRows.byRecency.any {
+                            it.id == edit.threadId && pending.matchesTarget(it)
+                        }
+                )
+                    add(edit.eventId)
             }
+        }
         if (matched.isEmpty()) return false
-        settleRowEdits(matched.toSet(), emptySet())
+        settleRowEdits(matched, emptySet())
         return true
     }
 

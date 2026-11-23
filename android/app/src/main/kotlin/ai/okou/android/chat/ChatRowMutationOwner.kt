@@ -94,9 +94,9 @@ internal class ChatRowMutationOwner(
                 else
                     retries.run { retrying ->
                         requireCurrent()
-                        if (retrying && projection.matchesConfirmedTarget(edit)) {
+                        if (retrying && projection.settleConfirmedTargets(listOf(edit))) {
                             alreadySatisfied = true
-                            if (projection.discardEdits(listOf(edit))) publishRows()
+                            publishRows()
                         } else write(edit)
                     }
             }
@@ -126,11 +126,10 @@ internal class ChatRowMutationOwner(
 
     fun discardRejected(submission: Submission): Rollback? {
         val rejected = submission.edits.dropLast(submission.submittedCount)
-        val failed =
-            !submission.recoverByTarget || rejected.any { !projection.matchesConfirmedTarget(it) }
-        if (!projection.discardEdits(rejected)) return null
-        if (!failed) {
-            publishRows()
+        val confirmedElsewhere =
+            submission.recoverByTarget && projection.settleConfirmedTargets(rejected)
+        if (!projection.discardEdits(rejected)) {
+            if (confirmedElsewhere) publishRows()
             return null
         }
         return when {

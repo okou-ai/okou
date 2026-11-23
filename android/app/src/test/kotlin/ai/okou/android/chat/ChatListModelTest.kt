@@ -1061,7 +1061,10 @@ class ChatListModelTest {
         }
     }
 
-    private fun tiedPinEvents(vararg threads: String): List<String> {
+    private fun pinnedEvents(
+        vararg threads: String,
+        pinOrder: (Int) -> String = { "a0" },
+    ): List<String> {
         fun id(seq: Long) = "${seq.toString().padStart(8, '0')}-0000-4000-8000-000000000000"
         return threads.flatMapIndexed { index, thread ->
             val created = 17L + 2 * index
@@ -1073,7 +1076,7 @@ class ChatListModelTest {
                     seq = pinned,
                     thread = thread,
                     kind = "pinned",
-                    extra = ""","pinOrder":"a0"""",
+                    extra = ""","pinOrder":"${pinOrder(index)}"""",
                 ),
             )
         }
@@ -1084,7 +1087,7 @@ class ChatListModelTest {
         val first = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val hidden = CHAT_IN_PROJECT
         val last = CHAT_PERSONAL
-        val events = tiedPinEvents(first, hidden, last).toMutableList()
+        val events = pinnedEvents(first, hidden, last).toMutableList()
         val writes = mutableListOf<String>()
         val source =
             object : Service() {
@@ -1137,12 +1140,65 @@ class ChatListModelTest {
     }
 
     @Test
+    fun aConfirmedNewerPinMoveSettlesTheEarlierUnconfirmedRank() = runTest {
+        val first = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val middle = CHAT_IN_PROJECT
+        val last = CHAT_PERSONAL
+        val events = pinnedEvents(first, middle, last, pinOrder = { "a$it" }).toMutableList()
+        val requested = mutableListOf<String>()
+        val source =
+            object : Service() {
+                override suspend fun chatEvents(since: Long?) = page(events)
+
+                override suspend fun reorderPinnedThread(
+                    threadId: String,
+                    pinOrder: String,
+                    eventId: String,
+                ) {
+                    assertEquals(first, threadId)
+                    requested.add(pinOrder)
+                    if (requested.size == 1) throw ApiFailure.Network(IOException("Response lost"))
+                    throw ApiFailure.Network(ConnectException("Request not delivered"))
+                }
+            }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
+            runCurrent()
+            assertEquals(listOf(middle, first, last), model.uiState.value.threads.map { it.id })
+            assertEquals(ChatRowAction.MovePinDown, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(first, ChatRowAction.MovePinDown))
+            runCurrent()
+            events.add(
+                chatEventWire(
+                    id = HISTORY_LAST_EVENT,
+                    seq = 23,
+                    thread = first,
+                    kind = "sort_touched",
+                    extra = ""","pinOrder":"a3"""",
+                )
+            )
+            model.refreshList()
+            runCurrent()
+            advanceTimeBy(3_000)
+            runCurrent()
+
+            val confirmed = model.uiState.value
+            assertEquals(listOf("a1V", "a3"), requested)
+            assertEquals(listOf(middle, last, first), confirmed.threads.map { it.id })
+            assertNull(confirmed.failedRowAction)
+        }
+    }
+
+    @Test
     fun rejectedPinReorderKeepsTheSubmittedStepAndDiscardsTheUnsentStep() = runTest {
         val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val next = CHAT_IN_PROJECT
         val rejected = "33333333-3333-4333-8333-333333333333"
         val submitted = CHAT_PERSONAL
-        val events = tiedPinEvents(moved, next, rejected, submitted).toMutableList()
+        val events = pinnedEvents(moved, next, rejected, submitted).toMutableList()
         val hold = CompletableDeferred<Unit>()
         val readback = CompletableDeferred<Unit>()
         val requested = mutableListOf<String>()
@@ -1216,7 +1272,7 @@ class ChatListModelTest {
     fun aPartialPinMoveCanSettleItsSubmittedRankAfterAReadFailure() = runTest {
         val moved = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
         val submitted = CHAT_PERSONAL
-        val events = tiedPinEvents(moved, CHAT_IN_PROJECT, submitted).toMutableList()
+        val events = pinnedEvents(moved, CHAT_IN_PROJECT, submitted).toMutableList()
         val attempted = mutableListOf<String>()
         var readUnavailable = false
         val source =
@@ -1576,6 +1632,131 @@ class ChatListModelTest {
             assertTrue(confirmed.readIntents.isEmpty())
             assertNull(confirmed.failedRowAction)
             assertNull(confirmed.rowUndo)
+        }
+    }
+
+    @Test
+    fun aConfirmedUnreadWriteRetiresTheEarlierUnknownReadFeedback() = runTest {
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Response lost"))
+
+                    override suspend fun markUnread(threadId: String) = ReadState(null)
+
+                    override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertTrue(model.uiState.value.readIntents.isEmpty())
+            assertNull(model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun anUnconfirmedReadCannotCancelAnUndeliveredUnreadWrite() = runTest {
+        var unreadWrites = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState =
+                        throw ApiFailure.Network(IOException("Response lost"))
+
+                    override suspend fun markUnread(threadId: String): ReadState {
+                        if (++unreadWrites == 1)
+                            throw ApiFailure.Network(ConnectException("Request not delivered"))
+                        return ReadState(null)
+                    }
+
+                    override suspend fun threadDetail(threadId: String) = ThreadDetail(null, false)
+                }
+                .apply {
+                    statusRead = {
+                        Indicators(
+                            mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                            mapOf(CHAT_PERSONAL to CHAT_DATE),
+                        )
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertEquals(ChatRowAction.MarkRead, model.uiState.value.failedRowAction?.action)
+
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkUnread))
+            runCurrent()
+            assertEquals(1, unreadWrites)
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, unreadWrites)
+            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertNull(model.uiState.value.failedRowAction)
+        }
+    }
+
+    @Test
+    fun aRetryPreflightCannotEraseANewerUnreadSnapshot() = runTest {
+        var confirmedReadAt: String? = null
+        var writes = 0
+        val source =
+            object : Service() {
+                    override suspend fun markRead(threadId: String): ReadState {
+                        writes++
+                        throw ApiFailure.Network(ConnectException("Request not delivered"))
+                    }
+
+                    override suspend fun threadDetail(threadId: String): ThreadDetail {
+                        val snapshot = ThreadDetail(confirmedReadAt, false)
+                        // Another client marks unread before the trailing indicators request.
+                        confirmedReadAt = null
+                        return snapshot
+                    }
+                }
+                .apply {
+                    statusRead = {
+                        if (confirmedReadAt == null)
+                            Indicators(
+                                mapOf(CHAT_PERSONAL to IndicatorsThreadsValue.UNREAD),
+                                mapOf(CHAT_PERSONAL to CHAT_DATE),
+                            )
+                        else Indicators(emptyMap(), emptyMap())
+                    }
+                }
+        withCatchUpModel(source) { model ->
+            model.refresh()
+            runCurrent()
+            model.selectFilter(ChatListFilter.Unread)
+            assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
+            runCurrent()
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
+
+            confirmedReadAt = CHAT_DATE
+            advanceTimeBy(3_000)
+            runCurrent()
+
+            val settled = model.uiState.value
+            assertEquals(1, writes)
+            assertTrue(settled.isUnread(CHAT_PERSONAL))
+            assertTrue(settled.readIntents.isEmpty())
+            assertNull(settled.rowUndo)
         }
     }
 

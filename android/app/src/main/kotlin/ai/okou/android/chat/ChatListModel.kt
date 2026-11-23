@@ -421,7 +421,6 @@ class ChatListModel(
         val rejected: Boolean = false,
         val connectionFailed: Boolean = false,
         val alreadySatisfied: Boolean = false,
-        val verifiedWatermark: ChatTimestamp? = null,
     ) {
         var observedUnread = false
     }
@@ -694,7 +693,6 @@ class ChatListModel(
         conversationId: String? = null,
     ): ReadConfirmation {
         var alreadySatisfied = false
-        var verifiedWatermark: ChatTimestamp? = null
         suspend fun writeRead(): Boolean {
             requireCurrent()
             return if (intent.action == ChatRowAction.MarkUnread) {
@@ -707,17 +705,26 @@ class ChatListModel(
             try {
                 if (reportFailure) {
                     ChatWriteRetries().run { retrying ->
-                        requireCurrent()
-                        alreadySatisfied =
-                            retrying &&
-                                if (intent.action == ChatRowAction.MarkUnread) {
-                                    readThreadForConfirmation(threadId)?.let {
-                                        it.lastReadAt == null
-                                    } == true
-                                } else {
-                                    verifiedWatermark = confirmedReadWatermark(threadId, intent)
-                                    verifiedWatermark != null
-                                }
+                        if (retrying) {
+                            val earlier = readConfirmations[threadId]
+                            // The server can still show the old value while an inverse is
+                            // unconfirmed.
+                            if (
+                                earlier == null ||
+                                    earlier.receiptCoversIntent ||
+                                    earlier.intent.action == intent.action
+                            ) {
+                                requireCurrent()
+                                alreadySatisfied =
+                                    if (intent.action == ChatRowAction.MarkUnread) {
+                                        readThreadForConfirmation(threadId)?.let {
+                                            it.lastReadAt == null
+                                        } == true
+                                    } else confirmedReadWatermark(threadId, intent) != null
+                            }
+                        }
+                        // Preflight can stop the retry. The subsequent indicator read owns the
+                        // display.
                         alreadySatisfied || writeRead()
                     }
                 } else {
@@ -773,13 +780,21 @@ class ChatListModel(
                 reportFailure,
                 projectedIntent,
                 alreadySatisfied = alreadySatisfied,
-                verifiedWatermark = verifiedWatermark,
             )
             .also {
-                readConfirmations[threadId] = it
-                if (publish) {
+                val previous = readConfirmations.put(threadId, it)
+                val failure =
+                    state.failedRowAction?.takeUnless {
+                        previous != null && it.readIntent === previous.intent
+                    }
+                if (publish || failure !== state.failedRowAction) {
                     mutable.value =
-                        state.copy(readIntents = state.readIntents + (threadId to intent))
+                        state.copy(
+                            readIntents =
+                                if (publish) state.readIntents + (threadId to intent)
+                                else state.readIntents,
+                            failedRowAction = failure,
+                        )
                 }
             }
     }
@@ -1199,6 +1214,7 @@ class ChatListModel(
                 confirmedThreads = projection.confirmedRows.threads,
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
+                failedRowAction = unresolvedRowAction(state.failedRowAction),
             )
         )
     }
@@ -1213,9 +1229,7 @@ class ChatListModel(
         val discarded =
             state.projectsSource == ChatListSource.Network &&
                 projection.discardUnconfirmedMovesToMissingProjects(state.projects)
-        if (rowsChanged || discarded) {
-            publishRows(state.copy(failedRowAction = unresolvedRowAction(state.failedRowAction)))
-        } else publishWithCurrentMoveNotice(state)
+        if (rowsChanged || discarded) publishRows(state) else publishWithCurrentMoveNotice(state)
     }
 
     private fun unresolvedRowAction(failure: ChatRowActionFailure?): ChatRowActionFailure? =
@@ -1711,7 +1725,6 @@ class ChatListModel(
                 listPhase = ChatReadPhase.Ready,
                 listReadFailure = null,
                 sustainedRefreshFailure = false,
-                failedRowAction = unresolvedRowAction(previousState.failedRowAction),
                 rowUndo =
                     undo?.takeUnless {
                         it.phase == ChatUndoPhase.Unconfirmed &&
@@ -1792,25 +1805,26 @@ class ChatListModel(
                     val result = service.indicators()
                     requireCurrent()
                     var checkedWatermarks: MutableMap<String, ChatTimestamp>? = null
-                    for ((id, confirmation) in eligible) {
-                        if (readConfirmations[id] !== confirmation) continue
-                        val watermark =
-                            confirmation.verifiedWatermark
-                                ?: if (
-                                    confirmation.reportFailure &&
-                                        !confirmation.receiptCoversIntent &&
-                                        confirmation.intent.action == ChatRowAction.MarkRead &&
-                                        verifyPendingRead?.invoke(id) == true
-                                )
-                                    confirmedReadWatermark(id, confirmation.intent)
-                                else null
-                        if (watermark == null || readConfirmations[id] !== confirmation) continue
-                        val watermarks =
-                            checkedWatermarks
-                                ?: mutableMapOf<String, ChatTimestamp>().also {
-                                    checkedWatermarks = it
-                                }
-                        watermarks[id] = watermark
+                    if (verifyPendingRead != null) {
+                        for ((id, confirmation) in eligible) {
+                            if (
+                                !confirmation.reportFailure ||
+                                    confirmation.receiptCoversIntent ||
+                                    confirmation.intent.action != ChatRowAction.MarkRead ||
+                                    !verifyPendingRead(id) ||
+                                    readConfirmations[id] !== confirmation
+                            )
+                                continue
+                            val watermark =
+                                confirmedReadWatermark(id, confirmation.intent) ?: continue
+                            if (readConfirmations[id] !== confirmation) continue
+                            val watermarks =
+                                checkedWatermarks
+                                    ?: mutableMapOf<String, ChatTimestamp>().also {
+                                        checkedWatermarks = it
+                                    }
+                            watermarks[id] = watermark
+                        }
                     }
                     val unreadConfirmedAt = wallMillis()
                     val reconciled =
