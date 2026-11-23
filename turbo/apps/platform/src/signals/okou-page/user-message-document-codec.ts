@@ -267,13 +267,69 @@ export function restoredMessageToDraftDocument(
   return completedEditorDraft(parts)?.userMessage ?? null;
 }
 
-function feedbackSource(
+export function feedbackSourceToNodeAttributes(
+  source: FeedbackSource | undefined,
+) {
+  return {
+    sourceType: source?.type ?? null,
+    sourceId: source?.type === "mail" ? source.id : null,
+    sourceStatus: source?.type === "mail" ? source.status : null,
+    sourceSentId: source?.type === "mail" ? (source.sentId ?? null) : null,
+    sourceFileId: source?.type === "artifact" ? source.fileId : null,
+    sourceFilenameSnapshot:
+      source?.type === "artifact" ? source.filenameSnapshot : null,
+    sourceArtifactId:
+      source?.type === "artifact" ? (source.artifactId ?? null) : null,
+  };
+}
+
+function artifactFeedbackSourceFromNode(
+  node: ProseMirrorNode,
+): FeedbackSource | null {
+  const fileId: unknown = node.attrs.sourceFileId;
+  const filenameSnapshot: unknown = node.attrs.sourceFilenameSnapshot;
+  const artifactId: unknown = node.attrs.sourceArtifactId;
+  if (
+    typeof fileId !== "string" ||
+    fileId.length === 0 ||
+    typeof filenameSnapshot !== "string" ||
+    filenameSnapshot.length === 0 ||
+    (artifactId !== null &&
+      (typeof artifactId !== "string" || artifactId.length === 0)) ||
+    node.attrs.sourceId !== null ||
+    node.attrs.sourceStatus !== null ||
+    node.attrs.sourceSentId !== null
+  ) {
+    return null;
+  }
+  return {
+    type: "artifact",
+    fileId,
+    filenameSnapshot,
+    ...(typeof artifactId === "string" ? { artifactId } : {}),
+  };
+}
+
+export function feedbackSourceFromNode(
   node: ProseMirrorNode,
 ): FeedbackSource | null | undefined {
   const sourceType: unknown = node.attrs.sourceType;
+  if (sourceType === "artifact") {
+    return artifactFeedbackSourceFromNode(node);
+  }
   const sourceId: unknown = node.attrs.sourceId;
   const sourceStatus: unknown = node.attrs.sourceStatus;
   const sourceSentId: unknown = node.attrs.sourceSentId;
+  const sourceFileId: unknown = node.attrs.sourceFileId;
+  const sourceFilenameSnapshot: unknown = node.attrs.sourceFilenameSnapshot;
+  const sourceArtifactId: unknown = node.attrs.sourceArtifactId;
+  if (
+    sourceFileId !== null ||
+    sourceFilenameSnapshot !== null ||
+    sourceArtifactId !== null
+  ) {
+    return null;
+  }
   if (
     sourceType === null &&
     sourceId === null &&
@@ -332,7 +388,7 @@ function feedbackLocation(
 
 function feedbackPart(node: ProseMirrorNode): UserMessagePart | null {
   const quote: unknown = node.attrs.quote;
-  const source = feedbackSource(node);
+  const source = feedbackSourceFromNode(node);
   const location = feedbackLocation(node);
   if (typeof quote !== "string" || source === null || location === null) {
     return null;
@@ -867,14 +923,7 @@ function restoredEditorDoc(userMessage: UserMessageDocument): JSONContent {
                 rangeEnd: part.range.end,
               }
             : {}),
-          ...(part.source
-            ? {
-                sourceType: part.source.type,
-                sourceId: part.source.id,
-                sourceStatus: part.source.status,
-                sourceSentId: part.source.sentId ?? null,
-              }
-            : {}),
+          ...feedbackSourceToNodeAttributes(part.source),
         },
         content: feedbackNoteContent(part.note),
       });

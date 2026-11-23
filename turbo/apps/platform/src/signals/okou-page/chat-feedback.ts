@@ -1,12 +1,10 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import type { SuggestionContext } from "@okouai/api-contracts/contracts/suggestion-context";
+import type { UserMessagePart } from "@okouai/api-contracts/contracts/chat-threads";
 
-export interface FeedbackSource {
-  readonly type: "mail";
-  readonly id: string;
-  readonly status: "draft" | "sent";
-  readonly sentId?: string;
-}
+export type FeedbackSource = NonNullable<
+  Extract<UserMessagePart, { type: "feedback" }>["source"]
+>;
 
 export interface FeedbackRange {
   /** UTF-16 code-unit offset, compatible with JavaScript String.slice. */
@@ -130,23 +128,34 @@ export function formatFeedbackPrompt(
   items: readonly Pick<FeedbackItem, "quote" | "note" | "source">[],
   chatRunSourceTitle?: string,
 ): string {
-  const firstMailSource = items[0]?.source;
-  const commonMailSource =
-    firstMailSource !== undefined &&
+  const firstSource = items[0]?.source;
+  const commonSource =
+    firstSource !== undefined &&
     items.every((item) => {
+      if (firstSource.type === "artifact") {
+        return (
+          item.source?.type === "artifact" &&
+          item.source.fileId === firstSource.fileId &&
+          item.source.filenameSnapshot === firstSource.filenameSnapshot &&
+          item.source.artifactId === firstSource.artifactId
+        );
+      }
       return (
         item.source?.type === "mail" &&
-        item.source.id === firstMailSource.id &&
-        item.source.status === firstMailSource.status &&
-        item.source.sentId === firstMailSource.sentId
+        item.source.id === firstSource.id &&
+        item.source.status === firstSource.status &&
+        item.source.sentId === firstSource.sentId
       );
     })
-      ? firstMailSource
+      ? firstSource
       : null;
   const hasSourceContext = items.some((item) => {
     return item.source !== undefined;
   });
-  const mailSourceLabel = (source: FeedbackSource) => {
+  const sourceLabel = (source: FeedbackSource) => {
+    if (source.type === "artifact") {
+      return `a file "${source.filenameSnapshot}" (file ID: ${source.fileId})`;
+    }
     return source.status === "draft"
       ? `an email draft (mail draft ID: ${source.id})`
       : `a sent email (mail ID: ${source.id}${source.sentId ? `, sent ID: ${source.sentId}` : ""})`;
@@ -159,8 +168,8 @@ export function formatFeedbackPrompt(
       })
       .join("\n");
     const source =
-      commonMailSource === null && item.source?.type === "mail"
-        ? `Source: ${mailSourceLabel(item.source)}\n\n`
+      commonSource === null && item.source
+        ? `Source: ${sourceLabel(item.source)}\n\n`
         : "";
     const note = item.note.trim();
     return note.length === 0
@@ -171,18 +180,18 @@ export function formatFeedbackPrompt(
     ? items.length === 1
       ? `The user forwarded this from the chat "${chatRunSourceTitle}":`
       : `The user forwarded ${items.length} parts from the chat "${chatRunSourceTitle}":`
-    : commonMailSource
+    : commonSource
       ? items.length === 1
-        ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
-        : `The user quoted ${items.length} parts of ${mailSourceLabel(commonMailSource)}:`
+        ? `The user quoted this part of ${sourceLabel(commonSource)}:`
+        : `The user quoted ${items.length} parts of ${sourceLabel(commonSource)}:`
       : hasSourceContext
         ? `The user quoted ${items.length} selected ${items.length === 1 ? "passage" : "passages"}:`
         : items.length === 1
           ? "The user quoted this part of your reply:"
           : `The user quoted ${items.length} parts of your reply:`;
-  const commonMailContext =
-    chatRunSourceTitle && commonMailSource
-      ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
+  const commonSourceContext =
+    chatRunSourceTitle && commonSource
+      ? `Source: ${sourceLabel(commonSource)}\n\n`
       : "";
-  return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
+  return `${intro}\n\n${commonSourceContext}${blocks.join("\n\n---\n\n")}`;
 }
