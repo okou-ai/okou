@@ -785,6 +785,12 @@ class ChatListRootTest {
         compose.onNodeWithTag("message_output").assertIsDisplayed()
         compose.waitUntilExactlyOneExists(hasTestTag("conversation_find_hit"), 5_000)
         compose.onNodeWithTag("conversation_find_hit").assertIsFocused()
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        compose.onNodeWithTag("conversation_find").assertIsDisplayed()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("conversation").assertIsDisplayed()
+        compose.onNodeWithTag("conversation_find_hit").assertDoesNotExist()
         compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
         field.assert(hasText("history"))
         compose.onNode(hasText("Messages") and isSelectable()).assertIsSelected()
