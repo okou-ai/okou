@@ -501,6 +501,75 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun newerTimezoneSavesAfterAnEarlierScheduleConflict() = check { model, api, _ ->
+        val release = CompletableDeferred<Unit>()
+        val save = api.write
+        api.write = { update ->
+            if (update.timezone == "Asia/Tokyo") {
+                release.await()
+                save(update)
+                throw ApiFailure.Http(409, "CONFLICT", null, null)
+            }
+            save(update)
+        }
+        model.selectTimezone("Asia/Tokyo")
+        runCurrent()
+        model.selectTimezone("Asia/Seoul")
+        model.selectTimezone("Asia/Shanghai")
+        release.complete(Unit)
+        runCurrent()
+
+        assertEquals(
+            listOf("Asia/Tokyo", "Asia/Shanghai"),
+            api.requests.map { it.timezone },
+        )
+        assertEquals("Asia/Shanghai", api.stored.timezone)
+        assertEquals("Asia/Shanghai", model.uiState.value.confirmed.timezone)
+        assertNull(model.uiState.value.pending)
+    }
+
+    @Test
+    fun queuedAppearanceSavesOnReconnectWithoutRepeatingAnObsoleteTimezone() {
+        val online = MutableStateFlow(true)
+        check(online = online) { model, api, _ ->
+            val release = CompletableDeferred<Unit>()
+            val save = api.write
+            api.write = { update ->
+                if (update.timezone == "Asia/Tokyo") {
+                    release.await()
+                    save(update)
+                    throw ApiFailure.Http(409, "CONFLICT", null, null)
+                }
+                save(update)
+            }
+            model.selectTimezone("Asia/Tokyo")
+            runCurrent()
+            model.selectTheme(UserPreferencesTheme.DARK)
+            online.value = false
+            runCurrent()
+            release.complete(Unit)
+            runCurrent()
+            assertEquals(1, api.requests.size)
+            assertEquals("Asia/Tokyo", model.uiState.value.confirmed.timezone)
+
+            api.stored = api.stored.copy(timezone = "Asia/Shanghai")
+            online.value = true
+            runCurrent()
+
+            assertEquals(
+                listOf(
+                    UpdatePreferencesRequest(timezone = "Asia/Tokyo"),
+                    UpdatePreferencesRequest(theme = UpdatePreferencesRequestTheme.DARK),
+                ),
+                api.requests,
+            )
+            assertEquals("Asia/Shanghai", model.uiState.value.timezone)
+            assertEquals(UserPreferencesTheme.DARK, api.stored.theme)
+            assertNull(model.uiState.value.pending)
+        }
+    }
+
+    @Test
     fun timezoneConflictRetryRespectsANewerSavedTimezone() {
         val service = Service()
         val save = service.write

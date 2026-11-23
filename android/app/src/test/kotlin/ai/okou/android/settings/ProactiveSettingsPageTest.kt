@@ -205,6 +205,16 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w720dp-h800dp")
+    fun intermediateWidthUsesTheMaterialBottomSheetLimit() {
+        openProactiveWithMissingTimezone()
+        compose.onNodeWithText("Time zone").performClick()
+        val choice = compose.onNode(hasText("Shanghai (UTC+8)") and isSelectable())
+        val bounds = choice.assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(608.dp, bounds.right - bounds.left)
+    }
+
+    @Test
     fun rejectedTimezoneRestoresTheRowAndTheNextSelectionClearsFeedback() {
         app.preferenceWrite = { update, save ->
             if (update.timezone == TimeZone.getCanonicalID("Asia/Kathmandu")) {

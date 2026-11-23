@@ -70,7 +70,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -327,11 +326,9 @@ internal fun SettingsModal(
     onDismiss: () -> Unit,
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
-    maxHeight: Dp = Dp.Unspecified,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
-    val panelHeight = Modifier.heightIn(max = maxHeight)
     if (fullScreen || workspaceListPaneWidth(window.width, window.height) != null) {
         Dialog(
             onDismissRequest = onDismiss,
@@ -344,12 +341,8 @@ internal fun SettingsModal(
         ) {
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
-                else
-                    Modifier.padding(horizontal = 24.dp)
-                        .widthIn(max = 460.dp)
-                        .fillMaxWidth()
-                        .then(panelHeight),
-                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
+                else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
+                shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 content(true)
@@ -357,9 +350,6 @@ internal fun SettingsModal(
         }
     } else {
         val allowDismiss by rememberUpdatedState(dismissible)
-        val handleHeight = 4.dp
-        val handleTopPadding = 14.dp
-        val handleBottomPadding = if (window.height < 480) 12.dp else 20.dp
         ModalBottomSheet(
             onDismissRequest = onDismiss,
             sheetState =
@@ -369,37 +359,25 @@ internal fun SettingsModal(
                     confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
                 ),
             sheetGesturesEnabled = dismissible,
-            sheetMaxWidth = 460.dp,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
-            dragHandle = {
-                Box(
-                    Modifier.padding(top = handleTopPadding, bottom = handleBottomPadding)
-                        .size(width = 32.dp, height = handleHeight)
-                        .background(
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            RoundedCornerShape(2.dp),
-                        ),
-                )
-            },
             properties =
                 ModalBottomSheetProperties(
                     shouldDismissOnBackPress = dismissible,
                     shouldDismissOnClickOutside = dismissible,
                 ),
         ) {
-            if (maxHeight.isSpecified) {
-                val bodyHeight =
-                    (maxHeight - handleHeight - handleTopPadding - handleBottomPadding)
-                        .coerceAtLeast(0.dp)
-                // The sheet needs the full window constraints to calculate its bottom anchor.
-                Box(Modifier.heightIn(max = bodyHeight)) { content(false) }
-            } else {
-                content(false)
-            }
+            content(false)
         }
     }
 }
+
+internal fun settingsPanelPadding(windowHeightDp: Int, centered: Boolean) =
+    PaddingValues(
+        start = 16.dp,
+        end = 16.dp,
+        top = if (centered) 16.dp else 0.dp,
+        bottom = if (windowHeightDp < 480) 12.dp else 22.dp,
+    )
 
 @Composable
 internal fun SettingsSheet(
@@ -412,20 +390,10 @@ internal fun SettingsSheet(
     scrollContent: Boolean = true,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height.dp
+    val windowHeight = currentWindowSizeDp().height
     val scroll = if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier
-    SettingsModal(onDismiss, maxHeight = windowHeight * 0.80f) { centered ->
-        Column(
-            modifier
-                .fillMaxWidth()
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
-                .then(scroll),
-        ) {
+    SettingsModal(onDismiss) { centered ->
+        Column(modifier.fillMaxWidth().padding(settingsPanelPadding(windowHeight, centered))) {
             Box(Modifier.fillMaxWidth()) {
                 Text(
                     title,
@@ -441,11 +409,12 @@ internal fun SettingsSheet(
                 if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
             }
             Column(
-                Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth().weight(1f, fill = false).then(scroll),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                content = content,
-            )
-            if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
+            ) {
+                content()
+                if (actions != null) Box { actions() }
+            }
         }
     }
 }

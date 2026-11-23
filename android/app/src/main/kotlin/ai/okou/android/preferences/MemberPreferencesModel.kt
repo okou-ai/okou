@@ -133,7 +133,7 @@ private fun MemberPreferencesState.afterTimezoneConflict(
     // The timezone endpoint returns this conflict after saving the fields and before finishing
     // Morning Brief reconciliation. Keep the schedule repair pending and acknowledge the values.
     val timezone = checkNotNull(sent.timezoneToWrite)
-    val remaining = pending?.after(sent) ?: PreferenceChange()
+    val remaining = pending?.after(sent)
     return copy(
         confirmed =
             confirmed.copy(
@@ -144,7 +144,9 @@ private fun MemberPreferencesState.afterTimezoneConflict(
                 cloudBrowserEnabledByDefault =
                     sent.cloudBrowser ?: confirmed.cloudBrowserEnabledByDefault,
             ),
-        pending = remaining.copy(timezoneToReconcile = timezone),
+        pending = (remaining ?: PreferenceChange()).copy(timezoneToReconcile = timezone),
+        status = if (remaining == null) PreferenceStatus.SaveFailed else PreferenceStatus.Ready,
+        recovering = false,
         timezoneConfirmation = timezoneConfirmation + 1,
     )
 }
@@ -358,9 +360,13 @@ class MemberPreferencesModel(
             return true
         }
         val conflict = error is ApiFailure.Http && error.status == 409 && error.code == "CONFLICT"
-        val state =
-            if (conflict && sent?.timezoneToWrite != null) mutable.value.afterTimezoneConflict(sent)
-            else mutable.value
+        if (conflict && sent?.timezoneToWrite != null) {
+            val state = mutable.value.afterTimezoneConflict(sent)
+            mutable.value = state
+            // New selections can proceed after readback. A schedule repair alone waits for Retry.
+            return state.status == PreferenceStatus.Ready
+        }
+        val state = mutable.value
         val pending = state.pending != null
         val recoverable =
             when (error) {
