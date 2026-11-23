@@ -3,9 +3,10 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
-import type {
-  ZipArtifactPreviewScope,
-  ZipArtifactPreviewSignals,
+import {
+  revealSelectedZipEntry$,
+  type ZipArtifactPreviewScope,
+  type ZipArtifactPreviewSignals,
 } from "../../signals/zip-artifact-preview.ts";
 import type { AttachmentLightboxState } from "../../signals/okou-page/attachment-chips.ts";
 import type { Computed } from "ccstate";
@@ -63,6 +64,7 @@ function ZipContents({
   const entries = useLoadable(signals.entries$);
   const selected = useGet(signals.selection$);
   const select = useSet(signals.select$);
+  const revealSelected = useSet(revealSelectedZipEntry$);
   const page = useGet(pageSignal$);
   if (entries.state === "loading") {
     return <ZipLoading />;
@@ -88,6 +90,9 @@ function ZipContents({
               {entry.preview ? (
                 <button
                   type="button"
+                  ref={
+                    selected?.path === entry.path ? revealSelected : undefined
+                  }
                   aria-pressed={selected?.path === entry.path}
                   className="w-full rounded-md px-2 py-1.5 text-start text-sm break-all hover:bg-state-hover aria-pressed:bg-muted"
                   onClick={onDomEventFn(() => {

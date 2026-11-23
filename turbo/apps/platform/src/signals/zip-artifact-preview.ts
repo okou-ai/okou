@@ -89,6 +89,26 @@ export type ZipArtifactPreviewSignals = ReturnType<
   typeof createZipArtifactPreview
 >;
 
+export const revealSelectedZipEntry$ = onRef<HTMLButtonElement>(
+  command((_, button: HTMLButtonElement, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const list = button.closest("ul");
+    if (!list) {
+      return;
+    }
+    const top = list.getBoundingClientRect().top + list.clientTop;
+    const bottom = top + list.clientHeight;
+    const row = button.getBoundingClientRect();
+    // The list becomes shorter on first selection. Scroll just its own
+    // viewport so the focused row stays visible as the preview opens.
+    if (row.top < top) {
+      list.scrollTop += row.top - top;
+    } else if (row.bottom > bottom) {
+      list.scrollTop += row.bottom - bottom;
+    }
+  }),
+);
+
 /** The ref mounting the preview owns its reads and every extracted object URL. */
 export function createZipArtifactPreviewScope(
   resourceUrl$: Computed<Promise<string | null>>,
