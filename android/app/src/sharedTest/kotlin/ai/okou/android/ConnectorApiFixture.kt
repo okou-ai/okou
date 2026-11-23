@@ -36,6 +36,7 @@ internal const val CONNECTOR_EXAMPLE_DEVICE_CODE = "ABCD-1234"
 
 internal data class FixtureConnectorIcon(
     val asset: String,
+    val svg: String? = null,
     val invertInDarkMode: Boolean = false,
     val scale: Double? = null,
 )
@@ -63,6 +64,7 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
     @Volatile var failAccountReads = false
     @Volatile var denyAccountReads = false
     @Volatile var denyPermissionReads = false
+    @Volatile var extraPermissionNames: List<String> = emptyList()
     @Volatile var loseRenameReply = false
     @Volatile var deferRenameCommit = false
     @Volatile var renameReplyGate: CountDownLatch? = null
@@ -162,7 +164,12 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
             object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     val url = checkNotNull(request.requestUrl)
-                    if (url.encodedPath.startsWith("/fixture-icons/")) return rejected(404)
+                    if (url.encodedPath.startsWith("/fixture-icons/")) {
+                        val asset = url.pathSegments.last().removeSuffix(".svg")
+                        val artwork = icons.values.firstOrNull { it.asset == asset }?.svg
+                            ?: return rejected(404)
+                        return MockResponse().setHeader("Content-Type", "image/svg+xml").setBody(artwork)
+                    }
                     if (request.getHeader("Authorization") != "Bearer connector-test")
                         return rejected(401)
                     if (url.encodedPath == "/api/connector-catalog/discovery") {
@@ -330,8 +337,10 @@ internal class ConnectorApiFixture(includeGrantExamples: Boolean = false) : Clos
                     if (denyPermissionReads) return rejected(403)
                     val (read, write) =
                         if (slug == "gmail") "读取邮件" to "起草与发送邮件" else "读取日历与日程" to "创建和更新日程"
+                    val names = listOf(read, write) + extraPermissionNames
+                    val permissions = JsonArray(names.map { buildJsonObject { put("name", it) } })
                     jsonResponse(
-                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":2,"permissions":[{"name":"$read"},{"name":"$write"}],"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
+                        """{"permissions":{"connectorSlug":"$slug","label":"${entry.name}","icon":${icon(entry.slug)},"permissionCount":${names.size},"permissions":$permissions,"categories":null,"defaultPolicy":{"permissionDefault":"ask","unknownPolicy":"deny"}}}""",
                     )
                 } else if (denyCatalogDetail) rejected(403)
                 else json(buildJsonObject { put("connector", entry.body(icon(entry.slug))) })
