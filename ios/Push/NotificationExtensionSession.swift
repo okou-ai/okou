@@ -43,7 +43,10 @@ final class NotificationExtensionSession {
       clerk.user?.id == destination.userId,
       identity.lastActiveOrganizationId == destination.workspaceId
     else { throw SessionError.scopeUnavailable }
-    let client = APIClient(baseURL: apiURL, clientVersion: version, session: session) { [self] in
+    let client = APIClient(
+      baseURL: apiURL, clientVersion: version, session: session,
+      distribution: { await InstallationDistribution.shared.current() }
+    ) { [self] in
       try await token(destination: destination, sessionID: identity.id)
     }
     let cache = ChatCache(

@@ -18,7 +18,8 @@ final class NotificationWorkspaceCache {
     if let preparedWorkspace, preparedWorkspace.scopeID == scopeID { return preparedWorkspace }
     let client = APIClient(
       baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session,
-      member: WorkspaceMemberID(userID: userID, workspaceID: workspaceID)
+      member: WorkspaceMemberID(userID: userID, workspaceID: workspaceID),
+      distribution: { await InstallationDistribution.shared.current() }
     ) {
       try await authentication.accessToken(workspaceID: workspaceID, scopeID: scopeID)
     }

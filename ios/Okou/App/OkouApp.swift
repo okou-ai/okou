@@ -296,15 +296,7 @@ private struct WorkspaceRootView: View {
       Text(store.list.actionError ?? "")
     }
     .fullScreenCover(isPresented: Binding(get: { store.needsUpgrade }, set: { _ in })) {
-      OkouEmptyState(
-        "Update required", icon: "download",
-        description: Text(
-          "This build no longer supports the current API. Install the latest Okou build to continue."
-        )
-      ) {
-        Link("Open TestFlight", destination: URL(string: "itms-beta://")!)
-          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
-      }
+      RequiredUpdateView()
       .background(OkouColor.background)
       .interactiveDismissDisabled()
     }
@@ -448,5 +440,36 @@ private struct WorkspaceRootView: View {
 
   private func startNewChat() {
     NewChatRequests.shared.request()
+  }
+}
+
+private struct RequiredUpdateView: View {
+  @State private var distribution: ClientDistribution?
+  @State private var attempt = 0
+
+  var body: some View {
+    OkouEmptyState(
+      "Update required", icon: "download",
+      description: Text(
+        "This build no longer supports the current API. Install the latest Okou build to continue."
+      )
+    ) {
+      switch distribution {
+      case .appStore:
+        Link("Open App Store", destination: URL(string: "https://apps.apple.com/app/id6815550027")!)
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case .testFlight:
+        Link("Open TestFlight", destination: URL(string: "itms-beta://")!)
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case .unknown:
+        Button("Try again") { attempt += 1 }
+          .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
+      case nil:
+        ProgressView()
+      }
+    }
+    .task(id: attempt) {
+      distribution = await InstallationDistribution.shared.current(retryUnknown: attempt > 0)
+    }
   }
 }
