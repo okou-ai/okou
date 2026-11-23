@@ -86,14 +86,14 @@ describe("system storage presigned URL cache", () => {
     const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`;
     const signedCount = mockUniquePresignedUrls();
     return {
-      advance(milliseconds: number) {
+      async advance(milliseconds: number) {
         clockTime += milliseconds;
-      },
-      signedCount,
-      async executionInput(prompt: string) {
         await owned.run(() => {
           return api.registerDirectRunner(owned.runnerGroup);
         });
+      },
+      signedCount,
+      async executionInput(prompt: string) {
         const run = await owned.sendChatRun(owned.actor, {
           prompt,
         });
@@ -218,7 +218,7 @@ describe("system storage presigned URL cache", () => {
       const objectKey = decodeURIComponent(
         new URL(first.downloadUrl).pathname.slice(1),
       );
-      scenario.advance(CACHE_TTL_SECONDS * 1000 - remainingMs);
+      await scenario.advance(CACHE_TTL_SECONDS * 1000 - remainingMs);
       const second = await scenario.executionInput(
         "select the archive near its lifetime boundary",
       );
@@ -356,7 +356,7 @@ describe("system storage presigned URL cache", () => {
     const objectKey = decodeURIComponent(
       new URL(first.downloadUrl).pathname.slice(1),
     );
-    scenario.advance(CACHE_TTL_SECONDS * 1000 + 60_000);
+    await scenario.advance(CACHE_TTL_SECONDS * 1000 + 60_000);
     const refreshed = await scenario.executionInput(
       "refresh the hard-expired readonly URL",
     );
