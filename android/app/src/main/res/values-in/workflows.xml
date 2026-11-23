@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Eksekusi chat selesai</string>
     <string name="workflow_clear_search">Hapus pencarian</string>
     <string name="workflow_connect_provider">Hubungkan %1$s untuk mengaktifkan aturan ini.</string>
-    <string name="workflow_connection_unavailable">Koneksi tidak dapat dibuka.</string>
     <string name="workflow_create_uncertain">Pembuatan tidak dapat dikonfirmasi. Tutup editor dan periksa aturan sebelum mencoba lagi.</string>
     <string name="workflow_creation_prompt">Bantu saya membuat alur kerja privat. Gunakan keterampilan workflow-setup. Tanyakan tugas apa yang ingin saya ulangi dan tunjukkan petunjuknya untuk dikonfirmasi sebelum menyimpan. Buat otomatisasi hanya jika saya memintanya.</string>
     <string name="workflow_daily">Setiap hari</string>

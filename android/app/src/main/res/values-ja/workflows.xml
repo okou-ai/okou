@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">チャットの実行が終了</string>
     <string name="workflow_clear_search">検索をクリア</string>
     <string name="workflow_connect_provider">このルールを有効にするには %1$s を接続してください。</string>
-    <string name="workflow_connection_unavailable">接続一覧を開けませんでした。</string>
     <string name="workflow_create_uncertain">作成を確認できませんでした。エディタを閉じてルールを確認してから、やり直してください。</string>
     <string name="workflow_creation_prompt">非公開のワークフローを作るのを手伝ってください。workflow-setup スキルを使い、繰り返したいタスクを尋ねてください。保存前に手順を提示して確認を求めてください。自動化は私が依頼した場合にだけ作成してください。</string>
     <string name="workflow_daily">毎日</string>
