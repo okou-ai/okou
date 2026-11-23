@@ -107,17 +107,19 @@ test("Group matching chats before messages and open the first message with its s
   ]);
   expect(queryAllByRoleFast("option", messages)).toHaveLength(22);
   fireEvent.keyDown(search, { key: "Control", ctrlKey: true });
-  expect(numberedHints(dialog)).toStrictEqual([
-    "1",
-    "2",
-    "3",
-    "4",
-    "5",
-    "6",
-    "7",
-    "8",
-    "9",
-  ]);
+  await waitFor(() => {
+    expect(numberedHints(dialog)).toStrictEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+    ]);
+  });
   fireEvent.keyDown(search, { key: "4", code: "Digit4", ctrlKey: true });
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${target.id}`);
