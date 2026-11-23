@@ -19,7 +19,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 
 /** Isolated external HTTP content; installed session, transport and native consumers are real. */
-class ComposerApiFixture : Closeable {
+class ComposerApiFixture(private val simulateHistory: Boolean = true) : Closeable {
     val chats = ChatListApiFixture()
     val service
         get() = chats.service
@@ -203,15 +203,17 @@ class ComposerApiFixture : Closeable {
             beforeListReturn(rows.size > existingRows)
             json("""{"events":${JsonArray(rows)},"hasMore":false}""")
         }
-        chats.historyRows = ::rows
-        chats.historyCatchUp = { request ->
-            val events =
-                Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate {
-                    val tuple = it.jsonArray
-                    val thread = tuple[0].jsonPrimitive.content
-                    thread to JsonArray(history(thread, tuple[1].jsonPrimitive.long))
-                }
-            json("""{"events":${JsonObject(events)},"notFoundThreads":[]}""")
+        if (simulateHistory) {
+            chats.historyRows = ::rows
+            chats.historyCatchUp = { request ->
+                val events =
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonArray.associate {
+                        val tuple = it.jsonArray
+                        val thread = tuple[0].jsonPrimitive.content
+                        thread to JsonArray(history(thread, tuple[1].jsonPrimitive.long))
+                    }
+                json("""{"events":${JsonObject(events)},"notFoundThreads":[]}""")
+            }
         }
     }
 

@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.108.0](https://github.com/okou-ai/okou/compare/api-v2.107.0...api-v2.108.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Performance Improvements
+
+* **api:** gzip large runner dispatch bodies ([#50184](https://github.com/okou-ai/okou/issues/50184)) ([df24b62](https://github.com/okou-ai/okou/commit/df24b62fb3ef693aa8f3372624d4138477b93e40))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+    * @okouai/core bumped to 8.862.0
+    * @okouai/db bumped to 2.60.0
+    * @okouai/pi-agent-runtime bumped to 1.52.48
+
 ## [2.107.0](https://github.com/okou-ai/okou/compare/api-v2.106.0...api-v2.107.0) (2026-11-23)
 
 

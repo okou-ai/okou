@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
-        "hint": "Busca flujos de trabajo o elige una plantilla…",
+        "hint": "Elige una acción",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",
@@ -3068,6 +3068,7 @@
       "edit": "Editar",
       "grant": "Conceder",
       "reconnect": "Volver a conectar",
+      "returnToOkou": "Volver a Okou",
       "revoke": "Revocar",
       "save": "Guardar",
       "saving": "Guardando...",

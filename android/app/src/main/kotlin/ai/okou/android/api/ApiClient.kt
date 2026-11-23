@@ -86,6 +86,8 @@ fun interface WorkspaceTokenProvider {
 
 data class RequiredUpdate(val minimumSupportedVersion: String?)
 
+internal val finiteReadRetryDelays = listOf(3_000L, 3_000L)
+
 sealed class ApiFailure(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Unauthenticated : ApiFailure("An authenticated workspace session is required")
 
@@ -345,6 +347,10 @@ class ApiClient(
 
     internal suspend fun artifactSitePreview(slug: String, host: String) = executeRead {
         reads.artifactSitePreview(it, slug, host)
+    }
+
+    suspend fun searchChatMessages(keyword: String) = executeRead {
+        reads.searchChatMessages(it, keyword)
     }
 
     suspend fun markRead(threadId: String) = execute { api.markRead(it, threadId) }

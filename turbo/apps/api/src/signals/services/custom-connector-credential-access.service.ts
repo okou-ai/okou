@@ -22,6 +22,7 @@ import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { enum as zEnum, type output } from "zod";
 
 import {
+  pgBooleanDecoder,
   pgTextDecoder,
   zodEnumDriverValueDecoder,
 } from "../../lib/db-structured-result";
@@ -90,8 +91,8 @@ interface CustomConnectorStoredConnection {
   readonly definitionAuthMethod: CustomConnectorAuthMode;
   readonly definitionMcpTransport: CustomConnectorMcpTransport | null;
   readonly definitionStorageVersion: number;
-  readonly oauthAccessTokenId: string | null;
-  readonly oauthRefreshTokenId: string | null;
+  readonly hasAccessToken: boolean;
+  readonly hasRefreshToken: boolean;
   readonly automaticOAuthBindingId: string | null;
 }
 
@@ -173,12 +174,12 @@ function customConnectorStoredConnectionsSqlParts(args: {
       definitionStorageVersion: sql`${orgCustomConnectors.storageVersion}`
         .mapWith(orgCustomConnectors.storageVersion)
         .as("definition_storage_version"),
-      oauthAccessTokenId: sql`${customConnectorAccessTokenSecret.id}`
-        .mapWith(customConnectorAccessTokenSecret.id)
-        .as("oauth_access_token_id"),
-      oauthRefreshTokenId: sql`${customConnectorRefreshTokenSecret.id}`
-        .mapWith(customConnectorRefreshTokenSecret.id)
-        .as("oauth_refresh_token_id"),
+      hasAccessToken: sql`${customConnectorAccessTokenSecret.id} IS NOT NULL`
+        .mapWith(pgBooleanDecoder)
+        .as("has_access_token"),
+      hasRefreshToken: sql`${customConnectorRefreshTokenSecret.id} IS NOT NULL`
+        .mapWith(pgBooleanDecoder)
+        .as("has_refresh_token"),
       automaticOAuthBindingId:
         sql`${customConnectorAccountOauthBindings.connectorAccountId}`
           .mapWith(customConnectorAccountOauthBindings.connectorAccountId)
@@ -346,7 +347,7 @@ function customConnectorStoredConnectionHasRequiredMaterial(
   return customConnectorAccountHasRequiredCredentialMaterial({
     definitionAuthMode: connection.definitionAuthMethod,
     storedAuthMethod: connection.storedAuthMethod,
-    hasAccessToken: connection.oauthAccessTokenId !== null,
+    hasAccessToken: connection.hasAccessToken,
     hasAutomaticOAuthBinding: connection.automaticOAuthBindingId !== null,
   });
 }
@@ -368,7 +369,7 @@ function customConnectorStoredConnectionIsConnected(
         ? connection.tokenExpiresAt
         : null,
     now,
-    isRefreshable: connection.oauthRefreshTokenId !== null,
+    isRefreshable: connection.hasRefreshToken,
   });
   return (
     credentialStatus === "available" &&
@@ -799,8 +800,8 @@ export function customConnectorRuntimeStorageReadPlan(args: {
     definitionAuthMethod: storedConnections.definitionAuthMethod,
     definitionMcpTransport: storedConnections.definitionMcpTransport,
     definitionStorageVersion: storedConnections.definitionStorageVersion,
-    oauthAccessTokenId: storedConnections.oauthAccessTokenId,
-    oauthRefreshTokenId: storedConnections.oauthRefreshTokenId,
+    hasAccessToken: storedConnections.hasAccessToken,
+    hasRefreshToken: storedConnections.hasRefreshToken,
     automaticOAuthBindingId: storedConnections.automaticOAuthBindingId,
     kind: storedValues.kind,
     key: storedValues.key,

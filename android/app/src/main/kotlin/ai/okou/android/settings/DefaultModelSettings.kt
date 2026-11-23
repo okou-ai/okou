@@ -1,6 +1,7 @@
 package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.RecoveryCatalog
 import ai.okou.android.api.generated.RecoveryModels
@@ -32,8 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-private const val readRetryDelayMillis = 3_000L
-private const val maxReadAttempts = 3
 private val preferenceSaveRetryDelays = listOf(3_000L, 3_000L)
 private const val preferenceRefreshMillis = 10 * 60_000L
 
@@ -345,8 +344,10 @@ internal class DefaultModelSettings(
                 currentCoroutineContext().ensureActive()
                 onFailure(error)
                 if (!authorized()) return
-                if (error.retryable() && ++failures < maxReadAttempts) {
-                    delay(readRetryDelayMillis)
+                val wait =
+                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                if (wait != null) {
+                    delay(wait)
                 } else {
                     failures = 0
                     delay(preferenceRefreshMillis)
@@ -356,8 +357,8 @@ internal class DefaultModelSettings(
     }
 
     private suspend fun refreshCatalog() {
-        for (attempt in 1..maxReadAttempts) {
-            if (!authorized()) return
+        var failures = 0
+        while (authorized()) {
             try {
                 val options = loadOptions()
                 currentCoroutineContext().ensureActive()
@@ -371,11 +372,13 @@ internal class DefaultModelSettings(
                 currentCoroutineContext().ensureActive()
                 onFailure(error)
                 if (!authorized()) return
-                if (!error.retryable() || attempt == maxReadAttempts) {
+                val wait =
+                    if (error.retryable()) finiteReadRetryDelays.getOrNull(failures++) else null
+                if (wait == null) {
                     mutable.value = mutable.value.copy(catalogUnavailable = true)
                     return
                 }
-                delay(readRetryDelayMillis)
+                delay(wait)
             }
         }
     }

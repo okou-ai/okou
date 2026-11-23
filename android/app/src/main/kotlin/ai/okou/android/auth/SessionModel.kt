@@ -16,6 +16,8 @@ import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.chat.RunControlsModel
+import ai.okou.android.chat.SearchRecentChatsStore
+import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.instructions.PersonalInstructionsModel
@@ -82,6 +84,7 @@ data class ReadyWorkspace(
     val settings: WorkspaceSettingsModel,
     val workflows: WorkflowModel?,
     val connectors: ConnectorModel? = null,
+    val search: WorkspaceSearchModel,
 )
 
 sealed interface OpeningWorkspace {
@@ -100,6 +103,7 @@ sealed interface OpeningWorkspace {
         val recovery: AssistantRecoveryModel,
         val artifacts: ArtifactCatalogModel,
         val chatArtifacts: ArtifactCatalogModel,
+        val search: WorkspaceSearchModel,
     ) : OpeningWorkspace
 }
 
@@ -129,6 +133,7 @@ class SessionModel(
     updatesRequired: Flow<Boolean> = emptyFlow(),
     private val connectivity: Flow<Boolean> = emptyFlow(),
     private val settingsCache: WorkspaceSettingsCache? = null,
+    private val searchRecents: SearchRecentChatsStore? = null,
 ) : ViewModel() {
     @Volatile private var generation = 0L
     private val mutable = MutableStateFlow(SessionUiState(generation))
@@ -394,6 +399,15 @@ class SessionModel(
                                 workspaceFailure(ticket, snapshot, it)
                             }
                         },
+                        store.workspaceModel {
+                            WorkspaceSearchModel(
+                                owner,
+                                identity,
+                                searchRecents,
+                                { current(ticket, snapshot) },
+                                { workspaceFailure(ticket, snapshot, it) },
+                            )
+                        },
                     )
                 mutable.value = mutable.value.copy(memberships = memberships, opening = opened)
                 preparation?.let(chats::restoreStartupCache)
@@ -579,6 +593,7 @@ class SessionModel(
                         settings,
                         workflows = workflows,
                         connectors = connectors,
+                        search = opened.search,
                     ),
                 working = false,
                 cachedAppearance = null,

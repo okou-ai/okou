@@ -1521,15 +1521,31 @@ data class ConnectorOauthCompletion(
 )
 
 @Serializable
+enum class ConnectorOauthStartNativeAppAuthorizationProvider {
+    @SerialName("strava") STRAVA,
+}
+
+@Serializable
+data class ConnectorOauthStartNativeAppAuthorization(
+    val `provider`: ConnectorOauthStartNativeAppAuthorizationProvider,
+)
+
+@Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
+    val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
 )
 
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeAppAuthorization {
+    @SerialName("ios") IOS,
 }
 
 @Serializable(with = ConnectorOauthStartRequestAccountSerializer::class)
@@ -1624,6 +1640,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
 
@@ -9349,6 +9366,38 @@ object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAut
         }
     }
 }
+
+@Serializable
+enum class ChatMessageSearchResponseResultsItemMatchedMessageRole {
+    @SerialName("user") USER,
+    @SerialName("assistant") ASSISTANT,
+}
+
+@Serializable
+data class ChatMessageSearchResponseResultsItemMatchedMessage(
+    val `chatThreadId`: String,
+    val `role`: ChatMessageSearchResponseResultsItemMatchedMessageRole,
+    val `content`: String,
+    val `createdAt`: String,
+    val `seqId`: Long,
+    val `runId`: String?,
+)
+
+@Serializable
+data class ChatMessageSearchResponseResultsItemMatchedRangesItem(
+    val `start`: Long,
+    val `end`: Long,
+)
+
+@Serializable
+data class ChatMessageSearchResponseResultsItem(
+    val `chatThreadId`: String,
+    val `matchedMessage`: ChatMessageSearchResponseResultsItemMatchedMessage,
+    val `matchedRanges`: List<ChatMessageSearchResponseResultsItemMatchedRangesItem>,
+)
+
+@Serializable
+data class ChatMessageSearchResponse(val `results`: List<ChatMessageSearchResponseResultsItem>)
 
 @Serializable
 data class RenameProjectRequest(

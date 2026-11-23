@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "hint": "Rechercher un workflow ou choisir un modèle…",
+        "hint": "Choisir une action",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -3068,6 +3068,7 @@
       "edit": "Modifier",
       "grant": "Accorder",
       "reconnect": "Reconnecter",
+      "returnToOkou": "Revenir à Okou",
       "revoke": "Révoquer",
       "save": "Enregistrer",
       "saving": "Enregistrement...",

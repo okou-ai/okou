@@ -2171,6 +2171,7 @@ const resolveMailLinkConnection$ = command(
             userId: args.userId,
           },
           connectorSlug,
+          args.runId === undefined,
         ).as("mail_chat_accounts"),
       );
     signal.throwIfAborted();

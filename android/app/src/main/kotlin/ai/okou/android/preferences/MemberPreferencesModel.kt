@@ -1,6 +1,7 @@
 package ai.okou.android.preferences
 
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.api.finiteReadRetryDelays
 import ai.okou.android.api.generated.UpdatePreferencesRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequestColorTheme
 import ai.okou.android.api.generated.UpdatePreferencesRequestLocale
@@ -329,7 +330,8 @@ class MemberPreferencesModel(
                 else -> false
             }
         if (!saving && !pending) {
-            val retry = recoverable && ++readFailures < 3
+            val wait = if (recoverable) finiteReadRetryDelays.getOrNull(readFailures++) else null
+            val retry = wait != null
             mutable.value =
                 state.copy(
                     status =
@@ -337,7 +339,7 @@ class MemberPreferencesModel(
                     recovering = retry,
                 )
             readRequested = retry
-            if (retry && online) scheduleRecovery(3_000L)
+            if (wait != null && online) scheduleRecovery(wait)
             return
         }
         mutable.value =

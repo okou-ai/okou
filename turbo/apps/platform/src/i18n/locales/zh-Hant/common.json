@@ -1953,7 +1953,7 @@
       },
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
-        "hint": "搜尋工作流程或選擇範本…",
+        "hint": "選擇一項操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -2997,6 +2997,7 @@
       "edit": "編輯",
       "grant": "授予",
       "reconnect": "重新連線",
+      "returnToOkou": "返回 Okou",
       "revoke": "撤銷",
       "save": "儲存",
       "saving": "正在儲存…",

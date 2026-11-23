@@ -182,12 +182,13 @@ class ApiClientTest {
             }
         client(provider).use { api ->
             server.enqueue(MockResponse().setResponseCode(401))
-            server.enqueue(MockResponse().setBody(organization))
-            assertEquals("org_one", api.organization().id)
+            server.enqueue(MockResponse().setBody("""{"results":[]}"""))
+            assertTrue(api.searchChatMessages("fixture").results.isEmpty())
             val first = server.takeRequest()
             val replay = server.takeRequest()
             assertEquals("Bearer initial", first.getHeader("Authorization"))
             assertEquals("Bearer replacement", replay.getHeader("Authorization"))
+            assertEquals("/api/chat/search", replay.requestUrl?.encodedPath)
             assertEquals(first.path, replay.path)
             assertNotEquals(
                 first.getHeader("X-Client-Request-Id"),

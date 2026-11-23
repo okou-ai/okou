@@ -8,6 +8,10 @@ import {
   connectorAccessAccountOwner,
   type ConnectorAccessOwner,
 } from "./connector-access-owner";
+import {
+  connectorAccountAllowedSql,
+  memberConnectorAccountAccessEnabledSql,
+} from "./member-connector-account-access";
 
 export interface ChatConnectorAccessOwner extends ConnectorAccessOwner {
   readonly chatThreadId: string;
@@ -54,6 +58,7 @@ export function accountDefaultEnabledSql(
       ) ELSE false END,
       updated_at = clock_timestamp()
     WHERE ${owned} AND ${eq(connectors.id, connectionId)}
+      AND NOT ${memberConnectorAccountAccessEnabledSql(owner)}
     RETURNING id, display_name, default_enabled_for_chats, is_default
   ), promoted AS (
     UPDATE ${connectors} SET is_default = true, updated_at = clock_timestamp()
@@ -134,7 +139,7 @@ export function saveChatConnectorCurrentSql(
       ${eq(chatThreadConnectorAccessOverrides.chatThreadId, chatThreads.id)} AND
       ${eq(chatThreadConnectorAccessOverrides.connectorId, connectors.id)}
     WHERE ${connectorAccessThreadOwner(owner)} AND ${eq(connectors.id, connectionId)}
-      AND coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
+      AND ${connectorAccountAllowedSql(owner)}
     ON CONFLICT ${selectionConflictTarget(owner.target)} DO UPDATE SET connector_id = excluded.connector_id
     RETURNING connector_id`;
 }

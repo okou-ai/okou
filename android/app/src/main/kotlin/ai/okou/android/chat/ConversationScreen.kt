@@ -99,6 +99,8 @@ internal fun ConversationRoute(
     onLinkFocusRestored: () -> Unit = {},
     linkFocusKey: String? = null,
     onLinkUnavailable: (() -> Unit)? = null,
+    messageSequence: Long? = null,
+    onSearchMessageResolved: (Long, Boolean) -> Unit = { _, _ -> },
     recovery: @Composable (failureId: String) -> Unit = {},
 ) {
     // Deferred work must acknowledge this composition's confirmation, never a newer State.value.
@@ -223,7 +225,38 @@ internal fun ConversationRoute(
     val window = currentWindowSizeDp()
     val messageInset = if (window.width >= 600) 32.dp else 24.dp
     val linkTarget = linkPosition?.destination
-    val readingTarget = findTarget ?: linkTarget
+    val searchEventId =
+        remember(transcript, messageSequence) {
+            messageSequence?.let { transcript?.searchMessage(it)?.id }
+        }
+    val requestedSearchTarget =
+        remember(messageSequence, searchEventId) {
+            searchEventId?.let { ConversationFindTarget(it, null) }
+        }
+    var revealedSearchTarget by
+        remember(model, threadId) { mutableStateOf<ConversationFindTarget?>(null) }
+    val searchTarget = if (messageSequence == null) revealedSearchTarget else requestedSearchTarget
+    val readingTarget = findTarget ?: linkTarget ?: searchTarget
+    // Keep cached history usable while a failed lookup awaits a retry.
+    val waitingForSearch =
+        messageSequence != null &&
+            searchTarget == null &&
+            !missing &&
+            state.phase != HistoryPhase.Failed
+    LaunchedEffect(model, thread?.id, messageSequence) {
+        val sequence = messageSequence ?: return@LaunchedEffect
+        if (thread != null && model.searchMessageIsMissing(threadId, sequence)) {
+            revealedSearchTarget = null
+            onSearchMessageResolved(sequence, false)
+        }
+    }
+    val searchPositioned = requestedSearchTarget?.positioned == true
+    LaunchedEffect(messageSequence, requestedSearchTarget, searchPositioned) {
+        if (messageSequence != null && requestedSearchTarget != null && searchPositioned) {
+            revealedSearchTarget = requestedSearchTarget
+            onSearchMessageResolved(messageSequence, true)
+        }
+    }
     val targetMessageId =
         remember(readingTarget, content) {
             when {
@@ -259,7 +292,7 @@ internal fun ConversationRoute(
         val scope = rememberCoroutineScope()
         var restored by remember(linkPosition) { mutableStateOf(false) }
         var restoredAnchor by remember(linkPosition) { mutableStateOf<ConversationAnchor?>(null) }
-        var positioned by remember(linkPosition) { mutableStateOf(false) }
+        var positioned by remember(linkPosition, searchTarget) { mutableStateOf(false) }
         var findViewport by remember { mutableStateOf<LayoutCoordinates?>(null) }
         var hasSeenLatest by remember { mutableStateOf(false) }
         var newReply by remember { mutableStateOf(false) }
@@ -307,8 +340,17 @@ internal fun ConversationRoute(
                     }
             }
         val pendingFind = readingTarget?.takeUnless { it.positioned }
-        LaunchedEffect(restored, positioned, timeline, state.phase, list.offline, readingTarget) {
-            if (!restored || positioned || (!hasContent && !missing)) return@LaunchedEffect
+        LaunchedEffect(
+            restored,
+            positioned,
+            timeline,
+            state.phase,
+            list.offline,
+            readingTarget,
+            waitingForSearch,
+        ) {
+            if (!restored || positioned || waitingForSearch || (!hasContent && !missing))
+                return@LaunchedEffect
             val anchor = restoredAnchor
             val index = timeline.indexOfFirst {
                 it is ConversationMessage && it.includes(anchor?.eventId)
@@ -377,7 +419,7 @@ internal fun ConversationRoute(
         LaunchedEffect(readingTarget, pendingFind) {
             if (pendingFind == null) readingTarget?.expireHighlight()
         }
-        val readingReady = positioned && !awaitingFindPosition
+        val readingReady = positioned && !awaitingFindPosition && !waitingForSearch
         LaunchedEffect(positioned, previewId) {
             // A newly submitted local preview is an action in this chat. A restored preview
             // belongs to the original attempt and should leave the restored reading position.

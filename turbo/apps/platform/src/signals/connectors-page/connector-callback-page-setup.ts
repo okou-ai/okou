@@ -1,5 +1,9 @@
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/client/connectors-slug-callback";
 import type { ConnectorOauthCallbackResult } from "@okouai/api-contracts/contracts/connectors-slug-callback";
+import {
+  connectorNativeAppReturnSchema,
+  connectorNativeAppReturnUrl,
+} from "@okouai/api-contracts/validators/connectors";
 import { customConnectorOAuth2Contract } from "@okouai/api-contracts/client/custom-connectors";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import { integrationOAuthCallbackProvider } from "@okouai/core/integration-routes";
@@ -110,15 +114,22 @@ function resultFromPath(
   status: string | undefined,
   searchParams: URLSearchParams,
 ): ConnectorOauthCallbackResult | null {
+  const nativeReturn = connectorNativeAppReturnSchema.safeParse({
+    platform: "ios",
+    attemptId: searchParams.get("nativeAppAttemptId"),
+  });
+  const nativeAppReturn = nativeReturn.success ? nativeReturn.data : undefined;
   if (status === "success") {
     return {
       status,
       username: searchParams.get("username"),
+      nativeAppReturn,
     };
   }
   if (status === "error") {
     return {
       status,
+      nativeAppReturn,
       message:
         searchParams.get("message") ||
         i18n.t(($) => {
@@ -142,6 +153,10 @@ function callbackPageElement(
     status: result.status,
     username: result.status === "success" ? result.username : null,
     errorMessage: result.status === "error" ? result.message : null,
+    nativeReturnUrl:
+      result.status !== "loading" && result.nativeAppReturn
+        ? connectorNativeAppReturnUrl(result.nativeAppReturn)
+        : undefined,
   });
 }
 
@@ -245,6 +260,60 @@ const setupIntegrationOAuthCallbackPage$ = setupAuthPageWrapper(
   completeIntegrationOAuthCallback$,
 );
 
+const showConnectorCallbackResult$ = command(
+  async (
+    { set },
+    args: {
+      readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
+      readonly connectorSlug: ConnectorSlug | null;
+      readonly callbackConnectorSlug: ConnectorCallbackSlug;
+      readonly label: string;
+      readonly result: ConnectorOauthCallbackResult;
+    },
+    signal: AbortSignal,
+  ) => {
+    let { connectorIcon } = args;
+    const { connectorSlug, callbackConnectorSlug, label, result } = args;
+    if (!connectorIcon && connectorSlug && !result.nativeAppReturn) {
+      connectorIcon = await set(
+        loadConnectorCallbackIcon$,
+        connectorSlug,
+        signal,
+      );
+    }
+    set(
+      updatePage$,
+      callbackPageElement(connectorIcon, connectorSlug, label, result),
+    );
+
+    const resultSearchParams = new URLSearchParams();
+    if (result.nativeAppReturn) {
+      resultSearchParams.set(
+        "nativeAppAttemptId",
+        result.nativeAppReturn.attemptId,
+      );
+    }
+    if (result.status === "success" && result.username) {
+      resultSearchParams.set("username", result.username);
+    }
+    if (result.status === "error") {
+      resultSearchParams.set("message", result.message);
+    }
+    addConnectorIconSearchParams(resultSearchParams, connectorIcon);
+    set(
+      replacePathSilently$,
+      ROUTES.connectorCallbackResult,
+      { connectorSlug: callbackConnectorSlug, status: result.status },
+      resultSearchParams,
+    );
+    if (result.nativeAppReturn) {
+      window.location.assign(
+        connectorNativeAppReturnUrl(result.nativeAppReturn),
+      );
+    }
+  },
+);
+
 export const setupConnectorCallbackPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const integration = integrationOAuthCallbackProvider(
@@ -308,31 +377,16 @@ export const setupConnectorCallbackPage$ = command(
             query,
             signal,
           );
-    if (!connectorIcon && connectorSlug) {
-      connectorIcon = await set(
-        loadConnectorCallbackIcon$,
+    await set(
+      showConnectorCallbackResult$,
+      {
+        connectorIcon,
         connectorSlug,
-        signal,
-      );
-    }
-    set(
-      updatePage$,
-      callbackPageElement(connectorIcon, connectorSlug, label, result),
-    );
-
-    const resultSearchParams = new URLSearchParams();
-    if (result.status === "success" && result.username) {
-      resultSearchParams.set("username", result.username);
-    }
-    if (result.status === "error") {
-      resultSearchParams.set("message", result.message);
-    }
-    addConnectorIconSearchParams(resultSearchParams, connectorIcon);
-    set(
-      replacePathSilently$,
-      ROUTES.connectorCallbackResult,
-      { connectorSlug: callbackConnectorSlug, status: result.status },
-      resultSearchParams,
+        callbackConnectorSlug,
+        label,
+        result,
+      },
+      signal,
     );
   },
 );

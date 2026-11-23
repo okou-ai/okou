@@ -243,12 +243,12 @@ const emptySections = Object.freeze({
   storage_definitionStorageVersion: sql`NULL::bigint`
     .mapWith(nullableDriverValueDecoder(orgCustomConnectors.storageVersion))
     .as("storage_definitionStorageVersion"),
-  storage_oauthAccessTokenId: sql`NULL::uuid`
-    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-    .as("storage_oauthAccessTokenId"),
-  storage_oauthRefreshTokenId: sql`NULL::uuid`
-    .mapWith(nullableDriverValueDecoder(pgTextDecoder))
-    .as("storage_oauthRefreshTokenId"),
+  storage_hasAccessToken: sql`NULL::boolean`
+    .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
+    .as("storage_hasAccessToken"),
+  storage_hasRefreshToken: sql`NULL::boolean`
+    .mapWith(nullableDriverValueDecoder(pgBooleanDecoder))
+    .as("storage_hasRefreshToken"),
   storage_automaticOAuthBindingId: sql`NULL::uuid`
     .mapWith(nullableDriverValueDecoder(pgTextDecoder))
     .as("storage_automaticOAuthBindingId"),
@@ -540,8 +540,8 @@ function customRuntimeStorageRows(storage: CustomRuntimeReadPlan["storage"]) {
       storage_definitionAuthMethod: storage.definitionAuthMethod,
       storage_definitionMcpTransport: storage.definitionMcpTransport,
       storage_definitionStorageVersion: storage.definitionStorageVersion,
-      storage_oauthAccessTokenId: storage.oauthAccessTokenId,
-      storage_oauthRefreshTokenId: storage.oauthRefreshTokenId,
+      storage_hasAccessToken: storage.hasAccessToken,
+      storage_hasRefreshToken: storage.hasRefreshToken,
       storage_automaticOAuthBindingId: storage.automaticOAuthBindingId,
     })
     .from(storage);
@@ -726,8 +726,8 @@ function customRuntimeStorageFromRow(row: SnapshotRow) {
     definitionStorageVersion: requiredSlot(
       row.storage_definitionStorageVersion,
     ),
-    oauthAccessTokenId: row.storage_oauthAccessTokenId,
-    oauthRefreshTokenId: row.storage_oauthRefreshTokenId,
+    hasAccessToken: requiredSlot(row.storage_hasAccessToken),
+    hasRefreshToken: requiredSlot(row.storage_hasRefreshToken),
     automaticOAuthBindingId: row.storage_automaticOAuthBindingId,
     kind: row.storage_kind,
     key: row.storage_key,
