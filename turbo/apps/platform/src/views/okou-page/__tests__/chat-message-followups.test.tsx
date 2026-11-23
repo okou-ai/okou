@@ -432,7 +432,7 @@ test("A fine-pointer device keeps the recommended follow-up rows at any width", 
 });
 
 test.each([false, true])(
-  "The first follow-up fills an empty draft with Tab (touch: %s)",
+  "The placeholder button and Tab both accept the first follow-up (touch: %s)",
   async (touch) => {
     context.mocks.browser.matchMedia((query) => {
       return touch && query === "(pointer: coarse)";
@@ -453,8 +453,22 @@ test.each([false, true])(
     });
     expect(screen.getByText(PRESENTATION_PROMPT)).toBeVisible();
     expect(screen.queryByRole("group", { name: "Keep going" })).toBeNull();
+    const accept = await findFastControl("button", "Use this suggestion");
+    expect(accept).toHaveTextContent(touch ? "OK" : "Tab");
+    await user.click(accept);
+    expect(editor).toHaveFocus();
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(accept).not.toBeInTheDocument();
+    await fill(editor, "");
     await user.click(editor);
     await user.keyboard("{Shift>}{Tab}{/Shift}");
+    await expect(
+      findFastControl("button", "Use this suggestion"),
+    ).resolves.toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(editor.textContent).toBe(PRESENTATION_PROMPT);
+    expect(editor).toHaveFocus();
+    await fill(editor, "");
     expect(editor.textContent).toBe("");
     await user.click(editor);
     await user.keyboard("{Tab}");

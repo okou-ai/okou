@@ -1895,6 +1895,8 @@
         "slideCountAuto": "自動",
         "slideCountRange": "{{range}}枚"
       },
+      "followupTabLabel": "Tab",
+      "followupTouchLabel": "OK",
       "mentionHint": "チャットやプロジェクトを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
@@ -1936,6 +1938,7 @@
       "temporarilySwitchTo": "一時的な切り替え先",
       "threadSuggestions": "チャットスレッド",
       "useForFutureChats": "今後のチャットでも使用",
+      "useSuggestion": "この提案を使う",
       "workflows": {
         "loading": "ワークフローを読み込んでいます...",
         "manage": "ワークフローを管理",
