@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">워크플로 목록을 새로 고치지 못했습니다. 마지막으로 불러온 목록에서 검색합니다.</string>
     <string name="chat_search_artifacts_failed">아티팩트를 검색할 수 없습니다</string>
     <string name="chat_search_loading">검색 중…</string>
+    <string name="chat_search_failed">검색 결과를 불러올 수 없습니다</string>
 </resources>

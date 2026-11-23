@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">暂时无法更新工作流目录，仅搜索已加载的目录</string>
     <string name="chat_search_artifacts_failed">暂时无法搜索成果</string>
     <string name="chat_search_loading">正在搜索</string>
+    <string name="chat_search_failed">暂时无法加载搜索结果</string>
 </resources>
