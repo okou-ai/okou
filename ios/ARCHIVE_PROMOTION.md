@@ -201,9 +201,10 @@ the unsigned archive; validation checks it before promotion. It then calls
 `xcodebuild -exportArchive`, never `archive`, `test`, or package resolution.
 Before uploading, it verifies compiled Mach-O sections against the original,
 release version/build number, `codesign --verify --deep --strict`, and the expected
-team/bundle identities, both shared storage entitlements, production APNs on
-the app, and disabled `get-task-allow`. The extension's compiled sections and
-symbols have the same immutable archive contract as the main executable.
+team/bundle identities, both shared storage entitlements, production APNs and
+Sign in with Apple on the main app, and disabled `get-task-allow`. The extension's
+compiled sections and symbols have the same immutable archive contract as the
+main executable.
 
 The standard TestFlight & App Store export is distributed automatically only to
 the configured internal group. External testing and App Store review require
