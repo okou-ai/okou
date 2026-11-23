@@ -32,6 +32,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
@@ -44,6 +45,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -66,10 +68,11 @@ class WorkflowRootApplication : TestOkouApplication() {
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
-        fixture = WorkflowApiFixture()
+        fixture = WorkflowApiFixture(chats = ComposerApiFixture(simulateHistory = false).chats)
         fixture.beforeCatalog = { gate.await() }
         chatService = fixture.service
         composerService = fixture.service
+        searchService = fixture.service
         workflows = fixture.service
         connectorFixture = ConnectorApiFixture()
         connectorService = connectorFixture.service
@@ -99,6 +102,7 @@ internal abstract class WorkflowRootTestFixture {
                             listOfNotNull(
                                 it.chats.viewModelScope.coroutineContext[Job],
                                 it.composer.viewModelScope.coroutineContext[Job],
+                                it.search.viewModelScope.coroutineContext[Job],
                                 it.workflows?.viewModelScope?.coroutineContext?.get(Job),
                                 it.connectors?.viewModelScope?.coroutineContext?.get(Job),
                             )
@@ -984,5 +988,303 @@ internal class WorkflowHistoryRootTest : WorkflowRootTestFixture() {
         } finally {
             releaseDelete.countDown()
         }
+    }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(
+    sdk = [35],
+    qualifiers = "en-rUS-w412dp-h840dp",
+    application = WorkflowRootApplication::class,
+)
+internal class WorkflowSearchRootTest : WorkflowRootTestFixture() {
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideArtifactSearchPreviewKeepsTheWorkflowDraftReturnPath() {
+        val fixture = ArtifactApiFixture(app.fixture.chats).apply { install() }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        val scope = compose.onNodeWithTag("search_type_Artifacts")
+        scope.performScrollTo().performClick()
+        val query = compose.onNodeWithTag("chat_search_query")
+        query.performTextInput("Product launch")
+        waitFor(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+        waitFor("Artifact preview")
+        compose.onNodeWithContentDescription("Close artifact preview").performClick()
+
+        query.assertTextContains("Product launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(fixture.summary.title).assertIsFocused()
+        back()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+
+        compose.onNodeWithContentDescription("Back").performClick()
+        compose.onNodeWithTag("workflow_tab_automations").assertIsSelected()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideMessageSearchOpensAChatIndependentlyOfThePreviousWorkflow() {
+        val reply = "Project handoff found by search"
+        app.fixture.chats.historyReply = reply
+        app.fixture.chats.searchMessages = {
+            jsonResponse(
+                """
+                {"results":[{"chatThreadId":"$CHAT_IN_PROJECT","agentName":"Okou",
+                  "matchedMessage":{"chatThreadId":"$CHAT_IN_PROJECT","role":"assistant",
+                    "content":"$reply","createdAt":"$CHAT_DATE","seqId":23,"runId":"$HISTORY_RUN"},
+                  "matchedRanges":[{"start":0,"end":7}]}]}
+                """,
+            )
+        }
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_history").performClick()
+        val source = hasTestTag("workflow_run_$WORKFLOW_SOURCE_RUN") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(source).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(source).performClick()
+        waitForTag("conversation")
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("Project")
+        val hit = hasText(reply) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        compose.waitUntil(10_000) { compose.onAllNodes(hit).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(hit).performClick()
+        waitForTag("conversation_find_hit")
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose.onNodeWithTag("chat_search").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h800dp")
+    fun wideWorkflowSearchOpensADraftIndependentlyOfThePreviousWorkflow() {
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_use").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Back").assertIsDisplayed()
+
+        compose.onNodeWithTag("workspace_search_entry").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        compose.onNodeWithText("Add to new chat draft").performClick()
+
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("chat_search").fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithTag("chat_list").assertIsDisplayed()
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        compose.onNodeWithContentDescription("Back").assertDoesNotExist()
+    }
+
+    @Test
+    fun searchWorkflowDetailsAndDraftReturnToTheSameSearch() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+        compose.onNodeWithText("Official launch workflow").assertDoesNotExist()
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        val renamed = "Launch planning"
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            compose.onNodeWithText("Edit instructions").performClick()
+            compose.onNodeWithText(originalTitle).performTextReplacement(renamed)
+            compose.onNodeWithTag("workflow_save").performClick()
+            waitForTag("workflow_detail_title")
+            compose.onNodeWithTag("workflow_detail_title").assertTextContains(renamed)
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            compose.onNodeWithText(renamed).assertIsDisplayed()
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
+        compose.onNodeWithText(renamed).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose
+            .onNodeWithTag("message_input")
+            .assertTextContains("/release-review Keep my existing draft")
+        assertFalse(
+            app.fixture.requests.any {
+                it.method == "POST" &&
+                    it.requestUrl?.encodedPath in setOf("/api/chat-threads", "/api/chat/events")
+            },
+        )
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(renamed).assertIsDisplayed()
+    }
+
+    @Test
+    fun returningFromWorkflowDetailsKeepsSearchResultsDuringCatalogRefresh() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        val originalTitle = app.fixture.releaseTitle
+        waitFor(originalTitle)
+
+        val catalogRequested = CountDownLatch(1)
+        val releaseCatalog = CountDownLatch(1)
+        app.fixture.beforeCatalog = {
+            catalogRequested.countDown()
+            releaseCatalog.await()
+        }
+        try {
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+
+            back()
+            query.assertTextContains("launch")
+            scope.assertIsSelected()
+            compose.onNodeWithText(originalTitle).assertIsDisplayed()
+
+            val updatedTitle = "Launch planning"
+            app.fixture.releaseTitle = updatedTitle
+            releaseCatalog.countDown()
+            waitFor(updatedTitle)
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+        }
+    }
+
+    @Test
+    fun workflowIntroRestoresResultsFocusWhileOtherSearchTypesAreLoading() {
+        val messagesRequested = CountDownLatch(1)
+        val releaseMessages = CountDownLatch(1)
+        app.fixture.chats.searchMessages = {
+            messagesRequested.countDown()
+            releaseMessages.await()
+            jsonResponse("""{"results":[]}""")
+        }
+        val releaseCatalog = CountDownLatch(1)
+        try {
+            app.gate.countDown()
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            val scope = compose.onNodeWithTag("search_type_All")
+            val query = compose.onNodeWithTag("chat_search_query")
+            query.performTextInput("checklist")
+            val originalTitle = app.fixture.releaseTitle
+            waitFor(originalTitle)
+            shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
+            compose.waitUntil(5_000) { messagesRequested.count == 0L }
+
+            val catalogRequested = CountDownLatch(1)
+            app.fixture.beforeCatalog = {
+                catalogRequested.countDown()
+                releaseCatalog.await()
+            }
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            compose.onNodeWithText("View workflow details").performClick()
+            waitForTag("workflow_detail_title")
+            compose.waitUntil(5_000) { catalogRequested.count == 0L }
+            back()
+
+            compose.onNodeWithText(originalTitle).performClick()
+            waitFor("View workflow details")
+            val updatedTitle = "Launch planning"
+            app.fixture.releaseTitle = updatedTitle
+            releaseCatalog.countDown()
+
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("View workflow details").fetchSemanticsNodes().isEmpty()
+            }
+            compose.onNodeWithText(originalTitle).assertDoesNotExist()
+            compose.onNodeWithTag("chat_search_results").assertIsFocused()
+            scope.assertIsSelected()
+
+            query.performTextReplacement("launch")
+            waitFor(updatedTitle)
+            compose.onNodeWithText("View workflow details").assertDoesNotExist()
+        } finally {
+            releaseCatalog.countDown()
+            releaseMessages.countDown()
+        }
+    }
+
+    @Test
+    fun workspaceSearchKeepsItsReturnPathWhenTheWorkflowDraftBecomesAChat() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        val scope = compose.onNodeWithTag("search_type_Workflows")
+        val query = compose.onNodeWithTag("chat_search_query")
+        scope.performClick()
+        query.performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("Add to new chat draft")
+        compose.onNodeWithText("Add to new chat draft").performClick()
+        waitForTag("message_input")
+        compose.onNodeWithContentDescription("Send").performClick()
+
+        waitFor("New conversation")
+        back()
+        query.assertTextContains("launch")
+        scope.assertIsSelected()
+        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
+    }
+
+    @Test
+    fun workspaceSearchLoadsAndKeepsTheWorkflowIntroWithAnOfflineSignal() {
+        app.gate.countDown()
+        waitForTag("workspace_search_entry")
+        compose.waitUntil(10_000) {
+            compose.runOnIdle {
+                ViewModelProvider(compose.activity)[SessionModel::class.java]
+                    .uiState
+                    .value
+                    .ready
+                    ?.workflows != null
+            }
+        }
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextInput("launch")
+        waitFor(app.fixture.releaseTitle)
+        compose.onNodeWithText(app.fixture.releaseTitle).performClick()
+        waitFor("View workflow details")
+        compose.onNodeWithText("Add to new chat draft").assertIsEnabled()
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.onNodeWithText("View workflow details").assertIsDisplayed()
     }
 }

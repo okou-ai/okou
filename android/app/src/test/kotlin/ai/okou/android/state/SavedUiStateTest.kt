@@ -1,12 +1,19 @@
 package ai.okou.android.state
 
 import ai.okou.android.OkouTheme
+import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
+import ai.okou.android.chat.ChatListReadFailure
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
-import ai.okou.android.chat.ChatTitleSearch
 import ai.okou.android.chat.ConfirmedChat
+import ai.okou.android.chat.SearchMessageHit
+import ai.okou.android.chat.SearchRead
+import ai.okou.android.chat.SearchWorkflowHit
+import ai.okou.android.chat.WorkspaceSearchResults
+import ai.okou.android.chat.WorkspaceSearchScreen
+import ai.okou.android.chat.WorkspaceSearchType
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
@@ -23,15 +30,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -57,58 +68,209 @@ class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun searchKeepsTheLastResultsUntilTheImeCommits() {
-        val search = ChatSearchState()
-        var rows by
-            mutableStateOf(
-                listOf(
-                    searchResult("checklist", "Release checklist"),
-                    searchResult("feedback", "Customer feedback"),
-                ),
+    fun searchWaitsForTheImeToCommitTheNewKeyword() {
+        val search = ChatSearchState(TextFieldValue("发"))
+        val composing = TextFieldValue("发bu", composition = TextRange(1, 3))
+        search.edit(composing)
+        assertEquals("发bu", search.query.text)
+        assertEquals("发", search.keyword)
+        assertEquals("发", search.savedQuery().text)
+        search.edit(TextFieldValue("发布"))
+        assertEquals("发布", search.keyword)
+    }
+
+    @Test
+    fun searchKeepsPresentedResultsAndSelectionUntilCompositionEnds() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                title = "Release before refresh",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
             )
+        var row by mutableStateOf(chat)
         compose.setContent {
             OkouTheme(false) {
-                ChatTitleSearch(
-                    state =
-                        ChatListUiState(
-                            listPhase = ChatReadPhase.Ready,
-                            confirmedAt = 1,
-                            threadsByRecency = rows,
-                        ),
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(row)),
                     search = search,
                     widthDp = 400,
                     listWidth = null,
-                    workspaceName = null,
                     focusOnEntry = false,
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                 )
             }
         }
-        val field = compose.onNodeWithTag("chat_search_query").performClick().assertIsFocused()
-        val checklist = compose.onNodeWithText("Release checklist").assertIsDisplayed()
-        val feedback = compose.onNodeWithText("Customer feedback").assertIsDisplayed()
+        compose.onNodeWithText(chat.title!!).assertIsDisplayed()
+        val composing =
+            TextFieldValue("Releasebu", selection = TextRange(8), composition = TextRange(7, 9))
+        compose.runOnIdle { search.edit(composing) }
+        compose.runOnIdle { row = chat.copy(title = "Release after refresh") }
+        compose.onNodeWithText("Release before refresh").assertIsDisplayed()
+        compose.onNodeWithText("Release after refresh").assertDoesNotExist()
+        compose.runOnIdle {
+            assertEquals(composing, search.query)
+            search.edit(TextFieldValue("Release", selection = TextRange(7)))
+        }
+        compose.onNodeWithText("Release after refresh").assertIsDisplayed()
+    }
+
+    @Test
+    fun searchReportsReadFailuresAndShowsConfirmedEmptyResultsWithAnOfflineSignal() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        val savedChat = searchResult("release", "Release notes")
+        var chats by
+            mutableStateOf(
+                ChatListUiState(
+                    offline = true,
+                    confirmedAt = 1L,
+                    threadsByRecency = listOf(savedChat),
+                ),
+            )
+        var remote by
+            mutableStateOf(
+                WorkspaceSearchResults(keyword = "Release", messages = SearchRead.Failed),
+            )
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = chats,
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = remote,
+                )
+            }
+        }
+        compose.onNodeWithText("Release notes").assertIsDisplayed()
+        compose
+            .onNodeWithText("Some results couldn’t load. Showing saved chats only.")
+            .assertIsDisplayed()
+        val retry = compose.onNodeWithText(compose.activity.getString(R.string.retry))
+        retry.assertDoesNotExist()
+        compose.onNodeWithTag("search_type_Messages").performClick()
+        compose
+            .onNodeWithText("Couldn’t search messages")
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
+        compose.onNodeWithText("No matching messages").assertDoesNotExist()
+        retry.assertDoesNotExist()
 
         compose.runOnIdle {
-            search.edit(TextFieldValue("fabu", TextRange(4), TextRange(0, 4)))
-            rows = rows + searchResult("summary", "Release summary")
+            search.edit(TextFieldValue("Deployment"))
+            remote = WorkspaceSearchResults(keyword = "Deployment", messages = SearchRead.Retrying)
         }
-        field.assertTextContains("fabu").assertIsFocused()
-        checklist.assertIsDisplayed()
-        feedback.assertIsDisplayed()
-        val summary = compose.onNodeWithText("Release summary")
-        summary.assertDoesNotExist()
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(280)
+        compose
+            .onNodeWithContentDescription("Searching…")
+            .assertIsDisplayed()
+            .assert(!searchProgress)
+        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
 
-        compose.runOnIdle { rows = rows.filterNot { it.id == "feedback" } }
-        feedback.assertIsDisplayed()
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
+        compose.onNodeWithText("No matching messages").assertIsDisplayed()
+        compose.onNodeWithText("Search all types").assertIsDisplayed()
+        compose.onNodeWithText("Couldn’t search messages").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Searching…").assertDoesNotExist()
 
-        compose.runOnIdle { search.edit(TextFieldValue("Release", TextRange(7))) }
-        field.assertTextContains("Release").assertIsFocused()
-        checklist.assertIsDisplayed()
-        summary.assertIsDisplayed()
-        feedback.assertDoesNotExist()
+        compose.runOnIdle {
+            search.selectType(WorkspaceSearchType.Chats)
+            chats =
+                ChatListUiState(
+                    listPhase = ChatReadPhase.Failed,
+                    listReadFailure = ChatListReadFailure.Retrying,
+                )
+        }
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithContentDescription("Loading chats…").assertIsDisplayed()
+        compose.onNodeWithText("No matching chats").assertDoesNotExist()
+        retry.assertDoesNotExist()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h400dp")
+    fun searchInsertsPartialFailureAboveResultsAndKeepsTheScrolledRowInPlace() {
+        val search = ChatSearchState(TextFieldValue("Release"))
+        var chats by
+            mutableStateOf(List(3) { index -> searchResult("chat-$index", "Release chat $index") })
+        val workflows =
+            List(3) { index ->
+                SearchWorkflowHit(
+                    "workflow-$index",
+                    "release-$index",
+                    "Release workflow $index",
+                    null,
+                    true,
+                )
+            }
+        var remote by mutableStateOf(WorkspaceSearchResults(keyword = "Release"))
+        compose.setContent {
+            OkouTheme(false) {
+                WorkspaceSearchScreen(
+                    state = ChatListUiState(confirmedAt = 1, threadsByRecency = chats),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    remote = remote,
+                    workflowResults = SearchRead.Ready(workflows),
+                    onOpenWorkflow = {},
+                )
+            }
+        }
+        val progress = compose.onNode(searchProgress)
+        val notice = compose.onNodeWithText("Some results couldn’t load")
+        val first = compose.onNodeWithText("Release chat 0")
+        val scrolled = compose.onNodeWithText("Release chat 2")
+        val results = compose.onNodeWithTag("chat_search_results")
+        compose.mainClock.advanceTimeBy(260)
+        progress.assertIsDisplayed()
+        compose.onNode(hasContentDescription("Searching…") and !searchProgress).assertDoesNotExist()
+        first.assertIsDisplayed()
+        results.performScrollToIndex(3)
+        val top = scrolled.fetchSemanticsNode().boundsInRoot.top
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Retrying) }
+        progress.assertIsDisplayed()
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Failed) }
+        progress.assertDoesNotExist()
+        assertEquals(top, scrolled.fetchSemanticsNode().boundsInRoot.top)
+
+        results.performScrollToIndex(0)
+        notice.assertIsDisplayed()
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Loading) }
+        first.assertIsDisplayed()
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Failed) }
+        notice.assertIsDisplayed()
+        assertTrue(
+            notice.fetchSemanticsNode().boundsInRoot.top <
+                first.fetchSemanticsNode().boundsInRoot.top,
+        )
+
+        compose.runOnIdle { remote = remote.copy(messages = SearchRead.Ready(emptyList())) }
+        compose.runOnIdle { search.position.requestScrollToItem(0, 8) }
+        val firstTop = first.fetchSemanticsNode().boundsInRoot.top
+        compose.runOnIdle { chats = listOf(searchResult("new", "Release newest")) + chats }
+        assertEquals(firstTop, first.fetchSemanticsNode().boundsInRoot.top)
     }
 
     @Test
@@ -140,6 +302,73 @@ class SavedUiStateTest {
     }
 
     @Test
+    fun searchRestoresResultFocusBeforeAnUnrelatedScrollAnchorReloads() {
+        val restoration = StateRestorationTester(compose)
+        val date = "2026-11-13T00:00:00Z"
+        val chat =
+            ConfirmedChat(
+                id = "chat",
+                title = "Planning conversation",
+                sortAt = date,
+                createdAt = date,
+                updatedAt = date,
+                pinnedAt = null,
+                archived = false,
+                renamedAt = null,
+            )
+        val message = SearchMessageHit(chat.id, 1, "Release reply", listOf(0..6))
+        val workflow = SearchWorkflowHit("workflow", "release", "Release workflow", null, true)
+        val loaded =
+            WorkspaceSearchResults(
+                keyword = "Release",
+                messages = SearchRead.Ready(listOf(message)),
+            )
+        var remote by mutableStateOf(loaded)
+        var detailsOpen by mutableStateOf(false)
+        restoration.setContent {
+            val search = rememberChatSearchState()
+            OkouTheme(false) {
+                if (detailsOpen) {
+                    Text("Workflow detail")
+                } else {
+                    WorkspaceSearchScreen(
+                        state = ChatListUiState(confirmedAt = 1, threadsByRecency = listOf(chat)),
+                        search = search,
+                        widthDp = 400,
+                        listWidth = null,
+                        focusOnEntry = false,
+                        onFocused = {},
+                        onClose = {},
+                        onOpen = {},
+                        remote = remote,
+                        workflowResults = SearchRead.Ready(listOf(workflow)),
+                        onOpenWorkflow = { detailsOpen = true },
+                    )
+                }
+            }
+        }
+
+        val query = compose.onNodeWithTag("chat_search_query")
+        val result = compose.onNodeWithText(workflow.title)
+        query.performTextInput("Release")
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.performClick()
+        compose.onNodeWithText("Workflow detail").assertIsDisplayed()
+
+        restoration.emulateSavedInstanceStateRestore()
+        compose.runOnIdle {
+            remote = loaded.copy(messages = SearchRead.Retrying)
+            detailsOpen = false
+        }
+        query.assertTextContains("Release")
+        result.assertIsDisplayed().assertIsFocused()
+
+        compose.runOnIdle { remote = loaded }
+        compose.onNodeWithText(message.content).assertIsDisplayed()
+        result.assertIsFocused()
+    }
+
+    @Test
     fun searchDropsTheOldResultPositionWhenTheQueryIsTooLongToRestore() {
         val longQuery = "Result " + "x".repeat(256)
         checkSearchRestoration(longQuery, "$longQuery 5", queryIsSaved = false)
@@ -163,7 +392,7 @@ class SavedUiStateTest {
             }
             val search = rememberChatSearchState()
             OkouTheme(false) {
-                ChatTitleSearch(
+                WorkspaceSearchScreen(
                     state =
                         ChatListUiState(
                             listPhase = ChatReadPhase.Ready,
@@ -174,17 +403,16 @@ class SavedUiStateTest {
                     search = search,
                     widthDp = 400,
                     listWidth = null,
-                    workspaceName = null,
                     focusOnEntry = false,
                     onFocused = {},
                     onClose = {},
                     onOpen = {},
-                    retry = {},
                 )
             }
         }
         val results = compose.onNodeWithTag("chat_search_results")
         val field = compose.onNodeWithTag("chat_search_query")
+        compose.onNodeWithText("Chats").performClick()
         field.performTextInput(query)
         val target = compose.onNodeWithText(targetTitle)
         results.performScrollToIndex(6)
@@ -212,6 +440,10 @@ class SavedUiStateTest {
             renamedAt = null,
         )
     }
+
+    private val searchProgress =
+        hasContentDescription("Searching…") and
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.ProgressBarRangeInfo)
 
     @Test
     fun restoredSelectionWaitsForTheJournalBody() {
