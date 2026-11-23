@@ -16,7 +16,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -50,8 +49,7 @@ internal enum class WorkflowHistoryRead(val loading: Boolean) {
 
 internal enum class WorkflowReadFailure {
     Unavailable,
-    Offline,
-    CouldNotLoad,
+    Network,
     RefreshFailed,
 }
 
@@ -99,54 +97,35 @@ internal constructor(
         this.offline = offline
         if (!offline) {
             val current = mutable.value
-            if (current.catalogFailure.canRecheckOnReconnect()) catalogRead.cancel()
-            if (current.rulesFailure.canRecheckOnReconnect()) rulesRead.cancel()
-            if (current.connectionsFailure.canRecheckOnReconnect()) connectionsRead.cancel()
-            if (current.detailFailure.canRecheckOnReconnect()) cancelDetailRead()
-            if (current.historyFailure.canRecheckOnReconnect())
-                cancelHistoryRead(keepEarlierRequest = true)
-            mutable.value =
-                current.copy(
-                    catalogFailure =
-                        current.catalogFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    rulesFailure =
-                        current.rulesFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    connectionsFailure =
-                        current.connectionsFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    detailFailure =
-                        current.detailFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    historyFailure =
-                        current.historyFailure.takeUnless { it == WorkflowReadFailure.Offline },
-                    historyRead = mutable.value.historyRead,
-                    issue =
-                        current.issue.takeUnless { it?.failure == WorkflowWriteFailure.Network },
-                )
+            if (current.issue?.failure == WorkflowWriteFailure.Network)
+                mutable.value = current.copy(issue = null)
+            // Active reads already own their backoff, including any server-requested delay.
             val now = monotonicMillis()
             refresh(
                 buildSet {
                     if (
                         !catalogRead.readAt.isFresh(now) ||
-                            current.catalogFailure.canRecheckOnReconnect()
+                            current.catalogFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.Catalog)
                     if (
                         !rulesRead.readAt.isFresh(now) ||
-                            current.rulesFailure.canRecheckOnReconnect()
+                            current.rulesFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.Rules)
                     if (
                         !connectionsRead.readAt.isFresh(now) ||
-                            current.connectionsFailure.canRecheckOnReconnect()
+                            current.connectionsFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.Connections)
                     if (
                         !selected?.let { details[it]?.readAt }.isFresh(now) ||
-                            current.detailFailure.canRecheckOnReconnect()
+                            current.detailFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.Detail)
                     if (
                         !selected?.let { histories[it]?.readAt }.isFresh(now) ||
-                            current.historyFailure.canRecheckOnReconnect()
+                            current.historyFailure == WorkflowReadFailure.Network
                     )
                         add(WorkflowReadScope.History)
                 },
@@ -154,11 +133,11 @@ internal constructor(
         }
     }
 
-    internal fun visibilityChanged(open: Boolean) {
+    internal fun visibilityChanged(open: Boolean, retainCurrentVisit: Boolean = false) {
         if (visible == open) return
         visible = open
         if (open) {
-            presentCachedRanges()
+            if (!retainCurrentVisit) presentCachedRanges()
             refresh()
         } else stopReads()
     }
@@ -580,7 +559,7 @@ internal constructor(
                     val current = mutable.value
                     val paused =
                         WorkflowHistoryRead.EarlierPaused.takeIf {
-                            cursor != null && current.historyFailure == WorkflowReadFailure.Offline
+                            cursor != null && current.historyFailure == WorkflowReadFailure.Network
                         }
                     mutable.value = current.copy(historyRead = paused)
                 }
@@ -624,37 +603,19 @@ internal constructor(
     private suspend fun retryReads(
         publishFailure: (WorkflowReadFailure) -> Unit,
         attempt: suspend () -> Throwable?,
-    ) = coroutineScope {
-        var failures = 0
-        var firstFailureAt = 0L
-        var notice: Job? = null
-        try {
-            while (authorized()) {
-                val error = attempt() ?: break
-                if (offline && error is ApiFailure.Network) {
-                    publishFailure(WorkflowReadFailure.Offline)
-                    break
-                }
-                val retryAfter = error.retryAfterMillis()
-                if (retryAfter == null) {
-                    publishFailure(WorkflowReadFailure.RefreshFailed)
-                    break
-                }
-                if (failures == 0) {
-                    firstFailureAt = monotonicMillis()
-                    publishFailure(WorkflowReadFailure.CouldNotLoad)
-                }
-                if (failures == 2) {
-                    notice = launch {
-                        delay((30_000L - (monotonicMillis() - firstFailureAt)).coerceAtLeast(0))
-                        if (authorized()) publishFailure(WorkflowReadFailure.RefreshFailed)
-                    }
-                }
-                delay(maxOf(workflowRetryDelays[failures], retryAfter))
-                failures = (failures + 1).coerceAtMost(workflowRetryDelays.lastIndex)
+    ) {
+        for (index in 0..WORKFLOW_READ_RETRIES) {
+            if (!authorized()) return
+            val error = attempt() ?: return
+            val retryAfter = error.retryAfterMillis()
+            if (retryAfter == null || index == WORKFLOW_READ_RETRIES) {
+                publishFailure(
+                    if (error is ApiFailure.Network) WorkflowReadFailure.Network
+                    else WorkflowReadFailure.RefreshFailed,
+                )
+                return
             }
-        } finally {
-            notice?.cancel()
+            delay(maxOf(WORKFLOW_READ_RETRY_DELAY_MILLIS, retryAfter))
         }
     }
 
@@ -964,12 +925,8 @@ private fun Map<String, List<WorkflowAutomation>>.withDirectoryUpdates(
     }
 }
 
-private val workflowRetryDelays = listOf(5_000L, 10_000L, 20_000L, 40_000L, 60_000L)
-
-private fun WorkflowReadFailure?.canRecheckOnReconnect() =
-    this == WorkflowReadFailure.Offline ||
-        this == WorkflowReadFailure.CouldNotLoad ||
-        this == WorkflowReadFailure.RefreshFailed
+private const val WORKFLOW_READ_RETRIES = 2
+private const val WORKFLOW_READ_RETRY_DELAY_MILLIS = 3_000L
 
 private fun Throwable?.denied() =
     this is ApiFailure.Unauthenticated ||

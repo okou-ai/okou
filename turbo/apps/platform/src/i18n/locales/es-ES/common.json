@@ -2173,6 +2173,12 @@
         },
         "inReview": "En revisión",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} créditos",
+            "confirm": "Volver al trabajo",
+            "description": "Los créditos pagan el trabajo en sí: cada ejecución, cada artefacto, cada flujo que corre con un horario.",
+            "title": "Lo de hoy está hecho"
+          },
           "connector": {
             "confirm": "Ver todos los conectores",
             "connected": "Conectado",

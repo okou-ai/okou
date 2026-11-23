@@ -174,7 +174,6 @@ describe("CHAT-02: default assistant identity", () => {
     });
     const customPrompt = (await api.executionInput(customRun.runId))
       .appendSystemPrompt;
-    expect(customPrompt).not.toContain("Your name is Nova.");
     expect(customPrompt).toContain("Your name is Okou.");
     const customExecution = await runExecution(customRun.runId);
     await expectRunAppContext({

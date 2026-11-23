@@ -39,10 +39,33 @@ export class AppStoreConnect {
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
-      // Do not print the response body or request headers: they can contain
-      // account information. HTTP failures never mean 'no build yet'.
-      throw new Error(
-        `App Store Connect ${method} ${url.pathname}: HTTP ${response.status}`,
+      // Apple's free-text details and metadata can contain private account data.
+      // Report structured codes and field names, including nested review errors.
+      const { errors } = (await response.json().catch(() => null)) ?? {};
+      const reasons = new Set();
+      for (const error of Array.isArray(errors) ? errors : []) {
+        const related = Object.values(
+          error?.meta?.associatedErrors ?? {},
+        ).flat();
+        for (const item of [error, ...related]) {
+          if (!/^[A-Z][A-Z0-9_.]{0,100}$/u.test(item?.code ?? "")) continue;
+          const field = item.source?.pointer;
+          reasons.add(
+            typeof field === "string" &&
+              /^\/data\/(attributes|relationships)(\/[A-Za-z][A-Za-z0-9]*){1,4}$/u.test(
+                field,
+              )
+              ? `${item.code} at ${field}`
+              : item.code,
+          );
+        }
+      }
+      const details = [...reasons].slice(0, 8).join(", ");
+      throw Object.assign(
+        new Error(
+          `App Store Connect ${method} ${url.pathname}: HTTP ${response.status}${details ? ` (${details})` : ""}`,
+        ),
+        { status: response.status },
       );
     }
     return response.status === 204 ? undefined : response.json();

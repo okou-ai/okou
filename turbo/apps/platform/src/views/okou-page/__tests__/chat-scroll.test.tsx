@@ -1547,22 +1547,34 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   const id = THREAD_IDS.unfilledViewport;
   const conversation = mockMutableConversation(id, completedHistoryEvents(26));
   const container = await openConversation(id, "History answer 26");
+  const transcript = within(container);
+  expect(transcript.queryByText("History answer 20")).toBeNull();
+  expect(transcript.queryByText("History answer 13")).toBeNull();
+  const frames = controlRevealFrames();
   const geometry = installChatScrollGeometry(container, () => {
     return 6000;
   });
   await conversation.publish(completedTurn(27));
-  await screen.findByText("History answer 27");
-  // The 6000px viewport spans fifteen turns. Its middle and oldest visible
-  // answers arrive in successive renders before the final tail alignment.
-  await screen.findByText("History answer 20");
-  await screen.findByText("History answer 13");
-  await waitFor(() => {
-    const before = container.querySelector<HTMLElement>(
-      '[data-transcript-spacer="before"]',
-    );
-    expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
-    expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-  });
+  await expect(
+    transcript.findByText("History answer 27"),
+  ).resolves.toBeInTheDocument();
+
+  // Each pair of paints lets the scroll handler fill the visible spacer once.
+  for (const answer of ["History answer 20", "History answer 13"]) {
+    await frames.paint();
+    await frames.paint();
+    expect(transcript.getByText(answer)).toBeInTheDocument();
+  }
+
+  // The final page changed the scroll height. Align after its layout commits.
+  await frames.paint();
+  await frames.paint();
+  const before = container.querySelector<HTMLElement>(
+    '[data-transcript-spacer="before"]',
+  );
+  expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+  expect(transcript.queryByText("History answer 1")).toBeNull();
 });
 
 test("Drag into unmounted history, retain the message through new output, and return to the latest reply", async () => {

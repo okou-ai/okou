@@ -6,10 +6,12 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ComposerJournalStore
 import android.os.Looper
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -34,8 +36,9 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -59,6 +62,7 @@ import org.robolectric.annotation.GraphicsMode
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
+    internal lateinit var connectorFixture: ConnectorApiFixture
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
@@ -67,6 +71,8 @@ class WorkflowRootApplication : TestOkouApplication() {
         chatService = fixture.service
         composerService = fixture.service
         workflows = fixture.service
+        connectorFixture = ConnectorApiFixture()
+        connectorService = connectorFixture.service
         journalStore =
             ComposerJournalStore(this, noBackupFilesDir.resolve("workflow-${UUID.randomUUID()}"))
         super.onCreate()
@@ -100,6 +106,7 @@ class WorkflowRootTest {
                                 it.chats.viewModelScope.coroutineContext[Job],
                                 it.composer.viewModelScope.coroutineContext[Job],
                                 it.workflows?.viewModelScope?.coroutineContext?.get(Job),
+                                it.connectors?.viewModelScope?.coroutineContext?.get(Job),
                             )
                         }
                         .orEmpty()
@@ -110,9 +117,73 @@ class WorkflowRootTest {
                     jobs.all { it.isCompleted }
                 }
             } finally {
-                runBlocking { checkNotNull(application.journalStore).close() }
+                application.connectorFixture.use {
+                    runBlocking { checkNotNull(application.journalStore).close() }
+                }
             }
         }
+    }
+
+    @Test
+    fun terminalCatalogFailureReplacesTheSkeletonBelowTheFilters() {
+        val fixture = app.fixture
+        val gate = app.gate
+        val response = fixture.chats.commandResponse
+        fixture.chats.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/workflows") {
+                gate.await()
+                MockResponse().setResponseCode(400)
+            } else response(request)
+        }
+
+        val loading = compose.onNodeWithTag("workflow_loading")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithContentDescription("Workflows").performClick()
+            compose.mainClock.advanceTimeByFrame()
+            compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+            compose.mainClock.advanceTimeBy(200)
+            loading.assertDoesNotExist()
+            compose.mainClock.advanceTimeBy(80)
+            loading.assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        gate.countDown()
+        waitFor("Could not load workflows")
+        val feedback =
+            compose
+                .onNodeWithText("Could not load workflows")
+                .assertIsDisplayed()
+                .assert(
+                    SemanticsMatcher.expectValue(
+                        SemanticsProperties.LiveRegion,
+                        LiveRegionMode.Polite,
+                    ),
+                )
+        compose.onNodeWithTag("workflow_loading").assertDoesNotExist()
+        compose.onNodeWithTag("workflow_query").assertIsDisplayed()
+        compose.onNodeWithTag("workflow_create").assertIsEnabled()
+        val filter =
+            compose
+                .onNode(
+                    hasText("All") and
+                        SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton),
+                )
+                .getUnclippedBoundsInRoot()
+        val bounds = feedback.getUnclippedBoundsInRoot()
+        val directory = compose.onNodeWithTag("workflow_directory").getUnclippedBoundsInRoot()
+        assertEquals(12.dp, bounds.left - directory.left)
+        assertEquals(32.dp, bounds.top - filter.bottom)
+        val layouts = mutableListOf<TextLayoutResult>()
+        feedback.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        val style = layouts.single().layoutInput.style
+        assertEquals(14.sp, style.fontSize)
+        assertEquals(20.sp, style.lineHeight)
+        selectScope("Workspace shared")
+        feedback.assertIsDisplayed()
+        back()
+        compose.onNodeWithContentDescription("Workflows").assertIsDisplayed()
     }
 
     @Test
@@ -549,7 +620,6 @@ class WorkflowRootTest {
 
     @Test
     fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() = withHardwareKeyboard {
-        val scenario = compose.activityRule.scenario
         app.fixture.gmailEnabled.set(true)
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
@@ -561,9 +631,16 @@ class WorkflowRootTest {
             .assertIsFocused()
             .performClick()
 
-        scenario.moveToState(Lifecycle.State.STARTED)
+        waitFor("Gmail")
+        waitFor("Connect account")
+        compose.onNodeWithContentDescription("Back").performClick()
+        waitFor("Enabled · Needs connection")
+        compose.onNodeWithText("View connections").assertIsFocused().performClick()
+        waitFor("Connect account")
+
+        app.connectorFixture.authorizeGmail()
         app.fixture.gmailConnected.set(true)
-        scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.onNodeWithContentDescription("Back").performClick()
 
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
@@ -574,7 +651,6 @@ class WorkflowRootTest {
 
     @Test
     fun connectingAnAccountPreservesTheRuleEditorAndEnablesSave() = withHardwareKeyboard {
-        val scenario = compose.activityRule.scenario
         val releaseConnections = CountDownLatch(1)
         app.fixture.beforeConnectionsRead = { releaseConnections.await() }
         val save = compose.onNodeWithTag("workflow_save")
@@ -607,15 +683,40 @@ class WorkflowRootTest {
             .assertIsFocused()
             .performClick()
 
-        scenario.moveToState(Lifecycle.State.STARTED)
+        waitFor("Connect account")
+        app.connectorFixture.authorizeGmail()
         app.fixture.gmailConnected.set(true)
-        scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.onNodeWithContentDescription("Back").performClick()
 
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
         }
         subject.assertTextContains("Release summary")
         save.assertIsEnabled().assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1180dp-h820dp")
+    fun calendarEditorOpensCalendarInTheWideConnectorPaneAndReturnsToItsDraft() {
+        app.connectorFixture.removeAccount(CONNECTOR_CALENDAR_PRIMARY)
+        app.connectorFixture.removeAccount(CONNECTOR_CALENDAR_SECONDARY)
+        openWorkflowDetail()
+        compose.onNodeWithTag("workflow_tab_automations").performClick()
+        compose.onNodeWithText("Add automation").performClick()
+        compose.onNodeWithText("Schedule").performClick()
+        compose.onNodeWithText("Calendar event created").performClick()
+        val calendar = compose.onNodeWithContentDescription("Calendar ID")
+        calendar.performTextReplacement("test-calendar")
+        waitFor("View connections")
+        compose.onNodeWithText("View connections").performClick()
+
+        waitFor("Connect account")
+        compose.onNodeWithTag("connector-google-calendar").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Back").performClick()
+
+        waitFor("View connections")
+        calendar.assertTextContains("test-calendar")
+        compose.onNodeWithTag("workflow_save").assertIsNotEnabled()
     }
 
     @Test

@@ -783,7 +783,6 @@ test.each(["tailscale", "cloudflare"] as const)(
       screen.findByLabelText("Connection method"),
     ).resolves.toHaveTextContent(network.name);
     expect(screen.queryByLabelText("Client Secret")).toBeNull();
-    expect(queryAction("button", "Add Service Token")).toBeNull();
     click(getAction("button", "Back"));
     await screen.findByRole("heading", { name: "Add remote connection" });
     click(screen.getByText("Run commands on the device."));

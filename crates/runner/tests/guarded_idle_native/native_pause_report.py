@@ -68,12 +68,11 @@ def validate(directory):
         observed = batch.clock(captured.get("capture_observed_ns"), started, events[1]["monotonic_ns"])
         verified = batch.clock(captured.get("data_verified_ns"), started, events[1]["monotonic_ns"])
         reparking = batch.clock(captured.get("repark_started_ns"), verified, observed)
-        original = history.encode()
-        payload_sha = hashlib.sha256((original*(65536//len(original)+1))[:65536]).hexdigest()
+        payload_sha = hashlib.sha256(report.history_payload(history)).hexdigest()
         request_sha = wire(captured.get("request_raw"), state="Paused")
         exact(captured, {"mode":mode,"history_run_id":history,"operation_run_id":operation,"reuse_key":reuse,
             "prepare_started_ns":started,"capture_observed_ns":observed,"request_raw":captured["request_raw"],
-            "data_verified_ns":verified,"repark_started_ns":reparking,"payload_bytes":65536,"payload_sha256":payload_sha,
+            "data_verified_ns":verified,"repark_started_ns":reparking,"payload_bytes":report.HISTORY_PAYLOAD_BYTES,"payload_sha256":payload_sha,
             "production_restore_completed":True,"private_history_verified":True,"ordinary_home_verified":True,
             "request_sha256":request_sha,"backend_dispatched":False,"restore_callback_reached":True,
             "backend_socket":"/run/vm0/sock/"+identity[0]+"/api.sock",

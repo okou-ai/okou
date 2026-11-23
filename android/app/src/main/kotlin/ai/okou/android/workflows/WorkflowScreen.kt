@@ -11,6 +11,7 @@ import ai.okou.android.api.generated.WorkflowSummaryVisibility
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
+import ai.okou.android.state.WorkflowConnectorVisit
 import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
@@ -81,6 +82,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -118,6 +120,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.LifecycleResumeEffect
 
+internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
+
 @Composable
 internal fun WorkflowScreen(
     model: WorkflowModel,
@@ -135,6 +139,9 @@ internal fun WorkflowScreen(
     onClose: () -> Unit,
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     sourceChatAvailable: (String) -> Boolean,
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
@@ -225,11 +232,21 @@ internal fun WorkflowScreen(
                 }
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    state.detailFailure == WorkflowReadFailure.Unavailable ->
-                        WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
-                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
+                        WorkflowEditor(
+                            detail,
+                            editor,
+                            state,
+                            model,
+                            wide,
+                            ::exitEditor,
+                            onViewConnection =
+                                onViewConnection?.let { open -> { slug -> open(slug, null) } },
+                            restoreConnectionFocus =
+                                connectionReturn != null && connectionReturn.ruleId == null,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
+                        )
                     else ->
                         WorkflowDetailPane(
                             detail = detail,
@@ -245,6 +262,9 @@ internal fun WorkflowScreen(
                             },
                             onEditRule = { model.edit(it) },
                             onToggle = model::toggle,
+                            onViewConnection = onViewConnection,
+                            connectionReturn = connectionReturn,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                             handoffPending = handoffPending,
                             useError = useError,
                             onUse = { onUse(detail) },
@@ -427,7 +447,9 @@ private fun WorkflowDirectory(
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
-            WorkflowPlaceholder(R.string.workflow_unavailable)
+            Box(Modifier.widthIn(max = 730.dp).fillMaxWidth()) {
+                WorkflowInitialReadError(R.string.workflow_unavailable)
+            }
             return@Column
         }
         Column(
@@ -467,10 +489,8 @@ private fun WorkflowDirectory(
         }
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
-                catalog == null && state.catalogFailure == WorkflowReadFailure.Offline ->
-                    WorkflowPlaceholder(R.string.workflow_offline)
                 catalog == null && state.catalogFailure != null ->
-                    WorkflowPlaceholder(R.string.workflow_load_failed)
+                    WorkflowInitialReadError(R.string.workflow_load_failed)
                 catalog == null -> WorkflowSkeleton(directory = true)
                 rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
                 else ->
@@ -495,9 +515,13 @@ private fun WorkflowDirectory(
             }
         }
         if (catalog != null) {
+            val rulesFeedback =
+                if (state.rulesFailure != null && state.rules == null)
+                    R.string.workflow_rules_load_failed
+                else state.rulesFailure.cachedReadFeedback()
             WorkflowReadFeedback(
                 state.catalogFailure.cachedReadFeedback()
-                    ?: state.rulesFailure.cachedReadFeedback()
+                    ?: rulesFeedback
                     ?: state.connectionReadFeedback(),
             )
         }
@@ -722,6 +746,9 @@ private fun WorkflowDetailPane(
     onNewRule: () -> Unit,
     onEditRule: (WorkflowEdit.Rule) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
+    onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
+    connectionReturn: WorkflowConnectorVisit?,
+    onConnectionFocusRestored: () -> Unit,
     handoffPending: Boolean,
     useError: Int?,
     onUse: () -> Unit,
@@ -788,6 +815,9 @@ private fun WorkflowDetailPane(
                             timezone = timezone,
                             onEdit = onEditRule,
                             onToggle = onToggle,
+                            onViewConnection = onViewConnection,
+                            restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                         )
                         if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                     }
@@ -866,8 +896,9 @@ private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) 
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when (failure) {
                 null -> WorkflowSkeleton(directory = false)
-                WorkflowReadFailure.Offline -> WorkflowPlaceholder(R.string.workflow_offline)
-                else -> WorkflowPlaceholder(R.string.workflow_load_failed)
+                WorkflowReadFailure.Unavailable ->
+                    WorkflowInitialReadError(R.string.workflow_unavailable)
+                else -> WorkflowInitialReadError(R.string.workflow_load_failed)
             }
         }
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
@@ -1124,7 +1155,7 @@ private fun WorkflowPlaceholder(label: Int) {
 
 @Composable
 private fun WorkflowSkeleton(directory: Boolean) {
-    if (rememberChatWaitIndicator(true)) {
+    if (rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)) {
         val label = stringResource(R.string.workspace_workflows)
         Column(
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
@@ -1163,10 +1194,11 @@ private fun WorkflowReadFeedback(label: Int?) {
     val shape = RoundedCornerShape(12.dp)
     Text(
         stringResource(label),
-        Modifier.widthIn(max = 480.dp)
+        Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 480.dp)
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
             .heightIn(min = 48.dp)
+            .shadow(2.dp, shape)
             .background(MaterialTheme.colorScheme.surface, shape)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .padding(12.dp)
@@ -1174,6 +1206,11 @@ private fun WorkflowReadFeedback(label: Int?) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
     )
+}
+
+@Composable
+internal fun WorkflowInitialReadError(label: Int) {
+    WorkflowNotice(label, PaddingValues(start = 12.dp, top = 24.dp, end = 12.dp))
 }
 
 @Composable

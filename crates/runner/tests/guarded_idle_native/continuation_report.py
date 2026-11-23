@@ -78,7 +78,7 @@ def validate(directory):
             raise ValueError("continuation reused an original run or Guest identity")
         run_ids.update((run, next_run))
         new_ids.add(incoming)
-        home = (run.encode()*2048)[:65536]
+        home = report.history_payload(run)
         home_hash = hashlib.sha256(home).hexdigest()
         if (canonical(original.get("thread_id")) != canonical(continued.get("thread_id"))
                 or original.get("seed_history_sha256") != SEED_HASH
@@ -89,7 +89,7 @@ def validate(directory):
         for proof, verified in ((original, expected_exit == 0), (continued, True)):
             if (proof.get("original_home_sha256") != home_hash
                     or type(proof.get("original_home_bytes")) is not int
-                    or proof["original_home_bytes"] != 65536
+                    or proof["original_home_bytes"] != report.HISTORY_PAYLOAD_BYTES
                     or proof.get("final_identity_verified") is not verified
                     or any(proof.get(k) is not True for k in (
                         "full_original_prefix_verified",

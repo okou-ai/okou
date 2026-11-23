@@ -1397,24 +1397,110 @@ data class SendRequestVariant1UserMessagePartsItemVariant10Range(
     val `end`: Long,
 )
 
+@Serializable(with = SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer::class)
+sealed interface SendRequestVariant1UserMessagePartsItemVariant10Source
+
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant10SourceType {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type {
     @SerialName("mail") MAIL,
 }
 
 @Serializable
-enum class SendRequestVariant1UserMessagePartsItemVariant10SourceStatus {
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Status {
     @SerialName("draft") DRAFT,
     @SerialName("sent") SENT,
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant10Source(
-    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceType,
+data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Type,
     val `id`: String,
-    val `status`: SendRequestVariant1UserMessagePartsItemVariant10SourceStatus,
+    val `status`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1Status,
     val `sentId`: String? = null,
-)
+) : SendRequestVariant1UserMessagePartsItemVariant10Source
+
+@Serializable
+enum class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type {
+    @SerialName("artifact") ARTIFACT,
+}
+
+@Serializable
+data class SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2(
+    val `type`: SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2Type,
+    val `fileId`: String,
+    val `filenameSnapshot`: String,
+    val `artifactId`: String? = null,
+) : SendRequestVariant1UserMessagePartsItemVariant10Source
+
+object SendRequestVariant1UserMessagePartsItemVariant10SourceSerializer :
+    KSerializer<SendRequestVariant1UserMessagePartsItemVariant10Source> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.commandfixtures.SendRequestVariant1UserMessagePartsItemVariant10Source",
+        )
+
+    override fun deserialize(
+        decoder: Decoder,
+    ): SendRequestVariant1UserMessagePartsItemVariant10Source {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for SendRequestVariant1UserMessagePartsItemVariant10Source",
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for SendRequestVariant1UserMessagePartsItemVariant10Source",
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("mail")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("artifact")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous SendRequestVariant1UserMessagePartsItemVariant10Source variant",
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown SendRequestVariant1UserMessagePartsItemVariant10Source variant",
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: SendRequestVariant1UserMessagePartsItemVariant10Source,
+    ) {
+        when (value) {
+            is SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1 ->
+                encoder.encodeSerializableValue(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant1.serializer(),
+                    value,
+                )
+            is SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2 ->
+                encoder.encodeSerializableValue(
+                    SendRequestVariant1UserMessagePartsItemVariant10SourceVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant10(
@@ -1432,7 +1518,9 @@ enum class SendRequestVariant1UserMessagePartsItemVariant11Type {
 }
 
 @Serializable
-data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(val `fileId`: String)
+data class SendRequestVariant1UserMessagePartsItemVariant11ClipsItem(
+    val `fileId`: String,
+)
 
 @Serializable
 data class SendRequestVariant1UserMessagePartsItemVariant11(
@@ -1823,4 +1911,8 @@ object SendRequestSerializer : KSerializer<SendRequest> {
     }
 }
 
-@Serializable data class AcceptedInput(val `threadId`: String, val `createdAt`: String? = null)
+@Serializable
+data class AcceptedInput(
+    val `threadId`: String,
+    val `createdAt`: String? = null,
+)

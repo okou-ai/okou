@@ -35,7 +35,8 @@
     <string name="artifact_missing">Este artefacto ya no está disponible</string>
     <string name="artifact_unavailable">No disponible temporalmente</string>
     <string name="artifact_preview_unsupported">Este archivo no tiene vista previa</string>
-    <string name="artifact_online_preview">Conéctate para cargar la vista previa</string>
+    <string name="artifact_preview_unavailable">La vista previa no se puede cargar por el momento</string>
+    <string name="artifact_preview_source_unavailable">Fuente no disponible</string>
     <string name="artifact_preview_only">Solo vista previa</string>
     <string name="artifact_source_name">Conversación de origen · %1$s</string>
     <string name="artifact_view_source">Ver conversación de origen</string>

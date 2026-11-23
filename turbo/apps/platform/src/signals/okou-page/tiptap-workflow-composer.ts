@@ -58,6 +58,7 @@ import {
   type ComposerFeedbackModel,
   type ComposerFeedbackSignals,
   type FeedbackItem,
+  type FeedbackSource,
 } from "./chat-feedback.ts";
 import {
   findActiveChatThreadSuggestionRange,
@@ -82,6 +83,8 @@ import {
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
+  feedbackSourceFromNode,
+  feedbackSourceToNodeAttributes,
   INLINE_TEMPLATE_NODE_NAME,
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
@@ -506,10 +509,7 @@ interface FeedbackItemNodeAttributes {
   readonly eventId: string | null;
   readonly rangeStart: number | null;
   readonly rangeEnd: number | null;
-  readonly sourceType: "mail" | null;
-  readonly sourceId: string | null;
-  readonly sourceStatus: "draft" | "sent" | null;
-  readonly sourceSentId: string | null;
+  readonly source?: FeedbackSource;
   readonly suggestionContext: SuggestionContext | null;
 }
 
@@ -551,24 +551,13 @@ function feedbackItemNodeAttributes(
   const showDivider: unknown = node.attrs.showDivider;
   const fill: unknown = node.attrs.fill;
   const location = feedbackItemLocationAttributes(node);
-  const sourceType: unknown = node.attrs.sourceType;
-  const sourceId: unknown = node.attrs.sourceId;
-  const sourceStatus: unknown = node.attrs.sourceStatus;
-  const sourceSentId: unknown = node.attrs.sourceSentId;
+  const source = feedbackSourceFromNode(node);
   if (
     typeof feedbackId !== "number" ||
     typeof quote !== "string" ||
     typeof showDivider !== "boolean" ||
     typeof fill !== "boolean" ||
-    (sourceType !== null && sourceType !== "mail") ||
-    (sourceId !== null && typeof sourceId !== "string") ||
-    (sourceStatus !== null &&
-      sourceStatus !== "draft" &&
-      sourceStatus !== "sent") ||
-    (sourceSentId !== null && typeof sourceSentId !== "string") ||
-    (sourceType === null) !== (sourceId === null) ||
-    (sourceType === null) !== (sourceStatus === null) ||
-    (sourceType === null && sourceSentId !== null)
+    source === null
   ) {
     throw new Error("Feedback item node attributes are invalid");
   }
@@ -578,10 +567,7 @@ function feedbackItemNodeAttributes(
     showDivider,
     fill,
     ...location,
-    sourceType,
-    sourceId,
-    sourceStatus,
-    sourceSentId,
+    ...(source ? { source } : {}),
     suggestionContext: suggestionContextSchema
       .nullable()
       .parse(node.attrs.suggestionContext ?? null),
@@ -747,14 +733,22 @@ function buildFeedbackChromeDecorations(
     if (child.type.name !== FEEDBACK_ITEM_NODE_NAME) {
       continue;
     }
-    const { feedbackId, quote, suggestionContext } =
+    const { feedbackId, quote, source, suggestionContext } =
       feedbackItemNodeAttributes(child);
     decorations.push(
       Decoration.widget(
         childPosition + 1,
         () => {
           return buildFeedbackItemChrome(
-            suggestionContext?.titleSnapshot ?? quote,
+            suggestionContext?.titleSnapshot ??
+              (source?.type === "artifact"
+                ? `${i18n.t(
+                    ($) => {
+                      return $.chat.feedback.sourcePartHeading;
+                    },
+                    { description: source.filenameSnapshot },
+                  )}: ${quote}`
+                : quote),
             suggestionContext
               ? undefined
               : () => {
@@ -767,7 +761,7 @@ function buildFeedbackChromeDecorations(
           // widget replaces a contenteditable=false element right next to the
           // caret, and WebKit loses the caret when that happens at an IME
           // composition boundary (typing or backspacing the first character).
-          key: `feedback-chrome-${feedbackId}-${suggestionContext?.contextVersion ?? ""}-${i18n.language}`,
+          key: `feedback-chrome-${feedbackId}-${JSON.stringify(source ?? null)}-${suggestionContext?.contextVersion ?? ""}-${i18n.language}`,
           side: -2,
           ignoreSelection: true,
           stopEvent: () => {
@@ -1231,20 +1225,7 @@ function feedbackItemFromNode(node: ProseMirrorNode): FeedbackItem {
           },
         }
       : {}),
-    ...(attributes.sourceType === "mail" &&
-    attributes.sourceId !== null &&
-    attributes.sourceStatus !== null
-      ? {
-          source: {
-            type: attributes.sourceType,
-            id: attributes.sourceId,
-            status: attributes.sourceStatus,
-            ...(attributes.sourceSentId !== null
-              ? { sentId: attributes.sourceSentId }
-              : {}),
-          },
-        }
-      : {}),
+    ...(attributes.source ? { source: attributes.source } : {}),
   };
 }
 
@@ -1259,10 +1240,7 @@ function feedbackItemNode(editor: Editor, item: FeedbackItem): ProseMirrorNode {
       eventId: item.eventId ?? null,
       rangeStart: item.range?.start ?? null,
       rangeEnd: item.range?.end ?? null,
-      sourceType: item.source?.type ?? null,
-      sourceId: item.source?.id ?? null,
-      sourceStatus: item.source?.status ?? null,
-      sourceSentId: item.source?.sentId ?? null,
+      ...feedbackSourceToNodeAttributes(item.source),
       suggestionContext: item.suggestionContext ?? null,
     },
     content: feedbackNoteContent(item.note),
@@ -1291,7 +1269,7 @@ function withFeedbackItemLayout(transaction: Transaction): Transaction {
       continue;
     }
     transaction.setNodeMarkup(nodePosition, undefined, {
-      ...attributes,
+      ...node.attrs,
       showDivider,
       fill,
     });
@@ -1775,6 +1753,9 @@ function createFeedbackItemNode(
         sourceId: { default: null },
         sourceStatus: { default: null },
         sourceSentId: { default: null },
+        sourceFileId: { default: null },
+        sourceFilenameSnapshot: { default: null },
+        sourceArtifactId: { default: null },
         suggestionContext: { default: null, rendered: false },
       };
     },

@@ -35,7 +35,8 @@
     <string name="artifact_missing">यह आर्टिफ़ैक्ट अब उपलब्ध नहीं है</string>
     <string name="artifact_unavailable">अस्थायी रूप से उपलब्ध नहीं है</string>
     <string name="artifact_preview_unsupported">इस फ़ाइल का पूर्वावलोकन उपलब्ध नहीं है</string>
-    <string name="artifact_online_preview">पूर्वावलोकन के लिए इंटरनेट से कनेक्ट करें</string>
+    <string name="artifact_preview_unavailable">अभी पूर्वावलोकन लोड नहीं हो पा रहा है</string>
+    <string name="artifact_preview_source_unavailable">स्रोत उपलब्ध नहीं है</string>
     <string name="artifact_preview_only">केवल पूर्वावलोकन</string>
     <string name="artifact_source_name">मूल बातचीत · %1$s</string>
     <string name="artifact_view_source">मूल बातचीत देखें</string>

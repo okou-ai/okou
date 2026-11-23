@@ -352,7 +352,7 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
   },
   {
     name: "threadDraft",
-    response: "ComposerDraft",
+    response: "ThreadDraft",
     route: chatThreadDraftContract.get,
   },
   {
@@ -734,6 +734,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "ComposerDraft",
     schema: composerDraftContract.get.responses[200],
+    direction: "output",
+    representation: "raw-object",
+  },
+  {
+    name: "ThreadDraft",
+    schema: chatThreadDraftContract.get.responses[200],
     direction: "output",
     representation: "raw-object",
   },

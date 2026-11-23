@@ -101,8 +101,7 @@ internal constructor(
                         reading = null,
                         page = current.page ?: if (online) null else cachedResults(current.query),
                         preview =
-                            if (!online && preview?.isHosted == true)
-                                preview.copy(content = null, problem = null)
+                            if (!online && preview?.isHosted == true) preview.copy(content = null)
                             else preview,
                     )
                 if (online && active) {
@@ -441,25 +440,25 @@ internal constructor(
 
 private fun artifactProblem(error: Exception): ArtifactProblem =
     when (error) {
-        is ApiFailure.Http ->
-            when (error.status) {
-                401,
-                402,
-                403 -> ArtifactProblem.Denied
-                404,
-                410 -> ArtifactProblem.Missing
-                else ->
-                    if (isTemporaryArtifactHttpStatus(error.status)) ArtifactProblem.Temporary
-                    else ArtifactProblem.Unavailable
-            }
+        is ApiFailure.Http -> artifactHttpProblem(error.status)
         is ResponseLimitExceeded -> ArtifactProblem.Unsupported
         is ApiFailure.Network,
         is IOException -> ArtifactProblem.Temporary
         else -> ArtifactProblem.Unavailable
     }
 
-internal fun isTemporaryArtifactHttpStatus(status: Int): Boolean =
-    status == 408 || status == 429 || status in 500..599
+internal fun artifactHttpProblem(status: Int): ArtifactProblem =
+    when (status) {
+        401,
+        402,
+        403 -> ArtifactProblem.Denied
+        404,
+        410 -> ArtifactProblem.Missing
+        408,
+        429,
+        in 500..599 -> ArtifactProblem.Temporary
+        else -> ArtifactProblem.Unavailable
+    }
 
 private suspend fun <T> retryArtifactOperation(
     canRetry: () -> Boolean = { true },

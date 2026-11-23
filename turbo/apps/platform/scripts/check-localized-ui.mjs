@@ -103,6 +103,10 @@ function isUserVisibleFunctionName(value) {
 function getInternalAllowedLiterals() {
   return [
     [
+      'src/signals/okou-page/chat-feedback.ts\u0000a file "{…}" (file ID: {…})',
+      "locale-neutral serialized agent prompt metadata",
+    ],
+    [
       "src/signals/okou-page/chat-feedback.ts\u0000a sent email (mail ID: {…}{…})",
       "locale-neutral serialized agent prompt metadata",
     ],

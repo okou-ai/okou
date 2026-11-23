@@ -35,7 +35,6 @@ import {
   artifactSidebarSyncTarget,
 } from "./artifact-sidebar.tsx";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
-import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
 
 // ---------------------------------------------------------------------------
 // Thread-owned utility sidebar content.
@@ -327,10 +326,8 @@ function ThreadArtifactDetail({
   const fullscreen = useGet(sidebar.fullscreen$);
   const toggleFullscreen = useSet(sidebar.toggleFullscreen$);
   const close = useSet(sidebar.close$);
-  const openAttachment = useSet(sidebar.openAttachment$);
-  const imageRole = useGet(thread.imageNavigation.sidebar.role$);
+  const setArtifactSourceRef = useSet(thread.feedback.setArtifactSourceRef$);
   const backToArtifacts = useOpenThreadArtifacts(thread);
-  const pageSignal = useGet(pageSignal$);
   const detailLoadable = useLastLoadable(
     sidebar.artifactCatalog.selectedArtifactDetail$,
   );
@@ -339,18 +336,6 @@ function ThreadArtifactDetail({
     active: fullscreen,
     toggle: toggleFullscreen,
   };
-  const navigateImage = (item: ImageArtifactNavigationItem) => {
-    openAttachment(
-      {
-        url: item.url,
-        filename: item.filename,
-        ...(item.preview ? { preview: item.preview } : {}),
-        ...(imageRole === "user" ? { shareAvailable: false } : {}),
-      },
-      pageSignal,
-    );
-  };
-
   if (source.kind === "attachment") {
     return (
       <ArtifactSidebar
@@ -359,7 +344,6 @@ function ThreadArtifactDetail({
         thread={thread}
         fullscreenState={fullscreenState}
         onClose={close}
-        onNavigateImage={navigateImage}
       />
     );
   }
@@ -440,6 +424,20 @@ function ThreadArtifactDetail({
         imageCanvasSignals={sidebar.imageCanvas}
         text$={sidebar.selectedArtifactText$}
         markdownTree$={sidebar.selectedArtifactMarkdownTree$}
+        markdownSelection={
+          detail.kind === "file"
+            ? {
+                threadId: thread.threadId,
+                source: {
+                  type: "artifact",
+                  fileId: detail.file.id,
+                  filenameSnapshot: detail.file.filename,
+                  artifactId: detail.id,
+                },
+                ref: setArtifactSourceRef,
+              }
+            : undefined
+        }
         fullscreenState={fullscreenState}
         onBack={backToArtifacts}
         onClose={close}

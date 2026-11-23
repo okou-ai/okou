@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.249.110](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.109...runner-rs-v0.249.110) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share original history binding validation ([#50111](https://github.com/okou-ai/okou/issues/50111)) ([effce3c](https://github.com/okou-ai/okou/commit/effce3c694a66cacef04bf46145c72390755fbc7))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.109](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.108...runner-rs-v0.249.109) (2026-11-23)
 
 ### Release Dependencies

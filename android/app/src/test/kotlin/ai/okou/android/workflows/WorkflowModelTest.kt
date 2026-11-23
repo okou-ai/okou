@@ -358,60 +358,81 @@ class WorkflowModelTest {
         model.connectivityChanged(true)
         model.loadEarlierRuns()
         runCurrent()
-        assertEquals(WorkflowReadFailure.Offline, model.state.value.historyFailure)
+        assertNull(model.state.value.historyFailure)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Network, model.state.value.historyFailure)
         assertEquals(listOf(recentRun), model.state.value.history?.runs)
 
         reachable = true
         model.connectivityChanged(false)
         runCurrent()
         assertNull(model.state.value.historyFailure)
-        assertEquals(listOf(null, "earlier", "earlier"), service.historyCursors)
+        assertEquals(
+            listOf(null, "earlier", "earlier", "earlier", "earlier"),
+            service.historyCursors,
+        )
         assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
     }
 
     @Test
     fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
-        var reads = 0
+        var reachable = false
         service.catalogRead = {
-            reads++
-            if (reads == 1) throw ApiFailure.Network(IOException("Offline"))
+            if (!reachable) throw ApiFailure.Network(IOException("Offline"))
             listOf(service.summary)
         }
         model.connectivityChanged(true)
         model.visibilityChanged(true)
         runCurrent()
 
-        assertEquals(1, reads)
-        assertEquals(WorkflowReadFailure.Offline, model.state.value.catalogFailure)
+        assertEquals(1, service.catalogReads)
+        assertNull(model.state.value.catalogFailure)
         assertNull(model.state.value.catalog)
-        advanceTimeBy(60_000)
+        advanceTimeBy(6_000)
         runCurrent()
-        assertEquals(1, reads)
+        assertEquals(3, service.catalogReads)
+        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
 
+        reachable = true
         model.connectivityChanged(false)
         runCurrent()
-        assertEquals(2, reads)
+        assertEquals(4, service.catalogReads)
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
     }
 
     @Test
-    fun reconnectDoesNotWaitForTheCurrentBackoff() = check { service, model ->
+    fun reconnectKeepsAnActiveReadOnItsServerSchedule() = check { service, model ->
         service.catalogRead = {
-            if (service.catalogReads == 1) throw ApiFailure.Network(IOException("Offline"))
+            when (service.catalogReads) {
+                1 -> throw ApiFailure.Http(429, null, null, 9)
+                2 -> throw ApiFailure.Http(503, null, null, 1)
+            }
             listOf(service.summary)
         }
         model.visibilityChanged(true)
         runCurrent()
-        assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+        assertNull(model.state.value.catalogFailure)
 
         model.connectivityChanged(true)
         model.connectivityChanged(false)
+        advanceTimeBy(8_999)
+        runCurrent()
+        assertEquals(1, service.catalogReads)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(2, service.catalogReads)
+        advanceTimeBy(2_999)
+        runCurrent()
+        assertEquals(2, service.catalogReads)
+        assertNull(model.state.value.catalogFailure)
+        advanceTimeBy(1)
         runCurrent()
 
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
-        assertEquals(2, service.catalogReads)
+        assertEquals(3, service.catalogReads)
         assertEquals(1, service.connectionReads)
     }
 
@@ -421,14 +442,15 @@ class WorkflowModelTest {
             val connections = CompletableDeferred<Set<String>>()
             service.connectionsRead = { connections.await() }
             service.detailRead = {
-                if (service.detailReads == 1) throw ApiFailure.Network(IOException("Offline"))
+                if (service.detailReads <= 3) throw ApiFailure.Network(IOException("Offline"))
                 service.detail
             }
             model.connectivityChanged(true)
             model.select(service.summary.id)
             model.visibilityChanged(true)
+            advanceTimeBy(6_000)
             runCurrent()
-            assertEquals(WorkflowReadFailure.Offline, model.state.value.detailFailure)
+            assertEquals(WorkflowReadFailure.Network, model.state.value.detailFailure)
 
             model.connectivityChanged(false)
             runCurrent()
@@ -438,7 +460,7 @@ class WorkflowModelTest {
         }
 
     @Test
-    fun cachedReadsBackOffIndependentlyAndOnlyWarnAfterSustainedFailure() =
+    fun cachedReadsWaitForTwoRetriesAndRetainTheEditorOnTerminalFailure() =
         check { service, model ->
             model.select(service.summary.id)
             model.visibilityChanged(true)
@@ -449,34 +471,60 @@ class WorkflowModelTest {
             model.edit(editing)
 
             val catalogAttempts = mutableListOf<Long>()
+            val start = testScheduler.currentTime
             service.catalogRead = {
-                catalogAttempts += testScheduler.currentTime - 600_000
+                catalogAttempts += testScheduler.currentTime - start
                 if (catalogAttempts.size <= 3) throw ApiFailure.Network(IOException("Offline"))
                 listOf(service.summary)
             }
             model.foregroundChanged(false)
-            advanceTimeBy(600_000)
             model.foregroundChanged(true)
             runCurrent()
 
-            advanceTimeBy(29_999)
+            advanceTimeBy(5_999)
             runCurrent()
-            assertEquals(listOf(0L, 5_000L, 15_000L), catalogAttempts)
+            assertEquals(listOf(0L, 3_000L), catalogAttempts)
             assertEquals(listOf(service.summary), model.state.value.catalog)
-            assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+            assertNull(model.state.value.catalogFailure)
             assertNull(model.state.value.detailFailure)
             assertEquals(editing, model.state.value.editor)
             assertEquals(2, service.detailReads)
 
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(WorkflowReadFailure.RefreshFailed, model.state.value.catalogFailure)
-            advanceTimeBy(5_000)
+            assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+            assertEquals(listOf(service.summary), model.state.value.catalog)
+            assertEquals(editing, model.state.value.editor)
+            advanceTimeBy(60_000)
             runCurrent()
-            assertEquals(listOf(0L, 5_000L, 15_000L, 35_000L), catalogAttempts)
+            assertEquals(listOf(0L, 3_000L, 6_000L), catalogAttempts)
+
+            model.connectivityChanged(true)
+            model.connectivityChanged(false)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 6_000L, 66_000L), catalogAttempts)
             assertNull(model.state.value.catalogFailure)
             assertEquals(2, service.detailReads)
         }
+
+    @Test
+    fun leavingTheDirectoryCancelsScheduledReadRetries() = check { service, model ->
+        service.catalogRead = { throw ApiFailure.Http(503, null, null, null) }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(1, service.catalogReads)
+
+        model.visibilityChanged(false)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(1, service.catalogReads)
+
+        service.catalogRead = { listOf(service.summary) }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(2, service.catalogReads)
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+    }
 
     @Test
     fun olderDetailCannotReplaceNewerCatalogAndRules() = check { service, model ->

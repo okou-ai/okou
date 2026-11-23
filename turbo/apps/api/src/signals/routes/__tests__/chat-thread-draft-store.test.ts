@@ -110,11 +110,19 @@ describe("thread drafts", () => {
       fixture.threadId,
     );
 
+    const preset = {
+      suggestion_id: randomUUID(),
+      impression_id: randomUUID(),
+      option_id: "review",
+      option_position: 2,
+    };
     await chat.patchThread(fixture.actor, fixture.threadId, {
+      suggestionPreset: preset,
       draftUserMessage: draftDocument("first draft"),
       draftAttachments: [draftAttachment()],
     });
     const saved = await chat.readThreadDraft(fixture.actor, fixture.threadId);
+    expect(saved.suggestionPreset).toStrictEqual(preset);
     expect(saved.draftUserMessage).toStrictEqual(draftDocument("first draft"));
     expect(saved.draftAttachments).toStrictEqual([draftAttachment()]);
     await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
@@ -131,6 +139,7 @@ describe("thread drafts", () => {
     expect(replaced.draftUserMessage).toStrictEqual(
       draftDocument("second draft"),
     );
+    expect(replaced.suggestionPreset).toBeUndefined();
     expect(replaced.draftAttachments).toBeNull();
 
     await chat.patchThread(fixture.actor, fixture.threadId, {
@@ -140,6 +149,36 @@ describe("thread drafts", () => {
     await expect(servedDraftText(fixture)).resolves.toBeNull();
     await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
+    );
+  });
+
+  it("round-trips artifact quote snapshots without requiring an attachment", async () => {
+    const { actor, threadId } = await createDraftFixture();
+    const draftUserMessage: UserMessageInputDocument = {
+      version: 1,
+      parts: [
+        {
+          type: "feedback",
+          quote: "Quoted before the file was renamed",
+          note: [{ type: "text", text: "Clarify this paragraph" }],
+          source: {
+            type: "artifact",
+            fileId: randomUUID(),
+            filenameSnapshot: "original-name.md",
+          },
+        },
+      ],
+    };
+    await chat.patchThread(actor, threadId, {
+      draftUserMessage,
+      draftAttachments: null,
+    });
+    await expect(chat.readThreadDraft(actor, threadId)).resolves.toStrictEqual({
+      draftUserMessage,
+      draftAttachments: null,
+    });
+    await expect(listedDraftIds({ actor, threadId })).resolves.toContain(
+      threadId,
     );
   });
 

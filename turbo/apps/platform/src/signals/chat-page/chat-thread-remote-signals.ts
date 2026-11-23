@@ -1,4 +1,7 @@
-import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
+import {
+  chatThreadDraftSchema,
+  type SuggestionPreset,
+} from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
 import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
@@ -55,6 +58,7 @@ interface ChatThreadRealtimeHandlers {
 }
 
 interface PatchDraftArgs {
+  readonly suggestionPreset?: SuggestionPreset;
   readonly threadId: string;
   readonly userMessage: UserMessageInputDocument | null;
   readonly attachments: PersistedAttachment[] | null;
@@ -118,11 +122,12 @@ type ChatRealtimeSubscription =
 export const patchChatThreadDraft$ = command(
   async (
     { get, set },
-    { threadId, userMessage, attachments }: PatchDraftArgs,
+    { threadId, userMessage, attachments, suggestionPreset }: PatchDraftArgs,
     signal: AbortSignal,
   ) => {
     const client = get(apiClient$)(chatThreadByIdContract);
     const body = {
+      suggestionPreset,
       draftUserMessage: userMessage,
       draftAttachments: attachments,
     };
@@ -373,6 +378,6 @@ export function createRemoteChatThreadDraft(threadId: string) {
       }),
       [200],
     );
-    return composerDraftSchema.parse(result.body);
+    return chatThreadDraftSchema.parse(result.body);
   });
 }

@@ -86,6 +86,7 @@ function withThumbnailLoad(
 }
 
 interface ArtifactCatalogSelection {
+  readonly refreshArtifactPreviews$: Command<void, []>;
   readonly selectArtifact$: Command<void, [string | null]>;
   readonly reloadSelectedArtifactDetail$: Command<void, []>;
   readonly ensureSelectedArtifactPreview$: Command<
@@ -223,8 +224,10 @@ function createCatalogSelectionSignals(
   catalog$: Computed<Promise<ArtifactCatalogPage>>,
   { reloadVersion$, chatThreadId, driveAccountRevision$ }: CatalogSource,
 ): ArtifactCatalogSelection {
+  const previews = createAttachmentPreviewRegistry();
   const internalDetailVersion$ = state(0);
   const reloadSelectedArtifactDetail$ = command(({ set }) => {
+    set(previews.refresh$);
     set(internalDetailVersion$, (version) => {
       return version + 1;
     });
@@ -232,7 +235,6 @@ function createCatalogSelectionSignals(
   const internalSelectedArtifactId$ = state<string | null>(null);
   const internalSelectedArtifactPreview$ =
     state<AttachmentPreviewSignals | null>(null);
-  const previews = createAttachmentPreviewRegistry();
 
   const selectArtifact$ = command(({ get, set }, artifactId: string | null) => {
     if (get(internalSelectedArtifactId$) === artifactId) {
@@ -309,6 +311,7 @@ function createCatalogSelectionSignals(
   );
 
   return {
+    refreshArtifactPreviews$: previews.refresh$,
     selectArtifact$,
     ensureSelectedArtifactPreview$,
     selectedArtifactDetail$,
@@ -358,14 +361,14 @@ function createCatalogView(source: CatalogSource) {
   };
 }
 
-/** Re-read the first page and discard every view's cursors from the old page. */
+/** Re-read the first page, discard old cursors, and refresh retained previews. */
 function createCatalogReload$(
   { reloadVersion$ }: CatalogSource,
-  ...resets: readonly Command<void, []>[]
+  ...invalidations: readonly Command<void, []>[]
 ) {
   return command(({ set }) => {
-    for (const reset of resets) {
-      set(reset);
+    for (const invalidate of invalidations) {
+      set(invalidate);
     }
     set(reloadVersion$, (version) => {
       return version + 1;
@@ -386,7 +389,11 @@ export function createArtifactCatalogSignals(): ArtifactCatalogSignals {
       return get(source.kind$);
     }),
     setKind$,
-    reload$: createCatalogReload$(source, resetPages$),
+    reload$: createCatalogReload$(
+      source,
+      resetPages$,
+      view.refreshArtifactPreviews$,
+    ),
   };
 }
 
@@ -402,7 +409,13 @@ export function createThreadArtifactCatalogs(
   const { resetPages$: resetGallery$, ...gallery } = createCatalogView(source);
   const { resetPages$: resetResources$, ...resources } =
     createCatalogView(source);
-  const reload$ = createCatalogReload$(source, resetGallery$, resetResources$);
+  const reload$ = createCatalogReload$(
+    source,
+    resetGallery$,
+    resetResources$,
+    gallery.refreshArtifactPreviews$,
+    resources.refreshArtifactPreviews$,
+  );
   return {
     gallery: { ...gallery, reload$ },
     resources: { ...resources, reload$ },

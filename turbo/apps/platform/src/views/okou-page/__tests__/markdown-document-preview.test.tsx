@@ -31,8 +31,8 @@ function expectDocumentHeadings(preview: HTMLElement) {
 }
 
 test.each([false, true])(
-  "Markdown documents preserve heading levels in every preview mode with typography enabled: %s",
-  async (typographyEnabled) => {
+  "Markdown documents preserve heading levels in every preview mode with Markdown-first output enabled: %s",
+  async (markdownFirstOutputEnabled) => {
     const url = publicArtifactUrl("heading-hierarchy.md");
     context.mocks.http.get(url, () => {
       return HttpResponse.text(
@@ -74,7 +74,7 @@ test.each([false, true])(
         },
       },
       featureSwitches: {
-        [FeatureSwitchKey.MarkdownDocumentTypography]: typographyEnabled,
+        [FeatureSwitchKey.MarkdownFirstOutput]: markdownFirstOutputEnabled,
       },
     });
     const chatHeading = await screen.findByRole("heading", {
