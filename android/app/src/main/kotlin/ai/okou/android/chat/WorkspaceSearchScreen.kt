@@ -622,7 +622,7 @@ private fun SearchResults(
     val showProgress = showPending && items.isNotEmpty() && remotePending
     val errorTitle =
         status
-            ?.takeIf { keyword.isNotEmpty() && items.isEmpty() }
+            ?.takeIf { items.isEmpty() }
             ?.let {
                 if (grouped) R.string.chat_search_failed else it
             }
@@ -793,7 +793,10 @@ private fun SearchResults(
             }
             if (errorTitle != null) {
                 item(key = "search_status") {
-                    SearchEmpty(errorTitle, onAction = null)
+                    ContentReadFeedback(
+                        errorTitle,
+                        Modifier.padding(horizontal = 12.dp, vertical = 24.dp),
+                    )
                 }
             } else if (visibleItems.isEmpty() && !pending) {
                 item(key = "search_empty") {
