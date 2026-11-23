@@ -13,6 +13,28 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1171.0](https://github.com/okou-ai/okou/compare/app-v0.1170.1...app-v0.1171.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **platform:** close the batch permission dialog after approval ([#50322](https://github.com/okou-ai/okou/issues/50322)) ([f86223c](https://github.com/okou-ai/okou/commit/f86223c0465d43ad576333e524e4fa8ab31e3541))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+    * @okouai/connectors bumped to 3.23.3
+    * @okouai/core bumped to 8.865.0
+    * @okouai/ui bumped to 1.21.110
+
 ## [0.1170.1](https://github.com/okou-ai/okou/compare/app-v0.1170.0...app-v0.1170.1) (2026-11-23)
 
 

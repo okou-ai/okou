@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.249.117](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.116...runner-rs-v0.249.117) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share indexed native witness refusal checks ([#50331](https://github.com/okou-ai/okou/issues/50331)) ([55954e0](https://github.com/okou-ai/okou/commit/55954e059d8190e4ecee4cba65f8955975d6ac54))
+* **runner:** share native witness omission and duplication checks ([#50318](https://github.com/okou-ai/okou/issues/50318)) ([1ec8153](https://github.com/okou-ai/okou/commit/1ec815376d93e451c8e3a82eb29e1ac23f4e3cef))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.116](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.115...runner-rs-v0.249.116) (2026-11-23)
 
 ### Release Dependencies

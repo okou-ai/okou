@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.112.0](https://github.com/okou-ai/okou/compare/api-v2.111.1...api-v2.112.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **api:** read subscription oauth client ids from doppler ([#50330](https://github.com/okou-ai/okou/issues/50330)) ([916d81b](https://github.com/okou-ai/okou/commit/916d81b3cb93a6fb0d03dc90ef05b2631fe6a523))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+    * @okouai/connectors bumped to 3.23.3
+    * @okouai/core bumped to 8.865.0
+    * @okouai/db bumped to 2.63.0
+    * @okouai/pi-agent-runtime bumped to 1.52.53
+
 ## [2.111.1](https://github.com/okou-ai/okou/compare/api-v2.111.0...api-v2.111.1) (2026-11-23)
 
 

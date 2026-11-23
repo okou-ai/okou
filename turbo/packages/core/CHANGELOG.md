@@ -1,5 +1,21 @@
 # Changelog
 
+## [8.865.0](https://github.com/okou-ai/okou/compare/core-v8.864.1...core-v8.865.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+* **core:** enable latest chat turn scroll room for staff orgs ([#50327](https://github.com/okou-ai/okou/issues/50327)) ([58cc0af](https://github.com/okou-ai/okou/commit/58cc0af1008e49b3d1212184af725b84e6330908))
+* enable voice messages for all users ([#50319](https://github.com/okou-ai/okou/issues/50319)) ([c42ad5f](https://github.com/okou-ai/okou/commit/c42ad5fab3a2eb3dff2fe9806c502c56ff7b58e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+
 ## [8.864.1](https://github.com/okou-ai/okou/compare/core-v8.864.0...core-v8.864.1) (2026-11-23)
 
 
