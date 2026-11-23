@@ -22,6 +22,7 @@ function preferences(
     sendMode: "enter",
     cloudBrowserEnabledByDefault: true,
     chatResourcesEnabledByDefault: true,
+    forYouCoverId: null,
     theme: "system",
     colorTheme: "blue-horizon",
     captureNetworkBodiesRemaining: 0,

@@ -54,12 +54,11 @@ def validate(directory):
             ordered, "native physical pause phase clocks lost ordering")
         initial, captured, accepted, lost, progress, joined, ready = [event["evidence"] for event in events[:7]]
         mode = case.rsplit("-", 1)[0]
-        path = initial.get("status_path")
-        status_evidence.claim_status_path(path, paths, "invalid or replayed native physical pause status path")
-        baseline = initial.get("published_status")
-        status_evidence.original_status(baseline, sandbox=identity[0])
-        exact(initial, {"policy":policy,"status_path":path,"published_status":baseline,"regular_file":True},
-              "native physical pause changed original inputs")
+        baseline = status_evidence.validate_initial_status_receipt(
+            initial, policy, identity[0], paths,
+            path_error="invalid or replayed native physical pause status path",
+            receipt_error="native physical pause changed original inputs",
+        )
         history, operation = later.history_operation(
             captured, identities, "native physical pause replayed run or resource identity"
         )

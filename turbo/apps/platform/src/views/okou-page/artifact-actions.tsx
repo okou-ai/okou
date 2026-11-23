@@ -766,10 +766,12 @@ function MarkdownArtifactExportItem({
   format,
   onExport,
   pending,
+  paywallLocked,
 }: {
   readonly format: MarkdownArtifactExportFormat;
   readonly onExport: () => void;
   readonly pending: boolean;
+  readonly paywallLocked: boolean;
 }): ReactElement {
   const { t } = useTranslation();
   const label = t(
@@ -791,6 +793,11 @@ function MarkdownArtifactExportItem({
         <Download size={14} />
       )}
       {label}
+      {paywallLocked && (
+        <span className="ml-auto">
+          <ProBadge />
+        </span>
+      )}
     </DropdownMenuItem>
   );
 }
@@ -799,16 +806,19 @@ function MarkdownArtifactExportItems({
   docxPending,
   onExport,
   pdfPending,
+  paywallLocked,
 }: {
   readonly docxPending: boolean;
   readonly onExport: (format: MarkdownArtifactExportFormat) => void;
   readonly pdfPending: boolean;
+  readonly paywallLocked: boolean;
 }): ReactElement {
   return (
     <>
       <MarkdownArtifactExportItem
         format="pdf"
         pending={pdfPending}
+        paywallLocked={paywallLocked}
         onExport={() => {
           onExport("pdf");
         }}
@@ -816,6 +826,7 @@ function MarkdownArtifactExportItems({
       <MarkdownArtifactExportItem
         format="docx"
         pending={docxPending}
+        paywallLocked={paywallLocked}
         onExport={() => {
           onExport("docx");
         }}
@@ -985,6 +996,7 @@ export function ArtifactDownloadMenu({
             docxPending={docxExportPending}
             onExport={startMarkdownExport}
             pdfPending={pdfExportPending}
+            paywallLocked={paywallLocked}
           />
         )}
         {drive}

@@ -245,6 +245,7 @@ type OrganizationAuthContext = AuthContext & {
 interface NormalSendRequest {
   readonly enqueueTiming?: ChatEnqueueTimingCollector;
   readonly bootstrap?: NormalSendBootstrap;
+  readonly onAcceptedDocument?: (document: UserMessageDocument) => void;
   readonly projectId?: string;
   readonly projectReferences?: EnqueuedChatInputFacts["projectReferences"];
   readonly body: NormalSendBody;
@@ -1028,6 +1029,22 @@ function normalSendInputFacts(
       : {}),
   };
 }
+async function readCapturedComputerAccess(
+  captured: ReturnType<
+    typeof settleIncludingAbort<
+      ThreadComputerAccess | ReturnType<typeof notFound>
+    >
+  >,
+  signal: AbortSignal,
+) {
+  const result = await captured;
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw result.error;
+  }
+  return result.value;
+}
+
 const resolveSendThread$ = command(
   async (
     { get, set },
@@ -1041,6 +1058,7 @@ const resolveSendThread$ = command(
       };
       readonly orgPlanCapabilities: OrgPlanCapabilities | null | undefined;
       readonly modelBootstrap: ModelSelectionBootstrap;
+      readonly host?: Parameters<typeof readCapturedComputerAccess>[0];
       readonly context: AgentRunContextSignals;
     },
     signal: AbortSignal,
@@ -1062,11 +1080,13 @@ const resolveSendThread$ = command(
       if ("status" in runSettings) {
         return runSettings;
       }
-      const computerAccess = await set(
-        requestedThreadComputerAccess$,
-        { ...member, body: args.body, current },
-        signal,
-      );
+      const computerAccess = args.host
+        ? await readCapturedComputerAccess(args.host, signal)
+        : await set(
+            requestedThreadComputerAccess$,
+            { ...member, body: args.body, current },
+            signal,
+          );
       if ("status" in computerAccess) {
         return computerAccess;
       }
@@ -1111,20 +1131,22 @@ const resolveSendThread$ = command(
     if ("status" in runSettings) {
       return runSettings;
     }
-    const computerAccess = await set(
-      requestedThreadComputerAccess$,
-      {
-        ...member,
-        body: args.body,
-        current: {
-          computerUseHostId: null,
-          cloudBrowserEnabled:
-            args.body.computerUseHostId === undefined &&
-            defaults.cloudBrowserEnabled,
-        },
-      },
-      signal,
-    );
+    const computerAccess = args.host
+      ? await readCapturedComputerAccess(args.host, signal)
+      : await set(
+          requestedThreadComputerAccess$,
+          {
+            ...member,
+            body: args.body,
+            current: {
+              computerUseHostId: null,
+              cloudBrowserEnabled:
+                args.body.computerUseHostId === undefined &&
+                defaults.cloudBrowserEnabled,
+            },
+          },
+          signal,
+        );
     if ("status" in computerAccess) {
       return computerAccess;
     }
@@ -2545,6 +2567,27 @@ const prepareNormalSendContext$ = command(
         return voice;
       }
     }
+    const host =
+      args.body.computerUseHostId && args.body.cloudBrowserEnabled !== true
+        ? settleIncludingAbort(() => {
+            return set(
+              requestedThreadComputerAccess$,
+              {
+                orgId: args.orgId,
+                userId: args.userId,
+                body: args.body,
+                current: {
+                  computerUseHostId: null,
+                  cloudBrowserEnabled: false,
+                },
+              },
+              signal,
+            );
+          })
+        : undefined;
+    if (host) {
+      waitUntil(host);
+    }
     const revocation =
       existing && args.body.revokesEventId
         ? settleIncludingAbort(() => {
@@ -2577,6 +2620,7 @@ const prepareNormalSendContext$ = command(
       inputId,
       attachmentRecords,
       revocation,
+      host,
     };
   },
 );
@@ -2747,6 +2791,7 @@ const prepareNormalSendPublicationInput$ = command(
               catalog,
               modelBootstrap,
               context,
+              host: prepared.host,
               existing: existing ? { thread: existing } : undefined,
             },
             signal,
@@ -2849,6 +2894,9 @@ export const sendNormalEvent$ = command(
       );
     }
     const accepted = enqueued.value;
+    if (accepted) {
+      args.onAcceptedDocument?.(publication.input.event.userMessage);
+    }
     if (accepted?.marketingRewardEventId) {
       const delivery = {
         jobId: accepted.marketingRewardEventId,
@@ -3397,10 +3445,12 @@ export const handleSendChatEvent$ = command(
       projectId,
       projectReferences,
       bootstrap,
+      onAcceptedDocument,
     }: {
       readonly body: SendBody;
       readonly projectId?: string;
       readonly bootstrap?: NormalSendBootstrap;
+      readonly onAcceptedDocument?: NormalSendRequest["onAcceptedDocument"];
       readonly projectReferences: NonNullable<
         EnqueuedChatInputFacts["projectReferences"]
       >;
@@ -3430,6 +3480,7 @@ export const handleSendChatEvent$ = command(
         projectId,
         projectReferences,
         bootstrap,
+        onAcceptedDocument,
         body,
         auth,
         userId: auth.userId,
