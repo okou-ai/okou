@@ -291,8 +291,9 @@ class ScreenshotScenario {
                     }
                     text("主动服务").click()
                     contains("请先选择时区以安排发送。")
-                    tabTo("时区")
+                    tabTo("比什凯克（UTC+6）")
                     check(device.pressEnter())
+                    text("用于新建定时任务的默认时区。")
                     awaitFocus("比什凯克（UTC+6）")
                     check(device.pressEnter())
                     awaitFocus("建议")
