@@ -9,6 +9,37 @@ import XCTest
 @MainActor
 final class ChatClientTests: XCTestCase {
 
+  func testPaymentRequiredResponsesShowTheLimitForTheRequestedAction() async throws {
+    let cases = [
+      (
+        "/api/chat/events", "INSUFFICIENT_CREDITS",
+        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
+        "Out of credits"
+      ),
+      (
+        "/api/chat/events", "PRO_REQUIRED", "This model requires a paid plan.",
+        "This action is unavailable on your current plan."
+      ),
+      (
+        "/api/voice-io/polish/segments", "AUDIO_INPUT_QUOTA_EXCEEDED",
+        "Audio input quota exceeded. Upgrade to Pro or Team for unlimited audio input.",
+        "Your voice input limit has been reached."
+      )
+    ]
+    for (path, code, message, expected) in cases {
+      let fixture = ChatHTTPFixture { _ in
+        try ChatHTTPResponse(status: 402, json: ["error": ["code": code, "message": message]])
+      }
+      do {
+        _ = try await fixture.client.data(path, method: "POST")
+        XCTFail("Expected the request to be rejected")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.serverCode, code)
+        XCTAssertEqual(error.localizedDescription, expected)
+      }
+    }
+  }
+
   func testUpgradeRequiredBlocksHistory() async throws {
     let fixture = ChatHTTPFixture { _ in
       ChatHTTPResponse(

@@ -8,7 +8,7 @@ import XCTest
 
 @MainActor
 final class FailureBillingRecoveryTests: XCTestCase {
-  func testBillingUsesServerCapabilitiesAndMemberPermissions() async throws {
+  func testAdminsAndMembersSeeTheCreditFailureAndCanRecheckTheBalance() async throws {
     let fixture = FailureRecoveryFixture(
       reason: "insufficient_credits", error: "insufficient_credits")
     let (conversation, models) = await fixture.conversation()
@@ -18,19 +18,25 @@ final class FailureBillingRecoveryTests: XCTestCase {
     }
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
     let initial = await conversation.readFailureState(failure)
-    XCTAssertTrue(try XCTUnwrap(initial.billing).canManageBilling)
+    let transcript = ConversationRowProjection(conversation: conversation).rows
+    XCTAssertTrue(transcript.contains { $0.message?.text == "Already generated content." })
+    XCTAssertFalse(try XCTUnwrap(initial.billing).hasCredits)
+    let adminCopy = AssistantFailureCopy.content(
+      initial, providerMessage: "Add credits to continue.")
+    XCTAssertEqual(adminCopy.title, "Out of credits")
+    XCTAssertEqual(adminCopy.description, "This workspace didn't have enough credits for this run.")
     fixture.state.value.withLock {
       $0.billingAdmin = false
       $0.canBuyCredits = false
     }
     await conversation.refreshFailureAccounts()
     let member = await conversation.readFailureState(failure)
-    let billing = try XCTUnwrap(member.billing)
-    XCTAssertFalse(billing.canManageBilling)
-    XCTAssertFalse(billing.canBuyCredits)
-    XCTAssertTrue(
-      AssistantFailureCopy.content(member).description.contains("admin")
+    XCTAssertFalse(try XCTUnwrap(member.billing).hasCredits)
+    let memberCopy = AssistantFailureCopy.content(
+      member, providerMessage: "Ask a workspace admin to add credits or upgrade the workspace plan."
     )
+    XCTAssertEqual(memberCopy.title, adminCopy.title)
+    XCTAssertEqual(memberCopy.description, adminCopy.description)
     await conversation.recoverFailure(failure.id)
     XCTAssertTrue(fixture.state.value.withLock { $0.sends.isEmpty })
     fixture.state.value.withLock {
@@ -40,11 +46,34 @@ final class FailureBillingRecoveryTests: XCTestCase {
     await conversation.refreshFailureAccounts()
     let funded = await conversation.readFailureState(failure)
     XCTAssertEqual(AssistantFailureCopy.content(funded).title, "Credits available")
+    XCTAssertEqual(AssistantFailureCopy.content(funded).description, "You can continue chatting.")
     conversation.draft = "A new input"
     await conversation.send()
     let historical = conversation.failureState(failure)
     XCTAssertFalse(historical.isCurrent)
-    XCTAssertFalse(AssistantFailureCopy.content(historical).description.contains("Checking"))
+    XCTAssertEqual(AssistantFailureCopy.content(historical).description, adminCopy.description)
+  }
+
+  func testReplayedBillingErrorsKeepTheirReasonWithoutARecoveryRead() {
+    let diagnostics = [
+      ("pro_required", "Plan restricted"),
+      ("Ask a workspace admin to add credits or upgrade the workspace plan.", "Out of credits"),
+      (
+        "Insufficient credits. Add credits to continue.\n\nBilling: https://example.invalid/?settings=billing",
+        "Out of credits"
+      ),
+      (
+        "API Error: 402 Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
+        "Out of credits"
+      )
+    ]
+    for (diagnostic, title) in diagnostics {
+      let failure = ChatFailure(id: "rejected", outputError: diagnostic)
+      let state = AssistantFailureState.make(
+        failure: failure, current: false, selection: nil, accounts: nil, busy: false)
+      XCTAssertEqual(state.recovery.kind, .billing)
+      XCTAssertEqual(AssistantFailureCopy.content(state).title, title)
+    }
   }
 
   func testRetiringBillingContextCancelsOriginalHTTPAndPreventsFutureReads() async throws {
@@ -111,7 +140,7 @@ final class FailureBillingRecoveryTests: XCTestCase {
     }
   }
 
-  func testBillingFailureRevokesCapabilitiesUntilItsOwnReadSucceeds() async throws {
+  func testFailedBalanceCheckRecoversWhenCreditsBecomeAvailable() async throws {
     let fixture = FailureRecoveryFixture(reason: "insufficient_credits", error: "No credits")
     let (conversation, models) = await fixture.conversation()
     defer {
@@ -127,11 +156,11 @@ final class FailureBillingRecoveryTests: XCTestCase {
     XCTAssertNil(unavailable.accountError)
     fixture.state.value.withLock {
       $0.billingStatus = 200
-      $0.billingAdmin = false
+      $0.credits = 100
     }
     await conversation.refreshFailureAccounts()
     let recovered = await conversation.readFailureState(failure)
-    XCTAssertFalse(try XCTUnwrap(recovered.billing).canManageBilling)
+    XCTAssertTrue(try XCTUnwrap(recovered.billing).hasCredits)
     XCTAssertNil(recovered.billingError)
     XCTAssertTrue(fixture.state.value.withLock { $0.resetKeys.isEmpty && $0.sends.isEmpty })
   }
