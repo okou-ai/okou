@@ -1347,6 +1347,7 @@ internal fun OkouApp(
                         if (settings != null) {
                             Text(
                                 title,
+                                modifier = Modifier.padding(start = 8.dp),
                                 style = settingsTitleStyle,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -1377,6 +1378,8 @@ internal fun OkouApp(
                     navigationIcon = {
                         if (settings != null || showWorkspaceBack || findVisit?.target != null)
                             IconButton(
+                                modifier =
+                                    Modifier.padding(start = if (settings != null) 8.dp else 0.dp),
                                 onClick = {
                                     focus.clearFocus()
                                     keyboard?.hide()

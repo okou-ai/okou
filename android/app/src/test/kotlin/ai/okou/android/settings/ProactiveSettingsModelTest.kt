@@ -4,7 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ProactiveSettingsApiFixture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -176,15 +176,13 @@ class ProactiveSettingsModelTest {
             val oldReadResponse = CountDownLatch(1)
             val writeStarted = CountDownLatch(1)
             val writeResponse = CountDownLatch(1)
-            val queuedRead = CountDownLatch(1)
-            val firstRefreshValue = AtomicReference<Boolean>()
+            val firstRefreshValue = CompletableDeferred<Boolean>()
             fixture.beforeMorningRead = {
                 if (oldReadStarted.count != 0L) {
                     oldReadStarted.countDown()
                     check(oldReadResponse.await(10, TimeUnit.SECONDS))
                 } else {
-                    firstRefreshValue.compareAndSet(null, fixture.morningEnabled)
-                    queuedRead.countDown()
+                    firstRefreshValue.complete(fixture.morningEnabled)
                 }
             }
             fixture.beforeMorningWrite = {
@@ -204,8 +202,7 @@ class ProactiveSettingsModelTest {
                 model.morningBrief.state.first {
                     it.confirmed?.matches(true) == true && it.choice == null
                 }
-                withContext(Dispatchers.IO) { assertTrue(queuedRead.await(10, TimeUnit.SECONDS)) }
-                assertEquals(true, firstRefreshValue.get())
+                assertTrue(firstRefreshValue.await())
             } finally {
                 oldReadResponse.countDown()
                 writeResponse.countDown()
