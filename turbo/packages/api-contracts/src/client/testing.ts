@@ -291,12 +291,10 @@ import {
 } from "./custom-connectors";
 import {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
-  dataRouterRequestContract as OriginalDataRouterRequestContract,
   runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import {
   dataRouterHistoryContract,
-  dataRouterRequestContract,
   runDataRouterRequestContract,
 } from "./data-router";
 import { debugMorningBriefContract as OriginalDebugMorningBriefContract } from "../contracts/debug-morning-brief";
@@ -1018,7 +1016,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [customConnectorValuesContract, OriginalCustomConnectorValuesContract],
   [customConnectorsContract, OriginalCustomConnectorsContract],
   [dataRouterHistoryContract, OriginalDataRouterHistoryContract],
-  [dataRouterRequestContract, OriginalDataRouterRequestContract],
   [runDataRouterRequestContract, OriginalRunDataRouterRequestContract],
   [debugMorningBriefContract, OriginalDebugMorningBriefContract],
   [
