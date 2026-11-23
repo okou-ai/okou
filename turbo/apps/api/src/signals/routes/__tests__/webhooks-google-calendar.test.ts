@@ -420,23 +420,6 @@ function webhookHeaders(
   };
 }
 
-async function setupCalendarRenewal() {
-  const cronSecret = "calendar-renewal-secret";
-  mockEnv("CRON_SECRET", cronSecret);
-  const app = await setupApp({
-    context,
-    routes: cronRenewGoogleCalendarWatchesRoutes,
-    isolatePg: true,
-  });
-  const cron = app(cronRenewGoogleCalendarWatchesContract);
-  return async () => {
-    return await accept(
-      cron.renew({ headers: { authorization: `Bearer ${cronSecret}` } }),
-      [200],
-    );
-  };
-}
-
 describe("POST /api/webhooks/google-calendar", () => {
   it("rejects notifications with missing required headers", async () => {
     await expect(postGoogleCalendarWebhook({})).resolves.toStrictEqual({
@@ -1297,8 +1280,15 @@ describe("POST /api/webhooks/google-calendar", () => {
   });
 
   it("repairs denied bindings and only retires unconsumed Calendar watches during renewal", async () => {
-    const renew = await setupCalendarRenewal();
+    const cronSecret = "calendar-renewal-secret";
+    mockEnv("CRON_SECRET", cronSecret);
     mockEnv("ABLY_API_KEY", "test.key:secret");
+    const app = await setupApp({
+      context,
+      routes: cronRenewGoogleCalendarWatchesRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronRenewGoogleCalendarWatchesContract);
     const firstToken = "calendar-renewal-first-token";
     const secondToken = "calendar-renewal-second-token";
     const sharedCalendar = "primary";
@@ -1441,7 +1431,10 @@ describe("POST /api/webhooks/google-calendar", () => {
     await completeRunThroughSandbox(execution.sandboxToken, run.runId);
 
     const stoppedBeforeRenewal = calendar.stoppedAccessTokens.length;
-    const renewal = await renew();
+    const renewal = await accept(
+      cron.renew({ headers: { authorization: `Bearer ${cronSecret}` } }),
+      [200],
+    );
     expect(renewal.body).toMatchObject({ success: true, failed: 0 });
     expect(
       calendar.stoppedAccessTokens.slice(stoppedBeforeRenewal),
@@ -1482,7 +1475,15 @@ describe("POST /api/webhooks/google-calendar", () => {
   });
 
   it("moves the Calendar watch at account access expiry and keeps the saved Chat choice", async () => {
-    const renew = await setupCalendarRenewal();
+    const cronSecret = "calendar-expiry-cron-secret";
+    mockEnv("CRON_SECRET", cronSecret);
+    const app = await setupApp({
+      context,
+      routes: cronRenewGoogleCalendarWatchesRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronRenewGoogleCalendarWatchesContract);
+    const cronRequest = { headers: { authorization: `Bearer ${cronSecret}` } };
     const firstToken = "calendar-expiring-token";
     const secondToken = "calendar-eligible-replacement-token";
     const calendar = configureAccountAwareGoogleCalendarApiMock({
@@ -1548,11 +1549,12 @@ describe("POST /api/webhooks/google-calendar", () => {
       [200],
     );
     mockNow(expiresAt - 1);
-    await renew();
+    await accept(cron.renew(cronRequest), [200]);
     expect(calendar.channels).toHaveLength(1);
 
     mockNow(expiresAt);
-    expect((await renew()).body).toMatchObject({ failed: 0 });
+    const renewal = await accept(cron.renew(cronRequest), [200]);
+    expect(renewal.body).toMatchObject({ failed: 0 });
     const secondWatch = calendar.channels[1];
     expect(secondWatch).toMatchObject({
       accessToken: secondToken,
