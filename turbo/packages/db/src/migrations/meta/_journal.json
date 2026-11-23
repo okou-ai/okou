@@ -3802,6 +3802,13 @@
       "when": 1795420969285,
       "tag": "1621_hosted_site_email_sharing",
       "breakpoints": true
+    },
+    {
+      "idx": 1622,
+      "version": "7",
+      "when": 1795428787258,
+      "tag": "1622_member_connector_account_access",
+      "breakpoints": true
     }
   ]
 }
