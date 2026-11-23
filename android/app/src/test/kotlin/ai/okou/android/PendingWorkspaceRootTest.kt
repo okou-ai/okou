@@ -27,6 +27,7 @@ import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
+import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.cursor
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.updates.ControlledUpdates
@@ -506,6 +507,33 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun workspaceSearchWaitsForAllIncludedScopesWhilePreferencesLoad() {
+        compose.runOnIdle { app.organizationResponse.complete(Unit) }
+        awaitCachedRow()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextReplacement("unmatched term")
+        compose.waitUntil(10_000) {
+            val opening = sessionState().opening as? OpeningWorkspace.Authorized
+            (opening?.search?.results?.value?.messages as? SearchRead.Ready)?.rows?.isEmpty() ==
+                true
+        }
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithText("No matching results").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.mainClock.advanceTimeBy(120)
+        compose.onNodeWithText("Could not load workflows").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Loading chats…").assertExists()
+
+        compose.onNodeWithTag("search_type_All").performClick()
+        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("No matching results").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     @Test
