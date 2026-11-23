@@ -65,6 +65,7 @@ export const CAPABILITIES = [
   "ssh:write",
   "vnc:read",
   "vnc:write",
+  "presentation-format:read",
   "presentation-template:write",
   "presentation-convert:write",
   "user-template:write",

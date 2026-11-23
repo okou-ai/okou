@@ -21,6 +21,7 @@ import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
 import {
+  presentationFormatEnabled,
   updateUserPreferences$,
   userPreferences,
 } from "../services/user-data.service";
@@ -66,12 +67,24 @@ const updateUserPreferencesInner$ = command(
       return body.response;
     }
 
+    const formatEnabled =
+      body.data.presentationFormat !== undefined &&
+      (await get(presentationFormatEnabled(auth)));
+    if (formatEnabled && auth.tokenType !== "session") {
+      return badRequestMessage(
+        "Presentation format preferences require a human session",
+      );
+    }
+    signal.throwIfAborted();
+
     const result = await set(
       updateUserPreferences$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
-        preferences: body.data,
+        preferences: formatEnabled
+          ? body.data
+          : { ...body.data, presentationFormat: undefined },
       },
       signal,
     );

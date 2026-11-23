@@ -15372,6 +15372,12 @@ enum class UserPreferencesColorTheme {
 }
 
 @Serializable
+enum class UserPreferencesPresentationFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class UserPreferences(
     val `timezone`: String?,
     val `locale`: UserPreferencesLocale?,
@@ -15381,6 +15387,7 @@ data class UserPreferences(
     val `chatResourcesEnabledByDefault`: Boolean,
     val `theme`: UserPreferencesTheme?,
     val `colorTheme`: UserPreferencesColorTheme?,
+    val `presentationFormat`: UserPreferencesPresentationFormat? = null,
     val `forYouCoverId`: String?,
     val `captureNetworkBodiesRemaining`: Long,
     val `memoryInitialized`: Boolean,
@@ -15450,6 +15457,12 @@ enum class UpdatePreferencesRequestColorTheme {
 }
 
 @Serializable
+enum class UpdatePreferencesRequestPresentationFormat {
+    @SerialName("html") HTML,
+    @SerialName("pptx") PPTX,
+}
+
+@Serializable
 data class UpdatePreferencesRequest(
     val `timezone`: String? = null,
     val `locale`: UpdatePreferencesRequestLocale? = null,
@@ -15457,6 +15470,7 @@ data class UpdatePreferencesRequest(
     val `cloudBrowserEnabledByDefault`: Boolean? = null,
     val `theme`: UpdatePreferencesRequestTheme? = null,
     val `colorTheme`: UpdatePreferencesRequestColorTheme? = null,
+    val `presentationFormat`: UpdatePreferencesRequestPresentationFormat? = null,
     val `forYouCoverId`: CanonicalOptional<String?> = CanonicalOptional.Absent,
     val `captureNetworkBodiesRemaining`: Long? = null,
 )

@@ -1,0 +1,2 @@
+ALTER TABLE "org_members_metadata" ADD COLUMN "presentation_format" text;--> statement-breakpoint
+ALTER TABLE "org_members_metadata" ADD CONSTRAINT "chk_org_members_metadata_presentation_format" CHECK ("org_members_metadata"."presentation_format" IS NULL OR "org_members_metadata"."presentation_format" IN ('html', 'pptx'));

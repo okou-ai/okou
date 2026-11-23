@@ -222,6 +222,7 @@ import { usageRecordRoutes } from "./routes/usage-record";
 import { userExportRoutes } from "./routes/user-export";
 import { userModelPreferenceRoutes } from "./routes/user-model-preference";
 import { userPreferencesRoutes } from "./routes/user-preferences";
+import { presentationFormatRoutes } from "./routes/presentation-format";
 import { userTemplatesRoutes } from "./routes/user-templates";
 import { vncAccessRoutes } from "./routes/vnc-access";
 import { vncConnectionsRoutes } from "./routes/vnc-connections";
@@ -435,6 +436,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...iosPushRegistrationsRoutes,
   ...iosNotificationsRoutes,
   ...userPreferencesRoutes,
+  ...presentationFormatRoutes,
   ...paidToolsRoutes,
   ...userModelPreferenceRoutes,
   ...morningBriefPreferenceRoutes,

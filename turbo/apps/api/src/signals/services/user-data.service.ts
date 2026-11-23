@@ -14,7 +14,12 @@ import {
   type UserLocale,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
+  updateUserPreferencesRequestSchema,
 } from "@okouai/api-contracts/contracts/user-preferences";
+import { presentationOutputFormatSchema } from "@okouai/api-contracts/validators/presentation-output-format";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { userFeatureSwitchContext } from "./feature-switches.service";
 import type {
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
@@ -34,6 +39,34 @@ import { isValidTimeZone } from "../utils";
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;
+}
+
+export function presentationFormatEnabled({ orgId, userId }: UserScopedQuery) {
+  const context$ = userFeatureSwitchContext(orgId, userId);
+  return computed(async (get) => {
+    return isFeatureEnabled(
+      FeatureSwitchKey.PresentationOutputFormat,
+      await get(context$),
+    );
+  });
+}
+
+export function userPresentationFormat({ orgId, userId }: UserScopedQuery) {
+  return computed(async (get) => {
+    const [row] = await get(db$)
+      .select({ presentationFormat: orgMembersMetadata.presentationFormat })
+      .from(orgMembersMetadata)
+      .where(
+        and(
+          eq(orgMembersMetadata.orgId, orgId),
+          eq(orgMembersMetadata.userId, userId),
+        ),
+      )
+      .limit(1);
+    return presentationOutputFormatSchema
+      .nullable()
+      .parse(row?.presentationFormat ?? null);
+  });
 }
 
 function parseSendMode(value: unknown): SendMode {
@@ -92,6 +125,9 @@ export function userPreferences({
   userId,
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
   return computed(async (get): Promise<UserPreferencesResponse> => {
+    const formatEnabled = await get(
+      presentationFormatEnabled({ orgId, userId }),
+    );
     const db = get(db$);
     const [[row], [memory]] = await Promise.all([
       db
@@ -106,6 +142,9 @@ export function userPreferences({
           forYouCoverId: orgMembersMetadata.forYouCoverId,
           captureNetworkBodiesRemaining:
             orgMembersMetadata.captureNetworkBodiesRemaining,
+          ...(formatEnabled && {
+            presentationFormat: orgMembersMetadata.presentationFormat,
+          }),
         })
         .from(orgMembersMetadata)
         .where(
@@ -127,6 +166,13 @@ export function userPreferences({
         .limit(1),
     ]);
     const memoryInitialized = (memory?.headVersionId ?? null) !== null;
+    const presentationPreference = formatEnabled
+      ? {
+          presentationFormat: presentationOutputFormatSchema
+            .nullable()
+            .parse(row?.presentationFormat ?? null),
+        }
+      : {};
 
     if (!row) {
       return {
@@ -141,6 +187,7 @@ export function userPreferences({
         forYouCoverId: null,
         captureNetworkBodiesRemaining: 0,
         memoryInitialized,
+        ...presentationPreference,
       };
     }
 
@@ -156,6 +203,7 @@ export function userPreferences({
       forYouCoverId: row.forYouCoverId,
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
       memoryInitialized,
+      ...presentationPreference,
     };
   });
 }
@@ -251,6 +299,10 @@ function mergeUserPreferences(
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
     memoryInitialized: existing.memoryInitialized,
+    ...(existing.presentationFormat !== undefined && {
+      presentationFormat:
+        preferences.presentationFormat ?? existing.presentationFormat,
+    }),
   };
 }
 
@@ -275,6 +327,9 @@ function userPreferenceUpdateColumns(
     ...(preferences.forYouCoverId !== undefined && {
       forYouCoverId: preferences.forYouCoverId,
     }),
+    ...(preferences.presentationFormat !== undefined && {
+      presentationFormat: preferences.presentationFormat,
+    }),
     ...(preferences.captureNetworkBodiesRemaining !== undefined && {
       captureNetworkBodiesRemaining: preferences.captureNetworkBodiesRemaining,
     }),
@@ -287,7 +342,16 @@ export const updateUserPreferences$ = command(
     args: UpdateUserPreferencesArgs,
     signal: AbortSignal,
   ): Promise<UpdateUserPreferencesResult> => {
-    const preferences = args.preferences;
+    const formatEnabled = await get(presentationFormatEnabled(args));
+    signal.throwIfAborted();
+    const parsed = updateUserPreferencesRequestSchema.safeParse({
+      ...args.preferences,
+      ...(!formatEnabled && { presentationFormat: undefined }),
+    });
+    if (!parsed.success) {
+      return { ok: false, message: "At least one preference must be provided" };
+    }
+    const preferences = parsed.data;
     if (
       preferences.timezone !== undefined &&
       !isValidTimeZone(preferences.timezone)
@@ -320,6 +384,9 @@ export const updateUserPreferences$ = command(
         theme: merged.theme,
         colorTheme: merged.colorTheme,
         forYouCoverId: merged.forYouCoverId,
+        ...(merged.presentationFormat !== undefined && {
+          presentationFormat: merged.presentationFormat,
+        }),
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,

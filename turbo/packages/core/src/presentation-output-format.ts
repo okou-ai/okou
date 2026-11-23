@@ -1,4 +1,4 @@
-export const PRESENTATION_OUTPUT_FORMATS = ["html", "pptx"] as const;
-
-export type PresentationOutputFormat =
-  (typeof PRESENTATION_OUTPUT_FORMATS)[number];
+export {
+  PRESENTATION_OUTPUT_FORMATS,
+  type PresentationOutputFormat,
+} from "@okouai/api-contracts/validators/presentation-output-format";
