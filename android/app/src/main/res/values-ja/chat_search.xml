@@ -33,4 +33,5 @@
     <string name="chat_search_workflows_saved">ワークフローの一覧を更新できませんでした。最後に読み込んだ一覧を検索しています。</string>
     <string name="chat_search_artifacts_failed">成果物を検索できませんでした</string>
     <string name="chat_search_loading">検索中…</string>
+    <string name="chat_search_failed">検索結果を読み込めませんでした</string>
 </resources>
