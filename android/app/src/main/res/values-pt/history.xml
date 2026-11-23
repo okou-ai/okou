@@ -10,6 +10,7 @@
     <string name="history_rejected">Não enviado</string>
     <string name="history_unsupported">Não é possível exibir este conteúdo no Android.</string>
     <string name="history_reference">Referência</string>
+    <string name="history_completed">Concluído</string>
     <string name="history_cancelled">Interrompido</string>
     <string name="history_run_failed">Falha</string>
 </resources>
