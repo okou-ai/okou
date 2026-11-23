@@ -273,7 +273,7 @@ class SessionModel(
                 ?.takeIf { snapshot.complete && session.active }
                 ?.let { WorkspaceIdentity(apiOrigin, session.userId, session.sessionId, it) }
         mutable.value =
-            checkingFrom?.copy(checkingWorkspace = true, entryFailure = null)
+            checkingFrom?.copy(checkingWorkspace = true)
                 ?: SessionUiState(
                     ticket,
                     SessionStage.LoadingWorkspace,
@@ -340,12 +340,17 @@ class SessionModel(
                 val role = fastAccess?.role ?: membership?.role
                 if (initialIdentity == null || role == null) {
                     entrySelection = null
+                    val browserFailure =
+                        mutable.value.entryFailure?.takeIf {
+                            memberships.isEmpty() && it == SessionEntryFailure.Browser
+                        }
                     mutable.value =
                         SessionUiState(
                             generation,
                             SessionStage.ChooseWorkspace,
                             memberships,
-                            entryFailure = selection?.let { SessionEntryFailure.Selection },
+                            entryFailure =
+                                selection?.let { SessionEntryFailure.Selection } ?: browserFailure,
                         )
                     return@launch
                 }
@@ -453,6 +458,7 @@ class SessionModel(
                         memberships = memberships,
                         opening = opened,
                         checkingWorkspace = false,
+                        entryFailure = null,
                     )
                 preparation?.let(chats::restoreStartupCache)
                 // The list owns restoration after handoff, including during bootstrap retries.
@@ -800,7 +806,7 @@ class SessionModel(
                     state.stage == SessionStage.AccessRemoved)
         ) {
             workspaceSetupReturn = null
-            prepare(snapshot, state)
+            prepare(snapshot, state.copy(entryFailure = null))
             return
         }
         val opened = state.opening as? OpeningWorkspace.Authorized
