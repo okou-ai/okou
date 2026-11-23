@@ -430,7 +430,6 @@
       "close": "Tutup",
       "closeArtifact": "Tutup artefak",
       "closeNamed": "Tutup {{title}}",
-      "closePreviewMenu": "Tutup menu pratinjau",
       "download": "Unduh",
       "downloadArtifact": "Unduh artefak",
       "downloadMarkdownAs": "Unduh sebagai {{format}}",
@@ -573,6 +572,28 @@
     "metadata": {
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"
+    },
+    "people": {
+      "accounts": "Anggota ruang kerja yang cocok",
+      "anyone": "Siapa saja",
+      "empty": "Belum ada orang lain yang memiliki akses.",
+      "hint": "Di luar ruang kerja Anda? Gunakan alamat email lengkapnya.",
+      "invitationProcessed": "Undangan berbagi telah diproses",
+      "label": "Bagikan dengan orang",
+      "noAccounts": "Tidak ada anggota yang cocok. Masukkan email lengkap untuk mengundang.",
+      "placeholder": "Nama atau alamat email",
+      "remove": "Hapus akses {{email}}",
+      "removed": "Akses dihapus",
+      "restricted": "Orang yang diundang",
+      "restrictedDescription": "Hanya Anda dan orang yang diundang",
+      "searching": "Mencari anggota ruang kerja…",
+      "searchUnavailable": "Pencarian anggota sementara tidak tersedia. Coba lagi sebentar.",
+      "share": "Undang",
+      "updateUnavailable": "Tidak dapat memperbarui pengaturan berbagi. Coba lagi sebentar.",
+      "viewers": "Orang dengan akses",
+      "workspace": "Ruang kerja",
+      "workspaceDescription": "Anggota {{organization}} dan orang yang diundang",
+      "workspaceDescriptionUnnamed": "Anggota ruang kerja dan orang yang diundang"
     },
     "preview": {
       "audioLabel": "Pratinjau audio untuk {{filename}}",
@@ -1931,7 +1952,7 @@
       },
       "slashPanel": {
         "browseAll": "Jelajahi semua templat",
-        "hint": "Cari alur kerja atau pilih templat…",
+        "hint": "Pilih tindakan",
         "useTemplate": "Gunakan templat {{title}}"
       },
       "temporarilySwitchTo": "Beralih sementara ke",
@@ -2975,6 +2996,7 @@
       "edit": "Edit",
       "grant": "Berikan",
       "reconnect": "Hubungkan ulang",
+      "returnToOkou": "Kembali ke Okou",
       "revoke": "Cabut",
       "save": "Simpan",
       "saving": "Menyimpan...",
@@ -5157,7 +5179,7 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",

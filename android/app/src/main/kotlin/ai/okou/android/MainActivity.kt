@@ -96,6 +96,8 @@ class MainActivity : AppCompatActivity() {
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,
+                    settingsCache = app.workspaceSettingsCache,
+                    searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )
@@ -162,9 +164,15 @@ class MainActivity : AppCompatActivity() {
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
                 val updateDetails = rememberUpdateDetailsOpen()
-                val installProgress = updateInstall.progressLabel
                 val attempt = updateInstall.attempt
                 val pending = updateInstall.automaticRelease
+                val installProgress =
+                    updateInstall.progressLabel
+                        ?: R.string.updates_waiting_to_install.takeIf {
+                            pending != null &&
+                                updateState.canInstall &&
+                                updateState.selectedRelease == pending
+                        }
                 LaunchedEffect(
                     attempt,
                     pending,
@@ -212,7 +220,6 @@ class MainActivity : AppCompatActivity() {
                         appUpdates = {
                             AppUpdateSettings(
                                 updateState,
-                                installProgress,
                                 openUpdates,
                                 updateDetails.value,
                             )

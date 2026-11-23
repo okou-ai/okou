@@ -2552,6 +2552,20 @@ const startNormalSendReads$ = command(
     waitUntil(settle(get(context.modelFacts$)));
     waitUntil(settle(get(context.memberMetadata$)));
     waitUntil(settle(get(context.executionPackageSources$)));
+    waitUntil(
+      settle(
+        (async () => {
+          if (
+            body.threadId !== undefined &&
+            !(await get(graph.existingThread$))
+          ) {
+            return;
+          }
+          signal.throwIfAborted();
+          await get(context.catalog$);
+        })(),
+      ),
+    );
     if (presentationIds.length || userTemplateIds.length) {
       waitUntil(settle(get(context.requestTemplateSources$)));
     }

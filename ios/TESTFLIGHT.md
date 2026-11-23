@@ -93,9 +93,15 @@ In the Max & Zoe, Inc. team (`C5UWSXYB67`):
 The repository declares `ITSAppUsesNonExemptEncryption=false`: the app's
 networking uses OS TLS, Clerk uses system Security/CryptoKit, and Ably's optional
 cipher implementation uses system CommonCrypto. Re-evaluate the declaration if
-adding custom encryption or changing these dependencies. Clerk, Ably, and
-PhoneNumberKit carry their own privacy manifests; Xcode upload validation remains
-required for the final archive.
+adding custom encryption or changing these dependencies.
+
+The app, notification service, and widget each include a privacy manifest for
+their executable. Clerk, Ably, Sentry, and PhoneNumberKit supply SDK manifests.
+Archive validation checks the app and extension API reasons. Export verification
+compares the archive and IPA manifests, including SDK resources. Use the final
+archive's Xcode privacy report and actual service data flows when updating the
+[App Store privacy answers](https://developer.apple.com/app-store/app-privacy-details/).
+Xcode upload validation still applies to the final distribution build.
 
 ## Versioning, validation, and failure recovery
 
@@ -166,7 +172,7 @@ release's publication or device acceptance.
 ## Local verification without Apple access
 
 ```sh
-node --test ios/scripts/testflight.test.mjs
+node --test ios/scripts/{testflight,distribution-availability,app-review}.test.mjs .github/scripts/release/ios-app-review.test.mjs
 python3 ios/scripts/archive-promotion.test.py
 python3 ios/scripts/archive-proof.test.py
 python3 ios/scripts/upload-sentry-symbols.test.py
@@ -204,3 +210,27 @@ latest protected verification for each channel, valid for 24 hours or until
 TestFlight expiration, whichever comes first. Re-run verification before
 raising a floor. A failed or pending subsequent check invalidates the older
 receipt. Verification does not submit a build or change a minimum version.
+
+## Submit an existing build for App Review
+
+1. Install the intended TestFlight build. Verify production sign-in, sending a
+   message and viewing its result. Prepare the store listing, screenshots,
+   privacy information, review contact details and any required demo account
+   in App Store Connect.
+2. In Actions, run **Submit iOS for App Review** on `main` with the exact
+   marketing version and build number. The production workflow verifies the
+   release publisher's upload record, checks that the same build is available
+   in TestFlight and eligible for the App Store, then submits it directly to
+   Apple with **manual release**. The existing iOS App Store Connect key needs
+   App Manager access. The Actions summary links to the app and records the
+   Apple build ID, submission ID and state.
+3. After approval, release the app manually in App Store Connect. To raise
+   the App Store minimum later, verify public availability in the configured
+   storefronts and use the normal minimum-version policy PR.
+
+To recover from a failure, resolve the reported metadata or draft conflict in
+App Store Connect and run the same version and build again. The workflow checks
+the current Apple state and uses a GitHub commit status to remember the Apple
+draft ID for that exact build. An already submitted build returns its receipt.
+If Apple created an empty draft but the ID could not be recorded, reconcile the
+draft in App Store Connect before retrying.

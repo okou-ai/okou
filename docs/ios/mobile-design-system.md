@@ -941,7 +941,10 @@ feature; the catalog shows each one.
   attachments), so typing or emptying a draft never changes it, and only an empty
   editor restarts when that content changes. Defer this refresh until marked-text
   composition settles; preserve the document, selection, and undo history rather
-  than replacing text or overriding `hasText`.
+  than replacing text or overriding `hasText`. Skip it while a sheet or cover is
+  presented over the editor: UIKit has put the keyboard away with the editor still
+  first responder, a reload would bring the keyboard back over that presentation,
+  and the keyboard takes the current traits when UIKit returns it.
 - First-party authentication uses native provider, email, code, password, and
   required-profile steps, composed from shared controls. Provider availability,
   required fields, verification, transport, OAuth, and session authority come from

@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">Actions de la réponse</string>
     <string name="conversation_copy_reply">Copier la réponse</string>
     <string name="conversation_reply_copied">Réponse copiée</string>
-    <string name="conversation_revoke">Retirer</string>
+    <string name="conversation_revoke">Retirer le message en attente</string>
+    <string name="conversation_queue">File d’attente</string>
+    <string name="conversation_queue_automation">Automatisation de workflow</string>
+    <string name="conversation_skip_automation">Ignorer cette automatisation</string>
+    <string name="conversation_withdrawing">Retrait en cours…</string>
+    <string name="conversation_skipping">Omission en cours…</string>
+    <string name="conversation_withdraw_unknown">Résultat du retrait à confirmer</string>
+    <string name="conversation_skip_unknown">Résultat de l’action à confirmer</string>
+    <string name="conversation_withdraw_failed">Impossible de retirer le message</string>
+    <string name="conversation_skip_failed">Impossible d’ignorer cette automatisation</string>
     <string name="conversation_stop">Arrêter</string>
     <string name="conversation_find">Rechercher des messages</string>
     <string name="conversation_find_turns">Parcourir les échanges</string>

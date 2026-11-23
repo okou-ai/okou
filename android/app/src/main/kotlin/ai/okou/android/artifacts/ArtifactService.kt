@@ -30,7 +30,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
-internal enum class ArtifactKind {
+enum class ArtifactKind {
     File,
     Website,
     Image,
@@ -119,11 +119,15 @@ internal constructor(
     private val referenceOrigins =
         setOfNotNull(apiOrigin.toHttpUrlOrNull(), BuildConfig.WEB_ORIGIN.toHttpUrlOrNull())
 
-    internal suspend fun page(query: ArtifactQuery, cursor: String?): ArtifactPage {
+    internal suspend fun page(
+        query: ArtifactQuery,
+        cursor: String?,
+        limit: Int = 40,
+    ): ArtifactPage {
         val page =
             api.artifactCatalog(
                 ArtifactCatalogQuery(
-                    limit = 40,
+                    limit = limit.toLong(),
                     chatThreadId = query.chatThreadId,
                     kind = query.filter.wire,
                     keyword = query.keyword.ifBlank { null },

@@ -82,6 +82,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -117,7 +118,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.lifecycle.compose.LifecycleResumeEffect
+
+internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
 
 @Composable
 internal fun WorkflowScreen(
@@ -143,11 +145,8 @@ internal fun WorkflowScreen(
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
     onOpenChat: (runId: String, threadId: String) -> Unit,
+    fromSearch: Boolean = false,
 ) {
-    LifecycleResumeEffect(model) {
-        model.foregroundChanged(true)
-        onPauseOrDispose { model.foregroundChanged(false) }
-    }
     val wide = listWidth != null
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -162,7 +161,7 @@ internal fun WorkflowScreen(
         when {
             editor != null -> exitEditor()
             state.writing -> Unit
-            route.id != null && !wide && !handoffPending -> {
+            route.id != null && !wide && !fromSearch && !handoffPending -> {
                 restoreRow = route.id
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
@@ -229,8 +228,6 @@ internal fun WorkflowScreen(
                 }
                 when {
                     route.id == null -> WorkflowPlaceholder(R.string.workflow_select)
-                    state.detailFailure == WorkflowReadFailure.Unavailable ->
-                        WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
                         WorkflowEditor(
@@ -395,7 +392,7 @@ private fun WorkflowDirectory(
     restoreRow: String?,
     onRowRestored: () -> Unit,
 ) {
-    val text = query.committedQuery.text.trim()
+    val text = query.keyword
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
         else query.retainWhileComposing(state)
@@ -423,7 +420,7 @@ private fun WorkflowDirectory(
     val anchor = query.pendingAnchor
     LaunchedEffect(rows, anchor, catalog) {
         if (anchor != null && catalog != null)
-            query.restorePosition(rows.indexOfFirst { it.id == anchor.chatId }.takeIf { it >= 0 })
+            query.restorePosition(rows.indexOfFirst { it.id == anchor.key }.takeIf { it >= 0 })
     }
     Column(
         modifier.testTag("workflow_directory"),
@@ -446,7 +443,9 @@ private fun WorkflowDirectory(
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
-            WorkflowPlaceholder(R.string.workflow_unavailable)
+            Box(Modifier.widthIn(max = 730.dp).fillMaxWidth()) {
+                WorkflowInitialReadError(R.string.workflow_unavailable)
+            }
             return@Column
         }
         Column(
@@ -486,10 +485,8 @@ private fun WorkflowDirectory(
         }
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
-                catalog == null && state.catalogFailure == WorkflowReadFailure.Offline ->
-                    WorkflowPlaceholder(R.string.workflow_offline)
                 catalog == null && state.catalogFailure != null ->
-                    WorkflowPlaceholder(R.string.workflow_load_failed)
+                    WorkflowInitialReadError(R.string.workflow_load_failed)
                 catalog == null -> WorkflowSkeleton(directory = true)
                 rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
                 else ->
@@ -514,9 +511,13 @@ private fun WorkflowDirectory(
             }
         }
         if (catalog != null) {
+            val rulesFeedback =
+                if (state.rulesFailure != null && state.rules == null)
+                    R.string.workflow_rules_load_failed
+                else state.rulesFailure.cachedReadFeedback()
             WorkflowReadFeedback(
                 state.catalogFailure.cachedReadFeedback()
-                    ?: state.rulesFailure.cachedReadFeedback()
+                    ?: rulesFeedback
                     ?: state.connectionReadFeedback(),
             )
         }
@@ -795,7 +796,7 @@ private fun WorkflowDetailPane(
                     item {
                         WorkflowSectionHeader(
                             R.string.workflow_trigger_rules,
-                            if (detail.canManage) R.string.workflow_add_automation else null,
+                            if (detail.canAddAutomation) R.string.workflow_add_automation else null,
                             !state.writing && !handoffPending,
                             onNewRule,
                         )
@@ -891,8 +892,9 @@ private fun WorkflowPendingDetail(wide: Boolean, failure: WorkflowReadFailure?) 
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when (failure) {
                 null -> WorkflowSkeleton(directory = false)
-                WorkflowReadFailure.Offline -> WorkflowPlaceholder(R.string.workflow_offline)
-                else -> WorkflowPlaceholder(R.string.workflow_load_failed)
+                WorkflowReadFailure.Unavailable ->
+                    WorkflowInitialReadError(R.string.workflow_unavailable)
+                else -> WorkflowInitialReadError(R.string.workflow_load_failed)
             }
         }
         WorkflowUseBar(wide = wide, enabled = false, onUse = {})
@@ -1149,7 +1151,7 @@ private fun WorkflowPlaceholder(label: Int) {
 
 @Composable
 private fun WorkflowSkeleton(directory: Boolean) {
-    if (rememberChatWaitIndicator(true)) {
+    if (rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)) {
         val label = stringResource(R.string.workspace_workflows)
         Column(
             Modifier.fillMaxWidth().padding(16.dp).testTag("workflow_loading").semantics {
@@ -1188,10 +1190,11 @@ private fun WorkflowReadFeedback(label: Int?) {
     val shape = RoundedCornerShape(12.dp)
     Text(
         stringResource(label),
-        Modifier.widthIn(max = 480.dp)
+        Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 480.dp)
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
             .heightIn(min = 48.dp)
+            .shadow(2.dp, shape)
             .background(MaterialTheme.colorScheme.surface, shape)
             .border(1.dp, MaterialTheme.colorScheme.outline, shape)
             .padding(12.dp)
@@ -1199,6 +1202,11 @@ private fun WorkflowReadFeedback(label: Int?) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
     )
+}
+
+@Composable
+internal fun WorkflowInitialReadError(label: Int) {
+    WorkflowNotice(label, PaddingValues(start = 12.dp, top = 24.dp, end = 12.dp))
 }
 
 @Composable

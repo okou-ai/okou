@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">E-Mail-Updates</string>
+    <string name="settings_email_scope">Erhalte Kurzberichte, Erinnerungen und Updates aus allen Arbeitsbereichen.</string>
+    <string name="settings_email_receive">E-Mails erhalten</string>
+    <string name="settings_email_unavailable">E-Mail nicht verfügbar</string>
+    <string name="settings_email_check_address">E-Mail-Adresse des Kontos prüfen</string>
+    <string name="settings_email_load_failed">E-Mail-Einstellungen sind vorübergehend nicht verfügbar.</string>
+    <string name="settings_email_refresh_failed">Synchronisierung fehlgeschlagen. Das zuletzt gespeicherte Abonnement wird angezeigt.</string>
+    <string name="settings_email_refreshing">E-Mail-Abonnement wird synchronisiert</string>
+    <string name="settings_email_save_failed">Das E-Mail-Abonnement konnte nicht aktualisiert werden.</string>
+    <string name="settings_email_save_unconfirmed">Die Änderung des E-Mail-Abonnements ist noch nicht bestätigt.</string>
     <string name="settings_models">Modelle</string>
     <string name="settings_tools">Tools</string>
     <string name="settings_my_okou">Mein Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">Auswählen</string>
     <string name="settings_account_reconnect">Erneute Verbindung erforderlich</string>
     <string name="settings_account_switching">Wird gewechselt…</string>
-    <string name="settings_account_switch_failed">Kontowechsel fehlgeschlagen.</string>
+    <string name="settings_account_switch_unconfirmed">Wechsel unbestätigt</string>
+    <string name="settings_account_switch_failed">Das Modellkonto konnte nicht gewechselt werden.</string>
     <string name="settings_quota">Kontingent</string>
     <string name="settings_hour_quota">%1$d-Stunden-Kontingent</string>
     <string name="settings_day_quota">%1$d-Tage-Kontingent</string>
@@ -70,4 +81,6 @@
     <string name="settings_model_effort_extra">Sehr hoch</string>
     <string name="settings_model_effort_max">Maximal</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Modellkonten werden aktualisiert</string>
+    <string name="settings_refreshing_credit_balance">Guthaben wird aktualisiert</string>
 </resources>

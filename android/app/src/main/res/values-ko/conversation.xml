@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">답변 작업</string>
     <string name="conversation_copy_reply">답변 복사</string>
     <string name="conversation_reply_copied">답변을 복사했어요</string>
-    <string name="conversation_revoke">철회</string>
+    <string name="conversation_revoke">대기 중인 메시지 철회</string>
+    <string name="conversation_queue">대기열</string>
+    <string name="conversation_queue_automation">워크플로 자동화</string>
+    <string name="conversation_skip_automation">이번 자동화 건너뛰기</string>
+    <string name="conversation_withdrawing">철회 중…</string>
+    <string name="conversation_skipping">건너뛰는 중…</string>
+    <string name="conversation_withdraw_unknown">철회 결과 확인 필요</string>
+    <string name="conversation_skip_unknown">건너뛰기 결과 확인 필요</string>
+    <string name="conversation_withdraw_failed">철회하지 못했습니다</string>
+    <string name="conversation_skip_failed">건너뛰지 못했습니다</string>
     <string name="conversation_stop">중지</string>
     <string name="conversation_find">메시지 찾기</string>
     <string name="conversation_find_turns">대화 차례별로 보기</string>

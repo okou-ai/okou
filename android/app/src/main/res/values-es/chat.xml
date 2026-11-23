@@ -13,15 +13,14 @@
     <string name="chat_undo_unconfirmed">No se pudo confirmar si se deshizo el cambio.</string>
     <string name="chat_feedback_dismiss">Cerrar</string>
     <string name="chat_list_offline">Sin conexión</string>
-    <string name="chat_list_refresh_failed">No se pudo actualizar la lista de chats</string>
     <string name="chat_list_first_load_failed">No se puede cargar temporalmente</string>
     <string name="chat_list_load_when_online">Los chats se cargarán al volver a conectarte.</string>
     <string name="chat_list_title">Chats</string>
     <string name="chat_refresh">Actualizar chats</string>
     <string name="chat_loading">Cargando chats…</string>
-    <string name="chat_refresh_failed">No se pudieron actualizar. Se muestran los últimos chats cargados.</string>
+    <string name="chat_refresh_failed">No se pudo actualizar el estado de lectura.</string>
     <string name="chat_cache_unavailable">El almacenamiento sin conexión no está disponible. Estos chats podrían no estar disponibles después de reiniciar.</string>
-    <string name="chat_metadata_unavailable">Parte de la información de Okou o de los proyectos no está disponible.</string>
+    <string name="chat_metadata_unavailable">La información del proyecto no está disponible temporalmente.</string>
     <string name="chat_inbox">Bandeja de entrada</string>
     <string name="chat_mark_all_read">Marcar todo como leído</string>
     <string name="chat_mark_all_read_unconfirmed">Es posible que algunos chats sigan sin leer.</string>

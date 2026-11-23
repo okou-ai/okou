@@ -10,6 +10,72 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.109.0](https://github.com/okou-ai/okou/compare/api-v2.108.0...api-v2.109.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### Performance Improvements
+
+* **api:** advance captured run launch preparation ([#50219](https://github.com/okou-ai/okou/issues/50219)) ([54b522f](https://github.com/okou-ai/okou/commit/54b522f197475f6089cda41f179eaa29d16b234f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+    * @okouai/core bumped to 8.862.1
+    * @okouai/db bumped to 2.60.1
+    * @okouai/pi-agent-runtime bumped to 1.52.49
+
+## [2.108.0](https://github.com/okou-ai/okou/compare/api-v2.107.0...api-v2.108.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Performance Improvements
+
+* **api:** gzip large runner dispatch bodies ([#50184](https://github.com/okou-ai/okou/issues/50184)) ([df24b62](https://github.com/okou-ai/okou/commit/df24b62fb3ef693aa8f3372624d4138477b93e40))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+    * @okouai/core bumped to 8.862.0
+    * @okouai/db bumped to 2.60.0
+    * @okouai/pi-agent-runtime bumped to 1.52.48
+
+## [2.107.0](https://github.com/okou-ai/okou/compare/api-v2.106.0...api-v2.107.0) (2026-11-23)
+
+
+### Features
+
+* **app:** track suggestion card impressions and outcomes ([#50158](https://github.com/okou-ai/okou/issues/50158)) ([d1cb596](https://github.com/okou-ai/okou/commit/d1cb596036a9079ecd0eb85072610dce8d44f5fb))
+
+
+### Performance Improvements
+
+* **api:** prepare run launch resources before admission ([#50174](https://github.com/okou-ai/okou/issues/50174)) ([288d064](https://github.com/okou-ai/okou/commit/288d0649dda1e7cf22a90cb61944018da3596875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.108.0
+    * @okouai/core bumped to 8.861.1
+    * @okouai/db bumped to 2.59.0
+    * @okouai/pi-agent-runtime bumped to 1.52.47
+
 ## [2.106.0](https://github.com/okou-ai/okou/compare/api-v2.105.1...api-v2.106.0) (2026-11-23)
 
 

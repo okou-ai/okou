@@ -102,4 +102,13 @@
     <plurals name="connector_impact_count">
         <item quantity="other">채팅 %d개에서 이 계정을 명시적으로 선택했습니다.</item>
     </plurals>
+    <string name="chat_options_title">채팅 옵션</string>
+    <string name="chat_options_settings">대화 설정</string>
+    <string name="chat_connector_scope">이 채팅에 적용됩니다. 처음에는 워크스페이스의 기본 계정이 사용됩니다.</string>
+    <string name="chat_connector_empty">이 워크스페이스에 연결된 계정이 없습니다.</string>
+    <string name="chat_connector_manage">커넥터 관리</string>
+    <string name="chat_connector_restore_defaults">워크스페이스 기본값 복원</string>
+    <string name="chat_connector_saving">커넥터 선택 저장 중…</string>
+    <string name="chat_connector_save_failed">커넥터 선택을 저장하지 못했습니다.</string>
+    <string name="chat_connector_first_send_failed">커넥터 선택을 적용하지 못했습니다. 채팅 옵션에서 확인한 후 이 메시지를 다시 보내세요.</string>
 </resources>

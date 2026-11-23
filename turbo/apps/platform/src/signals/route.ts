@@ -1,6 +1,6 @@
 import { command, computed, state, type Command } from "ccstate";
 import { match } from "path-to-regexp";
-import { ROUTES, type RoutePath } from "./route-paths";
+import type { RoutePath } from "./route-paths";
 import {
   clerk$,
   clerkUser$,
@@ -453,11 +453,12 @@ export const setupPageWrapper = (
 /**
  * Wraps a page setup function with authentication requirement.
  * Opens sign-in dialog if user is not authenticated.
- * Also redirects to the web app's choose-organization page when the user
- * needs to select an organization.
+ * Organization pages also require selection and a connected shared database.
+ * Identity-only resource authorization pages do not join or create a workspace.
  */
 export const setupAuthPageWrapper = (
   fn: Command<Promise<void> | void, [AbortSignal]>,
+  options: { readonly requireOrganization?: boolean } = {},
 ) => {
   return command(async ({ get, set }, signal: AbortSignal) => {
     const clerk = await get(clerk$);
@@ -487,6 +488,11 @@ export const setupAuthPageWrapper = (
       return;
     }
 
+    if (options.requireOrganization === false) {
+      await set(setupPageWrapper(fn), signal);
+      return;
+    }
+
     const needsSelection = await get(needsOrgSelection$);
     signal.throwIfAborted();
 
@@ -497,11 +503,9 @@ export const setupAuthPageWrapper = (
       window.location.href = resolveAppAuthUrl(
         "/sign-in/tasks/choose-organization",
         {
-          redirectUrl:
-            isIntegrationAuthContinuation(new URL(location.href)) ||
-            get(pathname$) === ROUTES.hostedSiteAuthorize
-              ? location.href
-              : undefined,
+          redirectUrl: isIntegrationAuthContinuation(new URL(location.href))
+            ? location.href
+            : undefined,
         },
       );
       return;

@@ -294,7 +294,7 @@ internal fun WorkflowEditor(
 ) {
     val horizontalPadding = if (wide) 32.dp else 20.dp
     val activeRule = editor as? WorkflowEdit.Rule
-    val available = !state.writing && detail.canChange(activeRule?.id)
+    val available = !state.writing && detail.canEdit(editor)
     val connectionRequired = activeRule?.blockingConnection(detail, state.connections)
     val connector = connectionRequired?.connector
     val showConnectionAction = connector != null && state.connections != null
@@ -404,10 +404,7 @@ internal fun WorkflowEditor(
             }
             val readFeedback = state.detailFailure.cachedReadFeedback() ?: connectionFeedback
             if (readFeedback != null) WorkflowNotice(readFeedback)
-            if (
-                connectionRequired != null &&
-                    (state.connections != null || connectionFeedback == null)
-            ) {
+            if (connectionRequired != null && state.connections != null) {
                 WorkflowStatus(
                     stringResource(
                         R.string.workflow_connect_to_save,
@@ -456,20 +453,16 @@ internal fun WorkflowEditor(
 
 internal fun WorkflowReadFailure?.cachedReadFeedback(): Int? =
     when (this) {
-        WorkflowReadFailure.Offline -> R.string.workflow_offline_cache
         WorkflowReadFailure.Unavailable,
+        WorkflowReadFailure.Network,
         WorkflowReadFailure.RefreshFailed -> R.string.workflow_refresh_failed
-        else -> null
+        null -> null
     }
 
 internal fun WorkflowState.connectionReadFeedback(): Int? =
-    if (connections != null) connectionsFailure.cachedReadFeedback()
-    else
-        when (connectionsFailure) {
-            WorkflowReadFailure.Offline -> R.string.connector_load_when_online
-            null -> null
-            else -> R.string.connector_accounts_failed
-        }
+    if (connectionsFailure == null) null
+    else if (connections == null) R.string.connector_accounts_failed
+    else connectionsFailure.cachedReadFeedback()
 
 @Composable
 private fun WorkflowRuleFields(

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.100](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.99...guest-control-proto-v0.22.100) (2026-11-23)
+
+
+### Performance Improvements
+
+* **guest-control:** stream medium decoded storage requests into sealed stdin ([#50185](https://github.com/okou-ai/okou/issues/50185)) ([b0a1d0d](https://github.com/okou-ai/okou/commit/b0a1d0da535179d0d999e6b1eda1fcb77156bda6))
+
 ## [0.22.99](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.98...guest-control-proto-v0.22.99) (2026-11-23)
 
 ## [0.22.98](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.97...guest-control-proto-v0.22.98) (2026-11-22)

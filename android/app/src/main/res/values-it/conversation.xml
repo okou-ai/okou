@@ -12,7 +12,16 @@
     <string name="conversation_reply_actions">Azioni della risposta</string>
     <string name="conversation_copy_reply">Copia risposta</string>
     <string name="conversation_reply_copied">Risposta copiata</string>
-    <string name="conversation_revoke">Ritira</string>
+    <string name="conversation_revoke">Ritira il messaggio in coda</string>
+    <string name="conversation_queue">Coda</string>
+    <string name="conversation_queue_automation">Automazione del flusso di lavoro</string>
+    <string name="conversation_skip_automation">Salta questa automazione</string>
+    <string name="conversation_withdrawing">Ritiro in corso…</string>
+    <string name="conversation_skipping">Operazione in corso…</string>
+    <string name="conversation_withdraw_unknown">Esito del ritiro da verificare</string>
+    <string name="conversation_skip_unknown">Esito del salto da verificare</string>
+    <string name="conversation_withdraw_failed">Impossibile ritirare il messaggio</string>
+    <string name="conversation_skip_failed">Impossibile saltare questa automazione</string>
     <string name="conversation_stop">Interrompi</string>
     <string name="conversation_find">Cerca messaggi</string>
     <string name="conversation_find_turns">Sfoglia i turni</string>

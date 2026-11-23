@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">ईमेल अपडेट</string>
+    <string name="settings_email_scope">सभी कार्यस्थलों की संक्षिप्त रिपोर्ट, रिमाइंडर और अपडेट पाएं।</string>
+    <string name="settings_email_receive">ईमेल पाएं</string>
+    <string name="settings_email_unavailable">ईमेल उपलब्ध नहीं है</string>
+    <string name="settings_email_check_address">खाते का ईमेल जांचें</string>
+    <string name="settings_email_load_failed">ईमेल सेटिंग कुछ समय के लिए उपलब्ध नहीं हैं।</string>
+    <string name="settings_email_refresh_failed">सिंक नहीं हो सका। पिछली सेव की गई सदस्यता दिखाई जा रही है।</string>
+    <string name="settings_email_refreshing">ईमेल सदस्यता सिंक हो रही है</string>
+    <string name="settings_email_save_failed">ईमेल सदस्यता अपडेट नहीं हो सकी।</string>
+    <string name="settings_email_save_unconfirmed">ईमेल सदस्यता में बदलाव की पुष्टि अभी नहीं हुई है।</string>
     <string name="settings_models">मॉडल</string>
     <string name="settings_tools">टूल</string>
     <string name="settings_my_okou">मेरा Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">चुनें</string>
     <string name="settings_account_reconnect">दोबारा कनेक्ट करना होगा</string>
     <string name="settings_account_switching">बदला जा रहा है…</string>
-    <string name="settings_account_switch_failed">खाता बदला नहीं जा सका।</string>
+    <string name="settings_account_switch_unconfirmed">खाता बदलने की पुष्टि बाकी है</string>
+    <string name="settings_account_switch_failed">मॉडल खाता बदला नहीं जा सका।</string>
     <string name="settings_quota">कोटा</string>
     <string name="settings_hour_quota">%1$d घंटे का कोटा</string>
     <string name="settings_day_quota">%1$d दिन का कोटा</string>
@@ -70,4 +81,6 @@
     <string name="settings_model_effort_extra">बहुत उच्च</string>
     <string name="settings_model_effort_max">अधिकतम</string>
     <string name="settings_model_effort_ultra">अल्ट्रा</string>
+    <string name="settings_refreshing_model_accounts">मॉडल खाते रीफ़्रेश हो रहे हैं</string>
+    <string name="settings_refreshing_credit_balance">क्रेडिट बैलेंस रीफ़्रेश हो रहा है</string>
 </resources>

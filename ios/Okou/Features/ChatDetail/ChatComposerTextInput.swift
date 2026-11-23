@@ -324,7 +324,10 @@ final class ComposerTextView: UITextView {
     let restartInputSession = needsReturnKeySessionRestart
     needsReturnKeyReload = false
     needsReturnKeySessionRestart = false
-    guard isFirstResponder else { return }
+    // A sheet over this editor puts its keyboard away and leaves it first responder, so a
+    // reload now would bring the keyboard back over the sheet. UIKit reads the current
+    // traits when it returns the keyboard.
+    guard isFirstResponder, !isUnderPresentation else { return }
     if restartInputSession {
       // iOS can retain the disabled key after reloadInputViews, even when a
       // follow-up has filled the editor. Refresh this editor's input session,
@@ -336,6 +339,19 @@ final class ComposerTextView: UITextView {
     } else {
       reloadInputViews()
     }
+  }
+
+  /// Whether a presented sheet or cover is holding this editor's keyboard down.
+  private var isUnderPresentation: Bool {
+    var responder = next
+    while let current = responder {
+      if let controller = current as? UIViewController {
+        // A presentation that is leaving has already returned the keyboard.
+        return controller.presentedViewController.map { !$0.isBeingDismissed } ?? false
+      }
+      responder = current.next
+    }
+    return false
   }
 
   /// Programmatic rich edits join this text view's undo manager; UIKit continues

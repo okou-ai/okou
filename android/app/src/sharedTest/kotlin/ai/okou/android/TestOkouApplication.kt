@@ -98,6 +98,7 @@ open class TestOkouApplication : OkouApplication() {
     var initialPreferences: UserPreferences? = null
     var workspaceRole = OrganizationRole.MEMBER
     var connectorService: ConnectorService? = null
+    var searchService: ai.okou.android.chat.WorkspaceSearchService = EmptyWorkspaceSearchService
     var realtimeService: RealtimeService = TestRealtimeService()
     var composerService: ChatComposerService = TestChatComposerService()
     var journalStore: ComposerJournalStore? = null
@@ -141,6 +142,7 @@ open class TestOkouApplication : OkouApplication() {
             ai.okou.android.chat.AssistantRecoveryService by recoveryService,
             RealtimeService by realtimeService,
             ChatListService by chatService,
+            ai.okou.android.chat.WorkspaceSearchService by searchService,
             ChatComposerService by composerService {
 
             override val artifacts = (fixture ?: canonical.value).artifacts
@@ -164,6 +166,14 @@ open class TestOkouApplication : OkouApplication() {
 
             override suspend fun activateModelAccount(accountId: String) =
                 (fixture ?: canonical.value).activateModelAccount(accountId)
+
+            override suspend fun emailSubscription() =
+                checkNotNull(fixture) { "No email subscription backend in this fixture" }
+                    .emailSubscription()
+
+            override suspend fun updateEmailSubscription(subscribed: Boolean) =
+                checkNotNull(fixture) { "No email subscription backend in this fixture" }
+                    .updateEmailSubscription(subscribed)
 
             override suspend fun sendControl(request: SendRequest) =
                 checkNotNull(controlService) { "No control backend in this external fixture" }

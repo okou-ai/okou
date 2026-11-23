@@ -5,6 +5,7 @@ import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/cha
 import { runConnectorAccountsContract } from "@okouai/api-contracts/contracts/run-connector-accounts";
 import { webhookNotionContract } from "@okouai/api-contracts/contracts/webhooks";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { HttpResponse, http } from "msw";
 import { onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -1050,6 +1051,51 @@ describe("POST /api/webhooks/notion", () => {
       eventType: "notion-child-page-created",
       eventConfig: { connectorId: firstAccount.id },
     });
+  });
+
+  it("keeps Notion listening on an eligible account when an ineligible account becomes the default", async () => {
+    const {
+      actor,
+      automationId,
+      firstAccount,
+      secondAccount,
+      expectAutomationConnector,
+    } = await setupNotionAccountLifecycle();
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const access = setupApp({ context, routes: chatConnectorAccessRoutes })(
+      chatConnectorAccessContract,
+    );
+    const account = {
+      headers: authHeaders(),
+      params: { connectionId: secondAccount.id },
+      body: { target: { kind: "builtin", connectorSlug: "notion" } as const },
+    };
+    await accept(
+      access.updateAccountPolicy({
+        ...account,
+        body: { ...account.body, policy: "deny" },
+      }),
+      [200],
+    );
+    await connectorsApi.setDefaultBuiltinConnectorAccount(
+      actor,
+      "notion",
+      secondAccount.id,
+    );
+    await expect(wf.readAutomation(automationId)).resolves.toMatchObject({
+      eventConfig: { connectorId: firstAccount.id },
+    });
+
+    await accept(
+      access.updateAccountPolicy({
+        ...account,
+        body: { ...account.body, policy: "allow-always" },
+      }),
+      [200],
+    );
+    await expectAutomationConnector(secondAccount.id);
   });
 
   it("repairs Notion selection after account deletion and re-add", async () => {

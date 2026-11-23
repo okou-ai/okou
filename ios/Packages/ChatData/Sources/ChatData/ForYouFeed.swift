@@ -26,6 +26,8 @@ public struct ForYouAutomation: Decodable, Equatable, Sendable {
   public let automationDescription: String?
   public let consecutiveFailures: Int
   public let recoveryScheduled: Bool
+  /// ISO 8601, as the feed sends it.
+  public let disabledAt: String?
 }
 
 public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {

@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">이메일 업데이트</string>
+    <string name="settings_email_scope">모든 워크스페이스의 브리핑, 알림 및 업데이트를 받습니다.</string>
+    <string name="settings_email_receive">이메일 받기</string>
+    <string name="settings_email_unavailable">이메일을 사용할 수 없음</string>
+    <string name="settings_email_check_address">계정 이메일 확인</string>
+    <string name="settings_email_load_failed">지금은 이메일 설정을 불러올 수 없습니다.</string>
+    <string name="settings_email_refresh_failed">동기화하지 못했습니다. 마지막으로 저장된 구독 상태를 표시합니다.</string>
+    <string name="settings_email_refreshing">이메일 구독 동기화 중</string>
+    <string name="settings_email_save_failed">이메일 구독을 업데이트하지 못했습니다.</string>
+    <string name="settings_email_save_unconfirmed">이메일 구독 변경 결과가 아직 확인되지 않았습니다.</string>
     <string name="settings_models">모델</string>
     <string name="settings_tools">도구</string>
     <string name="settings_my_okou">내 Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">선택</string>
     <string name="settings_account_reconnect">다시 연결해야 함</string>
     <string name="settings_account_switching">전환 중…</string>
-    <string name="settings_account_switch_failed">계정을 전환하지 못했습니다.</string>
+    <string name="settings_account_switch_unconfirmed">전환 결과 미확인</string>
+    <string name="settings_account_switch_failed">모델 계정을 전환하지 못했습니다.</string>
     <string name="settings_quota">할당량</string>
     <string name="settings_hour_quota">%1$d시간 할당량</string>
     <string name="settings_day_quota">%1$d일 할당량</string>
@@ -70,4 +81,6 @@
     <string name="settings_model_effort_extra">매우 높음</string>
     <string name="settings_model_effort_max">최대</string>
     <string name="settings_model_effort_ultra">울트라</string>
+    <string name="settings_refreshing_model_accounts">모델 계정 새로고침 중</string>
+    <string name="settings_refreshing_credit_balance">크레딧 잔액 새로고침 중</string>
 </resources>

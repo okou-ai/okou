@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">Petunjuk alur kerja</string>
     <string name="workflow_keep_editing">Lanjutkan pengeditan</string>
     <string name="workflow_load_failed">Alur kerja tidak dapat dimuat</string>
+    <string name="workflow_rules_load_failed">Aturan pemicu tidak dapat dimuat.</string>
     <string name="workflow_mail_from_contains">Pengirim berisi %1$s</string>
     <string name="workflow_mail_labeled">Label Gmail diterapkan</string>
     <string name="workflow_mail_received">Pesan Gmail diterima</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Subhalaman Notion dibuat</string>
     <string name="workflow_notion_item">Item basis data Notion dibuat</string>
     <string name="workflow_notion_updated">Halaman Notion diperbarui</string>
-    <string name="workflow_offline">Hubungkan ke internet untuk memuat alur kerja</string>
-    <string name="workflow_offline_cache">Offline · Menampilkan data terakhir</string>
     <string name="workflow_offline_changes">Hubungkan ke internet untuk menyimpan. Perubahan Anda tetap ada.</string>
     <string name="workflow_pause">Jeda</string>
     <string name="workflow_paused">Otomatisasi dijeda</string>
@@ -112,7 +111,6 @@
     <string name="workflow_history_event">Peristiwa</string>
     <string name="workflow_history_failed">Riwayat eksekusi tidak dapat dimuat</string>
     <string name="workflow_history_loading">Memuat riwayat eksekusi…</string>
-    <string name="workflow_history_offline">Sambungkan untuk memuat riwayat eksekusi</string>
     <string name="workflow_history_open_chat">Buka chat terkait</string>
     <string name="workflow_history_unavailable">Riwayat eksekusi tidak tersedia</string>
     <string name="workflow_run_pending">Tertunda</string>

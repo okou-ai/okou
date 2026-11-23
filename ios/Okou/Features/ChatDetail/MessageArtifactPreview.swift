@@ -93,23 +93,23 @@ private struct ArtifactPreviewContent: View {
       }
       .task(id: value.data?.artifact.id) { await prepareImageCovers() }
     } actions: {
-      if artifact.kind == .image {
-        Button {
-          if let content = value.data {
+      if artifact.kind == .image, let content = value.data {
+        if content.image(-1) != nil {
+          Button {
             viewer.navigateImage(-1, content: content, previewID: preview.id)
+          } label: {
+            OkouToolbarIcon("chevron-left")
           }
-        } label: {
-          OkouToolbarIcon("chevron-left")
+          .accessibilityLabel("Previous image")
         }
-        .disabled(value.data?.image(-1) == nil).accessibilityLabel("Previous image")
-        Button {
-          if let content = value.data {
+        if content.image(1) != nil {
+          Button {
             viewer.navigateImage(1, content: content, previewID: preview.id)
+          } label: {
+            OkouToolbarIcon("chevron-right")
           }
-        } label: {
-          OkouToolbarIcon("chevron-right")
+          .accessibilityLabel("Next image")
         }
-        .disabled(value.data?.image(1) == nil).accessibilityLabel("Next image")
       }
       if let text = value.data?.text {
         Button {
@@ -160,6 +160,8 @@ private struct ArtifactPreviewContent: View {
     case .loading:
       if artifact.kind == .video {
         MessageMediaPlayer(url: nil, autoplays: true, retry: viewer.retry)
+      } else if artifact.kind == .html {
+        pageLoading
       } else {
         fileContent(nil)
       }
@@ -198,10 +200,7 @@ private struct ArtifactPreviewContent: View {
           )
           .id(preview.id)
           if webLoading {
-            OkouLoadingRow("Loading page…")
-              .fixedSize()
-              .padding(.horizontal, OkouSpace.lg)
-              .modifier(OkouFloatingPanelStyle(radius: OkouRadius.control))
+            pageLoading
           }
         }
       }
@@ -211,6 +210,13 @@ private struct ArtifactPreviewContent: View {
     } else {
       fileContent(content.file)
     }
+  }
+
+  private var pageLoading: some View {
+    OkouLoadingRow("Loading page…")
+      .fixedSize()
+      .padding(.horizontal, OkouSpace.lg)
+      .modifier(OkouFloatingPanelStyle(radius: OkouRadius.control))
   }
 
   private func fileContent(_ file: ChatAttachmentFile?) -> some View {

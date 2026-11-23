@@ -42,7 +42,8 @@
     <string name="workflow_instructions">說明</string>
     <string name="workflow_instructions_heading">工作流說明</string>
     <string name="workflow_keep_editing">繼續編輯</string>
-    <string name="workflow_load_failed">無法載入工作流</string>
+    <string name="workflow_load_failed">暫時無法載入工作流</string>
+    <string name="workflow_rules_load_failed">暫時無法載入觸發規則。</string>
     <string name="workflow_mail_from_contains">寄件者包含%1$s</string>
     <string name="workflow_mail_labeled">郵件加上標籤</string>
     <string name="workflow_mail_received">收到郵件</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Notion 子頁面已建立</string>
     <string name="workflow_notion_item">Notion 資料庫項目已建立</string>
     <string name="workflow_notion_updated">Notion 頁面內容已更新</string>
-    <string name="workflow_offline">連線後載入工作流</string>
-    <string name="workflow_offline_cache">離線 · 顯示已載入內容</string>
     <string name="workflow_offline_changes">連線後可儲存，變更已保留。</string>
     <string name="workflow_pause">暫停</string>
     <string name="workflow_paused">自動化已暫停</string>
@@ -112,7 +111,6 @@
     <string name="workflow_history_event">事件觸發</string>
     <string name="workflow_history_failed">暫時無法載入執行記錄</string>
     <string name="workflow_history_loading">正在載入執行記錄…</string>
-    <string name="workflow_history_offline">連線後載入執行記錄</string>
     <string name="workflow_history_open_chat">開啟對應對話</string>
     <string name="workflow_history_unavailable">執行記錄無法使用</string>
     <string name="workflow_run_pending">待執行</string>

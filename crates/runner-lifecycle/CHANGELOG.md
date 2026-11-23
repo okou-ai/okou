@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.18.28](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.27...runner-lifecycle-v0.18.28) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share idle retirement selection capture ([#50190](https://github.com/okou-ai/okou/issues/50190)) ([ff4a0b1](https://github.com/okou-ai/okou/commit/ff4a0b1645ea0da4d198534e007e1d36e231ffad))
+
+## [0.18.27](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.26...runner-lifecycle-v0.18.27) (2026-11-23)
+
 ## [0.18.26](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.25...runner-lifecycle-v0.18.26) (2026-11-23)
 
 ## [0.18.25](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.24...runner-lifecycle-v0.18.25) (2026-11-23)

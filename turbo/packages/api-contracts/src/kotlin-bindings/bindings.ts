@@ -2,11 +2,13 @@ import type { ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
+import { emailSubscriptionContract } from "../contracts/email-subscription";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
+  chatSearchContract,
   chatThreadSnapshotArchiveSchema,
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -158,6 +160,17 @@ const connectorBindings = [
     name: "connectorOverview",
     response: "ConnectorOverview",
     route: chatConnectorAccessContract.overview,
+  },
+  {
+    name: "chatConnectorAccess",
+    response: "ChatConnectorAccess",
+    route: chatConnectorAccessContract.getThread,
+  },
+  {
+    name: "chatConnectorOverride",
+    response: "ChatConnectorAccess",
+    request: "ChatConnectorOverrideRequest",
+    route: chatConnectorAccessContract.setThreadOverride,
   },
   {
     name: "connectorAccountDefaults",
@@ -346,6 +359,11 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowAutomationsContract.disable,
   },
   {
+    name: "searchChatMessages",
+    response: "ChatMessageSearchResponse",
+    route: chatSearchContract.search,
+  },
+  {
     name: "workspaceDraft",
     response: "ComposerDraft",
     route: composerDraftContract.get,
@@ -387,6 +405,17 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     request: "UpdateDefaultModelPreference",
     response: "DefaultModelPreference",
     route: userModelPreferenceContract.update,
+  },
+  {
+    name: "emailSubscription",
+    response: "EmailSubscription",
+    route: emailSubscriptionContract.get,
+  },
+  {
+    name: "updateEmailSubscription",
+    request: "UpdateEmailSubscriptionRequest",
+    response: "EmailSubscriptionUpdate",
+    route: emailSubscriptionContract.update,
   },
   {
     name: "featureSwitches",
@@ -697,6 +726,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "ChatMessageSearchResponse",
+    schema: chatSearchContract.search.responses[200],
+    direction: "output",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
@@ -777,6 +811,21 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
+  },
+  {
+    name: "EmailSubscription",
+    schema: emailSubscriptionContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateEmailSubscriptionRequest",
+    schema: emailSubscriptionContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "EmailSubscriptionUpdate",
+    schema: emailSubscriptionContract.update.responses[200],
+    direction: "output",
   },
   {
     name: "FeatureSwitches",

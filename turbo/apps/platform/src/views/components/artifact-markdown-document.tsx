@@ -2,11 +2,25 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { cn } from "@okouai/ui";
 import { useLastResolved } from "ccstate-react";
 import type { Root } from "hast";
+import type { RefCallback } from "react";
+import type { FeedbackSource } from "../../signals/okou-page/chat-feedback.ts";
 import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
 import { MarkdownEventBody } from "./markdown.tsx";
 
+export interface ArtifactMarkdownSelection {
+  readonly threadId: string;
+  readonly source: Extract<FeedbackSource, { type: "artifact" }>;
+  readonly ref: RefCallback<HTMLDivElement>;
+}
+
 /** A reading target after leaving an inline diagram's keyboard controls. */
-export function ArtifactMarkdownDocument({ tree }: { readonly tree: Root }) {
+export function ArtifactMarkdownDocument({
+  tree,
+  selection,
+}: {
+  readonly tree: Root;
+  readonly selection?: ArtifactMarkdownSelection;
+}) {
   const typographyEnabled =
     useLastResolved(featureSwitches$)?.[
       FeatureSwitchKey.MarkdownFirstOutput
@@ -14,8 +28,15 @@ export function ArtifactMarkdownDocument({ tree }: { readonly tree: Root }) {
 
   return (
     <div
+      ref={selection?.ref}
       role="document"
       tabIndex={-1}
+      data-feedback-source={selection ? "" : undefined}
+      data-feedback-source-type={selection?.source.type}
+      data-feedback-source-file-id={selection?.source.fileId}
+      data-feedback-source-filename={selection?.source.filenameSnapshot}
+      data-feedback-source-artifact-id={selection?.source.artifactId}
+      data-feedback-source-thread-id={selection?.threadId}
       className={cn(
         "h-full overflow-auto p-6 outline-none",
         typographyEnabled && "text-base leading-[1.75]",

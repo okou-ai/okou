@@ -41,6 +41,7 @@ class MemberPreferencesModelTest {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override val artifacts: ArtifactService
             get() = error("Artifacts are outside this fixture")
@@ -64,6 +65,14 @@ class MemberPreferencesModelTest {
             accountId: String,
         ): ai.okou.android.api.generated.ActivatedModelAccount =
             error("Accounts are outside this fixture")
+
+        override suspend fun emailSubscription(): ai.okou.android.api.generated.EmailSubscription =
+            error("Email subscriptions are outside this fixture")
+
+        override suspend fun updateEmailSubscription(
+            subscribed: Boolean,
+        ): ai.okou.android.api.generated.EmailSubscriptionUpdate =
+            error("Email subscriptions are outside this fixture")
 
         override suspend fun sendControl(
             request: ai.okou.android.api.generated.SendRequest,
