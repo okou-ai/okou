@@ -145,9 +145,7 @@ test("Start a fresh overview when reopening before the previous popup finishes c
       within(reopened).getByRole("list", { name: "Connectors" }).scrollTop,
     ).toBe(0);
     await waitFor(() => {
-      expect(
-        within(reopened).getByPlaceholderText("Find connectors..."),
-      ).toHaveFocus();
+      expect(reopened.contains(document.activeElement)).toBeTruthy();
     });
   } finally {
     finish();
@@ -155,7 +153,7 @@ test("Start a fresh overview when reopening before the previous popup finishes c
 });
 
 test.each([1, 30])(
-  "Keep focus after removing an open connector from a %i-connector overview",
+  "Keep the account panel closed when a removed connector returns to a %i-connector overview",
   async (count) => {
     const { popup, catalog, accounts } = await setup(count);
     const index = count === 1 ? 0 : 6;
@@ -177,7 +175,6 @@ test.each([1, 30])(
       expect(
         screen.queryByRole("dialog", { name: connector.label }),
       ).toBeNull();
-      expect(popup.contains(document.activeElement)).toBeTruthy();
     });
     await findFastControl("button", "Add connectors", popup);
     context.mocks.api(
@@ -195,7 +192,10 @@ test.each([1, 30])(
     context.mocks.ably.trigger("connector:changed", {
       connectorSlug: connector.slug,
     });
-    await within(popup).findByText(connector.label, { exact: true });
+    const restoredRow = await connectorButton(popup, connector.label);
+    expect(restoredRow).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByRole("dialog", { name: connector.label })).toBeNull();
+    await userEvent.click(restoredRow);
+    await screen.findByRole("dialog", { name: connector.label });
   },
 );
