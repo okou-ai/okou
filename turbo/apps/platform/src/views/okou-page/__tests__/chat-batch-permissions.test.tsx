@@ -319,13 +319,9 @@ test("Approve only missing scopes without reapplying or extending active grants"
 
 test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {
   // No grant write handler: any write would fail as an unhandled request.
-  context.mocks.api(
-    connectorPermissionsContract.get,
-    async ({ query, respond }) => {
-      await loaded;
-      return respond(200, connectorPermissionsResponse(query, []));
-    },
-  );
+  context.mocks.api(connectorPermissionsContract.get, ({ query, respond }) => {
+    return respond(200, connectorPermissionsResponse(query, []));
+  });
   const release = context.mocks.deferred<void>();
   mockServiceMetadata(async (connectorSlug) => {
     await release.promise;
