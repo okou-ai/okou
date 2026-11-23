@@ -142,8 +142,6 @@
     <string name="realtime_connecting">Connexion aux mises à jour en direct…</string>
     <string name="realtime_unavailable">Les mises à jour en direct sont indisponibles. Vous pouvez actualiser manuellement.</string>
     <string name="settings_account">Compte</string>
-    <string name="chat_project_expansion_read_failed">Impossible de charger les préférences d’affichage des projets sur cet appareil.</string>
-    <string name="chat_project_expansion_save_failed">Impossible de mémoriser l’état ouvert ou fermé des projets pour la prochaine fois.</string>
     <string name="settings_cancel">Annuler</string>
     <string name="settings_saving">Enregistrement…</string>
     <string name="settings_sign_out_title">Se déconnecter ?</string>
