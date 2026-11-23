@@ -1,4 +1,7 @@
-import { resolveVoiceClips$ } from "./voice-clips.service";
+import {
+  resolveVoiceClipRecords,
+  voiceClipRequestError,
+} from "./voice-clips.service";
 import {
   publishChatThreadMessageCreated$,
   projectCommittedChatThreadSearch$,
@@ -62,6 +65,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   SQL,
   sql,
 } from "drizzle-orm";
@@ -618,24 +622,43 @@ function attachmentResolutionCounts(
   };
 }
 const startIncomingAttachmentRecords$ = command(
-  ({ get }, userMessage: UserMessageDocument, signal: AbortSignal) => {
+  (
+    { get },
+    userMessage: UserMessageDocument,
+    owner: { readonly orgId: string; readonly userId: string },
+    signal: AbortSignal,
+  ) => {
     const files = userMessagePhysicalFiles(userMessage);
-    if (files.length === 0) {
+    const voiceIds = userMessage.parts.flatMap((part) => {
+      return part.type === "voice"
+        ? part.clips.map((clip) => {
+            return clip.fileId;
+          })
+        : [];
+    });
+    if (files.length === 0 && voiceIds.length === 0) {
       return undefined;
     }
     const counts = attachmentResolutionCounts(files);
     const rows = settleIncludingAbort(async () => {
       signal.throwIfAborted();
-      const ids = [
+      const fileIds = [
         ...new Set(
-          files.flatMap((file) => {
-            return uuid().safeParse(file.fileId).success
-              ? [file.fileId.toLowerCase()]
+          files.flatMap(({ fileId }) => {
+            return uuid().safeParse(fileId).success
+              ? [fileId.toLowerCase()]
               : [];
           }),
         ),
       ];
-      if (ids.length === 0) {
+      const clipIds = [
+        ...new Set(
+          voiceIds.map((id) => {
+            return id.toLowerCase();
+          }),
+        ),
+      ];
+      if (fileIds.length === 0 && clipIds.length === 0) {
         return new Map<string, AttachmentRecord>();
       }
       counts.sqlReads += 1;
@@ -644,7 +667,21 @@ const startIncomingAttachmentRecords$ = command(
       const loaded = await get(db$)
         .select()
         .from(runUploadedFiles)
-        .where(sql`${runUploadedFiles.id} = ANY(${sql.param(ids)}::uuid[])`);
+        .where(
+          or(
+            fileIds.length
+              ? sql`${runUploadedFiles.id} = ANY(${sql.param(fileIds)}::uuid[])`
+              : undefined,
+            clipIds.length
+              ? and(
+                  sql`${runUploadedFiles.id} = ANY(${sql.param(clipIds)}::uuid[])`,
+                  eq(runUploadedFiles.orgId, owner.orgId),
+                  eq(runUploadedFiles.userId, owner.userId),
+                  isNull(runUploadedFiles.deletedAt),
+                )
+              : undefined,
+          ),
+        );
       signal.throwIfAborted();
       return new Map(
         loaded.map((row) => {
@@ -652,12 +689,39 @@ const startIncomingAttachmentRecords$ = command(
         }),
       );
     });
-    return { files, rows, counts };
+    return { files, voiceIds, rows, counts };
   },
 );
 type IncomingAttachmentRecords = NonNullable<
   ReturnType<(typeof startIncomingAttachmentRecords$)["write"]>
 >;
+
+const validateIncomingVoiceClips$ = command(
+  async (
+    { get },
+    args: { readonly orgId: string; readonly userId: string },
+    context: AgentRunContextSignals,
+    { voiceIds, rows }: IncomingAttachmentRecords,
+    signal: AbortSignal,
+  ) => {
+    const features = await get(context.featureSwitches$);
+    signal.throwIfAborted();
+    const error = voiceClipRequestError(voiceIds, features);
+    if (error) {
+      return error;
+    }
+    const records = await rows;
+    signal.throwIfAborted();
+    if (!records.ok) {
+      throw records.error;
+    }
+    const voice = resolveVoiceClipRecords(
+      { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+      records.value,
+    );
+    return "status" in voice ? voice : null;
+  },
+);
 
 const resolveIncomingAttachmentObject$ = command(
   async (
@@ -2494,6 +2558,7 @@ export const startNormalSendBootstrap$ = command(
     );
     waitUntil(settle(get(bootstrap.context.modelFacts$)));
     waitUntil(settle(get(bootstrap.context.memberMetadata$)));
+    waitUntil(settle(get(bootstrap.context.executionPackageSources$)));
     return bootstrap;
   },
 );
@@ -2529,13 +2594,15 @@ const prepareNormalSendContext$ = command(
     const attachmentRecords = set(
       startIncomingAttachmentRecords$,
       args.body.userMessage,
+      args,
       signal,
     );
     if (attachmentRecords) {
       waitUntil(attachmentRecords.rows);
     }
-    // Package sources only depend on the authenticated member.
-    waitUntil(settle(get(context.executionPackageSources$)));
+    if (!request.bootstrap) {
+      waitUntil(settle(get(context.executionPackageSources$)));
+    }
     const existing = await existingRead;
     signal.throwIfAborted();
     if (request.body.threadId !== undefined && !existing) {
@@ -2550,21 +2617,17 @@ const prepareNormalSendContext$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const voiceIds = args.body.userMessage.parts.flatMap((part) => {
-      return part.type === "voice"
-        ? part.clips.map((clip) => {
-            return clip.fileId;
-          })
-        : [];
-    });
-    if (voiceIds.length) {
-      const voice = await set(
-        resolveVoiceClips$,
-        { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+    if (attachmentRecords?.voiceIds.length) {
+      const voiceError = await set(
+        validateIncomingVoiceClips$,
+        args,
+        context,
+        attachmentRecords,
         signal,
       );
-      if ("status" in voice) {
-        return voice;
+      signal.throwIfAborted();
+      if (voiceError) {
+        return voiceError;
       }
     }
     const host =
