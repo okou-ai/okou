@@ -4381,23 +4381,120 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
   it.each([
     {
+      scenario: "errors reason",
+      scopeError: { errors: [{ reason: "insufficientPermissions" }] },
+      afterRefresh: false,
+    },
+    {
+      scenario: "details reason",
+      scopeError: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+      afterRefresh: false,
+    },
+    {
+      scenario: "errors reason",
+      scopeError: { errors: [{ reason: "insufficientPermissions" }] },
+      afterRefresh: true,
+    },
+    {
+      scenario: "details reason",
+      scopeError: { details: [{ reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT" }] },
+      afterRefresh: true,
+    },
+  ] as const)(
+    "workspace conversion offers scope recovery for $scenario (after refresh: $afterRefresh)",
+    async ({ scopeError, afterRefresh }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const account = await fixture.driveAccount();
+      const oauth = mockGoogleDriveConnectorOAuth({
+        refreshOutcome: {
+          type: "ok",
+          accessToken: "drive-preflight-refreshed",
+        },
+      });
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+      });
+      const lookup = mockGoogleDriveFilesList((request) => {
+        if (
+          afterRefresh &&
+          request.headers.get("authorization") !==
+            "Bearer drive-preflight-refreshed"
+        ) {
+          return { status: 401 };
+        }
+        return { status: 403, body: JSON.stringify({ error: scopeError }) };
+      });
+      const response = await fixture.upload("google", [403]);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "GOOGLE_DRIVE_SCOPE_REQUIRED",
+          message:
+            "Reconnect Google Drive and allow Drive access before uploading artifacts. No file was uploaded.",
+        },
+        recovery: { action: "reconnect", connectionId: account.id },
+      });
+      expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
+      expect(lookup.queries).toHaveLength(afterRefresh ? 2 : 1);
+      for (const query of lookup.queries) {
+        expect(query).toContain("key='vm0FileId'");
+        expect(query).toContain(
+          `mimeType = '${GOOGLE_WORKSPACE_MIME_TYPES.document}'`,
+        );
+      }
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+      await expect(fixture.driveAccount()).resolves.toMatchObject({
+        id: account.id,
+        connectionStatus: "connected",
+      });
+    },
+    10_000,
+  );
+
+  it.each([
+    {
       providerStatus: 403,
       afterRefresh: false,
-      providerReason: "insufficientPermissions",
+      providerReason: "insufficientFilePermissions",
+      providerDetailReason: "domainPolicy",
+    },
+    {
+      providerStatus: 403,
+      afterRefresh: false,
+      providerReason: "dailyLimitExceeded",
+      providerDetailReason: "userRateLimitExceeded",
+    },
+    {
+      providerStatus: 403,
+      afterRefresh: true,
+      providerReason: "private-unknown-reason",
+      providerDetailReason: "private-unknown-detail",
     },
     {
       providerStatus: 429,
       afterRefresh: false,
       providerReason: "rateLimitExceeded",
+      providerDetailReason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
     },
     {
       providerStatus: 503,
       afterRefresh: true,
       providerReason: "backendError",
+      providerDetailReason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
     },
   ] as const)(
-    "workspace conversion reports Google HTTP $providerStatus without creating another file (after refresh: $afterRefresh)",
-    async ({ providerStatus, afterRefresh, providerReason }) => {
+    "workspace conversion reports Google HTTP $providerStatus for $providerReason without creating another file (after refresh: $afterRefresh)",
+    async ({
+      providerStatus,
+      afterRefresh,
+      providerReason,
+      providerDetailReason,
+    }) => {
       const fixture = await publicOfficeConversionSource(
         docsImportFixture(),
         "docx",
@@ -4436,7 +4533,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
               ],
               details: [
                 {
-                  reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                  reason: providerDetailReason,
                   metadata: { account: "owner@example.test" },
                 },
               ],
@@ -4458,6 +4555,72 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       expect(upload.bodies).toHaveLength(0);
     },
     120_000,
+  );
+
+  it.each([
+    {
+      scenario: "empty body",
+      body: () => {
+        return "";
+      },
+    },
+    {
+      scenario: "invalid JSON",
+      body: () => {
+        return "<html>private-provider-body</html>";
+      },
+    },
+    {
+      scenario: "unreadable stream",
+      body: () => {
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.error(new Error("private-provider-body"));
+          },
+        });
+      },
+    },
+    {
+      scenario: "oversized body",
+      body: () => {
+        return JSON.stringify({
+          error: {
+            message: "x".repeat(16 * 1024),
+            errors: [{ reason: "insufficientPermissions" }],
+          },
+        });
+      },
+    },
+  ])(
+    "workspace conversion keeps an unproven scope failure controlled for $scenario",
+    async ({ body }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const oauth = mockGoogleDriveConnectorOAuth();
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+      });
+      const lookup = mockGoogleDriveFilesList(() => {
+        return { status: 403, body: body() };
+      });
+      const response = await fixture.upload("google", [400]);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message:
+            "Google Drive could not check previous conversions (HTTP 403). Try again.",
+        },
+      });
+      expect(oauth.refreshBodies).toHaveLength(0);
+      expect(lookup.queries).toHaveLength(1);
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    10_000,
   );
 
   it("workspace conversion rejects a stalled lookup without uploading another file", async () => {
@@ -4711,7 +4874,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     if (!actor.orgId) {
       throw new Error("Expected an entitled chat actor with an organization");
     }
-    const objectStore = chatCallbacks.acceptChatObjectStorage();
+    chatCallbacks.acceptChatObjectStorage();
 
     const run = await sendChatRun(actor, {
       prompt: "produce an account-bound artifact",
@@ -4721,13 +4884,32 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       run.runId,
     );
     const runBearer = `Bearer ${okouTokenFromExecution(receivedExecution)}`;
-    const fileId = randomUUID();
-    objectStore.addObject({
-      bucket: "test-user-artifacts",
-      key: `artifacts/${actor.userId}/${fileId}/account.txt`,
-      size: 64,
+    installSharedThreadStorage(context);
+    const source = Buffer.from("Account-bound artifact");
+    const prepared = await chat.prepareUpload(
+      { ...actor, orgId: null },
+      {
+        filename: "account.txt",
+        contentType: "text/plain",
+        size: source.byteLength,
+        purpose: "artifact",
+      },
+    );
+    if (!("uploadUrl" in prepared)) {
+      throw new Error("Expected a single-part artifact upload");
+    }
+    const put = await fetch(prepared.uploadUrl, {
+      method: "PUT",
+      headers: prepared.uploadHeaders,
+      body: Uint8Array.from(source),
     });
-    await chat.completeUploadWithBearer(runBearer, { id: fileId }, [200]);
+    expect(put.status).toBe(200);
+    await chat.completeUploadWithBearer(runBearer, { id: prepared.id }, [200]);
+    const catalog = await chat.listArtifactCatalog(actor, {
+      chatThreadId: run.threadId,
+    });
+    expect(catalog.artifacts).toHaveLength(1);
+    const artifactId = catalog.artifacts[0]!.id;
 
     mockGoogleDriveConnectorOAuth({
       userInfo: {
@@ -4835,7 +5017,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     });
     const synced = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
+      artifactId,
       {
         chatThreadId: run.threadId,
         connectionId: selectedAccount.id,
@@ -4863,23 +5045,30 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         }),
       };
     });
-    const scopeRejected = await chat.requestUploadArtifactToGoogleDrive(
-      actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
-      {
-        chatThreadId: run.threadId,
-        connectionId: selectedAccount.id,
-        mode: "original",
-      },
-      [403],
-    );
-    expect(scopeRejected.body).toMatchObject({
-      error: { code: "GOOGLE_DRIVE_SCOPE_REQUIRED" },
-      recovery: { action: "reconnect", connectionId: selectedAccount.id },
-    });
+    for (const mode of ["original", "google"] as const) {
+      const scopeRejected = await chat.requestUploadArtifactToGoogleDrive(
+        actor,
+        artifactId,
+        {
+          chatThreadId: run.threadId,
+          connectionId: selectedAccount.id,
+          mode,
+        },
+        [403],
+      );
+      expect(scopeRejected.body).toMatchObject({
+        error: { code: "GOOGLE_DRIVE_SCOPE_REQUIRED" },
+        recovery: { action: "reconnect", connectionId: selectedAccount.id },
+      });
+    }
     expect(scopeLookup.authorizationHeaders).toStrictEqual([
       "Bearer drive-access-drive-selected",
+      "Bearer drive-access-drive-selected",
     ]);
+    expect(scopeLookup.queries[0]).toContain(
+      "application/vnd.google-apps.folder",
+    );
+    expect(scopeLookup.queries[1]).toContain("key='vm0FileId'");
     expect(uploadRecorder.metadata).toHaveLength(1);
     expect(uploadRecorder.bodies).toHaveLength(1);
 
@@ -4944,7 +5133,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
 
     const unavailable = await chat.requestUploadArtifactToGoogleDrive(
       actor,
-      await chat.resolveCatalogArtifactId(actor, run.threadId, fileId),
+      artifactId,
       {
         chatThreadId: run.threadId,
         connectionId: selectedAccount.id,
