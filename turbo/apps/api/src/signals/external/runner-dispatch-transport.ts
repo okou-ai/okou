@@ -21,6 +21,8 @@ export interface TakenRunnerDispatch extends ReservedRunnerDispatch {
   readonly clearDeadline: () => void;
 }
 
+export type RunnerDispatchEncoding = "identity" | "gzip";
+
 export interface RunnerDispatchTransport {
   readonly reserve: (
     runId: string,
@@ -30,12 +32,14 @@ export interface RunnerDispatchTransport {
       signal: AbortSignal,
     ) => ReservedRunnerDispatch,
     signal: AbortSignal,
+    encoding?: RunnerDispatchEncoding,
   ) => void;
   readonly take: (
     url: string,
-    body: string,
+    body: string | Uint8Array<ArrayBuffer>,
     startedAt: number,
     signal: AbortSignal,
+    encoding?: RunnerDispatchEncoding,
   ) => TakenRunnerDispatch | undefined;
 }
 
