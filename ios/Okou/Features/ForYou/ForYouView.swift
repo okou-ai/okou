@@ -14,7 +14,6 @@ struct ForYouView: View {
   @Environment(\.scenePhase) private var phase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var typeSize
-  @Namespace private var dockGlass
   @State private var action: Task<Void, Never>?
   /// The card the pager rests on.
   @State private var pageID: String?
@@ -109,6 +108,14 @@ struct ForYouView: View {
     return from.blended(with: target, by: position - CGFloat(lower))
   }
 
+  /// A little below the top of the card in front, and never above the pager's top, so the
+  /// header stays on the picture while the keyboard lifts the card under it.
+  private var coverBottom: CGFloat {
+    let cardTop = (front?.minY ?? Self.defaultCardTop) + OkouSpace.section
+    guard pagerFrame.height > 0 else { return cardTop }
+    return max(cardTop, pagerFrame.minY + OkouSpace.xxl)
+  }
+
   private var cover: some View {
     let aspect = Self.coverAspect
     let drift = max(pagePosition, 0) * Self.coverDrift
@@ -129,7 +136,7 @@ struct ForYouView: View {
         )
         .frame(height: OkouSpace.hero)
       }
-      .frame(height: max(0, (front?.minY ?? Self.defaultCardTop) + OkouSpace.section))
+      .frame(height: max(0, coverBottom))
       Spacer(minLength: 0)
     }
     .ignoresSafeArea(edges: .top)
@@ -450,26 +457,23 @@ struct ForYouView: View {
   // MARK: Dock
 
   /// Below a suggestion, where a chat keeps its composer: the member's own direction, and the
-  /// one way to turn the suggestion down. The pill grows into the input in place, as the
-  /// web's does, and folds back into it.
+  /// one way to turn the suggestion down. The input grows out of the pill in place, as the
+  /// web's does, and shrinks back into it.
   @ViewBuilder private var dock: some View {
     if let card = store.current, case .suggestion(let suggestion) = card.content {
-      GlassEffectContainer(spacing: OkouSpace.sm) {
+      ZStack(alignment: .bottom) {
         if let direction = store.direction, direction.cardID == card.id {
           ForYouDirectionComposer(
             direction: direction, card: card, suggestion: suggestion, workspace: workspace
           )
-          .glassEffectID(ForYouDockGlass.input, in: dockGlass)
-          .transition(.opacity)
+          .transition(reduceMotion ? .opacity : .forYouInputGrowth)
           .accessibilityAction(.escape, collapseDirection)
         } else {
           restingDock(card)
             .transition(.opacity)
         }
       }
-      .animation(
-        reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86), value: isComposing
-      )
+      .animation(dockMotion, value: isComposing)
       .frame(maxWidth: OkouControl.readableWidth)
       .padding(.horizontal, OkouSpace.lg).padding(.bottom, OkouSpace.sm)
       .disabled(store.busy)
@@ -479,14 +483,16 @@ struct ForYouView: View {
   private func restingDock(_ card: ForYouCard) -> some View {
     HStack(spacing: OkouSpace.sm) {
       Button {
-        run { await store.openDirection(card) }
+        // The page moves with the input as it grows: the card rises with the dock.
+        if !withAnimation(dockMotion, { store.openListedDirection(card) }) {
+          run { await store.openDirection(card) }
+        }
       } label: {
         Text("What do you have in mind?")
           .font(.okou(.body)).foregroundStyle(OkouColor.placeholder).lineLimit(1)
           .frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, OkouSpace.lg)
           .modifier(OkouGlassControl(shape: .capsule))
-          .glassEffectID(ForYouDockGlass.input, in: dockGlass)
       }
       .accessibilityHint("Ask a question or describe what you’d like to do.")
       .accessibilityIdentifier("for-you-direction")
@@ -507,7 +513,6 @@ struct ForYouView: View {
           .font(.okou(.subheadline)).foregroundStyle(OkouColor.foreground).lineLimit(1)
           .padding(.horizontal, OkouSpace.lg)
           .modifier(OkouGlassControl(shape: .capsule))
-          .glassEffectID(ForYouDockGlass.dismiss, in: dockGlass)
       }
       .menuOrder(.fixed)
       .accessibilityIdentifier("for-you-dismiss")
@@ -516,12 +521,16 @@ struct ForYouView: View {
     .frame(height: OkouControl.minimumTarget + OkouSpace.md)
   }
 
+  private var dockMotion: Animation? {
+    reduceMotion ? nil : .spring(response: 0.38, dampingFraction: 0.86)
+  }
+
   private func collapseDirection() {
     guard let direction = store.direction else { return }
     if direction.composer.hasContent {
       direction.composer.editor.dismissKeyboard()
     } else {
-      store.closeDirection()
+      withAnimation(dockMotion) { store.closeDirection() }
     }
   }
 
@@ -563,8 +572,20 @@ private struct ForYouCardPlacement: Equatable, Sendable {
   }
 }
 
-/// The dock's glass shapes, which morph into one another as the input opens and closes.
-private enum ForYouDockGlass: Hashable, Sendable {
-  case input
-  case dismiss
+/// The input opening out of its pill: it starts at about the pill's size where the pill sits,
+/// at the dock's leading edge, and grows to its own size as it fades in.
+private struct ForYouInputGrowth: ViewModifier {
+  let progress: CGFloat
+
+  func body(content: Content) -> some View {
+    content
+      .scaleEffect(x: 0.72 + 0.28 * progress, y: 0.32 + 0.68 * progress, anchor: .bottomLeading)
+      .opacity(Double(progress))
+  }
+}
+
+extension AnyTransition {
+  fileprivate static var forYouInputGrowth: AnyTransition {
+    .modifier(active: ForYouInputGrowth(progress: 0), identity: ForYouInputGrowth(progress: 1))
+  }
 }

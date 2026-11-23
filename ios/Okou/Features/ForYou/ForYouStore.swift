@@ -215,18 +215,23 @@ final class ForYouStore {
     return openChat && error == nil
   }
 
+  /// Opens the input at once when its chat needs no check: a new chat, or one the list already
+  /// holds. False leaves an unknown chat to `openDirection`, which checks it first.
+  func openListedDirection(_ card: ForYouCard) -> Bool {
+    guard case .suggestion(let suggestion) = card.content, let workspace else { return false }
+    let target = suggestion.customOption.threadId
+    guard target == nil || workspace.list.threads.contains(where: { $0.id == target }) else {
+      return false
+    }
+    guard !busy, current?.id == card.id, !workspace.isClosed else { return true }
+    closeDirection()
+    direction = ForYouDirection(
+      cardID: card.id, threadID: target, commands: commands, workspace: workspace)
+    return true
+  }
+
   func openDirection(_ card: ForYouCard) async {
     guard case .suggestion(let suggestion) = card.content, let workspace else { return }
-    // The input grows out of its pill at once when its chat needs no check: a new chat, or one
-    // the list already holds. Only a chat the list does not know is checked first.
-    let target = suggestion.customOption.threadId
-    if target == nil || workspace.list.threads.contains(where: { $0.id == target }) {
-      guard !busy, current?.id == card.id, !workspace.isClosed else { return }
-      closeDirection()
-      direction = ForYouDirection(
-        cardID: card.id, threadID: target, commands: commands, workspace: workspace)
-      return
-    }
     await perform {
       let target = try await availableThread(suggestion.customOption.threadId)
       try Task.checkCancellation()
