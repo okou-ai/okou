@@ -130,7 +130,9 @@ final class ConnectorProviderAuthorizationTests: XCTestCase {
     let webURL = try XCTUnwrap(flow.browserURL)
     XCTAssertEqual(webURL.scheme, "https")
     XCTAssertEqual(webURL.host, "www.strava.com")
-    store.authenticationFinished(flow: flow, url: webURL, error: CancellationError())
+    store.receiveProviderReturn(
+      URL(string: "ai.okou.ios://connector-authorization/\(FixtureData.attemptID)")!)
+    XCTAssertNil(flow.browserURL)
     clock.advance(.seconds(2))
     try await waitForBusinessResult { flow.session == nil }
     XCTAssertTrue(flow.canSubmit)

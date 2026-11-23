@@ -375,12 +375,13 @@ final class ConnectorActionStore {
   }
 
   func receiveProviderReturn(_ url: URL) {
-    guard !closed, let flow = active, flow.usesProviderApplication,
+    guard !closed, let flow = active, flow.session?.nativeAppAuthorization?.provider == "strava",
       let attemptID = ConnectorProviderAuthorization.returnAttemptID(url),
       flow.session?.oauthAttemptId?.lowercased() == attemptID
     else { return }
     // Both success and denial wake the attempt. Only its authenticated backend
     // receipt can establish success or identify the exact connection.
+    flow.browserURL = nil
     flow.browserClosed = true
     if task == nil { startPolling(flow) }
   }
