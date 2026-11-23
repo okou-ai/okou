@@ -73,7 +73,6 @@
     <string name="chat_delete_rejected">Chat tidak dapat dihapus.</string>
     <string name="chat_delete_title">Hapus chat?</string>
     <string name="chat_delete_description">Pesan dan draf di “%1$s” akan dihapus secara permanen. Tugas yang sedang berjalan akan dihentikan dan automasi tertaut akan dijeda.</string>
-    <string name="chat_delete_confirm">Hapus</string>
     <string name="chat_rename_project">Ganti nama proyek</string>
     <string name="chat_project_name">Nama proyek</string>
     <string name="chat_project_rename_unconfirmed">Nama proyek tidak dapat dikonfirmasi.</string>
@@ -95,4 +94,12 @@
     <string name="chat_project_delete_unconfirmed">Penghapusan proyek tidak dapat dikonfirmasi.</string>
     <string name="chat_row_action_rejected_named">Tidak dapat menyelesaikan “%1$s”.</string>
     <string name="chat_row_action_offline_named">Tidak dapat menyelesaikan “%1$s”. Periksa koneksi dan coba lagi.</string>
+    <string name="chat_rename_save_failed">Tidak dapat menyimpan. Perubahan Anda masih tersimpan di formulir.</string>
+    <string name="chat_rename_check_result">Periksa hasil</string>
+    <string name="chat_rename_trim_hint">Spasi di awal dan akhir akan dihapus.</string>
+    <string name="chat_rename_required">Masukkan nama.</string>
+    <string name="chat_rename_checking_result">Memeriksa hasil…</string>
+    <string name="chat_rename_save_unconfirmed">Hasil penyimpanan belum dikonfirmasi.</string>
+    <string name="chat_title_saved">Judul chat disimpan</string>
+    <string name="chat_project_name_saved">Nama proyek disimpan</string>
 </resources>
