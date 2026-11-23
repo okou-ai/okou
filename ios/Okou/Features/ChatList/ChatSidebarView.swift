@@ -599,9 +599,7 @@ private struct ForYouSidebarRow: View {
   let statusColumn: CGFloat
   let open: () -> Void
   var body: some View {
-    Button {
-      showsForYou = true
-    } label: {
+    Button(action: open) {
       HStack(spacing: OkouSpace.ten) {
         OkouIcon("hand-heart").frame(width: statusColumn)
         Text("For you").font(.okou(.body))
