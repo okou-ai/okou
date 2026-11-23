@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.59.2](https://github.com/okou-ai/okou/compare/ios-v0.59.1...ios-v0.59.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove the Okou symbol from default workspace avatars ([#50313](https://github.com/okou-ai/okou/issues/50313)) ([caf7355](https://github.com/okou-ai/okou/commit/caf73558c2663ca0345dd35943f05379213c4c4f))
+
 ## [0.59.1](https://github.com/okou-ai/okou/compare/ios-v0.59.0...ios-v0.59.1) (2026-11-23)
 
 
