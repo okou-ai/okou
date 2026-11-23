@@ -78,8 +78,7 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         let requested_contexts = Arc::new(AtomicUsize::new(0));
         let context_requests = Arc::clone(&requested_contexts);
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
+            when.method(POST).path("/api/webhooks/run/storages/prepare");
             then.respond_with(move |request| {
                 let body: serde_json::Value = serde_json::from_slice(request.body_ref()).unwrap();
                 let files = body["files"].as_array().unwrap();
@@ -116,7 +115,7 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         });
         let conflict = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/storages/commit")
+                .path("/api/webhooks/run/storages/commit")
                 .json_body_includes(
                     json!({"parentVersionId": base, "versionId": ours}).to_string(),
                 );
@@ -125,7 +124,7 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         });
         let commit = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/storages/commit")
+                .path("/api/webhooks/run/storages/commit")
                 .json_body_includes(
                     json!({
                         "parentVersionId": head,
@@ -150,7 +149,7 @@ async fn memory_conflict_finalization_requires_merge_inputs_and_reports_the_comm
         });
         let complete = server.mock(|when, then| {
             when.method(POST)
-                .path("/api/webhooks/agent/complete")
+                .path("/api/webhooks/run/complete")
                 .json_body_includes(
                     json!({
                         "exitCode": 0,

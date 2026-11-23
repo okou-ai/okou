@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.27.18](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.17...runner-supervisor-v0.27.18) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+* **runner:** centralize parked sandbox home promotion reporting ([#50028](https://github.com/okou-ai/okou/issues/50028)) ([2ede205](https://github.com/okou-ai/okou/commit/2ede205688c57b847efcfb09ca01d7c5b360c2d2))
+
+## [0.27.17](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.16...runner-supervisor-v0.27.17) (2026-11-22)
+
 ## [0.27.16](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.15...runner-supervisor-v0.27.16) (2026-11-22)
 
 ## [0.27.15](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.27.14...runner-supervisor-v0.27.15) (2026-11-22)

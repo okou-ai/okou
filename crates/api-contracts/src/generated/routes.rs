@@ -434,78 +434,78 @@ pub mod runners {
 
 /// Generated route bindings under `webhooks`.
 pub mod webhooks {
-    /// Generated route bindings under `webhooks::agent`.
-    pub mod agent {
-        /// Generated route bindings under `webhooks::agent::complete`.
+    /// Generated route bindings under `webhooks::run`.
+    pub mod run {
+        /// Generated route bindings under `webhooks::run::complete`.
         pub mod complete {
             /// Handle agent run completion.
-            /// Route contract: `POST /api/webhooks/agent/complete`.
+            /// Route contract: `POST /api/webhooks/run/complete`.
             pub const COMPLETE: crate::Route = crate::Route {
                 method: crate::Method::Post,
-                path: "/api/webhooks/agent/complete",
+                path: "/api/webhooks/run/complete",
             };
         }
 
-        /// Generated route bindings under `webhooks::agent::events`.
+        /// Generated route bindings under `webhooks::run::events`.
         pub mod events {
             /// Receive agent events from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/events`.
+            /// Route contract: `POST /api/webhooks/run/events`.
             pub const SEND: crate::Route = crate::Route {
                 method: crate::Method::Post,
-                path: "/api/webhooks/agent/events",
+                path: "/api/webhooks/run/events",
             };
         }
 
-        /// Generated route bindings under `webhooks::agent::heartbeat`.
+        /// Generated route bindings under `webhooks::run::heartbeat`.
         pub mod heartbeat {
             /// Receive heartbeat from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/heartbeat`.
+            /// Route contract: `POST /api/webhooks/run/heartbeat`.
             pub const SEND: crate::Route = crate::Route {
                 method: crate::Method::Post,
-                path: "/api/webhooks/agent/heartbeat",
+                path: "/api/webhooks/run/heartbeat",
             };
         }
 
-        /// Generated route bindings under `webhooks::agent::session_output`.
+        /// Generated route bindings under `webhooks::run::session_output`.
         pub mod session_output {
             /// Publish transient session output from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/session-output`.
+            /// Route contract: `POST /api/webhooks/run/session-output`.
             pub const SEND: crate::Route = crate::Route {
                 method: crate::Method::Post,
-                path: "/api/webhooks/agent/session-output",
+                path: "/api/webhooks/run/session-output",
             };
         }
 
-        /// Generated route bindings under `webhooks::agent::storages`.
+        /// Generated route bindings under `webhooks::run::storages`.
         pub mod storages {
-            /// Generated route bindings under `webhooks::agent::storages::commit`.
+            /// Generated route bindings under `webhooks::run::storages::commit`.
             pub mod commit {
                 /// Commit uploaded storage from sandbox.
-                /// Route contract: `POST /api/webhooks/agent/storages/commit`.
+                /// Route contract: `POST /api/webhooks/run/storages/commit`.
                 pub const COMMIT: crate::Route = crate::Route {
                     method: crate::Method::Post,
-                    path: "/api/webhooks/agent/storages/commit",
+                    path: "/api/webhooks/run/storages/commit",
                 };
             }
 
-            /// Generated route bindings under `webhooks::agent::storages::prepare`.
+            /// Generated route bindings under `webhooks::run::storages::prepare`.
             pub mod prepare {
                 /// Prepare for direct S3 upload from sandbox.
-                /// Route contract: `POST /api/webhooks/agent/storages/prepare`.
+                /// Route contract: `POST /api/webhooks/run/storages/prepare`.
                 pub const PREPARE: crate::Route = crate::Route {
                     method: crate::Method::Post,
-                    path: "/api/webhooks/agent/storages/prepare",
+                    path: "/api/webhooks/run/storages/prepare",
                 };
             }
         }
 
-        /// Generated route bindings under `webhooks::agent::telemetry`.
+        /// Generated route bindings under `webhooks::run::telemetry`.
         pub mod telemetry {
             /// Receive telemetry data from sandbox.
-            /// Route contract: `POST /api/webhooks/agent/telemetry`.
+            /// Route contract: `POST /api/webhooks/run/telemetry`.
             pub const SEND: crate::Route = crate::Route {
                 method: crate::Method::Post,
-                path: "/api/webhooks/agent/telemetry",
+                path: "/api/webhooks/run/telemetry",
             };
         }
     }

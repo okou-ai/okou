@@ -103,44 +103,44 @@ const expectedBindings = [
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/events",
-    rustModulePath: ["webhooks", "agent", "events"],
+    path: "/api/webhooks/run/events",
+    rustModulePath: ["webhooks", "run", "events"],
     rustConstName: "SEND",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/session-output",
-    rustModulePath: ["webhooks", "agent", "session_output"],
+    path: "/api/webhooks/run/session-output",
+    rustModulePath: ["webhooks", "run", "session_output"],
     rustConstName: "SEND",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/complete",
-    rustModulePath: ["webhooks", "agent", "complete"],
+    path: "/api/webhooks/run/complete",
+    rustModulePath: ["webhooks", "run", "complete"],
     rustConstName: "COMPLETE",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/heartbeat",
-    rustModulePath: ["webhooks", "agent", "heartbeat"],
+    path: "/api/webhooks/run/heartbeat",
+    rustModulePath: ["webhooks", "run", "heartbeat"],
     rustConstName: "SEND",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/telemetry",
-    rustModulePath: ["webhooks", "agent", "telemetry"],
+    path: "/api/webhooks/run/telemetry",
+    rustModulePath: ["webhooks", "run", "telemetry"],
     rustConstName: "SEND",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/storages/prepare",
-    rustModulePath: ["webhooks", "agent", "storages", "prepare"],
+    path: "/api/webhooks/run/storages/prepare",
+    rustModulePath: ["webhooks", "run", "storages", "prepare"],
     rustConstName: "PREPARE",
   },
   {
     method: "POST",
-    path: "/api/webhooks/agent/storages/commit",
-    rustModulePath: ["webhooks", "agent", "storages", "commit"],
+    path: "/api/webhooks/run/storages/commit",
+    rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
   },
 ] as const;
@@ -151,10 +151,10 @@ function validBinding(
   return {
     route: {
       method: "POST",
-      path: "/api/webhooks/agent/events",
+      path: "/api/webhooks/run/events",
       summary: "Send an example route",
     },
-    rustModulePath: ["webhooks", "agent", "events"],
+    rustModulePath: ["webhooks", "run", "events"],
     rustConstName: "SEND",
     ...overrides,
   };
@@ -318,7 +318,7 @@ describe("Rust route bindings", () => {
       validBinding({
         route: {
           method: "TRACE",
-          path: "/api/webhooks/agent/events",
+          path: "/api/webhooks/run/events",
           summary: "Send an example route",
         },
       }),
@@ -334,7 +334,7 @@ describe("Rust route bindings", () => {
       validBinding({
         route: {
           method: "POST",
-          path: "api/webhooks/agent/events",
+          path: "api/webhooks/run/events",
           summary: "Send an example route",
         },
       }),
@@ -439,7 +439,7 @@ describe("Rust route bindings", () => {
       validBinding({
         route: {
           method: "POST",
-          path: "/api/webhooks/agent/heartbeat",
+          path: "/api/webhooks/run/heartbeat",
           summary: "Send an example route",
         },
       }),
@@ -454,7 +454,7 @@ describe("Rust route bindings", () => {
     const malformedBindings = [
       validBinding(),
       validBinding({
-        rustModulePath: ["webhooks", "agent", "heartbeat"],
+        rustModulePath: ["webhooks", "run", "heartbeat"],
       }),
     ];
 
@@ -467,11 +467,11 @@ describe("Rust route bindings", () => {
     for (const route of [
       {
         method: "POST",
-        path: "/api/webhooks/agent/events",
+        path: "/api/webhooks/run/events",
       },
       {
         method: "POST",
-        path: "/api/webhooks/agent/events",
+        path: "/api/webhooks/run/events",
         summary: "",
       },
     ]) {
@@ -487,7 +487,7 @@ describe("Rust route bindings", () => {
         validBinding({
           route: {
             method: "POST",
-            path: "/api/webhooks/agent/events",
+            path: "/api/webhooks/run/events",
             summary: "Send an example route\nwith extra detail",
           },
         }),

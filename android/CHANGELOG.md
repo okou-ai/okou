@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.43.0](https://github.com/okou-ai/okou/compare/android-v0.42.0...android-v0.43.0) (2026-11-22)
+
+
+### Features
+
+* **android:** find messages within a conversation ([#49937](https://github.com/okou-ai/okou/issues/49937)) ([00d7c77](https://github.com/okou-ai/okou/commit/00d7c77e2d035c2b339a13df536c75477cce7ddf))
+* **android:** move chats and delete projects ([#49950](https://github.com/okou-ai/okou/issues/49950)) ([066d2a8](https://github.com/okou-ai/okou/commit/066d2a8581d58f57425abb367194c34861b183cc))
+* **android:** open inline conversation message links ([#50001](https://github.com/okou-ai/okou/issues/50001)) ([93203dc](https://github.com/okou-ai/okou/commit/93203dc4eb74c0dba9b577dfcbebac7efc80f936))
+
+
+### Bug Fixes
+
+* **android:** align connector account actions and panels with design ([#50004](https://github.com/okou-ai/okou/issues/50004)) ([eb09e80](https://github.com/okou-ai/okou/commit/eb09e80a6a6748199fc28b6c46ef839146d5fa20))
+* **android:** evict idle tls sockets off the main thread ([#49974](https://github.com/okou-ai/okou/issues/49974)) ([de8458d](https://github.com/okou-ai/okou/commit/de8458d8da114dff694c5d9a973530d05ead9515))
+* **android:** keep chat list actions available through connection changes ([#50002](https://github.com/okou-ai/okou/issues/50002)) ([222b1fa](https://github.com/okou-ai/okou/commit/222b1fa3010f6e911e36861324416580b958ce9c))
+* **android:** preserve artifact website previews across reconnect ([#50000](https://github.com/okou-ai/okou/issues/50000)) ([f7ef903](https://github.com/okou-ai/okou/commit/f7ef903399fa0cf0d45a65ff6f841ab3240eb6f5))
+* **android:** retain connector filter and service results ([#49969](https://github.com/okou-ai/okou/issues/49969)) ([02b0605](https://github.com/okou-ai/okou/commit/02b0605d15256b92f093dfae69703af089b84d57))
+
+
+### Refactoring
+
+* **android:** narrow workspace chat state observation ([#49999](https://github.com/okou-ai/okou/issues/49999)) ([0012f32](https://github.com/okou-ai/okou/commit/0012f32ec508cd52ac3869f05204a36d0c573478))
+* **android:** separate chat list grouping from indicators ([#49987](https://github.com/okou-ai/okou/issues/49987)) ([541a590](https://github.com/okou-ai/okou/commit/541a590e84bae28ae6348a2ef641dbd52460106e))
+
 ## [0.42.0](https://github.com/okou-ai/okou/compare/android-v0.41.0...android-v0.42.0) (2026-11-22)
 
 

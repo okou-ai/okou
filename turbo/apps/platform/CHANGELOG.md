@@ -13,6 +13,61 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1164.0](https://github.com/okou-ai/okou/compare/app-v0.1163.8...app-v0.1164.0) (2026-11-22)
+
+
+### Features
+
+* **app:** play voice messages in one inline bubble ([#50033](https://github.com/okou-ai/okou/issues/50033)) ([c5b014a](https://github.com/okou-ai/okou/commit/c5b014a0b8cda90db74fe9ce4c7031158f5c448c))
+* **app:** restore paged rendering for long chat transcripts ([#50032](https://github.com/okou-ai/okou/issues/50032)) ([24f420e](https://github.com/okou-ai/okou/commit/24f420eec6d5d95bc56c1619df2e90c5c8b72889))
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.1
+    * @okouai/core bumped to 8.859.9
+    * @okouai/ui bumped to 1.21.96
+
+## [0.1163.8](https://github.com/okou-ai/okou/compare/app-v0.1163.7...app-v0.1163.8) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.0
+    * @okouai/core bumped to 8.859.8
+    * @okouai/ui bumped to 1.21.95
+
+## [0.1163.7](https://github.com/okou-ai/okou/compare/app-v0.1163.6...app-v0.1163.7) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.103.1
+    * @okouai/core bumped to 8.859.7
+    * @okouai/ui bumped to 1.21.94
+
+## [0.1163.6](https://github.com/okou-ai/okou/compare/app-v0.1163.5...app-v0.1163.6) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.103.0
+    * @okouai/core bumped to 8.859.6
+    * @okouai/ui bumped to 1.21.93
+
 ## [0.1163.5](https://github.com/okou-ai/okou/compare/app-v0.1163.4...app-v0.1163.5) (2026-11-22)
 
 

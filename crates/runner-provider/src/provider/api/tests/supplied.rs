@@ -84,7 +84,7 @@ async fn supplied_runs_keep_distinct_completion_authority_when_settled_in_revers
             server
                 .mock_async(|when, then| {
                     when.method(POST)
-                        .path("/api/webhooks/agent/complete")
+                        .path("/api/webhooks/run/complete")
                         .header("authorization", format!("Bearer {token}"))
                         .body_includes(format!("\"runId\":\"{run_id}\""));
                     then.status(204);

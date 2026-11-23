@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.12](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.11...runner-storage-v0.12.12) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+## [0.12.11](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.10...runner-storage-v0.12.11) (2026-11-22)
+
 ## [0.12.10](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.9...runner-storage-v0.12.10) (2026-11-21)
 
 

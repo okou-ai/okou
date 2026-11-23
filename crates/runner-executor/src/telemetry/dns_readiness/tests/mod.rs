@@ -36,7 +36,7 @@ async fn dns_readiness_flush_preserves_numeric_pairs_and_missing_measurements() 
     }
     telemetry.flush().await;
     let request = server.next_request("DNS attempt telemetry").await;
-    assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+    assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
     let (_, body) = request.split_once("\r\n\r\n").unwrap();
     let payload: serde_json::Value = serde_json::from_str(body).unwrap();
     let ops = payload["sandboxOperations"].as_array().unwrap();

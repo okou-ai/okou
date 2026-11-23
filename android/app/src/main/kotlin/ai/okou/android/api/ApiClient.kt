@@ -13,6 +13,7 @@ import ai.okou.android.api.generated.ChatEvents
 import ai.okou.android.api.generated.ChatSnapshot
 import ai.okou.android.api.generated.ComposerDraft
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DeleteProjectRequest
 import ai.okou.android.api.generated.HistoryCatchUpRequestItem
 import ai.okou.android.api.generated.HistoryRowsQueryVariant1
@@ -35,11 +36,15 @@ import ai.okou.android.api.generated.SendRequest
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
+import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
+import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
+import ai.okou.android.api.generated.WorkflowsQuery
 import ai.okou.android.api.generated.artifactCatalog
 import ai.okou.android.api.generated.artifactDetail
 import ai.okou.android.api.generated.historyRows
 import ai.okou.android.api.generated.resolveArtifactReference
+import ai.okou.android.api.generated.workflows
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.plainDraftDocument
@@ -174,6 +179,33 @@ class ApiClient(
     }
 
     suspend fun organization(): Organization = execute { reads.organization(it) }
+
+    suspend fun workflows() = execute { reads.workflows(it, WorkflowsQuery()) }
+
+    suspend fun workflow(id: String) = execute { reads.workflow(it, id) }
+
+    suspend fun workspaceWorkflowAutomations() = execute { reads.workspaceWorkflowAutomations(it) }
+
+    suspend fun workflowConnections() =
+        execute { reads.connectedConnectors(it) }
+            .builtinConnectors
+            .mapTo(mutableSetOf()) { it.slug }
+
+    suspend fun updateWorkflow(id: String, body: UpdateWorkflowRequest) = execute {
+        api.updateWorkflow(it, id, body)
+    }
+
+    suspend fun createWorkflowAutomation(id: String, body: CreateWorkflowAutomationRequest) =
+        execute(201) { api.createWorkflowAutomation(it, id, body) }
+
+    suspend fun updateWorkflowAutomation(id: String, body: UpdateWorkflowAutomationRequest) =
+        execute {
+            api.updateWorkflowAutomation(it, id, body)
+        }
+
+    suspend fun setWorkflowAutomationEnabled(id: String, enabled: Boolean) = execute {
+        if (enabled) api.enableWorkflowAutomation(it, id) else api.disableWorkflowAutomation(it, id)
+    }
 
     suspend fun realtimeToken() = execute { api.realtimeToken(it, RealtimeTokenRequest) }
 

@@ -110,17 +110,17 @@ async fn run_event_failure_case(
     )?;
 
     let _heartbeat = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
     let events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(http_status);
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -129,7 +129,7 @@ async fn run_event_failure_case(
     let complete = server.mock(|when, then| {
         let when = when
             .method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(format!(
                 r#"{{"exitCode":{cli_exit_code},"completion":{{"cliAgentSessionId":"{THREAD_ID}"}}}}"#
             ));

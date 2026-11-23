@@ -228,6 +228,9 @@ internal fun WorkspaceListToolbar(
 
 @Composable
 internal fun WorkspaceToolEntries(
+    openWorkflows: (() -> Unit)?,
+    workflowsFocus: FocusRequester,
+    onWorkflowsFocusChanged: (Boolean) -> Unit,
     openArtifacts: (() -> Unit)?,
     artifactFocus: FocusRequester,
     connectorFocus: FocusRequester,
@@ -246,7 +249,10 @@ internal fun WorkspaceToolEntries(
                 R.drawable.ic_account_tree,
                 R.string.workspace_workflows,
                 stacked,
-                Modifier.weight(1f),
+                Modifier.weight(1f).focusRequester(workflowsFocus).onFocusChanged {
+                    onWorkflowsFocusChanged(it.isFocused)
+                },
+                onClick = openWorkflows,
             )
             WorkspaceToolEntry(
                 R.drawable.ic_extension,

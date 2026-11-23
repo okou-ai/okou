@@ -49,8 +49,8 @@ fn complete_publication_preserves_canonical_execution_inputs() {
         "fixture-model"
     );
     assert_eq!(
-        context.platform_environment["OKOU_AGENT_ID"],
-        "fixture-agent-id"
+        context.platform_environment["OKOU_CHAT_THREAD_ID"],
+        "fixture-thread-id"
     );
     assert_eq!(
         context.model_usage_provider.as_deref(),

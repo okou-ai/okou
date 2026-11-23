@@ -561,7 +561,6 @@ describe("okou connector permission-request command", () => {
 
     const logCalls = mockConsoleLog.mock.calls.flat().join("\n");
     expect(logCalls).toContain("/connectors/permissions?");
-    expect(logCalls).not.toContain("/agents/permissions");
   });
 
   it("transforms www.okou.ai to app.okou.ai", async () => {

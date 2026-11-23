@@ -29,15 +29,19 @@
     <string name="appearance_dark">Dunkel</string>
     <string name="on_this_device">Auf diesem Gerät</string>
     <string name="retry">Erneut versuchen</string>
-    <string name="auth_welcome">Willkommen bei Okou</string>
     <string name="auth_restoring">Sitzung wird wiederhergestellt…</string>
     <string name="auth_preparing_workspace">Arbeitsbereich wird vorbereitet…</string>
     <string name="auth_choose_workspace">Arbeitsbereich auswählen</string>
-    <string name="auth_no_workspace">Du hast noch keinen Zugriff auf einen Arbeitsbereich.</string>
+    <string name="auth_no_workspace">Noch keine zugänglichen Arbeitsbereiche</string>
+    <string name="auth_no_workspace_detail">Erstelle im Browser einen Arbeitsbereich oder nimm eine Einladung an. Kehre dann zu Okou zurück.</string>
     <string name="auth_workspace_setup">Arbeitsbereich im Web einrichten</string>
-    <string name="auth_access_removed">Deine Sitzung oder dein Zugriff hat sich geändert. Melde dich erneut an oder aktualisiere den Zugriff.</string>
+    <string name="auth_access_removed">Dieser Arbeitsbereich ist nicht mehr zugänglich</string>
+    <string name="auth_access_removed_detail">Prüfe, auf welche Arbeitsbereiche dieses Konto noch Zugriff hat.</string>
     <string name="auth_update_required">Aktualisiere Okou, um fortzufahren.</string>
-    <string name="auth_unavailable">Sitzung oder Arbeitsbereich konnte nicht geladen werden. Versuche es erneut.</string>
+    <string name="auth_unavailable">Sitzung oder Arbeitsbereich konnte nicht geladen werden</string>
+    <string name="auth_check_workspace">Arbeitsbereiche prüfen</string>
+    <string name="auth_check_access">Zugriff prüfen</string>
+    <string name="auth_sign_in_again">Erneut anmelden</string>
     <string name="auth_sign_out">Abmelden</string>
     <string name="auth_signing_out">Abmeldung läuft…</string>
     <string name="auth_workspace">Aktueller Arbeitsbereich</string>
@@ -152,5 +156,6 @@
     <string name="instructions_save_when_online">Stelle eine Verbindung her, um Änderungen zu speichern.</string>
     <string name="settings_timezone">Zeitzone</string>
     <string name="settings_timezone_hint">Standardzeitzone für neue geplante Aufgaben.</string>
-    <string name="settings_timezone_utc">Koordinierte Weltzeit (UTC)</string>
+    <string name="settings_timezone_utc">Koordinierte Weltzeit</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

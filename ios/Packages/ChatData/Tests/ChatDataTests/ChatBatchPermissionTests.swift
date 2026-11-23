@@ -31,7 +31,7 @@ final class ChatBatchPermissionTests: XCTestCase {
     let rejected = [
       "https://evil.invalid" + valid,
       valid.replacingOccurrences(
-        of: "/connectors/permissions", with: "/agents/\(FixtureData.threadID)/permissions"),
+        of: "/connectors/permissions", with: "/connectors/unsupported"),
       "https://app.okou.ai.evil.invalid" + valid,
       "https://user@app.okou.ai" + valid,
       valid + "#extra", valid + "&action=allow", valid + "&ref=gmail",

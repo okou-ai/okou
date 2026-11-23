@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { webhookSessionOutputContract } from "@okouai/api-contracts/contracts/webhooks";
+import { runWebhookContract } from "@okouai/api-contracts/contracts/webhooks";
 import { sessionOutputDeltaSchema } from "@okouai/api-contracts/contracts/realtime";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -31,7 +31,7 @@ function send(fixture: ReturnType<typeof sandboxFixture>, chunkIndex = 3) {
   return setupApp({
     context,
     routes: webhooksAgentSessionOutputRoutes,
-  })(webhookSessionOutputContract).send({
+  })(runWebhookContract).sessionOutput({
     headers: { authorization: `Bearer ${fixture.token}` },
     body: {
       runId: fixture.runId,

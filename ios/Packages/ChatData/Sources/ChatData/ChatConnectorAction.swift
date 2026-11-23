@@ -73,7 +73,7 @@ public struct ChatConnectorAction: Equatable, Sendable, Identifiable {
       Self(id: value, kind: .unavailable, threadID: threadID, callbackPrompt: nil)
     }
     guard Set(query.map(\.name)).count == query.count,
-      UUID(uuidString: threadID) != nil, param("agentId") == nil
+      UUID(uuidString: threadID) != nil
     else { return invalid() }
     let prompt = param("callbackPrompt")
     let callbackThread = param("threadId")

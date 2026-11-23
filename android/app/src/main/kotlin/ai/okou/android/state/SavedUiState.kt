@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -145,25 +146,39 @@ internal class ChatSearchState(
     query: TextFieldValue = TextFieldValue(),
     anchor: SearchResultAnchor? = null,
 ) {
-    var query by mutableStateOf(query)
-        private set
+    private data class SearchInput(
+        val current: TextFieldValue,
+        val committed: TextFieldValue = current,
+    )
+
+    private var input by mutableStateOf(SearchInput(query))
+    val query: TextFieldValue
+        get() = input.current
+
+    val committedQuery: TextFieldValue
+        get() = input.committed
 
     val position = LazyListState()
     var pendingAnchor by mutableStateOf(anchor)
         private set
 
     fun edit(value: TextFieldValue) {
-        if (query.text != value.text) {
+        val committed = if (value.composition == null) value else committedQuery
+        if (committedQuery.text != committed.text) {
             pendingAnchor = null
             position.requestScrollToItem(0)
         }
-        query = value
+        input = SearchInput(value, committed)
     }
 
     fun reset() {
         pendingAnchor = null
         position.requestScrollToItem(0)
-        query = TextFieldValue()
+        input = SearchInput(TextFieldValue())
+    }
+
+    fun cancelComposition() {
+        if (query.composition != null) input = SearchInput(committedQuery)
     }
 
     fun restorePosition(index: Int?) {
@@ -186,13 +201,24 @@ internal class ChatSearchState(
     }
 }
 
+private class DisplayedSearchValue<T>(var value: T)
+
+@Composable
+internal fun <T> ChatSearchState.retainWhileComposing(value: T): T {
+    val displayed = remember(this) { DisplayedSearchValue(value) }
+    if (query.composition != null) return displayed.value
+    // Keep the last rendered results if a refresh arrives in the same frame as an IME edit.
+    SideEffect { displayed.value = value }
+    return value
+}
+
 @Composable
 internal fun rememberChatSearchState(): ChatSearchState =
     rememberSaveable(
         saver =
             listSaver<ChatSearchState, Any>(
                 save = {
-                    val query = it.query
+                    val query = it.committedQuery
                     if (query.text.length <= MAX_SAVED_SEARCH_QUERY_CHARS) {
                         val anchor = it.savedAnchor()
                         listOf(
@@ -410,6 +436,56 @@ internal fun rememberArtifactPageHolder(): SaveableStateHolder = rememberSaveabl
 internal fun rememberArtifactWebScroll(): MutableIntState = rememberSaveable {
     mutableIntStateOf(0)
 }
+
+internal enum class WorkflowsMode {
+    Closed,
+    Directory,
+    Chat,
+}
+
+internal enum class WorkflowTab {
+    Instructions,
+    Automations,
+    History,
+}
+
+internal enum class WorkflowScope {
+    All,
+    Private,
+    Shared,
+}
+
+internal data class WorkflowsRoute(
+    val mode: WorkflowsMode = WorkflowsMode.Closed,
+    val id: String? = null,
+    val tab: WorkflowTab = WorkflowTab.Instructions,
+    val scope: WorkflowScope = WorkflowScope.All,
+)
+
+@Composable
+internal fun rememberWorkflowsRoute(): MutableState<WorkflowsRoute> =
+    rememberSaveable(
+        stateSaver =
+            listSaver<WorkflowsRoute, String>(
+                save = { listOf(it.mode.name, it.id.orEmpty(), it.tab.name, it.scope.name) },
+                restore = { (mode, id, tab, scope) ->
+                    WorkflowsRoute(
+                        WorkflowsMode.valueOf(mode),
+                        id.ifEmpty { null },
+                        WorkflowTab.valueOf(tab),
+                        WorkflowScope.valueOf(scope),
+                    )
+                },
+            )
+    ) {
+        mutableStateOf(WorkflowsRoute())
+    }
+
+@Composable
+internal fun rememberWorkflowDiscardConfirmation(
+    workflowId: String?,
+    editing: Boolean,
+): MutableState<Boolean> = rememberSaveable(workflowId, editing) { mutableStateOf(false) }
 
 internal class SavedUiIds(private val state: MutableState<List<String>>, private val limit: Int) {
     fun record(id: String): List<String> {

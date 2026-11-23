@@ -152,13 +152,11 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
     );
 
     let storage_prepare = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/prepare");
+        when.method(POST).path("/api/webhooks/run/storages/prepare");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let storage_commit = server.mock(|when, then| {
-        when.method(POST)
-            .path("/api/webhooks/agent/storages/commit");
+        when.method(POST).path("/api/webhooks/run/storages/commit");
         then.status(200).json_body(json!({"unreachable": true}));
     });
     let expected_version = version_id.clone();
@@ -170,7 +168,7 @@ async fn unchanged_artifact_finalization_records_content_hash_timing()
         .into_owned();
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .is_true(move |req| {
                 finalization_request_has_storage_outputs(
                     req,

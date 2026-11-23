@@ -1,0 +1,197 @@
+//! Runs use managed tools unless the API explicitly opts into native tools.
+
+use crate::common;
+
+use api_contracts::generated::constants::paid_tools::{
+    ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
+};
+use guest_agent::masker::SecretMasker;
+use guest_agent::run_context::GuestRuntime;
+use std::collections::HashMap;
+use std::path::Path;
+
+type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
+
+#[tokio::test]
+async fn builtin_web_search_is_disabled_by_default_for_claude_and_codex() -> TestResult {
+    assert_native_tool_policy(&["claude-code", "codex"], None, None, true, false).await
+}
+
+#[tokio::test]
+async fn positive_opt_in_enables_builtin_web_search_for_claude_and_codex() -> TestResult {
+    assert_native_tool_policy(&["claude-code", "codex"], Some("true"), None, false, false).await
+}
+
+#[tokio::test]
+async fn image_generation_opt_in_keeps_builtin_web_search_disabled() -> TestResult {
+    assert_native_tool_policy(&["codex"], None, Some("true"), true, true).await
+}
+
+#[tokio::test]
+async fn native_image_generation_and_web_search_can_both_be_enabled() -> TestResult {
+    assert_native_tool_policy(&["codex"], Some("true"), Some("true"), false, true).await
+}
+
+async fn assert_native_tool_policy(
+    frameworks: &[&str],
+    framework_web_search: Option<&str>,
+    framework_image_generation: Option<&str>,
+    expect_search_disabled: bool,
+    expect_image_generation_enabled: bool,
+) -> TestResult {
+    common::ensure_canonical_workspace_for_test()?;
+    let root = tempfile::tempdir()?;
+
+    for &framework in frameworks {
+        let real_mock = if framework == "claude-code" {
+            common::build_and_locate_mock()?
+        } else {
+            common::build_and_locate_mock_codex()?
+        };
+        let case_root = root.path().join(format!(
+            "{framework}-{}",
+            if expect_search_disabled {
+                "disabled"
+            } else {
+                "enabled"
+            }
+        ));
+        std::fs::create_dir_all(&case_root)?;
+        let args_path = case_root.join("args.txt");
+        let wrapper_path = common::native_cli::write_recording_wrapper(&case_root)?;
+        let runtime = build_runtime(
+            &case_root,
+            framework,
+            &wrapper_path,
+            &real_mock,
+            &args_path,
+            framework_web_search,
+            framework_image_generation,
+        )?;
+
+        let result = common::execute_cli_for_runtime(
+            &runtime,
+            &SecretMasker::from_raw(""),
+            common::spawn_dummy_heartbeat(),
+        )
+        .await?;
+        assert_eq!(result.exit_code, common::CLEAN_EXIT);
+
+        let args = common::native_cli::read_args(&args_path)?;
+        if framework == "claude-code" {
+            let disallowed_tools_index = args
+                .iter()
+                .position(|arg| arg == "--disallowed-tools")
+                .ok_or("Claude command omitted --disallowed-tools")?;
+            let first_disallowed_tool = args
+                .get(disallowed_tools_index + 1)
+                .ok_or("Claude command omitted the disallowed-tools value")?;
+            assert_eq!(first_disallowed_tool, "CronCreate");
+            assert_eq!(
+                args.iter().any(|arg| arg == "WebSearch"),
+                expect_search_disabled,
+                "unexpected Claude web-search policy: {args:?}"
+            );
+        } else {
+            assert_eq!(
+                args.windows(2).any(|window| {
+                    matches!(
+                        window,
+                        [flag, value]
+                            if flag == "-c" && value == r#"web_search="disabled""#
+                    )
+                }),
+                expect_search_disabled,
+                "unexpected Codex web-search policy: {args:?}"
+            );
+            let image_configs = args
+                .windows(2)
+                .filter_map(|window| match window {
+                    [flag, value]
+                        if flag == "-c" && value.starts_with("features.image_generation=") =>
+                    {
+                        Some(value.as_str())
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                image_configs,
+                [format!(
+                    "features.image_generation={expect_image_generation_enabled}"
+                )],
+                "unexpected Codex image-generation policy: {args:?}"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn build_runtime(
+    root: &Path,
+    framework: &str,
+    wrapper_path: &Path,
+    real_mock: &Path,
+    args_path: &Path,
+    framework_web_search: Option<&str>,
+    framework_image_generation: Option<&str>,
+) -> TestResult<GuestRuntime> {
+    let run_id = format!("framework-web-search-{framework}");
+    let home = root.join("home");
+    let runtime_dir = root.join("runtime");
+    std::fs::create_dir_all(&home)?;
+    let run_payload_file = common::write_run_payload_file_for_test(
+        &runtime_dir,
+        &guest_contracts::env::RunPayload {
+            prompt: "true".to_string(),
+            disallowed_tools: "CronCreate".to_string(),
+            ..guest_contracts::env::RunPayload::default()
+        },
+    )?;
+    let mut user_env = HashMap::from([
+        (
+            "TEST_ARGS_PATH",
+            args_path.to_str().ok_or("args path must be valid UTF-8")?,
+        ),
+        (
+            "TEST_REAL_MOCK",
+            real_mock.to_str().ok_or("mock path must be valid UTF-8")?,
+        ),
+    ]);
+    if let Some(value) = framework_web_search {
+        user_env.insert(ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR, value);
+    }
+    if let Some(value) = framework_image_generation {
+        user_env.insert(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, value);
+    }
+    let user_env_file = common::native_cli::write_user_env_file(&runtime_dir, &user_env)?;
+    let is_claude = framework == "claude-code";
+    let mut config = guest_agent::env::GuestConfig::from_raw(guest_agent::env::GuestConfigRaw {
+        run_id,
+        api_url: "http://127.0.0.1:1".to_string(),
+        sandbox_id: "00000000-0000-4000-8000-000000000abc".to_string(),
+        use_mock_claude: is_claude.to_string(),
+        mock_claude_path: is_claude.then(|| wrapper_path.to_string_lossy().into_owned()),
+        cli_agent_type: framework.to_string(),
+        user_env_file: user_env_file.to_string_lossy().into_owned(),
+        run_payload_file: run_payload_file.to_string_lossy().into_owned(),
+        use_mock_codex: (!is_claude).to_string(),
+        mock_codex_path: (!is_claude).then(|| wrapper_path.to_string_lossy().into_owned()),
+        home: Some(home.to_string_lossy().into_owned()),
+        guest_runtime_dir: Some(runtime_dir.clone()),
+        ..guest_agent::env::GuestConfigRaw::default()
+    })
+    .map_err(std::io::Error::other)?;
+    config.codex_home_dir = root.join("codex-home").to_string_lossy().into_owned();
+    let paths = guest_agent::paths::GuestPaths::from_runtime_dir(runtime_dir);
+    let http = guest_agent::http::HttpClient::for_config(&config)?;
+
+    Ok(GuestRuntime {
+        config,
+        paths,
+        http,
+        workload_containment: None,
+        process_control_endpoint: None,
+    })
+}

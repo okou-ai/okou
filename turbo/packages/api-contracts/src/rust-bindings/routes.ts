@@ -9,15 +9,7 @@ import {
   runnersHeartbeatContract,
   runnersSteerContract,
 } from "../contracts/runners";
-import {
-  webhookCompleteContract,
-  webhookEventsContract,
-  webhookHeartbeatContract,
-  webhookSessionOutputContract,
-  webhookStoragesCommitContract,
-  webhookStoragesPrepareContract,
-  webhookTelemetryContract,
-} from "../contracts/webhooks";
+import { runWebhookContract } from "../contracts/webhooks";
 
 export interface RouteLike {
   readonly method?: unknown;
@@ -119,38 +111,38 @@ export const rustRouteBindings = [
     rustConstName: "CREATE",
   },
   {
-    route: webhookEventsContract.send,
-    rustModulePath: ["webhooks", "agent", "events"],
+    route: runWebhookContract.events,
+    rustModulePath: ["webhooks", "run", "events"],
     rustConstName: "SEND",
   },
   {
-    route: webhookSessionOutputContract.send,
-    rustModulePath: ["webhooks", "agent", "session_output"],
+    route: runWebhookContract.sessionOutput,
+    rustModulePath: ["webhooks", "run", "session_output"],
     rustConstName: "SEND",
   },
   {
-    route: webhookCompleteContract.complete,
-    rustModulePath: ["webhooks", "agent", "complete"],
+    route: runWebhookContract.complete,
+    rustModulePath: ["webhooks", "run", "complete"],
     rustConstName: "COMPLETE",
   },
   {
-    route: webhookHeartbeatContract.send,
-    rustModulePath: ["webhooks", "agent", "heartbeat"],
+    route: runWebhookContract.heartbeat,
+    rustModulePath: ["webhooks", "run", "heartbeat"],
     rustConstName: "SEND",
   },
   {
-    route: webhookTelemetryContract.send,
-    rustModulePath: ["webhooks", "agent", "telemetry"],
+    route: runWebhookContract.telemetry,
+    rustModulePath: ["webhooks", "run", "telemetry"],
     rustConstName: "SEND",
   },
   {
-    route: webhookStoragesPrepareContract.prepare,
-    rustModulePath: ["webhooks", "agent", "storages", "prepare"],
+    route: runWebhookContract.storagePrepare,
+    rustModulePath: ["webhooks", "run", "storages", "prepare"],
     rustConstName: "PREPARE",
   },
   {
-    route: webhookStoragesCommitContract.commit,
-    rustModulePath: ["webhooks", "agent", "storages", "commit"],
+    route: runWebhookContract.storageCommit,
+    rustModulePath: ["webhooks", "run", "storages", "commit"],
     rustConstName: "COMMIT",
   },
 ] as const satisfies readonly RustRouteBinding[];

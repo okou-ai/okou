@@ -598,19 +598,19 @@ import { runModelsMainContract } from "./run-models";
 import { runPhaseTimingContract as OriginalRunPhaseTimingContract } from "../contracts/run-phase-timing";
 import { runPhaseTimingContract } from "./run-phase-timing";
 import {
-  runAgentEventsContract as OriginalRunAgentEventsContract,
   runContextContract as OriginalRunContextContract,
   runNetworkLogsContract as OriginalRunNetworkLogsContract,
   runRunnerContract as OriginalRunRunnerContract,
+  runTelemetryEventsContract as OriginalRunTelemetryEventsContract,
   runsByIdContract as OriginalRunsByIdContract,
   runsCancelContract as OriginalRunsCancelContract,
   runsQueueContract as OriginalRunsQueueContract,
 } from "../contracts/run-routes";
 import {
-  runAgentEventsContract,
   runContextContract,
   runNetworkLogsContract,
   runRunnerContract,
+  runTelemetryEventsContract,
   runsByIdContract,
   runsCancelContract,
   runsQueueContract,
@@ -726,6 +726,7 @@ import {
 import { webFilesContract as OriginalWebFilesContract } from "../contracts/web-files";
 import { webFilesContract } from "./web-files";
 import {
+  runWebhookContract as OriginalRunWebhookContract,
   webhookBuiltInGenerationFalContract as OriginalWebhookBuiltInGenerationFalContract,
   webhookClerkContract as OriginalWebhookClerkContract,
   webhookCompleteContract as OriginalWebhookCompleteContract,
@@ -748,6 +749,7 @@ import {
   webhookWorkflowAutomationContract as OriginalWebhookWorkflowAutomationContract,
 } from "../contracts/webhooks";
 import {
+  runWebhookContract,
   webhookBuiltInGenerationFalContract,
   webhookClerkContract,
   webhookCompleteContract,
@@ -1262,10 +1264,10 @@ export const clientDescriptorContracts: readonly (readonly [
   [runConnectorAccountsContract, OriginalRunConnectorAccountsContract],
   [runModelsMainContract, OriginalRunModelsMainContract],
   [runPhaseTimingContract, OriginalRunPhaseTimingContract],
-  [runAgentEventsContract, OriginalRunAgentEventsContract],
   [runContextContract, OriginalRunContextContract],
   [runNetworkLogsContract, OriginalRunNetworkLogsContract],
   [runRunnerContract, OriginalRunRunnerContract],
+  [runTelemetryEventsContract, OriginalRunTelemetryEventsContract],
   [runsByIdContract, OriginalRunsByIdContract],
   [runsCancelContract, OriginalRunsCancelContract],
   [runsQueueContract, OriginalRunsQueueContract],
@@ -1327,6 +1329,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [walletContract, OriginalWalletContract],
   [walletUserContract, OriginalWalletUserContract],
   [webFilesContract, OriginalWebFilesContract],
+  [runWebhookContract, OriginalRunWebhookContract],
   [
     webhookBuiltInGenerationFalContract,
     OriginalWebhookBuiltInGenerationFalContract,

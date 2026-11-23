@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.58.5",
+  "version": "2.58.10",
   "private": true,
   "type": "module",
   "exports": {
@@ -71,17 +71,7 @@
     "test:web-upload-artifact-threads": "tsx scripts/test-web-upload-artifact-threads.ts",
     "test:pi-memory-retirement": "tsx scripts/test-pi-memory-retirement.ts",
     "test:run-output-memory-citation-retirement": "tsx scripts/test-run-output-memory-citation-retirement.ts",
-    "test:registry-resource-publication": "node scripts/test-registry-publication.mjs",
-    "single-agent:prepare": "tsx scripts/migrations/030-single-agent/cli.ts",
-    "single-agent:rehearse": "tsx scripts/migrations/030-single-agent/execute.ts",
-    "test:single-agent-migration": "node --import tsx scripts/migrations/030-single-agent/test-tool.ts && node --import tsx scripts/migrations/030-single-agent/test-execution.ts && node --import tsx scripts/migrations/030-single-agent/test-production.ts",
-    "test:single-agent-execution": "node --import tsx scripts/migrations/030-single-agent/test-execution.ts",
-    "test:staff-single-agent-copy": "node --import tsx scripts/test-staff-single-agent-copy.ts",
-    "test:single-agent-default-rollout": "node --import tsx scripts/test-single-agent-default-rollout.ts",
-    "single-agent:production": "tsx scripts/migrations/030-single-agent/production.ts",
-    "single-agent:package": "tsx scripts/migrations/030-single-agent/production-package-cli.ts",
-    "test:inactive-single-agent-pilot": "node --import tsx scripts/test-inactive-single-agent-pilot.ts",
-    "test:inactive-single-agent-batch": "node --import tsx scripts/test-inactive-single-agent-batch.ts"
+    "test:registry-resource-publication": "node scripts/test-registry-publication.mjs"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
@@ -107,7 +97,6 @@
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vitest": "^5.1.1",
-    "zod": "^4.5.4",
-    "msw": "^2.13.2"
+    "zod": "^4.5.4"
   }
 }

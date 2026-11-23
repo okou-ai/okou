@@ -2286,9 +2286,11 @@
     "messageDocument": {
       "chatThread": "[Chat thread: {{title}}]",
       "file": "[File: {{filename}}]",
+      "pauseVoice": "Pause voice message",
+      "playVoice": "Play voice message",
+      "retryVoice": "Retry voice playback",
       "template": "[Template: {{title}}]",
-      "voice": "Voice message",
-      "voiceClip": "Voice clip {{index}}"
+      "voice": "Voice message"
     },
     "newChat": "New chat",
     "origins": {

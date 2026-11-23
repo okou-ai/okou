@@ -786,31 +786,6 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres@postgres:5432/postgres
         run: pnpm test:web-upload-artifact-threads
-      - name: Test Single Agent Migration Preparation
-        working-directory: turbo/packages/db
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm test:single-agent-migration
-      - name: Test Staff Single Agent SQL Copy
-        working-directory: turbo/packages/db
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm test:staff-single-agent-copy
-      - name: Test Inactive Single Agent Pilot
-        working-directory: turbo/packages/db
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm test:inactive-single-agent-pilot
-      - name: Test Inactive Single Agent Batch
-        working-directory: turbo/packages/db
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm test:inactive-single-agent-batch
-      - name: Test Single Agent Default Rollout
-        working-directory: turbo/packages/db
-        env:
-          DATABASE_URL: postgresql://postgres@postgres:5432/postgres
-        run: pnpm test:single-agent-default-rollout
       - name: Check Migration Immutability
         if: vars.CI_CHECK_IMMUTABLE_MIGRATE != '0'
         run: |

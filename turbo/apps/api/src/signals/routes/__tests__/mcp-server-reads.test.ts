@@ -557,7 +557,6 @@ describe("thin MCP Web adapters", () => {
       ).code,
     ).toBe("BAD_REQUEST");
 
-    expect(listed.content[0]?.text).not.toContain("agentId");
     const thread = await chat.createThread(f.actor, {
       title: "Retained Chat",
     });

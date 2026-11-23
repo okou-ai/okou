@@ -1,6 +1,6 @@
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { logsByIdContract } from "@okouai/api-contracts/contracts/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/contracts/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/contracts/run-routes";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -224,30 +224,33 @@ test("Opening Instructions keeps rich Activity logs readable", async () => {
       completedAt: "2026-09-04T09:29:02Z",
     });
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [
-        {
-          sequenceNumber: 0,
-          eventType: "assistant",
-          eventData: {
-            message: {
-              content: [
-                {
-                  type: "text",
-                  text: "**Activity:** ++Literal text++ and <u>HTML underline</u>",
-                },
-              ],
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [
+          {
+            sequenceNumber: 0,
+            eventType: "assistant",
+            eventData: {
+              message: {
+                content: [
+                  {
+                    type: "text",
+                    text: "**Activity:** ++Literal text++ and <u>HTML underline</u>",
+                  },
+                ],
+              },
             },
+            createdAt: "2026-09-04T09:29:02Z",
           },
-          createdAt: "2026-09-04T09:29:02Z",
-        },
-      ],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: 0,
-    });
-  });
+        ],
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: 0,
+      });
+    },
+  );
 
   await openInstructionsThenChat();
 

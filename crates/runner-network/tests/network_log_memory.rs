@@ -214,7 +214,7 @@ async fn public_uploader_bounds_discarded_input_and_preserves_admitted_records()
                 server
                     .mock_async(move |when, then| {
                         when.method(POST)
-                            .path("/api/webhooks/agent/telemetry")
+                            .path("/api/webhooks/run/telemetry")
                             .header("authorization", "Bearer allocation-test-token")
                             .json_body(expected);
                         then.status(200);
@@ -224,7 +224,7 @@ async fn public_uploader_bounds_discarded_input_and_preserves_admitted_records()
         }
         let client = HttpClient {
             client: reqwest::Client::new(),
-            url: server.url("/api/webhooks/agent/telemetry"),
+            url: server.url("/api/webhooks/run/telemetry"),
         };
         let measurement = AllocationMeasurement::start();
         let outcome = upload_network_logs(&client, run_id, "allocation-test-token", &path).await;

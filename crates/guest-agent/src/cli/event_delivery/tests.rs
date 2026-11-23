@@ -82,7 +82,7 @@ fn assert_failed_batch(report: &EventDeliveryReport, acknowledged: Option<u32>) 
 async fn finish_wakes_failed_batch_backoff_without_advancing_time() {
     let server = MockServer::start_async().await;
     let failed = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(500);
     });
     let runtime = start(&server);
@@ -107,13 +107,13 @@ async fn close_during_backoff_drains_later_events_without_retrying_failed_batch(
     let server = MockServer::start_async().await;
     let failed = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .json_body_includes(r#"{"events":[{"sequenceNumber":1}]}"#);
         then.status(500);
     });
     let later = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .json_body_includes(r#"{"events":[{"sequenceNumber":2}]}"#);
         then.status(200);
     });
@@ -142,7 +142,7 @@ async fn close_during_backoff_drains_later_events_without_retrying_failed_batch(
 async fn backoff_expiry_retries_while_execution_continues() {
     let server = MockServer::start_async().await;
     let failed = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(500);
     });
     let runtime = start(&server);
@@ -151,7 +151,7 @@ async fn backoff_expiry_retries_while_execution_continues() {
     failed.delete_async().await;
     let recovered = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/events")
+            .path("/api/webhooks/run/events")
             .json_body_includes(r#"{"events":[{"sequenceNumber":1}]}"#);
         then.status(200);
     });

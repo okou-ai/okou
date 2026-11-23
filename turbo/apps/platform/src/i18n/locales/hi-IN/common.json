@@ -2286,9 +2286,11 @@
     "messageDocument": {
       "chatThread": "[चैट थ्रेड: {{title}}]",
       "file": "[फ़ाइल: {{filename}}]",
+      "pauseVoice": "वॉइस मैसेज रोकें",
+      "playVoice": "वॉइस मैसेज चलाएँ",
+      "retryVoice": "वॉइस मैसेज फिर से चलाएँ",
       "template": "[टेम्पलेट: {{title}}]",
-      "voice": "वॉइस मैसेज",
-      "voiceClip": "वॉइस क्लिप {{index}}"
+      "voice": "वॉइस मैसेज"
     },
     "newChat": "नई चैट",
     "origins": {

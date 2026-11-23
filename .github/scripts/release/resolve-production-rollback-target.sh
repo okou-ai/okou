@@ -152,6 +152,7 @@ readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-g
 readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
+readonly RUN_WEBHOOK_PATHS_PATH=.github/rollback-floors/run-webhook-callbacks
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
 readonly HOSTED_SITE_URL_ROUTING_PATH=.github/rollback-floors/hosted-site-url-routing
 readonly DESKTOP_MIGRATION_HOP_PATH=turbo/apps/api/src/signals/services/desktop-electron-migration-release.ts
@@ -797,6 +798,16 @@ if ! git merge-base --is-ancestor "$browser_session_mutations_commit" "$TARGET_C
   fail "Rollback target predates the Browser session mutation contract: ${browser_session_mutations_commit}."
 fi
 
+# Paired rollback can promote the API before all outgoing Runners exit.
+run_webhook_paths_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$RUN_WEBHOOK_PATHS_PATH" | sed -n '1p')
+if [[ ! "$run_webhook_paths_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Run webhook paths on main."
+fi
+if ! git merge-base --is-ancestor "$run_webhook_paths_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Run webhook paths: ${run_webhook_paths_commit}."
+fi
+
 # Host Worker aliases resolve through the API even while URL editing is disabled.
 # Earlier APIs cannot authorize a renamed site or preserve it on publication.
 hosted_site_url_routing_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -1261,6 +1272,23 @@ if ! git merge-base --is-ancestor "$agent_connector_schema_floor" origin/main; t
 fi
 if ! git merge-base --is-ancestor "$agent_connector_schema_floor" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Agent connector schema retirement: ${agent_connector_schema_floor}."
+fi
+
+# #49933 removed every API reader of the Agent profile copy and metadata
+# function that migration 1616 created. API 2.103.1 and 2.103.2 still query
+# them, so neither can serve after that storage is dropped.
+agent_api_profile_floor_path=.github/rollback-floors/agent-api-profile-independent-api
+if ! agent_api_profile_floor=$(git show "origin/main:${agent_api_profile_floor_path}"); then
+  fail "Cannot read the Agent API profile rollback floor from main."
+fi
+if [[ ! "$agent_api_profile_floor" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid Agent API profile rollback floor."
+fi
+if ! git merge-base --is-ancestor "$agent_api_profile_floor" origin/main; then
+  fail "Agent API profile rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$agent_api_profile_floor" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Agent API profile retirement: ${agent_api_profile_floor}."
 fi
 
 deployments=$(curl -fsS --get "https://api.vercel.com/v6/deployments" \

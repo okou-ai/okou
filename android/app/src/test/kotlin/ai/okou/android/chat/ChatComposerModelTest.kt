@@ -21,6 +21,7 @@ import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -51,6 +52,7 @@ class ChatComposerModelTest {
         val creates = mutableListOf<CreateThreadRequest>()
         val accepted = mutableMapOf<String, SendRequestVariant1>()
         val gates = mutableListOf<CompletableDeferred<Unit>>()
+        var readinessFailure: Exception? = null
         val drafts = mutableMapOf<ServerDraftTarget, ai.okou.android.api.generated.ComposerDraft>()
         val saves = mutableListOf<Pair<ServerDraftTarget, String>>()
         var draftRead: suspend (ServerDraftTarget) -> ai.okou.android.api.generated.ComposerDraft =
@@ -78,7 +80,10 @@ class ChatComposerModelTest {
             InputObservation(thread, event, if (event in accepted) TextDisposition.Queued else null)
         }
 
-        override suspend fun newChatReady() = true
+        override suspend fun newChatReady(): Boolean {
+            readinessFailure?.let { throw it }
+            return true
+        }
 
         override suspend fun composerDraft(target: ServerDraftTarget) = draftRead(target)
 
@@ -211,6 +216,49 @@ class ChatComposerModelTest {
             assertEquals("", model.uiState.value.entry(existing).text)
             assertEquals("", service.drafts[remote]!!.plainText())
             assertEquals(listOf("older", ""), service.saves.map { it.second })
+        }
+
+    @Test
+    fun workflowPrefillWaitsForTheQueuedReadAndRequiresAReadyWorkspace() =
+        check { service, _, create ->
+            val target = ComposerTarget()
+            val initial = CompletableDeferred<Unit>()
+            val refresh = CompletableDeferred<Unit>()
+            var reads = 0
+            service.draftRead = {
+                when (++reads) {
+                    1 -> {
+                        initial.await()
+                        plainDraftDocument("Initial draft")
+                    }
+                    else -> {
+                        refresh.await()
+                        plainDraftDocument("Current draft")
+                    }
+                }
+            }
+            val model = create(false, identity)
+            model.open(target)
+            runCurrent()
+            val prefill = async { model.prefillNew("/release-review ") }
+            runCurrent()
+            initial.complete(Unit)
+            runCurrent()
+            assertFalse(prefill.isCompleted)
+
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(ComposerPrefillResult.Ready, prefill.await())
+            assertEquals("/release-review Current draft", model.uiState.value.entry(target).text)
+            advanceTimeBy(500)
+            runCurrent()
+
+            service.readinessFailure =
+                ApiFailure.Network(IOException("Could not check workspace readiness"))
+            val failed = async { model.prefillNew("/another-workflow ") }
+            runCurrent()
+            assertEquals(ComposerPrefillResult.NetworkFailed, failed.await())
+            assertEquals("/release-review Current draft", model.uiState.value.entry(target).text)
         }
 
     @Test

@@ -10,6 +10,84 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.104.1](https://github.com/okou-ai/okou/compare/api-v2.104.0...api-v2.104.1) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.1
+    * @okouai/core bumped to 8.859.9
+    * @okouai/db bumped to 2.58.10
+    * @okouai/pi-agent-runtime bumped to 1.52.39
+
+## [2.104.0](https://github.com/okou-ai/okou/compare/api-v2.103.7...api-v2.104.0) (2026-11-22)
+
+
+### Features
+
+* **api:** authorize private voice clip playback for zero ([#50024](https://github.com/okou-ai/okou/issues/50024)) ([de960f7](https://github.com/okou-ai/okou/commit/de960f7eba38bd0f32afe65e2555cdae338388df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.104.0
+    * @okouai/core bumped to 8.859.8
+    * @okouai/db bumped to 2.58.9
+    * @okouai/pi-agent-runtime bumped to 1.52.38
+
+## [2.103.7](https://github.com/okou-ai/okou/compare/api-v2.103.6...api-v2.103.7) (2026-11-22)
+
+
+### Bug Fixes
+
+* **api:** frame voice clips as the user message ([#50020](https://github.com/okou-ai/okou/issues/50020)) ([925a41c](https://github.com/okou-ai/okou/commit/925a41cd3cfe24df9bc3401324450839690b1e47))
+
+
+### Refactoring
+
+* **api:** use run capabilities for personal resources ([#50021](https://github.com/okou-ai/okou/issues/50021)) ([e870be5](https://github.com/okou-ai/okou/commit/e870be51a01a822242d29089113bfc3e059b8a8f))
+* move rust run callbacks to run webhook paths ([#50022](https://github.com/okou-ai/okou/issues/50022)) ([ea009d1](https://github.com/okou-ai/okou/commit/ea009d1a44ab6b2a7164f03033a47a043ed09355))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.103.1
+    * @okouai/core bumped to 8.859.7
+    * @okouai/db bumped to 2.58.8
+    * @okouai/pi-agent-runtime bumped to 1.52.37
+
+## [2.103.6](https://github.com/okou-ai/okou/compare/api-v2.103.5...api-v2.103.6) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.58.7
+
+## [2.103.5](https://github.com/okou-ai/okou/compare/api-v2.103.4...api-v2.103.5) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.103.0
+    * @okouai/core bumped to 8.859.6
+    * @okouai/db bumped to 2.58.6
+    * @okouai/pi-agent-runtime bumped to 1.52.36
+
 ## [2.103.4](https://github.com/okou-ai/okou/compare/api-v2.103.3...api-v2.103.4) (2026-11-22)
 
 

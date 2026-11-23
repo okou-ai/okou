@@ -26,6 +26,7 @@ import ai.okou.android.preferences.PreferenceChange
 import ai.okou.android.preferences.appearance
 import ai.okou.android.settings.DefaultModelStore
 import ai.okou.android.settings.WorkspaceSettingsModel
+import ai.okou.android.workflows.WorkflowModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
@@ -76,6 +77,7 @@ data class ReadyWorkspace(
     val artifacts: ArtifactCatalogModel,
     val chatArtifacts: ArtifactCatalogModel,
     val settings: WorkspaceSettingsModel,
+    val workflows: WorkflowModel?,
     val connectors: ConnectorModel? = null,
 )
 
@@ -532,6 +534,16 @@ class SessionModel(
                     )
                     .also { it.defaultModel.foreground(foreground.value) }
             }
+        val workflows =
+            owner.workflowService?.let { service ->
+                store.workspaceModel {
+                    WorkflowModel(
+                        service,
+                        authorized = { current(ticket, snapshot) },
+                        onFailure = { workspaceFailure(ticket, snapshot, it) },
+                    )
+                }
+            }
         val connectors =
             owner.connectors?.let { service ->
                 store.workspaceModel {
@@ -560,7 +572,8 @@ class SessionModel(
                         opened.artifacts,
                         opened.chatArtifacts,
                         settings,
-                        connectors,
+                        workflows = workflows,
+                        connectors = connectors,
                     ),
                 working = false,
                 cachedAppearance = null,

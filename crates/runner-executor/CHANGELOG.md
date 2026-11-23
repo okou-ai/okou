@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.23.17](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.16...runner-executor-v0.23.17) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+## [0.23.16](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.15...runner-executor-v0.23.16) (2026-11-22)
+
 ## [0.23.15](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.14...runner-executor-v0.23.15) (2026-11-22)
 
 ## [0.23.14](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.13...runner-executor-v0.23.14) (2026-11-22)

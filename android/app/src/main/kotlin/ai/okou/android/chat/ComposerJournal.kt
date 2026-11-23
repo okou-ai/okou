@@ -89,6 +89,7 @@ enum class ComposerContext {
     Ready,
     Unavailable,
     Failed,
+    NetworkFailed,
 }
 
 data class ComposerState(

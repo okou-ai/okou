@@ -48,7 +48,12 @@ class ChatComposerModel(
     fun recover(target: ComposerTarget, failureId: String, reset: Boolean = false) =
         owner.recover(connection, target, failureId, reset)
 
-    fun open(target: ComposerTarget) = owner.open(connection, target)
+    fun open(target: ComposerTarget) {
+        owner.open(connection, target)
+    }
+
+    internal suspend fun prefillNew(prefix: String): ComposerPrefillResult =
+        owner.prefillNew(connection, prefix)
 
     fun edit(target: ComposerTarget, text: String) = owner.edit(connection, target, text)
 

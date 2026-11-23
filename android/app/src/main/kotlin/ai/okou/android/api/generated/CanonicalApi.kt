@@ -203,6 +203,61 @@ internal interface CanonicalApi {
         @Query("hostname") `queryHostname`: String,
     ): Response<ArtifactSitePreview>
 
+    @GET("/api/connectors/connected")
+    suspend fun `connectedConnectors`(
+        @Header("Authorization") token: String
+    ): Response<ConnectedConnectors>
+
+    @GET("/api/workflows")
+    suspend fun `workflowsWire`(
+        @Header("Authorization") token: String,
+        @QueryMap parameters: Map<String, String>,
+    ): Response<Workflows>
+
+    @GET("/api/workflows/{workflowId}")
+    suspend fun `workflow`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+    ): Response<WorkflowDetail>
+
+    @PATCH("/api/workflows/{workflowId}")
+    suspend fun `updateWorkflow`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+        @Body body: UpdateWorkflowRequest,
+    ): Response<WorkflowDetail>
+
+    @GET("/api/workflow-automations")
+    suspend fun `workspaceWorkflowAutomations`(
+        @Header("Authorization") token: String
+    ): Response<WorkspaceWorkflowAutomations>
+
+    @POST("/api/workflows/{workflowId}/automations")
+    suspend fun `createWorkflowAutomation`(
+        @Header("Authorization") token: String,
+        @Path("workflowId") `pathWorkflowId`: String,
+        @Body body: CreateWorkflowAutomationRequest,
+    ): Response<WorkflowAutomation>
+
+    @PATCH("/api/workflow-automations/{id}")
+    suspend fun `updateWorkflowAutomation`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+        @Body body: UpdateWorkflowAutomationRequest,
+    ): Response<WorkflowAutomation>
+
+    @POST("/api/workflow-automations/{id}/enable")
+    suspend fun `enableWorkflowAutomation`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<WorkflowAutomation>
+
+    @POST("/api/workflow-automations/{id}/disable")
+    suspend fun `disableWorkflowAutomation`(
+        @Header("Authorization") token: String,
+        @Path("id") `pathId`: String,
+    ): Response<WorkflowAutomation>
+
     @GET("/api/chat-drafts/composer")
     suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
@@ -863,6 +918,30 @@ internal fun ResolveArtifactReferenceQuery.toQueryParameters(): Map<String, Stri
             .count { it } == 1
     ) {
         "Invalid ResolveArtifactReferenceQuery"
+    }
+    return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
+}
+
+internal suspend fun CanonicalApi.`workflows`(
+    token: String,
+    query: WorkflowsQuery,
+): Response<Workflows> = `workflowsWire`(token, query.toQueryParameters())
+
+internal fun WorkflowsQuery.toQueryParameters(): Map<String, String> {
+    val value = Json.encodeToJsonElement(WorkflowsQuery.serializer(), this) as JsonObject
+    require(
+        listOf(
+                (value.keys.all { it in setOf("scope") } &&
+                    (!value.containsKey("scope") ||
+                        value["scope"].let { field ->
+                            (field is JsonPrimitive &&
+                                field.isString &&
+                                field.content == "workspace")
+                        }))
+            )
+            .count { it } == 1
+    ) {
+        "Invalid WorkflowsQuery"
     }
     return value.mapValues { (_, field) -> (field as JsonPrimitive).content }
 }

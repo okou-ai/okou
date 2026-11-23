@@ -90,20 +90,20 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
 
     let _heartbeat = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/heartbeat")
+            .path("/api/webhooks/run/heartbeat")
             .json_body_includes(format!(r#"{{"runId":"{}"}}"#, scenario.run_id));
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
     let _events = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/events");
+        when.method(POST).path("/api/webhooks/run/events");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200)
             .header("Content-Type", "application/json")
             .json_body(json!({}));
@@ -112,7 +112,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
     let combined_complete_order = Arc::clone(&request_order);
     let combined_complete = server.mock(move |when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .header("Authorization", "Bearer test-token")
             .json_body_includes(format!(
                 r#"{{"runId":"{}","exitCode":1,"completion":{{"cliAgentSessionId":"{}"}}}}"#,
@@ -133,7 +133,7 @@ async fn run_scenario(scenario: Scenario) -> Result<(), Box<dyn std::error::Erro
     let fallback_complete_order = Arc::clone(&request_order);
     let fallback_complete = server.mock(move |when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .header("Authorization", "Bearer test-token")
             .is_true(move |request| {
                 let Ok(body) = serde_json::from_slice::<serde_json::Value>(request.body_ref())

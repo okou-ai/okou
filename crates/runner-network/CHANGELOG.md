@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.40](https://github.com/okou-ai/okou/compare/runner-network-v0.6.39...runner-network-v0.6.40) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+## [0.6.39](https://github.com/okou-ai/okou/compare/runner-network-v0.6.38...runner-network-v0.6.39) (2026-11-22)
+
 ## [0.6.38](https://github.com/okou-ai/okou/compare/runner-network-v0.6.37...runner-network-v0.6.38) (2026-11-21)
 
 ## [0.6.37](https://github.com/okou-ai/okou/compare/runner-network-v0.6.36...runner-network-v0.6.37) (2026-11-20)

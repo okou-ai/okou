@@ -30,6 +30,7 @@ home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-c
 member_memory_protocol_floor=$(<"${repo_root}/.github/rollback-floors/member-memory-dual-writer")
 widget_push_columns_floor=$(<"${repo_root}/.github/rollback-floors/ios-widget-push-columns-independent-api")
 agent_connector_schema_floor=$(<"${repo_root}/.github/rollback-floors/agent-connector-schema-independent-api")
+agent_api_profile_floor=$(<"${repo_root}/.github/rollback-floors/agent-api-profile-independent-api")
 
 cat >"${fake_bin}/git" <<'SH'
 #!/usr/bin/env bash
@@ -264,6 +265,12 @@ case "${1:-}" in
       else
         [ "${MOCK_AGENT_CONNECTOR_SCHEMA_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "$MOCK_AGENT_API_PROFILE_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_AGENT_API_PROFILE_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_AGENT_API_PROFILE_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_MEMBER_MEMORY_PROTOCOL_ON_MAIN:-1}" = "1" ]
@@ -326,6 +333,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "1414141414141414141414141414141414141414" ]; then
       [ "${MOCK_BROWSER_SESSION_MUTATIONS_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7" ]; then
+      [ "${MOCK_RUN_WEBHOOK_PATHS_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "5858585858585858585858585858585858585858" ]; then
       [ "${MOCK_HOSTED_SITE_URL_ROUTING_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "4343434343434343434343434343434343434343" ]; then
@@ -485,6 +494,8 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_PI_MEMORY_RETIRED_COMMIT-6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a}"
     elif [[ "$*" == *browser-session-mutations* ]]; then
       printf '%s\n' "${MOCK_BROWSER_SESSION_MUTATIONS_COMMIT-1414141414141414141414141414141414141414}"
+    elif [[ "$*" == *run-webhook-callbacks* ]]; then
+      printf '%s\n' "${MOCK_RUN_WEBHOOK_PATHS_COMMIT-a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7}"
     elif [[ "$*" == *hosted-site-url-routing* ]]; then
       printf '%s\n' "${MOCK_HOSTED_SITE_URL_ROUTING_COMMIT-5858585858585858585858585858585858585858}"
     elif [[ "$*" == *computer-use-command-notifications* ]]; then
@@ -537,6 +548,11 @@ case "${1:-}" in
     if [ "${2:-}" = "origin/main:.github/rollback-floors/agent-connector-schema-independent-api" ]; then
       [ "${MOCK_AGENT_CONNECTOR_SCHEMA_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_AGENT_CONNECTOR_SCHEMA_COMMIT-$MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/agent-api-profile-independent-api" ]; then
+      [ "${MOCK_AGENT_API_PROFILE_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_AGENT_API_PROFILE_COMMIT-$MOCK_AGENT_API_PROFILE_FLOOR}"
       exit 0
     fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/member-memory-dual-writer" ]; then
@@ -692,6 +708,7 @@ run_resolver() {
     MOCK_MEMBER_MEMORY_PROTOCOL_FLOOR="$member_memory_protocol_floor" \
     MOCK_WIDGET_PUSH_COLUMNS_FLOOR="$widget_push_columns_floor" \
     MOCK_AGENT_CONNECTOR_SCHEMA_FLOOR="$agent_connector_schema_floor" \
+    MOCK_AGENT_API_PROFILE_FLOOR="$agent_api_profile_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
@@ -1744,6 +1761,18 @@ if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
 fi
 
 : >"${tmp_dir}/boundaries.log"
+assert_failure "Cannot resolve the merged Run webhook paths" \
+  run_resolver "${tmp_dir}/run-webhook-paths-history.output" "MOCK_RUN_WEBHOOK_PATHS_COMMIT=invalid"
+[ ! -s "${tmp_dir}/run-webhook-paths-history.output" ] || fail "invalid Run webhook history must not publish outputs"
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the Run webhook paths" \
+  run_resolver "${tmp_dir}/run-webhook-paths-floor.output" MOCK_RUN_WEBHOOK_PATHS_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/run-webhook-paths-floor.output" ] || fail "incompatible Run webhook API must not publish outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Run webhook floor must fail before artifact or host access"
+fi
+
+: >"${tmp_dir}/boundaries.log"
 assert_failure "Cannot resolve the merged hosted-site URL routing contract" \
   run_resolver "${tmp_dir}/hosted-site-url-history.output" "MOCK_HOSTED_SITE_URL_ROUTING_COMMIT=invalid"
 [ ! -s "${tmp_dir}/hosted-site-url-history.output" ] || fail "invalid hosted-site URL history must not publish outputs"
@@ -2550,6 +2579,19 @@ for connector_schema_case in \
   [ ! -s "${tmp_dir}/agent-connector-schema-policy.output" ] || fail "invalid Agent connector schema floor must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Agent connector schema floor must reject before provider or host access"
+  fi
+done
+for agent_api_profile_case in \
+  "MOCK_AGENT_API_PROFILE_AVAILABLE=0|Cannot read the Agent API profile rollback floor from main" \
+  "MOCK_AGENT_API_PROFILE_COMMIT=invalid|Missing or invalid Agent API profile rollback floor" \
+  "MOCK_AGENT_API_PROFILE_ON_MAIN=0|Agent API profile rollback floor is not on main" \
+  "MOCK_AGENT_API_PROFILE_VALID=0|Rollback target predates the Agent API profile retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${agent_api_profile_case#*|}" \
+    run_resolver "${tmp_dir}/agent-api-profile-policy.output" "${agent_api_profile_case%%|*}"
+  [ ! -s "${tmp_dir}/agent-api-profile-policy.output" ] || fail "invalid Agent API profile floor must not publish outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "Agent API profile floor must reject before provider or host access"
   fi
 done
 

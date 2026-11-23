@@ -496,16 +496,16 @@ export const webhookSessionOutputContract = c.router({
 });
 
 /**
- * Webhook events contract for /api/webhooks/agent/events
+ * Webhook events contract for /api/webhooks/run/events
  */
 export const webhookEventsContract = c.router({
   /**
-   * POST /api/webhooks/agent/events
+   * POST /api/webhooks/run/events
    * Receive agent events from sandbox
    */
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/events",
+    path: "/api/webhooks/run/events",
     headers: authHeadersSchema,
     body: webhookEventsBodySchema,
     responses: {
@@ -525,16 +525,16 @@ export const webhookEventsContract = c.router({
 });
 
 /**
- * Webhook complete contract for /api/webhooks/agent/complete
+ * Webhook complete contract for /api/webhooks/run/complete
  */
 export const webhookCompleteContract = c.router({
   /**
-   * POST /api/webhooks/agent/complete
+   * POST /api/webhooks/run/complete
    * Handle agent run completion (success or failure)
    */
   complete: {
     method: "POST",
-    path: "/api/webhooks/agent/complete",
+    path: "/api/webhooks/run/complete",
     headers: authHeadersSchema,
     body: webhookCompleteBodySchema,
     responses: {
@@ -552,16 +552,16 @@ export const webhookCompleteContract = c.router({
 });
 
 /**
- * Webhook heartbeat contract for /api/webhooks/agent/heartbeat
+ * Webhook heartbeat contract for /api/webhooks/run/heartbeat
  */
 export const webhookHeartbeatContract = c.router({
   /**
-   * POST /api/webhooks/agent/heartbeat
+   * POST /api/webhooks/run/heartbeat
    * Receive heartbeat signals from sandbox
    */
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/heartbeat",
+    path: "/api/webhooks/run/heartbeat",
     headers: authHeadersSchema,
     body: object({
       runId: string().min(1, "runId is required"),
@@ -1122,3 +1122,25 @@ export const webhookUsageEventContract = c.router({
 });
 
 export type WebhookUsageEventContract = typeof webhookUsageEventContract;
+
+export const runWebhookContract = c.router({
+  events: webhookEventsContract.send,
+  complete: webhookCompleteContract.complete,
+  heartbeat: webhookHeartbeatContract.send,
+  sessionOutput: {
+    ...webhookSessionOutputContract.send,
+    path: "/api/webhooks/run/session-output",
+  },
+  telemetry: {
+    ...webhookTelemetryContract.send,
+    path: "/api/webhooks/run/telemetry",
+  },
+  storagePrepare: {
+    ...webhookStoragesPrepareContract.prepare,
+    path: "/api/webhooks/run/storages/prepare",
+  },
+  storageCommit: {
+    ...webhookStoragesCommitContract.commit,
+    path: "/api/webhooks/run/storages/commit",
+  },
+});

@@ -26,8 +26,7 @@ async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
                 missing_root_policy: None,
             });
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/prepare");
+            when.method(POST).path("/api/webhooks/run/storages/prepare");
             if name == "memory" {
                 then.status(409).json_body(json!({
                     "error": {"code": "CONFLICT", "message": "Preparation conflict"},
@@ -40,8 +39,7 @@ async fn other_artifact_and_memory_prepare_conflicts_still_fail_finalization() {
             }
         });
         server.mock(|when, then| {
-            when.method(POST)
-                .path("/api/webhooks/agent/storages/commit");
+            when.method(POST).path("/api/webhooks/run/storages/commit");
             then.status(409).json_body(json!({
                 "error": {"code": "CONFLICT", "message": "Artifact conflict"},
             }));
@@ -75,7 +73,7 @@ async fn pi_finalization_reports_full_combined_completion_payload() {
 
     let complete = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 json!({
                     "runId": "test-run-001",
@@ -128,7 +126,7 @@ async fn combined_finalization_accepts_terminal_acknowledgement_without_finaliza
     guest_agent::paths::write_private(session_id_file(), session_id).unwrap();
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(
                 r#"{"completion":{"cliAgentSessionHistoryDisposition":"native_only"}}"#,
             );
@@ -213,7 +211,7 @@ async fn explicit_runtime_with_conflicting_process_env_child() {
 
     let complete_mock = server.mock(|when, then| {
         when.method(POST)
-            .path("/api/webhooks/agent/complete")
+            .path("/api/webhooks/run/complete")
             .json_body_includes(r#"{"runId":"captured-run"}"#)
             .json_body_includes(r#"{"completion":{"cliAgentType":"claude-code"}}"#)
             .json_body_includes(r#"{"completion":{"cliAgentSessionId":"captured-session"}}"#);

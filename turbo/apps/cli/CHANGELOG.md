@@ -1,5 +1,54 @@
 # Changelog
 
+## [10.36.9](https://github.com/okou-ai/okou/compare/cli-v10.36.8...cli-v10.36.9) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.104.1
+    * @okouai/core bumped to 8.859.9
+    * @okouai/pi-agent-runtime bumped to 1.52.39
+
+## [10.36.8](https://github.com/okou-ai/okou/compare/cli-v10.36.7...cli-v10.36.8) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.104.0
+    * @okouai/core bumped to 8.859.8
+    * @okouai/pi-agent-runtime bumped to 1.52.38
+
+## [10.36.7](https://github.com/okou-ai/okou/compare/cli-v10.36.6...cli-v10.36.7) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.103.1
+    * @okouai/core bumped to 8.859.7
+    * @okouai/pi-agent-runtime bumped to 1.52.37
+
+## [10.36.6](https://github.com/okou-ai/okou/compare/cli-v10.36.5...cli-v10.36.6) (2026-11-22)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.103.0
+    * @okouai/core bumped to 8.859.6
+    * @okouai/pi-agent-runtime bumped to 1.52.36
+
 ## [10.36.5](https://github.com/okou-ai/okou/compare/cli-v10.36.4...cli-v10.36.5) (2026-11-22)
 
 

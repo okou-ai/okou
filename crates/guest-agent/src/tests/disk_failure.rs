@@ -257,7 +257,7 @@ async fn record_first_completion(
     let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
     let recorded = Arc::clone(&requests);
     let complete = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/complete");
+        when.method(POST).path("/api/webhooks/run/complete");
         then.respond_with(move |request| {
             recorded
                 .lock()
@@ -275,7 +275,7 @@ async fn record_first_completion(
         });
     });
     let _telemetry = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/telemetry");
+        when.method(POST).path("/api/webhooks/run/telemetry");
         then.status(200).json_body(json!({}));
     });
     let masker = Arc::new(masker::SecretMasker::from_config(&config));

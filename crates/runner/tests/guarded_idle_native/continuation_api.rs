@@ -196,7 +196,7 @@ async fn respond(
         let run = value.get("runId").and_then(Value::as_str).ok_or_else(|| io::Error::other("native request has no original run"))?.to_string();
         uuid::Uuid::parse_str(&run)?;
         match path {
-            "/api/webhooks/agent/complete" => {
+            "/api/webhooks/run/complete" => {
                 if value.pointer("/completion/cliAgentSessionHistoryDisposition").and_then(Value::as_str) != Some("native_only") || !value.get("exitCode").is_some_and(Value::is_i64) {
                     return Err(io::Error::other("native completion is missing current identity metadata").into());
                 }
@@ -205,7 +205,7 @@ async fn respond(
                 state.completions.insert(run, value);
                 Ok(Reply::Json(json!({"success": true, "status": status})))
             }
-            "/api/webhooks/agent/storages/prepare" => {
+            "/api/webhooks/run/storages/prepare" => {
                 let typed: storages::prepare::Request = serde_json::from_value(value)?;
                 let version = hex::encode(Sha256::digest(serde_json::to_vec(&typed.files)?));
                 state.storage_preparations.insert(run.clone(), typed);
@@ -214,7 +214,7 @@ async fn respond(
                     "manifest": {"key": "manifest", "presignedUrl": format!("{base}/storage-upload/{run}-manifest")}
                 }})))
             }
-            "/api/webhooks/agent/storages/commit" => {
+            "/api/webhooks/run/storages/commit" => {
                 let typed: storages::commit::Request = serde_json::from_value(value)?;
                 let prepared = state.storage_preparations.get(&run).ok_or_else(|| io::Error::other("native storage commit was not prepared"))?;
                 if prepared.files != typed.files
@@ -224,7 +224,7 @@ async fn respond(
                 }
                 Ok(Reply::Json(json!({"success": true, "versionId": typed.version_id, "storageName": "workspace", "size": typed.files.iter().map(|f| f.size).sum::<u64>(), "fileCount": typed.files.len()})))
             }
-            "/api/webhooks/agent/events" | "/api/webhooks/agent/heartbeat" | "/api/webhooks/agent/telemetry" => Ok(Reply::Json(json!({}))),
+            "/api/webhooks/run/events" | "/api/webhooks/run/heartbeat" | "/api/webhooks/run/telemetry" => Ok(Reply::Json(json!({}))),
             _ => Err(io::Error::other(format!("unexpected native synthetic route: {path}")).into()),
         }
     }.await;

@@ -17,7 +17,7 @@ async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse()
     });
     api.mock(|when, then| {
         when.method(httpmock::Method::POST)
-            .path("/api/webhooks/agent/telemetry");
+            .path("/api/webhooks/run/telemetry");
         then.status(200)
             .json_body(serde_json::json!({"success": true, "id": "test"}));
     });

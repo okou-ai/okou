@@ -2,11 +2,11 @@ use api_contracts::{Method, ResolvedRoute, RouteTemplate, generated::routes};
 
 #[test]
 fn exposes_generated_webhook_route_constants() {
-    let route = routes::webhooks::agent::events::SEND;
+    let route = routes::webhooks::run::events::SEND;
 
     assert_eq!(route.method, Method::Post);
     assert_eq!(route.method.as_str(), "POST");
-    assert_eq!(route.path, "/api/webhooks/agent/events");
+    assert_eq!(route.path, "/api/webhooks/run/events");
 }
 
 #[test]
@@ -25,19 +25,19 @@ fn exposes_generated_runner_route_constants() {
 
 #[test]
 fn generated_routes_build_urls_from_base_api_url() {
-    let route = routes::webhooks::agent::telemetry::SEND;
+    let route = routes::webhooks::run::telemetry::SEND;
 
     assert_eq!(
         route.url("https://api.vm0.dev"),
-        "https://api.vm0.dev/api/webhooks/agent/telemetry"
+        "https://api.vm0.dev/api/webhooks/run/telemetry"
     );
     assert_eq!(
         route.url("https://api.vm0.dev/"),
-        "https://api.vm0.dev/api/webhooks/agent/telemetry"
+        "https://api.vm0.dev/api/webhooks/run/telemetry"
     );
     assert_eq!(
         route.url(""),
-        "/api/webhooks/agent/telemetry",
+        "/api/webhooks/run/telemetry",
         "empty base URL must preserve the old relative-path behavior"
     );
 }

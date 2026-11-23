@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.12.96](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.95...codex-mock-v0.12.96) (2026-11-22)
+
+## [0.12.95](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.94...codex-mock-v0.12.95) (2026-11-22)
+
+## [0.12.94](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.93...codex-mock-v0.12.94) (2026-11-22)
+
+
+### Refactoring
+
+* **codex-mock:** share experimental server notification construction ([#50003](https://github.com/okou-ai/okou/issues/50003)) ([d4f1bad](https://github.com/okou-ai/okou/commit/d4f1bad001dce43b7712b26b100e8435b7987d4b))
+
 ## [0.12.93](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.92...codex-mock-v0.12.93) (2026-11-22)
 
 

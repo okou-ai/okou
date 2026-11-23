@@ -2277,9 +2277,11 @@
     "messageDocument": {
       "chatThread": "[聊天會話：{{title}}]",
       "file": "[檔案：{{filename}}]",
+      "pauseVoice": "暫停語音訊息",
+      "playVoice": "播放語音訊息",
+      "retryVoice": "重試語音播放",
       "template": "[模板：{{title}}]",
-      "voice": "語音訊息",
-      "voiceClip": "第 {{index}} 段語音"
+      "voice": "語音訊息"
     },
     "newChat": "新建聊天",
     "origins": {

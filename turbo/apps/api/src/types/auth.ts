@@ -1,4 +1,3 @@
-import type { SingleAgentRuntimeContext } from "@okouai/api-contracts/contracts/single-agent";
 import type { Capability } from "@okouai/api-contracts/contracts/capabilities";
 import type { WorkflowImportSource } from "@okouai/api-contracts/contracts/workflows";
 
@@ -42,30 +41,28 @@ interface SandboxAuthContext {
   readonly runId: string;
 }
 
-export type AgentAuthContext = SingleAgentRuntimeContext &
-  (
-    | {
-        readonly tokenType: "agent";
-        readonly userId: string;
-        readonly orgId: string;
-        readonly orgRole?: ApiOrgRole;
-        readonly runId: string;
-        readonly capabilities: readonly Capability[];
-        readonly phoneUseDeviceId?: string;
-        readonly phoneUseGrantId?: string;
-        readonly computerUseHostId?: string;
-        readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
-        readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
-      }
-    | {
-        readonly tokenType: "agent";
-        readonly userId: string;
-        readonly runId: string;
-        readonly orgId?: undefined;
-        readonly orgRole?: undefined;
-        readonly capabilities?: undefined;
-      }
-  );
+export type AgentAuthContext =
+  | {
+      readonly tokenType: "agent";
+      readonly userId: string;
+      readonly orgId: string;
+      readonly orgRole?: ApiOrgRole;
+      readonly runId: string;
+      readonly capabilities: readonly Capability[];
+      readonly phoneUseDeviceId?: string;
+      readonly phoneUseGrantId?: string;
+      readonly computerUseHostId?: string;
+      readonly customConnectorSourceIds?: Readonly<Record<string, string>>;
+      readonly builtinConnectorSourceIds?: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly tokenType: "agent";
+      readonly userId: string;
+      readonly runId: string;
+      readonly orgId?: undefined;
+      readonly orgRole?: undefined;
+      readonly capabilities?: undefined;
+    };
 
 export type AuthContext =
   | {
@@ -103,7 +100,7 @@ export interface FirewallAuth extends RunIdentity {
   readonly scope: "firewall";
 }
 
-export interface AgentAuth extends SingleAgentRuntimeContext {
+export interface AgentAuth {
   readonly userId: string;
   readonly runId: string;
   readonly orgId: string;

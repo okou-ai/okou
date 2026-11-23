@@ -6,10 +6,8 @@ import {
   runnersHeartbeatContract,
 } from "../contracts/runners";
 import {
-  webhookCompleteContract,
-  webhookEventsContract,
+  runWebhookContract,
   webhookFirewallAuthContract,
-  webhookHeartbeatContract,
   webhookStoragesCommitContract,
   webhookStoragesPrepareContract,
   webhookTelemetryContract,
@@ -75,19 +73,39 @@ const runtimeServiceRouteBindings = [
     route: runnersConnectorRuntimeSyncContract.sync,
   },
   {
-    id: "webhooks.agent.events",
+    id: "webhooks.run.events",
     owner: "guest-agent",
-    route: webhookEventsContract.send,
+    route: runWebhookContract.events,
   },
   {
-    id: "webhooks.agent.complete",
+    id: "webhooks.run.complete",
     owner: "guest-agent",
-    route: webhookCompleteContract.complete,
+    route: runWebhookContract.complete,
   },
   {
-    id: "webhooks.agent.heartbeat",
+    id: "webhooks.run.heartbeat",
     owner: "guest-agent",
-    route: webhookHeartbeatContract.send,
+    route: runWebhookContract.heartbeat,
+  },
+  {
+    id: "webhooks.run.sessionOutput",
+    owner: "guest-agent",
+    route: runWebhookContract.sessionOutput,
+  },
+  {
+    id: "webhooks.run.telemetry",
+    owner: "guest-agent",
+    route: runWebhookContract.telemetry,
+  },
+  {
+    id: "webhooks.run.storages.prepare",
+    owner: "guest-agent",
+    route: runWebhookContract.storagePrepare,
+  },
+  {
+    id: "webhooks.run.storages.commit",
+    owner: "guest-agent",
+    route: runWebhookContract.storageCommit,
   },
   {
     id: "webhooks.agent.telemetry",

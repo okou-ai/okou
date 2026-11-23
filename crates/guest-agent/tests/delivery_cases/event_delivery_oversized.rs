@@ -131,12 +131,12 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     let mut delivered = Vec::new();
     let mut completions = Vec::new();
     for request in requests {
-        if request.path == "/api/webhooks/agent/events" {
+        if request.path == "/api/webhooks/run/events" {
             assert!(request.body.len() <= LIMIT);
             assert!(!request.body.contains(SECRET));
             let mut body: Value = serde_json::from_str(&request.body)?;
             delivered.append(body["events"].as_array_mut().ok_or("missing events")?);
-        } else if request.path == "/api/webhooks/agent/complete" {
+        } else if request.path == "/api/webhooks/run/complete" {
             completions.push(serde_json::from_str::<Value>(&request.body)?);
         }
     }

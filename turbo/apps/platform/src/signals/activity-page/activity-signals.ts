@@ -1,7 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { logsByIdContract } from "@okouai/api-contracts/client/logs";
 import { activityDetailSchema } from "@okouai/api-contracts/validators/logs";
-import { runAgentEventsContract } from "@okouai/api-contracts/client/run-routes";
+import { runTelemetryEventsContract } from "@okouai/api-contracts/client/run-routes";
 import type {
   InitClientArgs,
   InitClientReturn,
@@ -25,7 +25,7 @@ import {
 const AGENT_EVENTS_PAGE_LIMIT = 100;
 
 type AgentEventsClient = InitClientReturn<
-  typeof runAgentEventsContract,
+  typeof runTelemetryEventsContract,
   InitClientArgs
 >;
 
@@ -58,7 +58,7 @@ async function fetchAgentEventPage(
   cursor: string | undefined,
 ): Promise<AgentEventsResponse> {
   const result = await accept(
-    client.getAgentEvents({
+    client.getTelemetryEvents({
       params: { id: runId },
       query: {
         limit: AGENT_EVENTS_PAGE_LIMIT,
@@ -111,7 +111,10 @@ export const activityEvents$ = computed(async (get) => {
   get(pageVersion$);
   const runId = get(currentRunId$);
   return runId
-    ? await fetchAgentEventBatch(get(apiClient$)(runAgentEventsContract), runId)
+    ? await fetchAgentEventBatch(
+        get(apiClient$)(runTelemetryEventsContract),
+        runId,
+      )
     : null;
 });
 

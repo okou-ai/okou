@@ -139,6 +139,7 @@ internal fun WorkspaceChatFeedback(
     snackbar: SnackbarHostState,
     showChatList: Boolean,
     showRowFeedback: Boolean,
+    showRowActionFailure: Boolean,
     confirmingProjectDelete: String?,
     dismissProjectDelete: () -> Unit,
 ) {
@@ -228,9 +229,9 @@ internal fun WorkspaceChatFeedback(
                     }
                 )
             val refreshLabel = if (failure.rejected) null else stringResource(R.string.chat_refresh)
-            LaunchedEffect(chats, failure, message, showRowFeedback) {
+            LaunchedEffect(chats, failure, message, showRowActionFailure) {
                 if (
-                    showRowFeedback &&
+                    showRowActionFailure &&
                         snackbar.showSnackbar(
                             message,
                             actionLabel = refreshLabel,

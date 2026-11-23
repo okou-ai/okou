@@ -29,15 +29,19 @@
     <string name="appearance_dark">어둡게</string>
     <string name="on_this_device">이 기기</string>
     <string name="retry">다시 시도</string>
-    <string name="auth_welcome">Okou에 오신 것을 환영합니다</string>
     <string name="auth_restoring">로그인 상태 복원 중…</string>
     <string name="auth_preparing_workspace">워크스페이스 준비 중…</string>
     <string name="auth_choose_workspace">워크스페이스 선택</string>
-    <string name="auth_no_workspace">아직 접근할 수 있는 워크스페이스가 없습니다.</string>
+    <string name="auth_no_workspace">아직 접근할 수 있는 워크스페이스가 없습니다</string>
+    <string name="auth_no_workspace_detail">브라우저에서 워크스페이스를 만들거나 초대를 수락한 후 Okou로 돌아오세요.</string>
     <string name="auth_workspace_setup">웹에서 워크스페이스 설정</string>
-    <string name="auth_access_removed">로그인 상태 또는 접근 권한이 변경되었습니다. 다시 로그인하거나 권한을 새로고침하세요.</string>
+    <string name="auth_access_removed">이 워크스페이스에 더 이상 접근할 수 없습니다</string>
+    <string name="auth_access_removed_detail">이 계정으로 계속 접근할 수 있는 워크스페이스를 확인하세요.</string>
     <string name="auth_update_required">계속하려면 Okou를 업데이트하세요.</string>
-    <string name="auth_unavailable">로그인 상태 또는 워크스페이스를 불러오지 못했습니다. 다시 시도하세요.</string>
+    <string name="auth_unavailable">로그인 상태 또는 워크스페이스를 불러오지 못했습니다</string>
+    <string name="auth_check_workspace">워크스페이스 확인</string>
+    <string name="auth_check_access">접근 권한 확인</string>
+    <string name="auth_sign_in_again">다시 로그인</string>
     <string name="auth_sign_out">로그아웃</string>
     <string name="auth_signing_out">로그아웃 중…</string>
     <string name="auth_workspace">현재 워크스페이스</string>
@@ -152,5 +156,6 @@
     <string name="instructions_save_when_online">인터넷에 연결하면 변경사항을 저장할 수 있습니다.</string>
     <string name="settings_timezone">시간대</string>
     <string name="settings_timezone_hint">새 예약 작업에 사용할 기본 시간대입니다.</string>
-    <string name="settings_timezone_utc">협정 세계시(UTC)</string>
+    <string name="settings_timezone_utc">협정 세계시</string>
+    <string name="settings_timezone_format">%1$s(UTC%2$s)</string>
 </resources>

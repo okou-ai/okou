@@ -7,7 +7,7 @@ import {
 import type { NetworkLogEntry } from "@okouai/api-contracts/contracts/runs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
-  runAgentEventsContract,
+  runTelemetryEventsContract,
   runContextContract,
   runNetworkLogsContract,
   type RunContextResponse,
@@ -124,14 +124,17 @@ test("A user can download all retained diagnostics for an older activity", async
   context.mocks.api(logsByIdContract.getById, ({ respond }) => {
     return respond(200, logDetail());
   });
-  context.mocks.api(runAgentEventsContract.getAgentEvents, ({ respond }) => {
-    return respond(200, {
-      events: [activityEvent()],
-      hasMore: false,
-      status: "completed",
-      lastEventSequence: 0,
-    });
-  });
+  context.mocks.api(
+    runTelemetryEventsContract.getTelemetryEvents,
+    ({ respond }) => {
+      return respond(200, {
+        events: [activityEvent()],
+        hasMore: false,
+        status: "completed",
+        lastEventSequence: 0,
+      });
+    },
+  );
   context.mocks.api(runContextContract.getContext, ({ respond }) => {
     return respond(200, runContext());
   });

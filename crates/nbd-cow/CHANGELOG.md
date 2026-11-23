@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.30](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.29...nbd-cow-v0.5.30) (2026-11-22)
+
+
+### Refactoring
+
+* **nbd-cow:** separate shutdown retries from file cleanup ([#50012](https://github.com/okou-ai/okou/issues/50012)) ([5ae4307](https://github.com/okou-ai/okou/commit/5ae430783348c70e2feabc8db0ad747a62a5489e))
+
 ## [0.5.29](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.28...nbd-cow-v0.5.29) (2026-11-18)
 
 ## [0.5.28](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.27...nbd-cow-v0.5.28) (2026-11-17)

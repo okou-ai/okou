@@ -1305,6 +1305,12 @@ describe("RUN-04: agent run telemetry families", () => {
       noCache: true,
       format: "tabular",
     });
+
+    const outgoingTab = await reads.rawApiRequest(
+      actor,
+      `/api/runs/${run.runId}/telemetry/agent?limit=1&order=asc`,
+    );
+    expect(outgoingTab).toStrictEqual({ status: 200, body: firstPage.body });
   });
 
   it.each(["asc", "desc"] as const)(
@@ -2606,7 +2612,6 @@ describe("RUN-04/OPS-01: agent run logs", () => {
       "automation-event",
       "web",
     ]);
-    expect(listed.body.filters).not.toHaveProperty("agents");
   });
 
   it("pages run logs and falls back from malformed cursors", async () => {

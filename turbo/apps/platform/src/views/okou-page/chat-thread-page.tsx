@@ -394,6 +394,7 @@ import {
   CHAT_THREAD_USER_MESSAGE_ACTIONS_CLASS,
   CHAT_THREAD_USER_MESSAGE_ROW_CLASS,
 } from "./chat-message-surface.tsx";
+import { VoiceMessagePlayer } from "./voice-message-player.tsx";
 import { SCROLL_FADE_Y_END } from "./scroll-fade.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
@@ -2816,17 +2817,48 @@ function ChatThreadRenderedEventGroups({
   thread: ChatPanelSignals;
 }) {
   const rows = useGet(thread.visibleRows$);
+  const layout = useGet(thread.transcriptPages.layout$);
+  const bindPages = useSet(thread.transcriptPages.containerOnRef$);
+  const bindPage = useSet(thread.transcriptPages.pageOnRef$);
+  const renderRow = (row: ChatThreadRowSignals) => {
+    return (
+      <ChatThreadRow key={row.model$.toString()} row={row} thread={thread} />
+    );
+  };
   return (
     <>
-      {rows.map((row) => {
-        return (
-          <ChatThreadRow
-            key={row.model$.toString()}
-            row={row}
-            thread={thread}
+      {layout ? (
+        <div ref={bindPages}>
+          <div
+            aria-hidden
+            data-transcript-spacer="before"
+            style={{ height: layout.before }}
           />
-        );
-      })}
+          {layout.pages.map((page, i) => {
+            return (
+              <div
+                key={page.key}
+                ref={bindPage}
+                data-transcript-page={page.key}
+                className={cn(
+                  "flex flex-col",
+                  CHAT_THREAD_MESSAGE_ROW_GAP_CLASS,
+                  (i < layout.pages.length - 1 || layout.after > 0) && "pb-6",
+                )}
+              >
+                {layout.rows[i]!.map(renderRow)}
+              </div>
+            );
+          })}
+          <div
+            aria-hidden
+            data-transcript-spacer="after"
+            style={{ height: layout.after }}
+          />
+        </div>
+      ) : (
+        rows.map(renderRow)
+      )}
     </>
   );
 }
@@ -6671,18 +6703,23 @@ function UserMessageAttachmentRow({
   attachments,
   onImageClick,
   testId,
+  children,
 }: {
   threadId: string;
   attachments: ResolvedMessageAttachment[];
   onImageClick: OpenMessageImagePreview;
   testId: string;
+  children?: ReactNode;
 }) {
-  if (attachments.length === 0) {
+  if (attachments.length === 0 && !children) {
     return null;
   }
 
   return (
-    <div className="flex flex-wrap justify-end gap-2" data-testid={testId}>
+    <div
+      className="flex flex-wrap items-center justify-end gap-2"
+      data-testid={testId}
+    >
       {attachments.map((a) => {
         return (
           <MessageAttachment
@@ -6693,6 +6730,7 @@ function UserMessageAttachmentRow({
           />
         );
       })}
+      {children}
     </div>
   );
 }
@@ -6701,13 +6739,17 @@ function UserMessageAttachments({
   threadId,
   attachments,
   onImageClick,
+  voicePlayer,
+  hasBody,
 }: {
   threadId: string;
   attachments: ReturnType<typeof userMessageRenderAttachments>;
   onImageClick: OpenMessageImagePreview;
+  voicePlayer: UserMessageRenderDocument["voicePlayer"];
+  hasBody: boolean;
 }) {
-  if (attachments.length === 0) {
-    return null;
+  if (attachments.length === 0 && (!voicePlayer || !hasBody)) {
+    return voicePlayer ? <VoiceMessagePlayer player={voicePlayer} /> : null;
   }
 
   // Keep the gap to the bubble or actions inside the attachment's hover surface.
@@ -6729,7 +6771,11 @@ function UserMessageAttachments({
         })}
         onImageClick={onImageClick}
         testId="message-file-attachments"
-      />
+      >
+        {voicePlayer ? (
+          <VoiceMessagePlayer player={voicePlayer} compact />
+        ) : null}
+      </UserMessageAttachmentRow>
     </div>
   );
 }
@@ -7485,6 +7531,8 @@ function UserMessageContent({
       <UserMessageAttachments
         threadId={threadId}
         attachments={elevatedAttachments}
+        voicePlayer={document.voicePlayer}
+        hasBody={hasBody}
         onImageClick={onImageClick}
       />
       {hasBody ? (

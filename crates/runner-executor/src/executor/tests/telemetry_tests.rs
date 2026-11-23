@@ -1634,7 +1634,7 @@ async fn execution_entries_preserve_start_telemetry_on_session_rejection() {
         }
         let mut payloads = Vec::new();
         for request in requests {
-            assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+            assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
             let (headers, body) = request.split_once("\r\n\r\n").unwrap();
             assert!(headers.lines().any(|line| {
                 line.eq_ignore_ascii_case("authorization: Bearer entry-parity-token")
@@ -1753,7 +1753,7 @@ async fn assert_startup_observation(
             resource_reports += 1;
             continue;
         }
-        assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+        assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
         assert_eq!(body["runId"], run_id.to_string());
         for operation in body["sandboxOperations"].as_array().unwrap() {
             assert_eq!(operation["is_first_run"], is_first_run);

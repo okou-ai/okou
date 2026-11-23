@@ -4,7 +4,6 @@ import {
   instructionsRequestSchema,
   instructionsResponseSchema,
 } from "../instructions";
-import { singleAgentRuntimeContextSchema } from "../single-agent";
 
 describe("personal Instructions wire contract", () => {
   it("preserves an intentional clear and its conditional-write version", () => {
@@ -34,12 +33,5 @@ describe("personal Instructions wire contract", () => {
       version: "opaque-revision",
     };
     expect(instructionsResponseSchema.parse(saved)).toStrictEqual(saved);
-  });
-
-  it("carries a personal Run snapshot while accepting existing legacy tokens", () => {
-    expect(
-      singleAgentRuntimeContextSchema.parse({ singleAgent: true }),
-    ).toStrictEqual({ singleAgent: true });
-    expect(singleAgentRuntimeContextSchema.parse({})).toStrictEqual({});
   });
 });

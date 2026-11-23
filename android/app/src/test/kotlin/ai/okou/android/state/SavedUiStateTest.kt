@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasText
@@ -54,6 +55,61 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class SavedUiStateTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @Test
+    fun searchKeepsTheLastResultsUntilTheImeCommits() {
+        val search = ChatSearchState()
+        var rows by
+            mutableStateOf(
+                listOf(
+                    searchResult("checklist", "Release checklist"),
+                    searchResult("feedback", "Customer feedback"),
+                )
+            )
+        compose.setContent {
+            OkouTheme(false) {
+                ChatTitleSearch(
+                    state =
+                        ChatListUiState(
+                            listPhase = ChatReadPhase.Ready,
+                            confirmedAt = 1,
+                            threadsByRecency = rows,
+                        ),
+                    search = search,
+                    widthDp = 400,
+                    listWidth = null,
+                    workspaceName = null,
+                    focusOnEntry = false,
+                    onFocused = {},
+                    onClose = {},
+                    onOpen = {},
+                    retry = {},
+                )
+            }
+        }
+        val field = compose.onNodeWithTag("chat_search_query").performClick().assertIsFocused()
+        val checklist = compose.onNodeWithText("Release checklist").assertIsDisplayed()
+        val feedback = compose.onNodeWithText("Customer feedback").assertIsDisplayed()
+
+        compose.runOnIdle {
+            search.edit(TextFieldValue("fabu", TextRange(4), TextRange(0, 4)))
+            rows = rows + searchResult("summary", "Release summary")
+        }
+        field.assertTextContains("fabu").assertIsFocused()
+        checklist.assertIsDisplayed()
+        feedback.assertIsDisplayed()
+        val summary = compose.onNodeWithText("Release summary")
+        summary.assertDoesNotExist()
+
+        compose.runOnIdle { rows = rows.filterNot { it.id == "feedback" } }
+        feedback.assertIsDisplayed()
+
+        compose.runOnIdle { search.edit(TextFieldValue("Release", TextRange(7))) }
+        field.assertTextContains("Release").assertIsFocused()
+        checklist.assertIsDisplayed()
+        summary.assertIsDisplayed()
+        feedback.assertDoesNotExist()
+    }
 
     @Test
     fun connectorSearchOnlyAppliesCommittedInput() {
@@ -97,21 +153,7 @@ class SavedUiStateTest {
         val restoration = StateRestorationTester(compose)
         var source by mutableStateOf(ChatListSource.Network)
         var rows by
-            mutableStateOf(
-                List(40) { index ->
-                    val date = "2026-11-13T00:00:00Z"
-                    ConfirmedChat(
-                        id = index.toString(),
-                        title = "$query $index",
-                        sortAt = date,
-                        createdAt = date,
-                        updatedAt = date,
-                        pinnedAt = null,
-                        archived = false,
-                        renamedAt = null,
-                    )
-                }
-            )
+            mutableStateOf(List(40) { index -> searchResult(index.toString(), "$query $index") })
         restoration.setContent {
             DisposableEffect(Unit) {
                 onDispose {
@@ -155,6 +197,20 @@ class SavedUiStateTest {
             compose.onNodeWithText("Recent chats").assertIsDisplayed()
             compose.onNodeWithText("$query newest").assertIsDisplayed()
         }
+    }
+
+    private fun searchResult(id: String, title: String): ConfirmedChat {
+        val date = "2026-11-13T00:00:00Z"
+        return ConfirmedChat(
+            id = id,
+            title = title,
+            sortAt = date,
+            createdAt = date,
+            updatedAt = date,
+            pinnedAt = null,
+            archived = false,
+            renamedAt = null,
+        )
     }
 
     @Test

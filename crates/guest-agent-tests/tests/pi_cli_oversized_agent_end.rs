@@ -167,7 +167,7 @@ fi
     .map_err(|_| std::io::Error::new(std::io::ErrorKind::TimedOut, "Pi CLI process timed out"))??;
     let mut delivered_events = Vec::new();
     for request in server.requests()? {
-        if request.path != "/api/webhooks/agent/events" {
+        if request.path != "/api/webhooks/run/events" {
             continue;
         }
         let body: Value = serde_json::from_str(&request.body)?;

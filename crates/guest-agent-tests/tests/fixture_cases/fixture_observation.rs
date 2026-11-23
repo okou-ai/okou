@@ -53,7 +53,7 @@ fn sequence_observation_preserves_order_and_u32_boundaries()
         "metadata":{"records":[{"sequenceNumber":3}]}
     });
     let request = RecordedRequest {
-        path: "/api/webhooks/agent/events".into(),
+        path: "/api/webhooks/run/events".into(),
         authorization: None,
         content_type: None,
         client_request_id: None,
@@ -86,7 +86,7 @@ fn sequence_observation_rejects_missing_malformed_and_out_of_range_metadata() {
         r#"{"events":[{"sequenceNumber":1},{"content":"missing metadata"}]}"#,
     ] {
         let request = RecordedRequest {
-            path: "/api/webhooks/agent/events".into(),
+            path: "/api/webhooks/run/events".into(),
             authorization: None,
             content_type: None,
             client_request_id: None,

@@ -2322,9 +2322,11 @@
     "messageDocument": {
       "chatThread": "[Fil de discussion : {{title}}]",
       "file": "[Fichier : {{filename}}]",
+      "pauseVoice": "Mettre le message vocal en pause",
+      "playVoice": "Lire le message vocal",
+      "retryVoice": "Réessayer la lecture",
       "template": "[Modèle : {{title}}]",
-      "voice": "Message vocal",
-      "voiceClip": "Extrait audio {{index}}"
+      "voice": "Message vocal"
     },
     "newChat": "Nouvelle discussion",
     "origins": {

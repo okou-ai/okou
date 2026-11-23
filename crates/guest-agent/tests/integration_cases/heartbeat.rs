@@ -39,7 +39,7 @@ async fn heartbeat_first_success() {
     let observer_for_mock = observer.clone();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.respond_with(move |_req| {
             observer_for_mock.record();
             http_status(200)
@@ -94,7 +94,7 @@ async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
     let observer_for_mock = observer.clone();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.respond_with(move |_req| match observer_for_mock.record() {
             1 => json_http_response(
                 200,
@@ -297,7 +297,7 @@ async fn heartbeat_first_failure_fatal() {
     let server = api.server();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.status(500);
     });
 
@@ -343,7 +343,7 @@ async fn heartbeat_consecutive_failures_fatal() {
     let observer_for_mock = observer.clone();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.respond_with(move |_req| {
             if observer_for_mock.record() == 1 {
                 return http_status(200);
@@ -404,7 +404,7 @@ async fn heartbeat_recovery_resets_counter() {
     let observer_for_mock = observer.clone();
 
     let mock = server.mock(|when, then| {
-        when.method(POST).path("/api/webhooks/agent/heartbeat");
+        when.method(POST).path("/api/webhooks/run/heartbeat");
         then.respond_with(move |_req| match observer_for_mock.record() {
             2 | 3 | 5 | 6 | 7 => {
                 json_http_response(401, json!({"error": {"message": "Run expired"}}))

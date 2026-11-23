@@ -18,7 +18,10 @@ import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.encodeToJsonElement
 
@@ -4777,6 +4780,4454 @@ data class ArtifactSitePreview(
     val `previewImageUrl`: String? = null,
 )
 
+@Serializable
+data class ConnectedConnectorsBuiltinConnectorsItemIcon(
+    val `url`: String,
+    val `invertInDarkMode`: Boolean,
+    val `scale`: Double? = null,
+)
+
+@Serializable
+data class ConnectedConnectorsBuiltinConnectorsItem(
+    val `slug`: String,
+    val `label`: String,
+    val `icon`: ConnectedConnectorsBuiltinConnectorsItemIcon,
+    val `hasPermissions`: Boolean,
+)
+
+@Serializable
+data class ConnectedConnectorsCustomConnectorsItem(
+    val `id`: String,
+    val `slug`: String,
+    val `displayName`: String,
+    val `permissionBundleRef`: String?,
+    val `integrationManaged`: Boolean,
+)
+
+@Serializable
+data class ConnectedConnectors(
+    val `builtinConnectors`: List<ConnectedConnectorsBuiltinConnectorsItem>,
+    val `customConnectors`: List<ConnectedConnectorsCustomConnectorsItem>,
+)
+
+@Serializable
+enum class WorkflowSummaryVisibility {
+    @SerialName("public") PUBLIC,
+    @SerialName("private") PRIVATE,
+}
+
+@Serializable
+enum class WorkflowSummaryOfficialInstallationState {
+    @SerialName("installing") INSTALLING,
+    @SerialName("installed") INSTALLED,
+}
+
+@Serializable
+enum class WorkflowSummaryOfficialDefinitionLifecycle {
+    @SerialName("active") ACTIVE,
+    @SerialName("retired") RETIRED,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class WorkflowSummaryOfficial(
+    val `definitionName`: String,
+    val `installationState`: WorkflowSummaryOfficialInstallationState,
+    val `definitionLifecycle`: WorkflowSummaryOfficialDefinitionLifecycle,
+    val `readOnly`: CanonicalTrue,
+)
+
+@Serializable
+data class WorkflowSummaryShadowedBy(
+    val `id`: String,
+    val `name`: String,
+    val `displayName`: String?,
+)
+
+@Serializable
+enum class WorkflowSummaryImportSource {
+    @SerialName("claudeCode") CLAUDECODE,
+    @SerialName("codex") CODEX,
+}
+
+@Serializable
+data class WorkflowSummary(
+    val `id`: String,
+    val `name`: String,
+    val `displayName`: String?,
+    val `description`: String?,
+    val `visibility`: WorkflowSummaryVisibility,
+    val `ownerUserId`: String,
+    val `createdAt`: String,
+    val `canManage`: Boolean,
+    val `canPublish`: Boolean,
+    val `official`: WorkflowSummaryOfficial?,
+    val `shadowedBy`: WorkflowSummaryShadowedBy? = null,
+    val `importSource`: WorkflowSummaryImportSource?,
+)
+
+@Serializable
+enum class WorkflowAutomationRuleOriginReconciliationStatus {
+    @SerialName("current") CURRENT,
+    @SerialName("reconciling") RECONCILING,
+    @SerialName("needs_reconfiguration") NEEDS_RECONFIGURATION,
+    @SerialName("failed") FAILED,
+}
+
+@Serializable(with = WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer::class)
+sealed interface WorkflowAutomationRuleOriginParameterBindingsItemValue {
+    data class Variant1(val value: String) : WorkflowAutomationRuleOriginParameterBindingsItemValue
+
+    data class Variant2(val value: Long) : WorkflowAutomationRuleOriginParameterBindingsItemValue
+
+    data class Variant3(val value: Boolean) :
+        WorkflowAutomationRuleOriginParameterBindingsItemValue
+}
+
+object WorkflowAutomationRuleOriginParameterBindingsItemValueSerializer :
+    KSerializer<WorkflowAutomationRuleOriginParameterBindingsItemValue> {
+    override val descriptor = JsonPrimitive.serializer().descriptor
+
+    override fun deserialize(
+        decoder: Decoder
+    ): WorkflowAutomationRuleOriginParameterBindingsItemValue {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue"
+                )
+        val value = input.decodeJsonElement()
+        return when {
+            (value is JsonPrimitive && value.isString) ->
+                WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant1(value.content)
+            (value is JsonPrimitive &&
+                !value.isString &&
+                value.doubleOrNull?.let {
+                    it.isFinite() &&
+                        it % 1.0 == 0.0 &&
+                        it >= -9007199254740991.0 &&
+                        it <= 9007199254740991.0
+                } == true) ->
+                WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant2(
+                    value.double.toLong()
+                )
+            (value is JsonPrimitive && !value.isString && value.booleanOrNull != null) ->
+                WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant3(value.boolean)
+            else ->
+                throw SerializationException(
+                    "Unknown WorkflowAutomationRuleOriginParameterBindingsItemValue variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: WorkflowAutomationRuleOriginParameterBindingsItemValue,
+    ) {
+        val output =
+            encoder as? JsonEncoder
+                ?: throw SerializationException(
+                    "Expected JSON scalar for WorkflowAutomationRuleOriginParameterBindingsItemValue"
+                )
+        output.encodeJsonElement(
+            when (value) {
+                is WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant1 ->
+                    JsonPrimitive(value.value)
+                is WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant2 ->
+                    JsonPrimitive(value.value)
+                is WorkflowAutomationRuleOriginParameterBindingsItemValue.Variant3 ->
+                    JsonPrimitive(value.value)
+            }
+        )
+    }
+}
+
+@Serializable
+data class WorkflowAutomationRuleOriginParameterBindingsItem(
+    val `key`: String,
+    val `value`: WorkflowAutomationRuleOriginParameterBindingsItemValue,
+)
+
+@Serializable
+data class WorkflowAutomationRuleOrigin(
+    val `blueprintKey`: String,
+    val `appliedFingerprint`: String,
+    val `reconciliationStatus`: WorkflowAutomationRuleOriginReconciliationStatus,
+    val `intendedEnabled`: Boolean,
+    val `parameterBindings`: List<WorkflowAutomationRuleOriginParameterBindingsItem>,
+)
+
+@Serializable(with = WorkflowAutomationSerializer::class)
+sealed interface WorkflowAutomation {
+    val `id`: String
+    val `enabled`: Boolean
+    val `chatThreadId`: String?
+    val `nextRunAt`: String?
+    val `lastRunAt`: String?
+    val `official`: WorkflowAutomationRuleOrigin?
+}
+
+@Serializable
+enum class WorkflowAutomationVariant1Kind {
+    @SerialName("schedule") SCHEDULE
+}
+
+@Serializable(with = WorkflowAutomationVariant1ScheduleSerializer::class)
+sealed interface WorkflowAutomationVariant1Schedule
+
+@Serializable
+enum class WorkflowAutomationVariant1ScheduleVariant1Type {
+    @SerialName("cron") CRON
+}
+
+@Serializable
+data class WorkflowAutomationVariant1ScheduleVariant1(
+    val `type`: WorkflowAutomationVariant1ScheduleVariant1Type,
+    val `cronExpression`: String,
+    val `timezone`: String,
+) : WorkflowAutomationVariant1Schedule
+
+@Serializable
+enum class WorkflowAutomationVariant1ScheduleVariant2Type {
+    @SerialName("loop") LOOP
+}
+
+@Serializable
+data class WorkflowAutomationVariant1ScheduleVariant2(
+    val `type`: WorkflowAutomationVariant1ScheduleVariant2Type,
+    val `intervalSeconds`: Long,
+) : WorkflowAutomationVariant1Schedule
+
+@Serializable
+enum class WorkflowAutomationVariant1ScheduleVariant3Type {
+    @SerialName("once") ONCE
+}
+
+@Serializable
+data class WorkflowAutomationVariant1ScheduleVariant3(
+    val `type`: WorkflowAutomationVariant1ScheduleVariant3Type,
+    val `atTime`: String,
+    val `timezone`: String,
+) : WorkflowAutomationVariant1Schedule
+
+object WorkflowAutomationVariant1ScheduleSerializer :
+    KSerializer<WorkflowAutomationVariant1Schedule> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.WorkflowAutomationVariant1Schedule"
+        )
+
+    override fun deserialize(decoder: Decoder): WorkflowAutomationVariant1Schedule {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for WorkflowAutomationVariant1Schedule"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for WorkflowAutomationVariant1Schedule"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("cron")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("loop")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("once")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous WorkflowAutomationVariant1Schedule variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    WorkflowAutomationVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    WorkflowAutomationVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    WorkflowAutomationVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException("Unknown WorkflowAutomationVariant1Schedule variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: WorkflowAutomationVariant1Schedule) {
+        when (value) {
+            is WorkflowAutomationVariant1ScheduleVariant1 ->
+                encoder.encodeSerializableValue(
+                    WorkflowAutomationVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            is WorkflowAutomationVariant1ScheduleVariant2 ->
+                encoder.encodeSerializableValue(
+                    WorkflowAutomationVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            is WorkflowAutomationVariant1ScheduleVariant3 ->
+                encoder.encodeSerializableValue(
+                    WorkflowAutomationVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class WorkflowAutomationVariant1(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant1Kind,
+    val `schedule`: WorkflowAutomationVariant1Schedule,
+    val `scheduleSummary`: String,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant2Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant2EventType {
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant2EventConfigProvider {
+    @SerialName("chat") CHAT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant2EventConfigEvent {
+    @SerialName("run_finished") RUN_FINISHED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant2EventConfigRunStatusesItem {
+    @SerialName("completed") COMPLETED,
+    @SerialName("failed") FAILED,
+    @SerialName("cancelled") CANCELLED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant2EventConfig(
+    val `provider`: WorkflowAutomationVariant2EventConfigProvider,
+    val `event`: WorkflowAutomationVariant2EventConfigEvent,
+    val `chatThreadId`: String,
+    val `runStatuses`: List<WorkflowAutomationVariant2EventConfigRunStatusesItem>? = null,
+    val `outputPattern`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant2(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant2Kind,
+    val `eventType`: WorkflowAutomationVariant2EventType,
+    val `eventConfig`: WorkflowAutomationVariant2EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant3Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant3EventType {
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE
+}
+
+@Serializable
+enum class WorkflowAutomationVariant3EventConfigProvider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class WorkflowAutomationVariant3EventConfigEvent {
+    @SerialName("new_message") NEW_MESSAGE
+}
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatchFrom(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatchSubject(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatchBody(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatchTo(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatchCc(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfigMatch(
+    val `from`: WorkflowAutomationVariant3EventConfigMatchFrom? = null,
+    val `subject`: WorkflowAutomationVariant3EventConfigMatchSubject? = null,
+    val `body`: WorkflowAutomationVariant3EventConfigMatchBody? = null,
+    val `to`: WorkflowAutomationVariant3EventConfigMatchTo? = null,
+    val `cc`: WorkflowAutomationVariant3EventConfigMatchCc? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3EventConfig(
+    val `provider`: WorkflowAutomationVariant3EventConfigProvider,
+    val `event`: WorkflowAutomationVariant3EventConfigEvent,
+    val `threadId`: String? = null,
+    val `match`: WorkflowAutomationVariant3EventConfigMatch? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant3(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant3Kind,
+    val `eventType`: WorkflowAutomationVariant3EventType,
+    val `eventConfig`: WorkflowAutomationVariant3EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant4Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant4EventType {
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant4EventConfigProvider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class WorkflowAutomationVariant4EventConfigEvent {
+    @SerialName("label_applied") LABEL_APPLIED
+}
+
+@Serializable
+data class WorkflowAutomationVariant4EventConfig(
+    val `provider`: WorkflowAutomationVariant4EventConfigProvider,
+    val `event`: WorkflowAutomationVariant4EventConfigEvent,
+    val `labelName`: String,
+    val `resolvedLabelId`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant4(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant4Kind,
+    val `eventType`: WorkflowAutomationVariant4EventType,
+    val `eventConfig`: WorkflowAutomationVariant4EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant5Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant5EventType {
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant5EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant5EventConfigEvent {
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant5EventConfigFiltersStatesItem {
+    @SerialName("error") ERROR,
+    @SerialName("failure") FAILURE,
+    @SerialName("inactive") INACTIVE,
+    @SerialName("in_progress") IN_PROGRESS,
+    @SerialName("pending") PENDING,
+    @SerialName("queued") QUEUED,
+    @SerialName("success") SUCCESS,
+    @SerialName("waiting") WAITING,
+}
+
+@Serializable
+data class WorkflowAutomationVariant5EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `environments`: List<String>? = null,
+    val `states`: List<WorkflowAutomationVariant5EventConfigFiltersStatesItem>? = null,
+    val `refs`: List<String>? = null,
+    val `productionEnvironment`: Boolean? = null,
+    val `creators`: List<String>? = null,
+    val `apps`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant5EventConfig(
+    val `provider`: WorkflowAutomationVariant5EventConfigProvider,
+    val `event`: WorkflowAutomationVariant5EventConfigEvent,
+    val `filters`: WorkflowAutomationVariant5EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant5(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant5Kind,
+    val `eventType`: WorkflowAutomationVariant5EventType,
+    val `eventConfig`: WorkflowAutomationVariant5EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant6Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant6EventType {
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant6EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant6EventConfigEvent {
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant6EventConfigFiltersSubject {
+    @SerialName("both") BOTH,
+    @SerialName("issues") ISSUES,
+    @SerialName("pull_requests") PULL_REQUESTS,
+}
+
+@Serializable
+data class WorkflowAutomationVariant6EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `subject`: WorkflowAutomationVariant6EventConfigFiltersSubject,
+    val `trustedAuthors`: List<String>? = null,
+    val `commentPrefixes`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant6EventConfig(
+    val `provider`: WorkflowAutomationVariant6EventConfigProvider,
+    val `event`: WorkflowAutomationVariant6EventConfigEvent,
+    val `filters`: WorkflowAutomationVariant6EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant6(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant6Kind,
+    val `eventType`: WorkflowAutomationVariant6EventType,
+    val `eventConfig`: WorkflowAutomationVariant6EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant7Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant7EventType {
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST
+}
+
+@Serializable
+enum class WorkflowAutomationVariant7EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant7EventConfigEvent {
+    @SerialName("pull_request") PULL_REQUEST
+}
+
+@Serializable
+enum class WorkflowAutomationVariant7EventConfigAction {
+    @SerialName("opened") OPENED,
+    @SerialName("reopened") REOPENED,
+    @SerialName("closed") CLOSED,
+    @SerialName("ready_for_review") READY_FOR_REVIEW,
+    @SerialName("converted_to_draft") CONVERTED_TO_DRAFT,
+    @SerialName("synchronize") SYNCHRONIZE,
+    @SerialName("enqueued") ENQUEUED,
+    @SerialName("dequeued") DEQUEUED,
+    @SerialName("labeled") LABELED,
+    @SerialName("unlabeled") UNLABELED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant7EventConfigFilters(
+    val `baseBranches`: List<String>? = null,
+    val `authors`: List<String>? = null,
+    val `pullRequestNumbers`: List<String>? = null,
+    val `labels`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant7EventConfig(
+    val `provider`: WorkflowAutomationVariant7EventConfigProvider,
+    val `event`: WorkflowAutomationVariant7EventConfigEvent,
+    val `repository`: String,
+    val `action`: WorkflowAutomationVariant7EventConfigAction,
+    val `merged`: Boolean? = null,
+    val `filters`: WorkflowAutomationVariant7EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant7(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant7Kind,
+    val `eventType`: WorkflowAutomationVariant7EventType,
+    val `eventConfig`: WorkflowAutomationVariant7EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant8Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant8EventType {
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant8EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant8EventConfigEvent {
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant8EventConfigFiltersReviewStatesItem {
+    @SerialName("approved") APPROVED,
+    @SerialName("changes_requested") CHANGES_REQUESTED,
+    @SerialName("commented") COMMENTED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant8EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `reviewStates`: List<WorkflowAutomationVariant8EventConfigFiltersReviewStatesItem>? = null,
+    val `baseBranches`: List<String>? = null,
+    val `headBranches`: List<String>? = null,
+    val `trustedAuthors`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant8EventConfig(
+    val `provider`: WorkflowAutomationVariant8EventConfigProvider,
+    val `event`: WorkflowAutomationVariant8EventConfigEvent,
+    val `filters`: WorkflowAutomationVariant8EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant8(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant8Kind,
+    val `eventType`: WorkflowAutomationVariant8EventType,
+    val `eventConfig`: WorkflowAutomationVariant8EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant9Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant9EventType {
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant9EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant9EventConfigEvent {
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant9EventConfigFiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class WorkflowAutomationVariant9EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `jobs`: List<String>? = null,
+    val `conclusions`: List<WorkflowAutomationVariant9EventConfigFiltersConclusionsItem>? = null,
+    val `branches`: List<String>? = null,
+    val `runnerLabels`: List<String>? = null,
+    val `runnerGroups`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant9EventConfig(
+    val `provider`: WorkflowAutomationVariant9EventConfigProvider,
+    val `event`: WorkflowAutomationVariant9EventConfigEvent,
+    val `filters`: WorkflowAutomationVariant9EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant9(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant9Kind,
+    val `eventType`: WorkflowAutomationVariant9EventType,
+    val `eventConfig`: WorkflowAutomationVariant9EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant10Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant10EventType {
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant10EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class WorkflowAutomationVariant10EventConfigEvent {
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant10EventConfigFiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class WorkflowAutomationVariant10EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `conclusions`: List<WorkflowAutomationVariant10EventConfigFiltersConclusionsItem>? = null,
+    val `branches`: List<String>? = null,
+    val `events`: List<String>? = null,
+    val `actors`: List<String>? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant10EventConfig(
+    val `provider`: WorkflowAutomationVariant10EventConfigProvider,
+    val `event`: WorkflowAutomationVariant10EventConfigEvent,
+    val `filters`: WorkflowAutomationVariant10EventConfigFilters,
+)
+
+@Serializable
+data class WorkflowAutomationVariant10(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant10Kind,
+    val `eventType`: WorkflowAutomationVariant10EventType,
+    val `eventConfig`: WorkflowAutomationVariant10EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant11Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant11EventType {
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant11EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class WorkflowAutomationVariant11EventConfigEvent {
+    @SerialName("event_created") EVENT_CREATED
+}
+
+@Serializable
+data class WorkflowAutomationVariant11EventConfig(
+    val `provider`: WorkflowAutomationVariant11EventConfigProvider,
+    val `event`: WorkflowAutomationVariant11EventConfigEvent,
+    val `calendarId`: String,
+)
+
+@Serializable
+enum class WorkflowAutomationVariant11Warning {
+    @SerialName("calendar_not_found") CALENDAR_NOT_FOUND,
+    @SerialName("reconnect_required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant11(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant11Kind,
+    val `eventType`: WorkflowAutomationVariant11EventType,
+    val `eventConfig`: WorkflowAutomationVariant11EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+    val `warning`: WorkflowAutomationVariant11Warning? = null,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant12Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant12EventType {
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant12EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class WorkflowAutomationVariant12EventConfigEvent {
+    @SerialName("event_updated") EVENT_UPDATED
+}
+
+@Serializable
+data class WorkflowAutomationVariant12EventConfig(
+    val `provider`: WorkflowAutomationVariant12EventConfigProvider,
+    val `event`: WorkflowAutomationVariant12EventConfigEvent,
+    val `calendarId`: String,
+)
+
+@Serializable
+enum class WorkflowAutomationVariant12Warning {
+    @SerialName("calendar_not_found") CALENDAR_NOT_FOUND,
+    @SerialName("reconnect_required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant12(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant12Kind,
+    val `eventType`: WorkflowAutomationVariant12EventType,
+    val `eventConfig`: WorkflowAutomationVariant12EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+    val `warning`: WorkflowAutomationVariant12Warning? = null,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant13Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant13EventType {
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant13EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class WorkflowAutomationVariant13EventConfigEvent {
+    @SerialName("event_cancelled") EVENT_CANCELLED
+}
+
+@Serializable
+data class WorkflowAutomationVariant13EventConfig(
+    val `provider`: WorkflowAutomationVariant13EventConfigProvider,
+    val `event`: WorkflowAutomationVariant13EventConfigEvent,
+    val `calendarId`: String,
+)
+
+@Serializable
+enum class WorkflowAutomationVariant13Warning {
+    @SerialName("calendar_not_found") CALENDAR_NOT_FOUND,
+    @SerialName("reconnect_required") RECONNECT_REQUIRED,
+}
+
+@Serializable
+data class WorkflowAutomationVariant13(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant13Kind,
+    val `eventType`: WorkflowAutomationVariant13EventType,
+    val `eventConfig`: WorkflowAutomationVariant13EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+    val `warning`: WorkflowAutomationVariant13Warning? = null,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant14Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant14EventType {
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant14EventConfigProvider {
+    @SerialName("google-forms") GOOGLE_FORMS
+}
+
+@Serializable
+enum class WorkflowAutomationVariant14EventConfigEvent {
+    @SerialName("response_submitted") RESPONSE_SUBMITTED
+}
+
+@Serializable
+data class WorkflowAutomationVariant14EventConfigForm(
+    val `id`: String,
+    val `title`: String,
+    val `url`: String,
+)
+
+@Serializable
+data class WorkflowAutomationVariant14EventConfig(
+    val `provider`: WorkflowAutomationVariant14EventConfigProvider,
+    val `event`: WorkflowAutomationVariant14EventConfigEvent,
+    val `connectorId`: String,
+    val `form`: WorkflowAutomationVariant14EventConfigForm,
+)
+
+@Serializable
+data class WorkflowAutomationVariant14(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant14Kind,
+    val `eventType`: WorkflowAutomationVariant14EventType,
+    val `eventConfig`: WorkflowAutomationVariant14EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+    val `warning`: String? = null,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant15Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant15EventType {
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant15EventConfigProvider {
+    @SerialName("google-meet") GOOGLE_MEET
+}
+
+@Serializable
+enum class WorkflowAutomationVariant15EventConfigEvent {
+    @SerialName("transcript_generated") TRANSCRIPT_GENERATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant15EventConfigScopeType {
+    @SerialName("organizer_user") ORGANIZER_USER
+}
+
+@Serializable
+data class WorkflowAutomationVariant15EventConfigScope(
+    val `type`: WorkflowAutomationVariant15EventConfigScopeType
+)
+
+@Serializable
+data class WorkflowAutomationVariant15EventConfig(
+    val `provider`: WorkflowAutomationVariant15EventConfigProvider,
+    val `event`: WorkflowAutomationVariant15EventConfigEvent,
+    val `scope`: WorkflowAutomationVariant15EventConfigScope,
+)
+
+@Serializable
+data class WorkflowAutomationVariant15(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant15Kind,
+    val `eventType`: WorkflowAutomationVariant15EventType,
+    val `eventConfig`: WorkflowAutomationVariant15EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant16Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant16EventType {
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant16EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class WorkflowAutomationVariant16EventConfigEvent {
+    @SerialName("child_page_created") CHILD_PAGE_CREATED
+}
+
+@Serializable
+data class WorkflowAutomationVariant16EventConfigParentPage(
+    val `id`: String,
+    val `url`: String,
+    val `title`: String?,
+    val `rawUrl`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant16EventConfig(
+    val `provider`: WorkflowAutomationVariant16EventConfigProvider,
+    val `event`: WorkflowAutomationVariant16EventConfigEvent,
+    val `connectorId`: String,
+    val `parentPage`: WorkflowAutomationVariant16EventConfigParentPage,
+)
+
+@Serializable
+data class WorkflowAutomationVariant16(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant16Kind,
+    val `eventType`: WorkflowAutomationVariant16EventType,
+    val `eventConfig`: WorkflowAutomationVariant16EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant17Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant17EventType {
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant17EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class WorkflowAutomationVariant17EventConfigEvent {
+    @SerialName("database_item_created") DATABASE_ITEM_CREATED
+}
+
+@Serializable
+data class WorkflowAutomationVariant17EventConfigDataSource(
+    val `id`: String,
+    val `url`: String,
+    val `title`: String?,
+    val `rawUrl`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant17EventConfig(
+    val `provider`: WorkflowAutomationVariant17EventConfigProvider,
+    val `event`: WorkflowAutomationVariant17EventConfigEvent,
+    val `connectorId`: String,
+    val `dataSource`: WorkflowAutomationVariant17EventConfigDataSource,
+)
+
+@Serializable
+data class WorkflowAutomationVariant17(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant17Kind,
+    val `eventType`: WorkflowAutomationVariant17EventType,
+    val `eventConfig`: WorkflowAutomationVariant17EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant18Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant18EventType {
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant18EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class WorkflowAutomationVariant18EventConfigEvent {
+    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED
+}
+
+@Serializable(with = WorkflowAutomationVariant18EventConfigScopeSerializer::class)
+sealed interface WorkflowAutomationVariant18EventConfigScope
+
+@Serializable
+enum class WorkflowAutomationVariant18EventConfigScopeVariant1Type {
+    @SerialName("page") PAGE
+}
+
+@Serializable
+data class WorkflowAutomationVariant18EventConfigScopeVariant1Page(
+    val `id`: String,
+    val `url`: String,
+    val `title`: String?,
+    val `rawUrl`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant18EventConfigScopeVariant1(
+    val `type`: WorkflowAutomationVariant18EventConfigScopeVariant1Type,
+    val `page`: WorkflowAutomationVariant18EventConfigScopeVariant1Page,
+) : WorkflowAutomationVariant18EventConfigScope
+
+@Serializable
+enum class WorkflowAutomationVariant18EventConfigScopeVariant2Type {
+    @SerialName("data_source") DATA_SOURCE
+}
+
+@Serializable
+data class WorkflowAutomationVariant18EventConfigScopeVariant2DataSource(
+    val `id`: String,
+    val `url`: String,
+    val `title`: String?,
+    val `rawUrl`: String? = null,
+)
+
+@Serializable
+data class WorkflowAutomationVariant18EventConfigScopeVariant2(
+    val `type`: WorkflowAutomationVariant18EventConfigScopeVariant2Type,
+    val `dataSource`: WorkflowAutomationVariant18EventConfigScopeVariant2DataSource,
+) : WorkflowAutomationVariant18EventConfigScope
+
+object WorkflowAutomationVariant18EventConfigScopeSerializer :
+    KSerializer<WorkflowAutomationVariant18EventConfigScope> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.WorkflowAutomationVariant18EventConfigScope"
+        )
+
+    override fun deserialize(decoder: Decoder): WorkflowAutomationVariant18EventConfigScope {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for WorkflowAutomationVariant18EventConfigScope"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for WorkflowAutomationVariant18EventConfigScope"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("page")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("data_source")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous WorkflowAutomationVariant18EventConfigScope variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    WorkflowAutomationVariant18EventConfigScopeVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    WorkflowAutomationVariant18EventConfigScopeVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown WorkflowAutomationVariant18EventConfigScope variant"
+                )
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: WorkflowAutomationVariant18EventConfigScope) {
+        when (value) {
+            is WorkflowAutomationVariant18EventConfigScopeVariant1 ->
+                encoder.encodeSerializableValue(
+                    WorkflowAutomationVariant18EventConfigScopeVariant1.serializer(),
+                    value,
+                )
+            is WorkflowAutomationVariant18EventConfigScopeVariant2 ->
+                encoder.encodeSerializableValue(
+                    WorkflowAutomationVariant18EventConfigScopeVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class WorkflowAutomationVariant18EventConfig(
+    val `provider`: WorkflowAutomationVariant18EventConfigProvider,
+    val `event`: WorkflowAutomationVariant18EventConfigEvent,
+    val `connectorId`: String,
+    val `scope`: WorkflowAutomationVariant18EventConfigScope,
+)
+
+@Serializable
+data class WorkflowAutomationVariant18(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant18Kind,
+    val `eventType`: WorkflowAutomationVariant18EventType,
+    val `eventConfig`: WorkflowAutomationVariant18EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+) : WorkflowAutomation
+
+@Serializable
+enum class WorkflowAutomationVariant19Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class WorkflowAutomationVariant19EventType {
+    @SerialName("webhook-received") WEBHOOK_RECEIVED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant19EventConfigProvider {
+    @SerialName("webhook") WEBHOOK
+}
+
+@Serializable
+enum class WorkflowAutomationVariant19EventConfigEvent {
+    @SerialName("received") RECEIVED
+}
+
+@Serializable
+enum class WorkflowAutomationVariant19EventConfigAuthMode {
+    @SerialName("hmac-sha256") HMAC_SHA256
+}
+
+@Serializable
+data class WorkflowAutomationVariant19EventConfigAuth(
+    val `mode`: WorkflowAutomationVariant19EventConfigAuthMode
+)
+
+@Serializable
+data class WorkflowAutomationVariant19EventConfig(
+    val `provider`: WorkflowAutomationVariant19EventConfigProvider,
+    val `event`: WorkflowAutomationVariant19EventConfigEvent,
+    val `auth`: WorkflowAutomationVariant19EventConfigAuth,
+)
+
+@Serializable
+enum class WorkflowAutomationVariant19DisabledReason {
+    @SerialName("paid_plan_required") PAID_PLAN_REQUIRED
+}
+
+@Serializable
+data class WorkflowAutomationVariant19(
+    override val `id`: String,
+    val `ownerUserId`: String,
+    override val `enabled`: Boolean,
+    override val `chatThreadId`: String?,
+    override val `nextRunAt`: String?,
+    override val `lastRunAt`: String?,
+    override val `official`: WorkflowAutomationRuleOrigin?,
+    val `kind`: WorkflowAutomationVariant19Kind,
+    val `eventType`: WorkflowAutomationVariant19EventType,
+    val `eventConfig`: WorkflowAutomationVariant19EventConfig,
+    val `schedule`: JsonNull,
+    val `scheduleSummary`: JsonNull,
+    val `webhookUrl`: String? = null,
+    val `secretLastFour`: String,
+    val `disabledReason`: WorkflowAutomationVariant19DisabledReason? = null,
+    val `lastReceivedAt`: String?,
+    val `webhookSecret`: String? = null,
+) : WorkflowAutomation
+
+object WorkflowAutomationSerializer : KSerializer<WorkflowAutomation> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.WorkflowAutomation")
+
+    override fun deserialize(decoder: Decoder): WorkflowAutomation {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException("Expected JSON object for WorkflowAutomation")
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException("Expected object for WorkflowAutomation")
+        val matches =
+            listOf(
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("schedule")
+                    } == true &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "schedule")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("chat-run-finished")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "chat-run-finished")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("gmail-new-message")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "gmail-new-message")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("gmail-label-applied")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "gmail-label-applied")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-deployment-status-created")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-deployment-status-created")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-issue-comment-created")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-issue-comment-created")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-pull-request")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-pull-request")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-pull-request-review-submitted")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-pull-request-review-submitted")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-workflow-job-completed")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-workflow-job-completed")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-workflow-run-completed")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "github-workflow-run-completed")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-created")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "google-calendar-event-created")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-updated")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "google-calendar-event-updated")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-cancelled")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "google-calendar-event-cancelled")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-forms-response-submitted")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "google-forms-response-submitted")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-meet-transcript-generated")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "google-meet-transcript-generated")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-child-page-created")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "notion-child-page-created")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-database-item-created")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "notion-database-item-created")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-page-content-updated")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "notion-page-content-updated")
+                    }),
+                (value.containsKey("id") &&
+                    value.containsKey("ownerUserId") &&
+                    value.containsKey("enabled") &&
+                    value.containsKey("chatThreadId") &&
+                    value.containsKey("nextRunAt") &&
+                    value.containsKey("lastRunAt") &&
+                    value.containsKey("official") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("webhook-received")
+                    } == true &&
+                    value.containsKey("eventConfig") &&
+                    value.containsKey("schedule") &&
+                    value.containsKey("scheduleSummary") &&
+                    value.containsKey("secretLastFour") &&
+                    value.containsKey("lastReceivedAt")) &&
+                    (value["kind"].let { field ->
+                        (field is JsonPrimitive && field.isString && field.content == "event")
+                    }) &&
+                    (value["eventType"].let { field ->
+                        (field is JsonPrimitive &&
+                            field.isString &&
+                            field.content == "webhook-received")
+                    }),
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException("Unknown or ambiguous WorkflowAutomation variant")
+        return when (matches.indexOf(true)) {
+            0 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant1.serializer(), value)
+            1 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant2.serializer(), value)
+            2 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant3.serializer(), value)
+            3 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant4.serializer(), value)
+            4 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant5.serializer(), value)
+            5 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant6.serializer(), value)
+            6 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant7.serializer(), value)
+            7 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant8.serializer(), value)
+            8 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant9.serializer(), value)
+            9 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant10.serializer(), value)
+            10 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant11.serializer(), value)
+            11 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant12.serializer(), value)
+            12 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant13.serializer(), value)
+            13 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant14.serializer(), value)
+            14 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant15.serializer(), value)
+            15 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant16.serializer(), value)
+            16 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant17.serializer(), value)
+            17 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant18.serializer(), value)
+            18 -> input.json.decodeFromJsonElement(WorkflowAutomationVariant19.serializer(), value)
+            else -> throw SerializationException("Unknown WorkflowAutomation variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: WorkflowAutomation) {
+        when (value) {
+            is WorkflowAutomationVariant1 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant1.serializer(), value)
+            is WorkflowAutomationVariant2 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant2.serializer(), value)
+            is WorkflowAutomationVariant3 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant3.serializer(), value)
+            is WorkflowAutomationVariant4 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant4.serializer(), value)
+            is WorkflowAutomationVariant5 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant5.serializer(), value)
+            is WorkflowAutomationVariant6 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant6.serializer(), value)
+            is WorkflowAutomationVariant7 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant7.serializer(), value)
+            is WorkflowAutomationVariant8 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant8.serializer(), value)
+            is WorkflowAutomationVariant9 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant9.serializer(), value)
+            is WorkflowAutomationVariant10 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant10.serializer(), value)
+            is WorkflowAutomationVariant11 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant11.serializer(), value)
+            is WorkflowAutomationVariant12 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant12.serializer(), value)
+            is WorkflowAutomationVariant13 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant13.serializer(), value)
+            is WorkflowAutomationVariant14 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant14.serializer(), value)
+            is WorkflowAutomationVariant15 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant15.serializer(), value)
+            is WorkflowAutomationVariant16 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant16.serializer(), value)
+            is WorkflowAutomationVariant17 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant17.serializer(), value)
+            is WorkflowAutomationVariant18 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant18.serializer(), value)
+            is WorkflowAutomationVariant19 ->
+                encoder.encodeSerializableValue(WorkflowAutomationVariant19.serializer(), value)
+        }
+    }
+}
+
+typealias Workflows = List<WorkflowSummary>
+
+@Serializable
+enum class WorkflowDetailVisibility {
+    @SerialName("public") PUBLIC,
+    @SerialName("private") PRIVATE,
+}
+
+@Serializable
+enum class WorkflowDetailOfficialInstallationState {
+    @SerialName("installing") INSTALLING,
+    @SerialName("installed") INSTALLED,
+}
+
+@Serializable
+enum class WorkflowDetailOfficialDefinitionLifecycle {
+    @SerialName("active") ACTIVE,
+    @SerialName("retired") RETIRED,
+    @SerialName("unavailable") UNAVAILABLE,
+}
+
+@Serializable
+data class WorkflowDetailOfficial(
+    val `definitionName`: String,
+    val `installationState`: WorkflowDetailOfficialInstallationState,
+    val `definitionLifecycle`: WorkflowDetailOfficialDefinitionLifecycle,
+    val `readOnly`: CanonicalTrue,
+)
+
+@Serializable
+data class WorkflowDetailShadowedBy(
+    val `id`: String,
+    val `name`: String,
+    val `displayName`: String?,
+)
+
+@Serializable
+enum class WorkflowDetailImportSource {
+    @SerialName("claudeCode") CLAUDECODE,
+    @SerialName("codex") CODEX,
+}
+
+@Serializable data class WorkflowDetailFilesItem(val `path`: String, val `size`: Double)
+
+@Serializable data class WorkflowDetailFileContentsItem(val `path`: String, val `content`: String)
+
+@Serializable
+data class WorkflowDetail(
+    val `id`: String,
+    val `name`: String,
+    val `displayName`: String?,
+    val `description`: String?,
+    val `visibility`: WorkflowDetailVisibility,
+    val `ownerUserId`: String,
+    val `createdAt`: String,
+    val `canManage`: Boolean,
+    val `canPublish`: Boolean,
+    val `official`: WorkflowDetailOfficial?,
+    val `shadowedBy`: WorkflowDetailShadowedBy? = null,
+    val `importSource`: WorkflowDetailImportSource?,
+    val `createdByUserId`: String,
+    val `updatedByUserId`: String,
+    val `updatedAt`: String,
+    val `instruction`: String?,
+    val `files`: List<WorkflowDetailFilesItem>?,
+    val `fileContents`: List<WorkflowDetailFileContentsItem>?,
+    val `automations`: List<WorkflowAutomation>,
+)
+
+@Serializable(with = CanonicalOptionalSerializer::class)
+sealed interface CanonicalOptional<out T> {
+    data object Absent : CanonicalOptional<Nothing>
+
+    data class Present<T>(val value: T) : CanonicalOptional<T>
+}
+
+class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) :
+    KSerializer<CanonicalOptional<T>> {
+    override val descriptor = buildClassSerialDescriptor("CanonicalOptional", serializer.descriptor)
+
+    override fun deserialize(decoder: Decoder): CanonicalOptional<T> =
+        CanonicalOptional.Present(decoder.decodeSerializableValue(serializer))
+
+    override fun serialize(encoder: Encoder, value: CanonicalOptional<T>) {
+        when (value) {
+            CanonicalOptional.Absent -> throw SerializationException("Absent field must be omitted")
+            is CanonicalOptional.Present -> encoder.encodeSerializableValue(serializer, value.value)
+        }
+    }
+}
+
+@Serializable data class UpdateWorkflowRequestFilesItem(val `path`: String, val `content`: String)
+
+@Serializable
+data class UpdateWorkflowRequest(
+    val `name`: String? = null,
+    val `instruction`: CanonicalOptional<String?> = CanonicalOptional.Absent,
+    val `files`: List<UpdateWorkflowRequestFilesItem>? = null,
+    val `displayName`: CanonicalOptional<String?> = CanonicalOptional.Absent,
+    val `description`: CanonicalOptional<String?> = CanonicalOptional.Absent,
+)
+
+@Serializable
+data class WorkspaceWorkflowAutomationsItem(
+    val `workflow`: WorkflowSummary,
+    val `automation`: WorkflowAutomation,
+)
+
+typealias WorkspaceWorkflowAutomations = List<WorkspaceWorkflowAutomationsItem>
+
+@Serializable(with = CreateWorkflowAutomationRequestSerializer::class)
+sealed interface CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant1Kind {
+    @SerialName("schedule") SCHEDULE
+}
+
+@Serializable(with = CreateWorkflowAutomationRequestVariant1ScheduleSerializer::class)
+sealed interface CreateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant1Type {
+    @SerialName("cron") CRON
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant1ScheduleVariant1(
+    val `type`: CreateWorkflowAutomationRequestVariant1ScheduleVariant1Type,
+    val `cronExpression`: String,
+    val `timezone`: String,
+) : CreateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant2Type {
+    @SerialName("loop") LOOP
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant1ScheduleVariant2(
+    val `type`: CreateWorkflowAutomationRequestVariant1ScheduleVariant2Type,
+    val `intervalSeconds`: Long,
+) : CreateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant1ScheduleVariant3Type {
+    @SerialName("once") ONCE
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant1ScheduleVariant3(
+    val `type`: CreateWorkflowAutomationRequestVariant1ScheduleVariant3Type,
+    val `atTime`: String,
+    val `timezone`: String,
+) : CreateWorkflowAutomationRequestVariant1Schedule
+
+object CreateWorkflowAutomationRequestVariant1ScheduleSerializer :
+    KSerializer<CreateWorkflowAutomationRequestVariant1Schedule> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.CreateWorkflowAutomationRequestVariant1Schedule"
+        )
+
+    override fun deserialize(decoder: Decoder): CreateWorkflowAutomationRequestVariant1Schedule {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for CreateWorkflowAutomationRequestVariant1Schedule"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for CreateWorkflowAutomationRequestVariant1Schedule"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("cron")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("loop")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("once")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous CreateWorkflowAutomationRequestVariant1Schedule variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown CreateWorkflowAutomationRequestVariant1Schedule variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: CreateWorkflowAutomationRequestVariant1Schedule,
+    ) {
+        when (value) {
+            is CreateWorkflowAutomationRequestVariant1ScheduleVariant1 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant1ScheduleVariant2 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant1ScheduleVariant3 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant1(
+    val `kind`: CreateWorkflowAutomationRequestVariant1Kind? = null,
+    val `schedule`: CreateWorkflowAutomationRequestVariant1Schedule,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant2Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant2EventType {
+    @SerialName("chat-run-finished") CHAT_RUN_FINISHED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant2EventConfigProvider {
+    @SerialName("chat") CHAT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant2EventConfigEvent {
+    @SerialName("run_finished") RUN_FINISHED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant2EventConfigRunStatusesItem {
+    @SerialName("completed") COMPLETED,
+    @SerialName("failed") FAILED,
+    @SerialName("cancelled") CANCELLED,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant2EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant2EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant2EventConfigEvent,
+    val `chatThreadId`: String,
+    val `runStatuses`: List<CreateWorkflowAutomationRequestVariant2EventConfigRunStatusesItem>? =
+        null,
+    val `outputPattern`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant2(
+    val `kind`: CreateWorkflowAutomationRequestVariant2Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant2EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant2EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant3Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant3EventType {
+    @SerialName("gmail-new-message") GMAIL_NEW_MESSAGE
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant3EventConfigProvider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant3EventConfigEvent {
+    @SerialName("new_message") NEW_MESSAGE
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatchFrom(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatchSubject(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatchBody(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatchTo(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatchCc(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfigMatch(
+    val `from`: CreateWorkflowAutomationRequestVariant3EventConfigMatchFrom? = null,
+    val `subject`: CreateWorkflowAutomationRequestVariant3EventConfigMatchSubject? = null,
+    val `body`: CreateWorkflowAutomationRequestVariant3EventConfigMatchBody? = null,
+    val `to`: CreateWorkflowAutomationRequestVariant3EventConfigMatchTo? = null,
+    val `cc`: CreateWorkflowAutomationRequestVariant3EventConfigMatchCc? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant3EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant3EventConfigEvent,
+    val `threadId`: String? = null,
+    val `match`: CreateWorkflowAutomationRequestVariant3EventConfigMatch? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant3(
+    val `kind`: CreateWorkflowAutomationRequestVariant3Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant3EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant3EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant4Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant4EventType {
+    @SerialName("gmail-label-applied") GMAIL_LABEL_APPLIED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant4EventConfigProvider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant4EventConfigEvent {
+    @SerialName("label_applied") LABEL_APPLIED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant4EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant4EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant4EventConfigEvent,
+    val `labelName`: String,
+    val `resolvedLabelId`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant4(
+    val `kind`: CreateWorkflowAutomationRequestVariant4Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant4EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant4EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant5Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant5EventType {
+    @SerialName("github-deployment-status-created") GITHUB_DEPLOYMENT_STATUS_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant5EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant5EventConfigEvent {
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant5EventConfigFiltersStatesItem {
+    @SerialName("error") ERROR,
+    @SerialName("failure") FAILURE,
+    @SerialName("inactive") INACTIVE,
+    @SerialName("in_progress") IN_PROGRESS,
+    @SerialName("pending") PENDING,
+    @SerialName("queued") QUEUED,
+    @SerialName("success") SUCCESS,
+    @SerialName("waiting") WAITING,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant5EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `environments`: List<String>? = null,
+    val `states`: List<CreateWorkflowAutomationRequestVariant5EventConfigFiltersStatesItem>? = null,
+    val `refs`: List<String>? = null,
+    val `productionEnvironment`: Boolean? = null,
+    val `creators`: List<String>? = null,
+    val `apps`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant5EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant5EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant5EventConfigEvent,
+    val `filters`: CreateWorkflowAutomationRequestVariant5EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant5(
+    val `kind`: CreateWorkflowAutomationRequestVariant5Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant5EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant5EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant6Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant6EventType {
+    @SerialName("github-issue-comment-created") GITHUB_ISSUE_COMMENT_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant6EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant6EventConfigEvent {
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant6EventConfigFiltersSubject {
+    @SerialName("both") BOTH,
+    @SerialName("issues") ISSUES,
+    @SerialName("pull_requests") PULL_REQUESTS,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant6EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `subject`: CreateWorkflowAutomationRequestVariant6EventConfigFiltersSubject? = null,
+    val `trustedAuthors`: List<String>? = null,
+    val `commentPrefixes`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant6EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant6EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant6EventConfigEvent,
+    val `filters`: CreateWorkflowAutomationRequestVariant6EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant6(
+    val `kind`: CreateWorkflowAutomationRequestVariant6Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant6EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant6EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant7Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant7EventType {
+    @SerialName("github-pull-request") GITHUB_PULL_REQUEST
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant7EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant7EventConfigEvent {
+    @SerialName("pull_request") PULL_REQUEST
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant7EventConfigAction {
+    @SerialName("opened") OPENED,
+    @SerialName("reopened") REOPENED,
+    @SerialName("closed") CLOSED,
+    @SerialName("ready_for_review") READY_FOR_REVIEW,
+    @SerialName("converted_to_draft") CONVERTED_TO_DRAFT,
+    @SerialName("synchronize") SYNCHRONIZE,
+    @SerialName("enqueued") ENQUEUED,
+    @SerialName("dequeued") DEQUEUED,
+    @SerialName("labeled") LABELED,
+    @SerialName("unlabeled") UNLABELED,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant7EventConfigFilters(
+    val `baseBranches`: List<String>? = null,
+    val `authors`: List<String>? = null,
+    val `pullRequestNumbers`: List<String>? = null,
+    val `labels`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant7EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant7EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant7EventConfigEvent,
+    val `repository`: String,
+    val `action`: CreateWorkflowAutomationRequestVariant7EventConfigAction,
+    val `merged`: Boolean? = null,
+    val `filters`: CreateWorkflowAutomationRequestVariant7EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant7(
+    val `kind`: CreateWorkflowAutomationRequestVariant7Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant7EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant7EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant8Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant8EventType {
+    @SerialName("github-pull-request-review-submitted") GITHUB_PULL_REQUEST_REVIEW_SUBMITTED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant8EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant8EventConfigEvent {
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant8EventConfigFiltersReviewStatesItem {
+    @SerialName("approved") APPROVED,
+    @SerialName("changes_requested") CHANGES_REQUESTED,
+    @SerialName("commented") COMMENTED,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant8EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `reviewStates`:
+        List<CreateWorkflowAutomationRequestVariant8EventConfigFiltersReviewStatesItem>? =
+        null,
+    val `baseBranches`: List<String>? = null,
+    val `headBranches`: List<String>? = null,
+    val `trustedAuthors`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant8EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant8EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant8EventConfigEvent,
+    val `filters`: CreateWorkflowAutomationRequestVariant8EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant8(
+    val `kind`: CreateWorkflowAutomationRequestVariant8Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant8EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant8EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant9Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant9EventType {
+    @SerialName("github-workflow-job-completed") GITHUB_WORKFLOW_JOB_COMPLETED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant9EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant9EventConfigEvent {
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant9EventConfigFiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant9EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `jobs`: List<String>? = null,
+    val `conclusions`:
+        List<CreateWorkflowAutomationRequestVariant9EventConfigFiltersConclusionsItem>? =
+        null,
+    val `branches`: List<String>? = null,
+    val `runnerLabels`: List<String>? = null,
+    val `runnerGroups`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant9EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant9EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant9EventConfigEvent,
+    val `filters`: CreateWorkflowAutomationRequestVariant9EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant9(
+    val `kind`: CreateWorkflowAutomationRequestVariant9Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant9EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant9EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant10Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant10EventType {
+    @SerialName("github-workflow-run-completed") GITHUB_WORKFLOW_RUN_COMPLETED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant10EventConfigProvider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant10EventConfigEvent {
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant10EventConfigFiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant10EventConfigFilters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `conclusions`:
+        List<CreateWorkflowAutomationRequestVariant10EventConfigFiltersConclusionsItem>? =
+        null,
+    val `branches`: List<String>? = null,
+    val `events`: List<String>? = null,
+    val `actors`: List<String>? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant10EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant10EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant10EventConfigEvent,
+    val `filters`: CreateWorkflowAutomationRequestVariant10EventConfigFilters? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant10(
+    val `kind`: CreateWorkflowAutomationRequestVariant10Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant10EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant10EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant11Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant11EventType {
+    @SerialName("google-calendar-event-created") GOOGLE_CALENDAR_EVENT_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant11EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant11EventConfigEvent {
+    @SerialName("event_created") EVENT_CREATED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant11EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant11EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant11EventConfigEvent,
+    val `calendarId`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant11(
+    val `kind`: CreateWorkflowAutomationRequestVariant11Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant11EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant11EventConfig? = null,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant12Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant12EventType {
+    @SerialName("google-calendar-event-updated") GOOGLE_CALENDAR_EVENT_UPDATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant12EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant12EventConfigEvent {
+    @SerialName("event_updated") EVENT_UPDATED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant12EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant12EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant12EventConfigEvent,
+    val `calendarId`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant12(
+    val `kind`: CreateWorkflowAutomationRequestVariant12Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant12EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant12EventConfig? = null,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant13Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant13EventType {
+    @SerialName("google-calendar-event-cancelled") GOOGLE_CALENDAR_EVENT_CANCELLED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant13EventConfigProvider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant13EventConfigEvent {
+    @SerialName("event_cancelled") EVENT_CANCELLED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant13EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant13EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant13EventConfigEvent,
+    val `calendarId`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant13(
+    val `kind`: CreateWorkflowAutomationRequestVariant13Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant13EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant13EventConfig? = null,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant14Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant14EventType {
+    @SerialName("google-forms-response-submitted") GOOGLE_FORMS_RESPONSE_SUBMITTED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant14EventConfigProvider {
+    @SerialName("google-forms") GOOGLE_FORMS
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant14EventConfigEvent {
+    @SerialName("response_submitted") RESPONSE_SUBMITTED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant14EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant14EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant14EventConfigEvent,
+    val `formUrl`: String,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant14(
+    val `kind`: CreateWorkflowAutomationRequestVariant14Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant14EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant14EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant15Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant15EventType {
+    @SerialName("google-meet-transcript-generated") GOOGLE_MEET_TRANSCRIPT_GENERATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant15EventConfigProvider {
+    @SerialName("google-meet") GOOGLE_MEET
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant15EventConfigEvent {
+    @SerialName("transcript_generated") TRANSCRIPT_GENERATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant15EventConfigScopeType {
+    @SerialName("organizer_user") ORGANIZER_USER
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant15EventConfigScope(
+    val `type`: CreateWorkflowAutomationRequestVariant15EventConfigScopeType
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant15EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant15EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant15EventConfigEvent,
+    val `scope`: CreateWorkflowAutomationRequestVariant15EventConfigScope? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant15(
+    val `kind`: CreateWorkflowAutomationRequestVariant15Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant15EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant15EventConfig? = null,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant16Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant16EventType {
+    @SerialName("notion-child-page-created") NOTION_CHILD_PAGE_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant16EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant16EventConfigEvent {
+    @SerialName("child_page_created") CHILD_PAGE_CREATED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant16EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant16EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant16EventConfigEvent,
+    val `parentPageUrl`: String,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant16(
+    val `kind`: CreateWorkflowAutomationRequestVariant16Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant16EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant16EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant17Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant17EventType {
+    @SerialName("notion-database-item-created") NOTION_DATABASE_ITEM_CREATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant17EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant17EventConfigEvent {
+    @SerialName("database_item_created") DATABASE_ITEM_CREATED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant17EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant17EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant17EventConfigEvent,
+    val `databaseUrl`: String,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant17(
+    val `kind`: CreateWorkflowAutomationRequestVariant17Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant17EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant17EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant18Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant18EventType {
+    @SerialName("notion-page-content-updated") NOTION_PAGE_CONTENT_UPDATED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant18EventConfigProvider {
+    @SerialName("notion") NOTION
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant18EventConfigEvent {
+    @SerialName("page_content_updated") PAGE_CONTENT_UPDATED
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant18EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant18EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant18EventConfigEvent,
+    val `pageUrl`: String? = null,
+    val `databaseUrl`: String? = null,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant18(
+    val `kind`: CreateWorkflowAutomationRequestVariant18Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant18EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant18EventConfig,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant19Kind {
+    @SerialName("event") EVENT
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant19EventType {
+    @SerialName("webhook-received") WEBHOOK_RECEIVED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant19EventConfigProvider {
+    @SerialName("webhook") WEBHOOK
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant19EventConfigEvent {
+    @SerialName("received") RECEIVED
+}
+
+@Serializable
+enum class CreateWorkflowAutomationRequestVariant19EventConfigAuthMode {
+    @SerialName("hmac-sha256") HMAC_SHA256
+}
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant19EventConfigAuth(
+    val `mode`: CreateWorkflowAutomationRequestVariant19EventConfigAuthMode
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant19EventConfig(
+    val `provider`: CreateWorkflowAutomationRequestVariant19EventConfigProvider,
+    val `event`: CreateWorkflowAutomationRequestVariant19EventConfigEvent,
+    val `auth`: CreateWorkflowAutomationRequestVariant19EventConfigAuth,
+)
+
+@Serializable
+data class CreateWorkflowAutomationRequestVariant19(
+    val `kind`: CreateWorkflowAutomationRequestVariant19Kind,
+    val `eventType`: CreateWorkflowAutomationRequestVariant19EventType,
+    val `eventConfig`: CreateWorkflowAutomationRequestVariant19EventConfig? = null,
+    val `enabled`: Boolean? = null,
+) : CreateWorkflowAutomationRequest
+
+object CreateWorkflowAutomationRequestSerializer : KSerializer<CreateWorkflowAutomationRequest> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.CreateWorkflowAutomationRequest")
+
+    override fun deserialize(decoder: Decoder): CreateWorkflowAutomationRequest {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for CreateWorkflowAutomationRequest"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for CreateWorkflowAutomationRequest"
+                )
+        val matches =
+            listOf(
+                value.containsKey("schedule") &&
+                    ((value["schedule"] as? JsonObject)?.get("type") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("cron", "loop", "once")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("chat-run-finished")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("chat") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("run_finished")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("gmail-new-message")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("gmail") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("new_message")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("gmail-label-applied")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("gmail") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("label_applied")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-deployment-status-created")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("deployment_status_created")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-issue-comment-created")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("issue_comment_created")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-pull-request")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("pull_request")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("action") as? JsonPrimitive)?.let {
+                        it.isString &&
+                            it.content in
+                                setOf(
+                                    "opened",
+                                    "reopened",
+                                    "closed",
+                                    "ready_for_review",
+                                    "converted_to_draft",
+                                    "synchronize",
+                                    "enqueued",
+                                    "dequeued",
+                                    "labeled",
+                                    "unlabeled",
+                                )
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-pull-request-review-submitted")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("pull_request_review_submitted")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-workflow-job-completed")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("workflow_job_completed")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("github-workflow-run-completed")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("workflow_run_completed")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-created")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-updated")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-calendar-event-cancelled")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-forms-response-submitted")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("google-forms") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("response_submitted")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("google-meet-transcript-generated")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-child-page-created")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("notion") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("child_page_created")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-database-item-created")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("notion") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("database_item_created")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    value.containsKey("eventConfig") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("notion-page-content-updated")
+                    } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("notion") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("page_content_updated")
+                    } == true,
+                value.containsKey("kind") &&
+                    value.containsKey("eventType") &&
+                    (value["kind"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("event")
+                    } == true &&
+                    (value["eventType"] as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("webhook-received")
+                    } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous CreateWorkflowAutomationRequest variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant3.serializer(),
+                    value,
+                )
+            3 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant4.serializer(),
+                    value,
+                )
+            4 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant5.serializer(),
+                    value,
+                )
+            5 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant6.serializer(),
+                    value,
+                )
+            6 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant7.serializer(),
+                    value,
+                )
+            7 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant8.serializer(),
+                    value,
+                )
+            8 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant9.serializer(),
+                    value,
+                )
+            9 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant10.serializer(),
+                    value,
+                )
+            10 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant11.serializer(),
+                    value,
+                )
+            11 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant12.serializer(),
+                    value,
+                )
+            12 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant13.serializer(),
+                    value,
+                )
+            13 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant14.serializer(),
+                    value,
+                )
+            14 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant15.serializer(),
+                    value,
+                )
+            15 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant16.serializer(),
+                    value,
+                )
+            16 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant17.serializer(),
+                    value,
+                )
+            17 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant18.serializer(),
+                    value,
+                )
+            18 ->
+                input.json.decodeFromJsonElement(
+                    CreateWorkflowAutomationRequestVariant19.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown CreateWorkflowAutomationRequest variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: CreateWorkflowAutomationRequest) {
+        when (value) {
+            is CreateWorkflowAutomationRequestVariant1 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant1.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant2 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant2.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant3 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant3.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant4 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant4.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant5 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant5.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant6 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant6.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant7 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant7.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant8 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant8.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant9 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant9.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant10 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant10.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant11 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant11.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant12 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant12.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant13 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant13.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant14 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant14.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant15 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant15.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant16 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant16.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant17 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant17.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant18 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant18.serializer(),
+                    value,
+                )
+            is CreateWorkflowAutomationRequestVariant19 ->
+                encoder.encodeSerializableValue(
+                    CreateWorkflowAutomationRequestVariant19.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable(with = UpdateWorkflowAutomationRequestSerializer::class)
+sealed interface UpdateWorkflowAutomationRequest
+
+@Serializable(with = UpdateWorkflowAutomationRequestVariant1ScheduleSerializer::class)
+sealed interface UpdateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant1Type {
+    @SerialName("cron") CRON
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant1ScheduleVariant1(
+    val `type`: UpdateWorkflowAutomationRequestVariant1ScheduleVariant1Type,
+    val `cronExpression`: String,
+    val `timezone`: String,
+) : UpdateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant2Type {
+    @SerialName("loop") LOOP
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant1ScheduleVariant2(
+    val `type`: UpdateWorkflowAutomationRequestVariant1ScheduleVariant2Type,
+    val `intervalSeconds`: Long,
+) : UpdateWorkflowAutomationRequestVariant1Schedule
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant1ScheduleVariant3Type {
+    @SerialName("once") ONCE
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant1ScheduleVariant3(
+    val `type`: UpdateWorkflowAutomationRequestVariant1ScheduleVariant3Type,
+    val `atTime`: String,
+    val `timezone`: String,
+) : UpdateWorkflowAutomationRequestVariant1Schedule
+
+object UpdateWorkflowAutomationRequestVariant1ScheduleSerializer :
+    KSerializer<UpdateWorkflowAutomationRequestVariant1Schedule> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant1Schedule"
+        )
+
+    override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant1Schedule {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant1Schedule"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for UpdateWorkflowAutomationRequestVariant1Schedule"
+                )
+        val matches =
+            listOf(
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("cron")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("loop")
+                } == true,
+                (value["type"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("once")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant1Schedule variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown UpdateWorkflowAutomationRequestVariant1Schedule variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: UpdateWorkflowAutomationRequestVariant1Schedule,
+    ) {
+        when (value) {
+            is UpdateWorkflowAutomationRequestVariant1ScheduleVariant1 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant1.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant1ScheduleVariant2 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant2.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant1ScheduleVariant3 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant1ScheduleVariant3.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant1(
+    val `schedule`: UpdateWorkflowAutomationRequestVariant1Schedule
+) : UpdateWorkflowAutomationRequest
+
+@Serializable(with = UpdateWorkflowAutomationRequestVariant2EventConfigSerializer::class)
+sealed interface UpdateWorkflowAutomationRequestVariant2EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Provider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Event {
+    @SerialName("new_message") NEW_MESSAGE
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchFrom(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchSubject(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchBody(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchTo(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchCc(
+    val `contains`: String? = null,
+    val `containsAny`: List<String>? = null,
+    val `doesNotContain`: String? = null,
+    val `doesNotContainAny`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Match(
+    val `from`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchFrom? = null,
+    val `subject`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchSubject? = null,
+    val `body`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchBody? = null,
+    val `to`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchTo? = null,
+    val `cc`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1MatchCc? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant1(
+    val `provider`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Event,
+    val `threadId`: String? = null,
+    val `match`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant1Match? = null,
+) : UpdateWorkflowAutomationRequestVariant2EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Provider {
+    @SerialName("gmail") GMAIL
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Event {
+    @SerialName("label_applied") LABEL_APPLIED
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2EventConfigVariant2(
+    val `provider`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant2EventConfigVariant2Event,
+    val `labelName`: String,
+    val `resolvedLabelId`: String? = null,
+) : UpdateWorkflowAutomationRequestVariant2EventConfig
+
+object UpdateWorkflowAutomationRequestVariant2EventConfigSerializer :
+    KSerializer<UpdateWorkflowAutomationRequestVariant2EventConfig> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant2EventConfig"
+        )
+
+    override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant2EventConfig {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant2EventConfig"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for UpdateWorkflowAutomationRequestVariant2EventConfig"
+                )
+        val matches =
+            listOf(
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("new_message")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("label_applied")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant2EventConfig variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant2EventConfigVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant2EventConfigVariant2.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown UpdateWorkflowAutomationRequestVariant2EventConfig variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: UpdateWorkflowAutomationRequestVariant2EventConfig,
+    ) {
+        when (value) {
+            is UpdateWorkflowAutomationRequestVariant2EventConfigVariant1 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant2EventConfigVariant1.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant2EventConfigVariant2 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant2EventConfigVariant2.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant2(
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant2EventConfig
+) : UpdateWorkflowAutomationRequest
+
+@Serializable(with = UpdateWorkflowAutomationRequestVariant3EventConfigSerializer::class)
+sealed interface UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Event {
+    @SerialName("deployment_status_created") DEPLOYMENT_STATUS_CREATED
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1FiltersStatesItem {
+    @SerialName("error") ERROR,
+    @SerialName("failure") FAILURE,
+    @SerialName("inactive") INACTIVE,
+    @SerialName("in_progress") IN_PROGRESS,
+    @SerialName("pending") PENDING,
+    @SerialName("queued") QUEUED,
+    @SerialName("success") SUCCESS,
+    @SerialName("waiting") WAITING,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Filters(
+    val `repositories`: List<String>? = null,
+    val `environments`: List<String>? = null,
+    val `states`:
+        List<UpdateWorkflowAutomationRequestVariant3EventConfigVariant1FiltersStatesItem>? =
+        null,
+    val `refs`: List<String>? = null,
+    val `productionEnvironment`: Boolean? = null,
+    val `creators`: List<String>? = null,
+    val `apps`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant1(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Event,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant1Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Event {
+    @SerialName("issue_comment_created") ISSUE_COMMENT_CREATED
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2FiltersSubject {
+    @SerialName("both") BOTH,
+    @SerialName("issues") ISSUES,
+    @SerialName("pull_requests") PULL_REQUESTS,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Filters(
+    val `repositories`: List<String>? = null,
+    val `subject`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant2FiltersSubject? = null,
+    val `trustedAuthors`: List<String>? = null,
+    val `commentPrefixes`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant2(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Event,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant2Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Event {
+    @SerialName("pull_request") PULL_REQUEST
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Action {
+    @SerialName("opened") OPENED,
+    @SerialName("reopened") REOPENED,
+    @SerialName("closed") CLOSED,
+    @SerialName("ready_for_review") READY_FOR_REVIEW,
+    @SerialName("converted_to_draft") CONVERTED_TO_DRAFT,
+    @SerialName("synchronize") SYNCHRONIZE,
+    @SerialName("enqueued") ENQUEUED,
+    @SerialName("dequeued") DEQUEUED,
+    @SerialName("labeled") LABELED,
+    @SerialName("unlabeled") UNLABELED,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Filters(
+    val `baseBranches`: List<String>? = null,
+    val `authors`: List<String>? = null,
+    val `pullRequestNumbers`: List<String>? = null,
+    val `labels`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant3(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Event,
+    val `repository`: String,
+    val `action`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Action,
+    val `merged`: Boolean? = null,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant3Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Event {
+    @SerialName("pull_request_review_submitted") PULL_REQUEST_REVIEW_SUBMITTED
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4FiltersReviewStatesItem {
+    @SerialName("approved") APPROVED,
+    @SerialName("changes_requested") CHANGES_REQUESTED,
+    @SerialName("commented") COMMENTED,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Filters(
+    val `repositories`: List<String>? = null,
+    val `reviewStates`:
+        List<UpdateWorkflowAutomationRequestVariant3EventConfigVariant4FiltersReviewStatesItem>? =
+        null,
+    val `baseBranches`: List<String>? = null,
+    val `headBranches`: List<String>? = null,
+    val `trustedAuthors`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant4(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Event,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant4Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Event {
+    @SerialName("workflow_job_completed") WORKFLOW_JOB_COMPLETED
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5FiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Filters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `jobs`: List<String>? = null,
+    val `conclusions`:
+        List<UpdateWorkflowAutomationRequestVariant3EventConfigVariant5FiltersConclusionsItem>? =
+        null,
+    val `branches`: List<String>? = null,
+    val `runnerLabels`: List<String>? = null,
+    val `runnerGroups`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant5(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Event,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant5Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Provider {
+    @SerialName("github") GITHUB
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Event {
+    @SerialName("workflow_run_completed") WORKFLOW_RUN_COMPLETED
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6FiltersConclusionsItem {
+    @SerialName("action_required") ACTION_REQUIRED,
+    @SerialName("cancelled") CANCELLED,
+    @SerialName("failure") FAILURE,
+    @SerialName("neutral") NEUTRAL,
+    @SerialName("skipped") SKIPPED,
+    @SerialName("stale") STALE,
+    @SerialName("startup_failure") STARTUP_FAILURE,
+    @SerialName("success") SUCCESS,
+    @SerialName("timed_out") TIMED_OUT,
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Filters(
+    val `repositories`: List<String>? = null,
+    val `workflows`: List<String>? = null,
+    val `conclusions`:
+        List<UpdateWorkflowAutomationRequestVariant3EventConfigVariant6FiltersConclusionsItem>? =
+        null,
+    val `branches`: List<String>? = null,
+    val `events`: List<String>? = null,
+    val `actors`: List<String>? = null,
+)
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3EventConfigVariant6(
+    val `provider`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Event,
+    val `filters`: UpdateWorkflowAutomationRequestVariant3EventConfigVariant6Filters? = null,
+) : UpdateWorkflowAutomationRequestVariant3EventConfig
+
+object UpdateWorkflowAutomationRequestVariant3EventConfigSerializer :
+    KSerializer<UpdateWorkflowAutomationRequestVariant3EventConfig> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant3EventConfig"
+        )
+
+    override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant3EventConfig {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant3EventConfig"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for UpdateWorkflowAutomationRequestVariant3EventConfig"
+                )
+        val matches =
+            listOf(
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("deployment_status_created")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("issue_comment_created")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("pull_request")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("pull_request_review_submitted")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("workflow_job_completed")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("workflow_run_completed")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant3EventConfig variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant3.serializer(),
+                    value,
+                )
+            3 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant4.serializer(),
+                    value,
+                )
+            4 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant5.serializer(),
+                    value,
+                )
+            5 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant6.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown UpdateWorkflowAutomationRequestVariant3EventConfig variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: UpdateWorkflowAutomationRequestVariant3EventConfig,
+    ) {
+        when (value) {
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant1 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant1.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant2 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant2.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant3 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant3.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant4 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant4.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant5 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant5.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3EventConfigVariant6 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3EventConfigVariant6.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant3(
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant3EventConfig
+) : UpdateWorkflowAutomationRequest
+
+@Serializable(with = UpdateWorkflowAutomationRequestVariant4EventConfigSerializer::class)
+sealed interface UpdateWorkflowAutomationRequestVariant4EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Provider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event {
+    @SerialName("event_created") EVENT_CREATED
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant4EventConfigVariant1(
+    val `provider`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant1Event,
+    val `calendarId`: String? = null,
+) : UpdateWorkflowAutomationRequestVariant4EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Provider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Event {
+    @SerialName("event_updated") EVENT_UPDATED
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant4EventConfigVariant2(
+    val `provider`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant2Event,
+    val `calendarId`: String? = null,
+) : UpdateWorkflowAutomationRequestVariant4EventConfig
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Provider {
+    @SerialName("google-calendar") GOOGLE_CALENDAR
+}
+
+@Serializable
+enum class UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Event {
+    @SerialName("event_cancelled") EVENT_CANCELLED
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant4EventConfigVariant3(
+    val `provider`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Provider,
+    val `event`: UpdateWorkflowAutomationRequestVariant4EventConfigVariant3Event,
+    val `calendarId`: String? = null,
+) : UpdateWorkflowAutomationRequestVariant4EventConfig
+
+object UpdateWorkflowAutomationRequestVariant4EventConfigSerializer :
+    KSerializer<UpdateWorkflowAutomationRequestVariant4EventConfig> {
+    override val descriptor =
+        buildClassSerialDescriptor(
+            "ai.okou.android.api.generated.UpdateWorkflowAutomationRequestVariant4EventConfig"
+        )
+
+    override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequestVariant4EventConfig {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for UpdateWorkflowAutomationRequestVariant4EventConfig"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for UpdateWorkflowAutomationRequestVariant4EventConfig"
+                )
+        val matches =
+            listOf(
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("event_created")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("event_updated")
+                } == true,
+                (value["event"] as? JsonPrimitive)?.let {
+                    it.isString && it.content in setOf("event_cancelled")
+                } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous UpdateWorkflowAutomationRequestVariant4EventConfig variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant3.serializer(),
+                    value,
+                )
+            else ->
+                throw SerializationException(
+                    "Unknown UpdateWorkflowAutomationRequestVariant4EventConfig variant"
+                )
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: UpdateWorkflowAutomationRequestVariant4EventConfig,
+    ) {
+        when (value) {
+            is UpdateWorkflowAutomationRequestVariant4EventConfigVariant1 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant1.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant4EventConfigVariant2 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant2.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant4EventConfigVariant3 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant4EventConfigVariant3.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
+@Serializable
+data class UpdateWorkflowAutomationRequestVariant4(
+    val `eventConfig`: UpdateWorkflowAutomationRequestVariant4EventConfig
+) : UpdateWorkflowAutomationRequest
+
+object UpdateWorkflowAutomationRequestSerializer : KSerializer<UpdateWorkflowAutomationRequest> {
+    override val descriptor =
+        buildClassSerialDescriptor("ai.okou.android.api.generated.UpdateWorkflowAutomationRequest")
+
+    override fun deserialize(decoder: Decoder): UpdateWorkflowAutomationRequest {
+        val input =
+            decoder as? JsonDecoder
+                ?: throw SerializationException(
+                    "Expected JSON object for UpdateWorkflowAutomationRequest"
+                )
+        val value =
+            input.decodeJsonElement() as? JsonObject
+                ?: throw SerializationException(
+                    "Expected object for UpdateWorkflowAutomationRequest"
+                )
+        val matches =
+            listOf(
+                value.containsKey("schedule") &&
+                    ((value["schedule"] as? JsonObject)?.get("type") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("cron", "loop", "once")
+                    } == true,
+                value.containsKey("eventConfig") &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("gmail") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString && it.content in setOf("new_message", "label_applied")
+                    } == true,
+                value.containsKey("eventConfig") &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("github") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString &&
+                            it.content in
+                                setOf(
+                                    "deployment_status_created",
+                                    "issue_comment_created",
+                                    "pull_request",
+                                    "pull_request_review_submitted",
+                                    "workflow_job_completed",
+                                    "workflow_run_completed",
+                                )
+                    } == true,
+                value.containsKey("eventConfig") &&
+                    ((value["eventConfig"] as? JsonObject)?.get("provider") as? JsonPrimitive)
+                        ?.let { it.isString && it.content in setOf("google-calendar") } == true &&
+                    ((value["eventConfig"] as? JsonObject)?.get("event") as? JsonPrimitive)?.let {
+                        it.isString &&
+                            it.content in setOf("event_created", "event_updated", "event_cancelled")
+                    } == true,
+            )
+        if (matches.count { it } != 1)
+            throw SerializationException(
+                "Unknown or ambiguous UpdateWorkflowAutomationRequest variant"
+            )
+        return when (matches.indexOf(true)) {
+            0 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant1.serializer(),
+                    value,
+                )
+            1 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant2.serializer(),
+                    value,
+                )
+            2 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant3.serializer(),
+                    value,
+                )
+            3 ->
+                input.json.decodeFromJsonElement(
+                    UpdateWorkflowAutomationRequestVariant4.serializer(),
+                    value,
+                )
+            else -> throw SerializationException("Unknown UpdateWorkflowAutomationRequest variant")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: UpdateWorkflowAutomationRequest) {
+        when (value) {
+            is UpdateWorkflowAutomationRequestVariant1 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant1.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant2 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant2.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant3 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant3.serializer(),
+                    value,
+                )
+            is UpdateWorkflowAutomationRequestVariant4 ->
+                encoder.encodeSerializableValue(
+                    UpdateWorkflowAutomationRequestVariant4.serializer(),
+                    value,
+                )
+        }
+    }
+}
+
 @Serializable data class RenameProjectRequest(val `eventId`: String, val `name`: String)
 
 @Serializable
@@ -6404,28 +10855,6 @@ data class SaveWorkspaceDraftDraftAttachmentsItem(
     val `contentType`: String,
     val `size`: Double,
 )
-
-@Serializable(with = CanonicalOptionalSerializer::class)
-sealed interface CanonicalOptional<out T> {
-    data object Absent : CanonicalOptional<Nothing>
-
-    data class Present<T>(val value: T) : CanonicalOptional<T>
-}
-
-class CanonicalOptionalSerializer<T>(private val serializer: KSerializer<T>) :
-    KSerializer<CanonicalOptional<T>> {
-    override val descriptor = buildClassSerialDescriptor("CanonicalOptional", serializer.descriptor)
-
-    override fun deserialize(decoder: Decoder): CanonicalOptional<T> =
-        CanonicalOptional.Present(decoder.decodeSerializableValue(serializer))
-
-    override fun serialize(encoder: Encoder, value: CanonicalOptional<T>) {
-        when (value) {
-            CanonicalOptional.Absent -> throw SerializationException("Absent field must be omitted")
-            is CanonicalOptional.Present -> encoder.encodeSerializableValue(serializer, value.value)
-        }
-    }
-}
 
 @Serializable
 data class SaveWorkspaceDraft(
@@ -11687,6 +16116,13 @@ enum class ResolveArtifactReferenceQueryKind {
 
 @Serializable
 data class ResolveArtifactReferenceQuery(val `kind`: ResolveArtifactReferenceQueryKind? = null)
+
+@Serializable
+enum class WorkflowsQueryScope {
+    @SerialName("workspace") WORKSPACE
+}
+
+@Serializable data class WorkflowsQuery(val `scope`: WorkflowsQueryScope? = null)
 
 @Serializable(with = HistoryRowsQuerySerializer::class) sealed interface HistoryRowsQuery
 

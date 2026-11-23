@@ -1533,10 +1533,10 @@ export const clientContractImportManifest = [
   {
     module: "run-routes",
     contracts: [
-      "runAgentEventsContract",
       "runContextContract",
       "runNetworkLogsContract",
       "runRunnerContract",
+      "runTelemetryEventsContract",
       "runsByIdContract",
       "runsCancelContract",
       "runsQueueContract",
@@ -2186,6 +2186,7 @@ export const clientContractImportManifest = [
   {
     module: "webhooks",
     contracts: [
+      "runWebhookContract",
       "webhookBuiltInGenerationFalContract",
       "webhookClerkContract",
       "webhookCompleteContract",

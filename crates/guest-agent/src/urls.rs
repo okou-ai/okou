@@ -3,31 +3,31 @@
 use api_contracts::generated::routes;
 
 pub(crate) fn events_url(base_url: &str) -> String {
-    routes::webhooks::agent::events::SEND.url(base_url)
+    routes::webhooks::run::events::SEND.url(base_url)
 }
 
 pub(crate) fn session_output_url(base_url: &str) -> String {
-    routes::webhooks::agent::session_output::SEND.url(base_url)
+    routes::webhooks::run::session_output::SEND.url(base_url)
 }
 
 pub(crate) fn complete_url(base_url: &str) -> String {
-    routes::webhooks::agent::complete::COMPLETE.url(base_url)
+    routes::webhooks::run::complete::COMPLETE.url(base_url)
 }
 
 pub(crate) fn heartbeat_url(base_url: &str) -> String {
-    routes::webhooks::agent::heartbeat::SEND.url(base_url)
+    routes::webhooks::run::heartbeat::SEND.url(base_url)
 }
 
 pub(crate) fn telemetry_url(base_url: &str) -> String {
-    routes::webhooks::agent::telemetry::SEND.url(base_url)
+    routes::webhooks::run::telemetry::SEND.url(base_url)
 }
 
 pub(crate) fn storage_prepare_url(base_url: &str) -> String {
-    routes::webhooks::agent::storages::prepare::PREPARE.url(base_url)
+    routes::webhooks::run::storages::prepare::PREPARE.url(base_url)
 }
 
 pub(crate) fn storage_commit_url(base_url: &str) -> String {
-    routes::webhooks::agent::storages::commit::COMMIT.url(base_url)
+    routes::webhooks::run::storages::commit::COMMIT.url(base_url)
 }
 
 pub(crate) fn steered_input_url(base_url: &str, run_id: &str, event_id: &str) -> String {

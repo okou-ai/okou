@@ -34,22 +34,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,7 +66,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -94,8 +87,6 @@ internal fun SessionRoot(
     updateToolbarAction: UpdateToolbarAction? = null,
     onUpdateEditingChanged: (Boolean) -> Unit = {},
 ) {
-    val textButtonColors =
-        ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
     var switchTarget by rememberWorkspaceSwitchTarget()
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
@@ -129,6 +120,10 @@ internal fun SessionRoot(
                     ready?.chats ?: opened?.chats,
                     ready?.composer ?: opened?.composer,
                     ready?.controls,
+                    workflows = ready?.workflows,
+                    workflowTimezone =
+                        ready?.preferences?.uiState?.collectAsStateWithLifecycle()?.value?.timezone
+                            ?: java.util.TimeZone.getDefault().id,
                     projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
                     settingsContent = { destination, open, close ->
                         WorkspaceSettingsContent(
@@ -174,68 +169,7 @@ internal fun SessionRoot(
         } else if (state.stage == SessionStage.SignIn) {
             NativeAuthentication()
         } else {
-            Column(
-                Modifier.fillMaxSize()
-                    .safeDrawingPadding()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                OkouAuthLogo()
-                Text(
-                    stringResource(R.string.auth_welcome),
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.semantics { heading() },
-                )
-                val message =
-                    when (state.stage) {
-                        SessionStage.Restoring -> R.string.auth_restoring
-                        SessionStage.LoadingWorkspace -> R.string.auth_preparing_workspace
-                        SessionStage.SigningOut -> R.string.auth_signing_out
-                        SessionStage.ChooseWorkspace ->
-                            if (state.memberships.isEmpty()) R.string.auth_no_workspace
-                            else R.string.auth_choose_workspace
-                        SessionStage.AccessRemoved -> R.string.auth_access_removed
-                        SessionStage.UpdateRequired -> R.string.auth_update_required
-                        else -> R.string.auth_unavailable
-                    }
-                Text(
-                    stringResource(message),
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-                if (state.stage == SessionStage.Restoring || state.working) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.onSurface)
-                }
-                if (state.stage == SessionStage.ChooseWorkspace) {
-                    state.memberships.forEach { workspace ->
-                        OutlinedButton(onClick = { chooseWorkspace(workspace.id) }) {
-                            Text(workspace.name)
-                        }
-                    }
-                    if (state.memberships.isEmpty()) {
-                        Button(onClick = openWorkspaceSetup) {
-                            Text(stringResource(R.string.auth_workspace_setup))
-                        }
-                    }
-                }
-                if (
-                    !state.working &&
-                        state.stage != SessionStage.Restoring &&
-                        state.stage != SessionStage.UpdateRequired
-                ) {
-                    TextButton(onClick = retry, colors = textButtonColors) {
-                        Text(stringResource(R.string.retry))
-                    }
-                }
-                if (
-                    state.stage != SessionStage.Restoring && state.stage != SessionStage.SigningOut
-                ) {
-                    TextButton(onClick = signOut, colors = textButtonColors) {
-                        Text(stringResource(R.string.auth_sign_out))
-                    }
-                }
-            }
+            SessionEntryScreen(state, retry, chooseWorkspace, signOut, openWorkspaceSetup)
         }
     }
 }
@@ -288,7 +222,7 @@ private fun NativeAuthentication() {
 }
 
 @Composable
-private fun OkouAuthLogo() {
+internal fun OkouAuthLogo() {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -615,7 +549,7 @@ private fun WorkspaceAvatar(
 }
 
 @Composable
-private fun WorkspaceLogo(id: String, modifier: Modifier) {
+internal fun WorkspaceLogo(id: String, modifier: Modifier) {
     val logo = remember(id) { workspaceLogo(id) }
     Image(painterResource(logo), contentDescription = null, modifier = modifier.clip(CircleShape))
 }

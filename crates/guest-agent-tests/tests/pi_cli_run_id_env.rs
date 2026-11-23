@@ -180,7 +180,7 @@ fi
     );
     let mut delivered_events = Vec::new();
     for request in server.requests()? {
-        assert_eq!(request.path, "/api/webhooks/agent/events");
+        assert_eq!(request.path, "/api/webhooks/run/events");
         assert_eq!(request.authorization.as_deref(), Some("Bearer test-token"));
         let body: Value = serde_json::from_str(&request.body)?;
         delivered_events.extend(

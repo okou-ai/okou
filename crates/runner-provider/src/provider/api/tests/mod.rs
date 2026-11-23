@@ -1131,7 +1131,7 @@ async fn api_client_complete_non_success_includes_status_and_body() {
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path(routes::webhooks::agent::complete::COMPLETE.path);
+                .path(routes::webhooks::run::complete::COMPLETE.path);
             then.status(500).body("complete failed");
         })
         .await;
@@ -1195,7 +1195,7 @@ async fn api_client_complete_serializes_sandbox_identity() {
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path(routes::webhooks::agent::complete::COMPLETE.path)
+                .path(routes::webhooks::run::complete::COMPLETE.path)
                 .header("authorization", "Bearer sandbox-token")
                 .json_body(serde_json::json!({
                     "runId": run_id,
@@ -1231,7 +1231,7 @@ async fn api_provider_complete_uses_sandbox_token_from_completion_auth() {
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path(routes::webhooks::agent::complete::COMPLETE.path)
+                .path(routes::webhooks::run::complete::COMPLETE.path)
                 .header("authorization", "Bearer sandbox-token");
             then.status(200);
         })
@@ -1254,7 +1254,7 @@ async fn api_provider_complete_with_local_auth_does_not_send_request() {
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path(routes::webhooks::agent::complete::COMPLETE.path);
+                .path(routes::webhooks::run::complete::COMPLETE.path);
             then.status(200);
         })
         .await;
@@ -1276,7 +1276,7 @@ async fn api_provider_complete_with_mismatched_auth_does_not_send_request() {
     let mock = server
         .mock_async(|when, then| {
             when.method(POST)
-                .path(routes::webhooks::agent::complete::COMPLETE.path);
+                .path(routes::webhooks::run::complete::COMPLETE.path);
             then.status(200);
         })
         .await;

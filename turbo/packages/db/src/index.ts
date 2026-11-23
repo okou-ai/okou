@@ -24,7 +24,6 @@ import * as featureGuideSchema from "./schema/feature-guide";
 import * as deviceCodesSchema from "./schema/device-codes";
 import * as cliTokensSchema from "./schema/cli-tokens";
 import * as instructionsSchema from "./schema/instructions";
-import * as legacyAgentApiProfileSchema from "./schema/legacy-agent-api-profile";
 import * as agentRunSchema from "./runtime/agent-run";
 import * as agentRunConnectorDiagnosticRegistrationSchema from "./schema/agent-run-connector-diagnostic-registration";
 import * as memberMemorySchema from "./schema/member-memory";
@@ -201,7 +200,6 @@ export const schema = {
   ...artifactShareSchema,
   ...deviceCodesSchema,
   ...cliTokensSchema,
-  ...legacyAgentApiProfileSchema,
   ...instructionsSchema,
   ...agentRunSchema,
   ...agentRunConnectorDiagnosticRegistrationSchema,

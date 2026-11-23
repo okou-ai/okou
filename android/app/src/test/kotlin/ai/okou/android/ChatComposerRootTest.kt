@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -279,6 +280,20 @@ class ChatComposerRootTest {
         val listStarted = CountDownLatch(1)
         val historyStarted = CountDownLatch(1)
         app.fixture.beforeCreateReturn = { create.await() }
+        // A list read can see the new chat while its create response is still held.
+        app.fixture.beforeListReturn = { containsCreatedChat ->
+            if (containsCreatedChat) {
+                listStarted.countDown()
+                list.await()
+            }
+        }
+        app.fixture.beforeHistoryReturn = { id ->
+            val created = app.fixture.created.singleOrNull()
+            if (created?.getValue("clientThreadId")?.jsonPrimitive?.content == id) {
+                historyStarted.countDown()
+                history.await()
+            }
+        }
         app.contextGate.countDown()
         try {
             compose.onNodeWithText("New chat").performClick()
@@ -296,23 +311,19 @@ class ChatComposerRootTest {
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithTag("chat_${pending.threadId}").assertIsDisplayed().performClick()
             messageText(pending.eventId, prompt).assertIsDisplayed()
-            app.fixture.beforeListReturn = {
-                listStarted.countDown()
-                list.await()
-            }
-            app.fixture.beforeHistoryReturn = { id ->
-                if (id == pending.threadId) {
-                    historyStarted.countDown()
-                    history.await()
-                }
-            }
             create.countDown()
             awaitConversation { app.fixture.inputs.size == 1 }
             messageText(pending.eventId, "Sending…").assertIsDisplayed()
             app.sendGate.countDown()
-            awaitConversation { listStarted.count == 0L }
-            messageText(pending.eventId, "Message accepted; waiting for processing.")
-                .assertIsDisplayed()
+            val accepted = "Message accepted; waiting for processing."
+            awaitConversation {
+                listStarted.count == 0L &&
+                    compose
+                        .onAllNodesWithText(accepted, useUnmergedTree = true)
+                        .fetchSemanticsNodes()
+                        .isNotEmpty()
+            }
+            messageText(pending.eventId, accepted).assertIsDisplayed()
             assertEquals(1L, historyStarted.count)
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText("New chat").performClick()

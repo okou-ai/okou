@@ -7,6 +7,7 @@ import ai.okou.android.api.SignedTransferClient
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.CreateThreadRequest
+import ai.okou.android.api.generated.CreateWorkflowAutomationRequest
 import ai.okou.android.api.generated.DefaultModelPreference
 import ai.okou.android.api.generated.FeatureSwitches
 import ai.okou.android.api.generated.InitializePreferencesRequest
@@ -24,6 +25,8 @@ import ai.okou.android.api.generated.SendRequestVariant1
 import ai.okou.android.api.generated.UpdateDefaultModelPreference
 import ai.okou.android.api.generated.UpdateInstructionsRequest
 import ai.okou.android.api.generated.UpdatePreferencesRequest
+import ai.okou.android.api.generated.UpdateWorkflowAutomationRequest
+import ai.okou.android.api.generated.UpdateWorkflowRequest
 import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.artifacts.ArtifactService
 import ai.okou.android.chat.AblyRealtimeConnection
@@ -47,6 +50,7 @@ import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
 import ai.okou.android.instructions.PersonalInstructionsService
+import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
@@ -81,6 +85,9 @@ interface WorkspaceSession :
     AssistantRecoveryService {
     val artifacts: ArtifactService
     val connectors: ConnectorService?
+        get() = null
+
+    val workflowService: WorkflowService?
         get() = null
 
     suspend fun usagePackCredits(): ai.okou.android.api.generated.UsagePackCredits
@@ -120,7 +127,10 @@ class CanonicalWorkspaceSession(
     private val locale: InitializePreferencesRequestLocale = initialLocale(Locale.getDefault()),
     private val timezone: String = TimeZone.getDefault().id,
     onUpdateRequired: (RequiredUpdate) -> Unit = {},
-) : WorkspaceSession {
+) : WorkspaceSession, WorkflowService {
+    override val workflowService: WorkflowService
+        get() = this
+
     private val api =
         ApiClient(identity.apiOrigin.toHttpUrl(), tokens, onUpdateRequired = onUpdateRequired)
     override val connectors = ConnectorService(api)
@@ -132,6 +142,28 @@ class CanonicalWorkspaceSession(
     }
 
     override suspend fun chatSnapshot() = api.chatSnapshot()
+
+    override suspend fun workflows() = api.workflows()
+
+    override suspend fun workflow(id: String) = api.workflow(id)
+
+    override suspend fun workflowAutomations() = api.workspaceWorkflowAutomations()
+
+    override suspend fun workflowConnections() = api.workflowConnections()
+
+    override suspend fun updateWorkflow(id: String, request: UpdateWorkflowRequest) =
+        api.updateWorkflow(id, request)
+
+    override suspend fun createAutomation(
+        workflowId: String,
+        request: CreateWorkflowAutomationRequest,
+    ) = api.createWorkflowAutomation(workflowId, request)
+
+    override suspend fun updateAutomation(id: String, request: UpdateWorkflowAutomationRequest) =
+        api.updateWorkflowAutomation(id, request)
+
+    override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
+        api.setWorkflowAutomationEnabled(id, enabled)
 
     override suspend fun observeRealtime(
         target: StateFlow<RunOutputTarget?>,

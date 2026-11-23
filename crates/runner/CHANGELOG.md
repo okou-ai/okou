@@ -1,5 +1,60 @@
 # Changelog
 
+## [0.249.103](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.102...runner-rs-v0.249.103) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share native accepted response receipt validation ([#50037](https://github.com/okou-ai/okou/issues/50037)) ([5ca5231](https://github.com/okou-ai/okou/commit/5ca5231eaa0bd49c84c1045308150a58d32f0837))
+
+## [0.249.102](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.101...runner-rs-v0.249.102) (2026-11-22)
+
+
+### Refactoring
+
+* migrate run telemetry and runner callbacks ([#50027](https://github.com/okou-ai/okou/issues/50027)) ([08dc352](https://github.com/okou-ai/okou/commit/08dc352da3fda206528eaddfef6bb60efcf68db6))
+* **runner:** share idle connection detachment ([#50030](https://github.com/okou-ai/okou/issues/50030)) ([b4d957d](https://github.com/okou-ai/okou/commit/b4d957d31504e540817b6ca196626f2362e5cdcf))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.101](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.100...runner-rs-v0.249.101) (2026-11-22)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.100](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.99...runner-rs-v0.249.100) (2026-11-22)
+
+
+### Refactoring
+
+* move rust run callbacks to run webhook paths ([#50022](https://github.com/okou-ai/okou/issues/50022)) ([ea009d1](https://github.com/okou-ai/okou/commit/ea009d1a44ab6b2a7164f03033a47a043ed09355))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.249.99](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.98...runner-rs-v0.249.99) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** share guarded idle status path claims ([#50018](https://github.com/okou-ai/okou/issues/50018)) ([9196f04](https://github.com/okou-ai/okou/commit/9196f04854672097248b8a4c1f1c24712f9e6c64))
+
+## [0.249.98](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.97...runner-rs-v0.249.98) (2026-11-22)
+
+
+### Refactoring
+
+* **runner:** centralize platform http socket aborts ([#50008](https://github.com/okou-ai/okou/issues/50008)) ([0c216eb](https://github.com/okou-ai/okou/commit/0c216ebfc97f5a93bfc36ea7bf344fd8ba5afa6d))
+* **runner:** share native transition receipt validation ([#49980](https://github.com/okou-ai/okou/issues/49980)) ([23ab7ea](https://github.com/okou-ai/okou/commit/23ab7eaa5b83e240afe58f51d0917dc0de5b0440))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.249.97](https://github.com/okou-ai/okou/compare/runner-rs-v0.249.96...runner-rs-v0.249.97) (2026-11-22)
 
 

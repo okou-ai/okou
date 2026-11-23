@@ -29,15 +29,19 @@
     <string name="appearance_dark">Oscuro</string>
     <string name="on_this_device">En este dispositivo</string>
     <string name="retry">Reintentar</string>
-    <string name="auth_welcome">Te damos la bienvenida a Okou</string>
     <string name="auth_restoring">Restaurando tu sesión…</string>
     <string name="auth_preparing_workspace">Preparando tu espacio de trabajo…</string>
     <string name="auth_choose_workspace">Elige tu espacio de trabajo</string>
-    <string name="auth_no_workspace">Aún no tienes acceso a un espacio de trabajo.</string>
+    <string name="auth_no_workspace">Aún no hay espacios de trabajo accesibles</string>
+    <string name="auth_no_workspace_detail">Crea un espacio de trabajo o acepta una invitación en el navegador y vuelve a Okou.</string>
     <string name="auth_workspace_setup">Configurar un espacio de trabajo en la web</string>
-    <string name="auth_access_removed">Tu sesión o acceso ha cambiado. Inicia sesión de nuevo o actualiza el acceso.</string>
+    <string name="auth_access_removed">Ya no puedes acceder a este espacio de trabajo</string>
+    <string name="auth_access_removed_detail">Comprueba a qué espacios de trabajo puede seguir accediendo esta cuenta.</string>
     <string name="auth_update_required">Actualiza Okou para continuar.</string>
-    <string name="auth_unavailable">No se pudo cargar la sesión o el espacio de trabajo. Inténtalo de nuevo.</string>
+    <string name="auth_unavailable">No se pudo cargar la sesión o el espacio de trabajo</string>
+    <string name="auth_check_workspace">Comprobar espacios de trabajo</string>
+    <string name="auth_check_access">Comprobar acceso</string>
+    <string name="auth_sign_in_again">Volver a iniciar sesión</string>
     <string name="auth_sign_out">Cerrar sesión</string>
     <string name="auth_signing_out">Cerrando sesión…</string>
     <string name="auth_workspace">Espacio de trabajo actual</string>
@@ -152,5 +156,6 @@
     <string name="instructions_save_when_online">Conéctate para guardar los cambios.</string>
     <string name="settings_timezone">Zona horaria</string>
     <string name="settings_timezone_hint">Zona horaria predeterminada para nuevas tareas programadas.</string>
-    <string name="settings_timezone_utc">Tiempo universal coordinado (UTC)</string>
+    <string name="settings_timezone_utc">Tiempo universal coordinado</string>
+    <string name="settings_timezone_format">%1$s (UTC%2$s)</string>
 </resources>

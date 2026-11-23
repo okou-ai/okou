@@ -46,7 +46,7 @@ async fn startup_report_drains_after_completion_and_resource_release() {
                 // Retain just the unanswered startup socket; other delivery can progress.
                 report_tx.send(socket).unwrap();
             } else {
-                assert!(request.starts_with("POST /api/webhooks/agent/telemetry "));
+                assert!(request.starts_with("POST /api/webhooks/run/telemetry "));
                 assert!(payload["sandboxOperations"].is_array());
                 socket
                     .write_all(&json_response("200 OK", r#"{"success":true,"id":"ok"}"#))
