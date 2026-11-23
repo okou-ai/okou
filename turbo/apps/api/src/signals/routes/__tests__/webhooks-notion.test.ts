@@ -149,6 +149,7 @@ function configureNotionChildPageMock(
     readonly title?: string;
     readonly lastEditedTime?: string;
     readonly extraProperties?: Record<string, unknown>;
+    readonly once?: boolean;
   } = {},
 ): void {
   const title = options.title ?? "Launch notes";
@@ -184,6 +185,7 @@ function configureNotionChildPageMock(
           },
         });
       },
+      { once: options.once },
     ),
   );
 }
@@ -239,14 +241,17 @@ function configureNotionParentAndChildPageMock(entities: NotionEntities): void {
   );
 }
 
-function configureNotionDatabaseMock(entities: NotionEntities): void {
+function configureNotionDatabaseMock(
+  entities: NotionEntities,
+  accessToken = "notion-access-token",
+): void {
   server.use(
     http.get(
       "https://api.notion.com/v1/databases/:databaseId",
       ({ request, params }) => {
         expect(params.databaseId).toBe(entities.databaseId);
         expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
+          `Bearer ${accessToken}`,
         );
         expect(request.headers.get("notion-version")).toBe("2026-03-11");
         return HttpResponse.json({
@@ -263,7 +268,7 @@ function configureNotionDatabaseMock(entities: NotionEntities): void {
       ({ request, params }) => {
         expect(params.dataSourceId).toBe(entities.dataSourceId);
         expect(request.headers.get("authorization")).toBe(
-          "Bearer notion-access-token",
+          `Bearer ${accessToken}`,
         );
         expect(request.headers.get("notion-version")).toBe("2026-03-11");
         return HttpResponse.json({
@@ -1437,6 +1442,78 @@ describe("POST /api/webhooks/notion", () => {
       );
     },
   );
+
+  it("uses the verified page parent when dispatching a repaired data-source listener", async () => {
+    const webhook = (
+      await setupApp({ context, routes: webhooksNotionRoutes, isolatePg: true })
+    )(webhookNotionContract);
+    await verifyNotionWebhook(webhook);
+    const { actor, entities, workflowId, firstAccount } =
+      await setupNotionAccountLifecycle();
+    configureNotionDatabaseMock(entities);
+    await accept(
+      automationsClient().create({
+        headers: authHeaders(),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "notion-page-content-updated",
+          eventConfig: {
+            provider: "notion",
+            event: "page_content_updated",
+            databaseUrl: entities.databaseUrl,
+          },
+        },
+      }),
+      [201],
+    );
+    await connectorsApi.updateFeatureSwitches(actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const expiresAt = now();
+    mockNow(expiresAt - 3_600_000);
+    await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).updateAccountPolicy({
+        headers: authHeaders(),
+        params: { connectionId: firstAccount.id },
+        body: {
+          target: { kind: "builtin", connectorSlug: "notion" },
+          policy: "allow-1h",
+        },
+      }),
+      [200],
+    );
+    mockNow(expiresAt);
+    const replacementToken = "notion-second-access-token";
+    configureNotionDatabaseMock(entities, replacementToken);
+    server.use(
+      http.get(
+        `https://api.notion.com/v1/pages/${entities.childPageId}`,
+        () => {
+          return HttpResponse.json({ code: "rate_limited" }, { status: 429 });
+        },
+      ),
+    );
+    configureNotionChildPageMock(
+      entities,
+      { type: "data_source_id", data_source_id: entities.dataSourceId },
+      { accessToken: replacementToken, once: true },
+    );
+    const { rawBody } = notionPageEvent({
+      entities,
+      type: "page.content_updated",
+      timestamp: new Date(expiresAt).toISOString(),
+      accessibleBy: ["notion-user-2"],
+    });
+    await expect(
+      postNotionWebhook(
+        { rawBody, signature: notionSignature(rawBody) },
+        webhook,
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { pending: 1 } });
+  });
 
   it("repairs a denied Notion binding only when the replacement can access the resource", async () => {
     const cronSecret = "notion-listener-cron-secret";

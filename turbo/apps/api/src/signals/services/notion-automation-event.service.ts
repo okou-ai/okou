@@ -719,10 +719,16 @@ function notionWebhookScopeCondition(
   }
 }
 
+interface VerifiedNotionDataSource {
+  readonly connectorId: string;
+  readonly dataSourceId: string;
+}
+
 interface PreparedNotionWebhookAutomations {
   readonly kind: "prepared";
   readonly observations: readonly NotionWebhookAutomation[];
   readonly updates: readonly NotionProjectionUpdate[];
+  readonly verifiedDataSources: ReadonlyMap<string, VerifiedNotionDataSource>;
   readonly reload: boolean;
 }
 
@@ -763,6 +769,7 @@ const prepareNotionWebhookAutomations$ = command(
     // Finish provider checks before recording the delivery or retargeting any
     // binding, so transient failures can be retried without partial changes.
     const updates: NotionProjectionUpdate[] = [];
+    const verifiedDataSources = new Map<string, VerifiedNotionDataSource>();
     const pageWithoutDataSource =
       args.eventType === "notion-page-content-updated" &&
       eventDataSourceParentId(args.event) === null
@@ -775,10 +782,10 @@ const prepareNotionWebhookAutomations$ = command(
           : notionPageContentUpdatedEventConfigSchema.safeParse(
               automation.eventConfig,
             );
-      const dataSourcePageId =
+      const dataSource =
         contentConfig?.success &&
         contentConfig.data.scope.type === "data_source"
-          ? pageWithoutDataSource
+          ? contentConfig.data.scope.dataSource
           : null;
       const update = await set(
         selectNotionProjectionUpdate$,
@@ -789,7 +796,7 @@ const prepareNotionWebhookAutomations$ = command(
         continue;
       }
       if (update.selectedConnectorId === null) {
-        if (dataSourcePageId === null) {
+        if (dataSource === null) {
           updates.push(update);
         }
         continue;
@@ -802,7 +809,10 @@ const prepareNotionWebhookAutomations$ = command(
           connectorId: update.selectedConnectorId,
           eventType: args.eventType,
           eventConfig: update.values.eventConfig,
-          dataSourcePageId: dataSourcePageId ?? undefined,
+          dataSourcePageId:
+            dataSource === null
+              ? undefined
+              : (pageWithoutDataSource ?? undefined),
         },
         signal,
       );
@@ -811,6 +821,12 @@ const prepareNotionWebhookAutomations$ = command(
       }
       if (validation.kind === "scope-mismatch") {
         continue;
+      }
+      if (validation.kind === "ok" && dataSource !== null) {
+        verifiedDataSources.set(automation.id, {
+          connectorId: update.selectedConnectorId,
+          dataSourceId: dataSource.id,
+        });
       }
       const values =
         validation.kind === "ok"
@@ -824,6 +840,7 @@ const prepareNotionWebhookAutomations$ = command(
       kind: "prepared",
       observations,
       updates,
+      verifiedDataSources,
       reload: stale.length > 0,
     };
   },
@@ -1183,11 +1200,18 @@ const contentUpdatedAutomationMatchesEvent$ = command(
       readonly config: NotionPageContentUpdatedEventConfig;
       readonly event: NotionWebhookEvent;
       readonly pageId: string;
+      readonly verifiedDataSource: VerifiedNotionDataSource | undefined;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     if (args.config.scope.type === "page") {
       return args.config.scope.page.id === args.pageId;
+    }
+    if (
+      args.verifiedDataSource?.connectorId === args.config.connectorId &&
+      args.verifiedDataSource.dataSourceId === args.config.scope.dataSource.id
+    ) {
+      return true;
     }
     const dataSourceId = await set(
       dataSourceIdForContentUpdatedEvent$,
@@ -1205,6 +1229,10 @@ const enqueueOrRefreshNotionPageContentUpdatedEvents$ = command(
       readonly automations: readonly AutomationRow[];
       readonly event: NotionWebhookEvent;
       readonly pageId: string;
+      readonly verifiedDataSources: ReadonlyMap<
+        string,
+        VerifiedNotionDataSource
+      >;
     },
     signal: AbortSignal,
   ): Promise<{ readonly pending: number; readonly refreshed: number }> => {
@@ -1232,6 +1260,7 @@ const enqueueOrRefreshNotionPageContentUpdatedEvents$ = command(
             config: config.data,
             event: args.event,
             pageId: args.pageId,
+            verifiedDataSource: args.verifiedDataSources.get(automation.id),
           },
           signal,
         ))
@@ -1534,7 +1563,7 @@ const dispatchNotionEvent$ = command(
       case "notion-page-content-updated": {
         const outcome = await set(
           enqueueOrRefreshNotionPageContentUpdatedEvents$,
-          dispatch,
+          { ...dispatch, verifiedDataSources: prepared.verifiedDataSources },
           signal,
         );
         return { ...ACKNOWLEDGED_NOTION_EVENT_RESULT, ...outcome };
