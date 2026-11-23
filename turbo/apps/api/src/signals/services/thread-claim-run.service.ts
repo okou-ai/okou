@@ -13,6 +13,7 @@ import type { AgentRunCallbackPayload } from "@okouai/db/jsonb-contracts/agent-r
 import { STAFF_SINGLE_AGENT_ORG_ID } from "@okouai/core/single-agent-migration";
 import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { performance } from "node:perf_hooks";
+import { waitUntil } from "../context/wait-until";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
   DEFAULT_PROFILE,
@@ -89,10 +90,8 @@ import {
   createExecutionBundleCache,
   type AdmittedRunLaunch,
 } from "./direct-run-preparation.service";
-import {
-  startExecutionRuntimeResources$,
-  type ExecutionRuntimeResources,
-} from "./execution-runtime-context";
+import type { ExecutionRuntimeResources } from "./execution-runtime-context";
+import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
 import { selectExecutionContentBundles } from "./execution-content-bundle";
 import {
   prepareRunPackageMounts,
@@ -264,6 +263,8 @@ import {
 } from "./member-memory-head.service";
 import {
   buildMemberMemoryMount,
+  executionMemoryMount,
+  prepareExecutionMemoryArchive$,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
 
@@ -609,6 +610,14 @@ interface ThreadRunContext {
   readonly launchRecord: ClaimLaunchRecord;
 }
 
+interface PreparedRunAdmission {
+  readonly context: ThreadRunContext;
+  readonly memoryArchive: Promise<Awaited<
+    ReturnType<(typeof prepareExecutionMemoryArchive$)["write"]>
+  > | null>;
+  readonly networkPolicyInputs: ExecutionRuntimeResources["networkPolicyInputs"];
+}
+
 function claimCommitArguments(
   args: ThreadRunPersistenceArgs,
 ): ThreadRunContext["input"]["args"] {
@@ -791,7 +800,7 @@ export interface ThreadClaimRunObjects {
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
   readonly executionBundleCache$: ReturnType<typeof createExecutionBundleCache>;
   readonly prepareRunAdmission$: Command<
-    Promise<ThreadRunContext | null>,
+    Promise<PreparedRunAdmission | null>,
     [signal: AbortSignal]
   >;
   readonly admitRun$: Command<
@@ -799,7 +808,7 @@ export interface ThreadClaimRunObjects {
       readonly pending: PendingClaimRun;
       readonly resources: ExecutionRuntimeResources;
     } | null>,
-    [context: ThreadRunContext, signal: AbortSignal]
+    [prepared: PreparedRunAdmission, signal: AbortSignal]
   >;
   readonly publishPendingRun$: Command<
     Promise<void>,
@@ -1876,7 +1885,6 @@ export function createThreadClaimRunObjects(
             modelProvider,
             modelProviderPermissions: runtime.providerPermissions,
             connectorEnvironment: runtime.connector.environment,
-            connectorNetworkPolicyInputs: runtime.connector.networkPolicyInputs,
             userTimezone: runPrompt.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
@@ -2082,6 +2090,9 @@ export function createThreadClaimRunObjects(
     return ready && validSource;
   });
   // The pick captured Memory alongside the predecessor session binding.
+  const memoryHead$ = computed(async (get) => {
+    return decodeMemberMemoryHead((await get(preparation$)).memoryHead);
+  });
   const preparedMemory$ = computed(async (get) => {
     if (!(await get(resourceAllowed$))) {
       return null;
@@ -2091,7 +2102,7 @@ export function createThreadClaimRunObjects(
       return plan;
     }
     return {
-      head: decodeMemberMemoryHead((await get(preparation$)).memoryHead),
+      head: await get(memoryHead$),
     };
   });
   const runnerPackages$ = computed(async (get) => {
@@ -2737,28 +2748,63 @@ export function createThreadClaimRunObjects(
       if (!event) {
         return null;
       }
+      const memoryArchive = (async () => {
+        const head = await get(memoryHead$);
+        return head
+          ? await set(prepareExecutionMemoryArchive$, memoryOwner, head, signal)
+          : null;
+      })();
+      const networkPolicyInputs = (async () => {
+        if (
+          event.contextType === "automation" &&
+          (await get(automationSource$)).kind === "rejected"
+        ) {
+          return null;
+        }
+        const connector = await get(connectorAdmission$);
+        signal.throwIfAborted();
+        return isRouteError(connector)
+          ? null
+          : await set(prepareExecutionNetworkPolicy$, {
+              connectorRuntimeTargets: connector.environment.runtimeTargets,
+              networkPolicyInputs: connector.networkPolicyInputs,
+            });
+      })();
+      waitUntil(settle(memoryArchive));
+      waitUntil(settle(networkPolicyInputs));
       const prepared = await settle(
         set(prepareRunContext$, get(claimRunTiming$), signal),
         signal,
       );
-      return prepared.ok
-        ? prepared.value
-        : await set(failRunAdmission$, prepared.error, signal);
+      if (!prepared.ok) {
+        return await set(failRunAdmission$, prepared.error, signal);
+      }
+      return prepared.value
+        ? { context: prepared.value, memoryArchive, networkPolicyInputs }
+        : null;
     },
   );
   const admitRun$ = command(
-    async ({ get, set }, context: ThreadRunContext, signal: AbortSignal) => {
-      const resources = set(
-        startExecutionRuntimeResources$,
-        {
-          memoryMount: context.launch.memoryMount,
-          connectorRuntimeTargets:
-            context.persistence.diagnosticRegistrationPayload.targets,
-          networkPolicyInputs:
-            context.launch.facts.connectorNetworkPolicyInputs,
-        },
-        signal,
-      );
+    async (
+      { get, set },
+      prepared: PreparedRunAdmission,
+      signal: AbortSignal,
+    ) => {
+      const { context, memoryArchive, networkPolicyInputs } = prepared;
+      const memory = (async () => {
+        const { mount, head } = context.launch.memoryMount;
+        // Missing Memory is supplied by the initializer's accepted revision.
+        const archive =
+          (await memoryArchive) ??
+          (await set(
+            prepareExecutionMemoryArchive$,
+            memoryOwner,
+            head,
+            signal,
+          ));
+        return executionMemoryMount(mount, archive);
+      })();
+      waitUntil(settle(memory));
       const committed = await settle(
         set(
           createRun$,
@@ -2770,7 +2816,12 @@ export function createThreadClaimRunObjects(
       if (!committed.ok) {
         return await set(failRunAdmission$, committed.error, signal);
       }
-      return committed.value ? { pending: committed.value, resources } : null;
+      return committed.value
+        ? {
+            pending: committed.value,
+            resources: { memory, networkPolicyInputs },
+          }
+        : null;
     },
   );
   return {
@@ -3055,11 +3106,10 @@ function prepareAtomicLaunchPersistence(
   const rowsArgs = preparedLaunchRowsArgs(commit);
   return {
     rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
-    diagnosticRegistrationPayload:
-      agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
-        version: 1,
-        targets: commit.launch.facts.connectorEnvironment.runtimeTargets,
-      }),
+    diagnosticRegistrationPayload: {
+      version: 1,
+      targets: [...commit.launch.facts.connectorEnvironment.runtimeTargets],
+    },
   };
 }
 
@@ -3285,7 +3335,6 @@ interface ThreadRunnerFacts {
     | "modelProvider"
     | "modelProviderPermissions"
     | "connectorEnvironment"
-    | "connectorNetworkPolicyInputs"
     | "userTimezone"
   >;
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
@@ -3551,13 +3600,7 @@ function admittedRunLaunch(
       codexServiceTier: metadata.codexServiceTier,
     },
     packageMounts: args.launch.packageMounts,
-    facts: {
-      ...args.launch.facts,
-      connectorEnvironment: {
-        ...args.launch.facts.connectorEnvironment,
-        runtimeTargets: args.persistence.diagnosticRegistrationPayload.targets,
-      },
-    },
+    facts: args.launch.facts,
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
