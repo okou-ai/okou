@@ -235,6 +235,7 @@ internal abstract class ChatListRootTestFixture {
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 internal class ChatListRootTest : ChatListRootTestFixture() {
     @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
     @Config(qualifiers = "en-rUS-w1000dp-h800dp")
     fun wideSingleLineComposerMatchesTheFloatingActionHeightAndBottom() {
         val app = compose.activity.application as ChatListApplication
@@ -242,7 +243,9 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         val newChat = compose.onNode(hasText("New chat") and hasClickAction())
         val composer = compose.onNodeWithTag("chat_input_card", useUnmergedTree = true)
+        val editor = hasTestTag("message_input") and hasSetTextAction()
         fun assertAligned() {
+            compose.waitUntilExactlyOneExists(editor, 10_000)
             val action = newChat.assertIsDisplayed().getUnclippedBoundsInRoot()
             val card = composer.assertIsDisplayed().getUnclippedBoundsInRoot()
             assertEquals(56.dp, action.bottom - action.top)
@@ -253,7 +256,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick().assertIsSelected()
         assertAligned()
-        compose.onNode(hasTestTag("message_input") and hasSetTextAction()).performTextInput("Draft")
+        compose.onNode(editor).performTextInput("Draft")
         assertAligned()
     }
 
