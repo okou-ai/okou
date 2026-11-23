@@ -20,6 +20,7 @@ import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -132,6 +133,10 @@ internal fun WorkflowScreen(
     createError: Int?,
     useError: Int?,
     feedback: @Composable () -> Unit,
+    editorScroll: ScrollState,
+    connectionReturn: String?,
+    onConnectionFocusRestored: () -> Unit,
+    onViewConnection: ((slug: String, origin: String) -> Unit)?,
     onClose: () -> Unit,
     onCreate: () -> Unit,
     onUse: (WorkflowDetail) -> Unit,
@@ -229,7 +234,18 @@ internal fun WorkflowScreen(
                         WorkflowPlaceholder(R.string.workflow_unavailable)
                     detail == null -> WorkflowPendingDetail(wide, state.detailFailure)
                     editor != null ->
-                        WorkflowEditor(detail, editor, state, model, wide, ::exitEditor)
+                        WorkflowEditor(
+                            detail,
+                            editor,
+                            state,
+                            model,
+                            wide,
+                            editorScroll,
+                            ::exitEditor,
+                            onViewConnection,
+                            connectionReturn == WORKFLOW_EDITOR_CONNECTION,
+                            onConnectionFocusRestored,
+                        )
                     else ->
                         WorkflowDetailPane(
                             detail = detail,
@@ -253,6 +269,9 @@ internal fun WorkflowScreen(
                             onHistoryFocusRestored = onHistoryFocusRestored,
                             onOpenChat = onOpenChat,
                             onEarlierRuns = model::loadEarlierRuns,
+                            onViewConnection = onViewConnection,
+                            connectionReturn = connectionReturn,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                         )
                 }
             }
@@ -730,6 +749,9 @@ private fun WorkflowDetailPane(
     onHistoryFocusRestored: () -> Unit,
     onOpenChat: (runId: String, threadId: String) -> Unit,
     onEarlierRuns: () -> Unit,
+    onViewConnection: ((slug: String, origin: String) -> Unit)?,
+    connectionReturn: String?,
+    onConnectionFocusRestored: () -> Unit,
 ) {
     val padding = if (wide) 32.dp else 20.dp
     val contentWidth = Modifier.widthIn(max = 730.dp).fillMaxWidth()
@@ -788,6 +810,9 @@ private fun WorkflowDetailPane(
                             timezone = timezone,
                             onEdit = onEditRule,
                             onToggle = onToggle,
+                            onViewConnection = onViewConnection,
+                            restoreConnectionFocus = connectionReturn == rule.id,
+                            onConnectionFocusRestored = onConnectionFocusRestored,
                         )
                         if (detail.automations.lastOrNull()?.id != rule.id) WorkflowDivider()
                     }

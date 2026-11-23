@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Chat-Ausführung beendet</string>
     <string name="workflow_clear_search">Suche löschen</string>
     <string name="workflow_connect_provider">Verbinde %1$s, um die Regel zu aktivieren.</string>
-    <string name="workflow_connection_unavailable">Verbindungen konnten nicht geöffnet werden.</string>
     <string name="workflow_create_uncertain">Erstellung konnte nicht bestätigt werden. Schließe den Editor und prüfe die Regeln, bevor du es erneut versuchst.</string>
     <string name="workflow_creation_prompt">Hilf mir, einen privaten Workflow zu erstellen. Verwende den Skill workflow-setup. Frage mich nach der Aufgabe, die ich wiederholen möchte, und zeige mir vor dem Speichern die Anweisungen zur Bestätigung. Erstelle nur auf meine ausdrückliche Bitte eine Automatisierung.</string>
     <string name="workflow_daily">Täglich</string>

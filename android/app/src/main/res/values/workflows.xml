@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Chat run finished</string>
     <string name="workflow_clear_search">Clear search</string>
     <string name="workflow_connect_provider">Connect %1$s to enable this rule.</string>
-    <string name="workflow_connection_unavailable">Could not open connections.</string>
     <string name="workflow_create_uncertain">Could not confirm creation. Close the editor and check the rules before trying again.</string>
     <string name="workflow_creation_prompt">Help me create a private workflow. Use the workflow-setup skill. Ask what task I want to repeat and show the instructions for my confirmation before saving. Create no automation unless I ask for it.</string>
     <string name="workflow_daily">Daily</string>

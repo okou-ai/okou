@@ -60,6 +60,7 @@ import ai.okou.android.state.rememberConnectorsOpen
 import ai.okou.android.state.rememberConversationLinkPosition
 import ai.okou.android.state.rememberConversationLinkReturns
 import ai.okou.android.state.rememberConversationUiState
+import ai.okou.android.state.rememberWorkflowConnectionTarget
 import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
@@ -173,9 +174,11 @@ internal fun OkouApp(
     var linkFocusKey by remember(chats) { mutableStateOf<String?>(null) }
     var connectorsOpen by rememberConnectorsOpen()
     val canOpenConnectors = connectors != null && workspaceReady
-    val showingConnectors = canOpenConnectors && connectorsOpen
     var workflowOrigin by rememberWorkspaceNavigation()
     var workflowRoute by rememberWorkflowsRoute()
+    var workflowConnectionSlug by rememberWorkflowConnectionTarget(workflowRoute.id)
+    var workflowConnectionOrigin by rememberWorkflowConnectionTarget(workflowRoute.id)
+    val showingConnectors = canOpenConnectors && (connectorsOpen || workflowConnectionSlug != null)
     var workflowHistoryReturnRunId by
         remember(workflows, workflowRoute.id, workflowRoute.tab) { mutableStateOf<String?>(null) }
     val workflowQuery = rememberChatSearchState()
@@ -184,6 +187,10 @@ internal fun OkouApp(
             WorkflowTab.entries.map { tab -> key(tab) { rememberLazyListState() } }
         }
     val workflowState = workflows?.state?.collectAsStateWithLifecycle()?.value
+    val workflowEditorScroll =
+        key(workflowRoute.id, workflowState?.editor != null) {
+            rememberScrollState()
+        }
     val showWorkflows =
         workflows != null && !showingConnectors && workflowRoute.mode == WorkflowsMode.Directory
     val chatFromWorkflows = workflows != null && workflowRoute.mode == WorkflowsMode.Chat
@@ -830,6 +837,18 @@ internal fun OkouApp(
             createError = workflowDraftError?.takeIf { it.workflowId == null }?.message,
             useError = workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
             feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
+            editorScroll = workflowEditorScroll,
+            connectionReturn = workflowConnectionOrigin,
+            onConnectionFocusRestored = { workflowConnectionOrigin = null },
+            onViewConnection =
+                if (canOpenConnectors) {
+                    { slug, origin ->
+                        workflowConnectionOrigin = origin
+                        focus.clearFocus()
+                        keyboard?.hide()
+                        workflowConnectionSlug = slug
+                    }
+                } else null,
             onClose = ::closeWorkflows,
             onCreate = { workflowDraft("$creation\n\n") },
             onUse = { workflowDraft("/${it.name} ", it.id) },
@@ -852,7 +871,10 @@ internal fun OkouApp(
     }
 
     if (showingConnectors) {
-        ConnectorsPage(connectors, listWidth) { connectorsOpen = false }
+        ConnectorsPage(connectors, listWidth, workflowConnectionSlug) {
+            workflowConnectionSlug = null
+            connectorsOpen = false
+        }
         return
     }
 

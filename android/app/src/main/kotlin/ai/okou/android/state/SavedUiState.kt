@@ -76,6 +76,10 @@ internal fun rememberConnectorsOpen(): MutableState<Boolean> = rememberSaveable 
     mutableStateOf(false)
 }
 
+@Composable
+internal fun rememberWorkflowConnectionTarget(workflowId: String?): MutableState<String?> =
+    rememberSaveable(workflowId) { mutableStateOf(null) }
+
 internal class ConnectorDirectoryState(
     slug: String? = null,
     category: String? = null,
@@ -101,8 +105,9 @@ internal class ConnectorDirectoryState(
 }
 
 @Composable
-internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
+internal fun rememberConnectorDirectory(initialSlug: String?): ConnectorDirectoryState =
     rememberSaveable(
+        initialSlug,
         saver =
             listSaver<ConnectorDirectoryState, Any>(
                 save = {
@@ -129,7 +134,7 @@ internal fun rememberConnectorDirectory(): ConnectorDirectoryState =
                 },
             ),
     ) {
-        ConnectorDirectoryState()
+        ConnectorDirectoryState(slug = initialSlug)
     }
 
 @Composable

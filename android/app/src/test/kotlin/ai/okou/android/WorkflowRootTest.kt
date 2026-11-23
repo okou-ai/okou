@@ -35,7 +35,6 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
@@ -59,6 +58,7 @@ import org.robolectric.annotation.GraphicsMode
 
 class WorkflowRootApplication : TestOkouApplication() {
     internal lateinit var fixture: WorkflowApiFixture
+    internal lateinit var connections: ConnectorApiFixture
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
@@ -67,6 +67,8 @@ class WorkflowRootApplication : TestOkouApplication() {
         chatService = fixture.service
         composerService = fixture.service
         workflows = fixture.service
+        connections = ConnectorApiFixture()
+        connectorService = connections.service
         journalStore =
             ComposerJournalStore(this, noBackupFilesDir.resolve("workflow-${UUID.randomUUID()}"))
         super.onCreate()
@@ -111,6 +113,7 @@ class WorkflowRootTest {
                 }
             } finally {
                 runBlocking { checkNotNull(application.journalStore).close() }
+                application.connections.close()
             }
         }
     }
@@ -549,7 +552,6 @@ class WorkflowRootTest {
 
     @Test
     fun returningWithAConnectedAccountKeepsFocusOnTheSameRule() = withHardwareKeyboard {
-        val scenario = compose.activityRule.scenario
         app.fixture.gmailEnabled.set(true)
         openWorkflowDetail()
         compose.onNodeWithTag("workflow_tab_automations").performClick()
@@ -561,9 +563,10 @@ class WorkflowRootTest {
             .assertIsFocused()
             .performClick()
 
-        scenario.moveToState(Lifecycle.State.STARTED)
+        waitForTag("connector-detail")
+        waitFor("Gmail")
         app.fixture.gmailConnected.set(true)
-        scenario.moveToState(Lifecycle.State.RESUMED)
+        back()
 
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
@@ -574,7 +577,6 @@ class WorkflowRootTest {
 
     @Test
     fun connectingAnAccountPreservesTheRuleEditorAndEnablesSave() = withHardwareKeyboard {
-        val scenario = compose.activityRule.scenario
         val releaseConnections = CountDownLatch(1)
         app.fixture.beforeConnectionsRead = { releaseConnections.await() }
         val save = compose.onNodeWithTag("workflow_save")
@@ -607,9 +609,21 @@ class WorkflowRootTest {
             .assertIsFocused()
             .performClick()
 
-        scenario.moveToState(Lifecycle.State.STARTED)
+        waitForTag("connector-detail")
+        waitFor("Gmail")
+        compose.activityRule.scenario.recreate()
+        waitForTag("connector-detail")
+        waitFor("Gmail")
+        back()
+        waitFor("View connections")
+        connection.assertIsFocused()
+        subject.assertTextContains("Release summary")
+        save.assertIsNotEnabled()
+
+        connection.performClick()
+        waitForTag("connector-detail")
         app.fixture.gmailConnected.set(true)
-        scenario.moveToState(Lifecycle.State.RESUMED)
+        back()
 
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("View connections").fetchSemanticsNodes().isEmpty()
