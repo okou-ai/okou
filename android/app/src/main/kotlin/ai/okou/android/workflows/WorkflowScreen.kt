@@ -143,6 +143,7 @@ internal fun WorkflowScreen(
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
     onOpenChat: (runId: String, threadId: String) -> Unit,
+    fromSearch: Boolean = false,
 ) {
     LifecycleResumeEffect(model) {
         model.foregroundChanged(true)
@@ -162,7 +163,7 @@ internal fun WorkflowScreen(
         when {
             editor != null -> exitEditor()
             state.writing -> Unit
-            route.id != null && !wide && !handoffPending -> {
+            route.id != null && !wide && !fromSearch && !handoffPending -> {
                 restoreRow = route.id
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
@@ -395,7 +396,7 @@ private fun WorkflowDirectory(
     restoreRow: String?,
     onRowRestored: () -> Unit,
 ) {
-    val text = query.committedQuery.text.trim()
+    val text = query.keyword
     val displayedState =
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) state
         else query.retainWhileComposing(state)
@@ -423,7 +424,7 @@ private fun WorkflowDirectory(
     val anchor = query.pendingAnchor
     LaunchedEffect(rows, anchor, catalog) {
         if (anchor != null && catalog != null)
-            query.restorePosition(rows.indexOfFirst { it.id == anchor.chatId }.takeIf { it >= 0 })
+            query.restorePosition(rows.indexOfFirst { it.id == anchor.key }.takeIf { it >= 0 })
     }
     Column(
         modifier.testTag("workflow_directory"),

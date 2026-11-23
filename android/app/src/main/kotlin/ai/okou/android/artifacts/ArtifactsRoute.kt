@@ -54,6 +54,7 @@ internal fun ArtifactsRoute(
     listWidth: Int?,
     onClose: () -> Unit,
     onSource: (ConfirmedChat) -> Unit,
+    searchArtifactId: String? = null,
 ) {
     val state by model.state.collectAsStateWithLifecycle()
     val position = rememberLazyListState()
@@ -62,14 +63,19 @@ internal fun ArtifactsRoute(
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
-    val selectedId = page.selectedId
+    val selectedId = searchArtifactId ?: page.selectedId
 
     LifecycleStartEffect(model) {
-        model.setActive(true, ArtifactQuery(page.filter, input.text.toString().trim()))
+        model.setActive(
+            true,
+            ArtifactQuery(page.filter, input.text.toString().trim()),
+            showCatalog = searchArtifactId == null,
+        )
         onStopOrDispose { model.setActive(false) }
     }
     LaunchedEffect(model, selectedId) { model.select(selectedId) }
-    LaunchedEffect(model, input) {
+    LaunchedEffect(model, input, searchArtifactId) {
+        if (searchArtifactId != null) return@LaunchedEffect
         snapshotFlow { input.text.toString().trim() }
             .collect { keyword ->
                 if (keyword != model.state.value.query.keyword) {
@@ -87,7 +93,7 @@ internal fun ArtifactsRoute(
         focus.clearFocus()
         keyboard?.hide()
         val current = page.selectedId
-        if (current == null) {
+        if (current == null || searchArtifactId != null) {
             onClose()
         } else {
             page.restoreRow = current
@@ -97,7 +103,7 @@ internal fun ArtifactsRoute(
     }
 
     BackHandler(onBack = ::back)
-    val wide = listWidth != null
+    val wide = searchArtifactId == null && listWidth != null
     Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
         if (wide || selectedId == null) {
             ArtifactCatalogList(
@@ -140,7 +146,13 @@ internal fun ArtifactsRoute(
         if (selectedId != null) {
             Column(Modifier.weight(1f)) {
                 if (!wide)
-                    ArtifactToolbar(R.string.artifact_title, R.string.artifact_return_list, ::back)
+                    ArtifactToolbar(
+                        if (searchArtifactId == null) R.string.artifact_title
+                        else R.string.chat_search_artifact_preview,
+                        if (searchArtifactId == null) R.string.artifact_return_list
+                        else R.string.chat_search_close_artifact_preview,
+                        ::back,
+                    )
                 ArtifactSelectionPreview(
                     model,
                     state,
