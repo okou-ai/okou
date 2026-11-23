@@ -1,13 +1,17 @@
 import { command, computed, type Computed } from "ccstate";
-import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
+import type {
+  ChatConnectorAccess,
+  ConnectorAccountPolicyChoice,
+} from "@okouai/api-contracts/contracts/chat-connector-access";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { connectors } from "@okouai/db/schema/connector";
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, not } from "drizzle-orm";
 import { boolean, object, string, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { isConnectorAccountDefaultConflict } from "./connector-account-lifecycle.service";
@@ -24,6 +28,11 @@ import {
   type ConnectorAccessOwner,
 } from "./connector-access-owner";
 import { synchronizeChatConnectorAutomationAccounts$ } from "./chat-connector-automation-accounts.service";
+import {
+  connectorAccountAllowedSql,
+  memberConnectorAccountAllowed,
+  memberConnectorAccountAccessEnabledSql,
+} from "./member-connector-account-access";
 
 function accountColumns() {
   return {
@@ -72,6 +81,7 @@ export function chatConnectorAccess(
         .select({
           ...accountColumns(),
           overrideEnabled: chatThreadConnectorAccessOverrides.enabled,
+          enabled: connectorAccountAllowedSql(owner),
         })
         .from(connectors)
         .leftJoin(
@@ -97,13 +107,7 @@ export function chatConnectorAccess(
         )
         .limit(1),
     ]);
-    const effective = accounts.map((account) => {
-      return {
-        ...account,
-        enabled: account.overrideEnabled ?? account.defaultEnabled,
-      };
-    });
-    const allowed = effective.filter((account) => {
+    const allowed = accounts.filter((account) => {
       return account.enabled;
     });
     const current =
@@ -116,7 +120,7 @@ export function chatConnectorAccess(
       allowed[0];
     return {
       target: owner.target,
-      accounts: effective,
+      accounts,
       currentConnectionId: current?.connectionId ?? null,
       available: allowed.length > 0,
     };
@@ -129,6 +133,95 @@ const accountDefaultRow = object({
   default_enabled_for_chats: boolean(),
   is_default: boolean(),
 });
+
+function policyColumns() {
+  return {
+    connectionId: connectors.id,
+    defaultEnabledForChats: connectors.defaultEnabledForChats,
+    memberAccessAllowed: connectors.memberAccessAllowed,
+    memberAccessExpiresAt: connectors.memberAccessExpiresAt,
+  };
+}
+
+function accountPolicy(
+  row: {
+    readonly connectionId: string;
+    readonly defaultEnabledForChats: boolean;
+    readonly memberAccessAllowed: boolean | null;
+    readonly memberAccessExpiresAt: Date | null;
+  },
+  at: Date,
+) {
+  return {
+    connectionId: row.connectionId,
+    allowed: row.memberAccessAllowed ?? row.defaultEnabledForChats,
+    enabled: memberConnectorAccountAllowed(row, at),
+    expiresAt: row.memberAccessExpiresAt?.toISOString() ?? null,
+  };
+}
+
+export const readConnectorAccountPolicies$ = command(
+  async ({ get }, owner: ConnectorAccessOwner, signal: AbortSignal) => {
+    const rows = await get(db$)
+      .select(policyColumns())
+      .from(connectors)
+      .where(
+        and(
+          connectorAccessAccountOwner(owner),
+          memberConnectorAccountAccessEnabledSql(owner),
+        ),
+      )
+      .orderBy(asc(connectors.createdAt), asc(connectors.id));
+    signal.throwIfAborted();
+    const at = nowDate();
+    return rows.map((row) => {
+      return accountPolicy(row, at);
+    });
+  },
+);
+
+const policyDurationHours = {
+  deny: null,
+  "allow-always": null,
+  "allow-1h": 1,
+  "allow-24h": 24,
+  "allow-7d": 168,
+} satisfies Record<ConnectorAccountPolicyChoice, number | null>;
+
+export const updateConnectorAccountPolicy$ = command(
+  async (
+    { set },
+    owner: ConnectorAccessOwner,
+    connectionId: string,
+    policy: ConnectorAccountPolicyChoice,
+    signal: AbortSignal,
+  ) => {
+    const at = nowDate();
+    const hours = policyDurationHours[policy];
+    const [row] = await set(writeDb$)
+      .update(connectors)
+      .set({
+        memberAccessAllowed: policy !== "deny",
+        memberAccessExpiresAt:
+          hours === null ? null : new Date(at.getTime() + hours * 3_600_000),
+        updatedAt: at,
+      })
+      .where(
+        and(
+          connectorAccessAccountOwner(owner),
+          eq(connectors.id, connectionId),
+          memberConnectorAccountAccessEnabledSql(owner),
+        ),
+      )
+      .returning(policyColumns());
+    signal.throwIfAborted();
+    if (!row) {
+      return null;
+    }
+    await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);
+    return accountPolicy(row, at);
+  },
+);
 
 export const updateConnectorAccountDefaultEnabled$ = command(
   async (
@@ -187,7 +280,11 @@ export const setChatConnectorAccessOverride$ = command(
 
       .innerJoin(connectors, connectorAccessAccountOwner(owner))
       .where(
-        and(connectorAccessThreadOwner(owner), eq(connectors.id, connectionId)),
+        and(
+          connectorAccessThreadOwner(owner),
+          eq(connectors.id, connectionId),
+          not(memberConnectorAccountAccessEnabledSql(owner)),
+        ),
       )
       .limit(1);
     signal.throwIfAborted();

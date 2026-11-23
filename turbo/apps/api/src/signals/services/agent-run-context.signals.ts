@@ -236,6 +236,8 @@ export interface BootstrapConnectorAccount extends ConnectorSourceRow {
   readonly connectorId: string;
   readonly isDefault: boolean;
   readonly defaultEnabledForChats: boolean;
+  readonly memberAccessAllowed: boolean | null;
+  readonly memberAccessExpiresAt: Date | null;
   readonly createdAt: Date;
   readonly automaticAuthType: "none" | "oauth" | null;
   readonly connectorStateRevision: bigint;
@@ -685,6 +687,8 @@ const bootstrapConnectorAccountColumns = Object.freeze({
   customConnectorId: connectors.customConnectorId,
   isDefault: connectors.isDefault,
   defaultEnabledForChats: connectors.defaultEnabledForChats,
+  memberAccessAllowed: connectors.memberAccessAllowed,
+  memberAccessExpiresAt: connectors.memberAccessExpiresAt,
   createdAt: connectors.createdAt,
   automaticAuthType: connectors.automaticAuthType,
   needsReconnect: connectors.needsReconnect,

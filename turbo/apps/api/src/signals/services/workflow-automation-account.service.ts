@@ -10,6 +10,7 @@ import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
+import { connectorAccountAllowedSql } from "./member-connector-account-access";
 
 interface WorkflowAutomationAccountScope {
   readonly orgId: string;
@@ -88,7 +89,7 @@ export function workflowAutomationConnectorSelectionSql(args: {
         AND ${chatThreadConnectorAccessOverrides.connectorId} = ${connectors.id}
       WHERE ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
         AND ${connectors.connectorSlug} = ${args.connectorSlug}
-        AND coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
+        AND ${connectorAccountAllowedSql(args)}
       ORDER BY (${connectors.id} = ${chatThreadConnectorSelections.connectorId}) DESC NULLS LAST,
         ${connectors.isDefault} DESC, ${connectors.createdAt}, ${connectors.id}
       LIMIT 1

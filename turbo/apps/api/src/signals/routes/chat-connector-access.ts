@@ -11,9 +11,11 @@ import type { RouteEntry } from "../route-entry";
 import {
   chatConnectorAccess,
   connectorAccountAccessDefaults,
+  readConnectorAccountPolicies$,
   setChatConnectorAccessOverride$,
   setChatConnectorCurrent$,
   updateConnectorAccountDefaultEnabled$,
+  updateConnectorAccountPolicy$,
 } from "../services/chat-connector-access.service";
 
 const ownerAuth = {
@@ -34,6 +36,44 @@ const defaultsScope$ = computed((get) => {
   };
 });
 const defaults$ = connectorAccountAccessDefaults(defaultsScope$);
+const readPoliciesHandler$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const target = get(queryOf(chatConnectorAccessContract.accountPolicies));
+    const body = await set(
+      readConnectorAccountPolicies$,
+      { ...get(owner$), target },
+      signal,
+    );
+    signal.throwIfAborted();
+    return { status: 200 as const, body };
+  },
+);
+
+const updatePolicyHandler$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "no-store");
+    const body = await get(
+      bodyResultOf(chatConnectorAccessContract.updateAccountPolicy),
+    );
+    signal.throwIfAborted();
+    if (!body.ok) {
+      return body.response;
+    }
+    const { connectionId } = get(
+      pathParamsOf(chatConnectorAccessContract.updateAccountPolicy),
+    );
+    const result = await set(
+      updateConnectorAccountPolicy$,
+      { ...get(owner$), target: body.data.target },
+      connectionId,
+      body.data.policy,
+      signal,
+    );
+    signal.throwIfAborted();
+    return result ? { status: 200 as const, body: result } : missing;
+  },
+);
 const defaultsHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "no-store");
   const body = await get(defaults$);
@@ -180,6 +220,14 @@ const currentHandler$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 export const chatConnectorAccessRoutes: readonly RouteEntry[] = [
+  {
+    route: chatConnectorAccessContract.accountPolicies,
+    handler: authRoute(ownerAuth, readPoliciesHandler$),
+  },
+  {
+    route: chatConnectorAccessContract.updateAccountPolicy,
+    handler: authRoute(ownerAuth, updatePolicyHandler$),
+  },
   {
     route: chatConnectorAccessContract.accountDefaults,
     handler: authRoute(ownerAuth, defaultsHandler$),

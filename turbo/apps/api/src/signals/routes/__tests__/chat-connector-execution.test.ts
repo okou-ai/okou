@@ -6,6 +6,8 @@ import { connectorPermissionsContract } from "@okouai/api-contracts/contracts/co
 import { mcpConnectorsContract } from "@okouai/api-contracts/contracts/mcp-connectors";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { mockNow, now } from "../../../lib/time";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -131,6 +133,92 @@ async function current(
 }
 
 describe("Chat connector execution", () => {
+  it("uses live member eligibility without replacing the saved Chat account on expiry", async () => {
+    const value = await owner();
+    const fallback = await addAccount(value.actor, "Fallback");
+    const selected = await addAccount(value.actor, "Selected");
+    const thread = { threadId: value.threadId };
+    session(value.actor);
+    await accept(
+      access().setThreadCurrent({
+        headers: sessionHeaders,
+        params: thread,
+        body: { target: builtin, connectionId: selected.id },
+      }),
+      [200],
+    );
+    await accept(
+      access().setThreadOverride({
+        headers: sessionHeaders,
+        params: { ...thread, connectionId: fallback.id },
+        body: { target: builtin, enabled: false },
+      }),
+      [200],
+    );
+    const policy = () => {
+      return access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: selected.id },
+        body: { target: builtin, policy: "allow-1h" },
+      });
+    };
+    await accept(policy(), [404]);
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    session(value.actor);
+    const expiry = now();
+    mockNow(expiry - 3_600_000);
+    expect((await accept(policy(), [200])).body).toStrictEqual({
+      connectionId: selected.id,
+      allowed: true,
+      enabled: true,
+      expiresAt: new Date(expiry).toISOString(),
+    });
+    expect((await current(value, builtin)).currentConnectionId).toBe(
+      selected.id,
+    );
+    mockNow(expiry);
+    expect((await current(value, builtin)).currentConnectionId).toBe(
+      fallback.id,
+    );
+    const policies = await accept(
+      access().accountPolicies({ headers: sessionHeaders, query: builtin }),
+      [200],
+    );
+    expect(policies.body).toContainEqual({
+      connectionId: selected.id,
+      allowed: true,
+      enabled: false,
+      expiresAt: new Date(expiry).toISOString(),
+    });
+    await accept(
+      access().setThreadCurrent({
+        headers: sessionHeaders,
+        params: thread,
+        body: { target: builtin, connectionId: selected.id },
+      }),
+      [400],
+    );
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...builtin, sourceId: fallback.id }),
+    );
+    session(value.actor);
+    await accept(
+      client().approve({
+        headers: sessionHeaders,
+        params: thread,
+        body: { target: builtin, connectionId: selected.id },
+      }),
+      [404],
+    );
+    await accept(policy(), [200]);
+    expect((await current(value, builtin)).currentConnectionId).toBe(
+      selected.id,
+    );
+  });
+
   it("resolves the Chat's selected native credentials alongside a registered MCP account", async () => {
     const value = await owner();
     const nativeTarget = {

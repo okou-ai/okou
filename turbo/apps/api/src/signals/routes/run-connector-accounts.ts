@@ -68,11 +68,15 @@ const inventory$ = computed(async (get) => {
   if (!run) {
     return null;
   }
-  const query = chatConnectorExecutionReadPlan({
-    ...(await get(identity$)),
-    kind: "chat",
-    chatThreadId: run.chatThreadId,
-  }).as("run_chat_accounts");
+  const query = chatConnectorExecutionReadPlan(
+    {
+      ...(await get(identity$)),
+      kind: "chat",
+      chatThreadId: run.chatThreadId,
+    },
+    undefined,
+    true,
+  ).as("run_chat_accounts");
   const result = chatConnectorExecutionFromRows(
     await get(db$).select().from(query),
   );

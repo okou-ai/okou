@@ -11,6 +11,11 @@ import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-threa
 import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { and, asc, eq, or, sql } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
+import {
+  nullableDriverValueDecoder,
+  pgBooleanDecoder,
+} from "../../lib/db-structured-result";
+import { connectorAccountAllowedSql } from "./member-connector-account-access";
 
 export type ChatConnectorExecutionOwner = {
   readonly orgId: string;
@@ -24,6 +29,7 @@ export type ChatConnectorExecutionOwner = {
 export function chatConnectorExecutionReadPlan(
   owner: ChatConnectorExecutionOwner,
   connectorSlug?: string,
+  readLiveEligibility = false,
 ) {
   return new QueryBuilder()
     .select({
@@ -39,6 +45,12 @@ export function chatConnectorExecutionReadPlan(
       isDefault: connectors.isDefault,
       defaultEnabled: connectors.defaultEnabledForChats,
       overrideEnabled: chatThreadConnectorAccessOverrides.enabled,
+      liveEnabled: (readLiveEligibility
+        ? connectorAccountAllowedSql(owner)
+        : sql`NULL::boolean`.mapWith(
+            nullableDriverValueDecoder(pgBooleanDecoder),
+          )
+      ).as("live_enabled"),
       selectedConnectionId: chatThreadConnectorSelections.connectorId,
     })
     .from(chatThreads)
@@ -110,6 +122,7 @@ export function chatConnectorExecutionFromRows(
     readonly isDefault: boolean;
     readonly defaultEnabled: boolean;
     readonly overrideEnabled: boolean | null;
+    readonly liveEnabled: boolean | null;
     readonly selectedConnectionId: string | null;
   }[],
 ) {
@@ -128,7 +141,7 @@ export function chatConnectorExecutionFromRows(
     return {
       ...row,
       target,
-      enabled: row.overrideEnabled ?? row.defaultEnabled,
+      enabled: row.liveEnabled ?? row.overrideEnabled ?? row.defaultEnabled,
     };
   });
   const current = new Map<string, (typeof accounts)[number]>();
