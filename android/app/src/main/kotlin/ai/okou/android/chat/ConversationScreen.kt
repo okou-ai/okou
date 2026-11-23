@@ -190,11 +190,16 @@ internal fun ConversationRoute(
                     )
                 }
         }
+    val syncDelay = state.syncProgressDelayMillis.takeIf { transcript != null }
+    val syncDelayReached =
+        key(threadId) {
+            rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+        }
     val showHistoryProgress =
         transcript != null &&
             state.phase == HistoryPhase.Loading &&
             (state.consecutiveReadFailures >= 3 ||
-                state.syncingStaleCache &&
+                (syncDelay == 0L || syncDelayReached) &&
                     activity == null &&
                     !showControlFeedback &&
                     queue.isEmpty() &&

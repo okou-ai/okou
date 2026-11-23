@@ -323,10 +323,7 @@ internal fun ChatListScreen(
         }
     val syncDelay =
         remember(syncConfirmation) {
-            syncConfirmation?.let {
-                val age = (System.currentTimeMillis() - it).coerceAtLeast(0)
-                (ChatListSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
-            }
+            syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
         }
     // Keep the timer's composition in place as reads start and finish.
     val syncDelayReached =
