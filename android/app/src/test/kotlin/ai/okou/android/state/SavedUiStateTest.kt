@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -162,7 +163,12 @@ class SavedUiStateTest {
         val retry = compose.onNodeWithText(compose.activity.getString(R.string.retry))
         retry.assertDoesNotExist()
         compose.onNodeWithTag("search_type_Messages").performClick()
-        compose.onNodeWithText("Couldn’t search messages").assertIsDisplayed()
+        compose
+            .onNodeWithText("Couldn’t search messages")
+            .assertIsDisplayed()
+            .assert(
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+            )
         compose.onNodeWithText("No matching messages").assertDoesNotExist()
         retry.assertDoesNotExist()
 
