@@ -691,13 +691,15 @@ class ChatListRootTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun titleSearchKeepsTheResultAndOffersRetryAfterAnActionableRefreshFailure() {
+    fun titleSearchKeepsTheResultAndReportsARefreshFailureUntilRecovery() {
         val app = compose.activity.application as ChatListApplication
         val realtime = app.realtimeService as TestRealtimeService
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("search_type_Chats").performClick()
         val input = compose.onNodeWithTag("chat_search_query")
+        input.performClick()
         input.performTextInput("personal")
         val result = compose.onNodeWithText("Personal chat")
         val resultBounds = result.getUnclippedBoundsInRoot()
@@ -705,14 +707,18 @@ class ChatListRootTest {
         app.fixture.events = { MockResponse().setResponseCode(400) }
         realtime.invalidate(ChatChanges(list = true))
 
-        val retry = compose.onNodeWithText(app.getString(R.string.retry))
-        compose.waitUntilExactlyOneExists(hasText(app.getString(R.string.retry)), 5_000)
-        retry.assertIsDisplayed().assertIsEnabled()
-        assertEquals(resultBounds, result.getUnclippedBoundsInRoot())
+        val notice = hasText(app.getString(R.string.chat_search_saved_chats))
+        compose.waitUntilExactlyOneExists(notice, 5_000)
+        result.assertIsDisplayed()
+        assertTrue(
+            compose.onNode(notice).getUnclippedBoundsInRoot().bottom <=
+                result.getUnclippedBoundsInRoot().top,
+        )
+        compose.onNodeWithText(app.getString(R.string.retry)).assertDoesNotExist()
         input.assertIsFocused().assert(hasText("personal"))
         app.fixture.events = events
-        retry.performClick()
-        compose.waitUntilDoesNotExist(hasText(app.getString(R.string.retry)), 5_000)
+        realtime.invalidate(ChatChanges(list = true))
+        compose.waitUntilDoesNotExist(notice, 5_000)
         assertEquals(resultBounds, result.getUnclippedBoundsInRoot())
     }
 
@@ -1645,6 +1651,7 @@ class ChatListRootTest {
         val app = compose.activity.application as ChatListApplication
         val descriptors = AtomicInteger()
         val archives = AtomicInteger()
+        val finishArchive = CountDownLatch(1)
         app.fixture.snapshot = {
             val url = app.fixture.server.url("/archive?attempt=${descriptors.incrementAndGet()}")
             jsonResponse(
@@ -1653,18 +1660,29 @@ class ChatListRootTest {
         }
         app.fixture.archive = {
             if (archives.incrementAndGet() == 1) MockResponse().setResponseCode(403)
-            else jsonResponse("""{"chatThreads":[]}""")
+            else {
+                finishArchive.await()
+                jsonResponse("""{"chatThreads":[]}""")
+            }
         }
-        compose.onNodeWithContentDescription("Search workspace").performClick()
-        app.responseGate.countDown()
-        compose.waitUntil(10_000) {
+        try {
+            compose.onNodeWithContentDescription("Search workspace").performClick()
+            app.responseGate.countDown()
+            compose.waitUntil(10_000) { archives.get() >= 1 }
+            compose.waitForIdle()
+            compose.mainClock.advanceTimeBy(280)
             compose
-                .onAllNodesWithText("Temporarily unable to load")
-                .fetchSemanticsNodes()
-                .isNotEmpty()
+                .onNodeWithContentDescription(app.getString(R.string.chat_loading))
+                .assertIsDisplayed()
+            compose
+                .onNodeWithText(app.getString(R.string.chat_list_first_load_failed))
+                .assertDoesNotExist()
+            compose.onNodeWithTag("chat_search").assertExists()
+            shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.SECONDS)
+            compose.waitUntil(10_000) { archives.get() >= 2 }
+        } finally {
+            finishArchive.countDown()
         }
-        compose.onNodeWithTag("chat_search").assertExists()
-        shadowOf(Looper.getMainLooper()).idleFor(5, TimeUnit.SECONDS)
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Project chat").fetchSemanticsNodes().isNotEmpty()
         }
