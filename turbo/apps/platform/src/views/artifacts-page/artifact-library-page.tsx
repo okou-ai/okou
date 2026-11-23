@@ -260,13 +260,6 @@ function ArtifactLibraryName({
           <span>{kindLabel}</span>
           <span>
             {t(($) => {
-              return $.artifacts.library.modified;
-            })}
-            {": "}
-            <ArtifactTimestamp value={artifact.modifiedAt} />
-          </span>
-          <span>
-            {t(($) => {
               return $.artifacts.library.created;
             })}
             {": "}
@@ -369,9 +362,6 @@ function ArtifactLibraryRow({
             {content}
           </button>
         )}
-      </TableCell>
-      <TableCell className="hidden px-4 py-3 text-xs text-muted-foreground @3xl:table-cell">
-        <ArtifactTimestamp value={artifact.modifiedAt} />
       </TableCell>
       <TableCell className="hidden px-4 py-3 text-xs text-muted-foreground @3xl:table-cell">
         <ArtifactTimestamp value={artifact.createdAt} />
@@ -500,12 +490,6 @@ function ArtifactLibraryCompactSort() {
   const setSort = useSet(setArtifactCatalogSort$);
   const items = [
     {
-      value: "modifiedAt",
-      label: t(($) => {
-        return $.artifacts.library.modified;
-      }),
-    },
-    {
       value: "createdAt",
       label: t(($) => {
         return $.artifacts.library.created;
@@ -602,7 +586,6 @@ function ArtifactLibraryTable({
         <colgroup>
           <col />
           <col className="hidden w-36 @3xl:table-column" />
-          <col className="hidden w-36 @3xl:table-column" />
           <col className="hidden w-28 @4xl:table-column" />
           <col className="w-12" />
         </colgroup>
@@ -613,13 +596,6 @@ function ArtifactLibraryTable({
               label={t(($) => {
                 return $.artifacts.library.name;
               })}
-            />
-            <SortHeading
-              field="modifiedAt"
-              label={t(($) => {
-                return $.artifacts.library.modified;
-              })}
-              className="hidden @3xl:table-cell"
             />
             <SortHeading
               field="createdAt"

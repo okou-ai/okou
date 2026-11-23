@@ -184,7 +184,7 @@ function createArtifactLibraryQuerySignals(
   const internalSearch$ = state("");
   const internalKeyword$ = state(Promise.resolve(""));
   const internalSort$ = state<ArtifactCatalogOrder>({
-    sort: "modifiedAt",
+    sort: "createdAt",
     direction: "desc",
   });
   const internalRequest$ = state<CatalogPageRequest | null>(null);

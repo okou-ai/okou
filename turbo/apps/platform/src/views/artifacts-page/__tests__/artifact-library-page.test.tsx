@@ -100,11 +100,11 @@ function textDetail(id: string, title: string): ArtifactDetail {
   };
 }
 
-test("The enabled Library starts with all kinds ordered by content modification and does not auto-open a preview", async () => {
+test("The enabled Library starts with all kinds ordered by creation and does not auto-open a preview", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query).toStrictEqual({
       limit: 60,
-      sort: "modifiedAt",
+      sort: "createdAt",
       direction: "desc",
     });
     return respond(200, {
@@ -114,6 +114,8 @@ test("The enabled Library starts with all kinds ordered by content modification 
           id: SECOND_ID,
           kind: "image",
           title: "launch-image.png",
+          createdAt: "2026-02-01T00:00:00Z",
+          updatedAt: "2026-11-21T12:00:00Z",
           modifiedAt: "2026-11-20T12:00:00Z",
         }),
       ],
@@ -139,27 +141,33 @@ test("The enabled Library starts with all kinds ordered by content modification 
   expect(screen.getByRole("combobox", { name: "Type" })).toHaveTextContent(
     "All types",
   );
-  expect(getSortHeading("Last modified").closest("th")).toHaveAttribute(
+  expect(getSortHeading("Created").closest("th")).toHaveAttribute(
     "aria-sort",
     "descending",
   );
+  expect(
+    screen.getByRole("combobox", { name: "Sort artifacts" }),
+  ).toHaveTextContent("Created");
+  expect(
+    within(viewport).queryByText(/Last modified/u),
+  ).not.toBeInTheDocument();
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("complementary", { name: "Artifact" }),
   ).not.toBeInTheDocument();
 
   const legacyCells = queryAllByRoleFast("cell", rowFor("legacy-plan.txt"));
-  expect(legacyCells[1]).toHaveTextContent(/^—$/u);
-  expect(legacyCells[1]?.querySelector("time")).toBeNull();
-  expect(legacyCells[2]?.querySelector("time")).toHaveAttribute(
+  expect(legacyCells[1]?.querySelector("time")).toHaveAttribute(
     "dateTime",
     "2026-01-01T00:00:00Z",
   );
   const imageCells = queryAllByRoleFast("cell", rowFor("launch-image.png"));
-  expect(imageCells[1]?.querySelector("time")).toHaveAttribute(
-    "dateTime",
-    "2026-11-20T12:00:00Z",
-  );
+  for (const cell of [imageCells[0], imageCells[1]]) {
+    expect(cell?.querySelector("time")).toHaveAttribute(
+      "dateTime",
+      "2026-02-01T00:00:00Z",
+    );
+  }
 
   expect(
     queryAllByRoleFast("combobox", viewport).map((control) => {
@@ -195,6 +203,37 @@ test("The enabled Library starts with all kinds ordered by content modification 
     "File",
   ]);
   click(within(choices).getByRole("option", { name: "All types" }));
+});
+
+test("An old modifiedAt route requests Created descending at the HTTP boundary", async () => {
+  context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
+    expect(query).toStrictEqual({
+      limit: 60,
+      kind: "file",
+      keyword: "launch",
+      sort: "createdAt",
+      direction: "desc",
+    });
+    return respond(200, {
+      artifacts: [artifact({ title: "launch-created-first.txt" })],
+      nextCursor: null,
+    });
+  });
+
+  await setupLibraryPage(
+    "/artifacts?tab=file&q=launch&sort=modifiedAt&direction=asc",
+  );
+
+  await expect(
+    findArtifactAction("launch-created-first.txt"),
+  ).resolves.toBeInTheDocument();
+  expect(getSortHeading("Created").closest("th")).toHaveAttribute(
+    "aria-sort",
+    "descending",
+  );
+  expect(
+    screen.getByRole("combobox", { name: "Sort artifacts" }),
+  ).toHaveTextContent("Created");
 });
 
 test.each([undefined, false])(
@@ -269,7 +308,7 @@ test("Search debounces to the latest keyword and finds matches outside the loade
     {
       limit: 60,
       keyword: "launch",
-      sort: "modifiedAt",
+      sort: "createdAt",
       direction: "desc",
     },
   ]);
@@ -366,7 +405,7 @@ test("Whitespace-only search and clearing it omit the keyword from the productio
   expect(queryParams().has("q")).toBeFalsy();
 });
 
-test("Name, Last modified, and Created headings change the server order without losing the keyword", async () => {
+test("Name and Created headings change the server order without losing the keyword", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.keyword).toBe("launch");
     expect(query.kind).toBeUndefined();
@@ -381,13 +420,11 @@ test("Name, Last modified, and Created headings change the server order without 
   await setupLibraryPage("/artifacts?q=launch");
 
   await expect(
-    findArtifactAction("launch-modifiedAt-desc.txt"),
+    findArtifactAction("launch-createdAt-desc.txt"),
   ).resolves.toBeInTheDocument();
   for (const [heading, sort, direction] of [
     ["Name", "title", "asc"],
     ["Name", "title", "desc"],
-    ["Last modified", "modifiedAt", "desc"],
-    ["Last modified", "modifiedAt", "asc"],
     ["Created", "createdAt", "desc"],
     ["Created", "createdAt", "asc"],
   ] as const) {
@@ -421,16 +458,24 @@ test("Compact sort controls use the same kind, keyword, and backend order as tab
     });
   });
 
-  await setupLibraryPage("/artifacts?tab=image&q=launch");
+  await setupLibraryPage(
+    "/artifacts?tab=image&q=launch&sort=title&direction=asc",
+  );
 
   await expect(
-    findArtifactAction("modifiedAt-desc.png"),
+    findArtifactAction("title-asc.png"),
   ).resolves.toBeInTheDocument();
+  expect(
+    screen.getByRole("combobox", { name: "Sort artifacts" }),
+  ).toHaveTextContent("Name");
   click(screen.getByRole("combobox", { name: "Sort artifacts" }));
-  const created = await screen.findByRole("option", {
-    name: "Created",
-  });
-  click(created);
+  const choices = await screen.findByRole("listbox");
+  expect(
+    queryAllByRoleFast("option", choices).map((option) => {
+      return option.textContent?.trim();
+    }),
+  ).toStrictEqual(["Created", "Name"]);
+  click(within(choices).getByRole("option", { name: "Created" }));
 
   await expect(
     findArtifactAction("createdAt-desc.png"),
@@ -465,13 +510,13 @@ test.each(["type", "sort", "search"] as const)(
       limit: 60,
       kind: "file",
       keyword: "launch",
-      sort: "modifiedAt",
+      sort: "createdAt",
       direction: "desc",
     } satisfies ArtifactCatalogListQuery;
     const changedQuery: ArtifactCatalogListQuery = {
       ...initialQuery,
       ...(change === "type" ? { kind: "image" } : {}),
-      ...(change === "sort" ? { sort: "createdAt" } : {}),
+      ...(change === "sort" ? { sort: "title", direction: "asc" } : {}),
       ...(change === "search" ? { keyword: "roadmap" } : {}),
     };
     const matchesChangedQuery = (query: ArtifactCatalogListQuery) => {
@@ -544,7 +589,7 @@ test.each(["type", "sort", "search"] as const)(
     );
 
     await setupLibraryPage(
-      "/artifacts?tab=file&q=launch&sort=modifiedAt&direction=desc",
+      "/artifacts?tab=file&q=launch&sort=createdAt&direction=desc",
     );
 
     await expect(
@@ -556,7 +601,7 @@ test.each(["type", "sort", "search"] as const)(
     if (change === "type") {
       await selectType("Image");
     } else if (change === "sort") {
-      click(getSortHeading("Created"));
+      click(getSortHeading("Name"));
     } else {
       await fill(
         screen.getByRole("searchbox", { name: "Search artifacts" }),
@@ -667,6 +712,10 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
     screen.findByText("Second launch preview"),
   ).resolves.toBeInTheDocument();
   const switchedPreview = screen.getByTestId("artifact-sidebar");
+  expect(
+    screen.queryByRole("combobox", { name: "Sort artifacts" }),
+  ).not.toBeInTheDocument();
+  expect(queryButtonByName("Sort descending", viewport)).toBeUndefined();
   expect(secondRow).toHaveAttribute("aria-current", "true");
   expect(firstRow).not.toHaveAttribute("aria-current");
   expect(queryParams().get("artifact")).toBeNull();
@@ -681,6 +730,7 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   expect(
     screen.getByRole("combobox", { name: "Sort artifacts" }),
   ).toHaveTextContent("Name");
+  expect(getButtonByName("Sort descending", viewport)).toBeInTheDocument();
   expect(
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("launch");
@@ -746,6 +796,9 @@ test("A routed preview closes back to its original Library query", async () => {
   expect(
     screen.getByRole("combobox", { name: "Sort artifacts" }),
   ).toHaveTextContent("Created");
+  expect(
+    getButtonByName("Sort descending", getCatalogViewport()),
+  ).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "Type" })).toHaveTextContent(
     "File",
   );

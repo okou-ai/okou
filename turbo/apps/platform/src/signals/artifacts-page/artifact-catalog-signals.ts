@@ -55,11 +55,11 @@ function artifactCatalogSortFromSearchParams(
   params: URLSearchParams,
 ): ArtifactCatalogOrder {
   const sort = params.get("sort");
+  if (sort !== "createdAt" && sort !== "title") {
+    return { sort: "createdAt", direction: "desc" };
+  }
   return {
-    sort:
-      sort === "createdAt" || sort === "title" || sort === "modifiedAt"
-        ? sort
-        : "modifiedAt",
+    sort,
     direction: params.get("direction") === "asc" ? "asc" : "desc",
   };
 }
