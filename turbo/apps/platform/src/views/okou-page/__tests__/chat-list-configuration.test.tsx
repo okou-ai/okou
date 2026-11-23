@@ -1,3 +1,4 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
@@ -25,49 +26,70 @@ async function openHostSettings() {
   return await within(menu).findByRole("switch", { name: "Studio Mac" });
 }
 
-test("Selecting the newly arrived conversation from member Home restores its model, fast tier and computer", async () => {
-  const record = chatListThread(8, "Prepared workspace", {
-    selectedModel: "deepseek-v4-flash",
-  });
-  installChatListRunModels(context);
-  installActiveChatBoundaries(context, {
-    metadata: record,
-    hosts: [workstation],
-  });
-  installChatListStream(context, {
-    caseId: 286,
-    snapshot: [],
-    events: [
-      chatListEvent(286, 2, "model_selection_updated", record.id, {
-        selectedModel: "gpt-5.6-sol",
-      }),
-      chatListEvent(286, 3, "service_tier_updated", record.id, {
-        serviceTier: "priority",
-      }),
-      chatListEvent(286, 4, "computer_use_host_updated", record.id, {
-        computerUseHostId: workstation.id,
-      }),
-      chatListEvent(286, 5, "created", record.id, {
-        title: record.title,
-        selectedModel: record.selectedModel,
-        createdAt: record.createdAt,
-      }),
-    ],
-  });
-  await setupPage({
-    context,
-    path: "/",
-  });
-  const sidebar = within(await screen.findByTestId("chat-list-column"));
-  click(await sidebar.findByText("Prepared workspace"));
-  await waitFor(() => {
-    expect(location.pathname).toBe(`/chats/${record.id}`);
+test.each(["Studio Mac", "Workshop Mac"] as const)(
+  "A member can replay early configuration selecting %s after leaving the retired agent URL",
+  async (selected) => {
+    const alternate = onlineComputerUseHost(
+      "a421cc28-3b86-499a-8797-ad379bc497e3",
+      "Workshop Mac",
+    );
+    const record = chatListThread(8, "Prepared workspace", {
+      selectedModel: "deepseek-v4-flash",
+    });
+    installChatListRunModels(context);
+    installActiveChatBoundaries(context, {
+      metadata: record,
+      hosts: [alternate, workstation],
+    });
+    installChatListStream(context, {
+      caseId: 286,
+      snapshot: [],
+      events: [
+        chatListEvent(286, 2, "model_selection_updated", record.id, {
+          selectedModel: "gpt-5.6-sol",
+        }),
+        chatListEvent(286, 3, "service_tier_updated", record.id, {
+          serviceTier: "priority",
+        }),
+        chatListEvent(286, 4, "computer_use_host_updated", record.id, {
+          computerUseHostId:
+            selected === "Studio Mac" ? workstation.id : alternate.id,
+        }),
+        chatListEvent(286, 5, "created", record.id, {
+          title: record.title,
+          selectedModel: record.selectedModel,
+          createdAt: record.createdAt,
+        }),
+      ],
+    });
+    await setupPage({
+      context,
+      path: "/agents/c7000000-0000-4000-a000-000000000001/chat",
+    });
+    const browse = await findFastControl("link", "Browse workflows");
+    expect(browse).toHaveAttribute("href", "/workflows");
+    expect(screen.queryByText(record.title!)).toBeNull();
+    click(
+      await findFastControl("link", "Back to home", screen.getByRole("main")),
+    );
+    const sidebar = within(await screen.findByTestId("chat-list-column"));
+    click(await sidebar.findByText("Prepared workspace"));
+    await waitFor(() => {
+      expect(location.pathname).toBe(`/chats/${record.id}`);
+      expect(
+        queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
+      ).toBeInTheDocument();
+    });
+    await openHostSettings();
+    const hosts = within(screen.getByRole("dialog", { name: "Connectors" }));
+    expect(hosts.getByRole("switch", { name: selected })).toBeChecked();
     expect(
-      queryComposerModelTrigger("GPT 5.6 Sol, Max, Fast"),
-    ).toBeInTheDocument();
-  });
-  await expect(openHostSettings()).resolves.toBeChecked();
-});
+      hosts.getByRole("switch", {
+        name: selected === "Studio Mac" ? "Workshop Mac" : "Studio Mac",
+      }),
+    ).not.toBeChecked();
+  },
+);
 
 test("chat-list-configuration-003 applies tier and host changes without moving the configured chat", async () => {
   const configured = chatListThread(5, "Configured conversation", {

@@ -113,11 +113,13 @@ test.each([
     await visitProvider(context, provider, "/works");
     const card = await screen.findByTestId(provider + "-setup-button");
     expect(card).toHaveTextContent(brand);
+    expect(card).not.toHaveTextContent(`Route ${brand} messages to agents`);
     click(card);
     await expect(
       screen.findByAltText("Harbor dispatch bot icon"),
     ).resolves.toHaveAttribute("src", bot.botAvatarUrl);
     expect(screen.getByText("Ada Shore", { exact: false })).toBeVisible();
+    expect(queryAction("button", "Add bot")).toBeNull();
     await press("More options for Harbor dispatch");
     await expect(findAction("button", "Uninstall")).resolves.toBeEnabled();
     expect(queryAction("link", "Manage")).toBeNull();

@@ -211,26 +211,58 @@ test("composer-task-chips-019 the reply recommendation prepares one Gmail watch 
   ).toBeFalsy();
 });
 
+async function draftWithBrief() {
+  const asset = {
+    id: crypto.randomUUID(),
+    filename: "brief.txt",
+    contentType: "text/plain",
+    size: 5,
+    url: "https://files.example.org/brief.txt",
+  };
+  context.mocks.upload.success(asset);
+  const { editor, sent } = await home();
+  await fill(editor, draft);
+  await userEvent
+    .setup({ delay: null })
+    .upload(
+      await screen.findByLabelText("Attach", { selector: "input" }),
+      new File(["brief"], asset.filename, { type: asset.contentType }),
+    );
+  await findFastControl("button", "Remove brief.txt");
+  return { editor, sent };
+}
+
+test("composer-task-chips-006 Dismissing Image and the configured deck sends only the draft and its file", async () => {
+  const { sent } = await draftWithBrief();
+  await press("Image");
+  await press("Remove Image");
+  await press("Presentation");
+  await countSlides();
+  await expect(
+    screen.findByRole("combobox", { name: "Slide count" }),
+  ).resolves.toHaveTextContent(/16.20/);
+  await press("Remove Presentation");
+  await press("Send");
+  await waitFor(() => {
+    const message = sent.sentMessages[0];
+    expect(message?.parts).toHaveLength(2);
+    expect(message?.parts).toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "file",
+          filenameSnapshot: "brief.txt",
+        }),
+        expect.objectContaining({ type: "text", text: draft }),
+      ]),
+    );
+    expect(sent.runPrompts[0]).toBe(draft);
+  });
+});
+
 test.each(["keep", "remove"] as const)(
   "A brief sent after dismissing both tasks can %s its separate inline style",
   async (style) => {
-    const asset = {
-      id: crypto.randomUUID(),
-      filename: "brief.txt",
-      contentType: "text/plain",
-      size: 5,
-      url: "https://files.example.org/brief.txt",
-    };
-    context.mocks.upload.success(asset);
-    const { editor, sent } = await home();
-    await fill(editor, draft);
-    await userEvent
-      .setup({ delay: null })
-      .upload(
-        await screen.findByLabelText("Attach", { selector: "input" }),
-        new File(["brief"], asset.filename, { type: asset.contentType }),
-      );
-    await findFastControl("button", "Remove brief.txt");
+    const { editor, sent } = await draftWithBrief();
     await press("Image");
     await press("View all");
     const gallery = await screen.findByRole("dialog");

@@ -1,3 +1,4 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -143,9 +144,12 @@ test("connectors-account-rename-focus-009 the refreshed Research row takes focus
   await expect(screen.findByRole("menu")).resolves.toBeInTheDocument();
 });
 
-test.each(["keyboard", "pointer"] as const)(
-  "Cancelling the %s account edit restores Work 1's menu trigger through Escape",
-  async (interaction) => {
+test.each([
+  ["005", "keyboard"],
+  ["006", "pointer"],
+] as const)(
+  "connectors-account-rename-focus-%s A concurrent name survives cancelling the %s edit",
+  async (_id, interaction) => {
     const saved = accounts();
     mockSavedConnectorAccounts(context, () => {
       return saved;
@@ -164,9 +168,15 @@ test.each(["keyboard", "pointer"] as const)(
     const dialog = await openAccountList();
     const name = await beginEdit("Work 1", interaction);
     await fill(name, "Release planning");
+    saved[0]!.displayName = "Updated in another window";
+    const cancel = await findFastControl("button", "Cancel", dialog);
     await userEvent.tab();
-    expect(queryButton("Cancel", dialog)).toHaveFocus();
-    await userEvent.keyboard("{Enter}");
+    expect(cancel).toHaveFocus();
+    if (interaction === "keyboard") {
+      await userEvent.keyboard("{Enter}");
+    } else {
+      await userEvent.click(cancel);
+    }
     const opener = await accountActions("Work 1");
     await waitFor(() => {
       return expect(opener).toHaveFocus();
@@ -179,8 +189,11 @@ test.each(["keyboard", "pointer"] as const)(
     });
     expect(opener).toHaveFocus();
     expect(dialog).toBeVisible();
-    const nextEdit = await beginEdit("Work 1", "pointer");
-    expect(nextEdit).toHaveValue("Work 1");
+    await userEvent.click(await findFastControl("button", "Close", dialog));
+    await screen.findByPlaceholderText("Find connectors");
+    await openAccountList();
+    const nextEdit = await beginEdit("Updated in another window", "pointer");
+    expect(nextEdit).toHaveValue("Updated in another window");
     await fill(nextEdit, "Release planning");
     await userEvent.keyboard("{Enter}");
     await expect(accountActions("Release planning")).resolves.toHaveFocus();

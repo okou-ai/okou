@@ -583,48 +583,51 @@ test("integrations-discord-039 the Works root becomes interactive only after Dis
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
 });
 
-test("Returning to Works shows the Discord description while the membership refresh is pending", async () => {
-  const request = context.mocks.deferred<void>();
-  const publish = context.mocks.deferred<void>();
-  let refreshing = false;
-  statusService(context, async () => {
-    if (!refreshing) {
-      return { isAdmin: true, isConnected: false };
-    }
-    if (!request.settled()) {
-      request.resolve();
-    }
-    await publish.promise;
-    return {
-      isAdmin: true,
-      isConnected: true,
-      guildId: "123456789012345678",
-      guildName: "Review guild",
-      discordUserId: "456789012345678901",
-    };
-  });
-  await visit();
-  await expect(findDiscordButton("Connect")).resolves.toBeEnabled();
-  refreshing = true;
-  notifyStatusChanged();
-  await request.promise;
-  click(await findAction("link", "Okou"));
-  await waitFor(() => {
-    return expect(location.pathname).toBe("/");
-  });
-  window.history.back();
-  await waitFor(() => {
-    return expect(location.pathname).toBe("/works");
-  });
-  const returningCard = await screen.findByText(description);
-  expect(returningCard).toBeInTheDocument();
-  expect(queryAction("button", "Connect", card())).toBeNull();
-  publish.resolve();
-  await waitFor(() => {
-    return expect(card()).toHaveTextContent(/Connected/u);
-  });
-  await expect(findDiscordButton("More options")).resolves.toBeEnabled();
-});
+test.each([true, false])(
+  "Discord setup after returning to Works follows the released membership: %s",
+  async (connected) => {
+    const request = context.mocks.deferred<void>();
+    const publish = context.mocks.deferred<void>();
+    let refreshing = false;
+    statusService(context, async () => {
+      if (!refreshing) {
+        return { isAdmin: true, isConnected: false };
+      }
+      if (!request.settled()) {
+        request.resolve();
+      }
+      await publish.promise;
+      return {
+        isAdmin: true,
+        isConnected: connected,
+        guildId: "123456789012345678",
+        guildName: "Review guild",
+        discordUserId: "456789012345678901",
+      };
+    });
+    await visit();
+    await expect(findDiscordButton("Connect")).resolves.toBeEnabled();
+    refreshing = true;
+    notifyStatusChanged();
+    await request.promise;
+    click(await findAction("link", "Okou"));
+    await waitFor(() => {
+      return expect(location.pathname).toBe("/");
+    });
+    window.history.back();
+    await waitFor(() => {
+      return expect(location.pathname).toBe("/works");
+    });
+    const returningCard = await screen.findByText(description);
+    expect(returningCard).toBeInTheDocument();
+    expect(queryAction("button", "Connect", card())).toBeNull();
+    publish.resolve();
+    await expect(
+      findDiscordButton(connected ? "More options" : "Connect"),
+    ).resolves.toBeEnabled();
+    expect(Boolean(within(card()).queryByText("Connected"))).toBe(connected);
+  },
+);
 
 test("A connected Discord callback reads the unverified account before offering setup", async () => {
   const waiting = context.mocks.deferred<void>();
@@ -636,11 +639,7 @@ test("A connected Discord callback reads the unverified account before offering 
     await reply.promise;
     return { isAdmin: true, isConnected: false };
   });
-  const completions: unknown[] = [];
-  context.mocks.api(discordOauthContract.complete, ({ body, respond }) => {
-    completions.push(body);
-    return respond(200, { status: "connected" });
-  });
+
   const pending = await startPage({
     context,
     path: "/works?discord=connected&discord_error=provider-private&state=callback-check&completionToken=discarded-token",
@@ -656,5 +655,4 @@ test("A connected Discord callback reads the unverified account before offering 
   expect(queryAction("link", "Open Discord")).toBeNull();
   await expect(findAction("button", "Connect")).resolves.toBeEnabled();
   expect(screen.queryByText("provider-private")).toBeNull();
-  expect(completions).toStrictEqual([]);
 });

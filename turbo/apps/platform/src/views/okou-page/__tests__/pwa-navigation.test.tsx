@@ -193,41 +193,44 @@ test("pwa-navigation-009 A browser edge swipe restores Chats without a second sl
   expect(location.pathname).toBe("/");
   expect(transition.startedTypes).toStrictEqual([["push"]]);
 });
-test("An unread member conversation marks Chats alone", async () => {
-  mobile(false);
-  const other = chatListThread(17, "Independent report");
-  const server =
-    createMessageExperienceHelpers(context).installMessageExperienceChat();
-  server.setThreadList(
-    [current, other].map((thread) => {
-      return {
-        id: thread.id,
-        title: thread.title,
-        createdAt: thread.createdAt,
-        updatedAt: thread.updatedAt,
-      };
-    }),
-  );
-  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
-    return respond(200, {
-      threads: {},
-      unreadAt: { [other.id]: other.updatedAt },
+test.each([true, false])(
+  "The mobile Chats tab reflects whether the other member conversation is unread: %s",
+  async (unread) => {
+    mobile(false);
+    const other = chatListThread(17, "Independent report");
+    const server =
+      createMessageExperienceHelpers(context).installMessageExperienceChat();
+    server.setThreadList(
+      [current, other].map((thread) => {
+        return {
+          id: thread.id,
+          title: thread.title,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+        };
+      }),
+    );
+    context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+      return respond(200, {
+        threads: {},
+        unreadAt: unread ? { [other.id]: other.updatedAt } : {},
+      });
     });
-  });
-  await enterMobile();
-  await expect(screen.findByText(other.title!)).resolves.toBeVisible();
-  const tabs = tabBar();
-  await expect(
-    within(await findFastControl("link", /Chats/, tabs)).findByLabelText(
-      "Unread",
-    ),
-  ).resolves.toBeVisible();
-  expect(
-    within(await findFastControl("link", "Me", tabs)).queryByLabelText(
-      "Unread",
-    ),
-  ).toBeNull();
-});
+    await enterMobile();
+    await expect(screen.findByText(other.title!)).resolves.toBeVisible();
+    const tabs = tabBar();
+    const chats = within(await findFastControl("link", /Chats/, tabs));
+    if (unread) {
+      await chats.findByLabelText("Unread");
+    }
+    expect(Boolean(chats.queryByLabelText("Unread"))).toBe(unread);
+    expect(
+      within(await findFastControl("link", "Me", tabs)).queryByLabelText(
+        "Unread",
+      ),
+    ).toBeNull();
+  },
+);
 test("pwa-navigation-015 A home prompt opens a populated mobile composer alongside the tab bar", async () => {
   mobile(true);
   await enterMobile("/?prompt=Draft+a+launch+plan");

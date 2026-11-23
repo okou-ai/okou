@@ -3222,3 +3222,13 @@ Returning from Workflows with a narrow browser panel shows two tabs while either
 The four earlier shortcut and sidebar failures and their original descriptions remain in the batch 93 synchronization evidence. The workspace-switcher test exercises the current, available and invited workspaces after upstream changed the default avatar to texture only. The search and attachment regressions retain their handoff sources.
 
 [Fixed selection](https://app.okou.ai/artifacts/ucxnpf7lxf.md) · [40 ID dispositions](./test-rebuild-batch-94.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv) · [Four original failures](./test-rebuild-batch-93-main-sync.tsv) · [Workspace avatar change](https://github.com/okou-ai/okou/pull/50313)
+
+## Batch 95 concentrated revisit
+
+The selection covers 45 frozen IDs in 30 files. Three reach first complete acceptance, 27 retain partial regression coverage, six lack direct proof, and nine have sourced upstream dispositions. Six of the nine already had first acceptance before #49854. The original prerequisites or outcomes changed for all six. None receives another first acceptance or a restoration of complete coverage. All 485 files passed first review. Three inventories close, reducing the revisit queue from 112 to 109 files.
+
+The former agent-chat URL leads to the recovery page. From member Home, selecting the conversation in the sidebar replays GPT 5.6 Sol, Max, Fast and selects the host named by the event, even when the creation event and the other online host would give different answers. The Feishu and Lark cards preserve bot management. The deleted routing description, mobile switcher and workflow executor are traced to their respective upstream changes.
+
+Keyboard and pointer cancellation both preserve a concurrent account rename through a fresh account-list read. A control that successfully submits the stale name loses the concurrent label in both rows. Dismissing Image and a configured Presentation sends only the ordinary draft and its uploaded brief. An independently selected inline template has its own control. Replaying an identical image prompt or completing the same private upload twice produces equivalent public business results. Their single-submission requirements remain open.
+
+[Fixed selection](https://app.okou.ai/artifacts/c6qrea27d8.md) · [45 ID dispositions](./test-rebuild-batch-95.tsv) · [485-file inventory](./test-rebuild-first-pass.tsv) · [Original shortcut and sidebar evidence](./test-rebuild-batch-93-main-sync.tsv)

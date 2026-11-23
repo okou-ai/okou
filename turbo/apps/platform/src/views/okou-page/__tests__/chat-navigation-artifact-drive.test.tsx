@@ -1,3 +1,4 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
@@ -32,13 +33,14 @@ const path = "/chats/" + ATTACHMENT_THREAD_ID;
 function installArtifactConversation(
   filename: string,
   sync: ReturnType<typeof artifactFile>["googleDriveSync"],
+  destination = account,
 ) {
   const file = artifactFile(filename, {
     artifactId: artifact,
     id: crypto.randomUUID(),
     ...(sync &&
     !(sync.status === "disconnected" && sync.recovery.action === "connect")
-      ? { googleDriveConnectionId: account }
+      ? { googleDriveConnectionId: destination }
       : {}),
     googleDriveSync: sync,
   });
@@ -518,45 +520,59 @@ test("Closing a pending Drive upload leaves the reopened artifact ready for down
   expect(screen.queryByText("Synced to Google Drive")).not.toBeInTheDocument();
 });
 
-test("The conversation's saved Drive destination still accepts a downloadable file during a catalog outage", async () => {
-  const file = installArtifactConversation("manifest.txt", {
-    status: "not_synced",
-  });
-  const browser = context.mocks.browser.blobDownload();
-  const outage = {
-    error: {
-      code: "SERVICE_UNAVAILABLE",
-      message: "Account records unavailable",
-    },
-  };
-  context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
-    return respond(503, outage);
-  });
-  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
-    return respond(503, outage);
-  });
-  context.mocks.api(
-    artifactGoogleDriveContract.uploadFromChat,
-    ({ params, body, respond }) => {
-      return body.connectionId === account &&
-        params.artifactId === artifact &&
-        body.chatThreadId === ATTACHMENT_THREAD_ID
-        ? respond(200, {
-            id: "saved-manifest",
-            name: file.filename,
-            webViewLink: null,
-          })
-        : respond(403, {
-            error: { code: "FORBIDDEN", message: "Choose the saved account" },
-          });
-    },
-  );
-  const panel = await preview();
-  await choose(panel, "Upload to Google Drive");
-  await screen.findByText("Synced to Google Drive");
-  const menu = await options(panel);
-  click(await findNamedMenuItem("Download", menu));
-  await waitFor(() => {
-    return expect(browser.downloads.at(-1)?.filename).toBe(file.filename);
-  });
-});
+test.each([
+  ["Dispatch", account],
+  ["Research", "9c0ed3e6-1639-4e47-a132-1589414fab93"],
+])(
+  "The saved %s Drive destination supplies its file link during an inventory outage",
+  async (folder, connection) => {
+    const file = installArtifactConversation(
+      "manifest.txt",
+      {
+        status: "not_synced",
+      },
+      connection,
+    );
+    const browser = context.mocks.browser.blobDownload();
+    const outage = {
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message: "Account records unavailable",
+      },
+    };
+    context.mocks.api(connectorAccountsContract.connections, ({ respond }) => {
+      return respond(503, outage);
+    });
+    context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+      return respond(503, outage);
+    });
+    context.mocks.api(
+      artifactGoogleDriveContract.uploadFromChat,
+      ({ params, body, respond }) => {
+        return body.connectionId === connection &&
+          params.artifactId === artifact &&
+          body.chatThreadId === ATTACHMENT_THREAD_ID
+          ? respond(200, {
+              id: "saved-manifest",
+              name: file.filename,
+              webViewLink: "https://drive.google.com/open?id=" + folder,
+            })
+          : respond(403, {
+              error: { code: "FORBIDDEN", message: "Choose the saved account" },
+            });
+      },
+    );
+    const panel = await preview();
+    await choose(panel, "Upload to Google Drive");
+    await screen.findByText("Synced to Google Drive");
+    await expect(findFastControl("link", "View it")).resolves.toHaveAttribute(
+      "href",
+      "https://drive.google.com/open?id=" + folder,
+    );
+    const menu = await options(panel);
+    click(await findNamedMenuItem("Download", menu));
+    await waitFor(() => {
+      return expect(browser.downloads.at(-1)?.filename).toBe(file.filename);
+    });
+  },
+);

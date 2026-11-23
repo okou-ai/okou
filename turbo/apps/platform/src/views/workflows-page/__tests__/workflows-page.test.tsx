@@ -922,8 +922,19 @@ function copies() {
 }
 
 test("A member sees the shared workflow and the private definition that overrides it", async () => {
-  const { shared, sales } = copies();
-  await setupPage({ context, path: "/workflows" });
+  const { shared, sales, entries } = copies();
+  entries.push(
+    salesWorkflow(context, {
+      id: crypto.randomUUID(),
+      name: "warehouse-check",
+      displayName: "Warehouse check",
+    }),
+  );
+  await setupPage({
+    context,
+    path: "/workflows?agent=c7000000-0000-4000-a000-000000000001",
+  });
+  await screen.findByText("Warehouse check");
   const badge = await screen.findByText("Overridden for you");
   expect(badge.closest("a")).toHaveAttribute(
     "href",

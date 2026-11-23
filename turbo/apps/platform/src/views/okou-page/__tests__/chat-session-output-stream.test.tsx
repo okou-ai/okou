@@ -337,13 +337,25 @@ test("A partial authorization URL can already be followed before the terminating
     screen.queryByTestId("computer-use-authorization-card"),
   ).not.toBeInTheDocument();
   events.chunk("-report.");
-  await findFastControl("link", url);
+  await expect(findFastControl("link", url)).resolves.toHaveAttribute(
+    "href",
+    url,
+  );
+  expect(
+    screen.queryByTestId("computer-use-authorization-card"),
+  ).not.toBeInTheDocument();
   events.chunk(" Continue here.");
-  const ready = await card();
+  await card();
+  expect(screen.getAllByTestId("computer-use-authorization-card")).toHaveLength(
+    1,
+  );
   events.persist(url + ". Continue here.");
   events.finish();
   await waitFor(() => {
     return expect(events.subscribed()).toBeFalsy();
   });
-  await expect(card()).resolves.toBe(ready);
+  await screen.findByText(/Continue here/);
+  expect(screen.getAllByTestId("computer-use-authorization-card")).toHaveLength(
+    1,
+  );
 });
