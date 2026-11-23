@@ -4,6 +4,7 @@ import ai.okou.android.R
 import ai.okou.android.SettingsModal
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settingsPanelContentPadding
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -38,6 +40,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -48,7 +52,6 @@ import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 
@@ -147,11 +150,7 @@ internal fun ConversationQueueButton(
                     Text(
                         badge,
                         Modifier.semantics { hideFromAccessibility() },
-                        style =
-                            MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
-                                lineHeight = 16.sp,
-                            ),
+                        style = MaterialTheme.typography.labelSmall,
                     )
                 }
             },
@@ -168,18 +167,21 @@ internal fun ConversationQueueModal(
     snackbar: SnackbarHostState,
     onDismiss: () -> Unit,
 ) {
-    val height = currentWindowSizeDp().height
-    val fullScreen = height < 480
+    val window = currentWindowSizeDp()
+    val fullScreen = window.height < 480
+    val density = LocalDensity.current
     val titleFocus = remember { FocusRequester() }
-    val initialCount = remember { entries.size.coerceAtLeast(1) }
-    val rowsHeight = 72.dp * initialCount + (initialCount - 1).dp
-    val panelHeight = minOf(height.dp * 0.85f, 72.dp + rowsHeight)
-    SettingsModal(onDismiss, fullScreen = fullScreen) { centered ->
-        Box(
-            if (fullScreen) Modifier.fillMaxWidth().fillMaxHeight()
-            else Modifier.fillMaxWidth().height(panelHeight),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 16.dp)) {
+    // Keep the first displayed height when the server changes the queue. Reflow on window changes.
+    var openedHeight by remember(window, density) { mutableIntStateOf(0) }
+    val panelHeight =
+        when {
+            fullScreen -> Modifier.fillMaxHeight()
+            openedHeight > 0 -> Modifier.height(with(density) { openedHeight.toDp() })
+            else -> Modifier.onSizeChanged { if (openedHeight == 0) openedHeight = it.height }
+        }
+    SettingsModal(onDismiss, fullScreen = fullScreen) {
+        Box(Modifier.fillMaxWidth().then(panelHeight)) {
+            Column(Modifier.fillMaxWidth().padding(settingsPanelContentPadding(fullScreen))) {
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 56.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -196,16 +198,8 @@ internal fun ConversationQueueModal(
                             heading()
                         },
                         style =
-                            if (fullScreen)
-                                MaterialTheme.typography.titleMedium.copy(
-                                    fontSize = 16.sp,
-                                    lineHeight = 24.sp,
-                                )
-                            else
-                                MaterialTheme.typography.titleLarge.copy(
-                                    fontSize = 22.sp,
-                                    lineHeight = 28.sp,
-                                ),
+                            if (fullScreen) MaterialTheme.typography.titleMedium
+                            else MaterialTheme.typography.titleLarge,
                     )
                 }
                 if (entries.isEmpty()) {
@@ -213,11 +207,7 @@ internal fun ConversationQueueModal(
                         stringResource(R.string.conversation_queue_empty),
                         Modifier.padding(horizontal = 12.dp, vertical = 20.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style =
-                            MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp,
-                                lineHeight = 20.sp,
-                            ),
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 ConversationQueue(entries, controls, titleFocus)
@@ -350,17 +340,12 @@ private fun QueueRow(
                 summary.ifBlank { metadata },
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
-                style =
-                    MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
+                style = MaterialTheme.typography.bodyLarge,
             )
             if (summary.isNotBlank()) {
                 Text(
                     metadata,
-                    style =
-                        MaterialTheme.typography.bodyMedium.copy(
-                            fontSize = 14.sp,
-                            lineHeight = 20.sp,
-                        ),
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

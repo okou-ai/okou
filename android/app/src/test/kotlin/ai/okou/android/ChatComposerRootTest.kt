@@ -27,6 +27,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -301,6 +302,11 @@ class ChatComposerRootTest {
         val listStarted = CountDownLatch(1)
         val historyStarted = CountDownLatch(1)
         app.fixture.beforeCreateReturn = { create.await() }
+        // Hold both ways a confirmed queue entry can replace the accepted bubble.
+        app.fixture.beforeInputStatusReturn = { history.await() }
+        app.fixture.chats.historyCatchUp = {
+            jsonResponse("""{"events":{},"notFoundThreads":[]}""")
+        }
         // A list read can see the new chat while its create response is still held.
         app.fixture.beforeListReturn = { containsCreatedChat ->
             if (containsCreatedChat) {
@@ -574,21 +580,29 @@ class ChatComposerRootTest {
             awaitConversation {
                 pending.eventId in chats.history.uiState.value.transcript?.persistedIds.orEmpty()
             }
-            messageText(pending.eventId, prompt).assertIsDisplayed()
+            val queue = hasTestTag("open_conversation_queue")
+            compose.waitUntilExactlyOneExists(queue, 10_000)
+            messageText(pending.eventId, prompt).assertDoesNotExist()
             messageDelivery(pending.eventId, "Sending…").assertDoesNotExist()
-            assertEquals(
-                1,
-                compose.onAllNodesWithTag("message_${pending.eventId}").fetchSemanticsNodes().size,
-            )
             compose.onNodeWithContentDescription("Back").performClick()
             compose.onNodeWithText("New conversation").performClick()
             compose.onNodeWithTag("message_input").assertTextContains("Keep this newer draft")
             compose.onNodeWithText("Check delivery").assertDoesNotExist()
             app.sendGate.countDown()
             awaitConversation {
-                compose.onAllNodesWithText("New conversation").fetchSemanticsNodes().isNotEmpty()
+                editor?.uiState?.value?.entry(ComposerTarget(pending.threadId))?.receipt?.eventId ==
+                    pending.eventId
             }
+            compose.onNode(queue).performClick()
+            val row = hasTestTag("message_${pending.eventId}")
+            compose.waitUntilExactlyOneExists(row, 10_000)
             messageText(pending.eventId, prompt).assertIsDisplayed()
+            val panel = hasTestTag("conversation_queue")
+            compose
+                .onNode(
+                    hasContentDescription("Back") and hasAnyAncestor(hasAnyDescendant(panel)),
+                )
+                .performClick()
             compose.onNodeWithTag("message_input").assertTextContains("Keep this newer draft")
             compose.onNodeWithContentDescription("Send").assertIsEnabled()
             assertEquals(1, app.fixture.inputs.size)

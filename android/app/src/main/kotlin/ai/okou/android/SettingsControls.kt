@@ -323,7 +323,7 @@ internal fun SettingsModal(
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
                 else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
-                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
+                shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 content(true)
@@ -340,8 +340,6 @@ internal fun SettingsModal(
                     confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
                 ),
             sheetGesturesEnabled = dismissible,
-            sheetMaxWidth = 460.dp,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
@@ -353,6 +351,9 @@ internal fun SettingsModal(
         }
     }
 }
+
+internal fun settingsPanelContentPadding(fullScreen: Boolean = false) =
+    PaddingValues(start = 16.dp, end = 16.dp, bottom = if (fullScreen) 12.dp else 22.dp)
 
 @Composable
 internal fun SettingsSheet(
@@ -371,12 +372,8 @@ internal fun SettingsSheet(
             modifier
                 .fillMaxWidth()
                 .heightIn(max = windowHeight * 0.80f)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
+                .padding(settingsPanelContentPadding())
+                .padding(top = if (centered) 16.dp else 0.dp)
                 .verticalScroll(scroll),
         ) {
             Box(Modifier.fillMaxWidth()) {

@@ -306,8 +306,15 @@ class NativeRealtimeTest {
             external.snapshot.value =
                 RealtimeSnapshot(RealtimePhase.Connected, 1, changes = ChatChanges(resync = true))
             text("Changed on another client")
-            // The new confirmed message can be below the current viewport; use native scrolling.
-            reveal("External input")
+            val queueTitle = app.getString(R.string.conversation_queue_count, 1)
+            step = "Open the externally updated queue"
+            checkNotNull(
+                    device.wait(Until.findObject(By.pkg(app.packageName).desc(queueTitle)), 10_000),
+                )
+                .click()
+            text("External input")
+            assertTrue(device.pressBack())
+            condition("System Back closes the queue") { !device.hasObject(label(queueTitle)) }
             assertTrue(
                 checkNotNull(
                         device.findObject(By.pkg(app.packageName).clazz("android.widget.EditText")),
