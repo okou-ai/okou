@@ -19,6 +19,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  notExists,
   sql,
 } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -52,6 +53,7 @@ import {
   googleCalendarAccountProjectionStatement,
 } from "./google-calendar-automation-account.service";
 import { readConnectorRuntimeAuthSelection$ } from "./connector-catalog-slug-source.service";
+import { workflowAutomationBoundConnectorEligibleSql } from "./workflow-automation-account.service";
 
 const log = logger("api:google-calendar-automation-event");
 
@@ -951,31 +953,13 @@ export const hasEnabledGoogleCalendarConsumer$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = get(db$);
-    const automations = await db
-      .select({
-        eventType: workflowAutomations.eventType,
-        eventConfig: workflowAutomations.eventConfig,
-      })
+    const [consumer] = await db
+      .select({ id: workflowAutomations.id })
       .from(workflowAutomations)
-      .where(
-        and(
-          eq(workflowAutomations.orgId, args.orgId),
-          eq(workflowAutomations.ownerUserId, args.userId),
-          eq(workflowAutomations.eventConnectorId, args.connectorId),
-          eq(workflowAutomations.enabled, true),
-          eq(workflowAutomations.kind, "event"),
-          inArray(workflowAutomations.eventType, [
-            ...GOOGLE_CALENDAR_EVENT_TYPES,
-          ]),
-        ),
-      );
+      .where(enabledCalendarWatchConsumerCondition(args))
+      .limit(1);
     signal.throwIfAborted();
-    return automations.some((automation) => {
-      return (
-        parseGoogleCalendarEventAutomationConfig(automation)?.calendarId ===
-        args.calendarId
-      );
-    });
+    return consumer !== undefined;
   },
 );
 
@@ -1069,6 +1053,14 @@ function calendarAutomationTargetCondition(args: CalendarAutomationTarget) {
     eq(workflowAutomations.kind, "event"),
     inArray(workflowAutomations.eventType, [...GOOGLE_CALENDAR_EVENT_TYPES]),
     eq(sql`${workflowAutomations.eventConfig}->>'calendarId'`, args.calendarId),
+  );
+}
+
+function enabledCalendarWatchConsumerCondition(args: CalendarAutomationTarget) {
+  return and(
+    calendarAutomationTargetCondition(args),
+    eq(workflowAutomations.enabled, true),
+    workflowAutomationBoundConnectorEligibleSql("google-calendar"),
   );
 }
 
@@ -1559,13 +1551,24 @@ const deleteInactiveCalendarWatch$ = command(
     { set },
     args: {
       readonly state: GoogleCalendarWatchStateRow;
+      readonly forceStop?: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
     const db = set(writeDb$);
+    const consumers = db
+      .select({ id: workflowAutomations.id })
+      .from(workflowAutomations)
+      .where(enabledCalendarWatchConsumerCondition(args.state));
     const [deleted] = await db
       .delete(googleCalendarWatchStates)
-      .where(eq(googleCalendarWatchStates.id, args.state.id))
+      .where(
+        and(
+          eq(googleCalendarWatchStates.id, args.state.id),
+          eq(googleCalendarWatchStates.channelId, args.state.channelId),
+          args.forceStop ? undefined : notExists(consumers),
+        ),
+      )
       .returning({ id: googleCalendarWatchStates.id });
     signal.throwIfAborted();
     return deleted !== undefined;
@@ -1747,7 +1750,7 @@ export const reconcileGoogleCalendarWatchState$ = command(
       );
       const deleted = await set(
         deleteInactiveCalendarWatch$,
-        { state },
+        { state, forceStop: args.forceStop },
         signal,
       );
       if (!deleted) {
@@ -1875,7 +1878,7 @@ export const reconcileGoogleCalendarWatchesForUser$ = command(
   },
 );
 
-export const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
+const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
   async (
     { get, set },
     args: {
@@ -1883,7 +1886,6 @@ export const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
       readonly userId: string;
       readonly connectorId?: string;
       readonly calendarId?: string;
-      readonly ensureRefreshRequired?: boolean;
     },
     signal: AbortSignal,
   ): Promise<boolean> => {
@@ -1925,11 +1927,7 @@ export const repairAndEnsureGoogleCalendarWatchesForOwner$ = command(
       const existing = existingByKey.get(
         `${target.connectorId}\n${target.calendarId}`,
       );
-      if (
-        existing &&
-        (args.ensureRefreshRequired === false ||
-          !watchNeedsRefresh(existing, nowDate()))
-      ) {
+      if (existing && !watchNeedsRefresh(existing, nowDate())) {
         continue;
       }
       const ensured = await set(

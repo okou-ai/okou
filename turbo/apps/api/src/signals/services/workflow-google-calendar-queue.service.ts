@@ -2,7 +2,7 @@ import { connectors } from "@okouai/db/schema/connector";
 import { googleCalendarWatchStates } from "@okouai/db/schema/google-calendar-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
+import { workflowAutomationBoundConnectorEligibleSql } from "./workflow-automation-account.service";
 
 export interface GoogleCalendarQueueSource {
   readonly orgId: string;
@@ -36,6 +36,7 @@ function googleCalendarQueueAutomationCondition(
     ]),
     eq(workflowAutomations.enabled, true),
     eq(workflowAutomations.eventConnectorId, source.connectorId),
+    workflowAutomationBoundConnectorEligibleSql("google-calendar"),
     eq(
       sql`${workflowAutomations.eventConfig} ->> 'calendarId'`,
       source.calendarId,
@@ -47,7 +48,7 @@ function googleCalendarQueueAutomationCondition(
 export function googleCalendarQueueAdmissionSql(
   source: GoogleCalendarQueueSource,
 ) {
-  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(source, source.connectorId)} AND EXISTS (
+  return sql`SELECT 1 WHERE EXISTS (
       SELECT 1 FROM ${connectors}
       WHERE ${and(
         eq(connectors.id, source.connectorId),

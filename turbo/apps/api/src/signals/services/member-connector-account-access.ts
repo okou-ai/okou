@@ -3,25 +3,31 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
 import { connectors } from "@okouai/db/schema/connector";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDateSql } from "../../lib/time";
 
 interface MemberIdentity {
-  readonly orgId: string;
-  readonly userId: string;
+  readonly orgId: string | SQL;
+  readonly userId: string | SQL;
 }
 
 // This member-scoped switch can be evaluated inside existing account reads and
 // conditional writes. The fallback is the registry's non-override evaluation.
 export function memberConnectorAccountAccessEnabledSql(owner: MemberIdentity) {
   const key = FeatureSwitchKey.MemberConnectorAccountAccess;
+  // Reconciliation can reference a member through columns. That path applies
+  // stored member overrides in SQL and the registry default when none exists.
+  const registryEnabled = isFeatureEnabled(key, {
+    orgId: typeof owner.orgId === "string" ? owner.orgId : undefined,
+    userId: typeof owner.userId === "string" ? owner.userId : undefined,
+  });
   return sql`coalesce((
     SELECT (${userFeatureSwitches.switches} ->> ${key})::boolean
     FROM ${userFeatureSwitches}
     WHERE ${userFeatureSwitches.orgId} = ${owner.orgId}
       AND ${userFeatureSwitches.userId} = ${owner.userId}
-  ), ${isFeatureEnabled(key, owner)})`;
+  ), ${registryEnabled})`;
 }
 
 export function memberConnectorAccountAllowed(
