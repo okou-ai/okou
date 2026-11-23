@@ -214,14 +214,14 @@ internal class RunControlsOwner(
         )
     }
 
-    fun skip(connection: Connection, threadId: String, eventId: String) {
+    fun skip(
+        connection: Connection,
+        threadId: String,
+        eventId: String,
+        preview: ComposerMessagePreview?,
+    ) {
         if (!current(connection)) return
-        val state = connection.history.uiState.value
-        if (
-            state.thread?.id != threadId ||
-                eventId !in state.transcript?.revocableInputIds.orEmpty()
-        )
-            return
+        if (!connection.history.uiState.value.canWithdrawInput(threadId, eventId, preview)) return
         append(
             connection,
             listOf(

@@ -544,7 +544,7 @@ internal fun ConversationRoute(
                             ) {
                                 ConversationMessageRow(
                                     entry,
-                                    revoke = controls?.revoke(entry.message.id),
+                                    revoke = controls?.revoke(entry.message.id, entry.preview),
                                     artifactActions = artifactActions,
                                     findHighlight = highlight,
                                     links = links,

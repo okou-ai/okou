@@ -48,6 +48,22 @@ fun ConversationUiState.controlRunIds(output: RunOutputState): List<String> =
         )
         .orEmpty()
 
+/** An observed queue entry is actionable until history has evidence about that input. */
+internal fun ConversationUiState?.canWithdrawInput(
+    threadId: String,
+    eventId: String,
+    preview: ComposerMessagePreview?,
+): Boolean {
+    val confirmed = this?.takeIf { it.thread?.id == threadId }
+    if (confirmed?.phase == HistoryPhase.Missing) return false
+    val transcript = confirmed?.transcript
+    if (eventId in transcript?.revocableInputIds.orEmpty()) return true
+    return eventId !in transcript?.persistedIds.orEmpty() &&
+        preview?.disposition == TextDisposition.Queued &&
+        preview.threadId == threadId &&
+        preview.eventId == eventId
+}
+
 /** Presentation connection to shared commands and the existing independent conversation detail. */
 class RunControlsModel(
     service: RunControlService,
@@ -85,7 +101,8 @@ class RunControlsModel(
     fun stop(threadId: String, displayedRunIds: List<String>) =
         owner.stop(connection, threadId, displayedRunIds)
 
-    fun skip(threadId: String, eventId: String) = owner.skip(connection, threadId, eventId)
+    fun skip(threadId: String, eventId: String, preview: ComposerMessagePreview? = null) =
+        owner.skip(connection, threadId, eventId, preview)
 
     fun retry(id: String) = owner.retry(connection, id)
 

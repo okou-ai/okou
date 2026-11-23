@@ -830,7 +830,17 @@ class RunControlsModelTest {
                 setOf(manual, automation),
                 f.history.uiState.value.transcript?.pendingInputIds,
             )
-            f.controls.skip(CHAT_PERSONAL, active)
+            f.controls.skip(
+                CHAT_PERSONAL,
+                active,
+                ComposerMessagePreview(
+                    eventId = active,
+                    threadId = CHAT_PERSONAL,
+                    text = "Already delivered",
+                    disposition = TextDisposition.Queued,
+                ),
+            )
+            assertTrue(checkNotNull(f.controls.uiState.value.journal).pending.isEmpty())
             assertTrue(f.remote.posts.isEmpty())
             f.controls.skip(CHAT_PERSONAL, manual)
             f.controls.skip(CHAT_PERSONAL, automation)

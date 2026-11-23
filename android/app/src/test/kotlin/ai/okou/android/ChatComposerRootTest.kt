@@ -40,9 +40,13 @@ import androidx.test.core.app.ActivityScenario
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
@@ -71,6 +75,7 @@ class ComposerRootApplication : TestOkouApplication() {
         fixture.beforeSendReturn = { sendGate.await() }
         chatService = fixture.service
         composerService = fixture.service
+        controlService = fixture.service
         journalStore = ComposerJournalStore(this, journalDirectory)
         cacheSnapshot = ChatCacheSnapshot(noBackupFilesDir.resolve("chat-list"), chatCache)
         super.onCreate()
@@ -635,6 +640,70 @@ class ChatComposerRootTest {
             1,
             app.fixture.requests.count { it.requestUrl?.encodedPath == "/api/chat/events" },
         )
+    }
+
+    @Test
+    fun statusConfirmedFirstInputCanBeWithdrawnWhileTheChatListIsHeld() {
+        val app = compose.activity.application as ComposerRootApplication
+        val listStarted = CountDownLatch(1)
+        val releaseList = CountDownLatch(1)
+        app.fixture.beforeListReturn = { containsCreatedChat ->
+            if (containsCreatedChat) {
+                listStarted.countDown()
+                releaseList.await()
+            }
+        }
+        app.fixture.disconnectSend = true
+        val withdrawal = AtomicReference<JsonObject>()
+        val composerResponse = app.fixture.chats.commandResponse
+        app.fixture.chats.commandResponse = { request ->
+            val body =
+                if (
+                    request.method == "POST" &&
+                        request.requestUrl?.encodedPath == "/api/chat/events"
+                )
+                    Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                else null
+            if (body != null && "revokesEventId" in body) {
+                withdrawal.set(body)
+                MockResponse()
+                    .setResponseCode(201)
+                    .setHeader("Content-Type", "application/json")
+                    .setBody(
+                        """{"threadId":${body.getValue("threadId")},"createdAt":"$CHAT_DATE"}""",
+                    )
+            } else composerResponse(request)
+        }
+        app.contextGate.countDown()
+        try {
+            compose.onNodeWithText("New chat").performClick()
+            captureOwners()
+            awaitConversation { editor?.uiState?.value?.journal != null }
+            compose.onNodeWithTag("message_input").performTextInput("Withdraw my first input")
+            compose.onNodeWithContentDescription("Send").assertIsEnabled().performClick()
+            awaitConversation { app.fixture.inputs.size == 1 }
+            val (eventId, input) = app.fixture.inputs.entries.single()
+            app.sendGate.countDown()
+            awaitConversation {
+                listStarted.count == 0L &&
+                    compose.onAllNodesWithText("Queued").fetchSemanticsNodes().size == 1
+            }
+            compose
+                .onNode(
+                    hasText(app.getString(R.string.conversation_revoke)) and
+                        hasAnyAncestor(hasTestTag("message_$eventId")),
+                )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+            awaitConversation { withdrawal.get() != null }
+            val request = checkNotNull(withdrawal.get())
+            assertEquals(input.getValue("threadId"), request.getValue("threadId"))
+            assertEquals(eventId, request.getValue("revokesEventId").jsonPrimitive.content)
+            assertEquals(1, app.fixture.inputs.size)
+        } finally {
+            releaseList.countDown()
+        }
     }
 
     @After

@@ -61,14 +61,14 @@ internal class ConversationRunControls(
         if (canStop) model.stop(threadId, listOf(checkNotNull(currentRunId)))
     }
 
-    fun revoke(eventId: String): (() -> Unit)? {
+    fun revoke(eventId: String, preview: ComposerMessagePreview?): (() -> Unit)? {
         if (
             !available ||
-                eventId !in confirmed?.transcript?.revocableInputIds.orEmpty() ||
+                !confirmed.canWithdrawInput(threadId, eventId, preview) ||
                 pending.any { it.kind == RunControlKind.Revoke && it.targetId == eventId }
         )
             return null
-        return { model.skip(threadId, eventId) }
+        return { model.skip(threadId, eventId, preview) }
     }
 }
 

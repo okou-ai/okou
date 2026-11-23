@@ -946,15 +946,26 @@ internal fun OkouApp(
             maxOf(TopAppBarDefaults.TopAppBarExpandedHeight, textHeight + 16.dp)
         }
     val shortConversation = window.height < 480
+    val controlThreadId =
+        when (target) {
+            is WorkspaceTarget.Chat -> target.id.takeIf { thread != null || awaitingCreatedChat }
+            is WorkspaceTarget.NewChat -> createdId
+            else -> null
+        }
     val runActions =
         if (
             settings == null &&
-                thread != null &&
+                controlThreadId != null &&
                 controls != null &&
                 pendingNewChat == null &&
                 (!searchActive || listWidth != null)
         )
-            conversationRunControls(controls, checkNotNull(chats).history, thread.id, list.offline)
+            conversationRunControls(
+                controls,
+                checkNotNull(chats).history,
+                controlThreadId,
+                list.offline,
+            )
         else null
     fun rowAction(id: String, action: ChatRowAction) {
         val started = chats?.performRowAction(id, action) == true
@@ -1489,6 +1500,7 @@ internal fun OkouApp(
                                                     historyAvailable = provisionalChat != null,
                                                     realtime =
                                                         chats.updates.takeIf { workspaceReady },
+                                                    controls = runActions,
                                                 )
                                             }
                                         } else {

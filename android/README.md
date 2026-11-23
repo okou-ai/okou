@@ -718,6 +718,8 @@ readback and retry. After an ambiguous write the composer checks the original
 input, then only resends within the server's event retention window. Canonical
 history replaces the local bubble by input ID. A receipt removes progress while
 the queue state remains independently driven by input status and history.
+Status-confirmed queue entries can be withdrawn while the chat list and history
+catch up. Confirmed history determines eligibility once it has seen the input.
 Pending ordinary sends survive Activity recreation in memory. After process
 restart the app reads confirmed messages and queue entries from canonical history.
 
