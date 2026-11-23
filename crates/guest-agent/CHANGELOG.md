@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.110.26](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.25...guest-agent-v0.110.26) (2026-11-23)
+
+
+### Refactoring
+
+* **guest-agent:** centralize codex stream failure handling ([#50035](https://github.com/okou-ai/okou/issues/50035)) ([dca4f18](https://github.com/okou-ai/okou/commit/dca4f18907346872a0aca5f89c105f9dbc636038))
+
 ## [0.110.25](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.24...guest-agent-v0.110.25) (2026-11-22)
 
 
