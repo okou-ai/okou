@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -26,11 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -56,6 +51,7 @@ internal enum class RenameStatus {
 
 @Composable
 internal fun RenameListItemSheet(
+    editor: ChatRenameEditor,
     confirmedName: String,
     @StringRes titleRes: Int,
     @StringRes labelRes: Int,
@@ -68,9 +64,9 @@ internal fun RenameListItemSheet(
     save: (String) -> Boolean,
     maxLength: Int? = null,
 ) {
-    val baseline = rememberSaveable { confirmedName.trim() }
-    val input = rememberTextFieldState(initialText = confirmedName)
-    var submitted by rememberSaveable { mutableStateOf<String?>(null) }
+    val baseline = editor.baseline
+    val input = editor.input
+    val submitted = editor.submitted
     val name = input.text.toString().trim()
     val checking = status == RenameStatus.Checking
     val unconfirmed = checking || status == RenameStatus.Unconfirmed
@@ -136,7 +132,7 @@ internal fun RenameListItemSheet(
                 }
                 Button(
                     onClick = {
-                        if (unconfirmed) check() else if (save(name)) submitted = name
+                        if (unconfirmed) check() else if (save(name)) editor.submitted = name
                     },
                     modifier = target,
                     enabled = if (unconfirmed) checkEnabled && !checking else canSave,
