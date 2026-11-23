@@ -63,41 +63,48 @@ test("link-navigation-004 Back traverses directly to the missing page after rese
   expect(location.pathname).toBe(unknown);
 });
 
-test.each(["Meta", "plain"] as const)(
-  "The browser receives the Workflows link activation with a %s click",
-  async (modifier) => {
-    await open("/");
-    const link = await workflowsLink();
-    const activation = context.mocks.deferred<{
-      claimed: boolean;
-      meta: boolean;
-    }>();
-    // The document sees the bubbling event after the Router has handled it.
-    document.addEventListener(
-      "click",
-      (event) => {
-        return activation.resolve({
-          claimed: event.defaultPrevented,
-          meta: event.metaKey,
-        });
-      },
-      { once: true, signal: context.signal },
-    );
-    const user = userEvent.setup();
-    if (modifier === "Meta") {
-      await user.keyboard("{Meta>}");
-    }
-    await user.click(link);
-    if (modifier === "Meta") {
-      await user.keyboard("{/Meta}");
-    }
-    await expect(activation.promise).resolves.toStrictEqual({
-      claimed: modifier === "plain",
-      meta: modifier === "Meta",
-    });
-    expect(link).toHaveAttribute("href", "/workflows");
-    if (modifier === "plain") {
-      await screen.findByRole("heading", { name: "Workflows" });
-    }
+test.each([
+  {
+    modifier: "Meta",
+    title:
+      "link-navigation-005 Meta activation leaves the Workflows link to the browser",
   },
-);
+  {
+    modifier: "plain",
+    title: "A plain Workflows link activation navigates in the current tab",
+  },
+] as const)("$title", async ({ modifier }) => {
+  await open("/");
+  const link = await workflowsLink();
+  const activation = context.mocks.deferred<{
+    claimed: boolean;
+    meta: boolean;
+  }>();
+  // The document sees the bubbling event after the Router has handled it.
+  document.addEventListener(
+    "click",
+    (event) => {
+      return activation.resolve({
+        claimed: event.defaultPrevented,
+        meta: event.metaKey,
+      });
+    },
+    { once: true, signal: context.signal },
+  );
+  const user = userEvent.setup();
+  if (modifier === "Meta") {
+    await user.keyboard("{Meta>}");
+  }
+  await user.click(link);
+  if (modifier === "Meta") {
+    await user.keyboard("{/Meta}");
+  }
+  await expect(activation.promise).resolves.toStrictEqual({
+    claimed: modifier === "plain",
+    meta: modifier === "Meta",
+  });
+  expect(link).toHaveAttribute("href", "/workflows");
+  if (modifier === "plain") {
+    await screen.findByRole("heading", { name: "Workflows" });
+  }
+});
