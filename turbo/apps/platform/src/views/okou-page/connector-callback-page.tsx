@@ -1,7 +1,7 @@
 import { AlertCircle, Check, Loader2, WalletCards } from "lucide-react";
 import type { PublicConnectorCatalogIcon } from "@okouai/api-contracts/contracts/connector-catalog";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ConnectorFlowCard } from "./connector-flow-card.tsx";
@@ -142,16 +142,14 @@ function ConnectorCallbackAction({
 }): React.JSX.Element {
   const { t } = useTranslation();
   return nativeReturnUrl ? (
-    <Button
-      variant="outline"
-      nativeButton={false}
-      role="link"
-      render={<a href={nativeReturnUrl} />}
+    <a
+      className={buttonVariants({ variant: "outline" })}
+      href={nativeReturnUrl}
     >
       {t(($) => {
         return $.connectors.actions.returnToOkou;
       })}
-    </Button>
+    </a>
   ) : (
     <Button
       variant="outline"
