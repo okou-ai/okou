@@ -68,7 +68,7 @@ open class OkouApplication : Application() {
         SearchRecentChatsStore(
             PreferenceDataStoreFactory.create {
                 noBackupFilesDir.resolve("workspace-search-recents.preferences_pb")
-            }
+            },
         )
     }
     val memberAppearanceCache by lazy {
