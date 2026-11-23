@@ -1468,16 +1468,44 @@ test("Keep expanded work history and its duration visible after the run complete
   ).toBe(readingTop);
 });
 
+function observeIncomingReply(
+  container: HTMLElement,
+  text: string,
+): Promise<HTMLElement> {
+  const transcript = within(container);
+  const reply = context.mocks.deferred<HTMLElement>();
+  const signal = context.signal;
+  const observer = new MutationObserver(() => {
+    const answer = transcript.queryByText(text);
+    if (answer) {
+      stopObserving();
+      reply.resolve(answer);
+    }
+  });
+  function stopObserving(): void {
+    observer.disconnect();
+    signal.removeEventListener("abort", stopObserving);
+  }
+  observer.observe(container, {
+    childList: true,
+    characterData: true,
+    subtree: true,
+  });
+  signal.addEventListener("abort", stopObserving, { once: true });
+  return reply.promise;
+}
+
 test.each(["layout", "tap"])(
   "Follow new messages after a %s changes the viewport without a reading gesture",
   async (cause) => {
     const conversation = mockMutableConversation(
       THREAD_IDS.incomingLatest,
-      completedHistoryEvents(26),
+      // Ten complete turns enter the virtualized transcript at 20 groups.
+      completedHistoryEvents(10),
     );
     const container = await openConversation(
       THREAD_IDS.incomingLatest,
-      "History answer 26",
+      "History answer 10",
     );
     const geometry = installChatScrollGeometry(container);
     expect(container.scrollTop).toBe(geometry.bottomScrollTop());
@@ -1491,13 +1519,18 @@ test.each(["layout", "tap"])(
     fireEvent.scroll(container);
     expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
 
-    await conversation.publish(completedTurn(27));
-
-    const incomingAnswer = await screen.findByText("History answer 27");
+    // The mock API response can precede the transcript's React commit.
+    const [incomingAnswer] = await Promise.all([
+      observeIncomingReply(container, "History answer 11"),
+      conversation.publish(completedTurn(11)),
+    ]);
     expect(incomingAnswer).toBeVisible();
-    await waitFor(() => {
-      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-    });
+    await waitFor(
+      () => {
+        expect(container.scrollTop).toBe(geometry.bottomScrollTop());
+      },
+      { container },
+    );
     expect(queryButtonByLabel("Scroll to bottom")).toBeNull();
   },
 );
