@@ -142,9 +142,9 @@ required for the final archive.
 - The existing server rollback workflow does not roll back installed iOS apps.
   Ship a corrected build instead. The API's source-controlled
   [iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-  compares the marketing version advertised in `X-Client-Version`; it is
-  independent of the App Store Connect build number and TestFlight validity.
-  Check that policy separately when retiring an installed version.
+  compares the marketing version advertised in `X-Client-Version` against
+  the floor for the installation channel. Verify actual build availability
+  before raising either minimum. The App Store floor governs API compatibility.
 
 ## Archive promotion
 

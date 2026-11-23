@@ -201,9 +201,11 @@ downloads carry none of these headers. The API can use these values to identify
 the client. Builds that predate these headers cannot be identified through them.
 The API owns a source-controlled
 [iOS compatibility policy](../turbo/apps/api/src/lib/ios-client-compatibility.json)
-for the marketing version. A null minimum leaves the floor inactive; changing
-it requires the API's review and release process. HTTP 426 responses show a
-blocking update screen. Preserve this response handling when changing
+for the marketing version. The main app and notification extension send
+`X-Client-Distribution` on first-party requests. App Store and TestFlight each
+have a minimum. A null App Store minimum is valid before the first public
+release. HTTP 426 responses open the blocking update screen for the installation
+channel. Preserve this response handling when changing
 authentication, workspace startup, or data loading.
 
 The iOS icon retains the Desktop flower geometry from

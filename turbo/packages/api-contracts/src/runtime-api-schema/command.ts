@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { object, string } from "zod";
+import { iosGatePolicy } from "./ios-policy";
 import { checkIosConsumption } from "./ios-consumption";
 import { checkAndroidConsumption } from "./android-consumption";
 import { androidResponseTransforms } from "../client-transforms/android";
@@ -10,7 +11,6 @@ import { desktopResponseTransforms } from "../client-transforms/desktop";
 import { compareRuntimeApiSchemas } from "./compat";
 import {
   DESKTOP_PUBLISHED_VERSION_ORACLE,
-  IOS_PUBLISHED_VERSION_ORACLE,
   ANDROID_PUBLISHED_VERSION_ORACLE,
   type NativeFloorChange,
   evaluateRuntimeApiGate,
@@ -39,7 +39,7 @@ const LINT_OPTIONS = {
   "desktop-published-version": "single",
   "ios-floor": "single",
   "ios-base-floor": "single",
-  "ios-published-version": "single",
+  "ios-availability": "single",
   "android-floor": "single",
   "android-base-floor": "single",
   "android-published-version": "single",
@@ -58,7 +58,7 @@ const USAGE = `Usage:
     [--desktop-floor desktop-compatibility.json --desktop-base-floor base-desktop-compatibility.json]
     [--desktop-published-version x.y.z]
     [--ios-floor ios-client-compatibility.json --ios-base-floor base-ios-client-compatibility.json]
-    [--ios-published-version x.y.z]
+    [--ios-availability protected-distribution-receipts.json]
     [--android-floor android-client-compatibility.json --android-base-floor base-android-client-compatibility.json]
     [--android-published-version x.y.z]
 
@@ -141,7 +141,7 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
   }
   const blockingOwners = readBlockingOwners(options);
   const desktop = await readNativePolicy(options, "desktop");
-  const ios = await readNativePolicy(options, "ios");
+  const ios = await readIosPolicy(options);
   const android = await readNativePolicy(options, "android");
 
   const currentPath = single(options, "current");
@@ -155,13 +155,28 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
     : undefined;
   if (!online) {
     console.warn(
-      "Runtime API schema comparison skipped because no online schema is available yet; Native client floor and transform checks still run.",
+      "No online runtime API schema is available. The iOS base inventory (when available), native floors and transform checks still apply.",
     );
   }
 
+  const findings = online ? [...compareRuntimeApiSchemas(online, current)] : [];
+  // A missing production inventory must not turn a beta-only floor change into
+  // permission to break the iOS contract already present on the base branch.
+  if (
+    base &&
+    !online?.routes.some((route) => {
+      return route.owner === "ios";
+    })
+  ) {
+    findings.push(
+      ...compareRuntimeApiSchemas(base, current).filter((finding) => {
+        return finding.owner === "ios";
+      }),
+    );
+  }
   warnMissingNativeBaselines(online, blockingOwners);
   const result = evaluateRuntimeApiGate({
-    findings: online ? compareRuntimeApiSchemas(online, current) : [],
+    findings,
     ...(online && base
       ? { baseFindings: compareRuntimeApiSchemas(online, base) }
       : {}),
@@ -171,10 +186,7 @@ async function lintCommand(options: ParsedOptions): Promise<number> {
       ? { desktopPublishedVersion: desktop.publishedVersion }
       : {}),
     desktopTransforms: desktopResponseTransforms,
-    ...(ios.floor ? { iosFloor: ios.floor } : {}),
-    ...(ios.publishedVersion
-      ? { iosPublishedVersion: ios.publishedVersion }
-      : {}),
+    ...ios,
     iosTransforms: iosResponseTransforms,
     ...(android.floor ? { androidFloor: android.floor } : {}),
     ...(android.publishedVersion
@@ -221,9 +233,28 @@ function warnMissingNativeBaselines(
   }
 }
 
+async function readIosPolicy(options: ParsedOptions) {
+  const current = single(options, "ios-floor");
+  const base = single(options, "ios-base-floor");
+  const receipt = single(options, "ios-availability");
+  if (!current && !base && !receipt) return {};
+  if (!current || !base)
+    throw new CliUsageError(
+      "--ios-floor and --ios-base-floor must be passed together",
+    );
+  const json = async (path: string): Promise<unknown> => {
+    return JSON.parse(await readFile(resolve(path), "utf8"));
+  };
+  return iosGatePolicy(
+    await json(current),
+    await json(base),
+    receipt ? await json(receipt) : {},
+  );
+}
+
 async function readNativePolicy(
   options: ParsedOptions,
-  client: "desktop" | "ios" | "android",
+  client: "desktop" | "android",
 ): Promise<{
   readonly floor: NativeFloorChange | undefined;
   readonly publishedVersion: string | undefined;
@@ -304,14 +335,14 @@ function readBlockingOwners(
 
 function readPublishedVersion(
   options: ParsedOptions,
-  client: "desktop" | "ios" | "android" = "desktop",
+  client: "desktop" | "android" = "desktop",
 ): string | undefined {
   const value = single(options, `${client}-published-version`);
   if (value === undefined || parseStableVersion(value)) {
     return value;
   }
   console.warn(
-    `::warning::Ignoring --${client}-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${client === "android" ? ANDROID_PUBLISHED_VERSION_ORACLE : client === "ios" ? IOS_PUBLISHED_VERSION_ORACLE : DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
+    `::warning::Ignoring --${client}-published-version ${JSON.stringify(value)}: not a stable x.y.z version. Oracle: ${client === "android" ? ANDROID_PUBLISHED_VERSION_ORACLE : DESKTOP_PUBLISHED_VERSION_ORACLE}.`,
   );
   return undefined;
 }
