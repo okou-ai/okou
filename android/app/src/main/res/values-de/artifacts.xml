@@ -51,4 +51,7 @@
     <string name="artifact_play_media">Medienwiedergabe</string>
     <string name="artifact_catalog_access_denied">Du hast keinen Zugriff auf diesen Artefaktkatalog</string>
     <string name="artifact_catalog_missing">Dieser Artefaktkatalog ist nicht mehr verfügbar</string>
+    <string name="chat_resources_related">Verknüpfte Chats</string>
+    <string name="chat_resources_related_load_failed">Verknüpfte Chats können vorübergehend nicht geladen werden</string>
+    <string name="chat_resources_related_access_lost">Verknüpfte Chats sind nicht mehr verfügbar</string>
 </resources>

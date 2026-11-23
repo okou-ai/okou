@@ -45,6 +45,7 @@ import {
   billingUsagePackCreditsContract,
 } from "../contracts/billing";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
+import { chatRelationsContract } from "../contracts/chat-relations";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
@@ -120,6 +121,16 @@ const chatReadBindings = [
 ] satisfies readonly KotlinRouteBinding[];
 
 const historyReadBindings = [
+  {
+    name: "relatedCreatedChats",
+    response: "RelatedCreatedChats",
+    route: chatRelationsContract.children,
+  },
+  {
+    name: "relatedCommunicatingChats",
+    response: "RelatedCommunicatingChats",
+    route: chatRelationsContract.communications,
+  },
   {
     name: "historyCatchUp",
     request: "HistoryCatchUpRequest",

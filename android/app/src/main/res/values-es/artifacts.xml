@@ -51,4 +51,7 @@
     <string name="artifact_play_media">Reproducción multimedia</string>
     <string name="artifact_catalog_access_denied">No tienes acceso a este catálogo de artefactos</string>
     <string name="artifact_catalog_missing">Este catálogo de artefactos ya no está disponible</string>
+    <string name="chat_resources_related">Chats relacionados</string>
+    <string name="chat_resources_related_load_failed">No se pueden cargar los chats relacionados en este momento</string>
+    <string name="chat_resources_related_access_lost">Los chats relacionados ya no están disponibles</string>
 </resources>

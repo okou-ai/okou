@@ -19,6 +19,8 @@ import ai.okou.android.api.generated.ArtifactDetailVariant6
 import ai.okou.android.api.generated.ArtifactDetailVariant7
 import ai.okou.android.api.generated.ArtifactDownloadVariant1
 import ai.okou.android.api.generated.ArtifactReferenceTargetKind
+import ai.okou.android.api.generated.RelatedCommunicatingChatsItemsItemStatus
+import ai.okou.android.api.generated.RelatedCreatedChatsItemsItemStatus
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.OutputStream
@@ -118,6 +120,30 @@ internal constructor(
 ) {
     private val referenceOrigins =
         setOfNotNull(apiOrigin.toHttpUrlOrNull(), BuildConfig.WEB_ORIGIN.toHttpUrlOrNull())
+
+    internal suspend fun relatedChats(
+        threadId: String,
+        communicating: Boolean,
+    ): List<RelatedChatResource> =
+        if (communicating) {
+            api.relatedCommunicatingChats(threadId).items.map {
+                RelatedChatResource(
+                    it.threadId,
+                    it.title,
+                    it.lastMessageAt,
+                    it.status != RelatedCommunicatingChatsItemsItemStatus.UNAVAILABLE,
+                )
+            }
+        } else {
+            api.relatedCreatedChats(threadId).items.map {
+                RelatedChatResource(
+                    it.threadId,
+                    it.title,
+                    it.createdAt,
+                    it.status != RelatedCreatedChatsItemsItemStatus.UNAVAILABLE,
+                )
+            }
+        }
 
     internal suspend fun page(
         query: ArtifactQuery,

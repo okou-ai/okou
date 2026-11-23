@@ -181,8 +181,26 @@ internal data class ChatArtifactItemRecord(
     val createdAt: Long,
 )
 
+@Entity(tableName = "chat_related_resources", primaryKeys = ["scope", "threadId"])
+internal data class ChatRelatedResourceRecord(
+    val scope: String,
+    val threadId: String,
+    val authorization: String,
+    val payload: String,
+)
+
 @Dao
 internal interface ChatCacheDao {
+    @Query("SELECT * FROM chat_related_resources WHERE scope = :scope AND threadId = :threadId")
+    suspend fun relatedResources(scope: String, threadId: String): ChatRelatedResourceRecord?
+
+    @Upsert suspend fun putRelatedResources(record: ChatRelatedResourceRecord)
+
+    @Query(
+        "DELETE FROM chat_related_resources WHERE scope = :scope AND (:threadId IS NULL OR threadId = :threadId)",
+    )
+    suspend fun deleteRelatedResources(scope: String, threadId: String?)
+
     @Query("SELECT * FROM chat_artifact_catalogs WHERE scope = :scope AND threadId = :threadId")
     suspend fun artifactCatalog(scope: String, threadId: String): ChatArtifactCatalogRecord?
 
@@ -303,10 +321,11 @@ internal interface ChatCacheDao {
             HistoryEventRecord::class,
             ChatArtifactCatalogRecord::class,
             ChatArtifactItemRecord::class,
+            ChatRelatedResourceRecord::class,
         ],
-    version = 5,
+    version = 6,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 4, to = 5)],
+    autoMigrations = [AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6)],
 )
 internal abstract class ChatCacheDatabase : RoomDatabase() {
     abstract fun chats(): ChatCacheDao

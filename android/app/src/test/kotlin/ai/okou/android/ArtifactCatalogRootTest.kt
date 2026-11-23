@@ -374,6 +374,68 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText(fixture.summary.title).assertDoesNotExist()
     }
 
+    @Test
+    fun relatedChatsDeduplicateAndReturnToTheResourcesList() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val respondEvents = app.fixture.events
+        app.fixture.events = { request ->
+            if (request.requestUrl?.queryParameter("sinceSeqId") == null) {
+                val source = chatEventWire(title = fixture.sourceTitle)
+                val peer =
+                    chatEventWire(
+                        id = "77777777-7777-4777-8777-777777777777",
+                        seq = 23,
+                        thread = CHAT_IN_PROJECT,
+                        title = "Handoff conversation",
+                    )
+                jsonResponse("""{"events":[$source,$peer],"hasMore":false}""")
+            } else respondEvents(request)
+        }
+        val respond = app.fixture.commandResponse
+        val communicationStatus = AtomicInteger(200)
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/relations/children" ->
+                    jsonResponse(
+                        """{"items":[{"id":"$CHAT_PERSONAL","threadId":"$CHAT_IN_PROJECT","title":"Original title","status":"idle","sourceRunId":"$CHAT_PERSONAL","createdAt":"2026-01-01T00:00:00Z"}]}""",
+                    )
+                "/api/chat-threads/$CHAT_PERSONAL/relations/communications" ->
+                    if (communicationStatus.get() != 200) {
+                        MockResponse().setResponseCode(communicationStatus.get())
+                    } else
+                        jsonResponse(
+                            """{"items":[{"threadId":"$CHAT_IN_PROJECT","title":"Handoff conversation","status":"idle","sentCount":1,"receivedCount":1,"lastMessageAt":"2026-01-02T00:00:00Z"}]}""",
+                        )
+                else -> respond(request)
+            }
+        }
+        app.responseGate.countDown()
+        openChatResources(fixture.sourceTitle)
+        awaitText("Handoff conversation")
+        compose.onNodeWithText("Original title").assertDoesNotExist()
+        compose.onNodeWithText("Handoff conversation").performClick()
+        compose.onNodeWithTag("chat_artifact_resources").assertDoesNotExist()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        awaitText("Related chats")
+        compose.onNodeWithText("Handoff conversation").assertIsDisplayed()
+
+        val realtime = app.realtimeService as TestRealtimeService
+        communicationStatus.set(400)
+        realtime.invalidate()
+        val failure = "Temporarily unable to load related chats"
+        awaitText(failure)
+        compose.onNodeWithText("Handoff conversation").assertIsDisplayed()
+
+        communicationStatus.set(403)
+        realtime.invalidate()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("Handoff conversation").fetchSemanticsNodes().isEmpty()
+        }
+        awaitText("Related chats are no longer available")
+        compose.onNodeWithText("Handoff conversation").assertDoesNotExist()
+    }
+
     private fun openChatResources(chat: String) {
         awaitText(chat)
         compose.onNodeWithText(chat).performClick()
