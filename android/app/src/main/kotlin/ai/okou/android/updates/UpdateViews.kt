@@ -381,17 +381,19 @@ private fun UpdateSheet(
             val titleLineHeight = with(LocalDensity.current) { headingStyle.lineHeight.toDp() }
             val scroll = rememberScrollState()
             val contentSpacing = if (short) 8.dp else if (compact) 12.dp else 16.dp
-            val scrollWholePanel = maxHeight < actions.height + contentSpacing * 2 + titleLineHeight
+            val headingGap = if (short) 4.dp else contentSpacing
+            val scrollWholePanel =
+                maxHeight < actions.height + headingGap + contentSpacing + titleLineHeight
             Column(
                 if (scrollWholePanel) Modifier.fillMaxWidth().verticalScroll(scroll)
                 else Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(contentSpacing),
             ) {
                 Text(
                     stringResource(R.string.updates_title),
                     style = headingStyle.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.semantics { heading() },
                 )
+                Spacer(Modifier.height(headingGap))
                 Column(
                     if (scrollWholePanel) Modifier
                     else Modifier.weight(1f, fill = false).verticalScroll(scroll),
@@ -402,17 +404,23 @@ private fun UpdateSheet(
                     )
                     Spacer(Modifier.height(if (short) 4.dp else 8.dp))
                     FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         if (release != null) {
-                            UpdateMetadata(release)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                UpdateMetadata(release)
+                            }
                         } else if (state.check == UpdateCheck.Checked && !state.offline) {
                             UpdateCopy(stringResource(R.string.updates_current))
                         }
                         UpdateProblemText(state)
                     }
                 }
+                Spacer(Modifier.height(contentSpacing))
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(updateSheetActionGap),
