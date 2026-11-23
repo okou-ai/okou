@@ -1,5 +1,4 @@
 import { apiClient$ } from "../api-client.ts";
-import { chatThreads$ } from "../chat-thread-list.ts";
 import { eventDrivenChatThreads$ } from "../chat-page/chat-thread-event-sourcing.ts";
 import { chatListQuery$, debouncedChatListQuery$ } from "./sidebar-state.ts";
 import { computed } from "ccstate";
@@ -16,11 +15,6 @@ export interface WorkspaceSearchChatThread {
   readonly id: string;
   readonly title: string;
   readonly sortAt: string;
-}
-
-interface WorkspaceSearchChatThreadResult {
-  readonly query: string;
-  readonly chatThreads: readonly WorkspaceSearchChatThread[];
 }
 
 interface WorkspaceSearchChatMessageResult {
@@ -52,16 +46,10 @@ export const workspaceSearchChatThreadMap$ = computed((get) => {
 });
 
 export const threeColumnSearchChatThreads$ = computed(
-  async (get): Promise<WorkspaceSearchChatThreadResult> => {
+  (get): readonly WorkspaceSearchChatThread[] => {
     const query = get(chatListQuery$).trim().toLowerCase();
     if (!query) {
-      const threads = await get(chatThreads$);
-      return {
-        query,
-        chatThreads: threads
-          .slice(0, MAX_VISIBLE_SEARCH_RESULTS)
-          .map(workspaceSearchChatThread),
-      };
+      return [];
     }
     const matchingThreads = [...get(workspaceSearchChatThreadMap$).values()]
       .filter((thread) => {
@@ -73,10 +61,7 @@ export const threeColumnSearchChatThreads$ = computed(
           right.id.localeCompare(left.id)
         );
       });
-    return {
-      query,
-      chatThreads: matchingThreads.slice(0, MAX_MATCHING_THREADS),
-    };
+    return matchingThreads.slice(0, MAX_MATCHING_THREADS);
   },
 );
 

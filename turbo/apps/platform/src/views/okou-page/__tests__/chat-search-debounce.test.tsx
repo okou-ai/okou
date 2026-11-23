@@ -97,9 +97,7 @@ test("Clearing or closing search discards a pending message search", async () =>
   fireEvent.change(search, { target: { value: "discarded" } });
   fireEvent.change(search, { target: { value: "" } });
   expect(search).toHaveValue("");
-  await expect(
-    within(dialog).findByText(THREAD_TITLE),
-  ).resolves.toBeInTheDocument();
+  expect(within(dialog).queryByRole("listbox")).toBeNull();
 
   await fill(search, "issue");
   await expect(within(dialog).findByText("issue")).resolves.toBeInTheDocument();

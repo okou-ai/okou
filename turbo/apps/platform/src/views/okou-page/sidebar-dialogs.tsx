@@ -455,18 +455,11 @@ export function ThreeColumnSearchDialog({
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);
-  const threadLoadable = useLoadable(threeColumnSearchChatThreads$);
+  const threadMatches = useGet(threeColumnSearchChatThreads$);
   const shortcutIndex = useSet(threadNumberShortcutIndex$);
   const threadMap = useGet(workspaceSearchChatThreadMap$);
   const messageLoadable = useLoadable(workspaceSearchChatMessages$);
   const trimmedQuery = query.trim().toLowerCase();
-  const threadMatches = spotlightRowsFromLoadable(
-    threadLoadable,
-    trimmedQuery,
-    (result) => {
-      return result.chatThreads;
-    },
-  );
   const messageMatches = spotlightRowsFromLoadable(
     messageLoadable,
     trimmedQuery,
@@ -479,9 +472,10 @@ export function ThreeColumnSearchDialog({
     MAX_VISIBLE_SEARCH_RESULTS - threadMatches.length,
   );
   const resultCount = threadMatches.length + visibleMessages.length;
-  const visibleSearching =
-    spotlightLoadableIsSearching(threadLoadable, trimmedQuery) ||
-    spotlightLoadableIsSearching(messageLoadable, trimmedQuery);
+  const visibleSearching = spotlightLoadableIsSearching(
+    messageLoadable,
+    trimmedQuery,
+  );
   const showNoResults = !visibleSearching && resultCount === 0;
   const selectThread = (threadId: string) => {
     onOpenChange(false);
@@ -545,25 +539,29 @@ export function ThreeColumnSearchDialog({
           </DialogDescription>
         </DialogHeader>
         <SpotlightSearchInput />
-        <span
-          role="status"
-          className="self-end px-5 pb-1 text-xs text-muted-foreground"
-        >
-          {t(
-            ($) => {
-              return $.sidebar.resultCount;
-            },
-            { count: resultCount },
-          )}
-        </span>
-        <SpotlightSearchResults
-          threads={threadMatches}
-          messages={visibleMessages}
-          threadMap={threadMap}
-          searching={visibleSearching}
-          showNoResults={showNoResults}
-          onSelectChatThread={selectThread}
-        />
+        {trimmedQuery && (
+          <>
+            <span
+              role="status"
+              className="self-end px-5 pb-1 text-xs text-muted-foreground"
+            >
+              {t(
+                ($) => {
+                  return $.sidebar.resultCount;
+                },
+                { count: resultCount },
+              )}
+            </span>
+            <SpotlightSearchResults
+              threads={threadMatches}
+              messages={visibleMessages}
+              threadMap={threadMap}
+              searching={visibleSearching}
+              showNoResults={showNoResults}
+              onSelectChatThread={selectThread}
+            />
+          </>
+        )}
       </div>
     </CommandDialog>
   );

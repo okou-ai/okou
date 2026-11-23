@@ -1135,7 +1135,10 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
   const search = await screen.findByRole("dialog", {
     name: "Search workspace...",
   });
-  await within(search).findAllByText("History 1");
+  fireEvent.change(within(search).getByRole("combobox"), {
+    target: { value: "History 120" },
+  });
+  await within(search).findByText("History 120");
   expect(
     screen.queryAllByTestId("sidebar-chat-thread-virtual-row"),
   ).toHaveLength(0);

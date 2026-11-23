@@ -2,20 +2,14 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 import {
-  click,
   fill,
   queryAllByRoleFast,
   setupPage,
-  startPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { pathname } from "../../../signals/location.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
-import {
-  chatListThread,
-  fastButton,
-  sidebarThreadTitles,
-} from "./chat-list-test-helpers.ts";
+import { chatListThread } from "./chat-list-test-helpers.ts";
 
 const context = testContext();
 const SEARCH_LABEL = "Search workspace...";
@@ -52,140 +46,6 @@ function searchResultTitles(dialog: HTMLElement): string[] {
     return option.querySelector(".truncate")?.textContent ?? "";
   });
 }
-
-test("Limit empty search to 25 cached chats in sidebar order", async () => {
-  context.mocks.browser.matchMedia((query) => {
-    return (
-      query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
-    );
-  });
-  const threads = Array.from({ length: 26 }, (_, index) => {
-    return chatListThread(index + 1, `Chat ${index + 1}`, {
-      pinnedAt: index < 2 ? `2026-08-01T00:5${2 - index}:00.000Z` : null,
-    });
-  });
-  const remoteChatList = context.mocks.deferred<void>();
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 77,
-    threads,
-    chatListRemoteGate: remoteChatList.promise,
-  });
-  await startPage({
-    context,
-    path: `/`,
-    ...workspace.pageOptions,
-  });
-  const expectedTitles = [
-    "Chat 1",
-    "Chat 2",
-    ...Array.from({ length: 23 }, (_, index) => {
-      return `Chat ${26 - index}`;
-    }),
-  ];
-  const chatThreads = await screen.findByLabelText("Chat threads");
-  await within(chatThreads).findByText(expectedTitles[0]!);
-  expect(sidebarThreadTitles().slice(0, 3)).toStrictEqual(
-    expectedTitles.slice(0, 3),
-  );
-  click(fastButton("Hide chat list"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  });
-  const { dialog } = await openSearch();
-  await waitFor(() => {
-    expect(searchResultTitles(dialog)).toStrictEqual(expectedTitles);
-  });
-  expect(remoteChatList.settled()).toBeFalsy();
-});
-
-test.each([
-  {
-    caseId: 74,
-    platform: "Mac Chrome",
-    userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
-    modifiers: { metaKey: true, ctrlKey: false },
-    numberModifiers: { metaKey: true, ctrlKey: false },
-    firstHint: ["⌘1"],
-  },
-])(
-  "Number only the first nine search results and open the ninth on $platform",
-  async ({ caseId, userAgent, modifiers, numberModifiers, firstHint }) => {
-    context.mocks.browser.userAgent(userAgent);
-    context.mocks.browser.matchMedia((query) => {
-      return (
-        query === "(display-mode: standalone)" || query === "(min-width: 48rem)"
-      );
-    });
-    // Keep one result beyond the nine shortcuts; the 25-result cap is separate.
-    const threads = Array.from({ length: 10 }, (_, index) => {
-      return chatListThread(index + 1, `Chat ${index + 1}`, {
-        pinnedAt: index < 2 ? `2026-08-01T00:5${2 - index}:00.000Z` : null,
-      });
-    });
-    const remoteChatList = context.mocks.deferred<void>();
-    const workspace = installContinuityWorkspace(context, {
-      caseId,
-      threads,
-      chatListRemoteGate: remoteChatList.promise,
-    });
-    await startPage({
-      context,
-      path: `/`,
-      ...workspace.pageOptions,
-    });
-    const expectedTitles = [
-      "Chat 1",
-      "Chat 2",
-      ...Array.from({ length: 8 }, (_, index) => {
-        return `Chat ${10 - index}`;
-      }),
-    ];
-    const chatThreads = await screen.findByLabelText("Chat threads");
-    await within(chatThreads).findByText(expectedTitles[0]!);
-    expect(sidebarThreadTitles().slice(0, 3)).toStrictEqual(
-      expectedTitles.slice(0, 3),
-    );
-    expect(remoteChatList.settled()).toBeFalsy();
-    click(fastButton("Hide chat list"));
-    const { dialog, search } = await openSearch(modifiers);
-    await waitFor(() => {
-      expect(searchResultTitles(dialog)).toStrictEqual(expectedTitles);
-      expect(numberedHints(dialog)).toStrictEqual([
-        "1",
-        "2",
-        "3",
-        "4",
-        "5",
-        "6",
-        "7",
-        "8",
-        "9",
-      ]);
-    });
-    expect(
-      [...queryAllByRoleFast("option", dialog)[0]!.querySelectorAll("kbd")].map(
-        (keycap) => {
-          return keycap.textContent;
-        },
-      ),
-    ).toStrictEqual(firstHint);
-    expect(
-      queryAllByRoleFast("option", dialog)[9]!.querySelector("kbd"),
-    ).toBeNull();
-    fireEvent.keyDown(search, {
-      key: "9",
-      code: "Digit9",
-      ...numberModifiers,
-      shiftKey: false,
-    });
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).toBeNull();
-      expect(pathname()).toBe(`/chats/${threads[3]!.id}`);
-    });
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  },
-);
 
 test("Group matching chats before messages and open the first message with its shortcut", async () => {
   context.mocks.browser.matchMedia((query) => {
@@ -224,6 +84,10 @@ test("Group matching chats before messages and open the first message with its s
   });
   await setupPage({ context, path: "/", ...workspace.pageOptions });
   const { dialog, search } = await openSearch();
+  expect(within(dialog).queryByRole("listbox")).toBeNull();
+  expect(within(dialog).queryByRole("status")).toBeNull();
+  await fill(search, "   ");
+  expect(within(dialog).queryByRole("listbox")).toBeNull();
   await fill(search, "note");
   const messageOnly = await within(dialog).findByRole("group", {
     name: "Messages",
@@ -242,6 +106,18 @@ test("Group matching chats before messages and open the first message with its s
     "Budget 2",
   ]);
   expect(queryAllByRoleFast("option", messages)).toHaveLength(22);
+  fireEvent.keyDown(search, { key: "Control", ctrlKey: true });
+  expect(numberedHints(dialog)).toStrictEqual([
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+  ]);
   fireEvent.keyDown(search, { key: "4", code: "Digit4", ctrlKey: true });
   await waitFor(() => {
     expect(pathname()).toBe(`/chats/${target.id}`);

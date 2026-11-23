@@ -180,6 +180,7 @@ test("Show useful search-result ages and an illustrated empty state", async () =
   });
 
   const rowFor = async (title: string): Promise<HTMLElement> => {
+    await fill(within(dialog).getByRole("combobox"), title);
     const row = (await within(dialog).findByText(title)).closest(
       '[role="option"]',
     );
