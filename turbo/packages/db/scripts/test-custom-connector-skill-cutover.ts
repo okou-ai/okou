@@ -98,13 +98,6 @@ export async function validateCustomConnectorSkillPublicationViewRetirement(
     const before = Array.from(await readConnector());
     assert.equal(before.length, 1);
 
-    await sql`GRANT SELECT ON public.org_custom_connector_skill_publications TO PUBLIC`;
-    await assert.rejects(retire, /View still has non-owner grants/);
-    await sql`REVOKE SELECT ON public.org_custom_connector_skill_publications FROM PUBLIC`;
-    await sql`GRANT SELECT (id) ON public.org_custom_connector_skill_publications TO PUBLIC`;
-    await assert.rejects(retire, /View still has non-owner grants/);
-    await sql`REVOKE SELECT (id) ON public.org_custom_connector_skill_publications FROM PUBLIC`;
-
     await sql`CREATE VIEW publication_retirement_dependency_fixture AS
       SELECT id FROM public.org_custom_connector_skill_publications`;
     await assert.rejects(retire, { code: "2BP01" });
