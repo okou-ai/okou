@@ -685,6 +685,7 @@ internal fun OkouApp(
             activeChats.uiState.value.threads.firstOrNull {
                 it.id == hit.threadId && it.hidden != true
             } ?: return
+        leaveWorkflowChat()
         openConversation(
             result.id,
             WorkspaceTarget.Chat(result.id),
@@ -735,6 +736,8 @@ internal fun OkouApp(
                 try {
                     when (activeComposer.prefillNew(prefix)) {
                         ComposerPrefillResult.Ready -> {
+                            handoff = null
+                            if (fromSearch) leaveWorkflowChat()
                             clearConversationLinks()
                             focus.clearFocus()
                             keyboard?.hide()
@@ -1456,6 +1459,12 @@ internal fun OkouApp(
                                     },
                                     remote = remote,
                                     workflowResults = workflowRead,
+                                    workspaceToolsRead =
+                                        when {
+                                            workspaceReady -> null
+                                            startupRecovery == null -> SearchRead.Loading
+                                            else -> SearchRead.Failed
+                                        },
                                     recentlyOpened = recents.orEmpty(),
                                     onOpenMessage = ::openSearchMessage,
                                     restoreResultFocus = selectedWorkflowId == null,
