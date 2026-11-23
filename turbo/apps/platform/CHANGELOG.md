@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1168.0](https://github.com/okou-ai/okou/compare/app-v0.1167.0...app-v0.1168.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### Bug Fixes
+
+* simplify slash action hint copy ([#50215](https://github.com/okou-ai/okou/issues/50215)) ([c9ae929](https://github.com/okou-ai/okou/commit/c9ae92932b7da7fbfd74d0321cbc2f83957dcc95))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+    * @okouai/core bumped to 8.862.1
+    * @okouai/ui bumped to 1.21.106
+
 ## [0.1167.0](https://github.com/okou-ai/okou/compare/app-v0.1166.0...app-v0.1167.0) (2026-11-23)
 
 

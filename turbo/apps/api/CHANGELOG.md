@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.109.0](https://github.com/okou-ai/okou/compare/api-v2.108.0...api-v2.109.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### Performance Improvements
+
+* **api:** advance captured run launch preparation ([#50219](https://github.com/okou-ai/okou/issues/50219)) ([54b522f](https://github.com/okou-ai/okou/commit/54b522f197475f6089cda41f179eaa29d16b234f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+    * @okouai/core bumped to 8.862.1
+    * @okouai/db bumped to 2.60.1
+    * @okouai/pi-agent-runtime bumped to 1.52.49
+
 ## [2.108.0](https://github.com/okou-ai/okou/compare/api-v2.107.0...api-v2.108.0) (2026-11-23)
 
 
