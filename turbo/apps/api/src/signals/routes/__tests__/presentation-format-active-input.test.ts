@@ -28,80 +28,83 @@ const {
   cancelChatRun,
 } = createChatEventsFixture(context);
 
-test("keeps ordinary inputs steerable without a selection while the switch is off", async () => {
-  const { actor } = await entitledNativeChatActor({
-    userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
-    orgId: `org_${randomUUID()}`,
-    orgRole: "org:admin",
-  });
-  createRouteMocks(context).clerk.session(
-    actor.userId,
-    actor.orgId,
-    actor.orgRole,
-  );
-  await accept(
-    setupApp({ context, routes: featureSwitchesRoutes })(
-      featureSwitchesContract,
-    ).update({
-      headers: { authorization: "Bearer clerk-session" },
-      body: {
-        switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+test.each([true, false])(
+  "keeps ordinary inputs steerable without a selection when the switch is %s",
+  async (enabled) => {
+    const { actor } = await entitledNativeChatActor({
+      userId: "user_3EWY21Oe3f15kfs3yYmbGgDb3NV",
+      orgId: `org_${randomUUID()}`,
+      orgRole: "org:admin",
+    });
+    createRouteMocks(context).clerk.session(
+      actor.userId,
+      actor.orgId,
+      actor.orgRole,
+    );
+    await accept(
+      setupApp({ context, routes: featureSwitchesRoutes })(
+        featureSwitchesContract,
+      ).update({
+        headers: { authorization: "Bearer clerk-session" },
+        body: {
+          switches: { [FeatureSwitchKey.PresentationOutputFormat]: enabled },
+        },
+      }),
+      [200],
+    );
+    const active = await sendChatRun(actor, {
+      prompt: "Review the release plan.",
+    });
+    const execution = await runExecution(active.runId);
+    const eventId = randomUUID();
+    context.mocks.ably.publish.mockClear();
+    await chat.requestSendEvent(
+      actor,
+      {
+        threadId: active.threadId,
+        clientEventId: eventId,
+        prompt: "Include the launch checklist.",
       },
-    }),
-    [200],
-  );
-  const active = await sendChatRun(actor, {
-    prompt: "Review the release plan.",
-  });
-  const execution = await runExecution(active.runId);
-  const eventId = randomUUID();
-  context.mocks.ably.publish.mockClear();
-  await chat.requestSendEvent(
-    actor,
-    {
-      threadId: active.threadId,
-      clientEventId: eventId,
-      prompt: "Include the launch checklist.",
-    },
-    [201],
-  );
-  await flushWaitUntilForTest();
-  expect(context.mocks.ably.publish).toHaveBeenCalledWith("active-input", {
-    runId: active.runId,
-  });
-  const token = execution.execution.sandboxToken;
-  await expect(
-    api.nextSteerableInput(token, active.runId),
-  ).resolves.toMatchObject({
-    input: { eventId, prompt: "Include the launch checklist." },
-  });
-  for (let attempt = 0; attempt < 2; attempt++) {
+      [201],
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith("active-input", {
+      runId: active.runId,
+    });
+    const token = execution.execution.sandboxToken;
     await expect(
-      api.declareSteeredInput(token, active.runId, eventId),
-    ).resolves.toStrictEqual({ outcome: "steered" });
-  }
-  await expect(
-    api.nextSteerableInput(token, active.runId),
-  ).resolves.toStrictEqual({
-    input: null,
-  });
-  const { events } = await chat.listThreadEvents(actor, active.threadId);
-  expect(
-    events.filter((event) => {
-      return event.revokesEventId === eventId;
-    }),
-  ).toHaveLength(1);
-  expect(
-    events.flatMap((event) => {
-      return "userMessage" in event ? (event.userMessage?.parts ?? []) : [];
-    }),
-  ).not.toStrictEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ type: "presentation_format_selection" }),
-    ]),
-  );
-  await cancelChatRun(actor, active.runId, execution.sandboxHeaders);
-});
+      api.nextSteerableInput(token, active.runId),
+    ).resolves.toMatchObject({
+      input: { eventId, prompt: "Include the launch checklist." },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(
+        api.declareSteeredInput(token, active.runId, eventId),
+      ).resolves.toStrictEqual({ outcome: "steered" });
+    }
+    await expect(
+      api.nextSteerableInput(token, active.runId),
+    ).resolves.toStrictEqual({
+      input: null,
+    });
+    const { events } = await chat.listThreadEvents(actor, active.threadId);
+    expect(
+      events.filter((event) => {
+        return event.revokesEventId === eventId;
+      }),
+    ).toHaveLength(1);
+    expect(
+      events.flatMap((event) => {
+        return "userMessage" in event ? (event.userMessage?.parts ?? []) : [];
+      }),
+    ).not.toStrictEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "presentation_format_selection" }),
+      ]),
+    );
+    await cancelChatRun(actor, active.runId, execution.sandboxHeaders);
+  },
+);
 
 test.each([true, false])(
   "keeps a confirmed presentation for the next Run without overtaking when the switch is %s",
@@ -127,8 +130,8 @@ test.each([true, false])(
     await flushWaitUntilForTest();
 
     // The source thread is idle while another thread holds the organization's
-    // only slot. This is a public way for an earlier ordinary prompt and a
-    // confirmed continuation to queue before that ordinary prompt starts.
+    // only slot. Earlier ordinary inputs and the confirmed continuation can
+    // queue before the first ordinary prompt starts.
     const blocker = await sendChatRun(actor, { prompt: "Occupy the Run slot" });
     const blockerExecution = await runExecution(blocker.runId);
     const earlierEventId = randomUUID();
@@ -138,6 +141,16 @@ test.each([true, false])(
         threadId: source.threadId,
         clientEventId: earlierEventId,
         prompt: "Review an unrelated release task first.",
+      },
+      [201],
+    );
+    const earlierSteerableEventId = randomUUID();
+    await chat.requestSendEvent(
+      actor,
+      {
+        threadId: source.threadId,
+        clientEventId: earlierSteerableEventId,
+        prompt: "Include the release checklist before the presentation.",
       },
       [201],
     );
@@ -185,6 +198,10 @@ test.each([true, false])(
     const activeRunId = started.runId;
     const activeExecution = await runExecution(activeRunId);
     const token = activeExecution.execution.sandboxToken;
+    await expect(
+      api.nextSteerableInput(token, activeRunId),
+    ).resolves.toMatchObject({ input: { eventId: earlierSteerableEventId } });
+    await api.declareSteeredInput(token, activeRunId, earlierSteerableEventId);
     await expect(
       api.nextSteerableInput(token, activeRunId),
     ).resolves.toStrictEqual({ input: null });

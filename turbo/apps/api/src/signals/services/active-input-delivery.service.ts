@@ -3,13 +3,18 @@ import {
   chatEventCommandResultSchema,
 } from "./chat-event-append.service";
 import { parseRawRows } from "../../lib/db-raw-rows";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command } from "ccstate";
 import {
   runStatusSchema,
   type RunStatus,
 } from "@okouai/api-contracts/contracts/runs";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { chatEvents } from "@okouai/db/schema/chat-event";
+import {
+  chatEvents,
+  chatEventRunlessInputPredicate,
+} from "@okouai/db/schema/chat-event";
 import {
   and,
   desc,
@@ -55,6 +60,7 @@ import {
   hasPresentationFormatSelection,
   projectUserMessage,
 } from "./chat-user-message.service";
+import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 
 /*
  * Steering a pending input into a running sandbox run.
@@ -157,6 +163,49 @@ const loadActiveInputDeliveryScope$ = command(
       chatThreadId: row.chatThreadId,
       status: runStatusSchema.parse(row.status),
     };
+  },
+);
+
+const requiresPresentationSelectionGuard$ = command(
+  async (
+    { set },
+    scope: ActiveInputDeliveryScope,
+    source: { readonly seqId: number; readonly eventType: string },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const context = await set(
+      loadUserFeatureSwitchContext$,
+      scope.orgId,
+      scope.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (isFeatureEnabled(FeatureSwitchKey.PresentationOutputFormat, context)) {
+      return true;
+    }
+    if (source.eventType === "input.budget") {
+      return false;
+    }
+    // A committed source fixes its earlier thread positions. Later appends
+    // cannot add a selection to this prefix; keep even revoked markers here.
+    const [retained] = await set(writeDb$)
+      .select({ id: chatEvents.id })
+      .from(chatEvents)
+      .where(
+        and(
+          eq(chatEvents.chatThreadId, scope.chatThreadId),
+          chatEventRunlessInputPredicate(
+            chatEvents.runId,
+            chatEvents.eventType,
+          ),
+          eq(chatEvents.eventType, "input.prompt"),
+          lt(chatEvents.seqId, source.seqId),
+          sql`jsonb_path_exists(${chatEvents.payload}, '$.userMessage.parts[*] ? (@.type == "presentation_format_selection")')`,
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return retained !== undefined;
   },
 );
 
@@ -421,7 +470,7 @@ export const declareSteeredInput$ = command(
       const sourceChatThreadId = scope.chatThreadId;
       const sourceEventIds = [sourceEventId];
       const [source] = await db
-        .select(activeInputSourceFields())
+        .select({ ...activeInputSourceFields(), seqId: chatEvents.seqId })
         .from(chatEvents)
         .where(
           and(
@@ -429,6 +478,7 @@ export const declareSteeredInput$ = command(
             inArray(chatEvents.id, sourceEventIds),
           ),
         );
+      signal.throwIfAborted();
       if (
         !source?.userMessage ||
         (source.eventType !== "input.prompt" &&
@@ -447,22 +497,31 @@ export const declareSteeredInput$ = command(
           runId: scope.runId,
           userMessage: source.userMessage,
         };
-        const prepared = prepareChatEventReplacement(
-          replacementTarget(source),
+        const input =
           source.eventType === "input.budget"
-            ? { ...steeredInput, eventType: "input.budget" }
-            : { ...steeredInput, eventType: "input.prompt" },
+            ? { ...steeredInput, eventType: "input.budget" as const }
+            : { ...steeredInput, eventType: "input.prompt" as const };
+        const guarded = await set(
+          requiresPresentationSelectionGuard$,
+          scope,
+          source,
+          signal,
         );
+        signal.throwIfAborted();
+        const replacementSql = guarded
+          ? appendCanonicalChatEventsSql(
+              [
+                prepareChatEventReplacement(replacementTarget(source), input)
+                  .row,
+              ],
+              "any",
+              activeInputConsumptionEligibility(source.id),
+            )
+          : chatEventReplacementInsertSql(replacementTarget(source), input);
         const replacement =
           parseRawRows(
             chatEventCommandResultSchema,
-            await db.execute(
-              appendCanonicalChatEventsSql(
-                [prepared.row],
-                "any",
-                activeInputConsumptionEligibility(source.id),
-              ),
-            ),
+            await db.execute(replacementSql),
           )[0] ?? null;
         if (replacement) {
           // Record the committed winner before the caller observes cancellation.
