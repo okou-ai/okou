@@ -4,6 +4,7 @@ import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
 import ai.okou.android.connectors.ChatConnectorOptions
 import ai.okou.android.connectors.ConnectorAccountTarget
+import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
 import android.widget.Toast
@@ -55,8 +56,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -333,9 +336,16 @@ private fun ComposerFeedback(
     val busy = target.key in state.busy
     val connectorSetupFailed = state.connectorSetupFailed(target.key)
     if (connectorSetupFailed) {
-        Text(stringResource(R.string.chat_connector_first_send_failed))
-        TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
-            Text(stringResource(R.string.composer_retry))
+        Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
+            Text(
+                stringResource(R.string.chat_connector_first_send_failed),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = connectorFeedbackType(),
+            )
+            TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
+                Text(stringResource(R.string.composer_retry))
+            }
         }
     } else if (
         entry.pending != null &&

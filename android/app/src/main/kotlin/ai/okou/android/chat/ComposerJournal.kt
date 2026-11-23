@@ -16,7 +16,7 @@ data class PendingText(
     val create: CreateThreadRequest?,
     val send: SendRequestVariant1,
     val stage: TextStage,
-    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
+    @Transient val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
     @Transient val started: TimeMark? = null,
 )
 

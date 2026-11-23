@@ -192,13 +192,7 @@ internal class ChatComposerOwner(
             )
                 journal.entries - key
             else journal.entries + (key to value)
-        val format =
-            if (
-                value.connectorOverrides.isNotEmpty() ||
-                    value.pending?.connectorOverrides?.isNotEmpty() == true
-            )
-                4
-            else journal.format
+        val format = if (value.connectorOverrides.isNotEmpty()) 4 else journal.format
         replace(journal.copy(format = format, entries = entries), receiptMessages = receiptMessages)
     }
 
@@ -535,11 +529,8 @@ internal class ChatComposerOwner(
             }
         if (choices == previous) return
         // Once the thread exists, reset has to clear even preferences already applied by this send.
-        put(
-            target.key,
-            if (pending == null) entry.copy(connectorOverrides = choices)
-            else entry.copy(pending = pending.copy(connectorOverrides = choices)),
-        )
+        if (pending == null) put(target.key, entry.copy(connectorOverrides = choices))
+        else updatePending(target.key, pending.copy(connectorOverrides = choices))
     }
 
     fun acknowledge(connection: Connection, threadId: String) {
@@ -647,8 +638,9 @@ internal class ChatComposerOwner(
 
     /** Explicit user recovery always reuses the frozen request and all original UUIDs. */
     fun retry(connection: Connection, target: ComposerTarget) {
-        val pending = mutable.value.entry(target).pending ?: return
-        if (pending.started != null) return
+        val state = mutable.value
+        val pending = state.entry(target).pending ?: return
+        if (pending.started != null && !state.connectorSetupFailed(target.key)) return
         begin(connection, target.key)?.let(::dispatch)
     }
 
@@ -834,7 +826,11 @@ internal class ChatComposerOwner(
     private fun resumeSends(connection: Connection) {
         val state = mutable.value
         state.journal?.entries?.forEach { (key, entry) ->
-            if (entry.pending?.started != null && key !in operations && !state.connectorSetupFailed(key))
+            if (
+                entry.pending?.started != null &&
+                    key !in operations &&
+                    !state.connectorSetupFailed(key)
+            )
                 begin(connection, key)?.let(::dispatch)
         }
     }
@@ -850,23 +846,20 @@ internal class ChatComposerOwner(
             throw IOException("Exact pending input is not durable")
     }
 
-    private fun stage(op: Operation, pending: PendingText, stage: TextStage): PendingText {
-        val value = pending.copy(stage = stage)
-        val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
+    private fun stage(op: Operation, pending: PendingText, stage: TextStage): PendingText =
+        pending.copy(stage = stage).also { updatePending(op.key, it) }
+
+    private fun updatePending(key: String, pending: PendingText) {
+        val state = mutable.value
+        val journal = checkNotNull(state.journal)
+        val entry = checkNotNull(journal.entries[key])
         check(entry.pending?.eventId == pending.eventId)
-        if (pending.started == null) put(op.key, entry.copy(pending = value))
+        val next = entry.copy(pending = pending)
+        if (pending.started == null) put(key, next)
         else {
-            val state = mutable.value
-            val journal = checkNotNull(state.journal)
             mutable.value =
-                state.copy(
-                    journal =
-                        journal.copy(
-                            entries = journal.entries + (op.key to entry.copy(pending = value)),
-                        ),
-                )
+                state.copy(journal = journal.copy(entries = journal.entries + (key to next)))
         }
-        return value
     }
 
     private fun dispatch(op: Operation) {
