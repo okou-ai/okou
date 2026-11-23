@@ -631,7 +631,7 @@ private fun UpdateProblemText(
 }
 
 @Composable
-private fun UpdateCopy(label: String, muted: Boolean = false, modifier: Modifier = Modifier) {
+private fun UpdateCopy(label: String, modifier: Modifier = Modifier, muted: Boolean = false) {
     Text(
         label,
         modifier = modifier,
