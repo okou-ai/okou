@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.api.generated.CreateThreadRequest
 import ai.okou.android.api.generated.SendRequestVariant1
+import ai.okou.android.connectors.ChatConnectorOverride
 import kotlinx.serialization.Required
 import kotlinx.serialization.Serializable
 
@@ -13,6 +14,7 @@ data class PendingText(
     val create: CreateThreadRequest?,
     val send: SendRequestVariant1,
     val stage: TextStage,
+    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
 )
 
 @Serializable
@@ -60,6 +62,7 @@ data class ComposerEntry(
     val receipt: TextReceipt? = null,
     val createdThreadId: String? = null,
     val recovery: ComposerRecovery? = null,
+    val connectorOverrides: List<ChatConnectorOverride> = emptyList(),
 )
 
 @Serializable
@@ -115,11 +118,30 @@ data class ComposerState(
     }
 
     fun entry(target: ComposerTarget): ComposerEntry {
+        val journal = journal
         val entry = journal?.entries?.get(target.key) ?: ComposerEntry()
-        return if (journal?.format == 3)
+        return if (journal != null && journal.format >= 3)
             entry.copy(text = journal.drafts[draftKey(target)]?.text.orEmpty())
         else entry
     }
+
+    internal fun connectorOverrides(target: ComposerTarget): List<ChatConnectorOverride> {
+        val entry = entry(target)
+        return entry.pending?.connectorOverrides ?: entry.connectorOverrides
+    }
+
+    internal fun canEditDraftConnectors(target: ComposerTarget): Boolean {
+        if (target.threadId != null || journal == null || target.key in busy) return false
+        val entry = entry(target)
+        return entry.createdThreadId == null &&
+            (entry.pending == null || entry.pending.stage == TextStage.Created)
+    }
+
+    internal fun connectorSetupFailed(target: ComposerTarget): Boolean =
+        target.key in failed &&
+            entry(target).pending?.let {
+                it.stage == TextStage.Created && it.connectorOverrides.isNotEmpty()
+            } == true
 
     fun sync(target: ComposerTarget) = synchronization[draftKey(target)] ?: ComposerSync.Idle
 

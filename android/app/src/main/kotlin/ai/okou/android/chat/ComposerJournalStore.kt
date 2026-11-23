@@ -126,7 +126,7 @@ class ComposerJournalStore(
             .use { stream -> json.decodeFromStream<ComposerJournal>(stream) }
             .also {
                 if (
-                    it.format !in 1..3 ||
+                    it.format !in 1..4 ||
                         it.format == 1 &&
                             it.entries.values.any { entry -> entry.recovery != null } ||
                         it.format < 3 && (it.drafts.isNotEmpty() || it.retainedDrafts.isNotEmpty())

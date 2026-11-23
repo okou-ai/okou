@@ -2,6 +2,8 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.connectors.ChatConnectorOptions
+import ai.okou.android.connectors.ConnectorAccountTarget
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
 import android.widget.Toast
@@ -43,6 +45,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -64,12 +68,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun ChatComposerField(
+internal fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
     offline: Boolean = false,
     beforeSend: () -> Unit = {},
+    connectorOptions: ChatConnectorOptions? = null,
+    manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -102,6 +108,7 @@ fun ChatComposerField(
         if (shortWindow) minimumTextHeight
         else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
     var inputFocused by remember { mutableStateOf(false) }
+    val editorFocus = remember(target.key) { FocusRequester() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -151,6 +158,17 @@ fun ChatComposerField(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                if (connectorOptions != null)
+                    ChatConnectorOptionsButton(
+                        connectorOptions,
+                        model,
+                        state,
+                        target,
+                        offline,
+                        inputFocused,
+                        editorFocus,
+                        manageConnectors,
+                    )
                 BasicTextField(
                     value = input.value,
                     onValueChange = {
@@ -160,6 +178,7 @@ fun ChatComposerField(
                     modifier =
                         Modifier.weight(1f)
                             .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                            .focusRequester(editorFocus)
                             .onFocusChanged { inputFocused = it.isFocused }
                             .testTag("message_input")
                             .semantics { contentDescription = label },
@@ -327,7 +346,13 @@ private fun ComposerFeedback(
         }
     }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-    if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
+    if (target.key in state.failed)
+        Text(
+            stringResource(
+                if (state.connectorSetupFailed(target)) R.string.chat_connector_first_send_failed
+                else R.string.composer_request_failed,
+            ),
+        )
     if (state.persistence == ComposerPersistence.Pending)
         Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }

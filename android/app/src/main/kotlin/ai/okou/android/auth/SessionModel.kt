@@ -354,6 +354,7 @@ class SessionModel(
                         recovery,
                         chats.history,
                         chats,
+                        owner.connectors,
                     )
                 }
                 val opened =
