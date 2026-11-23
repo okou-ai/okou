@@ -50,7 +50,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Send voice messages and transcribe their recordings with model credits.",
-    enabled: false,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
