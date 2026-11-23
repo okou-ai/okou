@@ -389,6 +389,68 @@ class ConversationRouteTest {
     }
 
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h320dp")
+    fun slowSyncLetsTheQueuedInputCardProvideFeedback() {
+        val eventId = scrollEventId(40)
+        val prompt = "Please check the launch notes"
+        val queuedInput =
+            historyEventWire(
+                id = eventId,
+                seq = 40,
+                thread = CHAT_IN_PROJECT,
+                type = "input.prompt",
+                payload =
+                    """{"userMessage":{"version":1,"parts":[{"type":"text","text":${JsonPrimitive(prompt)}}]}}""",
+                run = null,
+            )
+        fixture.historyRows = { request ->
+            val after = request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0
+            val rows = if (after < 40) queuedInput else ""
+            jsonResponse(
+                """{"rows":[$rows],"cursor":{"lastEventId":"$eventId","lastSeqId":40},"hasMore":false}"""
+            )
+        }
+        val model = createListModel()
+        compose.setContent {
+            val list by model.uiState.collectAsStateWithLifecycle()
+            OkouTheme { ConversationRoute(model.history, CHAT_IN_PROJECT, list) }
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
+        }
+        compose.runOnIdle {
+            model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
+        }
+        compose.waitUntil(10_000) {
+            compose.runOnIdle { model.history.uiState.value.phase != HistoryPhase.Loading }
+        }
+        assertEquals(HistoryPhase.Ready, model.history.uiState.value.phase)
+        val queuedLabel = compose.activity.getString(R.string.history_queued)
+        val status = compose.onNodeWithText(queuedLabel).assertIsDisplayed()
+        val statusBounds = status.getUnclippedBoundsInRoot()
+        val refreshRequested = CountDownLatch(1)
+        val allowRefreshResponse = CountDownLatch(1)
+        fixture.beforeHistoryResponse = { request ->
+            if (request.requestUrl?.pathSegments?.lastOrNull() == "event-rows") {
+                refreshRequested.countDown()
+                allowRefreshResponse.await()
+            }
+        }
+        try {
+            compose.runOnIdle { model.history.refresh() }
+            compose.waitUntil(5_000) { refreshRequested.count == 0L }
+            compose.mainClock.advanceTimeBy(300)
+            compose
+                .onNodeWithText(compose.activity.getString(R.string.history_syncing))
+                .assertDoesNotExist()
+            assertEquals(statusBounds, status.assertIsDisplayed().getUnclippedBoundsInRoot())
+            compose.onNodeWithText(prompt).assertIsDisplayed()
+        } finally {
+            allowRefreshResponse.countDown()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun conversationRecoversAnInitialHistoryFailureAndKeepsRealtimeRetryReachable() {
         val realtime = TestRealtimeService()

@@ -215,7 +215,10 @@ internal fun ConversationRoute(
                     )
                 }
         }
-    val showHistorySyncNotice = showSync && (activity == null || content.isEmpty())
+    val showHistorySyncNotice =
+        showSync &&
+            (activity == null || content.isEmpty()) &&
+            content.none { it.message.queued || it.preview?.pendingDelivery != null }
     val feedback: @Composable (() -> Unit)? =
         when {
             showHistorySyncNotice -> ({ HistorySyncNotice() })
