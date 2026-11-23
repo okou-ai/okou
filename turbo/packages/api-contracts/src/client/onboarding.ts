@@ -4,6 +4,7 @@
 import type {
   onboardingCompleteContract as OriginalOnboardingCompleteContract,
   onboardingDraftContract as OriginalOnboardingDraftContract,
+  onboardingNativeAvailabilityContract as OriginalOnboardingNativeAvailabilityContract,
   onboardingRecommendationContract as OriginalOnboardingRecommendationContract,
   onboardingSourcesContract as OriginalOnboardingSourcesContract,
   onboardingStatusContract as OriginalOnboardingStatusContract,
@@ -45,6 +46,18 @@ export const onboardingDraftContract: ClientDescriptor<
       401: true,
       404: true,
       409: true,
+    },
+  },
+};
+
+export const onboardingNativeAvailabilityContract: ClientDescriptor<
+  typeof OriginalOnboardingNativeAvailabilityContract
+> = {
+  get: {
+    method: "GET",
+    path: "/api/onboarding/native-availability",
+    statuses: {
+      200: true,
     },
   },
 };

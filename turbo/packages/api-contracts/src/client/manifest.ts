@@ -546,6 +546,7 @@ export const clientDescriptorManifest = [
     contracts: [
       "onboardingCompleteContract",
       "onboardingDraftContract",
+      "onboardingNativeAvailabilityContract",
       "onboardingRecommendationContract",
       "onboardingSourcesContract",
       "onboardingStatusContract",
