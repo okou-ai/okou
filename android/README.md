@@ -725,12 +725,13 @@ uncertain submissions retain their original identities in memory. Legacy pending
 text is available for explicit draft restoration after upgrade.
 
 Chat options lets users choose built-in connector accounts. Format 4 stores
-explicit account choices on ordinary and Project new-chat drafts. The first
-input carries those choices in memory until the client confirms them on the
-created chat. A rejected connector choice leaves the unsent input and its
-identities available for correction in the current process. Existing chats
-save exact account overrides through the canonical chat API and display
-confirmed values.
+explicit account choices with the workspace draft shared by the ordinary and
+Project new-chat entry points. The first input carries those choices in memory
+until the client confirms them on the created chat. A rejected chat creation
+retains the original choices so they can be restored with the draft. A rejected
+connector choice leaves the unsent input and its identities available for
+correction in the current process. Existing chats save exact account overrides
+through the canonical chat API and display confirmed values.
 
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation

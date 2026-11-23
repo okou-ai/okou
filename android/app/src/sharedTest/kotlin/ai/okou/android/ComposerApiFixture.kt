@@ -31,6 +31,7 @@ class ComposerApiFixture : Closeable {
     val inputs = ConcurrentHashMap<String, JsonObject>()
     private val inputOrder = CopyOnWriteArrayList<String>()
     val created = CopyOnWriteArrayList<JsonObject>()
+    @Volatile var rejectCreate = false
     @Volatile var disconnectSend = false
     @Volatile var rejectSend = false
     @Volatile var beforeCreateReturn: () -> Unit = {}
@@ -74,6 +75,12 @@ class ComposerApiFixture : Closeable {
                     json(
                         """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
                     )
+                }
+                path == "/api/chat-threads" && request.method == "POST" && rejectCreate -> {
+                    requests += request
+                    beforeCreateReturn()
+                    json("""{"error":{"code":"FORBIDDEN","message":"Chat creation rejected"}}""")
+                        .setResponseCode(403)
                 }
                 path == "/api/chat-threads" && request.method == "POST" -> {
                     requests += request

@@ -187,13 +187,11 @@ internal class ChatComposerOwner(
                     value.pending == null &&
                     value.receipt == null &&
                     value.createdThreadId == null &&
-                    value.recovery == null &&
-                    value.connectorOverrides.isEmpty()
+                    value.recovery == null
             )
                 journal.entries - key
             else journal.entries + (key to value)
-        val format = if (value.connectorOverrides.isNotEmpty()) 4 else journal.format
-        replace(journal.copy(format = format, entries = entries), receiptMessages = receiptMessages)
+        replace(journal.copy(entries = entries), receiptMessages = receiptMessages)
     }
 
     private fun restoreJournal() {
@@ -342,9 +340,12 @@ internal class ChatComposerOwner(
         val text = journal.retainedDrafts[key] ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
+        val choices = if (draftKey == "new:") journal.retainedDraftConnectorOverrides[key] else null
         replace(
             journal.copy(
                 retainedDrafts = journal.retainedDrafts - key,
+                newChatConnectorOverrides = choices ?: journal.newChatConnectorOverrides,
+                retainedDraftConnectorOverrides = journal.retainedDraftConnectorOverrides - key,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -511,15 +512,15 @@ internal class ChatComposerOwner(
         choice: ChatConnectorOverride?,
     ) {
         val state = mutable.value
+        val journal = state.journal ?: return
         if (
             !connection.current() ||
                 connection.connectors == null ||
                 !state.canEditDraftConnectors(target)
         )
             return
-        val entry = state.entry(target)
-        val pending = entry.pending
-        val previous = pending?.connectorOverrides ?: entry.connectorOverrides
+        val pending = journal.entries[target.key]?.pending
+        val previous = state.connectorOverrides(target)
         val choices =
             when {
                 choice != null ->
@@ -529,7 +530,13 @@ internal class ChatComposerOwner(
             }
         if (choices == previous) return
         // Once the thread exists, reset has to clear even preferences already applied by this send.
-        if (pending == null) put(target.key, entry.copy(connectorOverrides = choices))
+        if (pending == null)
+            replace(
+                journal.copy(
+                    format = CONNECTOR_DRAFT_JOURNAL_FORMAT,
+                    newChatConnectorOverrides = choices,
+                ),
+            )
         else updatePending(target.key, pending.copy(connectorOverrides = choices))
     }
 
@@ -572,6 +579,7 @@ internal class ChatComposerOwner(
     fun send(connection: Connection, target: ComposerTarget) {
         if (!mutable.value.canSend(target) || !connection.current()) return
         val op = begin(connection, target.key) ?: return
+        val journal = checkNotNull(mutable.value.journal)
         val entry = mutable.value.entry(target)
         val threadId = target.threadId ?: UUID.randomUUID().toString()
         val eventId = UUID.randomUUID().toString()
@@ -604,23 +612,19 @@ internal class ChatComposerOwner(
                         ),
                 ),
                 TextStage.Prepared,
-                connectorOverrides = entry.connectorOverrides,
+                connectorOverrides =
+                    if (target.threadId == null) journal.newChatConnectorOverrides else emptyList(),
                 started = store.sendClock.markNow(),
             )
-        val journal = mutable.value.journal ?: return
         val draftKey = mutable.value.draftKey(target)
         val draft = journal.drafts[draftKey] ?: EditableComposerDraft()
         replace(
             journal.copy(
                 entries =
                     journal.entries +
-                        (op.key to
-                            entry.copy(
-                                text = "",
-                                pending = pending,
-                                receipt = null,
-                                connectorOverrides = emptyList(),
-                            )),
+                        (op.key to entry.copy(text = "", pending = pending, receipt = null)),
+                newChatConnectorOverrides =
+                    if (pending.create != null) emptyList() else journal.newChatConnectorOverrides,
                 drafts =
                     journal.drafts +
                         (draftKey to
@@ -948,11 +952,17 @@ internal class ChatComposerOwner(
                     } else if (latest.stage == TextStage.Creating) {
                         val entry = checkNotNull(mutable.value.journal?.entries?.get(op.key))
                         val journal = checkNotNull(mutable.value.journal)
+                        val choices = latest.connectorOverrides
                         replace(
                             journal.copy(
                                 entries = journal.entries + (op.key to entry.copy(pending = null)),
                                 retainedDrafts =
                                     journal.retainedDrafts + (latest.eventId to latest.send.prompt),
+                                retainedDraftConnectorOverrides =
+                                    if (choices.isEmpty()) journal.retainedDraftConnectorOverrides
+                                    else
+                                        journal.retainedDraftConnectorOverrides +
+                                            (latest.eventId to choices),
                             ),
                         )
                         fail(op, error)
@@ -1123,8 +1133,7 @@ internal class ChatComposerOwner(
                 it.text.isNotEmpty() ||
                     it.pending != null ||
                     it.createdThreadId != null ||
-                    it.recovery != null ||
-                    it.connectorOverrides.isNotEmpty()
+                    it.recovery != null
             }
         var entries = (meaningful - op.key) + (destination to value)
         if (pending.create != null)
