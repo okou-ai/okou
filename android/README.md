@@ -736,6 +736,13 @@ remain later work. Sending and clearing a saved draft are separate operations;
 uncertain submissions retain their original identities in memory. Legacy pending
 text is available for explicit draft restoration after upgrade.
 
+Chat options lets users choose built-in connector accounts. Format 4 adds
+explicit account choices to an ordinary or Project new-chat intent and to its
+prepared first input. The client confirms these settings on the created chat
+before sending. An unsent input retains its identities if a connector setting
+fails and the user revises the choices. Existing chats save exact account
+overrides through the canonical chat API and display confirmed values.
+
 A sent text draft appears in the conversation immediately using its frozen input
 ID. The first send opens the timeline with its allocated thread ID while creation
 and list catch-up run. The same progress indicator stays visible during submit,

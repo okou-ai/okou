@@ -66,7 +66,7 @@ class ConnectorAccountFlowTest {
         try {
             compose.setContent { OkouTheme(false) { ConnectorSkeleton("Loading connectors", 1) } }
             val skeleton = compose.onNodeWithContentDescription("Loading connectors")
-            compose.mainClock.advanceTimeBy(80)
+            compose.mainClock.advanceTimeBy(224)
             skeleton.assertDoesNotExist()
             compose.mainClock.advanceTimeBy(64)
             skeleton.assertIsDisplayed()
