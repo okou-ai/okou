@@ -71,4 +71,6 @@
     <string name="settings_model_effort_extra">Extra high</string>
     <string name="settings_model_effort_max">Max</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Refreshing model accounts</string>
+    <string name="settings_refreshing_credit_balance">Refreshing credit balance</string>
 </resources>

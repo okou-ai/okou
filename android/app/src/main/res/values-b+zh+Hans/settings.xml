@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">超高</string>
     <string name="settings_model_effort_max">最高</string>
     <string name="settings_model_effort_ultra">极高</string>
+    <string name="settings_refreshing_model_accounts">正在刷新模型账号</string>
+    <string name="settings_refreshing_credit_balance">正在刷新积分余额</string>
 </resources>

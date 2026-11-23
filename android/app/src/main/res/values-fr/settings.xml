@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">Très élevé</string>
     <string name="settings_model_effort_max">Maximum</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Actualisation des comptes de modèles</string>
+    <string name="settings_refreshing_credit_balance">Actualisation du solde de crédits</string>
 </resources>

@@ -3,12 +3,15 @@ package ai.okou.android.settings
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.SettingsApiFixture
 import ai.okou.android.api.generated.CanonicalOptional
+import ai.okou.android.api.generated.UsagePackCredits
+import ai.okou.android.auth.WorkspaceSession
 import ai.okou.android.state.SettingsDestination
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -138,6 +141,58 @@ class WorkspaceSettingsModelTest {
     }
 
     @Test
+    fun restoredCreditRemainsVisibleAndOnlyAStaleReadShowsProgress() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        try {
+            ChatListApiFixture().use { api ->
+                val file = temporary.newFolder().resolve("workspace-settings.preferences_pb")
+                val cache =
+                    WorkspaceSettingsCache(
+                        PreferenceDataStoreFactory.create(scope = backgroundScope) { file },
+                    )
+                val saved = UsagePackCredits(100, 90, 10)
+                cache.save(
+                    api.identity,
+                    "usage-pack",
+                    UsagePackCredits.serializer(),
+                    ConfirmedSetting(saved, 0),
+                )
+                val online = MutableStateFlow(false)
+                var time = 600_000L
+                val reply = CompletableDeferred<UsagePackCredits>()
+                val service =
+                    object : WorkspaceSession by api.service {
+                        override suspend fun usagePackCredits() = reply.await()
+                    }
+                val model =
+                    settings(store, api, online = online, cache = cache, service = service) { time }
+                model.visible(SettingsDestination.CreditBalance)
+                assertEquals(
+                    saved,
+                    model.uiState.first { it.usagePack.value != null }.usagePack.value,
+                )
+                online.value = true
+                runCurrent()
+                assertFalse(model.uiState.value.usagePack.refreshing)
+                model.visible(null)
+                runCurrent()
+                time += 1
+                model.visible(SettingsDestination.CreditBalance)
+                val stale = model.uiState.first { it.usagePack.refreshing }
+                assertEquals(saved, stale.usagePack.value)
+                reply.complete(UsagePackCredits(200, 180, 20))
+                val fresh = model.uiState.first { it.usagePack.value?.totalCredits == 200L }
+                assertFalse(fresh.usagePack.refreshing)
+                assertNull(fresh.workspaceCredits.value)
+            }
+        } finally {
+            store.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun memberNeverRequestsWorkspaceBalance() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
@@ -167,6 +222,9 @@ class WorkspaceSettingsModelTest {
         api: ChatListApiFixture,
         admin: Boolean = false,
         online: MutableStateFlow<Boolean> = MutableStateFlow(true),
+        cache: WorkspaceSettingsCache? = null,
+        service: WorkspaceSession = api.service,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ): WorkspaceSettingsModel =
         ViewModelProvider(
             store,
@@ -179,13 +237,15 @@ class WorkspaceSettingsModelTest {
                             backgroundScope,
                         )
                     WorkspaceSettingsModel(
-                        api.service,
+                        service,
                         api.identity,
                         defaultModelStore,
                         admin,
                         { true },
                         { throw it },
                         online,
+                        cache,
+                        nowMillis,
                     )
                 }
             },

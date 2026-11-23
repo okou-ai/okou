@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">非常に高い</string>
     <string name="settings_model_effort_max">最大</string>
     <string name="settings_model_effort_ultra">ウルトラ</string>
+    <string name="settings_refreshing_model_accounts">モデルアカウントを更新中</string>
+    <string name="settings_refreshing_credit_balance">クレジット残高を更新中</string>
 </resources>

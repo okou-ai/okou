@@ -32,10 +32,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLocale
@@ -60,7 +65,35 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.time.Instant
+import kotlinx.coroutines.delay
 import okhttp3.HttpUrl.Companion.toHttpUrl
+
+@Composable
+internal fun WorkspaceSettingsProgress(
+    destination: SettingsDestination,
+    model: WorkspaceSettingsModel,
+) {
+    val label =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> R.string.settings_refreshing_model_accounts
+            SettingsDestination.CreditBalance -> R.string.settings_refreshing_credit_balance
+            else -> return
+        }
+    val state by model.uiState.collectAsStateWithLifecycle()
+    val refreshing =
+        when (destination) {
+            SettingsDestination.ModelAccounts -> state.accounts.refreshing
+            else -> state.usagePack.refreshing || state.workspaceCredits.refreshing
+        }
+    if (refreshing && !state.offline) {
+        val description = stringResource(label)
+        LinearProgressIndicator(
+            Modifier.fillMaxWidth().height(4.dp).semantics {
+                contentDescription = description
+            },
+        )
+    }
+}
 
 @Composable
 internal fun WorkspaceSettingsDataPage(
@@ -132,8 +165,16 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 
 @Composable
 private fun SettingsPlaceholder() {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(100)
+        visible = true
+    }
     SettingsGroup {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.alpha(if (visible) 1f else 0f).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             for (width in listOf(144.dp, 94.dp)) {
                 Box(
                     Modifier.width(width)

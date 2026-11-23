@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">Sangat tinggi</string>
     <string name="settings_model_effort_max">Maksimum</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Memperbarui akun model</string>
+    <string name="settings_refreshing_credit_balance">Memperbarui saldo kredit</string>
 </resources>

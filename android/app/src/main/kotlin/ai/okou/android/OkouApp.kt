@@ -160,6 +160,7 @@ internal fun OkouApp(
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
+    settingsProgress: @Composable (SettingsDestination) -> Unit = {},
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
     val listState =
@@ -1259,7 +1260,7 @@ internal fun OkouApp(
     ) { insets ->
         Column(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
             if (settings != null) {
-                SettingsPage(subpagePosition) {
+                SettingsPage(subpagePosition, progress = { settingsProgress(settings) }) {
                     settingsContent(
                         settings,
                         { destination -> navigation = navigation.copy(settings = destination) },

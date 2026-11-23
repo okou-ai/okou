@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">매우 높음</string>
     <string name="settings_model_effort_max">최대</string>
     <string name="settings_model_effort_ultra">울트라</string>
+    <string name="settings_refreshing_model_accounts">모델 계정 새로고침 중</string>
+    <string name="settings_refreshing_credit_balance">크레딧 잔액 새로고침 중</string>
 </resources>

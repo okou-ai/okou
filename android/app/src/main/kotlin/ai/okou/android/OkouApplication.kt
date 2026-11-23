@@ -14,6 +14,7 @@ import ai.okou.android.chat.RunControlJournalStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.settings.DefaultModelStore
+import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
@@ -76,6 +77,13 @@ open class OkouApplication : Application() {
         )
     }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
+    internal val workspaceSettingsCache by lazy {
+        WorkspaceSettingsCache(
+            PreferenceDataStoreFactory.create {
+                noBackupFilesDir.resolve("workspace-settings.preferences_pb")
+            },
+        )
+    }
     open val composerJournal by lazy { ComposerJournalStore(this) }
     open val runControlJournal by lazy { RunControlJournalStore(this) }
     val authentication by lazy { createAuthentication() }

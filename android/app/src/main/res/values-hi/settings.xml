@@ -70,4 +70,6 @@
     <string name="settings_model_effort_extra">बहुत उच्च</string>
     <string name="settings_model_effort_max">अधिकतम</string>
     <string name="settings_model_effort_ultra">अल्ट्रा</string>
+    <string name="settings_refreshing_model_accounts">मॉडल खाते रीफ़्रेश हो रहे हैं</string>
+    <string name="settings_refreshing_credit_balance">क्रेडिट बैलेंस रीफ़्रेश हो रहा है</string>
 </resources>
