@@ -4,6 +4,7 @@ import ai.okou.android.auth.SessionModel
 import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.HistoryPhase
+import ai.okou.android.chat.ProjectDeleteStatus
 import android.os.Looper
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.MotionDurationScale
@@ -1972,6 +1973,49 @@ class ChatListRootTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Delete Project?").assertDoesNotExist()
         projectRow.assertIsFocused()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun projectDeletionRejectionWaitsForTheListAfterClosingTheConfirmation() {
+        val app = compose.activity.application as ChatListApplication
+        val deleteStarted = CountDownLatch(1)
+        val releaseDelete = CountDownLatch(1)
+        app.fixture.commandResponse = { request ->
+            if (
+                request.method == "DELETE" &&
+                    request.requestUrl?.encodedPath == "/api/projects/$CHAT_PROJECT"
+            ) {
+                deleteStarted.countDown()
+                releaseDelete.await()
+                MockResponse().setResponseCode(409)
+            } else null
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        try {
+            compose.onNodeWithText("Research").performTouchInput { longClick() }
+            compose.onNodeWithText("Delete Project").performClick()
+            compose.onNodeWithText("Delete Project").performClick()
+            compose.waitUntil(10_000) { deleteStarted.count == 0L }
+            compose.onNodeWithText("Cancel").performClick()
+            compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+            compose.onNodeWithTag("chat_list").assertDoesNotExist()
+
+            releaseDelete.countDown()
+            compose.waitUntil(10_000) {
+                currentList()?.projectDeleteFeedback?.status == ProjectDeleteStatus.Rejected
+            }
+            val failure = "Could not delete the Project."
+            compose.onNodeWithText(failure).assertDoesNotExist()
+
+            compose.onNodeWithContentDescription("Back").performClick()
+            val listFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
+            compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
+            compose.onNodeWithText("Research").assertIsDisplayed()
+        } finally {
+            releaseDelete.countDown()
+        }
     }
 
     @Test

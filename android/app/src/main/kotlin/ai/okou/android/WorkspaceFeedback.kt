@@ -201,7 +201,7 @@ internal fun WorkspaceChatFeedback(
             }
         }
         deleteFeedback
-            ?.takeUnless { it.projectId == deleteProject?.id }
+            ?.takeIf { showChatList && it.projectId != deleteProject?.id }
             ?.let { feedback ->
                 val unconfirmed = feedback.status == ProjectDeleteStatus.Unconfirmed
                 val message =
