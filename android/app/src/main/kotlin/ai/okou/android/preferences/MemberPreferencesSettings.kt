@@ -131,7 +131,7 @@ internal fun MemberPreferencesSettings(
                 }
             }
             HorizontalDivider()
-            TimezonePicker(state?.timezone, model?.let { it::selectTimezone })
+            TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
         }
         if (model != null && state != null && state.pending?.cloudBrowser == null) {
             PreferenceFeedback(state, model::retry)
@@ -166,7 +166,7 @@ private val commonTimezones =
     )
 
 @Composable
-private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
+internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     val title = stringResource(R.string.settings_timezone)
     SettingsPickerRow(
         title,

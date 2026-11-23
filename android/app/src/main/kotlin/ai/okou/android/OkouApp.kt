@@ -942,6 +942,7 @@ internal fun OkouApp(
             SettingsDestination.Instructions,
             SettingsDestination.ModelAccounts,
             SettingsDestination.CreditBalance,
+            SettingsDestination.ProactiveServices,
             SettingsDestination.Account ->
                 navigation = navigation.copy(settings = SettingsDestination.Overview)
             SettingsDestination.Overview -> navigation = navigation.copy(settings = null)
@@ -1075,6 +1076,8 @@ internal fun OkouApp(
             SettingsDestination.Instructions -> stringResource(R.string.settings)
             SettingsDestination.ModelAccounts -> stringResource(R.string.settings_model_accounts)
             SettingsDestination.CreditBalance -> stringResource(R.string.settings_credit_balance)
+            SettingsDestination.ProactiveServices ->
+                stringResource(R.string.settings_proactive_services)
             SettingsDestination.Account -> stringResource(R.string.settings_account_security)
             null ->
                 when (target) {
