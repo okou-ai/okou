@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.45.2](https://github.com/okou-ai/okou/compare/android-v0.45.1...android-v0.45.2) (2026-11-23)
+
+
+### CI
+
+* **android:** parallelize debug jvm tests in build-test ([#50134](https://github.com/okou-ai/okou/issues/50134)) ([bacc350](https://github.com/okou-ai/okou/commit/bacc350f7f4bbc1f51ef8dc27073af0035973020))
+
 ## [0.45.1](https://github.com/okou-ai/okou/compare/android-v0.45.0...android-v0.45.1) (2026-11-23)
 
 

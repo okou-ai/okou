@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.861.0](https://github.com/okou-ai/okou/compare/core-v8.860.4...core-v8.861.0) (2026-11-23)
+
+
+### Features
+
+* **core:** expand artifact timing to staff workspaces ([#50130](https://github.com/okou-ai/okou/issues/50130)) ([c1660c4](https://github.com/okou-ai/okou/commit/c1660c425117954b973d5439ccee5f866079787b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+
 ## [8.860.4](https://github.com/okou-ai/okou/compare/core-v8.860.3...core-v8.860.4) (2026-11-23)
 
 

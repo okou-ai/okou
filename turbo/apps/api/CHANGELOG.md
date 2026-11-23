@@ -10,6 +10,30 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.106.0](https://github.com/okou-ai/okou/compare/api-v2.105.1...api-v2.106.0) (2026-11-23)
+
+
+### Features
+
+* **core:** expand artifact timing to staff workspaces ([#50130](https://github.com/okou-ai/okou/issues/50130)) ([c1660c4](https://github.com/okou-ai/okou/commit/c1660c425117954b973d5439ccee5f866079787b))
+* **ios:** add the native for you deck ([#50086](https://github.com/okou-ai/okou/issues/50086)) ([8ff411e](https://github.com/okou-ai/okou/commit/8ff411ea4757a12255c04401bcceb0b47246fd35))
+* **runner:** accept gzip direct dispatch bodies ([#50128](https://github.com/okou-ai/okou/issues/50128)) ([dcb3ce1](https://github.com/okou-ai/okou/commit/dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290))
+
+
+### Performance Improvements
+
+* **api:** consolidate suggestion validation and prefetch send checks ([#50131](https://github.com/okou-ai/okou/issues/50131)) ([5a0dc63](https://github.com/okou-ai/okou/commit/5a0dc6316ac1457cc1ee8220800ec3977dc0dec8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+    * @okouai/core bumped to 8.861.0
+    * @okouai/db bumped to 2.58.17
+    * @okouai/pi-agent-runtime bumped to 1.52.46
+
 ## [2.105.1](https://github.com/okou-ai/okou/compare/api-v2.105.0...api-v2.105.1) (2026-11-23)
 
 
