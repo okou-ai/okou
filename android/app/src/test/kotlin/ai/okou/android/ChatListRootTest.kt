@@ -47,6 +47,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performFirstLinkClick
 import androidx.compose.ui.test.performKeyInput
@@ -692,6 +693,70 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithContentDescription("Settings").performClick()
         compose.onNodeWithText("Display mode").assertExists()
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w1280dp-h800dp")
+    fun wideConversationSyncProgressSpansThePaneAndPreservesContentBounds() {
+        val app = compose.activity.application as ChatListApplication
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithText("Personal chat").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Hello history"), 10_000)
+        val history = compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready
+                        ?.chats,
+                )
+                .history
+        }
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { history.uiState.value.phase == HistoryPhase.Ready }
+        }
+        val timeline = compose.onNodeWithTag("conversation")
+        val composer = compose.onNodeWithTag("chat_composer")
+        val reply = compose.onNodeWithText("Hello history")
+        val timelineBounds = timeline.getUnclippedBoundsInRoot()
+        val composerBounds = composer.getUnclippedBoundsInRoot()
+        val replyBounds = reply.getUnclippedBoundsInRoot()
+        val sync = hasContentDescription(compose.activity.getString(R.string.history_syncing))
+        val successfulRows = app.fixture.historyRows
+        app.fixture.historyRows = { MockResponse().setResponseCode(503) }
+        try {
+            compose.runOnIdle { history.refresh() }
+            for (failures in 1..3) {
+                compose.waitUntil(5_000) {
+                    compose.runOnIdle {
+                        history.uiState.value.consecutiveReadFailures >= failures
+                    }
+                }
+                if (failures < 3) {
+                    compose.onNode(sync).assertDoesNotExist()
+                    shadowOf(Looper.getMainLooper()).idleFor(3, TimeUnit.SECONDS)
+                }
+            }
+
+            compose.onNode(sync).assertIsDisplayed()
+            val bar = compose.onNodeWithTag("history_sync_progress").getUnclippedBoundsInRoot()
+            val list = compose.onNodeWithTag("chat_list").getUnclippedBoundsInRoot()
+            assertEquals(list.right + 1.dp, bar.left)
+            assertEquals(compose.onRoot().getUnclippedBoundsInRoot().right, bar.right)
+            assertEquals(timelineBounds.top, bar.top)
+            assertEquals(4.dp, bar.bottom - bar.top)
+            assertEquals(768.dp, timelineBounds.right - timelineBounds.left)
+            assertEquals(timelineBounds, timeline.getUnclippedBoundsInRoot())
+            assertEquals(composerBounds, composer.getUnclippedBoundsInRoot())
+            assertEquals(replyBounds, reply.getUnclippedBoundsInRoot())
+        } finally {
+            app.fixture.historyRows = successfulRows
+        }
+        shadowOf(Looper.getMainLooper()).idleFor(6, TimeUnit.SECONDS)
+        compose.waitUntilDoesNotExist(sync, 5_000)
+        assertEquals(replyBounds, reply.getUnclippedBoundsInRoot())
+        assertEquals(composerBounds, composer.getUnclippedBoundsInRoot())
     }
 
     @Test

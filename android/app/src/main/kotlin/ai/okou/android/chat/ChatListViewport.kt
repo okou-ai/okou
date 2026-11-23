@@ -125,16 +125,7 @@ internal fun ChatListViewport(
                 .measure(loose)
         val progress =
             if (syncing) {
-                subcompose(ListLayer.Sync) {
-                        val label = stringResource(R.string.chat_syncing)
-                        val colors = MaterialTheme.colorScheme
-                        LinearProgressIndicator(
-                            Modifier.fillMaxWidth().semantics { contentDescription = label },
-                            color = colors.primary,
-                            trackColor =
-                                colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
-                        )
-                    }
+                subcompose(ListLayer.Sync) { ChatReadProgress(R.string.chat_syncing) }
                     .single()
                     .measure(loose.copy(maxWidth = rows.width))
             } else null
@@ -146,6 +137,17 @@ internal fun ChatListViewport(
             feedbackLayer.placeRelative((bounds.maxWidth - feedbackLayer.width) / 2, feedbackTop)
         }
     }
+}
+
+@Composable
+internal fun ChatReadProgress(@StringRes label: Int) {
+    val description = stringResource(label)
+    val colors = MaterialTheme.colorScheme
+    LinearProgressIndicator(
+        Modifier.fillMaxWidth().height(4.dp).semantics { contentDescription = description },
+        color = colors.primary,
+        trackColor = colors.primary.copy(alpha = 0.18f).compositeOver(colors.background),
+    )
 }
 
 @Composable
