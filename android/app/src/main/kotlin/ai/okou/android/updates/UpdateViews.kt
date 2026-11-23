@@ -549,11 +549,7 @@ private fun UpdateMetadata(release: AndroidUpdatesRelease) {
 private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifier) {
     val offline =
         state.offline && !state.canInstall && state.transfer !is UpdateTransfer.Downloading
-    val availability =
-        state.required ||
-            state.displayedRelease?.let {
-                state.available && !state.isEligible(it)
-            } == true
+    val requiresNewerAndroid = state.requiresNewerAndroid
     val latestProblem =
         when (state.problem) {
             UpdateProblem.Check -> R.string.updates_error_check
@@ -565,7 +561,7 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
             UpdateProblem.Install -> R.string.updates_error_install
             null -> null
         }
-    if (state.requiresNewerAndroid) {
+    if (requiresNewerAndroid) {
         Text(
             stringResource(R.string.updates_android_unsupported),
             color = MaterialTheme.colorScheme.error,
@@ -583,11 +579,11 @@ private fun UpdateProblemText(state: UpdateUiState, modifier: Modifier = Modifie
                 !state.canDownload &&
                 !state.canInstall &&
                 state.transfer !is UpdateTransfer.Downloading -> R.string.updates_error_check
-            availability &&
-                !state.requiresNewerAndroid &&
+            !requiresNewerAndroid &&
                 state.check != UpdateCheck.Checking &&
-                !state.canDownload &&
-                !state.canInstall -> R.string.updates_unavailable
+                (state.required || state.available) &&
+                state.displayedRelease?.let(state::isEligible) != true ->
+                R.string.updates_unavailable
             else -> return
         }
     Text(

@@ -146,6 +146,7 @@ class UpdateRootTest {
         compose.waitUntil(10_000) { app.updates.state.value.required }
         compose.onNodeWithText("Update Okou to continue").assertExists()
         compose.onNodeWithText("Downloading · 50%").assertExists()
+        compose.onNodeWithText(app.getString(R.string.updates_unavailable)).assertDoesNotExist()
         compose.onNodeWithText("Settings").assertDoesNotExist()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithText("Update Okou to continue").assertExists()
