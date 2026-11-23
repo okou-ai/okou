@@ -137,6 +137,11 @@ home_needed_labels = {
     'workspace-config', 'ci', 'native-routing-tests', 'base-selector',
     'crate-selector', 'toolchain', 'fixture-and-ci',
 }
+native_lane_cases = {
+    'guest-agent': 'guest-home-cleanup-test',
+    'rfb-client': 'native-gssapi-independent-peer',
+    'vnc-admission': 'native-kerberos-runtime',
+}
 
 target = root / 'crates/target'
 assert not target.is_symlink() and target.resolve() == target
@@ -386,12 +391,11 @@ cat "$CARGO_METADATA_FIXTURE"
         normal.update({name: 'success' if needed else 'skipped' for name, needed in native_selection.items()})
         assert_gate(values, normal, True, label)
 
-        # Each path still checks selection. Exercise the same result handling
-        # once with all native lanes selected and once for each contract owner.
-        if label == 'workspace-lock':
-            for name in native_selection:
-                for result in ['failure', 'cancelled', 'skipped', '']:
-                    assert_gate(values, normal | {name: result}, False, f'{label}: {name} {result!r}')
+        # Check result handling once per native lane, with the other lanes skipped.
+        if label in native_lane_cases:
+            name = native_lane_cases[label]
+            for result in ['failure', 'cancelled', 'skipped', '']:
+                assert_gate(values, normal | {name: result}, False, f'{label}: {name} {result!r}')
 
         if label in {'workspace-lock', 'fixture-only'}:
             for result in ['failure', 'cancelled', 'skipped', '']:

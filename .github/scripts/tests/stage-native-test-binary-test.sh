@@ -4,8 +4,6 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)
 helper="$repo_root/.github/scripts/runner/stage-native-test-binary.sh"
 system_timeout=$(command -v timeout)
-STAGE_TEST_REAL_SLEEP=$(command -v sleep)
-export STAGE_TEST_REAL_SLEEP
 test_root=$(mktemp -d)
 destination="/tmp/okou-native-stage-test-$$"
 cleanup() {
@@ -42,7 +40,7 @@ assert_ssh_exited() {
   return 1
 }
 
-mkdir "$test_root/bin"
+mkdir "$test_root/bin" "$test_root/retry-bin"
 cat >"$test_root/test binary" <<'BINARY'
 #!/usr/bin/env bash
 echo native-test
@@ -141,17 +139,12 @@ if [ "$SCENARIO" = lost-ack ] && [ "$count" -eq 1 ]; then exit 255; fi
 SSH
 chmod +x "$test_root/bin/ssh"
 
-# The transfer outcomes exercise retry and exhaustion. Keep real cleanup waits
-# for the guarded caller and its parent.
-cat >"$test_root/bin/sleep" <<'SLEEP'
+# Retry cases observe transfer attempts and results without waiting out backoff.
+cat >"$test_root/retry-bin/sleep" <<'SLEEP'
 #!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  1|2) exit 0 ;;
-esac
-exec "$STAGE_TEST_REAL_SLEEP" "$@"
+exit 0
 SLEEP
-chmod +x "$test_root/bin/sleep"
+chmod +x "$test_root/retry-bin/sleep"
 
 assert_checksum_rejection() {
   local log=$1 expected=$2
@@ -170,7 +163,7 @@ for scenario in success pipe lost-ack late-writer corrupt permanent exhausted; d
   fi
   rm -f -- "$destination"
   status=0
-  PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
+  PATH="$test_root/retry-bin:$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO="$scenario" \
     bash "$helper" "$test_root/test binary" metal@host.vm3.ai "$destination" \
     >"$case_dir/out" 2>&1 || status=$?
   case "$scenario" in
@@ -223,7 +216,7 @@ cp "$test_root/test binary" "$large"
 size=$((129 * 1024 * 1024 + 37))
 truncate -s "$size" "$large"
 started=$SECONDS
-if ! PATH="$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
+if ! PATH="$test_root/retry-bin:$test_root/bin:$PATH" CASE_DIR="$case_dir" SCENARIO=chunk-reset \
   bash "$helper" "$test_root/linked-binary" metal@host.vm3.ai "$destination" >"$case_dir/out" 2>&1; then
   cat "$case_dir/out" >&2
   exit 1
