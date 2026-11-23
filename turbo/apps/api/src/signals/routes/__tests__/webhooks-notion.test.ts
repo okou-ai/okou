@@ -1315,6 +1315,129 @@ describe("POST /api/webhooks/notion", () => {
     );
   });
 
+  it.each(["page.created", "page.content_updated"] as const)(
+    "accepts a redelivered %s after a temporary Notion repair failure",
+    async (type) => {
+      const app = await setupApp({
+        context,
+        routes: webhooksNotionRoutes,
+        isolatePg: true,
+      });
+      const webhook = app(webhookNotionContract);
+      await verifyNotionWebhook(webhook);
+      const { actor, entities, workflowId, firstAccount } =
+        await setupNotionAccountLifecycle();
+      if (type === "page.content_updated") {
+        const unrelated = newNotionEntities();
+        configureNotionDatabaseMock(unrelated);
+        await accept(
+          automationsClient().create({
+            headers: authHeaders(),
+            params: { workflowId },
+            body: {
+              kind: "event",
+              eventType: "notion-page-content-updated",
+              eventConfig: {
+                provider: "notion",
+                event: "page_content_updated",
+                pageUrl: entities.parentPageUrl,
+              },
+            },
+          }),
+          [201],
+        );
+        await accept(
+          automationsClient().create({
+            headers: authHeaders(),
+            params: { workflowId },
+            body: {
+              kind: "event",
+              eventType: "notion-page-content-updated",
+              eventConfig: {
+                provider: "notion",
+                event: "page_content_updated",
+                databaseUrl: unrelated.databaseUrl,
+              },
+            },
+          }),
+          [201],
+        );
+        server.use(
+          http.get(
+            `https://api.notion.com/v1/data_sources/${unrelated.dataSourceId}`,
+            () => {
+              return HttpResponse.json(
+                { code: "rate_limited" },
+                { status: 429 },
+              );
+            },
+          ),
+        );
+      }
+      await connectorsApi.updateFeatureSwitches(actor, {
+        [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+      });
+      const expiresAt = now();
+      mockNow(expiresAt - 3_600_000);
+      await accept(
+        setupApp({ context, routes: chatConnectorAccessRoutes })(
+          chatConnectorAccessContract,
+        ).updateAccountPolicy({
+          headers: authHeaders(),
+          params: { connectionId: firstAccount.id },
+          body: {
+            target: { kind: "builtin", connectorSlug: "notion" },
+            policy: "allow-1h",
+          },
+        }),
+        [200],
+      );
+
+      mockNow(expiresAt);
+      server.use(
+        http.get(
+          `https://api.notion.com/v1/pages/${entities.parentPageId}`,
+          () => {
+            return HttpResponse.json({ code: "rate_limited" }, { status: 429 });
+          },
+        ),
+      );
+      const event = notionPageEvent({
+        entities,
+        type,
+        timestamp: new Date(expiresAt).toISOString(),
+        accessibleBy: ["notion-user-2"],
+        pageId:
+          type === "page.created"
+            ? entities.childPageId
+            : entities.parentPageId,
+      });
+      const delivery = {
+        rawBody: event.rawBody,
+        signature: notionSignature(event.rawBody),
+      };
+      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
+        {
+          status: 503,
+        },
+      );
+
+      configureNotionParentPageMock(entities, "notion-second-access-token");
+      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
+        {
+          status: 200,
+          body: { pending: 1, duplicates: 0 },
+        },
+      );
+      await expect(postNotionWebhook(delivery, webhook)).resolves.toMatchObject(
+        {
+          status: 200,
+          body: { pending: 0, duplicates: 1 },
+        },
+      );
+    },
+  );
+
   it("repairs a denied Notion binding only when the replacement can access the resource", async () => {
     const cronSecret = "notion-listener-cron-secret";
     mockEnv("CRON_SECRET", cronSecret);
