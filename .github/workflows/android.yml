@@ -117,7 +117,7 @@ jobs:
             "-Pokou.debugUnitTestShardIndex=$SHARD_INDEX"
             "-Pokou.debugUnitTestShardCount=$SHARD_COUNT"
           )
-          # Shard 0 has the lightest measured JVM workload and also builds the APK.
+          # Run the shared checks and build the APK once.
           if [ "$SHARD_INDEX" = 0 ]; then
             bash scripts/check.sh "${args[@]}"
           else
@@ -212,7 +212,8 @@ jobs:
             android/app/build/outputs/androidTest-results/managedDevice/debug/pixel2Api35/test-result-exit-code.txt
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          # Successful shards supply these reports when only failed jobs are rerun.
+          retention-days: 30
 
       - name: Save shared Android Gradle dependencies
         if: matrix.shard == 0 && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.gradle-dependencies.outputs.cache-hit != 'true'

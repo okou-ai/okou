@@ -112,7 +112,7 @@ class ChatListApplication : TestOkouApplication() {
 
 internal abstract class ChatListRootTestFixture {
     protected val animationScale = mutableFloatStateOf(1f)
-    protected val motion =
+    private val motion =
         object : MotionDurationScale {
             override val scaleFactor: Float
                 get() = animationScale.floatValue
