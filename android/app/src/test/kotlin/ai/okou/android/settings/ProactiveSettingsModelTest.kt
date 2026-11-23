@@ -4,6 +4,7 @@ import ai.okou.android.ChatListApiFixture
 import ai.okou.android.ProactiveSettingsApiFixture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -13,6 +14,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -155,6 +157,59 @@ class ProactiveSettingsModelTest {
             model.online(true)
             model.morningBrief.state.first { it.enabled == true && it.checking == null }
             assertEquals(listOf(ProactiveSetting.MorningBrief to true), fixture.writes)
+        }
+    }
+
+    @Test
+    fun aQueuedRefreshWaitsForTheChoiceAfterCancellingItsOlderRead() = runTest {
+        ChatListApiFixture().use { api ->
+            val fixture = ProactiveSettingsApiFixture(api)
+            val scope =
+                CoroutineScope(
+                    backgroundScope.coroutineContext + UnconfinedTestDispatcher(testScheduler),
+                )
+            val model = model(api, scope = scope)
+            model.visible(true)
+            model.morningBrief.state.first { it.confirmed != null }
+
+            val oldReadStarted = CountDownLatch(1)
+            val oldReadResponse = CountDownLatch(1)
+            val writeStarted = CountDownLatch(1)
+            val writeResponse = CountDownLatch(1)
+            val queuedRead = CountDownLatch(1)
+            val firstRefreshValue = AtomicReference<Boolean>()
+            fixture.beforeMorningRead = {
+                if (oldReadStarted.count != 0L) {
+                    oldReadStarted.countDown()
+                    check(oldReadResponse.await(10, TimeUnit.SECONDS))
+                } else {
+                    firstRefreshValue.compareAndSet(null, fixture.morningEnabled)
+                    queuedRead.countDown()
+                }
+            }
+            fixture.beforeMorningWrite = {
+                writeStarted.countDown()
+                check(writeResponse.await(10, TimeUnit.SECONDS))
+            }
+            try {
+                model.refresh()
+                withContext(Dispatchers.IO) {
+                    assertTrue(oldReadStarted.await(10, TimeUnit.SECONDS))
+                }
+                model.refresh()
+                model.morningBrief.choose(true)
+                withContext(Dispatchers.IO) { assertTrue(writeStarted.await(10, TimeUnit.SECONDS)) }
+                oldReadResponse.countDown()
+                writeResponse.countDown()
+                model.morningBrief.state.first {
+                    it.confirmed?.matches(true) == true && it.choice == null
+                }
+                withContext(Dispatchers.IO) { assertTrue(queuedRead.await(10, TimeUnit.SECONDS)) }
+                assertEquals(true, firstRefreshValue.get())
+            } finally {
+                oldReadResponse.countDown()
+                writeResponse.countDown()
+            }
         }
     }
 
