@@ -263,7 +263,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             val before = title.getUnclippedBoundsInRoot()
             val rowBounds = row.getUnclippedBoundsInRoot()
             assertEquals(12.dp, before.left - rowBounds.left)
-            assertEquals(52.dp, rowBounds.height)
+            assertEquals(52.dp, rowBounds.bottom - rowBounds.top)
             val activity = row.fetchSemanticsNode().config[SemanticsProperties.StateDescription]
 
             releaseIndex.countDown()
@@ -271,7 +271,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
             row.assertIsSelected()
             val icon = glyph.getUnclippedBoundsInRoot()
             val marked = title.getUnclippedBoundsInRoot()
-            assertEquals(18.dp, icon.width)
+            assertEquals(18.dp, icon.right - icon.left)
             assertEquals(8.dp, marked.left - icon.right)
             assertEquals(26.dp, marked.left - before.left)
             assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
