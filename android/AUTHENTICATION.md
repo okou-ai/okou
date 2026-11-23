@@ -102,15 +102,18 @@ no separate member-preference cache or durable draft store is introduced.
 Preferences refresh on foreground without replacing those owners. Automatic
 refresh preserves unconfirmed selections after failed saves, including a resume
 caused by locale recreation; explicit refresh reads back the canonical result.
-An HTTP authorization/update-required failure retires the workspace, while an
-ordinary save/network failure remains visible and retryable in Settings.
+A business read rejected with HTTP 401 can renew its credential and retry once
+within the same workspace. If the API still rejects it, the app shows workspace
+recovery. Explicit access loss and required updates retain their own screens.
+Member preference and default-model reads keep the last confirmed values and
+retry twice at three-second intervals on recoverable failures.
 
 Signing out or changing account/workspace closes API resources, cancels pending
 work and clears the old presentation store before another owner can be published.
 Both before and after token acquisition, the captured identity and generation must
 still match. Non-cooperative late completion cannot publish into a replacement.
-SDK token renewal uses its cache/refresh policy and retains the same workspace
-owner; it does not force a new token mint for every API request.
+Healthy requests use the SDK's cache and refresh policy. Concurrent read
+rejections serialize credential renewal and reuse the replacement from Clerk.
 
 ## Verification
 
