@@ -322,6 +322,7 @@ describe("content bundle presigned URL cache", () => {
     const startedAt = Math.floor(now() / 1000) * 1000;
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    const drainingOlderSend = createDeferredPromise<void>(context.signal);
     const sign = context.mocks.s3.getSignedUrl.getMockImplementation();
     if (!sign) {
       throw new Error("Expected the external presigner fixture");
@@ -331,10 +332,30 @@ describe("content bundle presigned URL cache", () => {
       await release.promise;
       return await sign(...args);
     });
-    const oldExecution = withMockNowForTest(startedAt, () => {
-      return api.createThreadRun(actor, {
-        prompt: "Older cache publisher",
-      });
+    const oldExecution = withMockNowForTest(startedAt, async () => {
+      const chat = createChatFilesBddApi(context);
+      const clientEventId = randomUUID();
+      const sent = await chat.requestSendEvent(
+        actor,
+        { prompt: "Older cache publisher", clientEventId },
+        [201],
+      );
+      if (sent.status !== 201) {
+        throw new Error("Expected the older send to enqueue");
+      }
+      await started.promise;
+      // Claim this request's tracked work before the newer send drains its own.
+      const drained = flushWaitUntilForTest();
+      drainingOlderSend.resolve();
+      await drained;
+      const { events } = await chat.listThreadEvents(actor, sent.body.threadId);
+      const runId = events.find((event) => {
+        return event.revokesEventId === clientEventId;
+      })?.runId;
+      if (!runId) {
+        throw new Error("Expected the older send to launch");
+      }
+      return await api.executionInput(runId);
     });
     onTestFinished(async () => {
       if (!release.settled()) {
@@ -342,15 +363,14 @@ describe("content bundle presigned URL cache", () => {
       }
       await oldExecution;
     });
-    await started.promise;
+    await drainingOlderSend.promise;
     const newer = await withMockNowForTest(
       startedAt + 1000,
       readWorkflowExecution,
     );
     release.resolve();
-    const oldRun = await oldExecution;
-    const older = await api.executionInput(oldRun.runId);
-    await chats.cancelChatRun(actor, oldRun.runId, {
+    const older = await oldExecution;
+    await chats.cancelChatRun(actor, older.runId, {
       authorization: `Bearer ${older.sandboxToken}`,
     });
     expect(older.contentBundles.instructions?.downloadUrl).not.toBe(

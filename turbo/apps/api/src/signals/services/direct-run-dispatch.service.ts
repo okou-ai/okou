@@ -23,8 +23,9 @@ import {
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
-  type ExecutionBundleCacheRead,
+  type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
+import type { ExecutionRuntimeResources } from "./execution-runtime-context";
 import {
   selectDirectRunOwner$,
   readDirectRunState$,
@@ -65,13 +66,14 @@ export const prepareDirectRunDispatch$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
-    bundleCache: ExecutionBundleCacheRead,
+    bundleUrls: ExecutionBundleUrlsRead,
+    resources: ExecutionRuntimeResources,
     signal: AbortSignal,
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
       const [publication, placement] = await joinAll([
-        set(prepareDirectRun$, input, bundleCache, signal),
+        set(prepareDirectRun$, input, bundleUrls, resources, signal),
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();

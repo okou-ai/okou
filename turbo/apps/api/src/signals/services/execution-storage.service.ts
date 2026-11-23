@@ -60,7 +60,7 @@ interface ExecutionMemoryMount {
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
 }
 
-/** Sign the accepted archive at dispatch time using its captured cache row. */
+/** Prepare the selected archive URL from its captured cache row. */
 export const prepareExecutionMemoryMount$ = command(
   async (
     { get },

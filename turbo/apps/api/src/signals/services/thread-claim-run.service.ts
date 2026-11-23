@@ -89,6 +89,10 @@ import {
   createExecutionBundleCache,
   type AdmittedRunLaunch,
 } from "./direct-run-preparation.service";
+import {
+  startExecutionRuntimeResources$,
+  type ExecutionRuntimeResources,
+} from "./execution-runtime-context";
 import { selectExecutionContentBundles } from "./execution-content-bundle";
 import {
   prepareRunPackageMounts,
@@ -791,7 +795,10 @@ export interface ThreadClaimRunObjects {
     [signal: AbortSignal]
   >;
   readonly admitRun$: Command<
-    Promise<PendingClaimRun | null>,
+    Promise<{
+      readonly pending: PendingClaimRun;
+      readonly resources: ExecutionRuntimeResources;
+    } | null>,
     [context: ThreadRunContext, signal: AbortSignal]
   >;
   readonly publishPendingRun$: Command<
@@ -2144,7 +2151,7 @@ export function createThreadClaimRunObjects(
       },
     };
   });
-  const bundleHashes$ = computed(async (get) => {
+  const executionBundles$ = computed(async (get) => {
     const [automation, captureNetworkBodies] = await Promise.all([
       get(isAutomation$),
       get(captureNetworkBodiesGate$),
@@ -2171,11 +2178,9 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan)
-      ? null
-      : packagePlan.packages.bundles.hashes;
+    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
   });
-  const executionBundleCache$ = createExecutionBundleCache(bundleHashes$);
+  const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
@@ -2193,7 +2198,7 @@ export function createThreadClaimRunObjects(
       return {
         launch: prepareRunnerLaunch({
           args,
-          packages: packagePlan.packages,
+          packageMounts: packagePlan.packages.mounts,
           okouToken,
           disabledPaidTools,
         }),
@@ -2743,6 +2748,17 @@ export function createThreadClaimRunObjects(
   );
   const admitRun$ = command(
     async ({ get, set }, context: ThreadRunContext, signal: AbortSignal) => {
+      const resources = set(
+        startExecutionRuntimeResources$,
+        {
+          memoryMount: context.launch.memoryMount,
+          connectorRuntimeTargets:
+            context.persistence.diagnosticRegistrationPayload.targets,
+          networkPolicyInputs:
+            context.launch.facts.connectorNetworkPolicyInputs,
+        },
+        signal,
+      );
       const committed = await settle(
         set(
           createRun$,
@@ -2751,9 +2767,10 @@ export function createThreadClaimRunObjects(
         ),
         signal,
       );
-      return committed.ok
-        ? committed.value
-        : await set(failRunAdmission$, committed.error, signal);
+      if (!committed.ok) {
+        return await set(failRunAdmission$, committed.error, signal);
+      }
+      return committed.value ? { pending: committed.value, resources } : null;
     },
   );
   return {
@@ -2791,7 +2808,7 @@ interface PreparedRunnerLaunch {
   readonly profile: string;
   readonly reuseKey: string;
   readonly facts: AdmittedExecutionFacts;
-  readonly packages: AdmittedRunLaunch["packages"];
+  readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly memoryMount: AcceptedMemoryMount;
 }
 
@@ -3282,7 +3299,7 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly packages: AdmittedRunLaunch["packages"];
+  readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
 }): Omit<PreparedRunnerLaunch, "memoryMount"> {
@@ -3306,7 +3323,7 @@ function prepareRunnerLaunch(input: {
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
-    packages: input.packages,
+    packageMounts: input.packageMounts,
   };
 }
 
@@ -3533,8 +3550,7 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
-    memoryMount: args.launch.memoryMount,
-    packages: args.launch.packages,
+    packageMounts: args.launch.packageMounts,
     facts: {
       ...args.launch.facts,
       connectorEnvironment: {

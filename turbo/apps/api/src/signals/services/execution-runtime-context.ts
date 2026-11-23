@@ -5,7 +5,8 @@ import {
 import type { agentRuns } from "@okouai/db/runtime/agent-run";
 import { command } from "ccstate";
 import { monotonicNow } from "../../lib/time";
-import { joinAllInOrder } from "../utils";
+import { waitUntil } from "../context/wait-until";
+import { joinAllInOrder, settle } from "../utils";
 import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
@@ -52,8 +53,37 @@ export type ExecutionContextRun = Pick<
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
-  readonly memoryMount: AcceptedMemoryMount;
 };
+
+export interface ExecutionRuntimeResources {
+  readonly memory: ReturnType<(typeof prepareExecutionMemoryMount$)["write"]>;
+  readonly networkPolicyInputs: ReturnType<
+    (typeof prepareExecutionNetworkPolicy$)["write"]
+  >;
+}
+
+/** These captured resources are needed only if the admission write succeeds. */
+export const startExecutionRuntimeResources$ = command(
+  (
+    { set },
+    input: {
+      readonly memoryMount: AcceptedMemoryMount;
+      readonly connectorRuntimeTargets: PreparedExecutionContext["connectorRuntimeTargets"];
+      readonly networkPolicyInputs: AdmittedExecutionFacts["connectorNetworkPolicyInputs"];
+    },
+    signal: AbortSignal,
+  ): ExecutionRuntimeResources => {
+    signal.throwIfAborted();
+    const memory = set(prepareExecutionMemoryMount$, input.memoryMount, signal);
+    const networkPolicyInputs = set(prepareExecutionNetworkPolicy$, {
+      connectorRuntimeTargets: input.connectorRuntimeTargets,
+      networkPolicyInputs: input.networkPolicyInputs,
+    });
+    waitUntil(settle(memory));
+    waitUntil(settle(networkPolicyInputs));
+    return { memory, networkPolicyInputs };
+  },
+);
 
 function executionPlatform({ run, facts }: ExecutionInput) {
   const framework = run.framework;
@@ -109,9 +139,10 @@ function executionEnvironment(input: ExecutionInput) {
 
 export const prepareExecutionRuntimeContext$ = command(
   async (
-    { set },
+    _context,
     input: ExecutionInput,
     packages: ExecutionPackageMounts,
+    resources: ExecutionRuntimeResources,
     signal: AbortSignal,
   ) => {
     const { run, facts } = input;
@@ -124,11 +155,7 @@ export const prepareExecutionRuntimeContext$ = command(
     const [prepared, networkPolicyInputs] = await joinAllInOrder(
       [
         (async () => {
-          const memory = await set(
-            prepareExecutionMemoryMount$,
-            input.memoryMount,
-            signal,
-          );
+          const memory = await resources.memory;
           signal.throwIfAborted();
           const prepared: PreparedExecutionContext = {
             ...executionModelConfiguration(
@@ -176,10 +203,7 @@ export const prepareExecutionRuntimeContext$ = command(
             readyAt: monotonicNow(),
           };
         })(),
-        set(prepareExecutionNetworkPolicy$, {
-          connectorRuntimeTargets,
-          networkPolicyInputs: facts.connectorNetworkPolicyInputs,
-        }),
+        resources.networkPolicyInputs,
       ],
       signal,
     );

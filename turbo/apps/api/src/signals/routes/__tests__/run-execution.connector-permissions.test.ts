@@ -349,8 +349,7 @@ describe("Execution connector permissions", () => {
               command instanceof GetObjectCommand &&
               command.input.Key?.endsWith(`/${versionId}/archive.tar.gz`)
             ) {
-              // The grant is active at admission and expires while the
-              // accepted Memory mount is being prepared.
+              // The pick captured an active grant that expires during signing.
               mockNow(expiresAt);
               presigner.mockImplementation(sign);
             }
