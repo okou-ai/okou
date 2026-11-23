@@ -12,14 +12,34 @@ import {
   FEISHU_CONNECTOR_ID,
   SCOUT_THREAD_ID,
   builtinConnector,
+  connectorAccount,
   httpConnector,
   createComposerConnectorHelpers,
 } from "./chat-composer-connectors-test-helpers.ts";
 import { openChatMenu } from "./composer-menu-page-fixture.ts";
 const context = testContext();
-function directoryData(saved: boolean) {
+function directoryData(saved: boolean, reconnect = false) {
   createComposerConnectorHelpers(context).installComposerConnectorFixture({
     threadId: SCOUT_THREAD_ID,
+    ...(reconnect
+      ? {
+          accounts: [
+            { kind: "builtin", connectorSlug: "github" } as const,
+            { kind: "custom", customConnectorId: ACME_CONNECTOR_ID } as const,
+          ].map((target) => {
+            return {
+              ...connectorAccount({
+                id: crypto.randomUUID(),
+                target,
+                displayName: "Needs reconnection",
+                isDefault: true,
+              }),
+              connectionStatus: "reconnect-required" as const,
+              reconnectReason: "credential_expired",
+            };
+          }),
+        }
+      : {}),
     catalog: [
       builtinConnector({ slug: "github", label: "GitHub" }),
       builtinConnector({ slug: "notion", label: "Notion", hasAccount: false }),
@@ -124,4 +144,37 @@ test("chat-composer-connector-status-005 Waiting for account inventory withholds
   expect(screen.queryByText("No accounts")).toBeNull();
   inventory.resolve();
   await expect(acme()).resolves.toHaveTextContent("No accounts");
+});
+
+test("Accounts requiring reconnection remain discoverable in both directory tabs", async () => {
+  directoryData(true, true);
+  const catalog = await directory();
+  const search = within(catalog).getByRole("textbox");
+  await fill(search, "GitHub");
+  await expect(
+    findFastControl("button", "Open GitHub details", catalog),
+  ).resolves.toBeEnabled();
+  await fill(search, "");
+  await customTab();
+  await expect(acme()).resolves.toBeEnabled();
+  expect(screen.queryByLabelText("Secret")).toBeNull();
+});
+
+test("Feishu still opens its managed connection flow when account inventory fails", async () => {
+  directoryData(true);
+  context.mocks.api(connectedConnectorsContract.list, ({ respond }) => {
+    return respond(503, {
+      error: { code: "UNAVAILABLE", message: "Saved account service offline" },
+    });
+  });
+  const catalog = await directory();
+  await customTab();
+  await within(catalog).findByText(
+    "Accounts are unavailable for this connector.",
+  );
+  expect(queryFastControl("button", "Connect Acme Search", catalog)).toBeNull();
+  expect(within(catalog).queryByText("No accounts")).toBeNull();
+  const managed = await findFastControl("button", "Connect Feishu", catalog);
+  click(managed);
+  await screen.findByRole("dialog", { name: /Feishu/i });
 });

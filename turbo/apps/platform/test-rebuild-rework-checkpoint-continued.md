@@ -3068,3 +3068,17 @@ The concurrent change at `090b0c51ba` retires chat-search-debounce-002 outside t
 [65 ID dispositions](https://app.okou.ai/artifacts/lbm2o5r594.tsv) · [30 owner dispositions](https://app.okou.ai/artifacts/uig9c367jx.tsv) · [Next 30 owners](https://app.okou.ai/artifacts/a8507odmqw.md)
 
 Ethan confirmed `090b0c51baf3d980b040220352cec1ae57d634bd` as the search debounce handoff. Its local App baseline is 514 files and 2,260 expanded tests. After each main or work-branch synchronization, verify the confirmed commit is an ancestor, `debounceCommand` awaits the cancellable zero-or-production delay, and the routed search submits five values in one turn and observes only the final keyword and its result. The clearing/Escape 002 registration was retired by the owner. Keep it in the inventory with its original ID. Recheck the attachment preview ordering and inline voice playback alongside the search suite.
+
+## Batch 83 concentrated revisit
+
+The [fixed intake](https://app.okou.ai/artifacts/a8507odmqw.md) selected 47 distinct IDs in 30 frozen files at `9f8016dc2f`. Eighteen IDs received their first complete verification in 21 Vitest rows. Ten IDs received partial regression evidence, nine retain an evidence gap and ten have source-backed upstream dispositions. The original activity-summary 002 row retains its identity.
+
+The shared queue now has 157 pending owners and 328 closed owners. Fourteen owners closed after reconciling all of their retained IDs. The other 16 BDD files match the opening bytes. First pass remains 485/485 with zero failed owners. The 44 affected suites passed all 161 rows together.
+
+The old draft was held until the member had typed locally. Removing the chat thread’s post-read guard corrupted the delivered case with the old attachment. Both the withheld case and the untouched composer behaved as expected. Restoring the guard passed all three cases. The old voice model released its ONNX session only when delivered after replacement. The activity-summary and frame-tree controls reached the same final page under both schedules. Leaving an unfinished metadata lookup aborted the old request.
+
+The current scopes and return points include the title-versus-filename discrepancy in both artifact viewers, the 168-pixel offset on both locator routes, and the replacement socket after native Shift cleanup. The old account chooser and the pre-migration connector request lifecycles have explicit upstream evidence in #48841 and #49047. The ledger retains every unresolved Then and its original registration.
+
+The synchronized main is `d68643d6e6cfb0f1d314903abfb44578a9170d41`. Ethan’s confirmed `090b0c51baf3d980b040220352cec1ae57d634bd` remains in ancestry. Search 002 is retired. Search 001 submits five values in one turn and verifies the last keyword and its page result. The shared debounce still awaits the abortable delay with zero only in Vitest. The preview suite covers media ordering, pause, resume and consecutive playback. The final SHA’s local results and GitHub job links are posted to PR #48906. The next shortlist contains 30 frozen owners and 46 IDs.
+
+[47 ID dispositions](https://app.okou.ai/artifacts/1shivef83m.tsv) · [30 file dispositions](https://app.okou.ai/artifacts/4pxcuunrn8.tsv) · [Shared queue](test-rebuild-first-pass.tsv)

@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -15,11 +16,15 @@ import { RUN_PATH } from "./chat-run-test-fixtures.ts";
 const context = testContext();
 
 const passage = "launch plan has three careful stages";
-async function startFork() {
+async function startFork(actions: boolean) {
   createChatCapabilityHelpers(context).installCapabilityChat({
     events: completedConversation(passage, "Unrelated revision feedback"),
   });
-  await setupPage({ context, path: RUN_PATH });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: actions },
+  });
   const original = await findComposerEditor();
   await fill(original, "Unfinished source notes");
   await screen.findByText(passage);
@@ -27,8 +32,8 @@ async function startFork() {
   return { original };
 }
 
-async function openForwardSuggestions() {
-  const { original } = await startFork();
+async function openForwardSuggestions(actions = false) {
+  const { original } = await startFork(actions);
   click(await findFastControl("button", /^Fork/i));
   const dialog = await screen.findByRole("dialog");
   const editor = await within(dialog).findByRole("textbox", {
@@ -78,5 +83,16 @@ test("chat-capability-voice-forwarding-004 Escape closes suggestions inside the 
   await waitFor(() => {
     expect(menu).not.toBeInTheDocument();
   });
+  expectForwardDraft(editor, dialog, original);
+});
+
+test("chat-capability-voice-forwarding-002 previewing Document keeps focus and both independent drafts", async () => {
+  const { editor, original, dialog, menu, user } =
+    await openForwardSuggestions(true);
+  await user.keyboard("{ArrowUp}");
+  await user.hover(await within(menu).findByText("Templates", { exact: true }));
+  const documentChoice = await findFastControl("button", /^Document\b/, menu);
+  await user.hover(documentChoice);
+  expect(documentChoice).toHaveAttribute("aria-pressed", "true");
   expectForwardDraft(editor, dialog, original);
 });

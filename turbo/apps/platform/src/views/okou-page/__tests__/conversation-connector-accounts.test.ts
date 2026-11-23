@@ -2,6 +2,9 @@ import {
   chatConnectorAccessContract,
   type ChatConnectorAccess,
 } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
+import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -27,6 +30,7 @@ async function openChat(
     path?: string;
     defaults?: readonly boolean[];
     failSelection?: boolean;
+    remoteHost?: string;
   } = {},
 ) {
   const defaults = options.defaults ?? [true];
@@ -135,6 +139,42 @@ async function openChat(
       return respond(200, access());
     },
   );
+  if (options.remoteHost) {
+    mockChatLifecycle(context, {
+      threadId: SCOUT_THREAD_ID,
+      cloudBrowserEnabled: true,
+    });
+    const host = {
+      connectionId: crypto.randomUUID(),
+      displayName: options.remoteHost,
+      defaultEnabled: true,
+    };
+    context.mocks.api(remotesContract.overview, ({ respond }) => {
+      return respond(200, {
+        computerUseHosts: [],
+        cloudBrowserAvailable: true,
+        cloudBrowserEnabledByDefault: true,
+        sshHosts: [host],
+        vncHosts: [],
+      });
+    });
+    context.mocks.api(
+      chatRemoteAccessContract.listThreadAccess,
+      ({ respond }) => {
+        return respond(200, {
+          ssh: [
+            {
+              ...host,
+              enabled: true,
+              source: "default",
+              overrideEnabled: null,
+            },
+          ],
+          vnc: [],
+        });
+      },
+    );
+  }
   await setupPage({
     context,
     path: options.path ?? "/chats/" + SCOUT_THREAD_ID,
@@ -296,4 +336,33 @@ test("chat-composer-chat-connector-access-018 Retrying a rejected account save r
   await expect(
     resultingConversation(atRun, text, false),
   ).resolves.toHaveTextContent("2 accounts");
+});
+
+test("chat-composer-chat-connector-access-003 the same composer opens its enabled remote host and connector discovery", async () => {
+  await openChat({ remoteHost: "Build host" });
+  const { panel, trigger } = await choices();
+  await expect(toggle(panel, "Work")).resolves.toBeChecked();
+  await userEvent.keyboard("{Escape}");
+  const menu = await screen.findByRole("dialog", { name: "Connectors" });
+  await expect(within(menu).findByText("Your computer")).resolves.toBeVisible();
+  await findFastControl("button", "Connect my computer", menu);
+  await expect(
+    within(menu).findByRole("switch", { name: /cloud browser/i }),
+  ).resolves.toBeChecked();
+  click(await findFastControl("button", /^Remote access/, menu));
+  const remote = await screen.findByRole("dialog", { name: "Remote access" });
+  await expect(
+    within(remote).findByRole("combobox", { name: "SSH Build host" }),
+  ).resolves.toHaveTextContent(/On/);
+  click(await findFastControl("button", "Close", remote));
+  await waitFor(() => {
+    expect(trigger).toHaveFocus();
+  });
+  click(trigger);
+  click(await findFastControl("button", "Add connectors"));
+  const directory = await screen.findByRole("dialog", { name: "Connectors" });
+  await expect(
+    within(directory).findByRole("radio", { name: "Custom" }),
+  ).resolves.toBeEnabled();
+  expect(within(directory).getByRole("textbox")).toBeEnabled();
 });

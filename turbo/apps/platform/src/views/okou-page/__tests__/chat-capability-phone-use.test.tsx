@@ -58,7 +58,9 @@ async function visit(
     return respond(200, { selection });
   });
   context.mocks.api(phoneUseContract.grant, async ({ body, respond }) => {
-    authorized.resolve();
+    if (!authorized.settled()) {
+      authorized.resolve();
+    }
     await opts.hold;
     if (opts.deny) {
       return respond(403, {
@@ -170,4 +172,39 @@ test("chat-capability-phone-use-002 phone availability changes between connector
   click(trigger);
   await screen.findByText("No phones online");
   expect(closingRead.settled()).toBeFalsy();
+});
+
+test("chat-capability-phone-use-007 switching between two online phones replaces and then clears chat access", async () => {
+  const desk = device("Desk handset");
+  const travel = device("Travel handset");
+  await visit([desk, travel]);
+  const list = within(await screen.findByRole("list", { name: "Your phone" }));
+  const first = () => {
+    return list.getByRole("switch", { name: desk.displayName });
+  };
+  const second = () => {
+    return list.getByRole("switch", { name: travel.displayName });
+  };
+  async function expectSelection(selected: "desk" | "travel" | "none") {
+    await waitFor(() => {
+      for (const [handset, name] of [
+        [first(), "desk"],
+        [second(), "travel"],
+      ] as const) {
+        expect(handset).toBeEnabled();
+        expect(handset).not.toHaveAttribute("aria-readonly", "true");
+        expect(handset.getAttribute("aria-checked")).toBe(
+          String(name === selected),
+        );
+      }
+    });
+  }
+  expect(first()).not.toBeChecked();
+  expect(second()).not.toBeChecked();
+  await userEvent.click(first());
+  await expectSelection("desk");
+  await userEvent.click(second());
+  await expectSelection("travel");
+  await userEvent.click(second());
+  await expectSelection("none");
 });

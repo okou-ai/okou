@@ -1,6 +1,7 @@
-import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
+import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   browserTab,
@@ -85,4 +86,42 @@ test("browser-frames-recovery-013 A control loss during image-only recovery revo
   });
   expect(input()).toBeDisabled();
   await expect(screen.findByText(/Reconnecting/)).resolves.toBeVisible();
+});
+
+test("The other tab remains navigable after a failed in-flight text entry on the separate image channel", async () => {
+  const viewer = scopedViewer(context);
+  await viewer.start(true);
+  const { cdp } = viewer;
+  const original = viewer.control();
+  cdp.failNext("Input.insertText", "Held text rejected", -32_000);
+  const inputSession = cdp.pageSession(viewer.first);
+  const sent = cdp.holdNext("Input.insertText");
+  const text = "Rejected entry";
+  await userEvent.click(input());
+  fireEvent.input(input(), {
+    target: { value: text },
+    inputType: "insertText",
+    data: text,
+  });
+  await expect(sent.received).resolves.toContain("Held text rejected");
+  cdp.setAutoOpen(false);
+  viewer.disconnectImage();
+  await waitFor(() => {
+    expect(input()).toBeDisabled();
+  });
+  await sent.release();
+  await expect(screen.findByText(/Reconnecting/)).resolves.toBeVisible();
+  expect(screen.queryByText("Retry live image")).toBeNull();
+  cdp.setAutoOpen(true);
+  click(browserTab("Other")!);
+  cdp.openConnection();
+  await expectStreamingAt(nextUrl);
+  expect(cdp.requests).toContainEqual(
+    expect.objectContaining({
+      method: "Input.insertText",
+      sessionId: inputSession,
+      params: { text },
+    }),
+  );
+  expect(viewer.control()).toBe(original);
 });

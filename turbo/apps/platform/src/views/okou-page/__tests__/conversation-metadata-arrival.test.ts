@@ -1,6 +1,8 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -27,7 +29,7 @@ function usable(id: string) {
     return element;
   });
 }
-async function sideBySide() {
+async function sideBySide(failPrimary = false) {
   const canonical = context.mocks.deferred<void>();
   const gates = new Map(
     [left, right].map((t) => {
@@ -56,6 +58,14 @@ async function sideBySide() {
         gate.request.resolve(request.signal);
       }
       await gate.response.promise;
+      if (params.id === left.id && failPrimary && !canonical.settled()) {
+        return respond(503, {
+          error: {
+            code: "UNAVAILABLE",
+            message: "Quarterly metadata unavailable",
+          },
+        });
+      }
       const row = params.id === left.id ? left : right;
       return respond(200, {
         id: row.id,
@@ -113,6 +123,44 @@ test("chat-metadata-009 The primary and side composers become usable when their 
       if (!gate.response.settled()) {
         gate.response.resolve();
       }
+    }
+  }
+});
+
+test("chat-metadata-008 the side composer opens Connectors before canonical recovery of the failed primary", async () => {
+  const session = await sideBySide(true);
+  try {
+    await Promise.all([
+      session.left.request.promise,
+      session.right.request.promise,
+    ]);
+    session.left.response.resolve();
+    session.right.response.resolve();
+    const side = await usable(right.id);
+    const trigger = await within(side).findByLabelText("Connectors", {
+      selector: "button",
+    });
+    await userEvent.click(trigger);
+    const connectors = await screen.findByRole("dialog", {
+      name: "Connectors",
+    });
+    await expect(
+      findFastControl("button", "Add connectors", connectors),
+    ).resolves.toBeEnabled();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(connectors).not.toBeInTheDocument();
+    });
+    expect(pane(left.id)).toBeUndefined();
+    expect(screen.getAllByRole("region", { name: "Chat thread" })).toHaveLength(
+      1,
+    );
+    session.canonical.resolve();
+    await usable(left.id);
+    await expect(usable(right.id)).resolves.toBeVisible();
+  } finally {
+    if (!session.canonical.settled()) {
+      session.canonical.resolve();
     }
   }
 });

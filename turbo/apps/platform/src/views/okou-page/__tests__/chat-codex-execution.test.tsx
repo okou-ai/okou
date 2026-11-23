@@ -1,8 +1,10 @@
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { within } from "@testing-library/react";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { act, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { accountModels } from "./chat-account-model-fixture.ts";
 import { openModelPanel } from "./chat-model-panel-test-helpers.ts";
@@ -51,3 +53,71 @@ test.each([
     expect(slider).toHaveAttribute("aria-valuetext", "Max");
   },
 );
+
+test("chat-codex-execution-003 returning from Lab restores the saved Ultra effort when Codex becomes available", async () => {
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    selectedModel: sol,
+    reasoningEffort: "ultra",
+  });
+  const { rows } = accountModels(context, [sol], sol);
+  context.mocks.data.availableRunModels(
+    rows.map((row) => {
+      return {
+        ...row,
+        subscriptionOptions: {
+          ...row.subscriptionOptions!,
+          efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+        },
+      };
+    }),
+  );
+  let codexEnabled = false;
+  function savedLabSettings() {
+    const switches = {
+      [FeatureSwitchKey.Lab]: true,
+      [FeatureSwitchKey.CodexExecution]: codexEnabled,
+    };
+    return { switches, effectiveSwitches: switches };
+  }
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, savedLabSettings());
+  });
+  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
+    codexEnabled =
+      body.switches[FeatureSwitchKey.CodexExecution] ?? codexEnabled;
+    return respond(200, savedLabSettings());
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    auth: {
+      user: { id: "test-user-123", fullName: "Test User" },
+      organization: {
+        activeOrg: {
+          id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe",
+          name: "Lab workspace",
+        },
+        memberships: [{ id: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" }],
+      },
+    },
+  });
+  await screen.findByLabelText("GPT 6.1 Sol, Max");
+  click(await findFastControl("button", "Test User"));
+  click(await screen.findByText("Lab", { selector: '[role="menuitem"] *' }));
+  const control = await screen.findByRole("switch", {
+    name: /^Codex execution/i,
+  });
+  expect(control).not.toBeChecked();
+  click(control);
+  await waitFor(() => {
+    expect(control).toBeChecked();
+  });
+  act(() => {
+    history.back();
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(RUN_PATH);
+  });
+  await screen.findByLabelText("GPT 6.1 Sol, Ultra");
+});

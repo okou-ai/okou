@@ -1,4 +1,5 @@
 // @vitest-environment-options {"url":"https://app.okou.ai"}
+import { initSentry } from "../../../lib/sentry.ts";
 import userEvent from "@testing-library/user-event";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
@@ -74,4 +75,54 @@ test("chat-browser-shutdown-004 closing the sidebar releases the button on its o
     "mouseReleased",
   );
   expect(errors.reports).toStrictEqual([]);
+});
+
+test("chat-browser-shutdown-003 a rejected Shift release preserves the protocol reason after the sidebar disconnects", async () => {
+  initSentry();
+  const { close, cdp, errors } = await sidebar();
+  const user = userEvent.setup({ delay: null });
+  await user.click(screen.getByLabelText("Remote browser input"));
+  await user.keyboard("{Shift>}");
+  await waitFor(() => {
+    expect(cdp.inputForTarget("example-page").at(-1)?.params?.key).toBe(
+      "Shift",
+    );
+  });
+  cdp.failNext(
+    "Input.dispatchKeyEvent",
+    "Shift release denied by browser",
+    -32_001,
+  );
+  cdp.holdNext("Page.stopScreencast");
+  click(close);
+  await waitFor(() => {
+    expect(cdp.activeConnections()).toBe(0);
+  });
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeEnabled();
+  await waitFor(() => {
+    const cleanup = errors.reports.find((report) => {
+      return (
+        report.type === "exception" &&
+        report.error instanceof Error &&
+        report.error.message === "Original input cleanup is unconfirmed."
+      );
+    });
+    const messages: string[] = [];
+    let fault: unknown =
+      cleanup?.type === "exception" ? cleanup.error : undefined;
+    while (fault instanceof Error && fault.cause instanceof Error) {
+      messages.push(fault.message);
+      fault = fault.cause;
+    }
+    expect(messages).toContain("Original input retirement failed.");
+    expect(messages).toContain(
+      "Original cleanup receipt failed: Input.dispatchKeyEvent (CDP -32001).",
+    );
+    expect(fault).toMatchObject({
+      code: -32_001,
+      request: { method: "Input.dispatchKeyEvent", code: -32_001 },
+    });
+  });
 });

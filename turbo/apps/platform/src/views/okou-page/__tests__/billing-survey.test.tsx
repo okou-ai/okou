@@ -22,15 +22,18 @@ import {
 const context = testContext();
 const exhausted = "What's stopping you from upgrading today?",
   abandoned = "What stopped you from completing your purchase?";
-function surveyBoundary(answered = false) {
+function surveyBoundary(answered: boolean | "until-canceled-return" = false) {
   let recorded: BillingSurveyRequest | undefined;
   context.mocks.api(billingSurveyContract.status, ({ query, respond }) => {
     return respond(200, {
-      answered: answered
-        ? ["credits_exhausted"]
-        : recorded
-          ? [recorded.survey]
-          : [],
+      answered:
+        answered === true ||
+        (answered === "until-canceled-return" &&
+          query.checkoutReturn !== "canceled")
+          ? ["credits_exhausted"]
+          : recorded
+            ? [recorded.survey]
+            : [],
       creditsExhaustedReward: 200,
       abandonedCheckout:
         query.checkoutReturn === "canceled" && !recorded
@@ -154,4 +157,17 @@ test("billing-survey-006 An exhausted workspace can answer in chat while a separ
   click(await action(exhausted));
   await screen.findByRole("form", { name: exhausted });
   expect(screen.queryByRole("dialog", { name: abandoned })).toBeNull();
+});
+
+test("billing-survey-004 the restored plan chooser takes precedence once the checkout survey is available", async () => {
+  // Only the canceled-return response makes the chat's exhaustion question available.
+  const service = surveyBoundary("until-canceled-return");
+  await openChat("?settings=billing&billingView=plans&billing=canceled");
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  await screen.findByLabelText(exhausted, { selector: "button" });
+  expect(plans).toBeVisible();
+  expect(screen.queryByText(abandoned)).toBeNull();
+  click(await action("Close", plans));
+  await submitPriceFeedback();
+  expect(service.answer()).toStrictEqual(planAnswer());
 });

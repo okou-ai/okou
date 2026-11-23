@@ -49,3 +49,26 @@ test("chat-composer-slash-panel-023 Manage workflows opens the workflow director
     screen.findByText("Workflows", { selector: "h1,h2" }),
   ).resolves.toBeVisible();
 });
+
+test("Expanding the desktop list preserves the draft until its last workflow is selected", async () => {
+  const { panel, editor } = await slashMenu(context, { many: true });
+  const menu = within(panel);
+  const initial = Array.from(panel.querySelectorAll("button"), (el) => {
+    return el.textContent?.match(/\/daily-\d+/)?.[0];
+  }).filter(Boolean);
+  expect(initial).toContain("/daily-1");
+  expect(initial).not.toContain("/daily-9");
+  const draft = editor.textContent;
+  click(await findFastControl("button", "Show 8 more", panel));
+  const last = await findFastControl("button", /\/daily-12\b/, panel);
+  const nine = await findFastControl("button", /\/daily-9\b/, panel);
+  expect(
+    nine.compareDocumentPosition(menu.getByText("New workflow")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(menu.getByText("Manage workflows")).toBeVisible();
+  expect(editor.textContent).toBe(draft);
+  click(last);
+  await closed(panel);
+  expect(editor.textContent).toContain("/daily-12");
+});

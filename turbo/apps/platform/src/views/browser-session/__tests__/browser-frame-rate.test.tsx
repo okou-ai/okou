@@ -143,3 +143,44 @@ test("browser-frame-rate-003 Resizing a letterboxed image moves its FPS overlay 
   });
   expect(overlay).toHaveAttribute("x", "0");
 });
+
+test("The browser settings radio reflects the 128-by-48 FPS overlay and regains focus on Escape", async () => {
+  const { openPage } = arrangeNativePage(context);
+  await openPage();
+  await expectStreamingAt(example.url);
+  expect(screen.queryByLabelText(/ FPS$/)).toBeNull();
+  async function openRates() {
+    await userEvent.click(settings());
+    const row = await screen.findByText("FPS", {
+      selector: '[role="menuitem"]',
+    });
+    await userEvent.hover(row);
+    return (await screen.findByText("Off")).closest<HTMLElement>(
+      '[role="menuitemradio"]',
+    )!;
+  }
+  const initial = await openRates();
+  expect(initial).toBeChecked();
+  expect(initial.closest("[data-side]")).toHaveAttribute("data-side", "left");
+  await userEvent.click(
+    screen.getByText("On").closest('[role="menuitemradio"]'),
+  );
+  const chart = (await screen.findByLabelText("— FPS")).querySelector(
+    "foreignObject",
+  );
+  expect(chart).toHaveAttribute("width", "128");
+  expect(chart).toHaveAttribute("height", "48");
+  const off = await openRates();
+  expect(
+    screen.getByText("On").closest('[role="menuitemradio"]'),
+  ).toBeChecked();
+  await userEvent.click(off);
+  await waitFor(() => {
+    expect(screen.queryByLabelText(/ FPS$/)).toBeNull();
+  });
+  await expect(openRates()).resolves.toBeChecked();
+  await userEvent.keyboard("{Escape}{Escape}");
+  await waitFor(() => {
+    expect(settings()).toHaveFocus();
+  });
+});

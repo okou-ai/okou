@@ -15,8 +15,8 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
 const context = testContext();
 
-async function uploader() {
-  await setupPage({ context, path: RUN_PATH });
+async function uploader(host?: string) {
+  await setupPage({ context, path: RUN_PATH, host });
   await findComposerEditor();
   const picker = document.querySelector<HTMLInputElement>(
     "input[type=file][multiple]",
@@ -156,7 +156,7 @@ test("chat-continuity-uploads-013 a file exactly at the limit starts uploading a
   held.resolve();
 });
 
-async function multipartRecording() {
+async function multipartRecording(missing = false) {
   mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
   const block = 5 * 1024 * 1024,
     id = crypto.randomUUID(),
@@ -190,6 +190,11 @@ async function multipartRecording() {
   context.mocks.api(uploadsContract.completeMultipart, async ({ respond }) => {
     finalizing.resolve();
     await completed.promise;
+    if (missing) {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Multipart upload not found" },
+      });
+    }
     return respond(200, { id, url: meta.url });
   });
   const partRequests = new Map<string, EventTarget>();
@@ -295,4 +300,54 @@ test("chat-continuity-uploads-014 cancelling four active parts leaves the fifth 
       t.release.resolve();
     }
   }
+});
+
+test("A completed private upload remains removable in the chat composer", async () => {
+  mockChatLifecycle(context, { threadId: RUN_THREAD_ID });
+  const id = crypto.randomUUID();
+  const file = {
+    ...metadata(
+      { filename: "private.txt", contentType: "text/plain", size: 6 },
+      id,
+    ),
+    url: "https://app.okou.ai/artifacts/" + id.replaceAll("-", "") + ".txt",
+  };
+  const finalized = context.mocks.deferred<string>();
+  context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+    return respond(200, {
+      ...file,
+      uploadUrl: origin + "/private",
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(origin + "/private", () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    if (!finalized.settled()) {
+      finalized.resolve(body.id);
+    }
+    return respond(200, file);
+  });
+  await userEvent.upload(
+    await uploader("app.okou.ai"),
+    new File(["secret"], file.filename, { type: "text/plain" }),
+  );
+  const remove = await findFastControl("button", "Remove private.txt");
+  await expect(finalized.promise).resolves.toBe(id);
+  click(remove);
+  await waitFor(() => {
+    expect(remove).not.toBeInTheDocument();
+  });
+});
+
+test("The recording shows the storage finalization error after its parts have transferred", async () => {
+  const upload = await multipartRecording(true);
+  for (const transfer of upload.transfers) {
+    transfer.release.resolve();
+  }
+  await upload.finalizing.promise;
+  upload.completed.resolve();
+  await screen.findByText("Multipart upload not found");
+  expect(screen.queryByText(/failed to upload/i)).toBeNull();
 });

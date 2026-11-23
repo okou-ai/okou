@@ -164,3 +164,40 @@ test("chat-navigation-browser-025 The closed browser input stays retired and onl
     }),
   ).toBeFalsy();
 });
+
+test("chat-navigation-browser-017 Off persists across embedded viewer sizing menus", async () => {
+  const { open } = await openBrowserChat(context, "live");
+  click(open);
+  await remoteBrowserInput();
+  const settings = await screen.findByLabelText("Browser settings");
+  async function sizing() {
+    await userEvent.click(settings);
+    const windowSize = await screen.findByText("Window size", {
+      selector: '[role="menuitem"]',
+    });
+    await userEvent.hover(windowSize);
+    return (await screen.findByText("Off")).closest<HTMLElement>(
+      '[role="menuitemradio"]',
+    )!;
+  }
+  const off = await sizing();
+  expect(
+    screen.getByText("Follow panel").closest('[role="menuitemradio"]'),
+  ).toBeChecked();
+  await userEvent.click(off);
+  await waitFor(() => {
+    expect(settings).toHaveAttribute("aria-expanded", "false");
+  });
+  await expect(sizing()).resolves.toBeChecked();
+  await userEvent.click(settings);
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Off", { selector: '[role="menuitemradio"] *' }),
+    ).toBeNull();
+  });
+  await userEvent.click(settings);
+  await screen.findByText("Window size", { selector: '[role="menuitem"]' });
+  expect(
+    screen.queryByText("Off", { selector: '[role="menuitemradio"] *' }),
+  ).toBeNull();
+});

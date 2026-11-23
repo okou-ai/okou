@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -227,4 +228,59 @@ test("chat-composer-create-009 leaving Presentation mode sends the edited ordina
     ]),
   });
   expect(JSON.stringify(body)).not.toContain("additional_info");
+});
+
+test("chat-composer-create-002 queuing a presentation keeps the member's typed instruction separate from its slide settings", async () => {
+  const queued = context.mocks.deferred<unknown>();
+  const run = crypto.randomUUID();
+  const text = "Create a presentation. Keep these words in my message.";
+  mockChatLifecycle(context, {
+    threadId: RUN_THREAD_ID,
+    activeRunIds: [run],
+    chatEvents: [
+      {
+        role: "user",
+        content: "Review the initial outline",
+        runId: run,
+        createdAt: "2026-08-01T10:00:00Z",
+      },
+    ],
+    onQueuedEventAppend(body) {
+      queued.resolve(body.userMessage);
+    },
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
+  });
+  await screen.findByText("Review the initial outline");
+  const editor = await findComposerEditor();
+  await userEvent.click(editor);
+  await userEvent.keyboard("/");
+  const slash = await screen.findByTestId("slash-workflow-menu");
+  await userEvent.hover(
+    await within(slash).findByText("Templates", { exact: true }),
+  );
+  const slides = await findFastControl("button", /^Presentation\b/, slash);
+  await userEvent.hover(slides);
+  const cover = await findFastControl("button", /^Use (?:template )?./i, slash);
+  click(cover);
+  await findFastControl("button", "Remove Presentation");
+  await fill(editor, text);
+  click(await screen.findByLabelText("Slide count"));
+  click(await screen.findByText("20–24 slides"));
+  click(await findFastControl("button", "Send"));
+  await expect(queued.promise).resolves.toMatchObject({
+    parts: expect.arrayContaining([
+      { type: "text", text },
+      {
+        type: "additional_info",
+        text: expect.stringMatching(
+          /Create a presentation[\s\S]*Slide count: 20-24/i,
+        ),
+      },
+    ]),
+  });
+  await screen.findByText(text);
 });

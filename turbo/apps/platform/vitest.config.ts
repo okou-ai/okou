@@ -59,6 +59,7 @@ export default defineConfig({
   test: {
     css: {
       include: [
+        /src\/views\/css\/index\.css\?inline$/u,
         /(?:browser-session-card|chat-relation-title)-fixture\.css(?:\?.*)?$/u,
       ],
     },
