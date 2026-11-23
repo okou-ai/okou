@@ -84,11 +84,16 @@ pub(in crate::executor) async fn drain_stdout_to_file(
             report.chunk_truncated = true;
             warn!(path = %path.display(), "stdout stream chunk was truncated before host log write");
         }
-        if chunk.bytes.len() >= tail.len() {
-            tail.copy_from_slice(&chunk.bytes[chunk.bytes.len() - MEMORY_PUBLISHED_MARKER.len()..]);
+        if let Some(suffix) = chunk
+            .bytes
+            .last_chunk::<{ MEMORY_PUBLISHED_MARKER.len() }>()
+        {
+            tail = *suffix;
         } else {
             tail.rotate_left(chunk.bytes.len());
-            tail[MEMORY_PUBLISHED_MARKER.len() - chunk.bytes.len()..].copy_from_slice(&chunk.bytes);
+            for (retained, byte) in tail.iter_mut().rev().zip(chunk.bytes.iter().rev()) {
+                *retained = *byte;
+            }
         }
         if let Err(e) = file.write_all(&chunk.bytes).await {
             return Err(StdoutDrainError::Write { path, source: e });
