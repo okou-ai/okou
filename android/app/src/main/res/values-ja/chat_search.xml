@@ -4,4 +4,26 @@
     <string name="chat_search_clear">検索をクリア</string>
     <string name="chat_search_recent">最近のチャット</string>
     <string name="chat_search_empty">一致するチャットがありません</string>
+    <string name="chat_search_all">すべて</string>
+    <string name="chat_search_messages">メッセージ</string>
+    <string name="chat_search_workflows">ワークフロー</string>
+    <string name="chat_search_artifacts">成果物</string>
+    <string name="chat_search_recently_opened">最近開いたチャット</string>
+    <string name="chat_search_enter_keyword">キーワードを入力して検索</string>
+    <string name="chat_search_view_all">すべて表示</string>
+    <string name="chat_search_view_type">%1$sをすべて表示</string>
+    <string name="chat_search_all_types">すべての種類を検索</string>
+    <string name="chat_search_no_results">一致する結果はありません</string>
+    <string name="chat_search_no_messages">一致するメッセージはありません</string>
+    <string name="chat_search_no_workflows">一致するワークフローはありません</string>
+    <string name="chat_search_no_artifacts">一致する成果物はありません</string>
+    <string name="chat_search_online_only">オンラインにするとこの種類を検索できます</string>
+    <string name="chat_search_offline_titles">オフラインでは保存されたチャットのタイトルのみを検索します。</string>
+    <string name="chat_search_unavailable">一部の結果を読み込めませんでした</string>
+    <string name="chat_search_message_unavailable">このメッセージは表示できません</string>
+    <string name="chat_search_workflow_add_draft">新しいチャットの下書きに追加</string>
+    <string name="chat_search_workflow_details">ワークフローの詳細を表示</string>
+    <string name="chat_search_workflow_shadowed">このコマンドは非公開のワークフローで使用されています</string>
+    <string name="chat_search_artifact_preview">成果物のプレビュー</string>
+    <string name="chat_search_close_artifact_preview">成果物のプレビューを閉じる</string>
 </resources>

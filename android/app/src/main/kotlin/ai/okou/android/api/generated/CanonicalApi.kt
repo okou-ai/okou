@@ -258,6 +258,12 @@ internal interface CanonicalApi {
         @Path("id") `pathId`: String,
     ): Response<WorkflowAutomation>
 
+    @GET("/api/chat/search")
+    suspend fun `searchChatMessages`(
+        @Header("Authorization") token: String,
+        @Query("keyword") `queryKeyword`: String,
+    ): Response<ChatMessageSearchResponse>
+
     @GET("/api/chat-drafts/composer")
     suspend fun `workspaceDraft`(@Header("Authorization") token: String): Response<ComposerDraft>
 
