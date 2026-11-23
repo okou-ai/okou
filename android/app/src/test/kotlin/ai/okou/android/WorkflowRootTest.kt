@@ -39,6 +39,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
@@ -60,7 +61,7 @@ class WorkflowRootApplication : TestOkouApplication() {
     val gate = CountDownLatch(1)
 
     override fun onCreate() {
-        fixture = WorkflowApiFixture(chats = ComposerApiFixture().chats)
+        fixture = WorkflowApiFixture(chats = ComposerApiFixture(simulateHistory = false).chats)
         fixture.beforeCatalog = { gate.await() }
         chatService = fixture.service
         composerService = fixture.service
@@ -913,6 +914,7 @@ class WorkflowRootTest {
             query.performTextInput("checklist")
             val originalTitle = app.fixture.releaseTitle
             waitFor(originalTitle)
+            shadowOf(Looper.getMainLooper()).idleFor(1, TimeUnit.SECONDS)
             compose.waitUntil(5_000) { messagesRequested.count == 0L }
 
             val catalogRequested = CountDownLatch(1)
@@ -982,7 +984,8 @@ class WorkflowRootTest {
         waitFor("View workflow details")
 
         compose.runOnIdle { app.connectivity.value = false }
-        waitFor("Go online to search this type")
+        waitFor(app.getString(R.string.workflow_offline_cache))
+        compose.onNodeWithText(app.fixture.releaseTitle).assertIsDisplayed()
         compose.onNodeWithText("View workflow details").assertDoesNotExist()
         compose.runOnIdle { app.connectivity.value = true }
         waitFor(app.fixture.releaseTitle)

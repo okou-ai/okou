@@ -80,6 +80,13 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private data class SearchSources(
+    val chats: ChatListUiState,
+    val remote: WorkspaceSearchResults?,
+    val workflows: SearchRead<SearchWorkflowHit>?,
+    val recentlyOpened: List<String>,
+)
+
 @Composable
 internal fun WorkspaceSearchScreen(
     state: ChatListUiState,
@@ -94,6 +101,7 @@ internal fun WorkspaceSearchScreen(
     retry: () -> Unit,
     refreshChats: () -> Unit = {},
     remote: WorkspaceSearchResults? = null,
+    workflowResults: SearchRead<SearchWorkflowHit>? = null,
     recentlyOpened: List<String> = emptyList(),
     onOpenMessage: (SearchMessageHit) -> Unit = {},
     restoreResultFocus: Boolean = true,
@@ -102,14 +110,22 @@ internal fun WorkspaceSearchScreen(
     onMoreArtifacts: (String, String) -> Unit = { _, _ -> },
 ) {
     val query = search.query
-    val incomingResults = Triple(state, remote, recentlyOpened)
+    val incomingResults = SearchSources(state, remote, workflowResults, recentlyOpened)
     var presentedResults by
-        remember(search, state.offline, onOpenWorkflow != null, onOpenArtifact != null) {
+        remember(
+            search,
+            state.offline,
+            onOpenWorkflow != null,
+            onOpenArtifact != null,
+            remote?.messages == SearchRead.AccessLost,
+            remote?.artifacts == SearchRead.AccessLost,
+            workflowResults == SearchRead.AccessLost,
+        ) {
             mutableStateOf(incomingResults)
         }
     val composing = query.composition != null
     if (!composing) SideEffect { presentedResults = incomingResults }
-    val (resultList, resultRemote, resultRecents) =
+    val (resultList, resultRemote, resultWorkflows, resultRecents) =
         if (composing) presentedResults else incomingResults
     val colors = MaterialTheme.colorScheme
     val keyboard = LocalSoftwareKeyboardController.current
@@ -161,7 +177,10 @@ internal fun WorkspaceSearchScreen(
                     modifier =
                         fieldModifier
                             .focusRequester(inputFocus)
-                            .onFocusChanged { inputFocused = it.isFocused }
+                            .onFocusChanged {
+                                inputFocused = it.isFocused
+                                if (!it.isFocused) search.cancelComposition()
+                            }
                             .testTag("chat_search_query")
                             .semantics {
                                 contentDescription =
@@ -227,6 +246,7 @@ internal fun WorkspaceSearchScreen(
             resultList,
             search,
             resultRemote,
+            resultWorkflows,
             resultRecents,
             contentWidth.weight(1f),
             onOpen,
@@ -385,6 +405,7 @@ private fun SearchResults(
     list: ChatListUiState,
     search: ChatSearchState,
     remote: WorkspaceSearchResults?,
+    workflowResults: SearchRead<SearchWorkflowHit>?,
     recentlyOpened: List<String>,
     modifier: Modifier,
     onOpen: (ConfirmedChat) -> Unit,
@@ -433,15 +454,17 @@ private fun SearchResults(
                 (if (grouped) matches.take(GroupedSearchResultLimit + 1) else matches).toList()
             }
         }
-    val remoteActive = keyword.isNotEmpty() && !list.offline && remote != null
+    val remoteActive = keyword.isNotEmpty() && remote != null
     val currentRemote = remote?.takeIf { it.keyword == keyword }
     val messageRead =
         (currentRemote?.messages ?: SearchRead.Loading).takeIf {
             remoteActive && type.includes(WorkspaceSearchType.Messages)
         }
     val workflowRead =
-        (currentRemote?.workflows ?: SearchRead.Loading).takeIf {
-            remoteActive && onOpenWorkflow != null && type.includes(WorkspaceSearchType.Workflows)
+        workflowResults.takeIf {
+            keyword.isNotEmpty() &&
+                onOpenWorkflow != null &&
+                type.includes(WorkspaceSearchType.Workflows)
         }
     val artifactRead =
         (currentRemote?.artifacts ?: SearchRead.Loading).takeIf {
@@ -459,7 +482,9 @@ private fun SearchResults(
         }
     val needsMessageChats =
         remember(messageHits, chatsById) { messageHits.any { it.threadId !in chatsById } }
-    LaunchedEffect(keyword, messageRead) { if (needsMessageChats) refreshChats() }
+    LaunchedEffect(keyword, messageRead, list.offline) {
+        if (needsMessageChats && !list.offline) refreshChats()
+    }
     val workflows = (workflowRead as? SearchRead.Ready)?.rows.orEmpty()
     val artifactPage = artifactRead as? SearchRead.Ready
     val artifacts = artifactPage?.rows.orEmpty()
@@ -521,37 +546,62 @@ private fun SearchResults(
     val waitingForList =
         needsChatList && list.confirmedAt == null && !list.offline && listFailure == null ||
             needsMessageChats && list.listPhase == ChatReadPhase.Loading
-    val retrying = SearchRead.Retrying in reads
-    val pending = waitingForList || reads.any { it.isPending }
+    val pending = waitingForList || !list.offline && reads.any { it.isPending }
     fun waitingForResult(key: String): Boolean =
         when (searchResultType(key)) {
             WorkspaceSearchType.Chats -> showChats && waitingForList
             WorkspaceSearchType.Messages ->
-                messageRead.isPending || needsMessageChats && waitingForList
-            WorkspaceSearchType.Workflows -> workflowRead.isPending
-            WorkspaceSearchType.Artifacts -> artifactRead.isPending
+                !list.offline && messageRead.isPending || needsMessageChats && waitingForList
+            WorkspaceSearchType.Workflows -> !list.offline && workflowRead.isPending
+            WorkspaceSearchType.Artifacts -> !list.offline && artifactRead.isPending
             WorkspaceSearchType.All -> pending
         }
-    val unavailableType =
-        type == WorkspaceSearchType.Artifacts && onOpenArtifact == null ||
-            type == WorkspaceSearchType.Workflows && onOpenWorkflow == null
-    val unavailableOffline = list.offline && !showChats
+    val confirmedChats = list.confirmedAt != null
+    val chatRefreshFailed = list.sustainedRefreshFailure || canRetryList
+    val missingMessageChats = needsMessageChats && (listFailure != null || !waitingForList)
+    val messageFailure = messageRead.hasFailure || missingMessageChats
+    val workflowFailure =
+        workflowRead.hasFailure || onOpenWorkflow == null && type == WorkspaceSearchType.Workflows
+    val artifactFailure =
+        artifactRead.hasFailure ||
+            moreArtifactsFailed ||
+            onOpenArtifact == null && type == WorkspaceSearchType.Artifacts
+    val hasRemoteData = reads.any { it is SearchRead.Ready }
     val status =
         when {
-            unavailableOffline -> R.string.chat_search_online_only
-            unavailableType && keyword.isNotEmpty() -> R.string.chat_search_unavailable
-            showChats && list.confirmedAt == null && list.offline ->
+            list.offline && !showChats && !hasRemoteData -> R.string.chat_search_online_only
+            showChats && !confirmedChats && list.offline && !hasRemoteData ->
                 R.string.chat_list_load_when_online
-            needsChatList && list.confirmedAt == null && listFailure != null ->
+            grouped &&
+                (messageFailure ||
+                    workflowFailure ||
+                    artifactFailure ||
+                    listFailure != null ||
+                    chatRefreshFailed ||
+                    list.offline) ->
+                when {
+                    confirmedChats && !hasRemoteData && list.offline ->
+                        R.string.chat_search_offline_titles
+                    confirmedChats && !hasRemoteData -> R.string.chat_search_partial_local
+                    else -> R.string.chat_search_unavailable
+                }
+            needsChatList && !confirmedChats && listFailure != null ->
                 R.string.chat_list_first_load_failed
-            retrying ||
-                SearchRead.Failed in reads ||
-                moreArtifactsFailed && type == WorkspaceSearchType.Artifacts ->
-                R.string.chat_search_unavailable
-            needsChatList && (list.sustainedRefreshFailure || canRetryList) ->
-                R.string.chat_list_refresh_failed
-            needsMessageChats && (listFailure != null || !waitingForList) ->
-                R.string.chat_search_unavailable
+            showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
+            grouped -> null
+            keyword.isEmpty() -> null
+            type == WorkspaceSearchType.Messages && (messageFailure || list.offline) ->
+                if (messages.isNotEmpty()) R.string.chat_search_saved_results
+                else R.string.chat_search_messages_failed
+            type == WorkspaceSearchType.Workflows && (workflowFailure || list.offline) ->
+                when {
+                    workflowRead !is SearchRead.Ready -> R.string.workflow_load_failed
+                    list.offline -> R.string.workflow_offline_cache
+                    else -> R.string.workflow_refresh_failed
+                }
+            type == WorkspaceSearchType.Artifacts && (artifactFailure || list.offline) ->
+                if (artifacts.isNotEmpty()) R.string.chat_search_saved_results
+                else R.string.chat_search_artifacts_failed
             else -> null
         }
     val showSkeleton = rememberChatWaitIndicator(pending && items.isEmpty() && status == null)
@@ -669,7 +719,11 @@ private fun SearchResults(
             }
         }
         if (
-            type == WorkspaceSearchType.Artifacts && artifactCursor != null && !moreArtifactsFailed
+            type == WorkspaceSearchType.Artifacts &&
+                artifactCursor != null &&
+                !moreArtifactsFailed &&
+                !artifactPage.refreshFailed &&
+                !list.offline
         ) {
             item(key = "search_more_artifacts") {
                 LaunchedEffect(keyword, artifactCursor) { onMoreArtifacts(keyword, artifactCursor) }
@@ -700,21 +754,6 @@ private fun SearchResults(
                         onBroaden.takeIf { !list.offline && type != WorkspaceSearchType.All },
                     )
                 }
-            }
-        }
-        if (
-            list.offline &&
-                list.confirmedAt != null &&
-                type == WorkspaceSearchType.All &&
-                keyword.isNotEmpty()
-        ) {
-            item(key = "search_offline_scope") {
-                Text(
-                    stringResource(R.string.chat_search_offline_titles),
-                    Modifier.padding(12.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = searchSecondaryStyle(),
-                )
             }
         }
     }
