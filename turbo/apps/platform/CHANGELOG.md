@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1167.0](https://github.com/okou-ai/okou/compare/app-v0.1166.0...app-v0.1167.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+    * @okouai/core bumped to 8.862.0
+    * @okouai/ui bumped to 1.21.105
+
 ## [0.1166.0](https://github.com/okou-ai/okou/compare/app-v0.1165.5...app-v0.1166.0) (2026-11-23)
 
 

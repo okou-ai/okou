@@ -9,6 +9,16 @@ import org.junit.Test
 
 class HistoryProjectionTest {
     @Test
+    fun searchTargetsTheDeliveredMessageWhenAnEarlierPromptIsStillQueued() {
+        val queued = input("queued", 1, run = null)
+        val delivered = input("delivered", 2)
+        val history = transcript(queued, delivered)
+
+        assertNull(history.searchMessage(1))
+        assertEquals(delivered.id, history.searchMessage(2)?.id)
+    }
+
+    @Test
     fun runFailureReasonsIncludingFutureTokensSurviveHistory() {
         for (reason in
             listOf(

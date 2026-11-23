@@ -1,6 +1,7 @@
 import { googleWorkspaceEventSubscriptionStates } from "@okouai/db/schema/google-workspace-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, sql } from "drizzle-orm";
+import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
 
 export interface GoogleMeetQueueSource {
   readonly automationId: string;
@@ -22,7 +23,7 @@ export class GoogleMeetAutomationSourceChangedError extends Error {
 
 /** Queue admission gated by the current consumer and subscription rows. */
 export function googleMeetQueueAdmissionSql(source: GoogleMeetQueueSource) {
-  return sql`SELECT 1 WHERE EXISTS (
+  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(source, source.connectorSourceId)} AND EXISTS (
       SELECT 1 FROM ${workflowAutomations}
       WHERE ${and(
         eq(workflowAutomations.id, source.automationId),

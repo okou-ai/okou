@@ -6,10 +6,15 @@ import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-threa
 
 import { command } from "ccstate";
 import { and, eq, sql, type SQL } from "drizzle-orm";
+import { QueryBuilder } from "drizzle-orm/pg-core";
 import { object, uuid } from "zod";
 
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { rawSqlReadDb$ } from "../external/db";
+import {
+  connectorAccountAllowedSql,
+  memberConnectorAccountAccessEnabledSql,
+} from "./member-connector-account-access";
 
 interface WorkflowAutomationAccountScope {
   readonly orgId: string;
@@ -42,29 +47,39 @@ export const readWorkflowAutomationConnectorAccount$ = command(
   },
 );
 
-export function workflowAutomationSelectedAccountReadPlan(
+export function workflowAutomationConnectorAfterDefaultChangeSql(
   args: WorkflowAutomationAccountScope,
+  connectionId: string,
 ) {
-  return {
-    columns: { connectorId: chatThreadConnectorSelections.connectorId },
-    from: workflowUserAutomationThreads,
-    join: {
-      table: chatThreadConnectorSelections,
-      on: and(
+  const nextDefault = sql`${connectionId}::uuid`;
+  const saved = new QueryBuilder()
+    .select({ connectorId: chatThreadConnectorSelections.connectorId })
+    .from(workflowUserAutomationThreads)
+    .innerJoin(
+      chatThreadConnectorSelections,
+      and(
         eq(
           chatThreadConnectorSelections.chatThreadId,
           workflowUserAutomationThreads.chatThreadId,
         ),
         eq(chatThreadConnectorSelections.connectorSlug, args.connectorSlug),
       ),
-    },
-    where: and(
-      eq(workflowUserAutomationThreads.orgId, args.orgId),
-      eq(workflowUserAutomationThreads.userId, args.userId),
-      eq(workflowUserAutomationThreads.workflowId, args.workflowId),
-    ),
-    limit: 1,
-  };
+    )
+    .where(
+      and(
+        eq(workflowUserAutomationThreads.orgId, args.orgId),
+        eq(workflowUserAutomationThreads.userId, args.userId),
+        eq(workflowUserAutomationThreads.workflowId, args.workflowId),
+      ),
+    )
+    .limit(1);
+  return sql`SELECT CASE WHEN ${memberConnectorAccountAccessEnabledSql(args)}
+    THEN (${workflowAutomationConnectorSelectionSql({
+      ...args,
+      workflowId: sql`${args.workflowId}`,
+      nextDefault,
+    })})
+    ELSE coalesce((${saved}), ${nextDefault}) END AS "connectorId"`;
 }
 
 export function workflowAutomationConnectorSelectionSql(args: {
@@ -72,7 +87,12 @@ export function workflowAutomationConnectorSelectionSql(args: {
   readonly userId: string;
   readonly workflowId: SQL;
   readonly connectorSlug: string;
+  readonly nextDefault?: SQL;
 }) {
+  const defaultOrder =
+    args.nextDefault === undefined
+      ? connectors.isDefault
+      : eq(connectors.id, args.nextDefault);
   return sql`SELECT (
       SELECT ${connectors.id}
       FROM ${connectors}
@@ -88,9 +108,9 @@ export function workflowAutomationConnectorSelectionSql(args: {
         AND ${chatThreadConnectorAccessOverrides.connectorId} = ${connectors.id}
       WHERE ${connectors.orgId} = ${args.orgId} AND ${connectors.userId} = ${args.userId}
         AND ${connectors.connectorSlug} = ${args.connectorSlug}
-        AND coalesce(${chatThreadConnectorAccessOverrides.enabled}, ${connectors.defaultEnabledForChats})
+        AND ${connectorAccountAllowedSql(args)}
       ORDER BY (${connectors.id} = ${chatThreadConnectorSelections.connectorId}) DESC NULLS LAST,
-        ${connectors.isDefault} DESC, ${connectors.createdAt}, ${connectors.id}
+        (${defaultOrder}) DESC NULLS LAST, ${connectors.createdAt}, ${connectors.id}
       LIMIT 1
     ) AS "connectorId"`;
 }

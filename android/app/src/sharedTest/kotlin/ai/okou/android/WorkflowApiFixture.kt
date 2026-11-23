@@ -9,6 +9,7 @@ import ai.okou.android.chat.plainDraftDocument
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.mockwebserver.MockResponse
@@ -22,8 +23,10 @@ internal const val WORKFLOW_SOURCE_RUN = "b1111111-1111-4111-8111-111111111111"
 internal const val WORKFLOW_NO_SOURCE_RUN = "b2222222-2222-4222-8222-222222222222"
 private const val WORKFLOW_FEEDBACK = "a3333333-3333-4333-8333-333333333333"
 
-internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCloseable {
-    val chats = ChatListApiFixture()
+internal class WorkflowApiFixture(
+    private val chinese: Boolean = false,
+    val chats: ChatListApiFixture = ChatListApiFixture(),
+) : AutoCloseable {
     val service = chats.service
     val requests = CopyOnWriteArrayList<RecordedRequest>()
     val active = AtomicBoolean(false)
@@ -84,7 +87,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         if (chinese) "1. 核对发布文案和产品说明。\n2. 查看官网、邮件和社区素材，列出缺项。\n3. 汇总负责人、发布时间和要确认的阻塞项。"
         else
             "Review launch copy and product notes.\nCheck the website, email, and community assets."
-    val releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
+    @Volatile var releaseTitle = if (chinese) "发布检查流程" else "Release checklist"
     val sharedTitle = if (chinese) "发布后跟进" else "Release follow-up"
     private val feedbackTitle = if (chinese) "客户反馈汇总" else "Customer feedback"
     val releasePurpose =
@@ -92,7 +95,8 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
     val ruleTitle = if (chinese) "工作日 09:00" else "Weekdays at 09:00"
 
     init {
-        chats.commandResponse = ::respond
+        val composerResponse = chats.commandResponse
+        chats.commandResponse = { request -> respond(request) ?: composerResponse(request) }
     }
 
     private fun respond(request: RecordedRequest): MockResponse? {
@@ -113,7 +117,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             "/api/workflows" -> {
                 assertNull(request.requestUrl?.query)
                 beforeCatalog()
-                jsonResponse("[${release()},${shared()},${feedback()}]")
+                jsonResponse("[${release()},${shared()},${feedback()},${official()}]")
             }
             "/api/workflows/$WORKFLOW_RELEASE" -> {
                 if (request.method == "GET") beforeReleaseDetailRead()
@@ -127,6 +131,7 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                             )
                             .setResponseCode(409)
                     val body = Json.parseToJsonElement(request.body.clone().readUtf8()).jsonObject
+                    body["displayName"]?.jsonPrimitive?.content?.let { releaseTitle = it }
                     body["instruction"]?.jsonPrimitive?.content?.let { instruction = it }
                 }
                 jsonResponse(detail(release(), instruction, "[${releaseRules().joinToString()}]"))
@@ -214,14 +219,15 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
                         return MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
                     jsonResponse(plainDraftDocument(previousDraft).toString())
                 } else {
-                    previousDraft =
+                    val document =
                         Json.parseToJsonElement(request.body.clone().readUtf8())
                             .jsonObject["draftUserMessage"]
-                            ?.jsonObject
-                            ?.let { document -> document.toString() }
-                            ?.let { document ->
+                            as? JsonObject
+                    previousDraft =
+                        document
+                            ?.let {
                                 // Read through the same wire format as a normal draft response.
-                                Json.decodeFromString<DraftFixtureMessage>(document)
+                                Json.decodeFromString<DraftFixtureMessage>(it.toString())
                                     .parts
                                     .single()
                                     .text
@@ -257,6 +263,17 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
             else "Summarize today's feedback and track action items.",
         )
 
+    private fun official() =
+        summary(
+            "a4444444-4444-4444-8444-444444444444",
+            "launch-official",
+            "Official launch workflow",
+            "Installed workflow",
+            manage = false,
+            official =
+                """{"definitionName":"launch-official","installationState":"installed","definitionLifecycle":"active","readOnly":true}""",
+        )
+
     private fun summary(
         id: String,
         name: String,
@@ -265,8 +282,9 @@ internal class WorkflowApiFixture(private val chinese: Boolean = false) : AutoCl
         visibility: String = "private",
         manage: Boolean = true,
         owner: String = "user-a",
+        official: String = "null",
     ) =
-        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"$owner","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":null,"shadowedBy":null,"importSource":null}"""
+        """{"id":"$id","name":"$name","displayName":"$title","description":"$purpose","visibility":"$visibility","ownerUserId":"$owner","createdAt":"$CHAT_DATE","canManage":$manage,"canPublish":$manage,"official":$official,"shadowedBy":null,"importSource":null}"""
 
     private fun detail(summary: String, instruction: String, automations: String) =
         summary.dropLast(1) +
