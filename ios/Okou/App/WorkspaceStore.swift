@@ -280,6 +280,7 @@ final class WorkspaceStore {
     creationTask?.cancel()
     newChatSubmission?.close()
     newChatSubmission = nil
+    forYou.closeDirection()
     conversations.close()
     modelStore.close()
     composerWorkflows.close()

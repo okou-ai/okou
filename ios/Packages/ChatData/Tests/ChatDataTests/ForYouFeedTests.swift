@@ -28,9 +28,23 @@ final class ForYouFeedTests: XCTestCase {
       """#
     let card = try JSONDecoder().decode(ForYouCard.self, from: Data(json.utf8))
     XCTAssertEqual(card.snapshot?["state"]?["futureKey"], .number(42))
-    let draft = try card.directionDraft(note: "Summarize it")
+    let reference = MessageJSON.object([
+      "type": .string("chat_thread"), "threadId": .string("ref"),
+      "titleSnapshot": .string("Budget")
+    ])
+    let extra = ChatAttachment(
+      id: "file-2", filename: "notes.txt", contentType: "text/plain",
+      size: 20, url: "https://example.com/notes.txt")
+    let note = [
+      MessageJSON.object(["type": .string("text"), "text": .string("Summarize ")]), reference
+    ]
+    let edited = ComposerDraft(
+      document: ChatDraftDocument(parts: note),
+      attachments: [.init(attachment: extra, url: "https://example.com/notes.txt")])
+    let draft = try card.directionDraft(note: edited)
     let parts = try XCTUnwrap(draft.draftUserMessage?.parts)
-    XCTAssertEqual(parts.map { $0["type"]?.string }, ["additional_info", "feedback", "file"])
+    XCTAssertEqual(
+      parts.map { $0["type"]?.string }, ["additional_info", "feedback", "file", "file"])
     let text = try XCTUnwrap(parts[0]["text"]?.string)
     let prefix = "Okou suggestion context v1:\n"
     XCTAssertTrue(text.hasPrefix(prefix))
@@ -41,8 +55,14 @@ final class ForYouFeedTests: XCTestCase {
     XCTAssertEqual(parts[1]["quote"], .string("Original background"))
     XCTAssertEqual(
       parts[1]["note"],
-      .array([.object(["type": .string("text"), "text": .string("Summarize it")])]))
-    XCTAssertEqual(draft.draftAttachments?.first?.id, "file-1")
+      .array(note))
+    XCTAssertEqual(draft.draftAttachments?.map(\.id), ["file-1", "file-2"])
+    let blank = ChatDraftDocument(parts: [
+      .object(["type": .string("text"), "text": .string("   ")])
+    ])
+    XCTAssertThrowsError(
+      try card.directionDraft(
+        note: ComposerDraft(document: blank, attachments: edited.draftAttachments)))
   }
 
   func testNewFeedAndEventTypesCanBeSkipped() throws {

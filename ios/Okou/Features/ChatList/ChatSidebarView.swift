@@ -205,7 +205,7 @@ struct ChatSidebarView: View {
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
     .fullScreenCover(isPresented: $showsForYou) {
-      ForYouView(store: store.forYou) {
+      ForYouView(workspace: store) {
         showForYouChat()
       }
     }

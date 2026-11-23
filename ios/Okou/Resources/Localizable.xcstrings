@@ -1,6 +1,125 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "What do you have in mind?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "你有什么想法？" }
+        }
+      }
+    },
+    "Ask a question or describe what you’d like to do.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "提个问题，或说说你想做什么。" }
+        }
+      }
+    },
+    "View source": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看来源" }
+        }
+      }
+    },
+    "Prepare a draft in the existing chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "在原对话中准备草稿" }
+        }
+      }
+    },
+    "Send to a new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "发送到新对话" }
+        }
+      }
+    },
+    "How is this suggestion?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这条建议怎么样？" }
+        }
+      }
+    },
+    "Noted — this is already done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记下，这件事已经处理了" }
+        }
+      }
+    },
+    "Noted — this is not planned": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记下，这件事暂无计划" }
+        }
+      }
+    },
+    "Noted — please don’t nudge me about this again": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已记录，请不要再催这件事" }
+        }
+      }
+    },
+    "You’ll see fewer suggestions like this.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "会少推荐类似的建议" }
+        }
+      }
+    },
+    "Sent to the chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送到该聊天" }
+        }
+      }
+    },
+    "All caught up": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "全部处理完了" }
+        }
+      }
+    },
+    "Okou will bring the next thing here when there is something worth your time.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "有值得你花时间的事时，Okou 会把下一件带到这里。" }
+        }
+      }
+    },
+    "Okou’s picks to handle": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "Okou 为你挑出的待处理事项" }
+        }
+      }
+    },
+    "Next suggestion": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "下一条建议" }
+        }
+      }
+    },
+    "Previous suggestion": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "上一条建议" }
+        }
+      }
+    },
+    "Show suggestion %lld of %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "查看第 %1$lld 条建议（共 %2$lld 条）" }
+        }
+      }
+    },
     "For you": {
       "localizations": {
         "zh-Hans": {
@@ -43,83 +162,6 @@
         }
       }
     },
-    "Send in a new chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "新建聊天并发送" }
-        }
-      }
-    },
-    "Edit draft in original chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "去原聊天编辑草稿" }
-        }
-      }
-    },
-    "Give your own direction": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "说说你的想法" }
-        }
-      }
-    },
-    "Source chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "来源聊天" }
-        }
-      }
-    },
-    "Send in the original chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "发送到原聊天" }
-        }
-      }
-    },
-    "No new suggestions": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "暂时没有新推荐" }
-        }
-      }
-    },
-    "Previous card": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "上一张" }
-        }
-      }
-    },
-    "Next card": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "下一张" }
-        }
-      }
-    },
-    "Your direction": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "你的想法" }
-        }
-      }
-    },
-    "What would you like Okou to do?": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "你想让 Okou 做什么？" }
-        }
-      }
-    },
-    "Feedback saved": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已记录反馈" }
-        }
-      }
-    },
     "Suggestion dismissed": {
       "localizations": {
         "zh-Hans": {
@@ -131,13 +173,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "已发送到新聊天" }
-        }
-      }
-    },
-    "Direction sent": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已发送你的想法" }
         }
       }
     },
@@ -166,13 +201,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "请重试上一个操作，确认处理结果。" }
-        }
-      }
-    },
-    "View chat": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "查看聊天" }
         }
       }
     },

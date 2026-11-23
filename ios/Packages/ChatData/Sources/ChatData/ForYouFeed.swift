@@ -64,33 +64,54 @@ public struct ForYouCard: Decodable, Equatable, Sendable, Identifiable {
     }
   }
 
-  public func directionDraft(note: String) throws -> ComposerDraft {
+  /// The visible editor owns just the member's note. The original background and
+  /// its signed file list remain immutable, including when the member adds files.
+  public func directionDraft(note: ComposerDraft) throws -> ComposerDraft {
     guard case .suggestion(let suggestion) = content, let customContextVersion,
       let original = suggestion.customOption.draft.draftUserMessage,
-      let quote = original.parts.first(where: { $0["type"]?.string == "feedback" }),
-      case .object(var feedback) = quote,
-      !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      case .object(var feedback) = original.parts.first(where: { $0["type"]?.string == "feedback" }),
+      let document = note.draftUserMessage
     else { throw APIClientError.incompatibleData }
-    let files = suggestion.customOption.draft.draftAttachments ?? []
+    let noteParts = document.parts.filter { $0["type"]?.string != "file" }
+    guard
+      noteParts.allSatisfy({
+        ["text", "chat_thread", "template"].contains($0["type"]?.string ?? "")
+      }),
+      noteParts.contains(where: {
+        $0["type"]?.string != "text"
+          || !($0["text"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      })
+    else { throw APIClientError.incompatibleData }
+    let backgroundFiles = suggestion.customOption.draft.draftAttachments ?? []
+    let backgroundIDs = backgroundFiles.map(\.id)
     let context = MessageJSON.object([
       "suggestionId": .string(id), "draftId": .string(id), "optionId": .string("custom"),
       "titleSnapshot": .string(suggestion.title),
       "rationaleSnapshot": .string(suggestion.rationale),
       "contextVersion": .string(customContextVersion),
-      "attachmentIds": .array(files.map { .string($0.id) })
+      "attachmentIds": .array(backgroundIDs.map(MessageJSON.string))
     ])
     guard let serialized = String(data: try JSONEncoder().encode(context), encoding: .utf8) else {
       throw APIClientError.incompatibleData
     }
-    let text = "Okou suggestion context v1:\n" + serialized
-    feedback["note"] = .array([.object(["type": .string("text"), "text": .string(note)])])
-    let parts: [MessageJSON] = [
-      .object(["type": .string("additional_info"), "text": .string(text)]), .object(feedback)
+    feedback["note"] = .array(noteParts)
+    var parts: [MessageJSON] = [
+      .object([
+        "type": .string("additional_info"),
+        "text": .string("Okou suggestion context v1:\n" + serialized)
+      ]),
+      .object(feedback)
     ]
+    let files =
+      backgroundFiles + (note.draftAttachments ?? []).filter { !backgroundIDs.contains($0.id) }
+    parts += files.map { file in
+      .object([
+        "type": .string("file"), "fileId": .string(file.id),
+        "filenameSnapshot": .string(file.filename), "contentType": .string(file.contentType)
+      ])
+    }
     return ComposerDraft(
-      document: ChatDraftDocument(
-        parts: parts + original.parts.filter { $0["type"]?.string == "file" }),
-      attachments: files)
+      document: ChatDraftDocument(parts: parts), attachments: files.isEmpty ? nil : files)
   }
 }
 

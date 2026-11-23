@@ -21,7 +21,11 @@ final class ForYouStore {
   private struct Selection {
     let cardID: String
     let optionID: String
-    let note: String
+    let direction: ComposerDraft?
+    var model: ChatModelSelection?
+    var effort: String?
+    var options: ChatComposerOptions?
+    var computerAccess: ChatComputerAccess?
     let newThreadID = UUID().uuidString
     let messageID = UUID().uuidString
     let sortID = UUID().uuidString
@@ -46,7 +50,9 @@ final class ForYouStore {
   private(set) var busy = false
   var error: String?
   var notice: Notice?
-  var directionNotes: [String: String] = [:]
+  private(set) var direction: ForYouDirection?
+  private var artworkByID: [String: String] = [:]
+
   var current: ForYouCard? { cards.indices.contains(position) ? cards[position] : nil }
   var summary: Computed<Task<Bool, Error>> { resources.forYouSummary }
 
@@ -66,6 +72,11 @@ final class ForYouStore {
     do {
       let result = try await resources.loadForYou()
       try Task.checkCancellation()
+      if let direction, !result.contains(where: { $0.id == direction.cardID }) { closeDirection() }
+      let illustrations = ["ForYouReader", "ForYouBridge", "ForYouWay"]
+      for card in result where artworkByID[card.id] == nil {
+        artworkByID[card.id] = illustrations[artworkByID.count % illustrations.count]
+      }
       cards = result
       position = previous.flatMap { id in result.firstIndex { $0.id == id } } ?? 0
       loaded = true
@@ -74,10 +85,12 @@ final class ForYouStore {
     } catch { self.error = error.localizedDescription }
   }
 
+  func illustration(for card: ForYouCard) -> String? { artworkByID[card.id] }
+
   func move(_ offset: Int) {
-    let next = position + offset
-    guard !busy, cards.indices.contains(next) else { return }
-    position = next
+    guard !busy, cards.count > 1 else { return }
+    direction?.composer.editor.dismissKeyboard()
+    position = (position + offset + cards.count) % cards.count
     error = nil
   }
 
@@ -107,8 +120,7 @@ final class ForYouStore {
         return
       }
       notice = Notice(
-        text: reason == nil
-          ? String(localized: "Suggestion dismissed") : String(localized: "Feedback saved"),
+        text: reason?.confirmation ?? String(localized: "Suggestion dismissed"),
         undo: Undo(card: card, position: position, feedbackID: id))
       remove(card)
       feedbackID = nil
@@ -177,21 +189,47 @@ final class ForYouStore {
     return openChat && error == nil
   }
 
-  func sendDirection(_ card: ForYouCard, note: String) async -> Bool {
-    guard case .suggestion(let suggestion) = card.content else { return false }
-    var sent = false
+  func openDirection(_ card: ForYouCard) async {
+    guard case .suggestion(let suggestion) = card.content, let workspace else { return }
     await perform {
-      let draft = try card.directionDraft(note: note)
-      let attempt = try beginSelection(card, optionID: "custom", note: note)
-      try await send(draft, target: suggestion.customOption.threadId, attempt: attempt)
-      notice = Notice(
-        text: String(localized: "Direction sent"), threadID: selections[card.id]?.threadID)
-      directionNotes[card.id] = nil
-      // Accepting the annotated chat event atomically consumes the custom direction.
-      remove(card)
-      sent = true
+      let target = try await availableThread(suggestion.customOption.threadId)
+      try Task.checkCancellation()
+      guard current?.id == card.id, !workspace.isClosed else { return }
+      closeDirection()
+      direction = ForYouDirection(
+        cardID: card.id, threadID: target, commands: commands, workspace: workspace)
     }
-    return sent
+  }
+
+  func closeDirection() {
+    direction?.close()
+    direction = nil
+  }
+
+  func sendDirection(_ card: ForYouCard, from editor: ForYouDirection) async {
+    guard direction === editor, current?.id == card.id, editor.composer.attachments.isReady,
+      editor.composer.canSend, editor.models.canSend, let workspace
+    else { return }
+    await perform {
+      let draft = try card.directionDraft(note: editor.composer.value)
+      let attempt = try beginSelection(
+        card, optionID: "custom", direction: draft, models: editor.models)
+      let target = editor.models.threadID
+      let workflows = try await workspace.composerWorkflows.prepareUse(
+        in: editor.composer.text,
+        document: editor.composer.value.draftUserMessage)
+      try Task.checkCancellation()
+      editor.models.isSending = true
+      defer { editor.models.isSending = false }
+      let destination = try await send(draft, target: target, attempt: attempt)
+      workspace.composerWorkflows.recordUse(workflows)
+      notice = Notice(
+        text: destination == target
+          ? String(localized: "Sent to the chat") : String(localized: "Sent to a new chat"),
+        threadID: destination)
+      // Accepting the annotated message consumes the card on the server.
+      remove(card)
+    }
   }
 
   func open(_ id: String) async -> Bool {
@@ -201,38 +239,53 @@ final class ForYouStore {
     return opened
   }
 
-  private func beginSelection(_ card: ForYouCard, optionID: String, note: String = "") throws
+  private func beginSelection(
+    _ card: ForYouCard, optionID: String, direction: ComposerDraft? = nil,
+    models: ChatModelSelectionStore? = nil
+  ) throws
     -> Selection
   {
     if let selection = selections[card.id] {
-      guard selection.cardID == card.id && selection.optionID == optionID && selection.note == note
+      guard selection.optionID == optionID && selection.direction == direction
       else {
         throw ChatError.invalidContract(
           String(localized: "Retry the previous action to confirm its result."))
       }
       return selection
     }
-    let attempt = Selection(cardID: card.id, optionID: optionID, note: note)
+    let attempt = Selection(
+      cardID: card.id, optionID: optionID, direction: direction,
+      model: models.flatMap { $0.models.configuration == nil ? nil : $0.selection },
+      effort: models?.requestedEffort, options: models?.connectors.pendingOptions,
+      computerAccess: models?.connectors.currentComputerAccess)
     selections[card.id] = attempt
     return attempt
   }
 
-  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws {
+  private func availableThread(_ id: String?) async throws -> String? {
+    guard let id else { return nil }
+    do {
+      try await feed.checkThread(id)
+      return id
+    } catch APIClientError.http(404, _, _, _) { return nil }
+  }
+
+  @discardableResult
+  private func send(_ draft: ComposerDraft, target: String?, attempt: Selection) async throws
+    -> String
+  {
     guard let document = draft.draftUserMessage, document.isSupported, let workspace,
       !workspace.isClosed
     else {
       throw ChatError.composerUnavailable
     }
-    var destination = selections[attempt.cardID]?.threadID ?? target
-    if let target, selections[attempt.cardID]?.threadID == nil {
-      do {
-        try await feed.checkThread(target)
-      } catch APIClientError.http(404, _, _, _) {
-        destination = nil
-      }
-    }
+    var destination = selections[attempt.cardID]?.threadID
+    if destination == nil { destination = try await availableThread(target) }
     if destination == nil {
-      let thread = try await commands.createThread(clientThreadID: attempt.newThreadID)
+      let thread = try await commands.createThread(
+        modelSelection: attempt.model,
+        reasoningEffort: attempt.effort, composerOptions: attempt.options,
+        clientThreadID: attempt.newThreadID)
       try Task.checkCancellation()
       workspace.list.insertCreated(thread)
       destination = thread.id
@@ -242,11 +295,15 @@ final class ForYouStore {
     _ = try await commands.send(
       threadID: destination, text: document.text,
       attachments: (draft.draftAttachments ?? []).map(\.attachment),
-      document: document, clientEventID: attempt.messageID, chatThreadSortEventID: attempt.sortID)
+      document: document, clientEventID: attempt.messageID, chatThreadSortEventID: attempt.sortID,
+      modelSelection: attempt.model, reasoningEffort: attempt.effort,
+      computerAccess: attempt.computerAccess)
     workspace.requestRefresh(.threadList)
+    return destination
   }
 
   private func remove(_ card: ForYouCard) {
+    if direction?.cardID == card.id { closeDirection() }
     cards.removeAll { $0.id == card.id }
     position = min(position, max(0, cards.count - 1))
     selections[card.id] = nil
