@@ -4,9 +4,13 @@ import ai.okou.android.artifacts.ArtifactSaveResult
 import ai.okou.android.auth.SessionModel
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -38,7 +42,12 @@ import androidx.core.view.children
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import okhttp3.mockwebserver.MockResponse
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -107,6 +116,38 @@ class ArtifactCatalogRootTest {
         awaitText(fixture.summary.title)
         compose.onNodeWithText(fixture.checklist.title).assertDoesNotExist()
         assertTrue(fixture.catalogQueries.contains(null to "Product launch"))
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h360dp")
+    fun compactCatalogRestoresTheScrolledSearchResultAfterPreview() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            val fixture = ArtifactApiFixture(app.fixture)
+            fixture.install()
+            app.responseGate.countDown()
+            awaitText(fixture.sourceTitle)
+            compose.onNodeWithContentDescription("Artifacts").performClick()
+
+            val query = compose.onNodeWithTag("artifact_query")
+            query.performTextReplacement("launch")
+            awaitText(fixture.summary.title)
+            val image = compose.onNodeWithText(fixture.image.title)
+            compose.onNodeWithTag("artifact_list").performScrollToNode(hasText(fixture.image.title))
+            image.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            val rowBounds = image.assertIsFocused().getUnclippedBoundsInRoot()
+            image.performClick()
+            compose.onNodeWithTag("artifact_preview_title").assertTextContains(fixture.image.title)
+            compose.onNodeWithContentDescription("Back to artifacts").performClick()
+
+            query.assertTextContains("launch").assertIsNotFocused()
+            compose.onNodeWithText("Yesterday").assertDoesNotExist()
+            assertEquals(rowBounds, image.assertIsFocused().getUnclippedBoundsInRoot())
+        } finally {
+            instrumentation.resetInTouchMode()
+        }
     }
 
     @Test
@@ -249,6 +290,53 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    fun saveRetriesTheGrantButDoesNotReplayADestinationWrite() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val grantAttempts = AtomicInteger()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath ==
+                    "/api/artifact-references/checklist1.md/download" &&
+                    grantAttempts.incrementAndGet() <= 2
+            ) {
+                MockResponse().setResponseCode(503)
+            } else respond(request)
+        }
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.checklist.title)
+        compose.onNodeWithText(fixture.checklist.title).performClick()
+        awaitText("Save file")
+        val model = artifactModel
+        val saved = ByteArrayOutputStream()
+        val destinationAttempts = AtomicInteger()
+        compose.runOnIdle {
+            model.save(fixture.checklist.id) {
+                destinationAttempts.incrementAndGet()
+                saved
+            }
+        }
+        awaitText("File saved")
+        assertEquals(3, grantAttempts.get())
+        assertEquals(1, destinationAttempts.get())
+        assertEquals(fixture.checklistBody, saved.toString(Charsets.UTF_8.name()))
+
+        compose.runOnIdle {
+            model.save(fixture.checklist.id) {
+                destinationAttempts.incrementAndGet()
+                throw IOException("Document provider failed after being invoked")
+            }
+        }
+        awaitText("Couldn’t save the file")
+        compose.onNodeWithText("Save file").assertIsEnabled()
+        assertEquals(4, grantAttempts.get())
+        assertEquals(2, destinationAttempts.get())
+    }
+
+    @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun unreadableImageShowsAnUnsupportedPreview() {
         val fixture =
@@ -291,6 +379,105 @@ class ArtifactCatalogRootTest {
 
         compose.onNodeWithText(fixture.summary.title).performClick()
         compose.onNodeWithText(documentText, substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun exhaustedPreviewRetriesKeepTheCachedDocumentAndShowTheFailure() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.summary.title)
+        compose.onNodeWithText(fixture.summary.title).performClick()
+
+        val body = fixture.summaryBody.lineSequence().first().substringAfter(". ")
+        awaitText(body, partial = true)
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        val originalBounds = surface.getUnclippedBoundsInRoot()
+        compose.runOnIdle { app.connectivity.value = false }
+        val failures = CopyOnWriteArrayList<Long>()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/artifact-bytes/summary") {
+                failures.add(SystemClock.uptimeMillis())
+                MockResponse().setResponseCode(503)
+            } else respond(request)
+        }
+        compose.runOnIdle { app.connectivity.value = true }
+        awaitText("Temporarily unavailable")
+
+        compose.onNodeWithText(body, substring = true).assertIsDisplayed()
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        assertEquals(originalBounds, surface.getUnclippedBoundsInRoot())
+        assertEquals(3, failures.size)
+        assertTrue(failures.zipWithNext().all { (first, next) -> next - first >= 3_000 })
+        shadowOf(Looper.getMainLooper()).idleFor(12, TimeUnit.SECONDS)
+        assertEquals(3, failures.size)
+
+        val rejectedReferences = AtomicInteger()
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath == "/api/artifact-references/artifacts2.md") {
+                rejectedReferences.incrementAndGet()
+                MockResponse().setResponseCode(403)
+            } else respond(request)
+        }
+        compose.onNodeWithText("View source conversation").performClick()
+        compose.onNodeWithContentDescription("Back to artifact preview").performClick()
+        awaitText("You don’t have access to this artifact")
+        compose.onNodeWithText(body, substring = true).assertDoesNotExist()
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        assertEquals(1, rejectedReferences.get())
+    }
+
+    @Test
+    fun websiteGrantAndInitialDocumentShareTheRetryBudget() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        val grantAttempts = AtomicInteger()
+        val respond = app.fixture.commandResponse
+        app.fixture.commandResponse = { request ->
+            if (
+                request.requestUrl?.encodedPath == "/api/host/sites/fixture/preview" &&
+                    grantAttempts.incrementAndGet() == 1
+            ) {
+                MockResponse().setResponseCode(503)
+            } else respond(request)
+        }
+        openWebsite(fixture)
+        val first = checkNotNull(websiteView())
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val originalBounds = frame.getUnclippedBoundsInRoot()
+        failWebsiteDocument(first)
+        compose.waitUntil(10_000) { websiteView()?.let { it !== first } == true }
+        val retry = checkNotNull(websiteView())
+        assertEquals(fixture.requestedSiteGrants.single(), loadedWebsiteUrl())
+        assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
+
+        failWebsiteDocument(retry)
+        awaitText("Temporarily unavailable")
+        compose.mainClock.advanceTimeBy(6_000)
+        assertNull(websiteView())
+        assertEquals(2, grantAttempts.get())
+        assertEquals(originalBounds, frame.getUnclippedBoundsInRoot())
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        compose.onNodeWithText("Open in browser").assertIsEnabled()
+    }
+
+    @Test
+    fun websiteDoesNotRetryNavigationAfterTheFirstDocumentCommits() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        openWebsite(fixture)
+        val view = checkNotNull(websiteView())
+        compose.runOnIdle {
+            view.webViewClient.onPageCommitVisible(view, checkNotNull(shadowOf(view).lastLoadedUrl))
+        }
+        failWebsiteDocument(view)
+        awaitText("Temporarily unavailable")
+        compose.mainClock.advanceTimeBy(6_000)
+        assertNull(websiteView())
+        assertEquals(1, fixture.requestedSiteGrants.size)
     }
 
     @Test
@@ -648,10 +835,42 @@ class ArtifactCatalogRootTest {
         app.cacheSnapshot.restore()
     }
 
-    private fun loadedWebsiteUrl(): String? =
+    private fun loadedWebsiteUrl(): String? = websiteView()?.let { shadowOf(it).lastLoadedUrl }
+
+    private fun websiteView(): WebView? =
+        compose.runOnIdle { compose.activity.window.decorView.website() }
+
+    private fun openWebsite(fixture: ArtifactApiFixture) {
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.site.title)
+        compose.onNodeWithText(fixture.site.title).performClick()
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
+    }
+
+    private fun failWebsiteDocument(view: WebView) {
         compose.runOnIdle {
-            compose.activity.window.decorView.website()?.let { shadowOf(it).lastLoadedUrl }
+            val address = Uri.parse(checkNotNull(shadowOf(view).lastLoadedUrl))
+            val request =
+                object : WebResourceRequest {
+                    override fun getUrl() = address
+
+                    override fun isForMainFrame() = true
+
+                    override fun isRedirect() = false
+
+                    override fun hasGesture() = false
+
+                    override fun getMethod() = "GET"
+
+                    override fun getRequestHeaders() = emptyMap<String, String>()
+                }
+            val response =
+                WebResourceResponse("text/plain", "UTF-8", 503, "Unavailable", emptyMap(), null)
+            view.webViewClient.onReceivedHttpError(view, request, response)
         }
+    }
 
     private fun View.website(): WebView? =
         when (this) {
