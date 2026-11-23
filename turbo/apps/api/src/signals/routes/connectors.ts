@@ -44,7 +44,7 @@ import {
   getBuiltinConnectorOpenIdCallbackOriginForMethod,
 } from "./connector-oauth-origin";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
-import { connectorNativeAppAuthorization$ } from "./connector-native-app-authorization";
+import { connectorNativeAppAuthorization } from "./connector-native-app-authorization";
 import {
   buildBuiltinConnectorAuthCodeAuthUrlWithMethod,
   prepareBuiltinConnectorAuthCodeStartWithMethod,
@@ -436,20 +436,13 @@ const startBuiltinConnectorOauthInner$ = command(
       state: prepared.state,
     });
     signal.throwIfAborted();
-    const authResult = await set(
-      connectorNativeAppAuthorization$,
-      {
-        authorization,
-        platform: bodyResult.data.nativeAppAuthorization,
-        callbackTarget: bodyResult.data.callbackTarget,
-        connectorSlug: resolved.connectorSlug,
-        authMethodId: resolved.authMethodId,
-        orgId: auth.orgId,
-        userId: auth.userId,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
+    const authResult = connectorNativeAppAuthorization({
+      authorization,
+      platform: bodyResult.data.nativeAppAuthorization,
+      callbackTarget: bodyResult.data.callbackTarget,
+      connectorSlug: resolved.connectorSlug,
+      authMethodId: resolved.authMethodId,
+    });
 
     const selection = await get(builtinOauthStartAccountSelection$);
     signal.throwIfAborted();

@@ -2,19 +2,16 @@ import { randomUUID } from "node:crypto";
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { builtinConnectorsSlugCallbackContract } from "@okouai/api-contracts/contracts/connectors-slug-callback";
 import { connectorAccountsContract } from "@okouai/api-contracts/contracts/connector-accounts";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { http, HttpResponse } from "msw";
 import { beforeEach, expect, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
-import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
 import { withMockNowForTest, now } from "../../../lib/time";
 import { builtinConnectorsRoutes } from "../connectors";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
-import { featureSwitchesRoutes } from "../feature-switches";
 import { createRouteMocks } from "./helpers/route-test";
 
 const context = testContext();
@@ -26,13 +23,12 @@ const routes = Object.freeze([
   ...builtinConnectorsRoutes,
   ...builtinConnectorsSlugCallbackRoutes,
   ...connectorAccountRoutes,
-  ...featureSwitchesRoutes,
 ]);
 function app() {
   return setupApp({ context, routes });
 }
-function staff() {
-  mocks.clerk.session(`user_${randomUUID()}`, createUniqueStaffOrgIdFixture());
+function user() {
+  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 }
 async function start(
   account: { intent: "add" } | { intent: "reconnect"; connectionId: string } = {
@@ -115,43 +111,35 @@ beforeEach(() => {
   mockOptionalEnv("STRAVA_OAUTH_CLIENT_SECRET", "strava-client-secret");
 });
 
-test("retains web authorization for old clients, staff opt-out and external opt-in", async () => {
-  staff();
-  const old = await accept(
-    app()(builtinConnectorOauthStartContract).start({
-      headers,
-      params: { connectorSlug: "strava" },
-      body: {
-        authMethod: "oauth",
-        callbackTarget: "app",
-        account: { intent: "add" },
-      },
-    }),
-    [200],
-  );
-  expect(old.body.nativeAppAuthorization).toBeUndefined();
-  expect(new URL(old.body.authorizationUrl).pathname).toBe("/oauth/authorize");
-  await accept(
-    app()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { iosConnectorAppAuthorization: false } },
-    }),
-    [200],
-  );
-  expect((await start()).nativeAppAuthorization).toBeUndefined();
-  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-  await accept(
-    app()(featureSwitchesContract).update({
-      headers,
-      body: { switches: { iosConnectorAppAuthorization: true } },
-    }),
-    [200],
-  );
-  expect((await start()).nativeAppAuthorization).toBeUndefined();
-});
+test.each([
+  { callbackTarget: "app", nativeAppAuthorization: undefined },
+  { callbackTarget: undefined, nativeAppAuthorization: "ios" },
+] as const)(
+  "retains web authorization without both native capability and app callback: $callbackTarget / $nativeAppAuthorization",
+  async ({ callbackTarget, nativeAppAuthorization }) => {
+    user();
+    const response = await accept(
+      app()(builtinConnectorOauthStartContract).start({
+        headers,
+        params: { connectorSlug: "strava" },
+        body: {
+          authMethod: "oauth",
+          callbackTarget,
+          nativeAppAuthorization,
+          account: { intent: "add" },
+        },
+      }),
+      [200],
+    );
+    expect(response.body.nativeAppAuthorization).toBeUndefined();
+    expect(new URL(response.body.authorizationUrl).pathname).toBe(
+      "/oauth/authorize",
+    );
+  },
+);
 
 test("binds mobile authorization to the registered HTTPS callback and confirms the exact account", async () => {
-  staff();
+  user();
   provider();
   const first = await start();
   const url = new URL(first.authorizationUrl);
@@ -207,7 +195,7 @@ test("binds mobile authorization to the registered HTTPS callback and confirms t
 });
 
 test("returns a denied attempt to iOS without a completion or a second authorization", async () => {
-  staff();
+  user();
   const pending = await start();
   const denied = await complete(pending.authorizationUrl, {
     error: "access_denied",
@@ -225,7 +213,7 @@ test.each([
 ])(
   "does not declare background access with missing scopes or refresh credentials: $scope / $refreshToken",
   async ({ scope, refreshToken }) => {
-    staff();
+    user();
     provider(refreshToken);
     const pending = await start();
     const result = await complete(pending.authorizationUrl, { scope });
@@ -236,7 +224,7 @@ test.each([
 );
 
 test("does not issue an app return for expired, foreign or fabricated state", async () => {
-  staff();
+  user();
   const pending = await start();
   await withMockNowForTest(now() + 16 * 60_000, async () => {
     const expired = await complete(pending.authorizationUrl);
