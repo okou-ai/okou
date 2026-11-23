@@ -6,6 +6,7 @@ import {
 import { notionWorkflowPendingEvents } from "@okouai/db/schema/notion-event";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { and, eq, sql } from "drizzle-orm";
+import { workflowEventConnectorAllowedSql } from "./member-connector-account-access";
 
 export interface NotionQueueSource {
   readonly automationId: string;
@@ -78,7 +79,7 @@ function notionQueueAdmissionSql(args: {
   readonly eventType: string | null;
   readonly eventConfig: unknown;
 }) {
-  return sql`SELECT 1 WHERE EXISTS (
+  return sql`SELECT 1 WHERE ${workflowEventConnectorAllowedSql(args.source, args.connectorId)} AND EXISTS (
       SELECT 1 FROM ${workflowAutomations}
       WHERE ${and(
         eq(workflowAutomations.id, args.source.automationId),
