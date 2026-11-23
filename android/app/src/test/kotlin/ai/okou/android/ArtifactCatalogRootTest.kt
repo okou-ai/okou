@@ -461,7 +461,7 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
-    fun missingWebsiteDocumentShowsTheSourceStatusWithoutReloading() {
+    fun missingWebsiteDocumentKeepsTheSourceStatusUntilReconnectReloads() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
         openWebsite(fixture)
@@ -474,7 +474,21 @@ class ArtifactCatalogRootTest {
         assertNull(websiteView())
         assertEquals(1, fixture.requestedSiteGrants.size)
         assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
-        compose.onNodeWithText("Open in browser").assertIsEnabled()
+        val browser = compose.onNodeWithText("Open in browser")
+        browser.assertIsEnabled()
+
+        compose.runOnIdle { app.connectivity.value = false }
+        compose.waitUntil(10_000) { artifactModel.state.value.offline }
+        compose.onNodeWithText("Source unavailable").assertIsDisplayed()
+        browser.assertDoesNotExist()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { loadedWebsiteUrl() != null }
+        assertEquals(2, fixture.requestedSiteGrants.size)
+        compose.onNodeWithText("Source unavailable").assertDoesNotExist()
+        browser.assertIsEnabled()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
     }
 
     @Test

@@ -49,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -373,15 +374,25 @@ private fun HostedPreviewContent(
     showLoading: Boolean,
 ) {
     var siteScroll by rememberArtifactWebScroll()
+    var documentAccessProblem by remember { mutableStateOf<ArtifactProblem?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
             when {
                 problem != null -> PreviewStatusText(problem.previewLabel())
-                offline -> PreviewStatusText(R.string.artifact_preview_unavailable)
+                offline ->
+                    PreviewStatusText(
+                        documentAccessProblem?.previewLabel()
+                            ?: R.string.artifact_preview_unavailable,
+                    )
                 content is ArtifactContent.Website ->
                     key(content.url) {
-                        HostedArtifactPreview(content, siteScroll) { siteScroll = it }
+                        HostedArtifactPreview(
+                            content,
+                            siteScroll,
+                            onAccessProblem = { documentAccessProblem = it },
+                            onScroll = { siteScroll = it },
+                        )
                     }
                 content == ArtifactContent.Unsupported ->
                     PreviewStatusText(R.string.artifact_preview_unsupported)
@@ -436,13 +447,21 @@ private fun ArtifactProblem.previewLabel(): Int =
 private fun HostedArtifactPreview(
     content: ArtifactContent.Website,
     scrollY: Int,
+    onAccessProblem: (ArtifactProblem?) -> Unit,
     onScroll: (Int) -> Unit,
 ) {
     var usedRetries by remember { mutableIntStateOf(0) }
     key(usedRetries) {
         var failure by remember { mutableStateOf<ArtifactProblem?>(null) }
+        val problem = failure
+        // Keep a displayed access error if disconnecting removes this WebView.
+        SideEffect {
+            onAccessProblem(
+                problem.takeIf { it == ArtifactProblem.Missing || it == ArtifactProblem.Denied },
+            )
+        }
         when {
-            failure == null ->
+            problem == null ->
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
@@ -460,7 +479,7 @@ private fun HostedArtifactPreview(
                     onRelease = { it.destroy() },
                     update = {},
                 )
-            failure == ArtifactProblem.Temporary && usedRetries < content.remainingRetries -> {
+            problem == ArtifactProblem.Temporary && usedRetries < content.remainingRetries -> {
                 val lifecycle = LocalLifecycleOwner.current.lifecycle
                 LaunchedEffect(lifecycle) {
                     lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -470,7 +489,7 @@ private fun HostedArtifactPreview(
                 }
                 PreviewLoading()
             }
-            else -> failure?.let { PreviewStatusText(it.previewLabel()) }
+            else -> PreviewStatusText(problem.previewLabel())
         }
     }
 }
