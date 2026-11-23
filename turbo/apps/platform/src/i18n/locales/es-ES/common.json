@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Ver todas las plantillas",
-        "hint": "Busca flujos de trabajo o elige una plantilla…",
+        "hint": "Elige una acción",
         "useTemplate": "Usar la plantilla {{title}}"
       },
       "temporarilySwitchTo": "Cambiar temporalmente a",

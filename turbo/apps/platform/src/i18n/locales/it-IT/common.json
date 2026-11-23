@@ -1989,7 +1989,7 @@
       },
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
-        "hint": "Cerca flussi di lavoro o scegli un modello…",
+        "hint": "Scegli un'azione",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
