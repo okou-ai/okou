@@ -167,23 +167,22 @@ private fun SettingsPageIntro(workspace: String, @StringRes scope: Int, @StringR
 private fun SettingsPlaceholder() {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        delay(100)
+        delay(250)
         visible = true
     }
-    SettingsGroup {
-        Column(
-            Modifier.alpha(if (visible) 1f else 0f).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            for (width in listOf(144.dp, 94.dp)) {
-                Box(
-                    Modifier.width(width)
-                        .height(16.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp),
-                        ),
-                )
+    Box(Modifier.alpha(if (visible) 1f else 0f)) {
+        SettingsGroup {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                for (width in listOf(144.dp, 94.dp)) {
+                    Box(
+                        Modifier.width(width)
+                            .height(16.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant,
+                                RoundedCornerShape(4.dp),
+                            ),
+                    )
+                }
             }
         }
     }
