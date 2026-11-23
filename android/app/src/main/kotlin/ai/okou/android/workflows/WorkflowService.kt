@@ -34,5 +34,3 @@ interface WorkflowService {
 
     suspend fun setAutomationEnabled(id: String, enabled: Boolean): WorkflowAutomation
 }
-
-internal suspend fun WorkflowService.workspaceCatalog() = workflows().filter { it.official == null }

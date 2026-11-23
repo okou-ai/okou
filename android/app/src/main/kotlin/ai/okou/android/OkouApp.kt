@@ -47,7 +47,7 @@ import ai.okou.android.chat.conversationRunControls
 import ai.okou.android.chat.openConversationWebLink
 import ai.okou.android.chat.projectDestinations
 import ai.okou.android.chat.rowActions
-import ai.okou.android.chat.toSearchHit
+import ai.okou.android.chat.searchCatalog
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.connectors.ConnectorsPage
 import ai.okou.android.settings.DefaultModelSettings
@@ -73,7 +73,6 @@ import ai.okou.android.state.rememberWorkflowsRoute
 import ai.okou.android.state.rememberWorkspaceNavigation
 import ai.okou.android.updates.UpdateToolbarAction
 import ai.okou.android.workflows.WorkflowModel
-import ai.okou.android.workflows.WorkflowReadFailure
 import ai.okou.android.workflows.WorkflowScreen
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
@@ -136,6 +135,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.currentStateAsState
@@ -219,9 +219,6 @@ internal fun OkouApp(
     LaunchedEffect(workflows, workflowRoute.id, workflowRoute.tab, showWorkflows) {
         syncWorkflowDestination(workflowRoute, showWorkflows)
     }
-    LaunchedEffect(workflows, list.offline, showWorkflows) {
-        if (showWorkflows) workflows.connectivityChanged(list.offline)
-    }
     val artifactPageState = rememberArtifactPageHolder()
     val resourcesPageState = rememberArtifactPageHolder()
     val inlineArtifactPageState = rememberArtifactPageHolder()
@@ -284,16 +281,24 @@ internal fun OkouApp(
     val searchState = rememberChatSearchState()
     var searchWorkflowId by rememberSearchWorkflowId()
     var focusSearch by remember { mutableStateOf(false) }
-    val searchActive =
-        chats != null &&
-            !artifactsOpen &&
-            !showWorkflows &&
-            !chatFromWorkflows &&
-            navigation.search.isOpen
+    val searchActive = chats != null && !artifactsOpen && !showWorkflows && navigation.search.isOpen
     val searchKeyword =
         searchState.keyword.takeIf { navigation.search != SearchRoute.Closed }.orEmpty()
     val searchWorkflowsAvailable = workflows != null
     val searchArtifactsAvailable = artifacts != null
+    val searchCatalogOpen =
+        navigation.search.isOpen && !artifactsOpen && !showingConnectors && settings == null
+    if (workflows != null) {
+        LifecycleResumeEffect(workflows) {
+            workflows.foregroundChanged(true)
+            onPauseOrDispose { workflows.foregroundChanged(false) }
+        }
+        LaunchedEffect(workflows, list.offline, searchCatalogOpen) {
+            workflows.connectivityChanged(list.offline)
+            workflows.searchVisibilityChanged(searchCatalogOpen)
+        }
+        DisposableEffect(workflows) { onDispose { workflows.searchVisibilityChanged(false) } }
+    }
     val searchVisible =
         workspaceSearch != null &&
             searchActive &&
@@ -307,7 +312,6 @@ internal fun OkouApp(
         searchKeyword,
         searchState.type,
         list.offline,
-        searchWorkflowsAvailable,
         searchArtifactsAvailable,
         searchVisible,
     ) {
@@ -315,7 +319,6 @@ internal fun OkouApp(
             searchKeyword,
             searchState.type,
             connected = !list.offline,
-            workflowsAvailable = searchWorkflowsAvailable,
             artifactsAvailable = searchArtifactsAvailable,
             visible = searchVisible,
         )
@@ -496,14 +499,6 @@ internal fun OkouApp(
         handoff = null
         workflowConnectionReturn = null
         workflowPageState.removeState("workflow")
-        if (workflowOrigin.search == SearchRoute.Open) {
-            val state = workflows?.state?.value
-            workspaceSearch?.refreshWorkflows(
-                state?.catalog?.map { it.toSearchHit() },
-                detail = state?.detail?.takeIf { it.official == null }?.toSearchHit(),
-                retainConfirmed = state?.detailFailure != WorkflowReadFailure.Unavailable,
-            )
-        }
         changeWorkflowRoute(WorkflowsRoute())
     }
 
@@ -605,6 +600,7 @@ internal fun OkouApp(
                 fromLink -> navigation.search
                 fromSearch && listWidth == null -> SearchRoute.ReturnOnBack
                 !fromSearch && navigation.search.isOpen -> SearchRoute.Open
+                !fromSearch && listWidth == null -> navigation.search
                 else -> SearchRoute.Closed
             }
         if (fromSearch) releaseSearchFocus()
@@ -981,7 +977,7 @@ internal fun OkouApp(
                     workflowDraftError?.takeIf { it.workflowId == workflowRoute.id }?.message,
                 feedback = { WorkspaceFeedbackHost(snackbar, Modifier.padding(vertical = 8.dp)) },
                 onClose = ::closeWorkflows,
-                fromSearch = workflowOrigin.search == SearchRoute.Open,
+                fromSearch = workflowOrigin.search.isOpen,
                 onCreate = { workflowDraft("$creation\n\n") },
                 onUse = { workflowDraft("/${it.name} ", it.id) },
                 onViewConnection =
@@ -1460,7 +1456,14 @@ internal fun OkouApp(
                                 val remote =
                                     workspaceSearch?.results?.collectAsStateWithLifecycle()?.value
                                 val workflowRead =
-                                    remote?.takeIf { it.keyword == searchState.keyword }?.workflows
+                                    remember(
+                                        workflowState?.catalog,
+                                        workflowState?.catalogFailure,
+                                        searchState.keyword,
+                                    ) {
+                                        if (searchState.keyword.isEmpty()) null
+                                        else workflowState?.searchCatalog(searchState.keyword)
+                                    }
                                 val selectedWorkflowId = searchWorkflowId
                                 val intro =
                                     selectedWorkflowId?.let { id ->
@@ -1471,6 +1474,7 @@ internal fun OkouApp(
                                 val unavailableWorkflowId =
                                     selectedWorkflowId.takeIf {
                                         workflowRead == SearchRead.Failed ||
+                                            workflowRead == SearchRead.AccessLost ||
                                             workflowRead is SearchRead.Ready && intro == null
                                     }
                                 LaunchedEffect(unavailableWorkflowId) {
@@ -1502,6 +1506,7 @@ internal fun OkouApp(
                                         openChat(it, fromSearch = true)
                                     },
                                     remote = remote,
+                                    workflowResults = workflowRead,
                                     recentlyOpened = recents.orEmpty(),
                                     onOpenMessage = ::openSearchMessage,
                                     restoreResultFocus = selectedWorkflowId == null,
