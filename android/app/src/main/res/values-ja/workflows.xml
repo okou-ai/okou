@@ -43,6 +43,7 @@
     <string name="workflow_instructions_heading">ワークフローの手順</string>
     <string name="workflow_keep_editing">編集を続ける</string>
     <string name="workflow_load_failed">ワークフローを読み込めませんでした</string>
+    <string name="workflow_rules_load_failed">トリガールールを読み込めませんでした。</string>
     <string name="workflow_mail_from_contains">送信者に %1$s を含む</string>
     <string name="workflow_mail_labeled">Gmail のラベルを適用</string>
     <string name="workflow_mail_received">Gmail のメールを受信</string>
@@ -65,8 +66,6 @@
     <string name="workflow_notion_child">Notion の子ページを作成</string>
     <string name="workflow_notion_item">Notion のデータベースに項目を作成</string>
     <string name="workflow_notion_updated">Notion のページを更新</string>
-    <string name="workflow_offline">ワークフローを読み込むには接続してください</string>
-    <string name="workflow_offline_cache">オフライン · 最後に読み込んだデータを表示</string>
     <string name="workflow_offline_changes">保存するには接続してください。変更は保持されています。</string>
     <string name="workflow_pause">一時停止</string>
     <string name="workflow_paused">自動化は一時停止中</string>
@@ -112,7 +111,6 @@
     <string name="workflow_history_event">イベント</string>
     <string name="workflow_history_failed">実行履歴を読み込めませんでした</string>
     <string name="workflow_history_loading">実行履歴を読み込み中…</string>
-    <string name="workflow_history_offline">接続して実行履歴を読み込む</string>
     <string name="workflow_history_open_chat">関連するチャットを開く</string>
     <string name="workflow_history_unavailable">実行履歴を利用できません</string>
     <string name="workflow_run_pending">保留中</string>
