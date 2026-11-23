@@ -205,7 +205,7 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
-    fun rejectedTimezoneRestoresTheRowAndShowsOneSnackbar() {
+    fun rejectedTimezoneRestoresTheRowAndTheNextSelectionClearsFeedback() {
         app.preferenceWrite = { update, save ->
             if (update.timezone == TimeZone.getCanonicalID("Asia/Kathmandu")) {
                 throw ApiFailure.Http(400, "BAD_REQUEST", null, null)
@@ -225,7 +225,7 @@ class ProactiveSettingsPageTest {
             hasText("Morning Brief") and nativeSwitch and isEnabled(),
             10_000,
         )
-        compose.waitUntilDoesNotExist(notice, 10_000)
+        compose.onNode(notice).assertDoesNotExist()
     }
 
     @Test

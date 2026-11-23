@@ -36,6 +36,11 @@ enum class PreferenceStatus {
     RefreshFailed,
 }
 
+internal enum class TimezoneSaveNotice {
+    Selected,
+    Rejected,
+}
+
 data class PreferenceChange(
     val colorTheme: UserPreferencesColorTheme? = null,
     val locale: UserPreferencesLocale? = null,
@@ -156,8 +161,8 @@ class MemberPreferencesModel(
     private val mutable =
         MutableStateFlow(MemberPreferencesState(initial, initialPending?.afterReadback(initial)))
     val uiState = mutable.asStateFlow()
-    private val rejectedTimezones = Channel<Unit>(Channel.CONFLATED)
-    internal val timezoneRejections = rejectedTimezones.receiveAsFlow()
+    private val timezoneSaveNotices = Channel<TimezoneSaveNotice>(Channel.CONFLATED)
+    internal val timezoneNotices = timezoneSaveNotices.receiveAsFlow()
     private var retired = false
     private var online = true
     private var request: Job? = null
@@ -211,9 +216,14 @@ class MemberPreferencesModel(
     }
 
     fun selectTimezone(value: String, missingOnServer: Boolean = false) {
+        if (!current()) return
         val state = mutable.value
-        if (state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer))
+        if (
+            state.pending?.timezoneToWrite != value && (state.timezone != value || missingOnServer)
+        ) {
+            timezoneSaveNotices.trySend(TimezoneSaveNotice.Selected)
             select((state.pending ?: PreferenceChange()).copy(timezone = value))
+        }
     }
 
     fun setCloudBrowser(enabled: Boolean) {
@@ -404,7 +414,7 @@ class MemberPreferencesModel(
                 .takeUnless { it == PreferenceChange() }
         needsWriteReadback = remaining?.timezoneToReconcile != null
         mutable.value = state.copy(pending = remaining, status = PreferenceStatus.Ready)
-        if (rejected) rejectedTimezones.trySend(Unit)
+        if (rejected) timezoneSaveNotices.trySend(TimezoneSaveNotice.Rejected)
     }
 
     private fun scheduleRecovery(wait: Long) {

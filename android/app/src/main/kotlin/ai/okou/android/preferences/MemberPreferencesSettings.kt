@@ -217,8 +217,10 @@ internal fun TimezoneSaveFeedback(model: MemberPreferencesModel, snackbar: Snack
     val message by rememberUpdatedState(stringResource(R.string.settings_timezone_save_rejected))
     LaunchedEffect(model, snackbar, lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            model.timezoneRejections.collectLatest {
-                snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+            model.timezoneNotices.collectLatest { notice ->
+                if (notice == TimezoneSaveNotice.Rejected) {
+                    snackbar.showSnackbar(message, duration = SnackbarDuration.Indefinite)
+                }
             }
         }
     }
