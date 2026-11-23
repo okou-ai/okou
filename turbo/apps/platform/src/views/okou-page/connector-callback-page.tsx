@@ -21,6 +21,7 @@ export function ConnectorCallbackPage({
   status,
   username,
   errorMessage,
+  nativeReturnUrl,
 }: {
   readonly connectorIcon: PublicConnectorCatalogIcon | undefined;
   readonly iconContent?: ReactNode;
@@ -29,6 +30,7 @@ export function ConnectorCallbackPage({
   readonly status: ConnectorCallbackPageStatus;
   readonly username: string | null;
   readonly errorMessage: string | null;
+  readonly nativeReturnUrl?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const title =
@@ -123,21 +125,43 @@ export function ConnectorCallbackPage({
                   })}
             </span>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => {
-              window.close();
-            }}
-          >
-            {t(($) => {
-              return $.connectors.actions.closeWindow;
-            })}
-          </Button>
+          <ConnectorCallbackAction nativeReturnUrl={nativeReturnUrl} />
         </div>
       )}
       {connectorSlug === "mercury" ? (
         <MercuryDisclosure className="w-full border-t border-border/50 pt-4 text-left" />
       ) : null}
     </ConnectorFlowCard>
+  );
+}
+
+function ConnectorCallbackAction({
+  nativeReturnUrl,
+}: {
+  readonly nativeReturnUrl?: string;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  return nativeReturnUrl ? (
+    <Button
+      variant="outline"
+      nativeButton={false}
+      role="link"
+      render={<a href={nativeReturnUrl} />}
+    >
+      {t(($) => {
+        return $.connectors.actions.returnToOkou;
+      })}
+    </Button>
+  ) : (
+    <Button
+      variant="outline"
+      onClick={() => {
+        window.close();
+      }}
+    >
+      {t(($) => {
+        return $.connectors.actions.closeWindow;
+      })}
+    </Button>
   );
 }

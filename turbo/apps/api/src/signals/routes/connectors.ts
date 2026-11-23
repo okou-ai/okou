@@ -44,6 +44,7 @@ import {
   getBuiltinConnectorOpenIdCallbackOriginForMethod,
 } from "./connector-oauth-origin";
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
+import { connectorNativeAppAuthorization$ } from "./connector-native-app-authorization";
 import {
   buildBuiltinConnectorAuthCodeAuthUrlWithMethod,
   prepareBuiltinConnectorAuthCodeStartWithMethod,
@@ -426,7 +427,7 @@ const startBuiltinConnectorOauthInner$ = command(
     if (!prepared.ok) {
       return internalServerError(`${connectorSlug} auth client not configured`);
     }
-    const authResult = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
+    const authorization = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
       connectorSlug: resolved.connectorSlug,
       authMethodId: resolved.authMethodId,
       method,
@@ -434,6 +435,20 @@ const startBuiltinConnectorOauthInner$ = command(
       redirectUri: prepared.redirectUri,
       state: prepared.state,
     });
+    signal.throwIfAborted();
+    const authResult = await set(
+      connectorNativeAppAuthorization$,
+      {
+        authorization,
+        platform: bodyResult.data.nativeAppAuthorization,
+        callbackTarget: bodyResult.data.callbackTarget,
+        connectorSlug: resolved.connectorSlug,
+        authMethodId: resolved.authMethodId,
+        orgId: auth.orgId,
+        userId: auth.userId,
+      },
+      signal,
+    );
     signal.throwIfAborted();
 
     const selection = await get(builtinOauthStartAccountSelection$);
@@ -485,6 +500,7 @@ const startBuiltinConnectorOauthInner$ = command(
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
+        nativeAppAuthorization: authResult.nativeAppAuthorization,
         connectionId:
           bodyResult.data.account.intent === "add" ? oauthState.id : undefined,
         oauthAttemptId: oauthState.id,

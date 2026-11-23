@@ -377,6 +377,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.IosConnectorAppAuthorization]: {
+    maintainer: "yuma@okou.ai",
+    description: "Authorize supported connectors in their installed iOS apps.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
 };
 
 interface ResolvedHashes {
