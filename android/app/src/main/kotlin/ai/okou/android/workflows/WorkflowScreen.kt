@@ -16,6 +16,7 @@ import ai.okou.android.state.WorkflowScope
 import ai.okou.android.state.WorkflowTab
 import ai.okou.android.state.WorkflowsRoute
 import ai.okou.android.state.rememberWorkflowDiscardConfirmation
+import ai.okou.android.state.rememberWorkflowEditorReturnFocus
 import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
@@ -120,6 +121,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 
 internal const val WORKFLOW_SKELETON_DELAY_MILLIS = 250L
+private const val SECTION_EDITOR_FOCUS = "section"
 
 @Composable
 internal fun WorkflowScreen(
@@ -151,6 +153,7 @@ internal fun WorkflowScreen(
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val editor = state.editor
+    var editorReturnFocus by rememberWorkflowEditorReturnFocus(route.id, route.tab)
     var discard by rememberWorkflowDiscardConfirmation(route.id, editor != null)
     var restoreRow by remember { mutableStateOf<String?>(null) }
     fun exitEditor() {
@@ -252,11 +255,12 @@ internal fun WorkflowScreen(
                             wide = wide,
                             timezone = timezone,
                             onTab = { if (it != route.tab) changeRoute(route.copy(tab = it)) },
-                            onEdit = { model.edit(detail.editableInstructions()) },
-                            onNewRule = {
-                                model.edit(WorkflowEdit.Rule(null, RuleFields(timezone = timezone)))
+                            editorReturnFocus = editorReturnFocus,
+                            onEditorFocusRestored = { editorReturnFocus = null },
+                            onEdit = { edit, focused ->
+                                editorReturnFocus = edit.focusKey.takeIf { focused }
+                                model.edit(edit)
                             },
-                            onEditRule = { model.edit(it) },
                             onToggle = model::toggle,
                             onViewConnection = onViewConnection,
                             connectionReturn = connectionReturn,
@@ -275,6 +279,11 @@ internal fun WorkflowScreen(
         }
     }
 }
+
+private val WorkflowEdit.focusKey: String
+    get() = (this as? WorkflowEdit.Rule)?.id?.let(::ruleEditorFocusKey) ?: SECTION_EDITOR_FOCUS
+
+private fun ruleEditorFocusKey(ruleId: String) = "rule:$ruleId"
 
 @Composable
 private fun WorkflowDiscardDialog(onClose: () -> Unit, onDiscard: () -> Unit) {
@@ -738,9 +747,9 @@ private fun WorkflowDetailPane(
     wide: Boolean,
     timezone: String,
     onTab: (WorkflowTab) -> Unit,
-    onEdit: () -> Unit,
-    onNewRule: () -> Unit,
-    onEditRule: (WorkflowEdit.Rule) -> Unit,
+    editorReturnFocus: String?,
+    onEditorFocusRestored: () -> Unit,
+    onEdit: (WorkflowEdit, Boolean) -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
     onViewConnection: ((slug: String, ruleId: String?) -> Unit)?,
     connectionReturn: WorkflowConnectorVisit?,
@@ -760,6 +769,7 @@ private fun WorkflowDetailPane(
     val listState =
         if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
         else position
+    val editEnabled = !state.writing && !handoffPending
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -780,12 +790,18 @@ private fun WorkflowDetailPane(
             when (tab) {
                 WorkflowTab.Instructions ->
                     item {
-                        WorkflowSectionHeader(
-                            R.string.workflow_instructions_heading,
-                            if (detail.canManage) R.string.workflow_edit_instructions else null,
-                            !state.writing && !handoffPending,
-                            onEdit,
-                        )
+                        WorkflowSectionHeader(R.string.workflow_instructions_heading) {
+                            if (detail.canManage) {
+                                WorkflowEditorAction(
+                                    R.string.workflow_edit_instructions,
+                                    enabled = editEnabled,
+                                    restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
+                                    onFocusRestored = onEditorFocusRestored,
+                                ) { focused ->
+                                    onEdit(detail.editableInstructions(), focused)
+                                }
+                            }
+                        }
                         Text(
                             detail.instruction?.takeIf { it.isNotBlank() }
                                 ?: stringResource(R.string.workflow_no_instructions),
@@ -794,12 +810,21 @@ private fun WorkflowDetailPane(
                     }
                 WorkflowTab.Automations -> {
                     item {
-                        WorkflowSectionHeader(
-                            R.string.workflow_trigger_rules,
-                            if (detail.canAddAutomation) R.string.workflow_add_automation else null,
-                            !state.writing && !handoffPending,
-                            onNewRule,
-                        )
+                        WorkflowSectionHeader(R.string.workflow_trigger_rules) {
+                            if (detail.canAddAutomation) {
+                                WorkflowEditorAction(
+                                    R.string.workflow_add_automation,
+                                    enabled = editEnabled,
+                                    restoreFocus = editorReturnFocus == SECTION_EDITOR_FOCUS,
+                                    onFocusRestored = onEditorFocusRestored,
+                                ) { focused ->
+                                    onEdit(
+                                        WorkflowEdit.Rule(null, RuleFields(timezone = timezone)),
+                                        focused,
+                                    )
+                                }
+                            }
+                        }
                         if (detail.automations.isEmpty())
                             WorkflowSecondary(stringResource(R.string.workflow_no_rules))
                     }
@@ -809,7 +834,9 @@ private fun WorkflowDetailPane(
                             state = state,
                             actionsEnabled = !handoffPending,
                             timezone = timezone,
-                            onEdit = onEditRule,
+                            onEdit = onEdit,
+                            restoreEditorFocus = editorReturnFocus == ruleEditorFocusKey(rule.id),
+                            onEditorFocusRestored = onEditorFocusRestored,
                             onToggle = onToggle,
                             onViewConnection = onViewConnection,
                             restoreConnectionFocus = connectionReturn?.ruleId == rule.id,
@@ -1051,11 +1078,9 @@ private fun WorkflowTabs(current: WorkflowTab, pick: (WorkflowTab) -> Unit) {
 }
 
 @Composable
-internal fun WorkflowSectionHeader(
+private fun WorkflowSectionHeader(
     label: Int,
-    action: Int? = null,
-    actionEnabled: Boolean = true,
-    perform: () -> Unit = {},
+    action: (@Composable () -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -1068,7 +1093,7 @@ internal fun WorkflowSectionHeader(
             style = workflowBodyStyle(),
             fontWeight = FontWeight.SemiBold,
         )
-        if (action != null) WorkflowAction(stringResource(action), perform, enabled = actionEnabled)
+        action?.invoke()
     }
 }
 

@@ -161,6 +161,12 @@ internal fun rememberUpdateWorkspaceState(): SaveableStateHolder = rememberSavea
 internal fun rememberWorkflowPageState(): SaveableStateHolder = rememberSaveableStateHolder()
 
 @Composable
+internal fun rememberWorkflowEditorReturnFocus(
+    workflowId: String?,
+    tab: WorkflowTab,
+): MutableState<String?> = rememberSaveable(workflowId, tab) { mutableStateOf(null) }
+
+@Composable
 internal fun rememberEarlierRepliesExpanded() = rememberSaveable { mutableStateOf(false) }
 
 @Composable

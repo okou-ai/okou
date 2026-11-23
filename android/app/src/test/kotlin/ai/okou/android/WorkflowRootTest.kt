@@ -11,6 +11,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -493,6 +494,29 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     application = WorkflowRootApplication::class,
 )
 internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
+    private fun SemanticsNodeInteraction.pressEnter() =
+        performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused().performKeyInput {
+            pressKey(Key.Enter)
+        }
+
+    @Test
+    fun closingInstructionsEditorReturnsKeyboardFocusToItsAction() = withHardwareKeyboard {
+        openWorkflowDetail()
+        val edit = compose.onNodeWithText("Edit instructions")
+        edit.pressEnter()
+        compose.onNodeWithText("Cancel").pressEnter()
+        edit.assertIsFocused().performKeyInput { pressKey(Key.Enter) }
+        val field = compose.onNodeWithContentDescription("Display name")
+        field.performTextReplacement("Prepare the release")
+        compose.onNodeWithText("Cancel").pressEnter()
+        compose.onNodeWithText("Keep editing").pressEnter()
+        field.assertTextContains("Prepare the release")
+        compose.onNodeWithText("Cancel").pressEnter()
+        compose.onNodeWithText("Discard").pressEnter()
+        edit.assertIsFocused()
+        compose.onNodeWithTag("workflow_detail_title").assertTextContains(app.fixture.releaseTitle)
+    }
+
     @Test
     fun newScheduleUsesTheLocalTimezoneBeforePreferencesSync() {
         openWorkflowDetail()
@@ -621,7 +645,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w1180dp-h820dp")
-    fun memberCanCreateEditEnableAndPauseTheirRuleOnASharedWorkflow() {
+    fun memberCanCreateEditEnableAndPauseTheirRuleOnASharedWorkflow() = withHardwareKeyboard {
         val fixture = app.fixture
         val releaseCreate = CountDownLatch(1)
         fixture.beforeSharedScheduleCreate = { releaseCreate.await() }
@@ -633,7 +657,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         val add = compose.onNodeWithText("Add automation").assertIsEnabled()
         val addBounds = add.getUnclippedBoundsInRoot()
         assertTrue(addBounds.bottom - addBounds.top >= 48.dp)
-        add.performClick()
+        add.pressEnter()
 
         val save = compose.onNodeWithTag("workflow_save").assertIsEnabled()
         val saveBounds = save.getUnclippedBoundsInRoot()
@@ -645,7 +669,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         time.performTextReplacement("09:30")
         val createPath = "/api/workflows/$WORKFLOW_SHARED/automations"
         try {
-            save.performClick()
+            save.pressEnter()
             compose.waitUntil(10_000) {
                 fixture.requests.any {
                     it.method == "POST" && it.requestUrl?.encodedPath == createPath
@@ -659,6 +683,7 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
 
         waitFor("Weekdays at 09:30")
         waitFor("Paused")
+        assertEquals(addBounds, add.assertIsFocused().getUnclippedBoundsInRoot())
         val create =
             fixture.requests.single {
                 it.method == "POST" && it.requestUrl?.encodedPath == createPath
@@ -669,12 +694,15 @@ internal class WorkflowRuleRootTest : WorkflowRootTestFixture() {
         assertEquals("30 9 * * 1-5", schedule.getValue("cronExpression").jsonPrimitive.content)
         assertEquals("UTC", schedule.getValue("timezone").jsonPrimitive.content)
 
-        compose
-            .onNode(hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")))
-            .performClick()
+        val edit =
+            compose.onNode(
+                hasText("Edit") and hasAnyAncestor(hasTestTag("workflow_rule_shared-weekday")),
+            )
+        edit.pressEnter()
         compose.onNodeWithContentDescription("Time (HH:mm)").performTextReplacement("10:00")
-        save.assertIsEnabled().performClick()
+        save.assertIsEnabled().pressEnter()
         waitFor("Weekdays at 10:00")
+        edit.assertIsFocused()
         val toggle = compose.onNodeWithTag("workflow_toggle_shared-weekday")
         toggle.assertIsEnabled().performClick()
         waitFor("Enabled")

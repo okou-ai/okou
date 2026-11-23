@@ -55,8 +55,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -80,7 +82,9 @@ internal fun WorkflowRuleRow(
     state: WorkflowState,
     actionsEnabled: Boolean,
     timezone: String,
-    onEdit: (WorkflowEdit.Rule) -> Unit,
+    onEdit: (WorkflowEdit.Rule, Boolean) -> Unit,
+    restoreEditorFocus: Boolean,
+    onEditorFocusRestored: () -> Unit,
     onToggle: (WorkflowAutomation) -> Unit,
     onViewConnection: ((String, String?) -> Unit)?,
     restoreConnectionFocus: Boolean,
@@ -205,14 +209,42 @@ internal fun WorkflowRuleRow(
                             ),
                 )
                 if (editable != null)
-                    WorkflowAction(
-                        stringResource(R.string.workflow_edit),
-                        { onEdit(editable) },
+                    WorkflowEditorAction(
+                        R.string.workflow_edit,
                         enabled = actionsEnabled && !state.writing,
-                    )
+                        restoreFocus = restoreEditorFocus,
+                        onFocusRestored = onEditorFocusRestored,
+                    ) { focused ->
+                        onEdit(editable, focused)
+                    }
             }
         }
     }
+}
+
+@Composable
+internal fun WorkflowEditorAction(
+    label: Int,
+    enabled: Boolean,
+    restoreFocus: Boolean,
+    onFocusRestored: () -> Unit,
+    onEdit: (Boolean) -> Unit,
+) {
+    val requester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val input = LocalInputModeManager.current
+    LaunchedEffect(restoreFocus, enabled) {
+        if (restoreFocus && enabled) {
+            if (input.inputMode == InputMode.Keyboard) requester.requestFocus()
+            onFocusRestored()
+        }
+    }
+    WorkflowAction(
+        stringResource(label),
+        { onEdit(focused) },
+        Modifier.focusRequester(requester).onFocusChanged { focused = it.isFocused },
+        enabled = enabled,
+    )
 }
 
 @Composable
