@@ -12,6 +12,7 @@ export enum FeatureSwitchKey {
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
   MarkdownDocumentTypography = "markdownDocumentTypography",
+  MarkdownArtifactQuote = "markdownArtifactQuote",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   BatchConnectorPermissions = "batchConnectorPermissions",

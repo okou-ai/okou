@@ -128,6 +128,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
+  [FeatureSwitchKey.MarkdownArtifactQuote]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Markdown artifact quotes",
+    description:
+      "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",
     displayName: "Project title reveal",

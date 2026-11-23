@@ -132,6 +132,10 @@ export interface ChatThreadFeedbackSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
+  readonly setArtifactSourceRef$: Command<
+    (() => void) | undefined,
+    [HTMLElement | null]
+  >;
 }
 
 function closestFeedbackSource(node: Node | null): Element | null {
@@ -206,6 +210,13 @@ function resolveSelectionSource(range: Range): Element | null {
 }
 
 function resolveSelectionThreadId(source: Element): string | null {
+  if (
+    source instanceof HTMLElement &&
+    source.dataset.feedbackSourceType === "artifact"
+  ) {
+    // FullscreenPanel owns the portal; its DOM ancestry is not chat ownership.
+    return source.dataset.feedbackSourceThreadId ?? null;
+  }
   const container = source.closest(THREAD_CONTAINER_SELECTOR);
   if (!(container instanceof HTMLElement)) {
     return null;
@@ -226,6 +237,19 @@ function resolveFeedbackSource(source: Element): FeedbackSource | undefined {
     return undefined;
   }
   const type = source.dataset.feedbackSourceType;
+  if (type === "artifact") {
+    const fileId = source.dataset.feedbackSourceFileId;
+    const filenameSnapshot = source.dataset.feedbackSourceFilename;
+    const artifactId = source.dataset.feedbackSourceArtifactId;
+    return fileId && filenameSnapshot
+      ? {
+          type,
+          fileId,
+          filenameSnapshot,
+          ...(artifactId ? { artifactId } : {}),
+        }
+      : undefined;
+  }
   const id = source.dataset.feedbackSourceId;
   const status = source.dataset.feedbackSourceStatus;
   const sentId = source.dataset.feedbackSourceSentId;
@@ -325,14 +349,29 @@ function readFeedbackSelection(): CapturedFeedbackSelection | null {
     return null;
   }
   const source = resolveFeedbackSource(sourceElement);
-  const location = resolveFeedbackLocation(range);
+  const threadId = resolveSelectionThreadId(sourceElement);
+  if (source?.type === "artifact") {
+    const owningThread = Array.from(
+      sourceElement.ownerDocument.querySelectorAll<HTMLElement>(
+        THREAD_CONTAINER_SELECTOR,
+      ),
+    ).find((element) => {
+      return element.dataset.chatThreadContainerId === threadId;
+    });
+    if (!owningThread?.querySelector(CHAT_COMPOSER_SELECTOR)) {
+      return null;
+    }
+  }
+  const location =
+    source?.type === "artifact" ? undefined : resolveFeedbackLocation(range);
   const rect = rectFromRange(range);
   return {
     text,
     rect,
     scrollReferenceRect: rect,
-    threadId: resolveSelectionThreadId(sourceElement),
-    runId: resolveSelectionRunId(sourceElement),
+    threadId,
+    runId:
+      source?.type === "artifact" ? null : resolveSelectionRunId(sourceElement),
     ...location,
     ...(source ? { source } : {}),
   };
@@ -919,6 +958,19 @@ export function createChatThreadFeedbackSignals(
     reconcileAfterScroll$: selection.reconcileAfterScroll$,
     isProgrammaticScrollEvent$,
   });
+  const setArtifactSourceRef$ = onRef(
+    command(({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(selection.internalSelection$)?.source?.type === "artifact") {
+            set(selection.close$);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
   return {
     selection$: selection.selection$,
     start$,
@@ -931,5 +983,6 @@ export function createChatThreadFeedbackSignals(
     closeForward$: forward.closeForward$,
     setListenersRef$,
     setToolbarRef$,
+    setArtifactSourceRef$,
   };
 }
