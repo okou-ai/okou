@@ -576,15 +576,15 @@ height rather than forcing the editor to move with the candidate count.
 `OkouWorkspaceLogo` shows an uploaded organization logo only when Clerk's
 `hasImage` is true; the SDK also supplies generated image URLs, which must not
 be mistaken for custom uploads. Without a custom image, use the exact eight
-Web texture/mark pairs selected by FNV-1a of the workspace ID over UTF-16.
+Web textures selected by FNV-1a of the workspace ID over UTF-16.
 Default artwork stays the same across themes and clients. Workspace marks are
 rounded squares, with a radius of one quarter of their size; people remain a
 separate avatar family. Use the shared logo in workspace chrome, selection,
 and settings. The compact native workspace mark is 32 pt.
 
 `sync-workspace-assets.py` derives the eight bundled vector compositions from
-`core/src/workspace-logo.ts`, the published brand textures, and Web's own
-four-petal mark. The 160% centered texture and 58% mark proportions follow Web.
+`core/src/workspace-logo.ts`, the published brand textures, and the same
+centered 160% texture crop as Web.
 `DesignSystem/Components/Identity/workspace-assets.json` records source and output hashes; `--check`
 verifies them offline. Artwork fills are brand asset colors, not interface-role
 substitutes. A missing upload falls back to that workspace's deterministic mark.

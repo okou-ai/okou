@@ -1,6 +1,4 @@
-// The final four-petal logomark, inline so its ink follows `currentColor`: the
-// 404 page draws it in the theme's brand orange, a workspace without a logo in
-// its colourway's mark colour.
+// The four-petal Okou logomark inherits its ink from the surrounding UI.
 export function OkouLogomark({ className }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 138 140">

@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.864.1](https://github.com/okou-ai/okou/compare/core-v8.864.0...core-v8.864.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove the Okou symbol from default workspace avatars ([#50313](https://github.com/okou-ai/okou/issues/50313)) ([caf7355](https://github.com/okou-ai/okou/commit/caf73558c2663ca0345dd35943f05379213c4c4f))
+
 ## [8.864.0](https://github.com/okou-ai/okou/compare/core-v8.863.0...core-v8.864.0) (2026-11-23)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.30](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.29...runner-lifecycle-v0.18.30) (2026-11-23)
+
+
+### Refactoring
+
+* **runner:** share finalizing handoff candidate construction ([#50312](https://github.com/okou-ai/okou/issues/50312)) ([0e2b6e2](https://github.com/okou-ai/okou/commit/0e2b6e2ae045b1411030be7a8d6fcb0665abb016))
+
 ## [0.18.29](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.28...runner-lifecycle-v0.18.29) (2026-11-23)
 
 ## [0.18.28](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.18.27...runner-lifecycle-v0.18.28) (2026-11-23)

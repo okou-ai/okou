@@ -14,7 +14,7 @@ import {
   invited,
 } from "./switcher-directory-fixture.ts";
 const context = testContext();
-test("org-switcher-002 Placeholder URLs leave the current, available and invited workspace brand marks intact", async () => {
+test("org-switcher-002 Workspaces with placeholder logos show only the default texture in the switcher", async () => {
   await directory(
     context,
     () => {
@@ -25,11 +25,12 @@ test("org-switcher-002 Placeholder URLs leave the current, available and invited
   const trigger = await switchButton();
   const current = await within(trigger).findByRole("img", { name: acme.name });
   expect(current).not.toHaveAttribute("src");
+  expect(current).toBeEmptyDOMElement();
   const panel = await switchMenu();
   for (const org of [acme, design, invited]) {
-    await expect(
-      within(panel).findByRole("img", { name: org.name }),
-    ).resolves.not.toHaveAttribute("src");
+    const avatar = await within(panel).findByRole("img", { name: org.name });
+    expect(avatar).not.toHaveAttribute("src");
+    expect(avatar).toBeEmptyDOMElement();
   }
 });
 test("org-switcher-001 Join an invitation, then choose the existing Design membership", async () => {
