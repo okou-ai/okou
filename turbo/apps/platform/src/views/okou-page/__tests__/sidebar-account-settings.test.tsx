@@ -97,7 +97,6 @@ test("Toggle network-body capture in Debug settings", async () => {
     chatResourcesEnabledByDefault: true,
     theme: "system",
     colorTheme: null,
-    presentationFormat: null,
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };

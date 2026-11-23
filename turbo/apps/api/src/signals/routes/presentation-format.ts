@@ -5,8 +5,6 @@ import {
   type PresentationOutputFormat,
 } from "@okouai/core/presentation-output-format";
 import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
@@ -16,7 +14,6 @@ import type { RouteEntry } from "../route-entry";
 import { now } from "../../lib/time";
 import { notFound, resourceUnavailable } from "../../lib/error";
 import { settle } from "../utils";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   presentationSourceDocuments,
   readPresentationFormatReceipt$,
@@ -27,6 +24,7 @@ import {
 import { reconstructPresentationTask } from "../services/presentation-format-source";
 import {
   presentationFormatContinuationEventId,
+  presentationFormatEnabled,
   PresentationFormatPublicationConflict,
 } from "../services/presentation-format-policy";
 import { CHAT_EVENT_RETENTION_DAYS } from "../services/chat-event-retention-policy";
@@ -59,13 +57,9 @@ const resolve$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (auth.tokenType !== "agent") {
     return sourceMissing();
   }
-  const context = await set(
-    loadUserFeatureSwitchContext$,
-    auth.orgId,
-    auth.userId,
-    signal,
-  );
-  if (!isFeatureEnabled(FeatureSwitchKey.PresentationOutputFormat, context)) {
+  const enabled = await get(presentationFormatEnabled(auth));
+  signal.throwIfAborted();
+  if (!enabled) {
     return resourceUnavailable("Presentation format selection is disabled");
   }
   const source = await set(
@@ -130,7 +124,7 @@ interface ConfirmationSelection {
 
 const readConfirmationResponse$ = command(
   async (
-    { set },
+    { get, set },
     selection: ConfirmationSelection,
     recoverPending: boolean,
     signal: AbortSignal,
@@ -141,7 +135,11 @@ const readConfirmationResponse$ = command(
       signal,
     );
     if (existing.kind === "conflict") {
-      return selectionConflict("The continuation identity is already in use");
+      const enabled = await get(presentationFormatEnabled(selection));
+      signal.throwIfAborted();
+      return enabled
+        ? selectionConflict("The continuation identity is already in use")
+        : null;
     }
     if (existing.kind !== "accepted") {
       return null;
@@ -166,18 +164,18 @@ const readConfirmationResponse$ = command(
 );
 
 const preflightConfirmation$ = command(
-  async ({ set }, selection: ConfirmationSelection, signal: AbortSignal) => {
+  async (
+    { get, set },
+    selection: ConfirmationSelection,
+    signal: AbortSignal,
+  ) => {
     const source = await set(readPresentationFormatSource$, selection, signal);
     if (!source) {
       return { ok: false as const, response: sourceMissing() };
     }
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      selection.orgId,
-      selection.userId,
-      signal,
-    );
-    if (!isFeatureEnabled(FeatureSwitchKey.PresentationOutputFormat, context)) {
+    const enabled = await get(presentationFormatEnabled(selection));
+    signal.throwIfAborted();
+    if (!enabled) {
       return {
         ok: false as const,
         response: resourceUnavailable(

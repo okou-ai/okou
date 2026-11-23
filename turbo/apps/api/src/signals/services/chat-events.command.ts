@@ -204,6 +204,7 @@ import { webChatContextId } from "./web-chat-queue-context.service";
 import { CHAT_EVENT_RETENTION_DAYS } from "./chat-event-retention-policy";
 import {
   presentationFormatContinuationEventId,
+  presentationFormatEnabled,
   PresentationFormatPublicationConflict,
 } from "./presentation-format-policy";
 /** Canonical ChatEvent write commands. */
@@ -2540,6 +2541,30 @@ export const startNormalSendBootstrap$ = command(
   },
 );
 
+const validateNormalSendPresentationSelection$ = command(
+  async (
+    { get },
+    request: NormalSendRequest,
+    selection: PresentationFormatSelectionPart,
+    signal: AbortSignal,
+  ) => {
+    if (
+      request.auth.tokenType !== "session" ||
+      request.body.threadId === undefined ||
+      request.body.clientEventId !==
+        presentationFormatContinuationEventId(selection.sourceRunId) ||
+      request.body.revokesEventId !== undefined
+    ) {
+      return badRequestMessage("Invalid presentation format confirmation");
+    }
+    const enabled = await get(presentationFormatEnabled(request));
+    signal.throwIfAborted();
+    return enabled
+      ? undefined
+      : badRequestMessage("Presentation format selection is disabled");
+  },
+);
+
 const prepareNormalSendContext$ = command(
   async ({ get, set }, request: NormalSendRequest, signal: AbortSignal) => {
     if (forgedMcpSource(request.body)) {
@@ -2553,15 +2578,17 @@ const prepareNormalSendContext$ = command(
       return badRequestMessage("Presentation selections are server-managed");
     }
     const selection = request.presentationFormatSelection;
-    if (
-      selection &&
-      (request.auth.tokenType !== "session" ||
-        request.body.threadId === undefined ||
-        request.body.clientEventId !==
-          presentationFormatContinuationEventId(selection.sourceRunId) ||
-        request.body.revokesEventId !== undefined)
-    ) {
-      return badRequestMessage("Invalid presentation format confirmation");
+    if (selection) {
+      const error = await set(
+        validateNormalSendPresentationSelection$,
+        request,
+        selection,
+        signal,
+      );
+      signal.throwIfAborted();
+      if (error) {
+        return error;
+      }
     }
     const { context, existingThread$, inputId } =
       request.bootstrap ?? createNormalSendBootstrap(request, request.body);

@@ -26,7 +26,6 @@ let mockPreferences: UserPreferencesResponse = {
   chatResourcesEnabledByDefault: false,
   theme: "system",
   colorTheme: null,
-  presentationFormat: null,
   captureNetworkBodiesRemaining: 0,
   memoryInitialized: true,
 };
@@ -54,7 +53,6 @@ export function resetMockUserPreferences(): void {
     chatResourcesEnabledByDefault: false,
     theme: "system",
     colorTheme: null,
-    presentationFormat: null,
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };

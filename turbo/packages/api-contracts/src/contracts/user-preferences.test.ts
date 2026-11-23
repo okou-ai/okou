@@ -8,11 +8,62 @@ import {
 } from "./user-preferences";
 
 describe("user preferences contract", () => {
+  const legacyPreferences = {
+    timezone: "UTC",
+    locale: "en-US",
+    supportedLocales: ["en-US"],
+    sendMode: "enter",
+    cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault: false,
+    theme: "system",
+    colorTheme: null,
+    captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
+  };
+
+  it("accepts the flag-off response without adding a presentation format field", () => {
+    const parsed = userPreferencesResponseSchema.parse(legacyPreferences);
+    expect(parsed).toStrictEqual(legacyPreferences);
+    expect(parsed).not.toHaveProperty("presentationFormat");
+  });
+
+  it.each([null, "html", "pptx"] as const)(
+    "accepts an enabled presentation format of %s",
+    (presentationFormat) => {
+      const preferences = { ...legacyPreferences, presentationFormat };
+      expect(userPreferencesResponseSchema.parse(preferences)).toStrictEqual(
+        preferences,
+      );
+    },
+  );
+
+  it("rejects unsupported presentation formats", () => {
+    expect(
+      userPreferencesResponseSchema.safeParse({
+        ...legacyPreferences,
+        presentationFormat: "pdf",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps old updates and explicit format clears distinct from an empty update", () => {
+    expect(
+      updateUserPreferencesRequestSchema.parse({ theme: "light" }),
+    ).toStrictEqual({
+      theme: "light",
+    });
+    expect(
+      updateUserPreferencesRequestSchema.parse({ presentationFormat: null }),
+    ).toStrictEqual({ presentationFormat: null });
+    expect(updateUserPreferencesRequestSchema.safeParse({}).success).toBe(
+      false,
+    );
+  });
+
   it("accepts Indonesian as a user locale", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "id-ID",
-      presentationFormat: null,
       supportedLocales: ["en-US", "pt-BR", "id-ID"],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,
@@ -32,7 +83,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ja-JP",
-        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -54,7 +104,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "ko-KR",
-        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "ko-KR"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -76,7 +125,6 @@ describe("user preferences contract", () => {
       userPreferencesResponseSchema.parse({
         timezone: null,
         locale: "es-ES",
-        presentationFormat: null,
         supportedLocales: ["en-US", "pt-BR", "ja-JP", "es-ES"],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
@@ -100,7 +148,6 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "it-IT",
-      presentationFormat: null,
       supportedLocales: ["en-US", "it-IT"],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,
@@ -134,7 +181,6 @@ describe("user preferences contract", () => {
     const preferences = userPreferencesResponseSchema.parse({
       timezone: null,
       locale: "zh-Hant",
-      presentationFormat: null,
       supportedLocales: [...SUPPORTED_USER_LOCALES],
       sendMode: "enter",
       cloudBrowserEnabledByDefault: true,

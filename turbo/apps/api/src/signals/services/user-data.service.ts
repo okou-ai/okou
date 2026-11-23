@@ -12,6 +12,7 @@ import {
   themePreferenceSchema,
   type ThemePreference,
   type UserLocale,
+  updateUserPreferencesRequestSchema,
   type UpdateUserPreferencesRequest,
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
@@ -31,6 +32,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { isValidTimeZone } from "../utils";
+import { presentationFormatEnabled } from "./presentation-format-policy";
 interface UserScopedQuery {
   readonly orgId: string;
   readonly userId: string;
@@ -91,9 +93,13 @@ export function userPreferences({
   orgId,
   userId,
 }: UserScopedQuery): Computed<Promise<UserPreferencesResponse>> {
+  const presentationFormatEnabled$ = presentationFormatEnabled({
+    orgId,
+    userId,
+  });
   return computed(async (get): Promise<UserPreferencesResponse> => {
     const db = get(db$);
-    const [[row], [memory]] = await Promise.all([
+    const [[row], [memory], formatEnabled] = await Promise.all([
       db
         .select({
           timezone: orgMembersMetadata.timezone,
@@ -125,6 +131,7 @@ export function userPreferences({
           ),
         )
         .limit(1),
+      get(presentationFormatEnabled$),
     ]);
     const memoryInitialized = (memory?.headVersionId ?? null) !== null;
 
@@ -138,7 +145,7 @@ export function userPreferences({
         chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
         theme: null,
         colorTheme: null,
-        presentationFormat: null,
+        ...(formatEnabled && { presentationFormat: null }),
         captureNetworkBodiesRemaining: 0,
         memoryInitialized,
       };
@@ -153,7 +160,7 @@ export function userPreferences({
       chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
-      presentationFormat: row.presentationFormat,
+      ...(formatEnabled && { presentationFormat: row.presentationFormat }),
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
       memoryInitialized,
     };
@@ -214,6 +221,7 @@ export function userModelPreference({
 
 interface UpdateUserPreferencesArgs extends UserScopedQuery {
   readonly preferences: UpdateUserPreferencesRequest;
+  readonly humanSession?: boolean;
 }
 
 type UpdateUserPreferencesResult =
@@ -232,6 +240,10 @@ function mergeUserPreferences(
   existing: UserPreferencesResponse,
   preferences: UpdateUserPreferencesRequest,
 ): StoredUserPreferences {
+  const presentationFormat =
+    preferences.presentationFormat === undefined
+      ? existing.presentationFormat
+      : preferences.presentationFormat;
   return {
     timezone: preferences.timezone ?? existing.timezone,
     locale: preferences.locale ?? existing.locale,
@@ -243,10 +255,7 @@ function mergeUserPreferences(
     chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
-    presentationFormat:
-      preferences.presentationFormat === undefined
-        ? existing.presentationFormat
-        : preferences.presentationFormat,
+    ...(presentationFormat !== undefined && { presentationFormat }),
     captureNetworkBodiesRemaining:
       preferences.captureNetworkBodiesRemaining ??
       existing.captureNetworkBodiesRemaining,
@@ -287,10 +296,9 @@ export const updateUserPreferences$ = command(
     args: UpdateUserPreferencesArgs,
     signal: AbortSignal,
   ): Promise<UpdateUserPreferencesResult> => {
-    const preferences = args.preferences;
     if (
-      preferences.timezone !== undefined &&
-      !isValidTimeZone(preferences.timezone)
+      args.preferences.timezone !== undefined &&
+      !isValidTimeZone(args.preferences.timezone)
     ) {
       return {
         ok: false,
@@ -302,6 +310,34 @@ export const updateUserPreferences$ = command(
       userPreferences({ orgId: args.orgId, userId: args.userId }),
     );
     signal.throwIfAborted();
+
+    const { presentationFormat, ...legacyPreferences } = args.preferences;
+    // The service projection includes the field only while its switch is on.
+    const requested = updateUserPreferencesRequestSchema.safeParse({
+      ...legacyPreferences,
+      ...(existing.presentationFormat !== undefined &&
+        presentationFormat !== undefined && { presentationFormat }),
+    });
+    if (!requested.success) {
+      return {
+        ok: false,
+        message: requested.error.issues
+          .map((issue) => {
+            return issue.message;
+          })
+          .join("; "),
+      };
+    }
+    const preferences = requested.data;
+    if (
+      preferences.presentationFormat !== undefined &&
+      args.humanSession !== true
+    ) {
+      return {
+        ok: false,
+        message: "Presentation format preferences require a human session",
+      };
+    }
 
     const merged = mergeUserPreferences(existing, preferences);
 
@@ -319,7 +355,9 @@ export const updateUserPreferences$ = command(
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
-        presentationFormat: merged.presentationFormat,
+        ...(preferences.presentationFormat !== undefined && {
+          presentationFormat: preferences.presentationFormat,
+        }),
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,
         createdAt: updatedAt,
         updatedAt,

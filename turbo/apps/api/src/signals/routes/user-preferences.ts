@@ -5,8 +5,6 @@ import {
   type UserLocale,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { DEFAULT_USER_TIMEZONE, isValidTimeZone } from "@okouai/core/timezone";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { command, computed } from "ccstate";
@@ -22,7 +20,6 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import type { RouteEntry } from "../route-entry";
 import { initializeMemberMemory$ } from "../services/member-memory-initialization.service";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   updateUserPreferences$,
   userPreferences,
@@ -69,34 +66,13 @@ const updateUserPreferencesInner$ = command(
       return body.response;
     }
 
-    if (body.data.presentationFormat !== undefined) {
-      if (auth.tokenType !== "session") {
-        return badRequestMessage(
-          "Presentation format preferences require a human session",
-        );
-      }
-      const context = await set(
-        loadUserFeatureSwitchContext$,
-        auth.orgId,
-        auth.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (
-        !isFeatureEnabled(FeatureSwitchKey.PresentationOutputFormat, context)
-      ) {
-        return badRequestMessage(
-          "Presentation format preferences are disabled",
-        );
-      }
-    }
-
     const result = await set(
       updateUserPreferences$,
       {
         orgId: auth.orgId,
         userId: auth.userId,
         preferences: body.data,
+        humanSession: auth.tokenType === "session",
       },
       signal,
     );

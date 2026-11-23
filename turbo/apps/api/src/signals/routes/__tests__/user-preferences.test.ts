@@ -8,6 +8,7 @@ import {
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import {
   USER_PREFERENCES_UNINITIALIZED,
+  SUPPORTED_USER_LOCALES,
   userPreferencesContract,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_USER_TIMEZONE } from "@okouai/core/timezone";
@@ -63,7 +64,7 @@ test("get requires initialization and post returns the saved preferences", async
   );
   expect(initialized.body.timezone).toBe("Asia/Tokyo");
   expect(initialized.body.locale).toBe("ja-JP");
-  expect(initialized.body.presentationFormat).toBeNull();
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
 
   const after = await accept(client().get({ headers: headers() }), [200]);
   expect(after.body).toStrictEqual(initialized.body);
@@ -75,8 +76,7 @@ test("get requires initialization and post returns the saved preferences", async
     }),
     [200],
   );
-  expect(repeated.body.timezone).toBe("Asia/Tokyo");
-  expect(repeated.body.locale).toBe("ja-JP");
+  expect(repeated.body).toStrictEqual(initialized.body);
 });
 
 test("initialization fills only a missing locale", async () => {
@@ -99,6 +99,7 @@ test("initialization fills only a missing locale", async () => {
   );
   expect(initialized.body.timezone).toBe("Asia/Tokyo");
   expect(initialized.body.locale).toBe("fr-FR");
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
 });
 
 test("initialization fills only a missing timezone", async () => {
@@ -118,6 +119,7 @@ test("initialization fills only a missing timezone", async () => {
   );
   expect(initialized.body.timezone).toBe("Asia/Tokyo");
   expect(initialized.body.locale).toBe("de-DE");
+  expect(initialized.body).not.toHaveProperty("presentationFormat");
 });
 
 test("initialization uses Pacific Time and English when no hints are provided", async () => {
@@ -131,6 +133,56 @@ test("initialization uses Pacific Time and English when no hints are provided", 
   expect(initialized.body.locale).toBe("en-US");
   const persisted = await accept(client().get({ headers: headers() }), [200]);
   expect(persisted.body).toStrictEqual(initialized.body);
+});
+
+test("a disabled presentation switch keeps initialization, reads, and updates on the legacy wire shape", async () => {
+  newMember(STAFF_ORG_ID);
+  await accept(
+    featureSwitches().update({
+      headers: headers(),
+      body: {
+        switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+      },
+    }),
+    [200],
+  );
+
+  const initialized = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { timezone: "Asia/Tokyo", locale: "ja-JP" },
+    }),
+    [200],
+  );
+  expect(initialized.body).toStrictEqual({
+    timezone: "Asia/Tokyo",
+    locale: "ja-JP",
+    supportedLocales: [...SUPPORTED_USER_LOCALES],
+    sendMode: "enter",
+    cloudBrowserEnabledByDefault: true,
+    chatResourcesEnabledByDefault: false,
+    theme: null,
+    colorTheme: null,
+    captureNetworkBodiesRemaining: 0,
+    memoryInitialized: true,
+  });
+  expect(
+    (await accept(client().get({ headers: headers() }), [200])).body,
+  ).toStrictEqual(initialized.body);
+  const repeated = await accept(
+    client().initialize({
+      headers: headers(),
+      body: { timezone: "UTC", locale: "en-US" },
+    }),
+    [200],
+  );
+  expect(repeated.body).toStrictEqual(initialized.body);
+
+  const updated = await accept(
+    client().update({ headers: headers(), body: { theme: "light" } }),
+    [200],
+  );
+  expect(updated.body).toStrictEqual({ ...initialized.body, theme: "light" });
 });
 
 test("presentation format updates are nullable and preserve unrelated preferences", async () => {
@@ -215,14 +267,14 @@ test("presentation format stays scoped to the current member and workspace", asy
     }),
     [200],
   );
-  expect(otherWorkspace.body.presentationFormat).toBeNull();
+  expect(otherWorkspace.body).not.toHaveProperty("presentationFormat");
 
   mocks.clerk.session(owner.userId, owner.orgId);
   const original = await accept(client().get({ headers: headers() }), [200]);
   expect(original.body.presentationFormat).toBe("pptx");
 });
 
-test("a disabled presentation switch rejects format writes without blocking other preferences", async () => {
+test("a disabled presentation switch ignores mixed format writes and preserves the saved default", async () => {
   newMember(STAFF_ORG_ID);
   const saved = await accept(
     client().update({
@@ -246,26 +298,59 @@ test("a disabled presentation switch rejects format writes without blocking othe
     [200],
   );
 
-  await accept(
+  const { presentationFormat, ...legacyPreferences } = saved.body;
+  expect(presentationFormat).toBe("pptx");
+  expect(
+    (await accept(client().get({ headers: headers() }), [200])).body,
+  ).toStrictEqual(legacyPreferences);
+
+  const mixed = await accept(
     client().update({
       headers: headers(),
       body: { presentationFormat: "html", theme: "light" },
     }),
-    [400],
-  );
-  await accept(
-    client().update({ headers: headers(), body: { presentationFormat: null } }),
-    [400],
-  );
-  expect(
-    (await accept(client().get({ headers: headers() }), [200])).body,
-  ).toStrictEqual(saved.body);
-
-  const unrelated = await accept(
-    client().update({ headers: headers(), body: { theme: "light" } }),
     [200],
   );
-  expect(unrelated.body).toStrictEqual({ ...saved.body, theme: "light" });
+  expect(mixed.body).toStrictEqual({ ...legacyPreferences, theme: "light" });
+  const ignoredClear = await accept(
+    client().update({
+      headers: headers(),
+      body: { presentationFormat: null, sendMode: "cmd-enter" },
+    }),
+    [200],
+  );
+  expect(ignoredClear.body).toStrictEqual({
+    ...mixed.body,
+    sendMode: "cmd-enter",
+  });
+
+  const empty = await accept(
+    client().update({ headers: headers(), body: {} }),
+    [400],
+  );
+  for (const presentationFormat of ["html", null] as const) {
+    const formatOnly = await accept(
+      client().update({ headers: headers(), body: { presentationFormat } }),
+      [400],
+    );
+    expect(formatOnly.body).toStrictEqual(empty.body);
+  }
+  expect(
+    (await accept(client().get({ headers: headers() }), [200])).body,
+  ).toStrictEqual(ignoredClear.body);
+
+  await accept(
+    featureSwitches().update({
+      headers: headers(),
+      body: { switches: { [FeatureSwitchKey.PresentationOutputFormat]: true } },
+    }),
+    [200],
+  );
+  const restored = await accept(client().get({ headers: headers() }), [200]);
+  expect(restored.body).toStrictEqual({
+    ...ignoredClear.body,
+    presentationFormat: "pptx",
+  });
 });
 
 test("external members cannot enable presentation format through a personal override", async () => {
@@ -284,19 +369,21 @@ test("external members cannot enable presentation format through a personal over
     }),
     [200],
   );
-  await accept(
+  const updated = await accept(
     client().update({
       headers: headers(),
       body: { presentationFormat: "pptx", sendMode: "cmd-enter" },
     }),
-    [400],
+    [200],
   );
+  expect(updated.body).toStrictEqual({ ...saved.body, sendMode: "cmd-enter" });
+  expect(updated.body).not.toHaveProperty("presentationFormat");
   expect(
     (await accept(client().get({ headers: headers() }), [200])).body,
-  ).toStrictEqual(saved.body);
+  ).toStrictEqual(updated.body);
 });
 
-test("a device-approved PAT can update other preferences but cannot set or clear presentation format", async () => {
+test("personal-token format restrictions apply only while enabled and do not change legacy preferences while disabled", async () => {
   const owner = newMember(STAFF_ORG_ID);
   const saved = await accept(
     client().update({
@@ -360,4 +447,71 @@ test("a device-approved PAT can update other preferences but cannot set or clear
   expect(
     (await accept(client().get({ headers: headers() }), [200])).body,
   ).toStrictEqual(unrelated.body);
+
+  await accept(
+    featureSwitches().update({
+      headers: headers(),
+      body: {
+        switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+      },
+    }),
+    [200],
+  );
+  const { presentationFormat, ...legacyPreferences } = unrelated.body;
+  expect(presentationFormat).toBe("pptx");
+  expect(
+    (await accept(client().get({ headers: personalHeaders }), [200])).body,
+  ).toStrictEqual(legacyPreferences);
+
+  const ignoredFormat = await accept(
+    client().update({
+      headers: personalHeaders,
+      body: { presentationFormat: "html", sendMode: "cmd-enter" },
+    }),
+    [200],
+  );
+  expect(ignoredFormat.body).toStrictEqual({
+    ...legacyPreferences,
+    sendMode: "cmd-enter",
+  });
+  const ignoredClear = await accept(
+    client().update({
+      headers: personalHeaders,
+      body: { presentationFormat: null, theme: "dark" },
+    }),
+    [200],
+  );
+  expect(ignoredClear.body).toStrictEqual({
+    ...ignoredFormat.body,
+    theme: "dark",
+  });
+
+  const empty = await accept(
+    client().update({ headers: personalHeaders, body: {} }),
+    [400],
+  );
+  for (const presentationFormat of ["html", null] as const) {
+    const formatOnly = await accept(
+      client().update({
+        headers: personalHeaders,
+        body: { presentationFormat },
+      }),
+      [400],
+    );
+    expect(formatOnly.body).toStrictEqual(empty.body);
+  }
+  expect(
+    (await accept(client().get({ headers: personalHeaders }), [200])).body,
+  ).toStrictEqual(ignoredClear.body);
+
+  await accept(
+    featureSwitches().update({
+      headers: headers(),
+      body: { switches: { [FeatureSwitchKey.PresentationOutputFormat]: true } },
+    }),
+    [200],
+  );
+  expect(
+    (await accept(client().get({ headers: headers() }), [200])).body,
+  ).toStrictEqual({ ...ignoredClear.body, presentationFormat: "pptx" });
 });

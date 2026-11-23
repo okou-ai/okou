@@ -203,6 +203,55 @@ describe("presentation format preflight and confirmation", () => {
     expect(denied.body.error.code).toBe("FORBIDDEN");
   });
 
+  it("blocks an already issued Agent token and new confirmation after switch-off without changing the task", async () => {
+    const s = await scenario();
+    const before = await fixture.chat.listThreadEvents(s.actor, s.threadId);
+    await accept(
+      switches().update({
+        headers: auth(s.actor),
+        body: {
+          switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+        },
+      }),
+      [200],
+    );
+    await accept(api().resolve({ headers: s.token, body: {} }), [403]);
+    await accept(
+      api().confirm({
+        headers: auth(s.actor),
+        body: { sourceRunId: s.runId, presentationFormat: "pptx" },
+      }),
+      [403],
+    );
+    await expect(
+      fixture.chat.listThreadEvents(s.actor, s.threadId),
+    ).resolves.toStrictEqual(before);
+    const hidden = await accept(
+      preferences().get({ headers: auth(s.actor) }),
+      [200],
+    );
+    expect(hidden.body).not.toHaveProperty("presentationFormat");
+    await accept(
+      switches().update({
+        headers: auth(s.actor),
+        body: {
+          switches: { [FeatureSwitchKey.PresentationOutputFormat]: true },
+        },
+      }),
+      [200],
+    );
+    const retained = await accept(
+      preferences().get({ headers: auth(s.actor) }),
+      [200],
+    );
+    expect(retained.body.presentationFormat).toBeNull();
+    const resumed = await accept(
+      api().resolve({ headers: s.token, body: {} }),
+      [200],
+    );
+    expect(resumed.body.status).toBe("selection_required");
+  });
+
   it("returns one stable inline descriptor without saving an explicit first-time request", async () => {
     const s = await scenario();
     const initial = await accept(
@@ -729,6 +778,31 @@ describe("presentation format preflight and confirmation", () => {
       },
       [201],
     );
+    await accept(
+      switches().update({
+        headers: auth(s.actor),
+        body: {
+          switches: { [FeatureSwitchKey.PresentationOutputFormat]: false },
+        },
+      }),
+      [200],
+    );
+    await accept(
+      api().confirm({
+        headers: auth(s.actor),
+        body: { sourceRunId: s.runId, presentationFormat: "pptx" },
+      }),
+      [403],
+    );
+    await accept(
+      switches().update({
+        headers: auth(s.actor),
+        body: {
+          switches: { [FeatureSwitchKey.PresentationOutputFormat]: true },
+        },
+      }),
+      [200],
+    );
     const conflicted = await accept(
       api().confirm({
         headers: auth(s.actor),
@@ -800,28 +874,31 @@ describe("presentation format preflight and confirmation", () => {
     ).toBeFalsy();
   });
 
-  it("rejects a forged selection part through ordinary chat send", async () => {
-    const s = await scenario();
-    const result = await fixture.chat.requestSendEvent(
-      s.actor,
-      {
-        threadId: s.threadId,
-        prompt: "Continue",
-        userMessage: {
-          version: 1,
-          parts: [
-            { type: "text", text: "Continue" },
-            {
-              type: "presentation_format_selection",
-              sourceRunId: s.runId,
-              sourceInputEventIds: [s.clientEventId],
-              presentationFormat: "pptx",
-            },
-          ],
+  it.each([true, false])(
+    "rejects a forged selection part through ordinary chat send when the switch is %s",
+    async (enabled) => {
+      const s = await scenario({ enabled });
+      const result = await fixture.chat.requestSendEvent(
+        s.actor,
+        {
+          threadId: s.threadId,
+          prompt: "Continue",
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Continue" },
+              {
+                type: "presentation_format_selection",
+                sourceRunId: s.runId,
+                sourceInputEventIds: [s.clientEventId],
+                presentationFormat: "pptx",
+              },
+            ],
+          },
         },
-      },
-      [400],
-    );
-    expect(result.status).toBe(400);
-  });
+        [400],
+      );
+      expect(result.status).toBe(400);
+    },
+  );
 });

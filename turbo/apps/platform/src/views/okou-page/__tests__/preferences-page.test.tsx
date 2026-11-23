@@ -33,7 +33,6 @@ function defaultPreferences(): UserPreferencesResponse {
     chatResourcesEnabledByDefault: true,
     theme: "system",
     colorTheme: "blue-horizon",
-    presentationFormat: null,
     captureNetworkBodiesRemaining: 0,
     memoryInitialized: true,
   };

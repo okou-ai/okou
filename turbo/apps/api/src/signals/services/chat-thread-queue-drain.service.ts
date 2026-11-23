@@ -92,10 +92,10 @@ export const notifyRunningChatRunOfPendingInput$ = command(
     if (!pending) {
       return false;
     }
-    if (!pending.userMessage) {
-      throw new Error("Pending active input is missing userMessage");
-    }
-    if (hasPresentationFormatSelection(pending.userMessage)) {
+    if (
+      pending.userMessage &&
+      hasPresentationFormatSelection(pending.userMessage)
+    ) {
       const [budget] = await database
         .select({ id: chatEvents.id })
         .from(chatEvents)

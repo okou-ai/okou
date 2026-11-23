@@ -48,7 +48,7 @@ export const userPreferencesResponseSchema = object({
   chatResourcesEnabledByDefault: boolean(),
   theme: themePreferenceSchema.nullable(),
   colorTheme: colorThemeSchema.nullable(),
-  presentationFormat: zEnum(PRESENTATION_OUTPUT_FORMATS).nullable(),
+  presentationFormat: zEnum(PRESENTATION_OUTPUT_FORMATS).nullable().optional(),
   captureNetworkBodiesRemaining: number().int().min(0),
   // False until this member's memory storage has a HEAD. The Web App then
   // calls the idempotent initialize route before starting runs; run creation

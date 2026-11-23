@@ -325,42 +325,47 @@ export const loadNextSteerableInput$ = command(
     if (!next) {
       return { outcome: "found", input: null };
     }
-    const budget = pending.find((input) => {
-      return input.eventType === "input.budget";
-    });
     const sourceChatThreadId = scope.chatThreadId;
-    const sourceEventIds = budget ? [next.id, budget.id] : [next.id];
-    const sources = await db
+    const [nextSource] = await db
       .select(activeInputSourceFields())
       .from(chatEvents)
       .where(
         and(
           eq(chatEvents.chatThreadId, sourceChatThreadId),
-          inArray(chatEvents.id, sourceEventIds),
+          eq(chatEvents.id, next.id),
         ),
       );
     signal.throwIfAborted();
-    const nextSource = sources.find((source) => {
-      return source.id === next.id;
-    });
     if (!nextSource) {
       throw new Error("Pending steerable input disappeared from its thread");
     }
-    // A selection blocks later prompts, not this Run's independent time warning.
-    const source =
+    let source = nextSource;
+    // Retained accepted inputs stay protected after switch-off. Ordinary input
+    // keeps the existing source read and does not materialize a second input.
+    if (
       nextSource.userMessage &&
       hasPresentationFormatSelection(nextSource.userMessage)
-        ? budget
-          ? sources.find((candidate) => {
-              return candidate.id === budget.id;
-            })
-          : null
-        : nextSource;
-    if (source === null) {
-      return { outcome: "found", input: null };
-    }
-    if (!source) {
-      throw new Error("Pending budget input disappeared from its thread");
+    ) {
+      const budget = pending.find((input) => {
+        return input.eventType === "input.budget";
+      });
+      if (!budget) {
+        return { outcome: "found", input: null };
+      }
+      const [budgetSource] = await db
+        .select(activeInputSourceFields())
+        .from(chatEvents)
+        .where(
+          and(
+            eq(chatEvents.chatThreadId, sourceChatThreadId),
+            eq(chatEvents.id, budget.id),
+          ),
+        );
+      signal.throwIfAborted();
+      if (!budgetSource) {
+        throw new Error("Pending budget input disappeared from its thread");
+      }
+      source = budgetSource;
     }
     const prompt = await settle(
       set(materializeActiveInputSource$, source, scope, signal),
