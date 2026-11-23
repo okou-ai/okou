@@ -44,6 +44,12 @@ struct ChatSettingsView: View {
   @State private var confirmsSignOut = false
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
+  #if STAGING
+    private static let accountSecurityURL = URL(
+      string: "https://informed-calf-6.accounts.dev/user/security")!
+  #else
+    private static let accountSecurityURL = URL(string: "https://accounts.okou.ai/user/security")!
+  #endif
   private static let supportEmail = "contact@okou.ai"
 
   var body: some View {
@@ -191,6 +197,16 @@ struct ChatSettingsView: View {
           .signOutConfirmation(isPresented: $confirmsSignOut, signOut: signOut)
         } header: {
           Text("Account").okouSectionHeader()
+        } footer: {
+          Link(destination: Self.accountSecurityURL) {
+            Text("Delete account")
+              .underline()
+              .okouSectionNote()
+              .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
+              .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .padding(.top, OkouSpace.sm)
         }
       }
       .okouGroupedBackground()

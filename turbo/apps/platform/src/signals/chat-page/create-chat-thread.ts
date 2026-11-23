@@ -731,11 +731,16 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
       attachments: persisted,
     });
 
+    const direction = get(draft.suggestionDirection$);
     await set(
       patchChatThreadDraft$,
       {
         threadId,
         ...payload,
+        suggestionPreset:
+          payload.userMessage && direction?.direction_type === "preset"
+            ? direction
+            : undefined,
       },
       signal,
     );
@@ -3255,6 +3260,9 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         generationTemplate,
         attachments: result.attachments,
       });
+      const suggestionDirection = request.options?.editorDocument
+        ? get(draft.suggestionDirection$)
+        : undefined;
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
@@ -3267,13 +3275,16 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         }),
         set(
           sendEvent$,
-          sendInputForRequest({
-            request,
-            result,
-            userMessage,
-            runOptions,
-            realAgentInPreviewEnabled,
-          }),
+          {
+            suggestionDirection,
+            ...sendInputForRequest({
+              request,
+              result,
+              userMessage,
+              runOptions,
+              realAgentInPreviewEnabled,
+            }),
+          },
           signal,
         ),
       ]);
@@ -3355,6 +3366,7 @@ function createQueueMessage(deps: SendMessageDeps) {
       const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
+      const suggestionDirection = get(draft.suggestionDirection$);
 
       set(cancelDraftSync$);
       set(draft.clear$);
@@ -3370,6 +3382,7 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
+            suggestionDirection,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,

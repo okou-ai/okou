@@ -1,3 +1,4 @@
+import type { SuggestionDirection } from "../../lib/posthog.ts";
 import { command, type Command, type Computed } from "ccstate";
 import type {
   ChatRunOptionsRequest,
@@ -30,6 +31,7 @@ export interface ChatRunSource {
 }
 
 export interface SendInputChatEvent {
+  readonly suggestionDirection?: SuggestionDirection;
   readonly kind: "input";
   readonly delivery: "run" | "queue";
   readonly prompt: string;
@@ -139,6 +141,7 @@ function createSendInputChatEvent({
               : { revokesEventId: input.revokesEventId }),
           },
           signal,
+          input.suggestionDirection,
         ),
         (async () => {
           await Promise.resolve(input.onOptimisticSend?.());
