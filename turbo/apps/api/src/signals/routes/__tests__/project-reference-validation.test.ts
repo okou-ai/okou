@@ -6,6 +6,7 @@ import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/c
 import { createProjectOperationId } from "@okouai/core/project-operation-id";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp, setupRawAppRequest } from "../../../__tests__/test-helpers";
+import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
@@ -175,6 +176,75 @@ describe("project reference admission through chat send", () => {
     );
     expect(renamed.body.name).toBe("Research during verification");
     await fixture.cancelChatRun(actor, run.runId);
+  });
+
+  it("uses current Project names and missing references when a queued input launches", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor } = await fixture.entitledNativeChatActor();
+    const bound = await createProject(actor, "Bound before pick");
+    const linked = await createProject(actor, "Linked before pick");
+    const deleted = await createProject(actor, "Deleted before pick");
+    const thread = await fixture.chat.createThread(actor, {
+      projectId: bound.id,
+    });
+    const blocking = await fixture.sendChatRun(actor, {
+      threadId: thread.id,
+      prompt: "Keep the thread busy",
+    });
+    const queued = await fixture.sendWaitingChatInput(actor, {
+      threadId: thread.id,
+      prompt: "Use these Projects",
+      userMessage: {
+        version: 1,
+        parts: [
+          mention(deleted.id, "Deleted link"),
+          {
+            type: "feedback",
+            quote: "Check the linked Project",
+            note: [mention(linked.id.toUpperCase(), "Feedback link")],
+          },
+        ],
+      },
+    });
+
+    for (const [project, name] of [
+      [bound, "Bound at pick"],
+      [linked, "Linked at pick"],
+    ] as const) {
+      await accept(
+        projects().update({
+          headers: fixture.sessionHeaders(actor),
+          params: { id: project.id },
+          body: {
+            eventId: createProjectOperationId(now(), randomUUID()),
+            name,
+          },
+        }),
+        [200],
+      );
+    }
+    await accept(
+      projects().delete({
+        headers: fixture.sessionHeaders(actor),
+        params: { id: deleted.id },
+        body: { eventId: createProjectOperationId(now(), randomUUID()) },
+      }),
+      [204],
+    );
+    const { sandboxHeaders } = await fixture.runExecution(blocking.runId);
+    await fixture.completeChatRunOk(blocking.runId, sandboxHeaders);
+    const { runId } = await queued.launchedRun();
+    const { execution } = await fixture.runExecution(runId);
+    expect(execution.appendSystemPrompt).toContain(
+      `Current Project: "Bound at pick" (PROJECT_ID=${bound.id})`,
+    );
+    expect(execution.appendSystemPrompt).toContain(
+      'current name="Linked at pick"',
+    );
+    expect(execution.appendSystemPrompt).toContain(
+      `Mentioned Project "Deleted link" (${deleted.id}) is unavailable.`,
+    );
+    await fixture.cancelChatRun(actor, runId);
   });
 
   it.each(["ordinary", "feedback"] as const)(

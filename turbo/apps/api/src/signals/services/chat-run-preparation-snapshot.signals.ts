@@ -28,11 +28,13 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { QueryBuilder } from "drizzle-orm/pg-core";
+import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { array, object, string, unknown as zUnknown, uuid } from "zod";
 
 import {
   nullableDriverValueDecoder,
   pgBooleanDecoder,
+  zodDriverValueDecoder,
 } from "../../lib/db-structured-result";
 import { db$ } from "../external/db";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
@@ -41,6 +43,7 @@ import {
   canonicalChatInputModelSelection,
 } from "./canonical-chat-event-read.service";
 import { queuedThreadInputCondition } from "./chat-queued-event.service";
+import { contextJsonRows } from "./context-rowset";
 import {
   pickedThreadColumns,
   type EnqueuedChatInputFacts,
@@ -214,6 +217,7 @@ function pickedProjectJoin(
 function pickedProjectFacts(
   projectId: string | null,
   current: ProjectReferenceRow | null,
+  capturedReferences: readonly ProjectReferenceRow[],
   owned: EnqueuedChatInputFacts | undefined,
 ) {
   const references = owned?.projectReferences;
@@ -222,8 +226,52 @@ function pickedProjectFacts(
       references?.find(({ id }) => {
         return id === projectId;
       }) ?? current,
-    ...(references ? { projectReferences: references } : {}),
+    projectReferences: references ?? capturedReferences,
   };
+}
+
+const projectReferenceRowsDecoder = zodDriverValueDecoder(
+  array(object({ id: uuid(), name: string() })),
+);
+
+function pickedProjectReferences(
+  head: ReturnType<typeof buildPreparationTables>["head"],
+  hasCapacity: SQL,
+) {
+  const referenced = alias(projects, "referenced_project");
+  // Stored documents also carry Project links inside feedback notes.
+  const referenceIds = sql`jsonb_path_query_array(${head.userMessage},
+    '$.parts[*] ? (@.type == "project").projectId')
+    || jsonb_path_query_array(${head.userMessage},
+    '$.parts[*] ? (@.type == "feedback").note[*] ? (@.type == "project").projectId')`;
+  const rows = new QueryBuilder()
+    .select({
+      payload:
+        sql`jsonb_build_object('id', ${referenced.id}, 'name', ${referenced.name})`
+          .mapWith(zodDriverValueDecoder(zUnknown()))
+          .as("payload"),
+    })
+    .from(referenced)
+    .where(
+      and(
+        eq(referenced.orgId, chatThreads.orgId),
+        eq(referenced.userId, chatThreads.userId),
+        sql`${referenced.id} IS DISTINCT FROM ${chatThreads.projectId}`,
+        inArray(
+          referenced.id,
+          sql`(SELECT CASE WHEN pg_input_is_valid(project_id, 'uuid')
+            THEN project_id::uuid END
+            FROM jsonb_array_elements_text(${referenceIds}) AS ids(project_id))`,
+        ),
+      ),
+    );
+  // The head's payload is NULL when this request already owns its references.
+  return sql`CASE WHEN ${hasCapacity}
+    AND ${inArray(head.contextType, ["web", "agent_run"])}
+    AND ${isNotNull(head.userMessage)}
+    THEN ${contextJsonRows(rows)} ELSE '[]'::jsonb END`.mapWith(
+    projectReferenceRowsDecoder,
+  );
 }
 
 /** Capture availability and launch facts for the actual FIFO head together. */
@@ -267,6 +315,7 @@ export function createChatRunPreparationSnapshot(
           grantId: phoneGrant.grantId,
         },
         currentProject: { id: projects.id, name: projects.name },
+        projectReferences: pickedProjectReferences(head, hasCapacity),
         head: { ...head._.selectedFields },
         ...pickedPromptColumns(
           head,
@@ -345,7 +394,12 @@ export function createChatRunPreparationSnapshot(
         captureNetworkBodies: row.captureNetworkBodies,
         computerUseHostGrant: row.computerUseHostGrant,
         phoneUseGrant: row.phoneUseGrant,
-        ...pickedProjectFacts(thread.projectId, row.currentProject, owned),
+        ...pickedProjectFacts(
+          thread.projectId,
+          row.currentProject,
+          row.projectReferences,
+          owned,
+        ),
       },
     };
     return { ...snapshot, pickedEvent };
