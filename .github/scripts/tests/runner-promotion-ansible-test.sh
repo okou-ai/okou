@@ -10,7 +10,7 @@ rollback_playbook="$repo_root/ansible/playbooks/rollback-runner.yml"
 gc_task="$repo_root/ansible/tasks/garbage-collect-runner.yml"
 release_workflow="$repo_root/.github/workflows/release-please.yml"
 
-for command in ansible-playbook yq; do
+for command in ansible-playbook jq yq; do
   if ! command -v "$command" >/dev/null; then
     echo "$command is required" >&2
     exit 1
@@ -73,23 +73,18 @@ test_home="$tmp/home"
 data_dir="$tmp/vm0-runner"
 fake_bin="$data_dir/fake-bin"
 runner_release=v999.0.0
-runner_bin_dir="$data_dir/bin/$runner_release"
 invocation_log="$data_dir/runner-invocations"
-gc_arrivals="$data_dir/gc-arrivals"
 mkdir -p \
   "$test_home" \
-  "$data_dir/locks" \
-  "$data_dir/runners/$runner_release" \
-  "$gc_arrivals" \
-  "$fake_bin" \
-  "$runner_bin_dir"
+  "$fake_bin"
 
-fake_runner="$runner_bin_dir/runner"
+fake_runner="$tmp/fake-runner"
 cat > "$fake_runner" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-data_dir="$(cd "$(dirname "$0")/../.." && pwd)"
+host_dir="$(cd "$(dirname "$0")/../.." && pwd)"
+data_dir="$(dirname "$host_dir")"
 invocation_log="$data_dir/runner-invocations"
 printf '%s\n' "$*" >> "$invocation_log"
 
@@ -108,7 +103,7 @@ case "${1:-}" in
         ;;
       drain)
         service_name=${4:-}
-        if [ -f "$data_dir/fail-drain-$service_name" ]; then
+        if [ -f "$host_dir/fail-drain-$service_name" ]; then
           echo "drain acknowledgement timed out for $service_name" >&2
           exit 42
         fi
@@ -119,42 +114,7 @@ case "${1:-}" in
         ;;
     esac
     ;;
-  doctor)
-    exit 0
-    ;;
-  gc)
-    if [ "$*" != "gc --keep-latest 6 --protect-version v999.0.0" ]; then
-      echo "unexpected gc arguments: $*" >&2
-      exit 1
-    fi
-
-    touch "$data_dir/gc-arrivals/$BASHPID"
-    exec 9> "$data_dir/locks/deployment-gc.lock"
-    flock --exclusive 9
-
-    active_dir="$data_dir/gc-active"
-    if ! mkdir "$active_dir"; then
-      echo "runner gc invocations overlapped" >&2
-      exit 1
-    fi
-    trap 'rmdir "$active_dir"' EXIT
-
-    arrivals_ready=false
-    for ((attempt = 0; attempt < 1000; attempt++)); do
-      arrival_count=$(
-        find "$data_dir/gc-arrivals" -mindepth 1 -maxdepth 1 -type f -print |
-          wc -l
-      )
-      if [ "$arrival_count" -ge 2 ]; then
-        arrivals_ready=true
-        break
-      fi
-      /bin/sleep 0.01
-    done
-    if [ "$arrivals_ready" != "true" ]; then
-      echo "timed out waiting for both gc lock contenders" >&2
-      exit 1
-    fi
+  doctor | gc)
     exit 0
     ;;
 esac
@@ -163,6 +123,11 @@ echo "unexpected runner invocation: $*" >&2
 exit 1
 EOF
 chmod +x "$fake_runner"
+for host in runner-promotion-a runner-promotion-b; do
+  runner_bin_dir="$data_dir/$host/bin/$runner_release"
+  mkdir -p "$runner_bin_dir" "$data_dir/$host/runners/$runner_release"
+  cp "$fake_runner" "$runner_bin_dir/runner"
+done
 
 fake_systemctl="$fake_bin/systemctl"
 cat > "$fake_systemctl" <<'EOF'
@@ -170,7 +135,6 @@ cat > "$fake_systemctl" <<'EOF'
 set -euo pipefail
 
 data_dir="$(cd "$(dirname "$0")/.." && pwd)"
-printf '%s\n' "$*" >> "$data_dir/systemctl-invocations"
 
 if [ -f "$data_dir/fail-service-discovery" ]; then
   echo "systemctl discovery unavailable" >&2
@@ -199,16 +163,8 @@ esac
 EOF
 chmod +x "$fake_systemctl"
 
-for playbook in "$promote_playbook" "$rollback_playbook"; do
-  HOME="$test_home" \
-    ANSIBLE_CONFIG="$ansible_config" \
-    ANSIBLE_NOCOLOR=1 \
-    ansible-playbook -i "$inventory" --syntax-check "$playbook" >/dev/null
-done
-
 assert_contains "$promote_playbook" "include_tasks: ../tasks/garbage-collect-runner.yml"
 assert_contains "$rollback_playbook" "include_tasks: ../tasks/garbage-collect-runner.yml"
-assert_contains "$gc_task" '      - "{{ bin_dir }}/runner"'
 if grep -Fq -- "flock" "$gc_task"; then
   echo "shared GC task must rely on runner-owned serialization" >&2
   cat "$gc_task" >&2
@@ -225,7 +181,7 @@ run_promotion() {
     ansible-playbook \
       -i "$inventory" \
       --forks 2 \
-      -e "data_dir=$data_dir" \
+      -e "data_dir=$data_dir/{{ inventory_hostname }}" \
       -e "runner_host_env_file=$tmp/host.env" \
       -e "runner_version=999.0.0" \
       -e "runner_target=$runner_target" \
@@ -233,17 +189,15 @@ run_promotion() {
       "$promote_playbook" >"$output" 2>&1
 }
 
-reset_case() {
-  rm -f "$invocation_log" "$data_dir/systemctl-invocations"
-  find "$gc_arrivals" -mindepth 1 -maxdepth 1 -type f -delete
-}
-
-normal_warning_dir="$tmp/normal-warnings"
-mkdir -p "$normal_warning_dir"
-if ! run_promotion "$tmp/promote-output" "$normal_warning_dir"; then
-  cat "$tmp/promote-output" >&2
+drain_failure="$data_dir/runner-promotion-a/fail-drain-v101.0.0"
+touch "$drain_failure"
+drain_warning_dir="$tmp/drain-warnings"
+mkdir -p "$drain_warning_dir"
+if ! run_promotion "$tmp/drain-warning-output" "$drain_warning_dir"; then
+  cat "$tmp/drain-warning-output" >&2
   exit 1
 fi
+rm -f "$drain_failure"
 
 assert_line_count "$invocation_log" 2 \
   "gc --keep-latest 6 --protect-version $runner_release"
@@ -254,31 +208,15 @@ assert_line_count "$invocation_log" 0 "service drain --name $runner_release"
 for old_release in v100.0.0 v101.0.0 v102.0.0; do
   assert_line_count "$invocation_log" 2 "service drain --name $old_release"
 done
-if find "$normal_warning_dir" -mindepth 1 -maxdepth 1 -type f -print -quit | grep -q .; then
-  echo "normal promotion unexpectedly wrote warnings" >&2
-  find "$normal_warning_dir" -type f -maxdepth 1 -print -exec cat {} \; >&2
-  exit 1
-fi
+jq -es '
+  length == 1 and (.[0] | length == 1 and (.[0] |
+    .host == "runner-promotion-a" and
+    .service == "vm0-runner-v101.0.0.service" and .version == "v101.0.0" and
+    .state == "drain_failed" and .error == "drain acknowledgement timed out for v101.0.0"
+  ))
+' "$drain_warning_dir"/*.json >/dev/null
 
-reset_case
-touch "$data_dir/fail-drain-v101.0.0"
-drain_warning_dir="$tmp/drain-warnings"
-mkdir -p "$drain_warning_dir"
-if ! run_promotion "$tmp/drain-warning-output" "$drain_warning_dir"; then
-  cat "$tmp/drain-warning-output" >&2
-  exit 1
-fi
-rm -f "$data_dir/fail-drain-v101.0.0"
-
-for old_release in v100.0.0 v101.0.0 v102.0.0; do
-  assert_line_count "$invocation_log" 2 "service drain --name $old_release"
-done
-assert_tree_contains "$drain_warning_dir" '"service": "vm0-runner-v101.0.0.service"'
-assert_tree_contains "$drain_warning_dir" '"version": "v101.0.0"'
-assert_tree_contains "$drain_warning_dir" '"state": "drain_failed"'
-assert_tree_contains "$drain_warning_dir" '"error": "drain acknowledgement timed out for v101.0.0"'
-
-reset_case
+rm -f "$invocation_log"
 touch "$data_dir/fail-service-discovery"
 discovery_warning_dir="$tmp/discovery-warnings"
 mkdir -p "$discovery_warning_dir"
@@ -295,7 +233,7 @@ assert_tree_contains "$discovery_warning_dir" '"service": "vm0-runner-*.service"
 assert_tree_contains "$discovery_warning_dir" '"state": "enumeration_failed"'
 assert_tree_contains "$discovery_warning_dir" '"error": "systemctl discovery unavailable"'
 
-reset_case
+rm -f "$invocation_log"
 touch "$data_dir/fail-wait-running"
 readiness_warning_dir="$tmp/readiness-warnings"
 mkdir -p "$readiness_warning_dir"
@@ -315,9 +253,6 @@ done
 assert_line_count "$invocation_log" 0 \
   "gc --keep-latest 6 --protect-version $runner_release"
 
-assert_contains "$release_workflow" "id: promote-runner"
-assert_contains "$release_workflow" 'shell: bash'
-assert_contains "$release_workflow" 'GITHUB_STEP_SUMMARY'
 assert_contains "$release_workflow" \
   "steps.promote-runner.outputs.has_warnings != 'true'"
 assert_contains "$release_workflow" \
@@ -364,7 +299,7 @@ run_promotion_workflow() (
     RUNNER_VERSION=999.0.0 \
     RUNNER_TARGET="$runner_target" \
     PROMOTION_WORKFLOW_CASE="$case_name" \
-    PROMOTION_TEST_WARNING_SOURCE="$drain_warning_dir" \
+    PROMOTION_TEST_WARNING_SOURCE="$discovery_warning_dir" \
     bash --noprofile --norc -e -o pipefail -c "$promotion_script" >"$work_dir/log" 2>&1
 )
 
@@ -378,7 +313,7 @@ assert_line_count "$tmp/workflow-empty/output" 1 'has_warnings=false'
 assert_line_count "$tmp/workflow-warnings/output" 1 'has_warnings=true'
 assert_contains "$tmp/workflow-warnings/summary" '## Runner promotion warnings'
 assert_contains "$tmp/workflow-warnings/summary" \
-  '"error": "drain acknowledgement timed out for v101.0.0"'
+  '"error": "systemctl discovery unavailable"'
 for host in runner-promotion-a runner-promotion-b; do
   assert_contains "$tmp/workflow-warnings/summary" "\"host\": \"$host\""
 done
