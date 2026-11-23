@@ -347,7 +347,9 @@ class NativeUpdateTest {
             online.value = false
             timedOut.completeExceptionally(SocketTimeoutException("fixture download timed out"))
             val waiting = checkNotNull(text(app.getString(R.string.updates_waiting_to_recover)))
-            assertFalse(waiting.isEnabled)
+            assertFalse(
+                generateSequence(waiting) { it.parent }.any { it.isClickable && it.isEnabled },
+            )
             captureState("details-waiting-to-recover")
             assertEquals(initialDetailsBounds, detailsBounds())
             val originalSize =
@@ -358,7 +360,9 @@ class NativeUpdateTest {
                 device.executeShellCommand("settings put system font_scale 2.0")
                 val resized =
                     object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice) = device.displayHeight == 790
+                        override fun apply(device: UiDevice) =
+                            device.displayHeight == 790 &&
+                                app.resources.configuration.fontScale >= 2f
                     }
                 assertTrue(device.wait(resized, 10_000) == true)
                 exists(R.string.updates_waiting_to_recover)
