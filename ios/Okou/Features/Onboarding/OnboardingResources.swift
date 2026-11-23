@@ -6,7 +6,7 @@ import Foundation
 @MainActor
 final class OnboardingResources {
   enum Resource: CaseIterable, Hashable {
-    case status, draft, sources, preferences, tools, recommendation
+    case availability, status, draft, sources, preferences, tools, recommendation
   }
   let store = CCState.Store()
   let service: OnboardingService
@@ -29,6 +29,8 @@ final class OnboardingResources {
     self.didFail = didFail
   }
 
+  lazy var availability = read(.availability) { [service] in try await service.nativeAvailability()
+  }
   lazy var status = read(.status) { [service] in try await service.status() }
   lazy var draft = read(.draft) { [service] in try await service.draft() }
   lazy var sources = read(.sources) { [service] in try await service.sources() }

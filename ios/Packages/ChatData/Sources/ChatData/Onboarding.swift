@@ -102,6 +102,10 @@ public struct OnboardingService: Sendable {
   private let client: APIClient
   public init(client: APIClient) { self.client = client }
 
+  public func nativeAvailability() async throws -> Bool {
+    try await client.nativeOnboardingAvailability()
+  }
+
   public func status() async throws -> OnboardingStatus {
     try await client.request("/api/onboarding/status")
   }

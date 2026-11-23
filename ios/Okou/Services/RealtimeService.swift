@@ -97,37 +97,39 @@ final class RealtimeService {
         reportAvailability()
       }
     }
-    for name in channelNames {
-      let channel = realtime.channels.get(name)
-      channel.subscribe { [weak self] message in
-        let topic = message.name ?? ""
-        let invalidation = ChatInvalidation(notification: topic)
-        guard invalidation != nil || topic == "onboardingRecommendationChanged" else { return }
-        Task { @MainActor [weak self] in
-          guard let self, self.generation == generation else { return }
-          if let invalidation { onChange(invalidation) }
-          if topic == "onboardingRecommendationChanged" { onRecommendationChanged() }
-        }
-      }
-      channel.on { [weak self] change in
-        let state = change.current
-        let continuityLost = state == .attached && !change.resumed
-        Task { @MainActor [weak self] in
-          guard let self, self.generation == generation else { return }
-          switch state {
-          case .attached: channelAvailability[name] = .connected
-          case .initialized, .attaching: channelAvailability[name] = .connecting
-          case .detaching, .detached, .failed, .suspended:
-            channelAvailability[name] = .unavailable
-          @unknown default: channelAvailability[name] = .unavailable
-          }
-          // This also covers SDK updates when an attached channel loses continuity.
-          if continuityLost { catchUpPending = true }
-          reportAvailability()
-        }
+    for name in channelNames { subscribe(to: name, realtime: realtime, generation: generation) }
+    realtime.connect()
+  }
+
+  private func subscribe(to name: String, realtime: ARTRealtime, generation: UUID) {
+    let channel = realtime.channels.get(name)
+    channel.subscribe { [weak self] message in
+      let topic = message.name ?? ""
+      let invalidation = ChatInvalidation(notification: topic)
+      guard invalidation != nil || topic == "onboardingRecommendationChanged" else { return }
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == generation else { return }
+        if let invalidation { onChange(invalidation) }
+        if topic == "onboardingRecommendationChanged" { onRecommendationChanged() }
       }
     }
-    realtime.connect()
+    channel.on { [weak self] change in
+      let state = change.current
+      let continuityLost = state == .attached && !change.resumed
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == generation else { return }
+        switch state {
+        case .attached: channelAvailability[name] = .connected
+        case .initialized, .attaching: channelAvailability[name] = .connecting
+        case .detaching, .detached, .failed, .suspended:
+          channelAvailability[name] = .unavailable
+        @unknown default: channelAvailability[name] = .unavailable
+        }
+        // This also covers SDK updates when an attached channel loses continuity.
+        if continuityLost { catchUpPending = true }
+        reportAvailability()
+      }
+    }
   }
 
   private func clientOptions(generation: UUID) -> ARTClientOptions {

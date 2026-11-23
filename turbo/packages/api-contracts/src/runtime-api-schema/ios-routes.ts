@@ -1,6 +1,7 @@
 import { array } from "zod";
 import {
   onboardingStatusContract,
+  onboardingNativeAvailabilityContract,
   onboardingDraftContract,
   onboardingSourcesContract,
   onboardingCompleteContract,
@@ -124,6 +125,10 @@ export const iosClientContracts: readonly {
     readonly responses: Readonly<Record<number, unknown>>;
   };
 }[] = [
+  {
+    id: "ios.onboardingNativeAvailabilityContract.get",
+    route: onboardingNativeAvailabilityContract.get,
+  },
   {
     id: "ios.onboardingStatusContract.getStatus",
     route: onboardingStatusContract.getStatus,

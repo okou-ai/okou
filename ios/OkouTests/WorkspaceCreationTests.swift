@@ -19,11 +19,11 @@ final class WorkspaceCreationTests: XCTestCase {
     XCTAssertTrue(authentication.needsWorkspaceSelection)
 
     let api = ChatHTTPFixture { request in
-      guard request.url?.path == "/api/onboarding/status" else { throw URLError(.unsupportedURL) }
-      return ChatHTTPResponse(
-        body: """
-          {"hasOrg":false,"needsOnboarding":false,"onboardingComplete":false,"isAdmin":false,"nativeOnboardingEnabled":true}
-          """)
+      guard request.url?.path == "/api/onboarding/native-availability" else {
+        throw URLError(.unsupportedURL)
+      }
+      XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+      return ChatHTTPResponse(body: "{\"nativeOnboardingEnabled\":true}")
     }
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let bundleURL = directory.appending(path: "Creation.bundle")

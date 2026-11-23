@@ -5,6 +5,7 @@ import { featureSwitchesRoutes } from "../feature-switches";
 
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import {
+  onboardingNativeAvailabilityContract,
   onboardingCompleteContract,
   onboardingDraftContract,
   onboardingStatusContract,
@@ -199,6 +200,14 @@ describe("Onboarding draft", () => {
 });
 
 describe("GET /api/onboarding/status", () => {
+  it("exposes only the global rollout bit before a new account has an active workspace", async () => {
+    const client = setupApp({ context, routes: onboardingStatusRoutes })(
+      onboardingNativeAvailabilityContract,
+    );
+    const response = await accept(client.get(), [200]);
+    expect(response.body).toStrictEqual({ nativeOnboardingEnabled: false });
+  });
+
   it("returns the server's native rollout decision and honors member overrides", async () => {
     const actor = orgActor();
     mocks.clerk.session(actor.userId, actor.orgId, actor.role);

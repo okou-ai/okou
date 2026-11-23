@@ -23,12 +23,11 @@ final class WorkspaceCreationStore {
     self.authentication = authentication
     userID = authentication.userID
     sessionID = authentication.clerk?.session?.id
-    let expectedUser = userID
-    let expectedSession = sessionID
     let client = APIClient(
       baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session
     ) {
-      try await authentication.accountAccessToken(userID: expectedUser, sessionID: expectedSession)
+      // This client only reads the public rollout bootstrap until Clerk activates a workspace.
+      throw AuthenticationError.workspaceUnavailable
     }
     resources = OnboardingResources(
       client: client, catalogURL: configuration.apiURL, locale: "en-US", didFail: { _ in })
@@ -47,9 +46,9 @@ final class WorkspaceCreationStore {
         operation = nil
       }
       do {
-        let status = try await resources.service.status()
+        let enabled = try await resources.service.nativeAvailability()
         try checkCurrent()
-        guard status.nativeOnboardingEnabled == true else {
+        guard enabled else {
           throw APIClientError.http(
             status: 403, message: "Workspace setup is not available in this build.")
         }
@@ -92,7 +91,7 @@ final class WorkspaceCreationStore {
   }
 
   func retryStatus() {
-    do { try resources.retry(.status) } catch {
+    do { try resources.retry(.availability) } catch {
       self.error = ChatRequestFailure.message(for: error)
     }
   }

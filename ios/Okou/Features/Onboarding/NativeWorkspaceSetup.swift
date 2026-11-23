@@ -24,13 +24,13 @@ struct NativeWorkspaceSetup: View {
 private struct NativeWorkspaceSetupContent: View {
   @Bindable var store: WorkspaceCreationStore
   let webURL: URL
-  @LoadableValue private var status: Loadable<OnboardingStatus>
+  @LoadableValue private var status: Loadable<Bool>
   @FocusState private var isNameFocused: Bool
 
   init(store: WorkspaceCreationStore, webURL: URL) {
     self.store = store
     self.webURL = webURL
-    _status = LoadableValue(task: store.resources.status)
+    _status = LoadableValue(task: store.resources.availability)
   }
 
   var body: some View {
@@ -42,8 +42,8 @@ private struct NativeWorkspaceSetupContent: View {
           store.retryStatus()
         }
         webSetup
-      case .hasData(let status):
-        if status.nativeOnboardingEnabled == true {
+      case .hasData(let enabled):
+        if enabled {
           Text("Create your workspace to get started.")
             .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
           TextField("Workspace name", text: $store.name)

@@ -103,9 +103,17 @@ export type OnboardingRecommendationStatus = zInfer<
   typeof onboardingRecommendationStatusSchema
 >;
 
-/**
- * Onboarding status contract for workspace members
- */
+/** Public rollout bootstrap: Clerk organization-selection sessions are still pending. */
+export const onboardingNativeAvailabilityContract = c.router({
+  get: {
+    method: "GET",
+    path: "/api/onboarding/native-availability",
+    responses: { 200: object({ nativeOnboardingEnabled: boolean() }) },
+    summary: "Read the global native setup rollout before workspace activation",
+  },
+});
+
+/** Onboarding status contract for workspace members. */
 export const onboardingStatusContract = c.router({
   getStatus: {
     method: "GET",

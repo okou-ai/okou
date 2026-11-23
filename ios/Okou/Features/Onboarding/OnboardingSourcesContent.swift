@@ -4,14 +4,10 @@ import SwiftUI
 
 struct OnboardingSourcesContent: View {
   let store: OnboardingStore
-  let onShowAll: () -> Void
-  let isBrowsing: Bool
   @LoadableValue private var sources: Loadable<[OnboardingSource]>
 
-  init(store: OnboardingStore, isBrowsing: Bool, onShowAll: @escaping () -> Void) {
+  init(store: OnboardingStore) {
     self.store = store
-    self.isBrowsing = isBrowsing
-    self.onShowAll = onShowAll
     _sources = LoadableValue(task: store.resources.sources)
   }
 
@@ -51,7 +47,6 @@ struct OnboardingSourcesContent: View {
           .accessibilityIdentifier("onboarding-connect-\(source.slug)")
         }
       }
-      Button(action: onShowAll) { OkouRowLabel("Browse all connectors", okouSymbol: "plus") }
       if let error = store.connectors.authorization.activationError {
         Text(error).foregroundStyle(OkouColor.destructive)
       }
@@ -59,7 +54,7 @@ struct OnboardingSourcesContent: View {
     .task { await store.connectors.refresh() }
     .sheet(
       item: Binding(
-        get: { isBrowsing ? nil : store.connectors.authorization.active },
+        get: { store.connectors.authorization.active },
         set: { if $0 == nil { store.connectors.authorization.cancel() } })
     ) { flow in
       ConnectorAuthorizationSheet(flow: flow, store: store.connectors.authorization)
@@ -67,7 +62,7 @@ struct OnboardingSourcesContent: View {
     }
     .sheet(
       item: Binding(
-        get: { isBrowsing ? nil : store.connectors.webDestination },
+        get: { store.connectors.webDestination },
         set: { store.connectors.webDestination = $0 }),
       onDismiss: { Task { await store.connectors.refresh() } },
       content: { destination in

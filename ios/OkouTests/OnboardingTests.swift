@@ -23,7 +23,7 @@ final class OnboardingTests: XCTestCase {
     XCTAssertEqual(reopened.step, .sources)
     XCTAssertEqual(reopened.draft.answers.industry, "software")
     XCTAssertNotNil(reopened.draft.revision)
-    let json = try XCTUnwrap(remote.state.withLock { $0.savedJSON })
+    let json = try XCTUnwrap(remote.state.value.withLock { $0.savedJSON })
     let body = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     let answers = try XCTUnwrap(body["answers"] as? [String: Any])
     XCTAssertTrue(answers["provider"] is NSNull)
@@ -59,7 +59,7 @@ final class OnboardingTests: XCTestCase {
 
   func testLostCompletionResponseRecoversByReadingStatusBeforeAnotherWrite() async throws {
     let remote = OnboardingHTTPFixture()
-    remote.state.withLock {
+    remote.state.value.withLock {
       var draft = OnboardingDraft()
       draft.step = .ready
       draft.answers.industry = "marketing"
@@ -77,12 +77,12 @@ final class OnboardingTests: XCTestCase {
     await store.next()
     XCTAssertNil(store.error)
     XCTAssertEqual(handoff.withLock { $0 }, "Draft a product launch brief")
-    XCTAssertEqual(remote.state.withLock { $0.completionWrites }, 1)
+    XCTAssertEqual(remote.state.value.withLock { $0.completionWrites }, 1)
   }
 
   func testConflictingDraftDoesNotAdvanceOrDiscardTheMembersSelection() async throws {
     let remote = OnboardingHTTPFixture()
-    remote.state.withLock { $0.conflict = true }
+    remote.state.value.withLock { $0.conflict = true }
     let store = remote.makeStore()
     defer { store.close() }
     await store.prepare()
@@ -114,28 +114,29 @@ private final class OnboardingHTTPFixture: Sendable {
     var loseCompletionResponse = false
     var conflict = false
   }
-  let state: Mutex<State>
+  final class StateBox: Sendable { let value = Mutex(State()) }
+  let state: StateBox
   let fixture: ChatHTTPFixture
   var service: OnboardingService { OnboardingService(client: fixture.client) }
 
   init() {
-    let state = Mutex(State())
+    let state = StateBox()
     self.state = state
     fixture = ChatHTTPFixture { request in
       let path = request.url!.path
       switch (request.httpMethod!, path) {
       case ("GET", "/api/onboarding/status"):
         return ChatHTTPResponse(
-          body: state.withLock {
+          body: state.value.withLock {
             "{\"needsOnboarding\":\(!($0.completed)),\"onboardingComplete\":\($0.completed),\"isAdmin\":false,\"hasOrg\":true,\"nativeOnboardingEnabled\":true}"
           })
       case ("GET", "/api/onboarding/draft"):
         struct Response: Encodable { let draft: OnboardingDraft? }
-        return try ChatHTTPResponse(json: Response(draft: state.withLock { $0.draft }))
+        return try ChatHTTPResponse(json: Response(draft: state.value.withLock { $0.draft }))
       case ("PUT", "/api/onboarding/draft"):
         let body = try request.onboardingBody()
         let saved = try JSONDecoder().decode(OnboardingDraft.self, from: body)
-        return state.withLock {
+        return state.value.withLock {
           if $0.conflict {
             return ChatHTTPResponse(
               status: 409, body: "{\"error\":{\"message\":\"Setup changed on another device\"}}")
@@ -146,11 +147,8 @@ private final class OnboardingHTTPFixture: Sendable {
           $0.savedJSON = String(data: body, encoding: .utf8)
           return ChatHTTPResponse(body: "{\"revision\":\"\(draft.revision!)\"}")
         }
-      case ("POST", "/api/onboarding/recommendations"):
-        return ChatHTTPResponse(
-          status: 202, body: "{\"jobId\":\"\(UUID().uuidString)\",\"status\":\"pending\"}")
       case ("POST", "/api/onboarding/complete"):
-        return state.withLock {
+        return state.value.withLock {
           $0.completed = true
           $0.completionWrites += 1
           if $0.loseCompletionResponse {

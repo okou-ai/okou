@@ -1,8 +1,11 @@
-import { onboardingStatusContract } from "@okouai/api-contracts/contracts/onboarding";
+import {
+  onboardingNativeAvailabilityContract,
+  onboardingStatusContract,
+} from "@okouai/api-contracts/contracts/onboarding";
 import { command } from "ccstate";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
-import { request$ } from "../context/hono";
+import { request$, setResHeader$ } from "../context/hono";
 import { userFeatureSwitchContext } from "../services/feature-switches.service";
 
 import { authContext$ } from "../auth/auth-context";
@@ -34,7 +37,25 @@ const statusHandler$ = command(async ({ get }, signal: AbortSignal) => {
   };
 });
 
+const nativeAvailability$ = command(({ set }, signal: AbortSignal) => {
+  signal.throwIfAborted();
+  set(setResHeader$, "Cache-Control", "no-store");
+  return {
+    status: 200 as const,
+    body: {
+      nativeOnboardingEnabled: isFeatureEnabled(
+        FeatureSwitchKey.NativeOnboarding,
+        {},
+      ),
+    },
+  };
+});
+
 export const onboardingStatusRoutes: readonly RouteEntry[] = [
+  {
+    route: onboardingNativeAvailabilityContract.get,
+    handler: nativeAvailability$,
+  },
   {
     route: onboardingStatusContract.getStatus,
     handler: authRoute({}, statusHandler$),

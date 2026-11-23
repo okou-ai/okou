@@ -56,6 +56,7 @@ final class OnboardingStore {
   var canContinue: Bool {
     switch step {
     case .industry: draft.answers.industry != nil
+    case .sources: !connectors.connectors.isEmpty
     case .skills: !importedSkills.isEmpty
     case .ready:
       !draft.answers.startingPromptDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -82,9 +83,11 @@ final class OnboardingStore {
 
   func setForeground(_ active: Bool) { realtime?.setForeground(active) }
 
-  func stopLiveUpdates() {
+  func endPresentation() {
     realtime?.stop()
     realtime = nil
+    connectors.authorization.cancel()
+    subscriptions.cancelAuth()
   }
 
   private func invalidateRecommendation() {
@@ -148,6 +151,7 @@ final class OnboardingStore {
     guard !isWorking else { return }
     var prompt = draft.answers.startingPromptDraft
     if let output = draft.answers.startingPromptOutput,
+      output.start >= 0, output.end >= output.start, output.end <= prompt.utf16.count,
       let range = Range(
         NSRange(location: output.start, length: output.end - output.start), in: prompt)
     {
@@ -194,7 +198,7 @@ final class OnboardingStore {
         try await self.finish(usePrompt: !skip)
         return
       }
-      if current == .sources, self.draft.answers.recommendationJobId == nil {
+      if current == .sources, !skip, self.draft.answers.recommendationJobId == nil {
         await self.startRecommendation()
       }
       if current == .experience, skip { self.draft.answers.provider = nil }
@@ -342,7 +346,7 @@ final class OnboardingStore {
   func close() {
     closed = true
     operation?.cancel()
-    stopLiveUpdates()
+    endPresentation()
     resources.close()
     connectors.close()
     subscriptions.close()

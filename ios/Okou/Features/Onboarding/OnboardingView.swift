@@ -78,7 +78,6 @@ private struct OnboardingGateContent<Content: View>: View {
 
 struct OnboardingView: View {
   @Bindable var store: OnboardingStore
-  @State private var showsConnectors = false
   @State private var showsSubscriptions = false
   @State private var confirmsSignOut = false
   @State private var channelPage: ComposerConnectorStore.WebDestination?
@@ -125,9 +124,6 @@ struct OnboardingView: View {
       .safeAreaInset(edge: .bottom, spacing: 0) {
         if store.isPrepared { footer }
       }
-      .sheet(isPresented: $showsConnectors) {
-        ComposerConnectorSheet(store: store.connectors)
-      }
       .sheet(isPresented: $showsSubscriptions, onDismiss: store.subscriptions.cancelAuth) {
         SubscriptionAuthorizationView(store: store.subscriptions)
       }
@@ -142,7 +138,7 @@ struct OnboardingView: View {
       store.startLiveUpdates()
       await store.prepare()
     }
-    .onDisappear { store.stopLiveUpdates() }
+    .onDisappear { store.endPresentation() }
     .onChange(of: scenePhase) { _, phase in
       store.setForeground(phase == .active)
       if phase == .active, store.step == .ready { Task { await store.refreshReady() } }
@@ -166,8 +162,7 @@ struct OnboardingView: View {
       switch store.step {
       case .industry: OnboardingIndustryContent(store: store)
       case .sources:
-        OnboardingSourcesContent(
-          store: store, isBrowsing: showsConnectors, onShowAll: { showsConnectors = true })
+        OnboardingSourcesContent(store: store)
       case .experience:
         OnboardingExperienceContent(
           store: store,

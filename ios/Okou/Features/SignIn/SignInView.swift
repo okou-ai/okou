@@ -65,8 +65,7 @@ struct SignInView: View {
   }
 }
 
-/// Clerk's organization task also offers organization creation. This restricted
-/// selection view keeps workspace setup on the web while using native SDK sessions.
+/// Resolve the account's existing workspaces before offering server-gated native setup.
 private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
   let configuration: AppConfiguration

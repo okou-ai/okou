@@ -149,6 +149,22 @@ public struct APIClient: Sendable {
     return try await execute(request)
   }
 
+  /// Clerk's organization-selection session cannot authorize ordinary API routes yet.
+  /// Only the global, non-personal rollout bit is public; creation still uses Clerk's SDK.
+  public func nativeOnboardingAvailability() async throws -> Bool {
+    struct Response: Decodable { let nativeOnboardingEnabled: Bool }
+    var request = URLRequest(url: baseURL.appending(path: "api/onboarding/native-availability"))
+    request.cachePolicy = .reloadIgnoringLocalCacheData
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    request.setValue("iOS", forHTTPHeaderField: "X-Client-Type")
+    request.setValue(clientVersion, forHTTPHeaderField: "X-Client-Version")
+    request.setValue(clientSessionId, forHTTPHeaderField: "X-Client-Session-Id")
+    request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Client-Request-Id")
+    let response = try await execute(request)
+    try Task.checkCancellation()
+    return try Self.decoder().decode(Response.self, from: response.data).nativeOnboardingEnabled
+  }
+
   /// Public Router discovery is stateless and never receives the member's API identity.
   public static func publicToolCatalogPage(
     at url: URL, cursor: String?, session: URLSession = .shared
