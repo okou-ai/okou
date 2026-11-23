@@ -60,6 +60,7 @@ import ai.okou.android.instructions.PersonalInstructionsService
 import ai.okou.android.workflows.WorkflowService
 import java.io.Closeable
 import java.io.IOException
+import java.io.InputStream
 import java.util.Locale
 import java.util.TimeZone
 import kotlinx.coroutines.Dispatchers
@@ -405,18 +406,7 @@ class CanonicalWorkspaceSession(
         }
 
     override suspend fun historyArchive(url: String): List<HistoryEvent> =
-        withContext(Dispatchers.IO) {
-            val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
-            try {
-                transfers.download(address, ::readHistoryNdjson)
-            } catch (error: ApiFailure.Http) {
-                throw ChatSnapshotUnavailable(error.status)
-            } catch (_: SerializationException) {
-                throw ApiFailure.IncompatibleResponse()
-            } catch (_: IllegalArgumentException) {
-                throw ApiFailure.IncompatibleResponse()
-            }
-        }
+        downloadArchive(url, ::readHistoryNdjson)
 
     override suspend fun chatArchive(url: String): ChatArchive = archive(url)
 
@@ -424,10 +414,13 @@ class CanonicalWorkspaceSession(
 
     @OptIn(ExperimentalSerializationApi::class)
     private suspend inline fun <reified T> archive(url: String): T =
+        downloadArchive(url) { archiveJson.decodeFromStream<T>(it) }
+
+    private suspend fun <T> downloadArchive(url: String, read: (InputStream) -> T): T =
         withContext(Dispatchers.IO) {
             val address = url.toHttpUrlOrNull() ?: throw ApiFailure.IncompatibleResponse()
             try {
-                transfers.download(address) { archiveJson.decodeFromStream<T>(it) }
+                transfers.download(address, read)
             } catch (error: ApiFailure.Http) {
                 throw ChatSnapshotUnavailable(error.status, error.retryAfterSeconds)
             } catch (error: IOException) {
