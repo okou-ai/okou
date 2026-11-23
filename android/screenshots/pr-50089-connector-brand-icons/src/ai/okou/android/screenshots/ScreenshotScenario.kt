@@ -65,7 +65,7 @@ class ScreenshotScenario {
             description("返回").click()
             text("Google Drive").click()
             text("连接账号")
-            awaitArtwork(detailTile("Google Drive"), 24, ::saturated)
+            awaitArtwork(detailTile("Google Drive"), 24, ::driveGreen)
             assertTrue("google-drive-v219" in fixture.iconRequests)
             ScreenshotCapture.capture("phone-updated-icon.png")
         }
@@ -342,3 +342,6 @@ private fun white(pixel: Int): Boolean =
 
 private fun slackPink(pixel: Int): Boolean =
     Color.red(pixel) in 221..227 && Color.green(pixel) in 27..33 && Color.blue(pixel) in 87..93
+
+private fun driveGreen(pixel: Int): Boolean =
+    Color.red(pixel) <= 50 && Color.green(pixel) in 165..220 && Color.blue(pixel) in 75..130
