@@ -1550,25 +1550,30 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   const transcript = within(container);
   expect(transcript.queryByText("History answer 20")).toBeNull();
   expect(transcript.queryByText("History answer 13")).toBeNull();
+  const frames = controlRevealFrames();
   const geometry = installChatScrollGeometry(container, () => {
     return 6000;
   });
   await conversation.publish(completedTurn(27));
-  await waitFor(
-    () => {
-      // The 6000px viewport needs history from multiple pages. Missing text
-      // during the fill should not produce a DOM dump on every retry.
-      expect(transcript.queryByText("History answer 27")).toBeInTheDocument();
-      expect(transcript.queryByText("History answer 20")).toBeInTheDocument();
-      expect(transcript.queryByText("History answer 13")).toBeInTheDocument();
-      const before = container.querySelector<HTMLElement>(
-        '[data-transcript-spacer="before"]',
-      );
-      expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
-      expect(container.scrollTop).toBe(geometry.bottomScrollTop());
-    },
-    { container },
+  await expect(
+    transcript.findByText("History answer 27"),
+  ).resolves.toBeInTheDocument();
+
+  // Each pair of paints lets the scroll handler fill the visible spacer once.
+  for (const answer of ["History answer 20", "History answer 13"]) {
+    await frames.paint();
+    await frames.paint();
+    expect(transcript.getByText(answer)).toBeInTheDocument();
+  }
+
+  // The final page changed the scroll height. Align after its layout commits.
+  await frames.paint();
+  await frames.paint();
+  const before = container.querySelector<HTMLElement>(
+    '[data-transcript-spacer="before"]',
   );
+  expect(before?.getBoundingClientRect().bottom).toBeLessThanOrEqual(0);
+  expect(container.scrollTop).toBe(geometry.bottomScrollTop());
   expect(transcript.queryByText("History answer 1")).toBeNull();
 });
 
