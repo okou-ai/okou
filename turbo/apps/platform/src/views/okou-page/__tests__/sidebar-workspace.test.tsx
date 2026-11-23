@@ -32,7 +32,7 @@ async function search() {
   click(await screen.findByLabelText("Search workspace"));
   return screen.findByRole("dialog");
 }
-test("sidebar-workspace-003 Selecting a title-filtered result opens that conversation", async () => {
+test("Selecting the title in a mixed search opens its chat while the message match remains available", async () => {
   const [notes, incident] = history([
     ["Deployment notes", 3],
     ["Incident response", 10],
@@ -69,15 +69,17 @@ test("sidebar-workspace-003 Selecting a title-filtered result opens that convers
   await expect(
     within(dialog).findByText(/the recovery/),
   ).resolves.toBeInTheDocument();
-  click(within(dialog).getByText("Chats"));
-  expect(within(dialog).queryByText("Incident response")).toBeNull();
-  click(within(dialog).getByText("Deployment notes"));
+  const titles = within(dialog).getByRole("group", { name: "Threads" });
+  const messages = within(dialog).getByRole("group", { name: "Messages" });
+  expect(within(titles).queryByText("Incident response")).toBeNull();
+  expect(within(messages).getByText("Incident response")).toBeVisible();
+  click(within(titles).getByText("Deployment notes"));
   await waitFor(() => {
     return expect(window.location.pathname).toBe("/chats/" + notes.id);
   });
   expect(dialog).not.toBeInTheDocument();
 });
-test("sidebar-workspace-004 Search shows each chat's age and an illustrated empty result", async () => {
+test("A title query reveals its conversation age and a nonmatching query shows the illustrated empty state", async () => {
   const entries = [
     ["Triage", 5],
     ["Handover", 180],
@@ -89,12 +91,14 @@ test("sidebar-workspace-004 Search shows each chat's age and an illustrated empt
     return respond(200, { results: [] });
   });
   const dialog = await search();
+  expect(within(dialog).queryByRole("listbox")).toBeNull();
   for (const [title, age] of [
     ["Triage", "5 minutes ago"],
     ["Handover", "3 hours ago"],
     ["Escalation", "2 days ago"],
     ["Quarterly review", /Mar 21/],
   ] as const) {
+    await fill(within(dialog).getByRole("combobox"), title);
     const row = await within(dialog).findByText(title);
     const result = row.closest('[role="option"]');
     if (!(result instanceof HTMLElement)) {

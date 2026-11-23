@@ -9,6 +9,7 @@ import ai.okou.android.artifacts.ArtifactItem
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChats
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
@@ -279,6 +280,44 @@ internal constructor(
                 persist(clear = {}, saved = {}) { dao ->
                     if (threadId == null) dao.deleteArtifactCatalogs(key)
                     else dao.deleteArtifactCatalog(key, threadId)
+                    true
+                }
+            }
+
+        internal suspend fun loadRelatedResources(threadId: String): ConfirmedRelatedChats? =
+            withContext(dispatcher) {
+                lock.withLock {
+                    checkCurrent()
+                    if (database == null && !file.exists()) return@withLock null
+                    val record = database().chats().relatedResources(key, threadId)
+                    checkCurrent()
+                    record
+                        ?.takeIf { it.authorization == authorization }
+                        ?.let {
+                            json.decodeFromString<ConfirmedRelatedChats>(it.payload)
+                        }
+                }
+            }
+
+        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats) =
+            withContext(dispatcher) {
+                persist(clear = { it.deleteRelatedResources(key, threadId) }, saved = {}) { dao ->
+                    dao.putRelatedResources(
+                        ChatRelatedResourceRecord(
+                            key,
+                            threadId,
+                            authorization,
+                            json.encodeToString(data),
+                        ),
+                    )
+                    true
+                }
+            }
+
+        internal suspend fun deleteRelatedResources(threadId: String?) =
+            withContext(dispatcher) {
+                persist(clear = {}, saved = {}) { dao ->
+                    dao.deleteRelatedResources(key, threadId)
                     true
                 }
             }

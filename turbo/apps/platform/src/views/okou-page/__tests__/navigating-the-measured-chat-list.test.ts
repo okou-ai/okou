@@ -6,7 +6,12 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { chatListThread } from "./chat-list-test-helpers.ts";
 import { installContinuityWorkspace } from "./chat-continuity-test-helpers.ts";
@@ -539,4 +544,66 @@ test("sidebar-virtualization-008 Reversing a running fold begins at its measured
       value: previous,
     });
   }
+});
+
+test("Pending mobile styles hold all 120 sidebar rows while the last conversation is searchable", async () => {
+  const css = context.mocks.deferred<"loaded">();
+  const previous = window.__mainStylesheetLoaded;
+  window.__mainStylesheetLoaded = css.promise;
+  context.signal.addEventListener(
+    "abort",
+    () => {
+      if (previous !== undefined) {
+        window.__mainStylesheetLoaded = previous;
+      } else {
+        delete window.__mainStylesheetLoaded;
+      }
+    },
+    { once: true },
+  );
+  context.mocks.browser.matchMedia((media) => {
+    return media === "(display-mode: standalone)";
+  });
+  const conversations = Array.from({ length: 120 }, (_, index) => {
+    const time = new Date(Date.UTC(2026, 9, 14) - index * 60_000).toISOString();
+    return chatListThread(
+      index + 1,
+      index === 119 ? "Field journal" : "Voyage " + index,
+      { updatedAt: time, sortAt: time, createdAt: time },
+    );
+  });
+  const fixture = installContinuityWorkspace(context, {
+    caseId: 915,
+    threads: conversations,
+  });
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      if (this.getAttribute("aria-label") !== "Chat threads") {
+        return 0;
+      }
+      return css.settled() ? 300 : 7200;
+    },
+  );
+  const startup = await startPage({
+    context,
+    ...fixture.pageOptions,
+    path: "/",
+  });
+  try {
+    click(await screen.findByLabelText("Search workspace"));
+    const picker = within(await screen.findByRole("dialog"));
+    await fill(picker.getByRole("combobox"), "journal");
+    await expect(picker.findByText("Field journal")).resolves.toBeVisible();
+    expect(
+      screen.queryAllByTestId("sidebar-chat-thread-virtual-row"),
+    ).toHaveLength(0);
+    fireEvent.keyDown(picker.getByRole("combobox"), { key: "Escape" });
+  } finally {
+    css.resolve("loaded");
+    await startup.ready;
+  }
+  await expect(shown("Voyage 0")).resolves.toBeVisible();
+  expect(
+    within(list()).getAllByTestId("sidebar-chat-thread-virtual-row"),
+  ).toHaveLength(13);
 });

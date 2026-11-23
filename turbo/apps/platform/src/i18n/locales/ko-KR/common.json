@@ -6354,17 +6354,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "전체",
     "markAllRead": "모두 읽음으로 표시",
     "noResults": "결과가 없습니다",
     "resultCount_other": "결과 {{count}}개",
     "searching": "검색 중...",
     "searchWorkspace": "워크스페이스 검색...",
     "sections": {
-      "artifacts": "아티팩트",
-      "chats": "채팅",
       "messages": "메시지",
-      "workflows": "워크플로"
+      "threads": "스레드"
     }
   },
   "ssh": {

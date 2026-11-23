@@ -530,7 +530,12 @@ class ChatListModel(
                     changes.detailThreads.forEach { history.invalidateDetail(it) }
                 }
                 if (changes.resync || changes.messageThreads.isNotEmpty()) warming.invalidate()
-                if (changes.resync || changes.artifactThreads.isNotEmpty()) {
+                if (
+                    changes.resync ||
+                        changes.list ||
+                        changes.messageThreads.isNotEmpty() ||
+                        changes.artifactThreads.isNotEmpty()
+                ) {
                     viewModelScope.launch { artifactChanges.emit(changes) }
                 }
             }

@@ -6376,7 +6376,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "All",
     "markAllRead": "Mark all read",
     "noResults": "No results found",
     "resultCount_one": "{{count}} result",
@@ -6384,10 +6383,8 @@
     "searching": "Searching...",
     "searchWorkspace": "Search workspace...",
     "sections": {
-      "artifacts": "Artifacts",
-      "chats": "Chats",
       "messages": "Messages",
-      "workflows": "Workflows"
+      "threads": "Threads"
     }
   },
   "ssh": {

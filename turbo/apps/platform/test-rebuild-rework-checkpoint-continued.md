@@ -3194,3 +3194,9 @@ The rewards picker exposes both provider methods after the selected connector's 
 The subsequent main sync includes [#50239](https://github.com/okou-ai/okou/pull/50239). Three conflicts touched the original connector access, focus and scroll tests. The migrated permission editor and account manager check focus inside their dialogs. The directory keeps focus on Add connectors as a delayed inventory arrives and reopens with an empty search. With one or thirty connectors, a restored row stays collapsed until selected. The upstream change explicitly removed the assertion about focus after an open row disappears. These integration checks sit outside the fixed 42 IDs.
 
 [Fixed selection](https://app.okou.ai/artifacts/pn1e4t5mc4.md) · [42 dispositions and regression rows](./test-rebuild-batch-92.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv)
+
+## Batch 93 main synchronization
+
+Main's workspace search now groups up to three titles before message matches within 25 results. The four earlier search and sidebar assertions failed individually on the integrated production code. The complete original descriptions are archived under `test-rebuild-evidence/50305`. The independent replacements exercise distinct shortcut destinations, a hidden archived chat, the bounded mobile list after stylesheet readiness, and the visible age and empty-state results. The 120 pending-file baseline remains the starting point for the fixed selection.
+
+[Six conflict resolutions and four obsolete assertions](./test-rebuild-batch-93-main-sync.tsv) · [Upstream change](https://github.com/okou-ai/okou/pull/50305)

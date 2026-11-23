@@ -2,7 +2,7 @@ import {
   findComposer,
   findFastControl,
 } from "./chat-message-experience-test-helpers.ts";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
@@ -257,4 +257,20 @@ test("sidebar-chat-history-028 The Chat rail action leaves the archived list and
   });
   await titles("Release plan");
   expect(screen.queryByText("Archived", { exact: true })).toBeNull();
+});
+
+test("An archived chat hidden in the active sidebar can be opened from matching search titles", async () => {
+  await workspace([release, archived], route(release.id));
+  expect(sidebarThreadTitles()).not.toContain(archived.title);
+  click(await screen.findByLabelText("Search workspace"));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByRole("combobox"), {
+    target: { value: "archived context" },
+  });
+  const group = await within(dialog).findByRole("group", { name: "Threads" });
+  click(within(group).getByText("Archived context"));
+  await waitFor(() => {
+    expect(location.pathname).toBe(route(archived.id));
+  });
+  expect(dialog).not.toBeInTheDocument();
 });

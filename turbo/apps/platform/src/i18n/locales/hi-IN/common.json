@@ -6378,7 +6378,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "सभी",
     "markAllRead": "सभी को पढ़ा दिखाएं",
     "noResults": "कोई परिणाम नहीं मिला",
     "resultCount_one": "{{count}} परिणाम",
@@ -6386,10 +6385,8 @@
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "artifacts": "आर्टिफ़ैक्ट्स",
-      "chats": "चैट",
       "messages": "संदेश",
-      "workflows": "वर्कफ़्लो"
+      "threads": "थ्रेड"
     }
   },
   "ssh": {

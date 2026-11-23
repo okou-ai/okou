@@ -9,23 +9,9 @@ import {
   useLoadable,
   type Loadable,
 } from "ccstate-react";
-import {
-  File,
-  Globe,
-  Image,
-  Loader2,
-  MessagesSquare,
-  Presentation,
-  Route,
-  User,
-  Video,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 import type { ChatSearchResult } from "@okouai/api-contracts/contracts/chat-threads";
-import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
-import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 import {
-  buttonVariants,
-  cn,
   CommandDialog,
   CommandGroup,
   CommandInput,
@@ -35,23 +21,18 @@ import {
   DialogHeader,
   DialogTitle,
   RunningIndicator,
-  Toggle,
-  ToggleGroup,
 } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { formatRelativeTimestamp } from "../../i18n/format.ts";
-import { i18n } from "../../i18n/index.ts";
 import { emptySearchImg } from "./platform-assets.ts";
 import {
   chatListQuery$,
   setChatListQuery$,
-  setThreeColumnSearchFilter$,
-  threeColumnSearchFilter$,
-  type ThreeColumnSearchFilter,
 } from "../../signals/okou-page/sidebar-state.ts";
 import { sidebarActiveThreadIds$ } from "../../signals/chat-page/chat-thread-indicators-from-worker.ts";
 import { sidebarUnreadThreadIds$ } from "../../signals/chat-page/sidebar-unread-threads.ts";
 import {
+  MAX_VISIBLE_SEARCH_RESULTS,
   workspaceSearchChatMessages$,
   workspaceSearchChatThreadMap$,
   threeColumnSearchChatThreads$,
@@ -65,14 +46,7 @@ import {
 } from "../../signals/okou-page/thread-number-shortcuts.ts";
 import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
 import { AvatarFromUrl, ChatThreadStateText } from "./sidebar-shared.tsx";
-import {
-  threeColumnArtifactSearchResults$,
-  threeColumnWorkflowSearchResults$,
-  type ThreeColumnArtifactSearchItem,
-} from "../../signals/okou-page/three-column-search-resources.ts";
-import { ArtifactThumbnailImage } from "./artifact-thumbnail.tsx";
 
-/** Command value of the pin manager's create row; never an agent id. */
 function ChatThreadCommandIndicator({
   threadId,
 }: {
@@ -205,15 +179,14 @@ function ChatMessageSnippet({
 /**
  * Trailing metadata for a spotlight row: the state dot sits in a fixed-width
  * slot ahead of the timestamp so the timestamps line up on the same rail as the
- * filter row above, whether or not a row is unread.
+ * search input above, whether or not a row is unread.
  */
 function SpotlightRowMeta({
   indicatorThreadId,
   timestamp,
   shortcutNumber,
 }: {
-  /** The chat whose state dot this row shows; null for rows without one. */
-  readonly indicatorThreadId: string | null;
+  readonly indicatorThreadId: string;
   readonly timestamp: string;
   readonly shortcutNumber: number | undefined;
 }) {
@@ -222,9 +195,7 @@ function SpotlightRowMeta({
       {/* w-3.5 fits the widest indicator (RunningIndicator is 0.86rem) so the
           running dot is not squashed and the timestamp never shifts. */}
       <span className="flex w-3.5 shrink-0 justify-center">
-        {indicatorThreadId !== null && (
-          <ChatThreadCommandIndicator threadId={indicatorThreadId} />
-        )}
+        <ChatThreadCommandIndicator threadId={indicatorThreadId} />
       </span>
       <span className="text-xs text-[hsl(var(--gray-700))]">{timestamp}</span>
       <ThreadNumberShortcutHint shortcutNumber={shortcutNumber} />
@@ -235,7 +206,7 @@ function SpotlightRowMeta({
 /**
  * `pl-1` rather than the usual `pl-2`: the agent avatar art carries ~4px of its
  * own margin, so the tighter box padding lands the avatar's ink on the same
- * rail as the filter row and the search field's left border.
+ * rail as the search field's left border.
  */
 const SPOTLIGHT_ROW_CLASS = "group w-full gap-3.5 py-2 pl-1 pr-2";
 
@@ -316,175 +287,10 @@ function SpotlightMessageCommandItem({
   );
 }
 
-const SPOTLIGHT_RESOURCE_ICON_CLASS =
-  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-nested-fill text-muted-foreground";
-
-function SpotlightWorkflowCommandItem({
-  workflow,
-  onSelect,
-  shortcutNumber,
-}: {
-  readonly workflow: WorkflowSummary;
-  readonly onSelect: () => void;
-  readonly shortcutNumber: number | undefined;
-}) {
-  const title = workflow.displayName ?? workflow.name;
-  return (
-    <CommandItem
-      value={`spotlight-workflow-${workflow.id}`}
-      onClick={onSelect}
-      className={SPOTLIGHT_ROW_CLASS}
-    >
-      <span className={SPOTLIGHT_RESOURCE_ICON_CLASS} aria-hidden="true">
-        <Route size={16} />
-      </span>
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm text-foreground">{title}</span>
-        <span className="block truncate text-xs text-muted-foreground">
-          /{workflow.name}
-        </span>
-      </span>
-      <SpotlightRowMeta
-        shortcutNumber={shortcutNumber}
-        indicatorThreadId={null}
-        timestamp={formatRelativeTimestamp(workflow.createdAt)}
-      />
-    </CommandItem>
-  );
-}
-
-function artifactKindLabel(kind: ArtifactCatalogKind): string {
-  switch (kind) {
-    case "presentation": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.presentation;
-      });
-    }
-    case "hosted-site": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.hostedSite;
-      });
-    }
-    case "image": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.image;
-      });
-    }
-    case "video": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.video;
-      });
-    }
-    case "avatar": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.avatar;
-      });
-    }
-    case "shared-thread": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.sharedConversation;
-      });
-    }
-    case "file": {
-      return i18n.t(($) => {
-        return $.artifacts.kinds.file;
-      });
-    }
-  }
-}
-
-function SpotlightArtifactKindIcon({
-  kind,
-}: {
-  readonly kind: ArtifactCatalogKind;
-}) {
-  const icon =
-    kind === "presentation" ? (
-      <Presentation size={16} />
-    ) : kind === "hosted-site" ? (
-      <Globe size={16} />
-    ) : kind === "image" ? (
-      <Image size={16} />
-    ) : kind === "video" ? (
-      <Video size={16} />
-    ) : kind === "avatar" ? (
-      <User size={16} />
-    ) : kind === "shared-thread" ? (
-      <MessagesSquare size={16} />
-    ) : (
-      <File size={16} />
-    );
-  return (
-    <span
-      className={SPOTLIGHT_RESOURCE_ICON_CLASS}
-      aria-hidden="true"
-      data-testid={`spotlight-artifact-kind-icon-${kind}`}
-    >
-      {icon}
-    </span>
-  );
-}
-
-function SpotlightArtifactThumbnail({
-  artifact,
-}: {
-  readonly artifact: ThreeColumnArtifactSearchItem;
-}) {
-  const thumbnailUrl = useLastResolved(artifact.thumbnailUrl$);
-  if (!thumbnailUrl) {
-    return <SpotlightArtifactKindIcon kind={artifact.kind} />;
-  }
-  return (
-    <ArtifactThumbnailImage
-      src={thumbnailUrl}
-      load={artifact.thumbnailLoad}
-      loading="eager"
-      className="h-8 w-8 shrink-0 rounded-lg bg-gray-50 object-cover"
-      fallback={<SpotlightArtifactKindIcon kind={artifact.kind} />}
-      testId="spotlight-artifact-thumbnail"
-    />
-  );
-}
-
-function SpotlightArtifactCommandItem({
-  artifact,
-  onSelect,
-  shortcutNumber,
-}: {
-  readonly artifact: ThreeColumnArtifactSearchItem;
-  readonly onSelect: () => void;
-  readonly shortcutNumber: number | undefined;
-}) {
-  return (
-    <CommandItem
-      value={`spotlight-artifact-${artifact.id}`}
-      onClick={onSelect}
-      className={SPOTLIGHT_ROW_CLASS}
-    >
-      <SpotlightArtifactThumbnail artifact={artifact} />
-      <span className="min-w-0 flex-1 text-left">
-        <span className="block truncate text-sm text-foreground">
-          {artifact.title}
-        </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {artifactKindLabel(artifact.kind)}
-        </span>
-      </span>
-      <SpotlightRowMeta
-        shortcutNumber={shortcutNumber}
-        indicatorThreadId={null}
-        timestamp={formatRelativeTimestamp(artifact.createdAt)}
-      />
-    </CommandItem>
-  );
-}
-
 function SpotlightSearchInput() {
   const { t } = useTranslation("common");
 
   return (
-    // `p-5` all round: the 20px bottom padding is what balances the air above
-    // and below the filter row (see SpotlightSearchFilterBar's `mb-3`).
     <div className="shrink-0 p-5">
       <div className="relative">
         <CommandInput
@@ -505,119 +311,13 @@ function SpotlightSearchInput() {
   );
 }
 
-function SpotlightSearchFilterBar({
-  filter,
-  resultCount,
-  onSelect,
-}: {
-  readonly filter: ThreeColumnSearchFilter;
-  readonly resultCount: number;
-  readonly onSelect: (filter: ThreeColumnSearchFilter) => void;
-}) {
-  const { t } = useTranslation("common");
-  const options: readonly {
-    readonly value: ThreeColumnSearchFilter;
-    readonly label: string;
-  }[] = [
-    {
-      value: "all",
-      label: t(($) => {
-        return $.sidebar.filterAll;
-      }),
-    },
-    {
-      value: "chats",
-      label: t(($) => {
-        return $.sidebar.sections.chats;
-      }),
-    },
-    {
-      value: "messages",
-      label: t(($) => {
-        return $.sidebar.sections.messages;
-      }),
-    },
-    {
-      value: "workflows",
-      label: t(($) => {
-        return $.sidebar.sections.workflows;
-      }),
-    },
-    {
-      value: "artifacts",
-      label: t(($) => {
-        return $.sidebar.sections.artifacts;
-      }),
-    },
-  ];
-
-  return (
-    // No divider: the search field and the list are already separated by their
-    // own padding, and a full-bleed rule ran into the dialog's 24px corners.
-    <div className="mb-3 flex h-7 shrink-0 items-center justify-between px-5">
-      <ToggleGroup<ThreeColumnSearchFilter>
-        aria-label={t(($) => {
-          return $.sidebar.searchWorkspace;
-        })}
-        value={[filter]}
-        onValueChange={(value) => {
-          const nextFilter = value[0];
-          if (nextFilter !== undefined) {
-            onSelect(nextFilter);
-          }
-        }}
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
-      >
-        {options.map((option) => {
-          return (
-            <Toggle
-              key={option.value}
-              value={option.value}
-              variant="quiet"
-              size="xs"
-              className={({ pressed }) => {
-                return cn(
-                  buttonVariants({
-                    variant: pressed ? "outline" : "quiet",
-                    size: "xs",
-                  }),
-                  // Reserve the border and keep keyboard focus visible in the scroller.
-                  "shrink-0 border focus-visible:ring-inset focus-visible:ring-offset-0",
-                  !pressed && "border-transparent",
-                );
-              }}
-            >
-              {option.label}
-            </Toggle>
-          );
-        })}
-      </ToggleGroup>
-      <span
-        className="ml-2 shrink-0 text-xs text-muted-foreground"
-        role="status"
-      >
-        {t(
-          ($) => {
-            return $.sidebar.resultCount;
-          },
-          { count: resultCount },
-        )}
-      </span>
-    </div>
-  );
-}
-
 interface SpotlightSearchResultsProps {
   readonly threads: readonly WorkspaceSearchChatThread[];
   readonly messages: readonly ChatSearchResult[];
-  readonly workflows: readonly WorkflowSummary[];
-  readonly artifacts: readonly ThreeColumnArtifactSearchItem[];
   readonly threadMap: ReadonlyMap<string, WorkspaceSearchChatThread>;
   readonly searching: boolean;
   readonly showNoResults: boolean;
   readonly onSelectChatThread: (threadId: string) => void;
-  readonly onSelectWorkflow: (workflowId: string) => void;
-  readonly onSelectArtifact: (artifact: ThreeColumnArtifactSearchItem) => void;
 }
 
 interface SpotlightQueryResult {
@@ -651,51 +351,13 @@ function spotlightLoadableIsSearching<Result extends SpotlightQueryResult>(
   return loadable.data.query !== query;
 }
 
-function spotlightFilterShows(
-  filter: ThreeColumnSearchFilter,
-  category: Exclude<ThreeColumnSearchFilter, "all">,
-): boolean {
-  return filter === "all" || filter === category;
-}
-
-function spotlightVisibleSearchIsPending({
-  showThreads,
-  threadSearching,
-  showMessages,
-  showWorkflows,
-  showArtifacts,
-  messageSearching,
-  workflowSearching,
-  artifactSearching,
-}: {
-  readonly showThreads: boolean;
-  readonly threadSearching: boolean;
-  readonly showMessages: boolean;
-  readonly showWorkflows: boolean;
-  readonly showArtifacts: boolean;
-  readonly messageSearching: boolean;
-  readonly workflowSearching: boolean;
-  readonly artifactSearching: boolean;
-}): boolean {
-  return (
-    (showThreads && threadSearching) ||
-    (showMessages && messageSearching) ||
-    (showWorkflows && workflowSearching) ||
-    (showArtifacts && artifactSearching)
-  );
-}
-
 function SpotlightSearchResults({
   threads,
   messages,
-  workflows,
-  artifacts,
   threadMap,
   searching,
   showNoResults,
   onSelectChatThread,
-  onSelectWorkflow,
-  onSelectArtifact,
 }: SpotlightSearchResultsProps) {
   const { t } = useTranslation("common");
   const numberShortcutsEnabled = useGet(threadNumberShortcutsEnabled$);
@@ -704,99 +366,78 @@ function SpotlightSearchResults({
   };
 
   return (
-    // `px-3` pairs with each row's `pl-1` / `pr-2` to put row content on the
-    // same 20px rail as the search field and the filter row, while the row's
-    // hover fill still bleeds past it.
-    <CommandList className="min-h-0 max-h-[min(560px,65dvh)] overscroll-contain px-3 pb-4">
-      {/*
-        No group heading: the filter row above already names what is listed, and
-        "Best matches" was labelling the only group there is.
-      */}
-      <CommandGroup className="min-h-[300px] [&_[data-slot=command-group-items]]:flex [&_[data-slot=command-group-items]]:flex-col">
-        {threads.map((thread, index) => {
-          return (
-            <SpotlightThreadCommandItem
-              shortcutNumber={shortcutNumber(index)}
-              key={thread.id}
-              thread={thread}
-              onSelect={() => {
-                return onSelectChatThread(thread.id);
-              }}
-            />
-          );
-        })}
-        {messages.map((message, index) => {
-          return (
-            <SpotlightMessageCommandItem
-              shortcutNumber={shortcutNumber(threads.length + index)}
-              key={`${message.matchedMessage.chatThreadId}:${message.matchedMessage.seqId}`}
-              message={message}
-              thread={threadMap.get(message.chatThreadId)}
-              onSelect={() => {
-                return onSelectChatThread(message.chatThreadId);
-              }}
-            />
-          );
-        })}
-        {workflows.map((workflow, index) => {
-          return (
-            <SpotlightWorkflowCommandItem
-              shortcutNumber={shortcutNumber(
-                threads.length + messages.length + index,
-              )}
-              key={workflow.id}
-              workflow={workflow}
-              onSelect={() => {
-                return onSelectWorkflow(workflow.id);
-              }}
-            />
-          );
-        })}
-        {artifacts.map((artifact, index) => {
-          return (
-            <SpotlightArtifactCommandItem
-              shortcutNumber={shortcutNumber(
-                threads.length + messages.length + workflows.length + index,
-              )}
-              key={artifact.id}
-              artifact={artifact}
-              onSelect={() => {
-                return onSelectArtifact(artifact);
-              }}
-            />
-          );
-        })}
-        {searching ? (
-          <div
-            className="flex items-center gap-2 py-2 pl-1 text-xs text-muted-foreground"
-            role="status"
-          >
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+    <CommandList className="min-h-[min(300px,65dvh)] max-h-[min(560px,65dvh)] overscroll-contain px-3 pb-4">
+      {threads.length > 0 && (
+        <CommandGroup
+          heading={t(($) => {
+            return $.sidebar.sections.threads;
+          })}
+        >
+          {threads.map((thread, index) => {
+            return (
+              <SpotlightThreadCommandItem
+                shortcutNumber={shortcutNumber(index)}
+                key={thread.id}
+                thread={thread}
+                onSelect={() => {
+                  return onSelectChatThread(thread.id);
+                }}
+              />
+            );
+          })}
+        </CommandGroup>
+      )}
+      {messages.length > 0 && (
+        <CommandGroup
+          heading={t(($) => {
+            return $.sidebar.sections.messages;
+          })}
+        >
+          {messages.map((message, index) => {
+            return (
+              <SpotlightMessageCommandItem
+                shortcutNumber={shortcutNumber(threads.length + index)}
+                key={`${message.matchedMessage.chatThreadId}:${message.matchedMessage.seqId}`}
+                message={message}
+                thread={threadMap.get(message.chatThreadId)}
+                onSelect={() => {
+                  return onSelectChatThread(message.chatThreadId);
+                }}
+              />
+            );
+          })}
+        </CommandGroup>
+      )}
+      {searching ? (
+        <div
+          className="flex items-center gap-2 py-2 pl-1 text-xs text-muted-foreground"
+          role="status"
+        >
+          <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+          {t(($) => {
+            return $.sidebar.searching;
+          })}
+        </div>
+      ) : null}
+      {showNoResults ? (
+        // Same empty-state shape as the artifacts and workflows lists: a 96px-tall
+        // scene illustration over a single line, centred in the list's minimum
+        // height so the dialog does not resize as results come and go.
+        <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
+          <img
+            src={emptySearchImg}
+            alt=""
+            role="presentation"
+            loading="lazy"
+            className="h-24 w-36 object-contain"
+          />
+          <p className="mt-3 text-sm font-medium text-foreground">
             {t(($) => {
-              return $.sidebar.searching;
+              return $.sidebar.noResults;
             })}
-          </div>
-        ) : null}
-        {showNoResults ? (
-          // Same empty-state shape as the artifacts and workflows lists: a 96px-tall
-          // scene illustration over a single line, centred in the list's minimum
-          // height so the dialog does not resize as results come and go.
-          <div className="flex min-h-[268px] flex-col items-center justify-center px-6 text-center">
-            <img
-              src={emptySearchImg}
-              alt=""
-              role="presentation"
-              loading="lazy"
-              className="h-24 w-36 object-contain"
-            />
-            <p className="mt-3 text-sm font-medium text-foreground">
-              {t(($) => {
-                return $.sidebar.noResults;
-              })}
-            </p>
-          </div>
-        ) : null}
-      </CommandGroup>
+          </p>
+        </div>
+      ) : null}
     </CommandList>
   );
 }
@@ -805,35 +446,20 @@ export function ThreeColumnSearchDialog({
   open,
   onOpenChange,
   onSelectChatThread,
-  onSelectWorkflow,
-  onSelectArtifact,
 }: {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onSelectChatThread: (threadId: string) => void;
-  readonly onSelectWorkflow: (workflowId: string) => void;
-  readonly onSelectArtifact: (artifact: ThreeColumnArtifactSearchItem) => void;
 }) {
   const { t } = useTranslation("common");
   const query = useGet(chatListQuery$);
   const setQuery = useSet(setChatListQuery$);
   const signal = useGet(pageSignal$);
-  const filter = useGet(threeColumnSearchFilter$);
-  const setFilter = useSet(setThreeColumnSearchFilter$);
-  const threadLoadable = useLoadable(threeColumnSearchChatThreads$);
+  const threadMatches = useGet(threeColumnSearchChatThreads$);
   const shortcutIndex = useSet(threadNumberShortcutIndex$);
   const threadMap = useGet(workspaceSearchChatThreadMap$);
   const messageLoadable = useLoadable(workspaceSearchChatMessages$);
-  const workflowLoadable = useLoadable(threeColumnWorkflowSearchResults$);
-  const artifactLoadable = useLoadable(threeColumnArtifactSearchResults$);
   const trimmedQuery = query.trim().toLowerCase();
-  const threadMatches = spotlightRowsFromLoadable(
-    threadLoadable,
-    trimmedQuery,
-    (result) => {
-      return result.chatThreads;
-    },
-  );
   const messageMatches = spotlightRowsFromLoadable(
     messageLoadable,
     trimmedQuery,
@@ -841,88 +467,20 @@ export function ThreeColumnSearchDialog({
       return result.chatMessages;
     },
   );
-  const workflowMatches = spotlightRowsFromLoadable(
-    workflowLoadable,
-    trimmedQuery,
-    (result) => {
-      return result.workflows;
-    },
+  const visibleMessages = messageMatches.slice(
+    0,
+    MAX_VISIBLE_SEARCH_RESULTS - threadMatches.length,
   );
-  const artifactMatches = spotlightRowsFromLoadable(
-    artifactLoadable,
+  const resultCount = threadMatches.length + visibleMessages.length;
+  const visibleSearching = spotlightLoadableIsSearching(
+    messageLoadable,
     trimmedQuery,
-    (result) => {
-      return result.artifacts;
-    },
   );
-  const showThreads = spotlightFilterShows(filter, "chats");
-  const showMessages = spotlightFilterShows(filter, "messages");
-  const showWorkflows = spotlightFilterShows(filter, "workflows");
-  const showArtifacts = spotlightFilterShows(filter, "artifacts");
-  const visibleThreads = showThreads ? threadMatches : [];
-  const visibleMessages = showMessages ? messageMatches : [];
-  const visibleWorkflows = showWorkflows ? workflowMatches : [];
-  const visibleArtifacts = showArtifacts ? artifactMatches : [];
-  const resultCount =
-    visibleThreads.length +
-    visibleMessages.length +
-    visibleWorkflows.length +
-    visibleArtifacts.length;
-  const visibleSearching = spotlightVisibleSearchIsPending({
-    showThreads,
-    threadSearching: spotlightLoadableIsSearching(threadLoadable, trimmedQuery),
-    showMessages,
-    showWorkflows,
-    showArtifacts,
-    messageSearching: spotlightLoadableIsSearching(
-      messageLoadable,
-      trimmedQuery,
-    ),
-    workflowSearching: spotlightLoadableIsSearching(
-      workflowLoadable,
-      trimmedQuery,
-    ),
-    artifactSearching: spotlightLoadableIsSearching(
-      artifactLoadable,
-      trimmedQuery,
-    ),
-  });
   const showNoResults = !visibleSearching && resultCount === 0;
   const selectThread = (threadId: string) => {
     onOpenChange(false);
     onSelectChatThread(threadId);
   };
-  const selectWorkflow = (workflowId: string) => {
-    onOpenChange(false);
-    onSelectWorkflow(workflowId);
-  };
-  const selectArtifact = (artifact: ThreeColumnArtifactSearchItem) => {
-    onOpenChange(false);
-    onSelectArtifact(artifact);
-  };
-
-  const resultSelections = [
-    ...visibleThreads.map((thread) => {
-      return () => {
-        selectThread(thread.id);
-      };
-    }),
-    ...visibleMessages.map((message) => {
-      return () => {
-        selectThread(message.chatThreadId);
-      };
-    }),
-    ...visibleWorkflows.map((workflow) => {
-      return () => {
-        selectWorkflow(workflow.id);
-      };
-    }),
-    ...visibleArtifacts.map((artifact) => {
-      return () => {
-        selectArtifact(artifact);
-      };
-    }),
-  ];
 
   return (
     <CommandDialog
@@ -960,7 +518,12 @@ export function ThreeColumnSearchDialog({
           }
           event.preventDefault();
           event.stopPropagation();
-          resultSelections[index]?.();
+          const threadId =
+            threadMatches[index]?.id ??
+            visibleMessages[index - threadMatches.length]?.chatThreadId;
+          if (threadId) {
+            selectThread(threadId);
+          }
         }}
       >
         <DialogHeader className="sr-only">
@@ -976,23 +539,29 @@ export function ThreeColumnSearchDialog({
           </DialogDescription>
         </DialogHeader>
         <SpotlightSearchInput />
-        <SpotlightSearchFilterBar
-          filter={filter}
-          resultCount={resultCount}
-          onSelect={setFilter}
-        />
-        <SpotlightSearchResults
-          threads={visibleThreads}
-          messages={visibleMessages}
-          workflows={visibleWorkflows}
-          artifacts={visibleArtifacts}
-          threadMap={threadMap}
-          searching={visibleSearching}
-          showNoResults={showNoResults}
-          onSelectChatThread={selectThread}
-          onSelectWorkflow={selectWorkflow}
-          onSelectArtifact={selectArtifact}
-        />
+        {trimmedQuery && (
+          <>
+            <span
+              role="status"
+              className="self-end px-5 pb-1 text-xs text-muted-foreground"
+            >
+              {t(
+                ($) => {
+                  return $.sidebar.resultCount;
+                },
+                { count: resultCount },
+              )}
+            </span>
+            <SpotlightSearchResults
+              threads={threadMatches}
+              messages={visibleMessages}
+              threadMap={threadMap}
+              searching={visibleSearching}
+              showNoResults={showNoResults}
+              onSelectChatThread={selectThread}
+            />
+          </>
+        )}
       </div>
     </CommandDialog>
   );

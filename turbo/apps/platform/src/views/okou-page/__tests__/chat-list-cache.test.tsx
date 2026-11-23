@@ -1,8 +1,15 @@
+import { chatSearchContract } from "@okouai/api-contracts/contracts/chat-threads";
 import userEvent from "@testing-library/user-event";
 import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import {
   createTestRuntime,
   testContext,
@@ -112,6 +119,26 @@ async function openCachedSearch(count: number, standalone = false) {
   context.mocks.browser.userAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/132.0.0.0 Safari/537.36",
   );
+
+  context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
+    return respond(200, {
+      results: Array.from({ length: 30 }, (_, index) => {
+        const source = history[(index + 2) % history.length]!;
+        return {
+          chatThreadId: source.id,
+          matchedMessage: {
+            role: "assistant",
+            chatThreadId: source.id,
+            seqId: index + 2,
+            runId: null,
+            createdAt: source.updatedAt,
+            content: query.keyword + " entry " + (index + 1),
+          },
+          matchedRanges: [{ start: 0, end: query.keyword.length }],
+        };
+      }),
+    });
+  });
   const page = await startPage({
     context,
     path: "/",
@@ -130,11 +157,12 @@ async function openCachedSearch(count: number, standalone = false) {
     const keys = userEvent.setup();
     await keys.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
     const dialog = within(await screen.findByRole("dialog"));
-    const options = await dialog.findAllByRole("option");
+    const input = dialog.getByRole("combobox");
     return {
-      options,
-      keys,
+      input,
+      dialog,
       history,
+      keys,
       finish: async () => {
         gate.resolve();
         await page.ready;
@@ -146,50 +174,73 @@ async function openCachedSearch(count: number, standalone = false) {
     throw error;
   }
 }
-test("search-result-number-shortcuts-001 empty search lists the first 25 cached conversations in sidebar order", async () => {
-  const { options, finish } = await openCachedSearch(26);
+test("Blank queries leave cached chats hidden and typing shares twenty-five places between title and message matches", async () => {
+  const { input, dialog, finish } = await openCachedSearch(26);
   try {
-    const order = [
-      1,
-      2,
-      ...Array.from({ length: 23 }, (_, offset) => {
-        return 26 - offset;
-      }),
-    ];
-    expect(options).toHaveLength(order.length);
-    for (const [i, n] of order.entries()) {
-      expect(options[i]).toHaveTextContent(
-        new RegExp("Chat " + n + "(?![0-9])"),
-      );
-    }
+    expect(dialog.queryByRole("listbox")).toBeNull();
+    await fill(input, "   ");
+    expect(dialog.queryByRole("status")).toBeNull();
+    expect(dialog.queryByRole("listbox")).toBeNull();
+    await fill(input, "letter");
+    const only = await dialog.findByRole("group", { name: "Messages" });
+    expect(queryAllByRoleFast("option", only)).toHaveLength(25);
+    expect(dialog.queryByRole("group", { name: "Threads" })).toBeNull();
+    await fill(input, "Chat");
+    await dialog.findByLabelText("chat entry 22");
+    const titles = dialog.getByRole("group", { name: "Threads" });
+    const messages = dialog.getByRole("group", { name: "Messages" });
+    const groups = dialog.getAllByRole("group");
+    expect(groups.indexOf(titles)).toBeLessThan(groups.indexOf(messages));
+    const shown = queryAllByRoleFast("option", titles);
+    expect(shown).toHaveLength(3);
+    expect(shown[0]).toHaveTextContent("Chat 26");
+    expect(shown[1]).toHaveTextContent("Chat 25");
+    expect(shown[2]).toHaveTextContent("Chat 24");
+    expect(queryAllByRoleFast("option", messages)).toHaveLength(22);
   } finally {
     await finish();
   }
 });
-test("search-result-number-shortcuts-002 Command+9 opens the ninth cached conversation without showing the sidebar", async () => {
-  const { options, keys, history, finish } = await openCachedSearch(10, true);
-  try {
-    await keys.keyboard("{Meta>}");
-    await waitFor(() => {
-      return expect(options[0]).toHaveTextContent("⌘1");
-    });
-    expect(options).toHaveLength(10);
-    for (const [index, row] of options.slice(0, 9).entries()) {
-      expect(row).toHaveTextContent("⌘" + (index + 1));
+test.each([
+  { digit: 4, message: 1 },
+  { digit: 9, message: 6 },
+])(
+  "Command+$digit opens matching message $message after three titles with the sidebar hidden",
+  async ({ digit, message }) => {
+    const { input, dialog, history, keys, finish } = await openCachedSearch(
+      10,
+      true,
+    );
+    try {
+      expect(dialog.queryByRole("listbox")).toBeNull();
+      await fill(input, "Chat");
+      await dialog.findByLabelText("chat entry 22");
+      const options = dialog.getAllByRole("option");
+      expect(options[digit - 1]).toHaveTextContent("entry " + message);
+      await keys.keyboard("{Meta>}");
+      await waitFor(() => {
+        return expect(options[0]).toHaveTextContent("⌘1");
+      });
+      expect(options).toHaveLength(25);
+      for (const [index, row] of options.slice(0, 9).entries()) {
+        expect(row).toHaveTextContent("⌘" + (index + 1));
+      }
+      expect(options[9]).not.toHaveTextContent(/⌘/);
+      await keys.keyboard(String(digit) + "{/Meta}");
+      await waitFor(() => {
+        return expect(location.pathname).toBe(
+          "/chats/" + history[message + 1]!.id,
+        );
+      });
+      expect(screen.queryByRole("dialog")).toBeNull();
+      await expect(
+        findFastControl("button", "Show chat list"),
+      ).resolves.toBeEnabled();
+    } finally {
+      await finish();
     }
-    expect(options[9]).not.toHaveTextContent(/⌘/);
-    await keys.keyboard("9{/Meta}");
-    await waitFor(() => {
-      return expect(location.pathname).toBe("/chats/" + history[3]!.id);
-    });
-    expect(screen.queryByRole("dialog")).toBeNull();
-    await expect(
-      findFastControl("button", "Show chat list"),
-    ).resolves.toBeEnabled();
-  } finally {
-    await finish();
-  }
-});
+  },
+);
 
 test("Leaving the member session keeps its saved conversation out of the signed-out sign-in page", async () => {
   const member = createTestRuntime(context);

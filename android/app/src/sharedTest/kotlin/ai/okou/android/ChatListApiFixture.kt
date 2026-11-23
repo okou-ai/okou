@@ -251,6 +251,10 @@ class ChatListApiFixture : Closeable {
                         return when (segments.getOrNull(3)) {
                             "event-snapshot" -> historySnapshot()
                             "event-rows" -> historyRows(request)
+                            "relations" ->
+                                if (segments.getOrNull(4) in setOf("children", "communications")) {
+                                    jsonResponse("""{"items":[]}""")
+                                } else MockResponse().setResponseCode(404)
                             "mark-read" -> {
                                 readRequests.incrementAndGet()
                                 historyMarkRead()

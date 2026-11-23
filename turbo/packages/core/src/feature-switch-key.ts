@@ -43,6 +43,7 @@ export enum FeatureSwitchKey {
   SlashActions = "slashActions",
   WorkflowRecencySync = "workflowRecencySync",
   FollowupPlaceholder = "followupPlaceholder",
+  ChatLatestTurnScrollRoom = "chatLatestTurnScrollRoom",
   ChatReplyNameLine = "chatReplyNameLine",
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
