@@ -75,7 +75,6 @@
     <string name="chat_delete_rejected">Could not delete the chat.</string>
     <string name="chat_delete_title">Delete chat?</string>
     <string name="chat_delete_description">Messages and drafts in “%1$s” will be permanently deleted. Running tasks will stop and linked automations will pause.</string>
-    <string name="chat_delete_confirm">Delete</string>
     <string name="chat_rename_project">Rename Project</string>
     <string name="chat_project_name">Project name</string>
     <string name="chat_project_rename_unconfirmed">Could not confirm the Project name.</string>
@@ -97,4 +96,12 @@
     <string name="chat_project_delete_unconfirmed">Could not confirm Project deletion.</string>
     <string name="chat_row_action_rejected_named">Could not complete “%1$s”.</string>
     <string name="chat_row_action_offline_named">Could not complete “%1$s”. Check your connection and try again.</string>
+    <string name="chat_rename_save_failed">Could not save. Your changes are still here.</string>
+    <string name="chat_rename_check_result">Check result</string>
+    <string name="chat_rename_trim_hint">Leading and trailing spaces are removed.</string>
+    <string name="chat_rename_required">Enter a name.</string>
+    <string name="chat_rename_checking_result">Checking the result…</string>
+    <string name="chat_rename_save_unconfirmed">The save result is still unconfirmed.</string>
+    <string name="chat_title_saved">Chat title saved</string>
+    <string name="chat_project_name_saved">Project name saved</string>
 </resources>
