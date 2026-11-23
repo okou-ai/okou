@@ -96,6 +96,7 @@ class MainActivity : AppCompatActivity() {
                     app.projectExpansionStore,
                     app.defaultModelStore,
                     settingsCache = app.workspaceSettingsCache,
+                    searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )

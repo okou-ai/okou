@@ -4,4 +4,26 @@
     <string name="chat_search_clear">검색 지우기</string>
     <string name="chat_search_recent">최근 채팅</string>
     <string name="chat_search_empty">일치하는 채팅 없음</string>
+    <string name="chat_search_all">전체</string>
+    <string name="chat_search_messages">메시지</string>
+    <string name="chat_search_workflows">워크플로</string>
+    <string name="chat_search_artifacts">결과물</string>
+    <string name="chat_search_recently_opened">최근에 열어 본 채팅</string>
+    <string name="chat_search_enter_keyword">검색어를 입력하세요</string>
+    <string name="chat_search_view_all">모두 보기</string>
+    <string name="chat_search_view_type">%1$s 모두 보기</string>
+    <string name="chat_search_all_types">모든 유형 검색</string>
+    <string name="chat_search_no_results">일치하는 결과가 없습니다</string>
+    <string name="chat_search_no_messages">일치하는 메시지가 없습니다</string>
+    <string name="chat_search_no_workflows">일치하는 워크플로가 없습니다</string>
+    <string name="chat_search_no_artifacts">일치하는 결과물이 없습니다</string>
+    <string name="chat_search_online_only">온라인에서 이 유형을 검색할 수 있습니다</string>
+    <string name="chat_search_offline_titles">오프라인에서는 저장된 채팅 제목만 검색합니다.</string>
+    <string name="chat_search_unavailable">일부 결과를 불러오지 못했습니다</string>
+    <string name="chat_search_message_unavailable">이 메시지는 더 이상 사용할 수 없습니다</string>
+    <string name="chat_search_workflow_add_draft">새 채팅 초안에 추가</string>
+    <string name="chat_search_workflow_details">워크플로 세부 정보 보기</string>
+    <string name="chat_search_workflow_shadowed">비공개 워크플로에서 이 명령을 사용합니다</string>
+    <string name="chat_search_artifact_preview">결과물 미리보기</string>
+    <string name="chat_search_close_artifact_preview">결과물 미리보기 닫기</string>
 </resources>
