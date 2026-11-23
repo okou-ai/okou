@@ -310,7 +310,7 @@ struct ForYouView: View {
     let layerInset = Self.layerInset
     let leaveTilt = Self.leaveTilt
     return ScrollView {
-      surface(measure: { cardPlacements[card.id] = $0 }) {
+      surface(placementOf: card.id) {
         cardView(card).disabled(store.busy)
       }
       .overlay(alignment: .topTrailing) { artwork(for: card) }
@@ -346,7 +346,7 @@ struct ForYouView: View {
   /// A standalone panel: the caught-up card, or loading and its failure.
   private func standalone<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     ScrollView {
-      surface(measure: { panelPlacement = $0 }, content)
+      surface(placementOf: nil, content)
         .padding(.top, Self.artworkRise + OkouSpace.sm)
         .padding(.bottom, OkouSpace.sm)
     }
@@ -356,9 +356,10 @@ struct ForYouView: View {
     .refreshable { await store.load() }
   }
 
-  /// The one surface of the page. It reports where it sits, for the cover and the deck.
+  /// The one surface of the page. It reports where it sits, for the cover and the deck: a
+  /// card under its id, the standalone panel under none.
   private func surface<Content: View>(
-    measure: @escaping (ForYouCardPlacement) -> Void, @ViewBuilder _ content: () -> Content
+    placementOf id: String?, @ViewBuilder _ content: () -> Content
   ) -> some View {
     content()
       .padding(OkouSpace.lg)
@@ -367,7 +368,7 @@ struct ForYouView: View {
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
         ForYouCardPlacement(proxy.frame(in: .global))
       } action: { placement in
-        measure(placement)
+        if let id { cardPlacements[id] = placement } else { panelPlacement = placement }
       }
       .frame(maxWidth: OkouControl.readableWidth)
       .padding(.horizontal, OkouSpace.lg)
