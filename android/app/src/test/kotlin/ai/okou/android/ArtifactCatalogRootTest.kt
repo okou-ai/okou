@@ -492,6 +492,31 @@ class ArtifactCatalogRootTest {
     }
 
     @Test
+    fun websiteDenialSurvivesDisconnectionBeforeTheNextFrame() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        openWebsite(fixture)
+        val view = checkNotNull(websiteView())
+        val model = artifactModel
+        val connectivity = app.connectivity
+        val frame = compose.onNodeWithTag("artifact_preview_surface")
+        val frameBounds = frame.getUnclippedBoundsInRoot()
+        compose.mainClock.autoAdvance = false
+        try {
+            failWebsiteDocument(view, 403)
+            compose.runOnIdle { connectivity.value = false }
+            compose.waitUntil(10_000) { model.state.value.offline }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+
+        compose.onNodeWithText("You don’t have access to this artifact").assertIsDisplayed()
+        compose.onNodeWithText("Open in browser").assertDoesNotExist()
+        compose.onNodeWithText("View source conversation").assertIsEnabled()
+        assertEquals(frameBounds, frame.getUnclippedBoundsInRoot())
+    }
+
+    @Test
     fun websiteGrantAndInitialDocumentShareTheRetryBudget() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()

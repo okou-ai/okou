@@ -49,7 +49,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -374,7 +373,7 @@ private fun HostedPreviewContent(
     showLoading: Boolean,
 ) {
     var siteScroll by rememberArtifactWebScroll()
-    var documentAccessProblem by remember { mutableStateOf<ArtifactProblem?>(null) }
+    var documentAttempt by remember { mutableStateOf<HostedDocumentAttempt?>(null) }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val inset = if (maxWidth >= 600.dp) 32.dp else 16.dp
         Box(Modifier.fillMaxSize().padding(inset), contentAlignment = Alignment.Center) {
@@ -382,7 +381,7 @@ private fun HostedPreviewContent(
                 problem != null -> PreviewStatusText(problem.previewLabel())
                 offline ->
                     PreviewStatusText(
-                        documentAccessProblem?.previewLabel()
+                        documentAttempt?.accessProblem?.previewLabel()
                             ?: R.string.artifact_preview_unavailable,
                     )
                 content is ArtifactContent.Website ->
@@ -390,7 +389,7 @@ private fun HostedPreviewContent(
                         HostedArtifactPreview(
                             content,
                             siteScroll,
-                            onAccessProblem = { documentAccessProblem = it },
+                            onDocumentStarted = { documentAttempt = it },
                             onScroll = { siteScroll = it },
                         )
                     }
@@ -447,36 +446,34 @@ private fun ArtifactProblem.previewLabel(): Int =
 private fun HostedArtifactPreview(
     content: ArtifactContent.Website,
     scrollY: Int,
-    onAccessProblem: (ArtifactProblem?) -> Unit,
+    onDocumentStarted: (HostedDocumentAttempt) -> Unit,
     onScroll: (Int) -> Unit,
 ) {
     var usedRetries by remember { mutableIntStateOf(0) }
     key(usedRetries) {
-        var failure by remember { mutableStateOf<ArtifactProblem?>(null) }
-        val problem = failure
-        // Keep a displayed access error if disconnecting removes this WebView.
-        SideEffect {
-            onAccessProblem(
-                problem.takeIf { it == ArtifactProblem.Missing || it == ArtifactProblem.Denied },
-            )
-        }
+        val attempt = remember { HostedDocumentAttempt() }
+        val problem = attempt.problem
         when {
             problem == null ->
                 AndroidView(
                     modifier = Modifier.fillMaxSize(),
                     factory = {
+                        onDocumentStarted(attempt)
                         val initialScroll = scrollY
                         isolatedPreview(
                             it,
                             content.url,
-                            onFailure = { if (failure == null) failure = it },
+                            onFailure = attempt::recordProblem,
                             onLoaded = { view ->
                                 view.scrollTo(0, initialScroll)
                                 view.setOnScrollChangeListener { _, _, y, _, _ -> onScroll(y) }
                             },
                         )
                     },
-                    onRelease = { it.destroy() },
+                    onRelease = {
+                        attempt.release()
+                        it.destroy()
+                    },
                     update = {},
                 )
             problem == ArtifactProblem.Temporary && usedRetries < content.remainingRetries -> {
@@ -491,6 +488,25 @@ private fun HostedArtifactPreview(
             }
             else -> PreviewStatusText(problem.previewLabel())
         }
+    }
+}
+
+/** The preview can still read the last active attempt's access result after release. */
+private class HostedDocumentAttempt {
+    var problem by mutableStateOf<ArtifactProblem?>(null)
+        private set
+
+    val accessProblem: ArtifactProblem?
+        get() = problem.takeIf { it == ArtifactProblem.Missing || it == ArtifactProblem.Denied }
+
+    private var released = false
+
+    fun recordProblem(problem: ArtifactProblem) {
+        if (!released && this.problem == null) this.problem = problem
+    }
+
+    fun release() {
+        released = true
     }
 }
 
