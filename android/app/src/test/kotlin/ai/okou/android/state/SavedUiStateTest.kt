@@ -79,7 +79,6 @@ class SavedUiStateTest {
         val chat =
             ConfirmedChat(
                 id = "chat",
-                agentId = "agent",
                 title = "Release before refresh",
                 sortAt = date,
                 createdAt = date,
@@ -177,7 +176,6 @@ class SavedUiStateTest {
         val chat =
             ConfirmedChat(
                 id = "chat",
-                agentId = "agent",
                 title = "Planning conversation",
                 sortAt = date,
                 createdAt = date,
@@ -192,7 +190,6 @@ class SavedUiStateTest {
             WorkspaceSearchResults(
                 keyword = "Release",
                 messages = SearchRead.Ready(listOf(message)),
-                workflows = SearchRead.Ready(listOf(workflow)),
             )
         var remote by mutableStateOf(loaded)
         var detailsOpen by mutableStateOf(false)
@@ -214,6 +211,7 @@ class SavedUiStateTest {
                         onOpen = {},
                         retry = {},
                         remote = remote,
+                        workflowResults = SearchRead.Ready(listOf(workflow)),
                         onOpenWorkflow = { detailsOpen = true },
                     )
                 }

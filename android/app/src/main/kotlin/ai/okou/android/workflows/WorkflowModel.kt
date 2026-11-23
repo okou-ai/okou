@@ -65,6 +65,7 @@ internal constructor(
     private val mutable = MutableStateFlow(WorkflowState())
     internal val state = mutable.asStateFlow()
     private var visible = false
+    private var searchingCatalog = false
     private var foreground = false
     private var offline = false
     private var selected: String? = null
@@ -80,6 +81,7 @@ internal constructor(
     internal fun connectivityChanged(offline: Boolean) {
         if (this.offline == offline) return
         this.offline = offline
+        if (offline && !visible) catalogRead.cancel()
         if (!offline) {
             val current = mutable.value
             if (current.catalogFailure.canRecheckOnReconnect()) catalogRead.cancel()
@@ -102,7 +104,8 @@ internal constructor(
             refresh(
                 buildSet {
                     if (
-                        !catalogRead.readAt.isFresh(now) ||
+                        searchingCatalog ||
+                            !catalogRead.readAt.isFresh(now) ||
                             current.catalogFailure.canRecheckOnReconnect()
                     )
                         add(WorkflowReadScope.Catalog)
@@ -132,7 +135,20 @@ internal constructor(
         if (open) {
             presentCachedRanges()
             refresh()
-        } else stopReads()
+        } else stopReads(keepCatalog = searchingCatalog)
+    }
+
+    internal fun searchVisibilityChanged(open: Boolean) {
+        if (searchingCatalog == open) return
+        searchingCatalog = open
+        if (open) {
+            if (!visible && !catalogRead.readAt.isFresh(monotonicMillis())) {
+                mutable.value = mutable.value.copy(catalog = null, catalogFailure = null)
+            }
+            refresh(catalogScope)
+        } else if (!visible) {
+            catalogRead.cancel()
+        }
     }
 
     internal fun foregroundChanged(resumed: Boolean) {
@@ -142,13 +158,13 @@ internal constructor(
         if (resumed) refresh() else stopReads()
     }
 
-    private fun stopReads() {
-        stopWorkflowReads()
+    private fun stopReads(keepCatalog: Boolean = false) {
+        stopWorkflowReads(keepCatalog)
         connectionsRead.cancel()
     }
 
-    private fun stopWorkflowReads() {
-        catalogRead.cancel()
+    private fun stopWorkflowReads(keepCatalog: Boolean = false) {
+        if (!keepCatalog) catalogRead.cancel()
         rulesRead.cancel()
         cancelDetailRead()
     }
@@ -186,7 +202,7 @@ internal constructor(
     private fun presentCachedRanges() {
         val current = mutable.value
         val now = monotonicMillis()
-        val catalog = current.catalog.takeIf { catalogRead.readAt.isFresh(now) }
+        val catalog = current.catalog.takeIf { searchingCatalog || catalogRead.readAt.isFresh(now) }
         val rules = current.rules.takeIf { rulesRead.readAt.isFresh(now) }
         val connections = current.connections.takeIf { connectionsRead.readAt.isFresh(now) }
         val detail =
@@ -205,12 +221,15 @@ internal constructor(
     }
 
     private fun refresh(scopes: Set<WorkflowReadScope> = allReadScopes) {
-        if (!authorized() || !visible || !foreground) return
+        if (!authorized() || !foreground || !visible && (!searchingCatalog || offline)) return
+        val activeScopes =
+            if (visible) scopes
+            else if (WorkflowReadScope.Catalog in scopes) catalogScope else return
         if (mutable.value.writing) {
-            readsAfterWrite.addAll(scopes)
+            readsAfterWrite.addAll(activeScopes)
             return
         }
-        for (scope in scopes) when (scope) {
+        for (scope in activeScopes) when (scope) {
             WorkflowReadScope.Detail -> selected?.let(::loadDetail)
             WorkflowReadScope.Catalog -> loadCatalog()
             WorkflowReadScope.Rules -> loadDirectoryRules()
@@ -221,7 +240,7 @@ internal constructor(
     private fun loadCatalog() {
         refreshRange(
             catalogRead,
-            fetch = { service.workspaceCatalog() },
+            fetch = { service.workflows().filter { it.official == null } },
             receive = ::publishCatalog,
             denied = ::clearAccess,
             failure = { mutable.value = mutable.value.copy(catalogFailure = it) },
@@ -665,6 +684,7 @@ private enum class WorkflowReadScope {
 
 private val directoryScopes =
     setOf(WorkflowReadScope.Catalog, WorkflowReadScope.Rules, WorkflowReadScope.Connections)
+private val catalogScope = setOf(WorkflowReadScope.Catalog)
 private val allReadScopes = WorkflowReadScope.entries.toSet()
 
 private class WorkflowRangeRead {

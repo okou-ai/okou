@@ -41,6 +41,48 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class WorkflowModelTest {
     @Test
+    fun workspaceSearchReusesTheUnexpiredCatalogAndSharesItsRefreshWithTheDirectory() =
+        check { service, model ->
+            model.visibilityChanged(true)
+            runCurrent()
+            model.visibilityChanged(false)
+            val saved = listOf(service.summary)
+            val refresh = CompletableDeferred<Unit>()
+            service.catalogRead = {
+                refresh.await()
+                throw ApiFailure.Http(503, null, null, null)
+            }
+
+            model.searchVisibilityChanged(true)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
+            assertEquals(2, service.catalogReads)
+            assertEquals(1, service.ruleReads)
+            assertEquals(1, service.connectionReads)
+
+            model.visibilityChanged(true)
+            runCurrent()
+            assertEquals(2, service.catalogReads)
+            model.visibilityChanged(false)
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
+            assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+
+            model.searchVisibilityChanged(false)
+            advanceTimeBy(600_000)
+            val newCatalog = CompletableDeferred<List<WorkflowSummary>>()
+            service.catalogRead = { newCatalog.await() }
+            model.searchVisibilityChanged(true)
+            runCurrent()
+            assertNull(model.state.value.catalog)
+            assertNull(model.state.value.catalogFailure)
+            newCatalog.complete(saved)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
+        }
+
+    @Test
     fun reopeningRevalidatesEachRangeAndOnlyShowsItsUnexpiredCache() = check { service, model ->
         val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
         val connections = CompletableDeferred<Set<String>>()

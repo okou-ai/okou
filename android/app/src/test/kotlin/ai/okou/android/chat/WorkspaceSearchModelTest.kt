@@ -160,6 +160,53 @@ class WorkspaceSearchModelTest {
     }
 
     @Test
+    fun reconnectKeepsConfirmedMessagesThroughReadFailureAndDropsThemWhenAccessIsLost() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val store = ViewModelStore()
+        val hit = SearchMessageHit("thread", 23, "launch", listOf(0..5))
+        var requests = 0
+        val service =
+            object : WorkspaceSearchService by EmptyWorkspaceSearchService {
+                override suspend fun searchMessages(keyword: String): List<SearchMessageHit> =
+                    when (++requests) {
+                        1 -> listOf(hit)
+                        2 -> throw ApiFailure.Http(503, null, null, null)
+                        else -> throw ApiFailure.Http(403, null, null, null)
+                    }
+            }
+        val model =
+            ViewModelProvider(
+                store,
+                viewModelFactory {
+                    initializer {
+                        WorkspaceSearchModel(service, identity, null, { true }, { throw it })
+                    }
+                },
+            )[WorkspaceSearchModel::class.java]
+        try {
+            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            advanceTimeBy(300)
+            runCurrent()
+            val confirmed = SearchRead.Ready(listOf(hit))
+            assertEquals(confirmed, model.results.value.messages)
+
+            model.update("launch", WorkspaceSearchType.Messages, connected = false)
+            assertEquals(confirmed, model.results.value.messages)
+            model.update("launch", WorkspaceSearchType.Messages, connected = true)
+            advanceTimeBy(300)
+            runCurrent()
+            assertEquals(confirmed.copy(refreshFailed = true), model.results.value.messages)
+
+            advanceTimeBy(5_000)
+            runCurrent()
+            assertEquals(SearchRead.AccessLost, model.results.value.messages)
+        } finally {
+            store.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
     fun artifactContinuationKeepsRowsWhileWaitingToRetryInItsScope() = runTest {
         Dispatchers.setMain(StandardTestDispatcher(testScheduler))
         val store = ViewModelStore()
