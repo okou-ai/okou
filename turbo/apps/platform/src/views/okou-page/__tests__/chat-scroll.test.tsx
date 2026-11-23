@@ -1554,13 +1554,22 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
     return 6000;
   });
   await conversation.publish(completedTurn(27));
+  // The incoming reply and each history page can arrive in separate renders.
+  const replies = [
+    "History answer 27",
+    "History answer 20",
+    "History answer 13",
+  ];
+  for (const reply of replies) {
+    await waitFor(
+      () => {
+        expect(transcript.queryByText(reply)).toBeInTheDocument();
+      },
+      { container },
+    );
+  }
   await waitFor(
     () => {
-      // The 6000px viewport needs history from multiple pages. Missing text
-      // during the fill should not produce a DOM dump on every retry.
-      expect(transcript.queryByText("History answer 27")).toBeInTheDocument();
-      expect(transcript.queryByText("History answer 20")).toBeInTheDocument();
-      expect(transcript.queryByText("History answer 13")).toBeInTheDocument();
       const before = container.querySelector<HTMLElement>(
         '[data-transcript-spacer="before"]',
       );
@@ -1569,6 +1578,9 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
     },
     { container },
   );
+  for (const reply of replies) {
+    expect(transcript.queryByText(reply)).toBeInTheDocument();
+  }
   expect(transcript.queryByText("History answer 1")).toBeNull();
 });
 
