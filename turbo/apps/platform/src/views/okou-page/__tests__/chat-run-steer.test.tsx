@@ -1,5 +1,5 @@
 import { publicArtifactUrl } from "./chat-attachment-test-helpers.ts";
-import { screen, within } from "@testing-library/react";
+import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -92,7 +92,7 @@ test("chat-run-steer-005 interrupts the active run while its queued follow-up re
   expect(screen.queryByRole("listitem", { name: "Queued message" })).toBeNull();
 });
 
-test("Two completed review phases keep independent artifacts and durations after a steer", async () => {
+test("An unclaimed steer shows Thinking before delivery and keeps both timed results when claimed", async () => {
   const at = (sec: number) => {
     return new Date(Date.UTC(2026, 8, 9, 10, 0, sec)).toISOString();
   };
@@ -124,23 +124,38 @@ test("Two completed review phases keep independent artifacts and durations after
   installRunChat({ activeRunIds: [runId], chatEvents: events });
   await setupPage({ context, path: RUN_PATH });
   await screen.findByText("Review complete.");
-  events.push(
-    promptEvent({
-      id: "steering",
-      text: "Check error handling.",
-      runId,
-      seqId: 3,
-      createdAt: at(12),
-    }),
-  );
+  const queueItem = promptEvent({
+    id: "waiting-on-errors",
+    text: "Check error handling.",
+    seqId: 3,
+    createdAt: at(12),
+  });
+  events.push(queueItem);
   publishRunUpdate();
-  const steer = await screen.findByText("Check error handling.");
+  await screen.findByText("Check error handling.");
+  await screen.findByText("Thinking...");
+  expect(screen.queryByRole("listitem", { name: "Queued message" })).toBeNull();
+  expect(screen.queryByText("queue...")).toBeNull();
+  expect(screen.getByText("Worked for 12 sec")).toBeInTheDocument();
+  events.push({
+    ...queueItem,
+    id: "delivered-to-review",
+    runId,
+    seqId: 4,
+    revokesEventId: queueItem.id,
+  });
+  publishRunUpdate();
+
+  const steer = screen.getByText("Check error handling.");
   events.push(
-    output(18, "followup", "Error paths checked.", "errors.md", 4),
-    completedEvent({ id: "finished", runId, seqId: 5, createdAt: at(20) }),
+    output(18, "followup", "Error paths checked.", "errors.md", 5),
+    completedEvent({ id: "finished", runId, seqId: 6, createdAt: at(20) }),
   );
   publishRunUpdate();
   const followup = await screen.findByText("Error paths checked.");
+  await waitFor(() => {
+    return expect(screen.queryByText("Thinking...")).toBeNull();
+  });
   const initial = screen.getByText("Review complete.");
   expect(
     initial.compareDocumentPosition(steer) & Node.DOCUMENT_POSITION_FOLLOWING,

@@ -461,77 +461,123 @@ test("browser-automatic-recovery-033 Two transient descriptor errors recover the
   ).toStrictEqual([]);
 });
 
-test("An assigned window conflict ends recovery before the member reconnects", async () => {
-  const live = await online();
-  const interrupted = await nextImage(live, 1);
-  const requested = context.mocks.deferred<void>();
-  const answer = context.mocks.deferred<void>();
-  let missing = true;
-  context.mocks.api(browserContract.get, async ({ respond }) => {
-    if (!missing) {
-      return respond(200, {
-        browser: live.viewer.browser,
-        viewer: live.viewer,
+test.each(["during", "after"] as const)(
+  "An assigned window conflict %s repaint keeps its terminal diagnostics through manual reconnect",
+  async (timing) => {
+    const live = await online();
+    const interrupted = await nextImage(live, 1);
+    const requested = context.mocks.deferred<void>();
+    const answer = context.mocks.deferred<void>();
+    let missing = true;
+    context.mocks.api(browserContract.get, async ({ respond }) => {
+      if (!missing) {
+        return respond(200, {
+          browser: live.viewer.browser,
+          viewer: live.viewer,
+        });
+      }
+      requested.resolve();
+      await answer.promise;
+      return respond(409, {
+        error: { code: "CONFLICT", message: "Assigned window lost" },
       });
-    }
-    requested.resolve();
-    await answer.promise;
-    return respond(409, {
-      error: { code: "CONFLICT", message: "Assigned window lost" },
     });
-  });
-  context.mocks.ably.trigger("browserSessionChanged", {
-    threadId: live.viewer.browser.threadId,
-  });
-  await requested.promise;
-  interrupted.release();
-  expect(proxy()).toBeDisabled();
-  answer.resolve();
-  await screen.findByText("Browser view unavailable");
-  const telemetry = [...live.errors.reports];
-  expect(telemetry).toStrictEqual([
-    expect.objectContaining({
-      context: expect.objectContaining({
-        tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
-        contexts: expect.objectContaining({
-          browser_http: { status: 409, code: "CONFLICT" },
-          browser_viewer: { kind: "protocol", transient: false },
-          browser_recovery: { outcome: "terminal" },
+    if (timing === "after") {
+      const painted = context.mocks.deferred<void>();
+      const canvas = screen
+        .getByLabelText<HTMLCanvasElement>("Live browser view")
+        .getContext("2d")!;
+      const draw = canvas.drawImage.bind(canvas);
+      vi.spyOn(canvas, "drawImage").mockImplementationOnce((image, x, y) => {
+        draw(image, x, y);
+        painted.resolve();
+      });
+      interrupted.release();
+      await painted.promise;
+    }
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: live.viewer.browser.threadId,
+    });
+    await requested.promise;
+    if (timing === "during") {
+      interrupted.release();
+    }
+    answer.resolve();
+    await screen.findByText("Browser view unavailable");
+    const telemetry = [...live.errors.reports];
+    expect(telemetry).toStrictEqual([
+      expect.objectContaining({
+        context: expect.objectContaining({
+          tags: expect.objectContaining({ browser_event: "recovery-stopped" }),
+          contexts: expect.objectContaining({
+            browser_http: { status: 409, code: "CONFLICT" },
+            browser_viewer: { kind: "protocol", transient: false },
+            browser_recovery: { outcome: "terminal" },
+          }),
         }),
       }),
-    }),
-  ]);
-  missing = false;
-  await userEvent.click(screen.getByText("Reconnect", { selector: "button" }));
-  await expectStreamingAt(primary.url);
-  await write(live, "v");
-  expect(live.errors.reports).toStrictEqual(telemetry);
-});
+    ]);
+    missing = false;
+    await userEvent.click(
+      screen.getByText("Reconnect", { selector: "button" }),
+    );
+    await expectStreamingAt(primary.url);
+    await write(live, "v");
+    expect(live.errors.reports).toStrictEqual(telemetry);
+  },
+);
 
-test.each([65_000, 180_000])(
-  "Manual reconnect restores typing after the replacement frame crosses %i ms",
-  async (elapsed) => {
+test.each([
+  { elapsed: 70_000, expired: false, name: "Early frame control" },
+  { elapsed: 180_000, expired: true, name: "Expired frame control" },
+])(
+  "$name A replacement image held until $elapsed ms distinguishes the original episode deadline",
+  async ({ elapsed, expired }) => {
     const live = await online();
-    const oldFrame = await nextImage(live, 3);
-    live.time(elapsed - 1000);
-    const descriptor = refresh(live, "replacement");
-    await descriptor.arrived;
+    const oldSession = live.cdp.pageSession(primary.targetId);
+    const original = await nextImage(live, 3);
+    live.time(65_000);
+    expect(exhausted(live)).toHaveLength(0);
+    live.time(expired ? 179_000 : 69_000);
+    const binding = refresh(live, "replacement");
+    await binding.arrived;
     const replacement = live.cdp.holdTargetFrames(primary.targetId);
-    await descriptor.release();
+    await binding.release();
     await replacement.received;
-    oldFrame.release("!invalid");
-    live.time(elapsed + 1);
-    replacement.release("!invalid");
-    const manual = await screen.findByText("Reconnect", { selector: "button" });
     expect(proxy()).toBeDisabled();
-    const receipts = [...live.errors.reports];
-    const connections = live.cdp.connections(endpoint);
-    live.time(elapsed + 4001);
+    live.time(elapsed - (expired ? 1 : 0));
+    expect(exhausted(live)).toHaveLength(0);
+    live.time(elapsed);
+    await waitFor(() => {
+      return expect(exhausted(live)).toHaveLength(expired ? 1 : 0);
+    });
+    if (!expired) {
+      replacement.release();
+      await expectStreamingAt(primary.url);
+      await write(live, "c");
+      return;
+    }
+    replacement.release("!damaged");
+    original.release("!damaged");
+    const manual = await screen.findByText("Reconnect", { selector: "button" });
+    const before = [...live.errors.reports];
+
+    live.time(184_000);
+    expect(proxy()).toBeDisabled();
+    expect(screen.queryByText("Reconnecting…")).toBeNull();
     expect(manual).toBeEnabled();
-    expect(live.cdp.connections(endpoint)).toBe(connections);
+    expect(live.errors.reports).toStrictEqual(before);
     await userEvent.click(manual);
     await expectStreamingAt(primary.url);
     await write(live, "h");
-    expect(live.errors.reports).toStrictEqual(receipts);
+    const recipient = live.cdp.pageSession(primary.targetId);
+    expect(recipient).not.toBe(oldSession);
+    expect(live.cdp.requestsAt(endpoint)).toContainEqual(
+      expect.objectContaining({
+        sessionId: recipient,
+        params: expect.objectContaining({ text: "h" }),
+      }),
+    );
+    expect(live.errors.reports).toStrictEqual(before);
   },
 );

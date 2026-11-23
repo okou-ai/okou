@@ -4,9 +4,14 @@ import {
   chatThreadPinContract,
   chatThreadUnpinContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, screen } from "@testing-library/react";
+import { act, screen, within, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { test, expect } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createChatRunFixtures,
@@ -133,3 +138,59 @@ test("The same chat offers Rename on mobile and mail management in the desktop M
   expect(menu).not.toHaveTextContent(/Pin chat|Rename chat/);
   expect(screen.getByText(subject)).toBeInTheDocument();
 });
+
+test.each(["mobile", "desktop"] as const)(
+  "Mail entry, focus return and automation access in the %s chat header",
+  async (layout) => {
+    const media = await openMobile();
+    if (layout === "desktop") {
+      act(() => {
+        media.setMatches((query) => {
+          return query.startsWith("(min-width:");
+        });
+      });
+    }
+    const user = userEvent.setup();
+    const more = await findButton("More actions");
+    await expect(findButton("Share messages")).resolves.toBeEnabled();
+    await expect(findButton("Artifacts and chats")).resolves.toBeEnabled();
+    await user.click(more);
+    const menu = await screen.findByRole("menu");
+    const labels = queryAllByRoleFast("menuitem", menu).map((item) => {
+      return item.textContent;
+    });
+    expect(labels).toStrictEqual(
+      layout === "desktop"
+        ? ["Automations", "Manage emails", "Open browser"]
+        : [
+            "Pin chat",
+            "Rename chat",
+            "Mute chat",
+            "Archive chat",
+            "Automations",
+            "Open browser",
+          ],
+    );
+    let origin = more;
+    if (layout === "desktop") {
+      await user.click(within(menu).getByText("Manage emails"));
+    } else {
+      await user.keyboard("{Escape}");
+      origin = await findButton("Manage emails");
+      await user.click(origin);
+    }
+    const emails = await screen.findByRole("dialog", { name: "Emails" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    await user.click(queryButton("Close emails", emails)!);
+    await waitFor(() => {
+      return expect(origin).toHaveFocus();
+    });
+    await user.click(more);
+    await user.click(
+      await findNamedMenuItem("Automations", await screen.findByRole("menu")),
+    );
+    await expect(
+      screen.findByRole("complementary", { name: "Automations" }),
+    ).resolves.toBeVisible();
+  },
+);

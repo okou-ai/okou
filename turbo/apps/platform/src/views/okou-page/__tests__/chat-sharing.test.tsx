@@ -1,3 +1,4 @@
+import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { sharedThreadVisibilityContract } from "@okouai/api-contracts/contracts/shared-thread-visibility";
 import {
   selectPassage,
@@ -405,9 +406,12 @@ test("A new share opens with public access while both message groups remain sele
   expect(messageGroup("Release approved").getByRole("checkbox")).toBeChecked();
 });
 
-test.each(["created", "denied"] as const)(
-  "The composer survives a %s organization link after both events are selected by the message shortcut",
-  async (outcome) => {
+test.each([
+  { outcome: "created", label: "chat-sharing-018" },
+  { outcome: "denied", label: "Rejected share control" },
+] as const)(
+  "$label The editor stays usable and the copied organization link has a $outcome receipt",
+  async ({ outcome }) => {
     const clipboard = context.mocks.browser.clipboardWriteText();
     const choice = context.mocks.deferred<{
       audience: string;
@@ -415,11 +419,30 @@ test.each(["created", "denied"] as const)(
       id?: string;
     }>();
     const release = context.mocks.deferred<void>();
+    let published: string | undefined;
+    context.mocks.api(sharedThreadsContract.get, ({ params, respond }) => {
+      if (published === params.id) {
+        return respond(200, {
+          id: params.id,
+          title: "Shared inventory review",
+          messages: [],
+        });
+      }
+      return respond(404, {
+        error: {
+          code: "NOT_FOUND",
+          message: "This conversation has not been shared",
+        },
+      });
+    });
     context.mocks.api(
       sharedThreadVisibilityContract.create,
       async ({ body, respond }) => {
         choice.resolve(body);
         await release.promise;
+        if (outcome === "created") {
+          published = body.id;
+        }
         return outcome === "created"
           ? respond(201, { id: body.id! })
           : respond(403, {
@@ -450,5 +473,15 @@ test.each(["created", "denied"] as const)(
     expect(
       screen.queryByRole("textbox", { name: "Shared chat link" }),
     ).not.toBeInTheDocument();
+    const link = clipboard.writes.at(-1)!;
+    window.history.pushState(null, "", link);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => {
+      return expect(document.title).toContain(
+        outcome === "created"
+          ? "Shared inventory review"
+          : "Shared chat not found",
+      );
+    });
   },
 );

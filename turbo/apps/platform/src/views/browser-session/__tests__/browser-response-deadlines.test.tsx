@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { click } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { isRecord } from "../../../signals/utils.ts";
 import { browserRecoveryClock } from "../../../__tests__/browser-recovery-clock.ts";
 import {
   arrangeNativePage,
@@ -409,5 +410,89 @@ test.each(["released", "withheld"] as const)(
     await sendText(cdp, "dispatch after the paused handshake");
     expect(cdp.connections()).toBe(2);
     expect(cdp.activeConnections()).toBe(1);
+  },
+);
+
+test.each(["deliver", "withhold"] as const)(
+  "Replacement page receives typing when the pending descriptor expires and its original reply is %s",
+  async (late) => {
+    const advance = browserRecoveryClock(context.signal);
+    const {
+      openPage,
+      cdp,
+      viewer: connection,
+    } = arrangeNativePage(context, { targets: [original, replacement] });
+    await openPage();
+    await expectStreamingAt(original.url);
+    const received = context.mocks.deferred<void>();
+    const answer = context.mocks.deferred<void>();
+    const updatedBrowser = {
+      ...connection.browser,
+      window: {
+        ...connection.browser.window!,
+        primaryWindowId: replacement.windowId,
+      },
+    };
+    const delivered = context.mocks.deferred<void>();
+    const read = Response.prototype.json;
+    vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+      this: Response,
+    ) {
+      const value: unknown = await read.call(this);
+      if (
+        isRecord(value) &&
+        isRecord(value.browser) &&
+        value.browser.name === "Previous voyage" &&
+        !delivered.settled()
+      ) {
+        delivered.resolve();
+      }
+      return value;
+    });
+    context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
+      return respond(200, { browser: updatedBrowser });
+    });
+    context.mocks.api(browserContract.get, async ({ respond }) => {
+      if (!received.settled()) {
+        received.resolve();
+        await answer.promise;
+        const stale = { ...connection.browser, name: "Previous voyage" };
+        return respond(200, {
+          browser: stale,
+          viewer: { ...connection, browser: stale },
+        });
+      }
+      return respond(200, {
+        browser: updatedBrowser,
+        viewer: { ...connection, browser: updatedBrowser },
+      });
+    });
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: connection.browser.threadId,
+    });
+    try {
+      await received.promise;
+      await waitFor(() => {
+        return expect(remoteInput()).toBeDisabled();
+      });
+      expect(remoteInput().closest('[aria-hidden="true"]')).toBeNull();
+      advance(60_001);
+      await screen.findByText("Reconnecting…");
+      advance(4000);
+      await expectStreamingAt(replacement.url);
+      await sendText(cdp, "inspect the new map", replacement.targetId);
+      if (late === "deliver") {
+        answer.resolve();
+        await delivered.promise;
+      }
+      await sendText(cdp, "check after deadline", replacement.targetId);
+      expect(cdp.inputForTarget(original.targetId)).not.toContainEqual(
+        expect.objectContaining({ params: { text: "check after deadline" } }),
+      );
+    } finally {
+      if (!answer.settled()) {
+        answer.resolve();
+      }
+    }
   },
 );

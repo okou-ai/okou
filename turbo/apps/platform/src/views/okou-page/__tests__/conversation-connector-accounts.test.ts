@@ -458,88 +458,101 @@ test("A new chat inherits both account choices after leaving a pending thread ov
   await expect(toggle(fresh.panel, "Work")).resolves.toBeChecked();
 });
 
-test("A rejected Personal selection leaves the attached field report and message in the new composer", async () => {
-  const attempted = context.mocks.deferred<void>();
-  const reject = context.mocks.deferred<void>();
-  const attachment = continuityAttachment(
-    86,
-    6,
-    "field-report.txt",
-    "text/plain",
-    5,
-  );
-  const { atRun } = await openChat(
-    {
-      path: "/?compose=1",
-      defaults: [true, true],
-      failSelection: true,
-      beforeCurrent: async () => {
-        if (!attempted.settled()) {
-          attempted.resolve();
-        }
-        await reject.promise;
+test.each(["Personal", "Work"] as const)(
+  "A rejected Personal selection preserves the edited report for a retry using %s",
+  async (account) => {
+    const attempted = context.mocks.deferred<void>();
+    const reject = context.mocks.deferred<void>();
+    const attachment = continuityAttachment(
+      86,
+      6,
+      "field-report.txt",
+      "text/plain",
+      5,
+    );
+    const { atRun } = await openChat(
+      {
+        path: "/?compose=1",
+        defaults: [true, true],
+        failSelection: true,
+        beforeCurrent: async () => {
+          if (!attempted.settled()) {
+            attempted.resolve();
+          }
+          await reject.promise;
+        },
       },
-    },
-    () => {
-      context.mocks.api(uploadsContract.prepare, ({ respond }) => {
-        return respond(200, {
-          ...attachment,
-          uploadUrl: "https://survey-storage.example/report",
-          uploadHeaders: {},
+      () => {
+        context.mocks.api(uploadsContract.prepare, ({ respond }) => {
+          return respond(200, {
+            ...attachment,
+            uploadUrl: "https://survey-storage.example/report",
+            uploadHeaders: {},
+          });
         });
-      });
-      context.mocks.http.put("https://survey-storage.example/report", () => {
-        return new Response(null, { status: 200 });
-      });
-      context.mocks.api(uploadsContract.complete, ({ respond }) => {
-        return respond(200, attachment);
-      });
-    },
-  );
-  const editor = await findComposerEditor();
-  const message = "Review the attached field report";
-  await fill(editor, message);
-  const picker = document.querySelector<HTMLInputElement>(
-    "input[type=file][multiple]",
-  )!;
-  await userEvent.upload(
-    picker,
-    new File(["notes"], attachment.filename, { type: "text/plain" }),
-  );
-  await findFastControl("button", "Remove field-report.txt");
-  const accounts = await choices();
-  click(await toggle(accounts.panel, "Work"));
-  await waitFor(() => {
-    expect(
-      within(accounts.panel).getByRole("switch", { name: "Work access" }),
-    ).not.toBeChecked();
-  });
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("{Escape}{Escape}");
-  await user.click(editor);
-  await user.keyboard("{Enter}");
-  await attempted.promise;
-  const edited = "Review the updated field report first";
-  await fill(editor, edited);
-  reject.resolve();
-  await screen.findByText("Account access could not be saved");
-  expect(location.pathname).toBe("/");
-  expect(editor).toHaveTextContent(edited);
-  await expect(
-    findFastControl("button", "Remove field-report.txt"),
-  ).resolves.toBeEnabled();
-  expect(atRun).toStrictEqual([]);
-  const retry = await choices();
-  await expect(toggle(retry.panel, "Personal")).resolves.toBeChecked();
-  await expect(toggle(retry.panel, "Work")).resolves.not.toBeChecked();
-  expect(queryFastControl("button", "Use default", retry.panel)).toBeNull();
-  await user.keyboard("{Escape}{Escape}");
-  await user.click(editor);
-  await user.keyboard("{Enter}");
-  await screen.findByText(edited, { selector: "[data-role=user] *" });
-  await screen.findByText(attachment.filename);
-  expect(atRun.at(-1)?.currentConnectionId).toBe(personal);
-});
+        context.mocks.http.put("https://survey-storage.example/report", () => {
+          return new Response(null, { status: 200 });
+        });
+        context.mocks.api(uploadsContract.complete, ({ respond }) => {
+          return respond(200, attachment);
+        });
+      },
+    );
+    const editor = await findComposerEditor();
+    const message = "Review the attached field report";
+    await fill(editor, message);
+    const picker = document.querySelector<HTMLInputElement>(
+      "input[type=file][multiple]",
+    )!;
+    await userEvent.upload(
+      picker,
+      new File(["notes"], attachment.filename, { type: "text/plain" }),
+    );
+    await findFastControl("button", "Remove field-report.txt");
+    const accounts = await choices();
+    click(await toggle(accounts.panel, "Work"));
+    await waitFor(() => {
+      expect(
+        within(accounts.panel).getByRole("switch", { name: "Work access" }),
+      ).not.toBeChecked();
+    });
+    const user = userEvent.setup({ delay: null });
+    await user.keyboard("{Escape}{Escape}");
+    await user.click(editor);
+    await user.keyboard("{Enter}");
+    await attempted.promise;
+    const edited = "Review the updated field report first";
+    await fill(editor, edited);
+    reject.resolve();
+    await screen.findByText("Account access could not be saved");
+    expect(location.pathname).toBe("/");
+    expect(editor).toHaveTextContent(edited);
+    await expect(
+      findFastControl("button", "Remove field-report.txt"),
+    ).resolves.toBeEnabled();
+    expect(atRun).toStrictEqual([]);
+    const retry = await choices();
+    await expect(toggle(retry.panel, "Personal")).resolves.toBeChecked();
+    await expect(toggle(retry.panel, "Work")).resolves.not.toBeChecked();
+    expect(queryFastControl("button", "Use default", retry.panel)).toBeNull();
+    if (account === "Work") {
+      await user.click(await toggle(retry.panel, "Work"));
+      await user.click(await toggle(retry.panel, "Personal"));
+    }
+    await expect(toggle(retry.panel, account)).resolves.toBeChecked();
+    await expect(
+      toggle(retry.panel, account === "Work" ? "Personal" : "Work"),
+    ).resolves.not.toBeChecked();
+    await user.keyboard("{Escape}{Escape}");
+    await user.click(editor);
+    await user.keyboard("{Enter}");
+    await screen.findByText(edited, { selector: "[data-role=user] *" });
+    await screen.findByText(attachment.filename);
+    expect(atRun.at(-1)?.currentConnectionId).toBe(
+      account === "Work" ? work : personal,
+    );
+  },
+);
 
 test("A new composer can change local account access before a conversation exists", async () => {
   const write = context.mocks.deferred<void>();

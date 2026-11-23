@@ -1,6 +1,10 @@
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import userEvent from "@testing-library/user-event";
-import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadsContract,
+  chatThreadDraftContract,
+  chatThreadArtifactsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, within, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -15,10 +19,23 @@ import {
 import {
   createChatRunFixtures,
   findEnabledButton,
+  RUN_PATH,
 } from "./chat-run-test-fixtures.ts";
 import { composerModelTrigger } from "./chat-composer-test-helpers.ts";
 
 const context = testContext();
+const savedDraft = "Continue the saved shipment review";
+function offerServerDraft() {
+  context.mocks.api(chatThreadDraftContract.get, ({ respond }) => {
+    return respond(200, {
+      draftAttachments: null,
+      draftUserMessage: {
+        version: 1,
+        parts: [{ type: "text", text: savedDraft }],
+      },
+    });
+  });
+}
 
 test("chat-list-optimistic-007 reconciles the temporary sidebar destination with the confirmed title", async () => {
   const submitted = context.mocks.deferred<{ id: string; event: string }>();
@@ -47,11 +64,12 @@ test("chat-list-optimistic-007 reconciles the temporary sidebar destination with
     });
   });
 
+  offerServerDraft();
   await setupPage({ context, path: "/" });
   await composerModelTrigger("Claude Sonnet 5");
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
-    "Review the release",
+    "Start the local conversation.",
   );
   click(await findEnabledButton("Send"));
   const identity = await submitted.promise;
@@ -60,6 +78,8 @@ test("chat-list-optimistic-007 reconciles the temporary sidebar destination with
     await waitFor(() => {
       return expect(sidebarThreadTitles()).toStrictEqual(["New chat"]);
     });
+    const composer = screen.getByRole("textbox", { name: "Message" });
+    expect(composer).not.toHaveTextContent(savedDraft);
     expect(sidebarThreadLinks()[0]).toHaveAttribute(
       "href",
       `/chats/${identity.id}`,
@@ -123,6 +143,11 @@ test("A QuickTime attachment appears in the pending conversation before its titl
       serviceTier: null,
     });
   });
+  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
+    return respond(404, {
+      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
+    });
+  });
   await setupPage({ context, path: "/" });
   await composerModelTrigger("Claude Sonnet 5");
   await fill(
@@ -152,7 +177,20 @@ test("A QuickTime attachment appears in the pending conversation before its titl
       );
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chat thread not found")).toBeNull();
   } finally {
     release.resolve();
   }
+});
+
+test("The confirmed conversation restores the shipment draft supplied by the same draft endpoint", async () => {
+  createChatRunFixtures(context).installRunChat({
+    selectedModel: "claude-sonnet-5",
+  });
+  offerServerDraft();
+  await setupPage({ context, path: RUN_PATH });
+  const editor = await screen.findByRole("textbox", { name: "Message" });
+  await waitFor(() => {
+    return expect(editor).toHaveTextContent(savedDraft);
+  });
 });

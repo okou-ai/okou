@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -127,23 +127,37 @@ test("chat-run-status-tail-008 retires the completed run's followups on a pendin
   gate.resolve();
 });
 
-test("Replaying a continuation of a failed run keeps its report and attachment with the copy action", async () => {
-  const continuation = "Continue from the recorded input";
-  installRunChat({
-    activeRunIds: [runId],
-    chatEvents: [
-      ...failedHistory(),
-      promptEvent({
-        id: "recorded-second-input",
-        runId,
-        seqId: 4,
-        text: continuation,
-      }),
-    ],
-  });
-  await setupPage({ context, path: RUN_PATH });
-  await screen.findByText(continuation);
-  retainedAnswer();
-  expect(screen.queryByText(generic)).not.toBeInTheDocument();
-  expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
-});
+test.each([
+  { active: true, name: "chat-run-status-tail-005" },
+  { active: false, name: "Inactive conversation control" },
+])(
+  "$name A recorded continuation preserves its earlier report with active membership $active",
+  async ({ active }) => {
+    const continuation = "Continue from the recorded input";
+    installRunChat({
+      threadTitle: "Dependency report",
+      activeRunIds: active ? [runId] : [],
+      chatEvents: [
+        ...failedHistory(),
+        promptEvent({
+          id: "recorded-second-input",
+          runId,
+          seqId: 4,
+          text: continuation,
+        }),
+      ],
+    });
+    await setupPage({ context, path: RUN_PATH });
+    await screen.findByText(continuation);
+    retainedAnswer();
+    expect(screen.queryByText(generic)).not.toBeInTheDocument();
+    expect(screen.queryByText("Thinking...")).not.toBeInTheDocument();
+    const list = within(
+      await screen.findByTestId("sidebar-chat-threads-virtual-list"),
+    );
+    const thread = (await list.findByText("Dependency report")).closest("a")!;
+    await waitFor(() => {
+      expect(within(thread).queryByText("Running") !== null).toBe(active);
+    });
+  },
+);

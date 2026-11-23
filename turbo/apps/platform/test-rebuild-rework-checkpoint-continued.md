@@ -3200,3 +3200,15 @@ The subsequent main sync includes [#50239](https://github.com/okou-ai/okou/pull/
 Main's workspace search now groups up to three titles before message matches within 25 results. The four earlier search and sidebar assertions failed individually on the integrated production code. The complete original descriptions are archived under `test-rebuild-evidence/50305`. The independent replacements exercise distinct shortcut destinations, a hidden archived chat, the bounded mobile list after stylesheet readiness, and the visible age and empty-state results. The 120 pending-file baseline remains the starting point for the fixed selection.
 
 [Six conflict resolutions and four obsolete assertions](./test-rebuild-batch-93-main-sync.tsv) · [Upstream change](https://github.com/okou-ai/okou/pull/50305)
+
+## Batch 93 concentrated revisit
+
+The fixed selection contains 42 frozen IDs from 30 files. Two IDs reach first complete acceptance, five have sourced upstream dispositions, thirty retain partial page coverage, and five lack direct proof. All 485 files passed their first review. Six complete inventories close, moving the revisit queue from 120 files to 114. The other 24 selected files keep their full frozen BDD and re-entry instructions.
+
+The active conversation's sidebar row shows Running with the recorded continuation, and its previous answer retains its own attachment and copy action. An otherwise identical inactive conversation lacks the Running marker. The organization-sharing case verifies that two selected event IDs reach the create endpoint, the composer remains editable, and reading the actual copied address distinguishes an accepted share from a rejected one.
+
+The desktop More menu owns email management and restores its focus when closed. Mobile exposes email management next to Share and Artifacts. Chromium saves an owned PDF with its source filename even when its display title differs. Account retry sends the edited attachment under the explicit account chosen, while a pending SSH save leaves the other host focusable and read-only. The corresponding upstream changes and original descriptions are recorded per ID.
+
+The first synchronization checkpoint exposed a residual file-search expectation in the migrated private artwork suite and a widened literal in the search fixture. The follow-up synchronization includes the Android geometry and release changes through main `44760130ad`. All eight App shards and the App type check passed on `57adf2e2af`. The protected debounce and attachment sources match the handoff.
+
+[Fixed selection](https://app.okou.ai/artifacts/fvl53af658.md) · [42 ID dispositions](./test-rebuild-batch-93.tsv) · [Synchronization evidence](./test-rebuild-batch-93-main-sync.tsv) · [485-file ledger](./test-rebuild-first-pass.tsv)

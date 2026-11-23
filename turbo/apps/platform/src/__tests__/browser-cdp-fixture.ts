@@ -952,6 +952,12 @@ export function mockBrowserCdp(
             return url === endpoint;
           }).length;
     },
+    requestsAt(endpoint: string) {
+      return requests.filter(
+        ({ connectionId }) =>
+          connectionEndpoints.get(connectionId) === endpoint,
+      );
+    },
     activeConnections: socket.activeConnections,
     setAutoOpen(autoOpen: boolean) {
       socketOptions.autoOpen = autoOpen;
