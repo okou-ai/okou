@@ -180,7 +180,12 @@ export function PhoneUseSetupDialog({
         updateUi({ phoneUseSetupOpen });
       }}
     >
-      <DialogContent maxWidth={480} finalFocus={trigger}>
+      <DialogContent
+        maxWidth={480}
+        finalFocus={() => {
+          return trigger;
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {t(($) => {
