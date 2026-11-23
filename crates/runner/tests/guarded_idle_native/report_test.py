@@ -94,6 +94,16 @@ def assert_scalar_refusals(test, witnesses, validate):
                 node[path[-1]] = value
 
 
+def assert_indexed_witness_refusals(test, original, changes):
+    """Check each mutation against a fresh copy of the saved witnesses."""
+    for index, change in enumerate(changes):
+        with test.subTest(change=index):
+            test.witnesses = copy.deepcopy(original)
+            change()
+            with test.assertRaises(ValueError):
+                test.validate()
+
+
 def assert_witness_omission_and_duplication_refused(test):
     """Check every omission and a duplicate final witness through the reader."""
     original = test.witnesses
