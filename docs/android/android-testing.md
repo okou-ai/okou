@@ -60,8 +60,8 @@ just to preserve tests for an obsolete API.
 
 ## Test Runtime And CI Sharding
 
-Keep new or substantially changed JVM cases within **10 seconds** each and
-Debug device cases within **30 seconds** each on their regular CI runners. Use
+Keep new or substantially changed JVM cases within **5 seconds** each and
+Debug device cases within **20 seconds** each on their regular CI runners. Use
 the JUnit `testcase` duration for this budget. For a repeatable overrun, reduce
 fixture cost, use controlled completion or virtual time where the test owns the
 clock, or move independent assertions to the smallest production boundary that
