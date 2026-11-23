@@ -234,6 +234,73 @@ internal abstract class ChatListRootTestFixture {
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 internal class ChatListRootTest : ChatListRootTestFixture() {
     @Test
+    @Config(qualifiers = "en-rUS-w1000dp-h800dp")
+    fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
+        val app = compose.activity.application as ChatListApplication
+        val releaseIndex = CountDownLatch(1)
+        app.fixture.draftIndex = {
+            releaseIndex.await()
+            jsonResponse("""{"draftThreadIds":["$CHAT_PERSONAL"]}""")
+        }
+        val rowTag = hasTestTag("chat_$CHAT_PERSONAL")
+        val row = compose.onNode(rowTag)
+        val title =
+            compose.onNode(
+                hasText("Personal chat") and hasAnyAncestor(rowTag),
+                useUnmergedTree = true,
+            )
+        val glyph =
+            compose.onNode(
+                hasTestTag("chat_draft_icon") and hasAnyAncestor(rowTag),
+                useUnmergedTree = true,
+            )
+        try {
+            app.responseGate.countDown()
+            awaitListAndNames()
+            row.performClick()
+            row.assertIsSelected()
+            glyph.assertDoesNotExist()
+            val before = title.getUnclippedBoundsInRoot()
+            val rowBounds = row.getUnclippedBoundsInRoot()
+            assertEquals(12.dp, before.left - rowBounds.left)
+            assertEquals(52.dp, rowBounds.height)
+            val activity = row.fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+
+            releaseIndex.countDown()
+            compose.waitUntil(10_000) { currentList()?.draftThreadIds == setOf(CHAT_PERSONAL) }
+            row.assertIsSelected()
+            val icon = glyph.getUnclippedBoundsInRoot()
+            val marked = title.getUnclippedBoundsInRoot()
+            assertEquals(18.dp, icon.width)
+            assertEquals(8.dp, marked.left - icon.right)
+            assertEquals(26.dp, marked.left - before.left)
+            assertEquals(rowBounds, row.getUnclippedBoundsInRoot())
+            assertEquals(
+                "$activity, Has draft",
+                row.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+            )
+
+            val editor = compose.onNode(hasTestTag("message_input") and hasSetTextAction())
+            compose.waitUntilExactlyOneExists(
+                hasTestTag("message_input") and hasSetTextAction(),
+                10_000,
+            )
+            editor.performTextInput("A local draft")
+            editor.performTextReplacement("")
+            glyph.assertDoesNotExist()
+            assertEquals(before.left, title.getUnclippedBoundsInRoot().left)
+            assertEquals(
+                activity,
+                row.fetchSemanticsNode().config[SemanticsProperties.StateDescription],
+            )
+            editor.performTextInput("A local draft")
+            glyph.assertExists()
+        } finally {
+            releaseIndex.countDown()
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     fun inPlaceRowMenuActionReturnsFocusToItsKeyboardTrigger() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)

@@ -34,6 +34,7 @@
     <string name="chat_back_to_inbox">Kembali ke Kotak Masuk</string>
     <string name="chat_more_actions">Tindakan lainnya</string>
     <string name="chat_unread">Belum dibaca</string>
+    <string name="chat_has_draft">Ada draf</string>
     <string name="chat_archived">Diarsipkan</string>
     <string name="chat_muted">Dibisukan</string>
     <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
