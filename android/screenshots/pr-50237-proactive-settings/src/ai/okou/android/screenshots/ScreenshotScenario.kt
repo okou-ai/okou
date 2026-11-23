@@ -18,6 +18,7 @@ import androidx.test.uiautomator.By
 import androidx.test.uiautomator.BySelector
 import androidx.test.uiautomator.Condition
 import androidx.test.uiautomator.Direction
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
@@ -67,7 +68,12 @@ class ScreenshotScenario {
                             device
                                 .findObjects(selector().checkable(true).checked(checked))
                                 .firstOrNull {
-                                    it.text?.contains(label) == true || it.hasObject(By.text(label))
+                                    // A new layout can replace a switch while the app changes theme.
+                                    try {
+                                        it.text?.contains(label) == true || it.hasObject(By.text(label))
+                                    } catch (_: StaleObjectException) {
+                                        false
+                                    }
                                 }
                     },
                     12_000,
