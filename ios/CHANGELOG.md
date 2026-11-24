@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.65.2](https://github.com/okou-ai/okou/compare/ios-v0.65.1...ios-v0.65.2) (2026-11-24)
+
+
+### Refactoring
+
+* **ios:** keep approval card values in the session store ([#50587](https://github.com/okou-ai/okou/issues/50587)) ([2cfbd20](https://github.com/okou-ai/okou/commit/2cfbd20b2879317c984a3615ae2a283385b371c1))
+* **ios:** keep the computer access card's state in the session graph ([#50617](https://github.com/okou-ai/okou/issues/50617)) ([e61f5f2](https://github.com/okou-ai/okou/commit/e61f5f20a81081c75631ea5cf104eca6aee758b8))
+* **ios:** keep the ssh access card's state in the session graph ([#50611](https://github.com/okou-ai/okou/issues/50611)) ([51c0094](https://github.com/okou-ai/okou/commit/51c009401272ec7af574e6e6309b54aebed98eeb))
+
 ## [0.65.1](https://github.com/okou-ai/okou/compare/ios-v0.65.0...ios-v0.65.1) (2026-11-24)
 
 

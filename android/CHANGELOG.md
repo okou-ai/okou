@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.55.3](https://github.com/okou-ai/okou/compare/android-v0.55.2...android-v0.55.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align artifact catalog filters and keyboard navigation ([#50608](https://github.com/okou-ai/okou/issues/50608)) ([a969f0d](https://github.com/okou-ai/okou/commit/a969f0d2ec7227136192da380298f17b535d3058))
+* **android:** align conversation artifact cards with the design ([#50633](https://github.com/okou-ai/okou/issues/50633)) ([723a7f0](https://github.com/okou-ai/okou/commit/723a7f06c48781bb2136eca5f3a75c586ec7b9da))
+* **android:** align incompatible update recovery with design ([#50630](https://github.com/okou-ai/okou/issues/50630)) ([5aa1d8b](https://github.com/okou-ai/okou/commit/5aa1d8ba12cdb0646c38a8428a136c36fed0f191))
+* **android:** align workflow automation editing with the design ([#50610](https://github.com/okou-ai/okou/issues/50610)) ([cefee69](https://github.com/okou-ai/okou/commit/cefee69cfcca1158eda91c74eb0fef7ce315a64c))
+* **android:** keep connector detail and return focus stable ([#50609](https://github.com/okou-ai/okou/issues/50609)) ([47c825a](https://github.com/okou-ai/okou/commit/47c825ac8ab9f3191c0697b579ee1f0f695c0512))
+
+
+### CI
+
+* **android:** combine release and change detection ([#50639](https://github.com/okou-ai/okou/issues/50639)) ([9ee5820](https://github.com/okou-ai/okou/commit/9ee5820917c21c1dad79a3a3900a3675e48e9a75))
+
+
+### Performance Improvements
+
+* **android:** bound Room history read and write batches ([#50616](https://github.com/okou-ai/okou/issues/50616)) ([76b3262](https://github.com/okou-ai/okou/commit/76b32628b43ca1af37287805d3a34c202a4c9019))
+* **android:** show cached chats before online verification ([#50589](https://github.com/okou-ai/okou/issues/50589)) ([126d0af](https://github.com/okou-ai/okou/commit/126d0af973036e3d17e09d03ad7b84e7cba00749))
+
 ## [0.55.2](https://github.com/okou-ai/okou/compare/android-v0.55.1...android-v0.55.2) (2026-11-24)
 
 
