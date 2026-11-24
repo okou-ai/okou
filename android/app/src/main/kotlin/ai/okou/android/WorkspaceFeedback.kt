@@ -342,10 +342,8 @@ private fun WorkspaceRenameForm(
                 labelRes = R.string.chat_title_field,
                 enabled =
                     ChatRowAction.Rename in list.rowActions(thread) &&
-                        id !in list.pendingRowActions &&
-                        (!target.fromConversation || !list.offline),
+                        id !in list.pendingRowActions,
                 status = status,
-                checkEnabled = !list.offline,
                 check = { chats.checkChatRename(id) },
                 dismiss = {
                     if (failure?.rejected == true) chats.dismissRowActionFailure(failure)
@@ -380,8 +378,7 @@ private fun WorkspaceRenameForm(
                 maxLength = ProjectNameLimit,
                 enabled = list.canRenameProject,
                 status = status,
-                checkEnabled = !list.offline,
-                check = chats::refreshMetadata,
+                check = { chats.checkProjectRename(id) },
                 dismiss = {
                     rejection?.let(chats::dismissProjectRenameRejection)
                     dismiss()

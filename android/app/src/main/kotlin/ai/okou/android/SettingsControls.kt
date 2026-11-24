@@ -355,6 +355,8 @@ internal fun SettingsModal(
 internal fun settingsPanelContentPadding(compactHeight: Boolean) =
     PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
 
+@Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
+
 @Composable
 internal fun SettingsSheet(
     title: String,
@@ -366,14 +368,13 @@ internal fun SettingsSheet(
     actionSpacing: Dp = 8.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val windowHeight = currentWindowSizeDp().height.dp
+    val shortWindow = isShortSettingsPanelWindow()
     val scroll = rememberScrollState()
     SettingsModal(onDismiss) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
-                .heightIn(max = windowHeight * 0.80f)
-                .padding(settingsPanelContentPadding(compactHeight = windowHeight < 480.dp))
+                .padding(settingsPanelContentPadding(compactHeight = shortWindow))
                 .padding(top = if (centered) 16.dp else 0.dp)
                 .verticalScroll(scroll),
         ) {

@@ -58,7 +58,7 @@ internal fun ConversationToolbarActions(
         val focus = settingsFocus ?: remember { FocusRequester() }
         var keyboardFocused by remember { mutableStateOf(false) }
         var restoreFocus by remember { mutableStateOf(false) }
-        val busy = state.offline || thread?.id in state.pendingRowActions
+        val busy = thread?.id in state.pendingRowActions
 
         Box {
             IconButton(

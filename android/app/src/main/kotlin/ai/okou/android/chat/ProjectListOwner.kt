@@ -167,6 +167,10 @@ internal class ProjectListOwner(
         retryableProjectRenames[id]?.let(::submitProjectRename)
     }
 
+    internal fun checkProjectRename(id: String) {
+        if (retryableProjectRenames[id]?.connectionFailed == false) refresh(verifyWrite = true)
+    }
+
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) {
         if (current() && state.renameRejection == rejection) {
             state = state.copy(renameRejection = null)
