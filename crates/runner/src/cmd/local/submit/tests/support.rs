@@ -26,13 +26,18 @@ pub(super) fn mode(path: &Path) -> u32 {
     std::fs::metadata(path).unwrap().permissions().mode() & 0o777
 }
 
+pub(super) struct ObservedJob {
+    pub(super) request: JobRequest,
+    pub(super) source_bytes: usize,
+}
+
 pub(super) async fn wait_for_job_and_write_result(
     group_dir: std::path::PathBuf,
     profile: String,
     exit_code: i32,
     error: Option<String>,
     response_run_id: Option<RunId>,
-) -> JobRequest {
+) -> ObservedJob {
     let job_dir = local_queue::profile_jobs_dir(&group_dir, &profile).unwrap();
     loop {
         if let Ok(entries) = std::fs::read_dir(&job_dir) {
@@ -41,8 +46,10 @@ pub(super) async fn wait_for_job_and_write_result(
                 if path.extension().and_then(|ext| ext.to_str()) != Some("job") {
                     continue;
                 }
-                let request: JobRequest =
-                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                let bytes = std::fs::read(&path).unwrap();
+                let source_bytes = bytes.len();
+                let request: JobRequest = serde_json::from_slice(&bytes).unwrap();
+                drop(bytes);
                 let response = JobResponse {
                     run_id: response_run_id.unwrap_or(request.job_id),
                     exit_code,
@@ -51,7 +58,10 @@ pub(super) async fn wait_for_job_and_write_result(
                 let result_path = local_queue::result_path(&group_dir, request.job_id);
                 std::fs::create_dir_all(result_path.parent().unwrap()).unwrap();
                 std::fs::write(&result_path, serde_json::to_vec(&response).unwrap()).unwrap();
-                return request;
+                return ObservedJob {
+                    request,
+                    source_bytes,
+                };
             }
         }
 
@@ -83,7 +93,7 @@ async fn run_submit_and_write_result_with_timeout(
     exit_code: i32,
     error: Option<String>,
     timeout: Duration,
-) -> Result<(ExitCode, JobRequest), String> {
+) -> Result<(ExitCode, ObservedJob), String> {
     let group = args.group.clone();
     let group_dir = home.groups_dir().join(&group);
     let watched_group_dir = group_dir.clone();
@@ -91,7 +101,7 @@ async fn run_submit_and_write_result_with_timeout(
     let watched_profile = profile.clone();
     let rendezvous = async move {
         tokio::try_join!(run_submit_with_home(args, home), async move {
-            Ok::<JobRequest, crate::error::RunnerError>(
+            Ok::<ObservedJob, crate::error::RunnerError>(
                 wait_for_job_and_write_result(
                     watched_group_dir,
                     watched_profile,
@@ -121,7 +131,7 @@ pub(super) async fn run_submit_and_write_result(
     home: HomePaths,
     exit_code: i32,
     error: Option<String>,
-) -> Result<(ExitCode, JobRequest), String> {
+) -> Result<(ExitCode, ObservedJob), String> {
     let profile = args
         .profile
         .as_deref()
@@ -141,7 +151,7 @@ pub(super) async fn run_submit_and_write_result(
 pub(super) async fn run_submit_and_write_success(
     args: SubmitArgs,
     home: HomePaths,
-) -> Result<(ExitCode, JobRequest), String> {
+) -> Result<(ExitCode, ObservedJob), String> {
     run_submit_and_write_result(args, home, 0, None).await
 }
 
