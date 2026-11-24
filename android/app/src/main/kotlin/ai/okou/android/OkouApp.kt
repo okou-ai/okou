@@ -18,7 +18,6 @@ import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
-import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
@@ -37,8 +36,10 @@ import ai.okou.android.chat.ConversationStopButton
 import ai.okou.android.chat.ConversationStopPlacement
 import ai.okou.android.chat.ConversationToolbarActions
 import ai.okou.android.chat.ConversationUiState
+import ai.okou.android.chat.CreateProjectSheet
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.NewConversationWelcome
+import ai.okou.android.chat.ProjectCreatePhase
 import ai.okou.android.chat.ProjectExpansionModel
 import ai.okou.android.chat.ProjectMoveFocus
 import ai.okou.android.chat.ProjectMovePicker
@@ -47,6 +48,7 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowIntro
+import ai.okou.android.chat.WorkspaceNamePresentation
 import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
@@ -188,7 +190,7 @@ internal fun OkouApp(
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
-    renamePresentation: ChatRenamePresentation? = null,
+    namePresentation: WorkspaceNamePresentation? = null,
     settingsProgress: @Composable (SettingsDestination) -> Unit = {},
     cachedStartupChats: ChatListModel? = null,
 ) {
@@ -604,11 +606,16 @@ internal fun OkouApp(
     }
 
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
-    val renameEditor = renamePresentation?.editor
+    val renameEditor = namePresentation?.editor
+    val projectCreationEditor = namePresentation?.projectCreation
+    val projectCreation by
+        remember(listState) {
+            derivedStateOf { listState.value.projectList.creation }
+        }
     val renameTarget = renameEditor?.target
-    val renameFocus = renamePresentation?.focusReturn
+    val renameFocus = namePresentation?.focusReturn
     fun finishRenameFocus(request: WorkspaceRenameTarget) {
-        renamePresentation?.finishFocus(request)
+        namePresentation?.finishFocus(request)
     }
 
     fun openConversation(
@@ -1092,6 +1099,43 @@ internal fun OkouApp(
     }
     // Workflow history also shows feedback from chat operations.
     if (chats != null) {
+        val creation = projectCreation
+        if (creation?.phase == ProjectCreatePhase.Confirmed) {
+            val filter = listState.value.filter
+            LaunchedEffect(creation, filter, projectCreationEditor) {
+                val projectId =
+                    creation.id.takeIf { id ->
+                        projectCreationEditor != null &&
+                            listState.value.projects.any { it.id == id }
+                    }
+                if (projectId != null) {
+                    if (filter != ChatListFilter.Inbox) {
+                        chats.selectFilter(ChatListFilter.Inbox)
+                        return@LaunchedEffect
+                    }
+                    keyboard?.hide()
+                    projectExpansion?.setExpanded(projectId, true)
+                }
+                namePresentation?.finishProjectCreation(projectId)
+                chats.dismissProjectCreation()
+            }
+        }
+        if (projectCreationEditor != null) {
+            CreateProjectSheet(
+                projectCreationEditor,
+                creation?.phase,
+                create = chats::createProject,
+                check = chats::checkProjectCreation,
+                dismiss = {
+                    val phase = chats.uiState.value.projectList.creation?.phase
+                    if (phase?.inProgress != true && phase != ProjectCreatePhase.Confirmed) {
+                        val retain = phase == ProjectCreatePhase.Unconfirmed
+                        namePresentation.closeProjectCreation(projectCreationEditor, retain)
+                        if (!retain) chats.dismissProjectCreation()
+                    }
+                },
+            )
+        }
         WorkspaceChatFeedback(
             chats,
             listState,
@@ -1106,7 +1150,7 @@ internal fun OkouApp(
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
             renameEditor = renameEditor,
-            dismissRename = { renamePresentation?.dismiss(it) },
+            dismissRename = { namePresentation?.dismiss(it) },
         )
     }
 
@@ -1386,7 +1430,7 @@ internal fun OkouApp(
                 onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
                 onRename = { id, restore ->
-                    renamePresentation?.openChat(
+                    namePresentation?.openChat(
                         id,
                         fromConversation = true,
                         restoreFocus = restore,
@@ -1410,17 +1454,7 @@ internal fun OkouApp(
                                 navigation = navigation.copy(chatResourcesId = id)
                             }
                         },
-                openSettings =
-                    if (!workspaceReady || listWidth != null) null
-                    else {
-                        { restore ->
-                            restoreSettingsFocus = restore
-                            focus.clearFocus()
-                            keyboard?.hide()
-                            navigation = navigation.copy(settings = SettingsDestination.Overview)
-                        }
-                    },
-                settingsFocus = if (listWidth == null) settingsFocus else resourcesFocus,
+                actionsFocus = resourcesFocus,
                 onFind =
                     actionableThread?.let { selected ->
                         { restoreFocus ->
@@ -1448,13 +1482,9 @@ internal fun OkouApp(
                     },
             )
             LaunchedEffect(Unit) {
-                if (listWidth == null && restoreSettingsFocus) {
-                    restoreSettingsFocus = false
-                    settingsFocus.requestFocus()
-                }
                 if (restoreConversationActionsFocus && actionableThread != null) {
                     restoreConversationActionsFocus = false
-                    (if (listWidth == null) settingsFocus else resourcesFocus).requestFocus()
+                    resourcesFocus.requestFocus()
                 }
             }
         }
@@ -1479,7 +1509,15 @@ internal fun OkouApp(
                                 navigation =
                                     navigation.copy(settings = SettingsDestination.Overview)
                             },
+                    openProjectCreation =
+                        namePresentation?.takeIf { chats != null }?.let { it::openProjectCreation },
                 )
+                if (namePresentation?.restoreCreationFocus == true) {
+                    LaunchedEffect(namePresentation) {
+                        settingsFocus.requestFocus()
+                        namePresentation.finishCreationFocus()
+                    }
+                }
                 LaunchedEffect(Unit) {
                     if (restoreSettingsFocus) {
                         restoreSettingsFocus = false
@@ -1773,7 +1811,7 @@ internal fun OkouApp(
                                         if (moveFocus == request) moveFocus = null
                                     },
                                     renameThread = { id, restore ->
-                                        renamePresentation?.openChat(
+                                        namePresentation?.openChat(
                                             id,
                                             fromConversation = false,
                                             restoreFocus = restore,
@@ -1781,7 +1819,7 @@ internal fun OkouApp(
                                         )
                                     },
                                     renameProject = { id, restore ->
-                                        renamePresentation?.openProject(
+                                        namePresentation?.openProject(
                                             id,
                                             restore,
                                             listState.value,
@@ -2030,9 +2068,7 @@ internal fun OkouApp(
                                                         Modifier.padding(bottom = feedbackGap)
                                                             .testTag("conversation_feedback"),
                                                         restorePaneFocus = {
-                                                            (if (listWidth == null) settingsFocus
-                                                                else resourcesFocus)
-                                                                .requestFocus()
+                                                            resourcesFocus.requestFocus()
                                                         },
                                                     )
                                                 if (hasComposer) {

@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
@@ -344,6 +347,7 @@ internal fun SettingsModal(
     dismissible: Boolean = true,
     fullScreen: Boolean = false,
     showDragHandle: Boolean = true,
+    fitContentInsets: Boolean = false,
     content: @Composable (centered: Boolean) -> Unit,
 ) {
     val window = currentWindowSizeDp()
@@ -355,6 +359,7 @@ internal fun SettingsModal(
                     dismissOnBackPress = dismissible,
                     dismissOnClickOutside = dismissible && !fullScreen,
                     usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = !fitContentInsets,
                 ),
         ) {
             Surface(
@@ -363,7 +368,9 @@ internal fun SettingsModal(
                 shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
-                content(true)
+                if (fitContentInsets) {
+                    Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content(true) }
+                } else content(true)
             }
         }
     } else {
@@ -412,13 +419,19 @@ internal fun SettingsSheet(
     actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     dismissible: Boolean = true,
+    fullScreenInShortWindow: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
-    SettingsModal(onDismiss, dismissible = dismissible) { centered ->
+    SettingsModal(
+        onDismiss,
+        dismissible = dismissible,
+        fullScreen = compactHeight && fullScreenInShortWindow,
+        fitContentInsets = compactHeight && fullScreenInShortWindow,
+    ) { centered ->
         Column(
             modifier
                 .fillMaxWidth()
@@ -427,14 +440,15 @@ internal fun SettingsSheet(
                 .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
         ) {
             Box(Modifier.fillMaxWidth()) {
+                val compactTitle = compactHeight && fullScreenInShortWindow
                 Text(
                     title,
                     Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
                         .semantics { heading() },
                     style =
                         MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 22.sp,
-                            lineHeight = 28.sp,
+                            fontSize = if (compactTitle) 16.sp else 22.sp,
+                            lineHeight = if (compactTitle) 24.sp else 28.sp,
                             fontWeight = FontWeight.SemiBold,
                         ),
                 )

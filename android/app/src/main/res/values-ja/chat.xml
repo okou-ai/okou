@@ -77,6 +77,14 @@
     <string name="chat_delete_description">「%1$s」のメッセージと下書きは完全に削除されます。実行中のタスクは停止し、関連する自動化は一時停止します。</string>
     <string name="chat_rename_project">プロジェクト名を変更</string>
     <string name="chat_project_name">プロジェクト名</string>
+    <string name="chat_project_create">新しいプロジェクト</string>
+    <string name="chat_project_create_confirm">作成</string>
+    <string name="chat_project_creating">作成中…</string>
+    <string name="chat_project_create_close">閉じる</string>
+    <string name="chat_project_checking">確認中…</string>
+    <string name="chat_project_create_failed">プロジェクトを作成できませんでした。入力した名前は保持されています。</string>
+    <string name="chat_project_create_unconfirmed">プロジェクトの作成結果を確認できていません</string>
+    <string name="chat_project_name_too_long">プロジェクト名は%1$d文字以内で入力してください</string>
     <string name="chat_project_rename_unconfirmed">プロジェクト名を確認できませんでした。</string>
     <string name="chat_project_rename_rejected">プロジェクトの名前を変更できませんでした。</string>
     <string name="chat_project_rename_save">保存</string>

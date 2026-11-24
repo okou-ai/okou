@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.122.0](https://github.com/okou-ai/okou/compare/api-v2.121.0...api-v2.122.0) (2026-11-24)
+
+
+### Features
+
+* add first-use presentation format setup ([#50150](https://github.com/okou-ai/okou/issues/50150)) ([0e802ee](https://github.com/okou-ai/okou/commit/0e802ee6b10be62579cc7a5e40f3fc21182a0b15))
+* enable member connector account access for staff ([#50629](https://github.com/okou-ai/okou/issues/50629)) ([d824b76](https://github.com/okou-ai/okou/commit/d824b7647e34b77f0bfb0f6d86049a62d8b5f1d0))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.873.0
+    * @okouai/db bumped to 2.67.1
+    * @okouai/pi-agent-runtime bumped to 1.52.67
+
 ## [2.121.0](https://github.com/okou-ai/okou/compare/api-v2.120.0...api-v2.121.0) (2026-11-24)
 
 

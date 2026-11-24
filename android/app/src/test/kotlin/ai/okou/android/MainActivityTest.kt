@@ -37,7 +37,7 @@ class MainActivityTest {
         val app = compose.activity.application as TestOkouApplication
         val auth = app.authentication as TestAuthentication
         compose.runOnIdle { auth.account.value = NativeAccount("other-user", "other@okou.test") }
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Account and security").performScrollTo().performClick()
         compose.onNodeWithText("other@okou.test").assertDoesNotExist()
         compose.onNodeWithText("Email").assertDoesNotExist()
@@ -79,7 +79,7 @@ class MainActivityTest {
                     error("Sign-out failed")
                 }
             }
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.openChatListSettings()
             compose.onNodeWithText("Account and security").performScrollTo().performClick()
             compose.onNodeWithText("Sign out").performScrollTo().performClick()
             compose.onNode(hasText("Sign out") and hasAnyAncestor(isDialog())).performClick()
@@ -105,7 +105,7 @@ class MainActivityTest {
     @Test
     @Config(qualifiers = "en-rUS-w411dp-h731dp-notnight")
     fun pastelPaletteKeepsSettingsAndDialogActionsReadable() {
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Color theme").performScrollTo().performClick()
         compose.onNode(isSelectable() and hasText("Deep lagoon")).assertIsDisplayed()
         val choice = compose.onNode(isSelectable() and hasText("Cotton sky"))

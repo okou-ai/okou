@@ -79,6 +79,14 @@
     <string name="chat_delete_description">Nachrichten und Entwürfe in „%1$s“ werden dauerhaft gelöscht. Laufende Aufgaben werden gestoppt und verknüpfte Automatisierungen pausiert.</string>
     <string name="chat_rename_project">Projekt umbenennen</string>
     <string name="chat_project_name">Projektname</string>
+    <string name="chat_project_create">Neues Projekt</string>
+    <string name="chat_project_create_confirm">Erstellen</string>
+    <string name="chat_project_creating">Wird erstellt…</string>
+    <string name="chat_project_create_close">Schließen</string>
+    <string name="chat_project_checking">Wird geprüft…</string>
+    <string name="chat_project_create_failed">Das Projekt konnte nicht erstellt werden. Der Name wurde beibehalten.</string>
+    <string name="chat_project_create_unconfirmed">Die Projekterstellung wurde noch nicht bestätigt</string>
+    <string name="chat_project_name_too_long">Der Projektname darf höchstens %1$d Zeichen lang sein</string>
     <string name="chat_project_rename_unconfirmed">Der Projektname konnte nicht bestätigt werden.</string>
     <string name="chat_project_rename_rejected">Das Projekt konnte nicht umbenannt werden.</string>
     <string name="chat_project_rename_save">Speichern</string>

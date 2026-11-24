@@ -797,9 +797,25 @@ class ConversationRouteTest {
         compose.onNode(skeleton).assertIsDisplayed()
         assertEquals(bounds, compose.onNode(skeleton).getUnclippedBoundsInRoot())
         compose.onNodeWithText(retryLabel).assertDoesNotExist()
-        fixture.historyRows = historyRows
-        compose.waitUntilDoesNotExist(skeleton, 10_000)
-        compose.onNodeWithText("Hello history").assertExists()
+        compose.mainClock.autoAdvance = false
+        try {
+            fixture.historyRows = historyRows
+            compose.waitUntil(10_000) {
+                compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Ready }
+            }
+            val message = hasText("Hello history")
+            compose.mainClock.advanceTimeUntil(1_000) {
+                if (compose.onAllNodes(message).fetchSemanticsNodes().isNotEmpty()) true
+                else {
+                    compose.onNode(skeleton).assertIsDisplayed()
+                    false
+                }
+            }
+            compose.onNode(message).assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+        compose.onNode(skeleton).assertDoesNotExist()
     }
 
     @Test
@@ -886,11 +902,24 @@ class ConversationRouteTest {
         val anchorTag = "message_${scrollEventId(6)}"
         val anchor = compose.onNodeWithTag(anchorTag).assertIsDisplayed()
         val bounds = anchor.getUnclippedBoundsInRoot()
+        compose.waitUntil("the older anchor is recorded", 5_000) {
+            compose.runOnIdle {
+                runBlocking { model.history.restoreReadingAnchor(CHAT_IN_PROJECT) } != null
+            }
+        }
 
         compose.runOnIdle { showConversation.value = false }
         compose.waitUntilDoesNotExist(hasTestTag("conversation"), 5_000)
-        compose.runOnIdle { showConversation.value = true }
-        compose.waitUntilExactlyOneExists(hasTestTag(anchorTag), 10_000)
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnIdle { showConversation.value = true }
+            compose.mainClock.advanceTimeUntil(1_000) {
+                compose.onNodeWithText("The first reply").assertIsNotDisplayed()
+                compose.onAllNodes(hasTestTag(anchorTag)).fetchSemanticsNodes().isNotEmpty()
+            }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
         compose.waitUntilExactlyOneExists(jump, 10_000)
         assertEquals(bounds, anchor.getUnclippedBoundsInRoot())
         compose.onNode(newReply).assertDoesNotExist()
