@@ -96,6 +96,7 @@
     <string name="updates_download_failed">下載失敗</string>
     <string name="updates_check_compatible">檢查版本</string>
     <string name="updates_required_incompatible">此裝置暫時無法更新 Okou</string>
+    <string name="updates_required_incompatible_short">裝置暫時無法更新</string>
     <string name="updates_required_short">需要更新</string>
     <string name="updates_ready">繼續安裝</string>
     <string name="updates_later">稍後</string>
@@ -120,7 +121,7 @@
     <string name="updates_error_interrupted">下載已中斷。</string>
     <string name="updates_error_install">Android 無法完成安裝。</string>
     <string name="updates_unavailable">暫未找到適用的更新。</string>
-    <string name="updates_android_unsupported">此更新需要較新版本的 Android 系統。</string>
+    <string name="updates_android_unsupported">需較新版本的 Android。更新系統後再檢查。</string>
     <string name="settings_account">帳戶</string>
     <string name="settings_cancel">取消</string>
     <string name="settings_saving">正在儲存…</string>

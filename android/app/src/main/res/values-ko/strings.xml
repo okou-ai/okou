@@ -96,6 +96,7 @@
     <string name="updates_download_failed">다운로드 실패</string>
     <string name="updates_check_compatible">버전 확인</string>
     <string name="updates_required_incompatible">이 기기에서는 Okou를 업데이트할 수 없습니다</string>
+    <string name="updates_required_incompatible_short">업데이트할 수 없음</string>
     <string name="updates_required_short">업데이트 필요</string>
     <string name="updates_ready">설치 계속</string>
     <string name="updates_later">나중에</string>
@@ -120,7 +121,7 @@
     <string name="updates_error_interrupted">다운로드가 중단되었습니다.</string>
     <string name="updates_error_install">Android에서 업데이트를 설치하지 못했어요.</string>
     <string name="updates_unavailable">적합한 업데이트가 아직 없습니다.</string>
-    <string name="updates_android_unsupported">이 업데이트에는 최신 Android 시스템이 필요합니다.</string>
+    <string name="updates_android_unsupported">Android를 최신 버전으로 업데이트한 후 다시 확인하세요.</string>
     <string name="settings_account">계정</string>
     <string name="settings_cancel">취소</string>
     <string name="settings_saving">저장 중…</string>
