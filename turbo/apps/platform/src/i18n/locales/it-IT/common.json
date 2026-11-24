@@ -2652,11 +2652,6 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato della presentazione",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {

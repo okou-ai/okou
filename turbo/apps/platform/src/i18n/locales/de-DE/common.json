@@ -2602,11 +2602,6 @@
       "unsupported": "Manuelles Zurücksetzen wird nicht unterstützt; die Nutzung erholt sich automatisch."
     },
     "taskChips": {
-      "presentationFormat": "Präsentationsformat",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {

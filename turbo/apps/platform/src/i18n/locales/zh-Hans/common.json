@@ -2587,11 +2587,6 @@
       "unsupported": "不支持手动重置；用量将自然恢复。"
     },
     "taskChips": {
-      "presentationFormat": "演示文稿格式",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {

@@ -2602,11 +2602,6 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
-      "presentationFormat": "Presentation format",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {

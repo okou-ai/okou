@@ -2602,11 +2602,6 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "presentationFormat": "प्रस्तुति का प्रारूप",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {

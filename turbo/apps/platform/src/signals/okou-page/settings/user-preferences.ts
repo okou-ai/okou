@@ -104,7 +104,12 @@ function confirmedFields(
 ): Partial<InitializedUserPreferencesResponse> {
   const timezone = update.timezone === undefined ? undefined : result.timezone;
   const locale = update.locale === undefined ? undefined : result.locale;
-  if (timezone === null || locale === null) {
+  if (
+    timezone === null ||
+    locale === null ||
+    (update.presentationFormat !== undefined &&
+      result.presentationFormat !== update.presentationFormat)
+  ) {
     throw new Error("Preference write response omitted a written value");
   }
   // Other fields in the response may come from a pre-write snapshot.
@@ -117,6 +122,9 @@ function confirmedFields(
     }),
     ...(update.theme !== undefined && { theme: result.theme }),
     ...(update.colorTheme !== undefined && { colorTheme: result.colorTheme }),
+    ...(update.presentationFormat !== undefined && {
+      presentationFormat: result.presentationFormat,
+    }),
     ...(update.forYouCoverId !== undefined && {
       forYouCoverId: result.forYouCoverId,
     }),

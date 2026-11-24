@@ -2652,11 +2652,6 @@
       "unsupported": "No se admite el restablecimiento manual; el uso se recupera automáticamente."
     },
     "taskChips": {
-      "presentationFormat": "Formato de presentación",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
       "shelf": {

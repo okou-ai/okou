@@ -2652,11 +2652,6 @@
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
-      "presentationFormat": "Format de présentation",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
