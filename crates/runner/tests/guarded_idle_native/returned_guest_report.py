@@ -43,10 +43,8 @@ def validate(directory):
     directory = pathlib.Path(directory)
     output, collector, terminals = report._validate_cases(directory, CASES, report.PHASES)
     policy, raw = startup.original_inputs(collector["metadata"], output["artifacts"], "native_returned_guest")
-    witnesses = {case: [] for case in CASES}
-    report.collect_witnesses(
-        directory / 'stdout.log', {PREFIX: witnesses},
-        case_matches=lambda value: value in CASES,
+    witnesses = report.collect_case_witnesses(
+        directory / 'stdout.log', PREFIX, CASES,
         invalid_message="invalid actual returned Guest witness",
     )
     identities, generations, home_uuids = set(), set(), set()
