@@ -1,5 +1,9 @@
 package ai.okou.android.auth
 
+import ai.okou.android.EntryBrand
+import ai.okou.android.EntryCompactHeight
+import ai.okou.android.EntryContentGutter
+import ai.okou.android.EntryContentWidth
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouApp
 import ai.okou.android.OkouConfirmationDialog
@@ -15,6 +19,8 @@ import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.chat.WorkspaceRealtimeLifecycle
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entrySpacing
+import ai.okou.android.entryTopPadding
 import ai.okou.android.instructions.PersonalInstructionsSettings
 import ai.okou.android.preferences.MemberPreferencesSettings
 import ai.okou.android.preferences.PreferenceFeedback
@@ -36,13 +42,10 @@ import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchControlHeight
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
@@ -190,12 +193,13 @@ internal fun SessionRoot(
 
 @Composable
 private fun NativeAuthentication() {
-    val window = currentWindowSizeDp()
-    val compact = window.height < SessionEntryCompactHeight
-    // Clerk 1.5 adds 8dp in its top app bar and 18dp on each side of its body.
-    val hostTop =
-        if (window.width >= 600 && !compact) sessionEntryTopPadding(window.height) - 8.dp else 0.dp
-    val maxHostWidth = SessionEntryContentWidth + 36.dp
+    val windowHeight = currentWindowSizeDp().height
+    val compact = windowHeight < EntryCompactHeight
+    // Clerk 1.5 supplies 8dp above and below the logo and 18dp on each side of the form.
+    val clerkAppBarPadding = 8.dp
+    val hostTop = entryTopPadding(windowHeight) - clerkAppBarPadding
+    val logoBottom = entrySpacing(compact) - clerkAppBarPadding
+    val maxHostWidth = EntryContentWidth + EntryContentGutter * 2
     val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
     val theme =
@@ -239,52 +243,11 @@ private fun NativeAuthentication() {
         Box(Modifier.widthIn(max = maxHostWidth).fillMaxSize()) {
             AuthView(
                 clerkTheme = theme,
-                logo = {
-                    // Reserve the height of Clerk's Back target without moving the mark down.
-                    OkouAuthLogo(compact, if (compact) Modifier.heightIn(min = 48.dp) else Modifier)
-                },
+                logo = { EntryBrand(compact, Modifier.padding(bottom = logoBottom)) },
                 isDismissible = false,
                 persistIdentifiers = false,
                 preferGoogleOneTap = false,
             )
-        }
-    }
-}
-
-@Composable
-internal fun OkouAuthLogo(compact: Boolean, modifier: Modifier = Modifier) {
-    val typography = MaterialTheme.typography
-    val mark: @Composable () -> Unit = {
-        Image(
-            painterResource(R.drawable.okou_mark),
-            contentDescription = null,
-            modifier = Modifier.size(if (compact) 40.dp else 64.dp),
-        )
-    }
-    val name: @Composable () -> Unit = {
-        Text(
-            stringResource(R.string.app_name),
-            style = if (compact) typography.titleLarge else typography.headlineLarge,
-        )
-    }
-    if (compact) {
-        Row(
-            modifier,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            mark()
-            Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.CenterStart) {
-                name()
-            }
-        }
-    } else {
-        Column(
-            modifier,
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            mark()
-            name()
         }
     }
 }

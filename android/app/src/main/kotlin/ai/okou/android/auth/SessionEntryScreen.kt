@@ -1,11 +1,18 @@
 package ai.okou.android.auth
 
+import ai.okou.android.EntryBrand
+import ai.okou.android.EntryCompactHeight
+import ai.okou.android.EntryContentGutter
+import ai.okou.android.EntryContentWidth
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.OkouConfirmationDialog
 import ai.okou.android.R
 import ai.okou.android.SettingsGroup
 import ai.okou.android.WithButtonFocusOutline
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.entrySpacing
+import ai.okou.android.entryTitleStyle
+import ai.okou.android.entryTopPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -53,17 +60,9 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
-
-internal const val SessionEntryCompactHeight = 480
-internal val SessionEntryContentWidth = 360.dp
-
-internal fun sessionEntryTopPadding(windowHeight: Int) =
-    if (windowHeight < SessionEntryCompactHeight) 12.dp
-    else (windowHeight * 0.08f).coerceIn(32f, 80f).dp
 
 @Composable
 internal fun SessionEntryScreen(
@@ -74,11 +73,11 @@ internal fun SessionEntryScreen(
     openWorkspaceSetup: () -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val compact = windowHeight < SessionEntryCompactHeight
-    val groupSpacing = if (compact) 12.dp else 24.dp
+    val compact = windowHeight < EntryCompactHeight
+    val groupSpacing = entrySpacing(compact)
     if (state.stage == SessionStage.Restoring) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.Center) {
-            OkouAuthLogo(compact)
+            EntryBrand(compact)
         }
         return
     }
@@ -114,18 +113,18 @@ internal fun SessionEntryScreen(
             state.stage != SessionStage.UpdateRequired
     Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
         Column(
-            Modifier.padding(horizontal = if (compact) 16.dp else 24.dp)
-                .widthIn(max = SessionEntryContentWidth)
+            Modifier.padding(horizontal = EntryContentGutter)
+                .widthIn(max = EntryContentWidth)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(
-                    top = sessionEntryTopPadding(windowHeight),
-                    bottom = if (compact) 12.dp else 24.dp,
+                    top = entryTopPadding(windowHeight),
+                    bottom = groupSpacing,
                 ),
             verticalArrangement = Arrangement.spacedBy(groupSpacing),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            OkouAuthLogo(compact)
+            EntryBrand(compact)
             SessionEntryHeading(
                 title,
                 detail,
@@ -279,8 +278,7 @@ private fun SessionEntryHeading(
                     heading()
                     liveRegion = LiveRegionMode.Polite
                 },
-                style = if (compact) typography.titleLarge else typography.headlineMedium,
-                fontWeight = FontWeight(650),
+                style = entryTitleStyle(compact),
                 textAlign = TextAlign.Center,
             )
             if (waiting) SessionEntryProgress()
