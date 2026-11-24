@@ -1,5 +1,6 @@
 import {
   billingStatusContract,
+  billingFeedbackRewardContract,
   billingCheckoutContract,
   billingUsagePackCheckoutContract,
   billingUsagePackCreditsContract,
@@ -124,6 +125,9 @@ export function resetMockBilling(): void {
 }
 
 export const apiBillingHandlers = [
+  mockApi(billingFeedbackRewardContract.get, ({ respond }) => {
+    return respond(200, { rewardCredits: 0, token: null });
+  }),
   mockApi(billingStatusContract.get, ({ respond }) => {
     return respond(200, mockBillingStatus);
   }),

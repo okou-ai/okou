@@ -55,13 +55,13 @@ export const clientDescriptorManifest = [
       "billingConcurrencySubscriptionContract",
       "billingCreditCheckoutContract",
       "billingDowngradeContract",
+      "billingFeedbackRewardContract",
       "billingInvoicesContract",
       "billingPortalContract",
       "billingRedeemCodeContract",
       "billingRedeemContract",
       "billingRestoreContract",
       "billingStatusContract",
-      "billingSurveyContract",
       "billingUsagePackCatalogContract",
       "billingUsagePackCheckoutContract",
       "billingUsagePackCreditsContract",
@@ -591,6 +591,10 @@ export const clientDescriptorManifest = [
   {
     module: "phone-use",
     contracts: ["phoneUseContract"],
+  },
+  {
+    module: "posthog-surveys",
+    contracts: ["posthogSurveysContract"],
   },
   {
     module: "presentation-templates",

@@ -52,7 +52,7 @@ import { ChatShortcutHelpDialog } from "./chat-shortcut-help-dialog.tsx";
 import { ConcurrencyConfirmDialog } from "./components/org-manage/org-billing-tab.tsx";
 import { CreditPurchaseConfirmDialog } from "./components/org-manage/credit-purchase-confirm-dialog.tsx";
 import { SubscriptionPurchaseConfirmDialog } from "./components/org-manage/subscription-purchase-confirm-dialog.tsx";
-import { CheckoutAbandonedSurveyDialog } from "./components/billing-survey.tsx";
+import { BillingFeedback } from "./components/billing-feedback.tsx";
 import { lightboxUrl$ } from "../../signals/okou-page/attachment-chips.ts";
 import { AttachmentLightbox } from "./attachment-chips.tsx";
 import { MarkdownTableConnectionDialog } from "../components/markdown-table.tsx";
@@ -509,7 +509,7 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       <ConcurrencyConfirmDialog />
       <CreditPurchaseConfirmDialog />
       <SubscriptionPurchaseConfirmDialog />
-      <CheckoutAbandonedSurveyDialog />
+      <BillingFeedback />
       <AttachmentLightboxMount />
       <MarkdownTableConnectionDialog />
       <SkillImportDialogMount />

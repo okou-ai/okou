@@ -1,6 +1,7 @@
 import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
+import { SurveysExtensions } from "posthog-js/dist/extension-bundles";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
 import { resolvePlatformRuntimeConfig } from "./platform-host.ts";
 import { redactProofUrl } from "./redact-proof-url.ts";
@@ -100,6 +101,8 @@ function runPostHog(action: (key: string, host: string) => void): void {
 export function initPostHog(): void {
   runPostHog((key, host) => {
     posthog.init(key, {
+      // The slim SDK requires the survey and targeting-flag extensions explicitly.
+      __extensionClasses: SurveysExtensions,
       // First-party reverse proxy (Cloudflare-fronted): forwards /static assets,
       // /flags, ingest and replay (/s) to PostHog US so ad blockers do not drop
       // events. Shared with the marketing site through one ingest domain.
@@ -650,6 +653,84 @@ export function captureSuggestionCard(
       eventName,
       { surface: "home_suggestions", ...properties },
       eventId ? { uuid: eventId } : undefined,
+    );
+  });
+}
+
+export function captureBillingFunnelEvent(
+  event:
+    | "billing_upgrade_dialog_opened"
+    | "billing_upgrade_dialog_closed"
+    | "billing_checkout_started"
+    | "billing_checkout_canceled"
+    | "billing_purchase_completed",
+  properties: Record<string, unknown>,
+): void {
+  runPostHog(() => {
+    posthog.capture(event, properties);
+  });
+}
+
+/** Fetch current targeting and launch state; the SDK owns rendering and lifecycle events. */
+export function displayBillingFeedbackSurvey(
+  surveyId: string,
+  properties: Record<string, unknown>,
+  language: string,
+  signal: AbortSignal,
+): void {
+  runPostHog(() => {
+    posthog.set_config({
+      override_display_language:
+        language === "zh-Hans"
+          ? "zh-CN"
+          : language === "zh-Hant"
+            ? "zh-TW"
+            : language,
+    });
+    let requested = false;
+    let surveysReady = false;
+    let flagsReady = false;
+    const requestWhenReady = () => {
+      if (signal.aborted || requested || !surveysReady || !flagsReady) {
+        return;
+      }
+      requested = true;
+      posthog.getActiveMatchingSurveys((surveys) => {
+        if (
+          signal.aborted ||
+          !surveys.some((survey) => {
+            return survey.id === surveyId;
+          })
+        ) {
+          return;
+        }
+        posthog.displaySurvey(surveyId, {
+          displayType: "popover",
+          ignoreConditions: false,
+          ignoreDelay: false,
+          properties,
+        });
+      }, true);
+    };
+    const unsubscribeSurveys = posthog.onSurveysLoaded((_surveys, context) => {
+      surveysReady = context?.isLoaded === true;
+      requestWhenReady();
+    });
+    // The survey list can arrive before the targeting flags on a Stripe return.
+    const unsubscribeFlags = posthog.onFeatureFlags(
+      (_flags, _variants, context) => {
+        flagsReady = context?.errorsLoading !== true;
+        requestWhenReady();
+      },
+    );
+    signal.addEventListener(
+      "abort",
+      () => {
+        unsubscribeSurveys();
+        unsubscribeFlags();
+        posthog.cancelPendingSurvey(surveyId);
+      },
+      { once: true },
     );
   });
 }

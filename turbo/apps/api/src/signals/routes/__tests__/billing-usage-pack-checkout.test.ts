@@ -365,7 +365,7 @@ describe("POST /api/billing/usage-pack-checkout", () => {
           allow_promotion_codes: true,
           success_url: `${APP_ORIGIN}/billing?billing=success`,
           cancel_url: `${APP_ORIGIN}/billing?billing=canceled`,
-          metadata: { ...metadata, billingSurveyUserId: fixture.userId },
+          metadata: metadata,
           subscription_data: { metadata },
         },
         { idempotencyKey: `usage-pack-checkout:${createdSnapshotId}` },

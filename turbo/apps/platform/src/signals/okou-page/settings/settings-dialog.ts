@@ -1,3 +1,4 @@
+import { finishBillingUpgrade$ } from "../../billing-feedback-flow.ts";
 import type { UsagePackManagementResponse } from "@okouai/api-contracts/contracts/billing";
 import {
   observeWalletConnection$,
@@ -237,6 +238,7 @@ export const openSettingsUsagePackUpgrade$ = command(
 );
 
 const releaseSettingsDialogSession$ = command(({ set }) => {
+  set(finishBillingUpgrade$, false);
   set(internalSettingsDialogSignal$, null);
   set(internalSettingsDialogSessionActive$, false);
   set(clearPendingLogo$);
@@ -249,6 +251,7 @@ const releaseSettingsDialogSession$ = command(({ set }) => {
 });
 
 export const closeSettingsModal$ = command(({ get, set }) => {
+  set(finishBillingUpgrade$);
   set(resetSettingsActionSignal$);
   set(internalSettingsDialogOpen$, false);
 

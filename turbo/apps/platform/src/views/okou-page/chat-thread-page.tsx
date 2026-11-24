@@ -173,8 +173,7 @@ import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body
 import { i18n } from "../../i18n/index.ts";
 import { artifactFallbackSubtitle } from "./artifact-display.ts";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { billingSurveyEnabled$ } from "../../signals/billing-survey.ts";
-import { CreditsExhaustedSurvey } from "./components/billing-survey.tsx";
+import { CreditsFeedbackButton } from "./components/billing-feedback.tsx";
 import {
   CHAT_INLINE_IMAGE_PREVIEW_CLASS,
   CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS,
@@ -4688,7 +4687,6 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const setSubPage = useSet(setBillingSubPage$);
   const pageSignal = useGet(pageSignal$);
   const creditPurchaseOrigin = useGet(creditPurchaseOrigin$);
-  const billingSurveyEnabled = useLastResolved(billingSurveyEnabled$) ?? false;
 
   const billingResolved = billingLoadable.state === "hasData";
   const credits = billingResolved ? billingLoadable.data.credits : null;
@@ -4762,8 +4760,7 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
   const showUpgradeSurvey =
     hasExhaustedCredits(error, credits) &&
     canShowBillingAction &&
-    shouldStartProCheckout &&
-    billingSurveyEnabled;
+    shouldStartProCheckout;
 
   return (
     <>
@@ -4791,7 +4788,7 @@ function InsufficientCreditsCard({ error }: { readonly error: string }) {
           </div>
         </div>
         <div className={CHAT_NOTICE_ACTION_SLOT_CLASS}>
-          <CreditsExhaustedSurvey eligible={showUpgradeSurvey} />
+          <CreditsFeedbackButton eligible={showUpgradeSurvey} />
           {!canShowBillingAction ? null : shouldStartProCheckout ? (
             <Button
               type="button"
