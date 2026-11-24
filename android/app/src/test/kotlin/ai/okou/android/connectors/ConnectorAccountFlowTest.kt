@@ -8,6 +8,7 @@ import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.OkouTheme
 import ai.okou.android.TestOkouApplication
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
@@ -31,6 +32,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isOff
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -141,8 +143,11 @@ class ConnectorAccountFlowTest {
     }
 
     @Test
-    fun wideDirectoryChangesKeepTheSelectedPreviewUntilTheDetailResponds() =
-        withDirectory(initiallyOnline = false, listWidth = 180) { fixture, connectivity ->
+    fun wideDirectoryChangesKeepTheSelectedPreviewUntilTheDetailResponds() = withKeyboard {
+        val restoration = StateRestorationTester(compose)
+        withDirectory(initiallyOnline = false, listWidth = 180, restoration = restoration) {
+            fixture,
+            connectivity ->
             fixture.omittedFromDefaultBrowse = setOf("gmail")
             compose.runOnIdle { connectivity.value = true }
             awaitText("Google Calendar")
@@ -157,7 +162,10 @@ class ConnectorAccountFlowTest {
             fixture.denyCatalogDetail = true
             fixture.detailReplyGate = releaseDetail
             try {
-                compose.onNode(gmailRow).performClick()
+                val gmail = compose.onNode(gmailRow)
+                gmail.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
+                gmail.performKeyInput { pressKey(Key.Enter) }
+                gmail.assertIsSelected().assertIsFocused()
                 gmailDetail.assertIsDisplayed()
 
                 search.performTextReplacement("calendar")
@@ -177,6 +185,10 @@ class ConnectorAccountFlowTest {
                 )
                 search.assertTextContains("calendar")
                 gmailDetail.assertIsDisplayed()
+
+                restoration.emulateSavedInstanceStateRestore()
+                search.assertTextContains("calendar")
+                gmailDetail.assertIsDisplayed()
             } finally {
                 releaseDetail.countDown()
             }
@@ -189,6 +201,7 @@ class ConnectorAccountFlowTest {
             awaitText("Permission update required")
             gmailDetail.assertDoesNotExist()
         }
+    }
 
     @Test
     fun directoryShowsOfflineLoadingOnlyForTabsWithoutCachedResults() =
@@ -638,6 +651,7 @@ class ConnectorAccountFlowTest {
     private fun withDirectory(
         initiallyOnline: Boolean = true,
         listWidth: Int? = null,
+        restoration: StateRestorationTester? = null,
         exercise: (ConnectorApiFixture, MutableStateFlow<Boolean>) -> Unit,
     ) {
         ConnectorApiFixture().use { fixture ->
@@ -660,11 +674,26 @@ class ConnectorAccountFlowTest {
                             },
                         )[ConnectorModel::class]
                 }
-                compose.setContent { OkouTheme(false) { ConnectorsPage(model, listWidth) {} } }
+                val content: @Composable () -> Unit = {
+                    OkouTheme(false) { ConnectorsPage(model, listWidth) {} }
+                }
+                if (restoration == null) compose.setContent(content)
+                else restoration.setContent(content)
                 exercise(fixture, connectivity)
             } finally {
                 compose.runOnIdle { store.clear() }
             }
+        }
+    }
+
+    private fun withKeyboard(exercise: () -> Unit) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            exercise()
+        } finally {
+            instrumentation.resetInTouchMode()
         }
     }
 

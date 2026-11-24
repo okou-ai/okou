@@ -918,6 +918,7 @@ internal fun OkouApp(
             workspaceReady &&
                 chatConnectorVisit?.composerKey?.let { it != activeComposerKey } == true
         ) {
+            if (!connectorsOpen && workflowConnectorVisit == null) connectors?.select(null)
             chatConnectorVisit = null
         }
     }

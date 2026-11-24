@@ -204,7 +204,6 @@ class ConnectorModel(
             hidePermissions()
             clearImpact()
             pauseReads()
-            mutableState.update { it.copy(selectedPreview = null) }
         }
     }
 

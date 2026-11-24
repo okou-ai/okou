@@ -66,6 +66,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -73,6 +74,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -110,6 +112,7 @@ internal fun ConnectorsPage(
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
     val focus = LocalFocusManager.current
+    val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     var restoreRow by remember { mutableStateOf<String?>(null) }
     val filter =
@@ -134,6 +137,12 @@ internal fun ConnectorsPage(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { model.resume() }
 
+    fun closePage() {
+        // A navigation exit ends the selection. Activity recreation keeps the same route.
+        model.select(null)
+        close()
+    }
+
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
@@ -141,7 +150,7 @@ internal fun ConnectorsPage(
             restoreRow = selected
             route.slug = null
         } else {
-            close()
+            closePage()
         }
     }
 
@@ -183,7 +192,7 @@ internal fun ConnectorsPage(
                     editQuery = ::setQuery,
                     setCategory = ::setCategory,
                     open = { entry ->
-                        focus.clearFocus()
+                        if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                         keyboard?.hide()
                         route.slug = entry.slug
                         model.select(entry.slug, entry)
@@ -225,7 +234,7 @@ internal fun ConnectorsPage(
                         entry ?: matchingState?.selectedPreview,
                         wide,
                         initialAccountId = initialAccountId.takeIf { selected == initialSlug },
-                        onCloseInitialAccount = close,
+                        onCloseInitialAccount = ::closePage,
                     )
                 }
             }
