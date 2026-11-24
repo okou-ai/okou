@@ -1920,7 +1920,9 @@ class ChatListModel(
     }
 
     fun refreshIndicators() {
-        if (networkEnabled()) readIndicators()
+        if (networkEnabled()) {
+            readIndicators(verifyPendingRead = { readConfirmations[it]?.reportFailure == true })
+        }
     }
 
     private fun refreshDraftIndex() {

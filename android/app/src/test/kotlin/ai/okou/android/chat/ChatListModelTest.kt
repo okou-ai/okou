@@ -3869,8 +3869,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
     }
 
     @Test
-    fun lostReadResponseStaysPendingUntilAnAuthoritativeWatermarkCoversIt() = runTest {
-        val realtime = TestRealtimeService()
+    fun refreshingIndicatorsSettlesALostReadResponseWhenTheWatermarkCoversIt() = runTest {
         var confirmedAt: String? = null
         var writes = 0
         val source =
@@ -3891,9 +3890,8 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
                         )
                     }
                 }
-        withCatchUpModel(source, realtime) { model ->
+        withCatchUpModel(source) { model ->
             model.refresh()
-            model.updates.foreground(true)
             advanceUntilIdle()
             model.selectFilter(ChatListFilter.Unread)
             assertTrue(model.performRowAction(CHAT_PERSONAL, ChatRowAction.MarkRead))
@@ -3909,7 +3907,7 @@ internal class ChatListUnreadReconciliationModelTest : ChatListModelTestFixture(
             assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             confirmedAt = CHAT_DATE
-            realtime.invalidate(ChatChanges(readCursor = true))
+            model.refreshIndicators()
             advanceUntilIdle()
             val confirmed = model.uiState.value
             assertEquals(1, writes)
