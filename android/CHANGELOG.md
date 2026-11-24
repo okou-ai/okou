@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.55.2](https://github.com/okou-ai/okou/compare/android-v0.55.1...android-v0.55.2) (2026-11-24)
+
+
+### Refactoring
+
+* **android:** share rename form behavior ([#50603](https://github.com/okou-ai/okou/issues/50603)) ([40612fc](https://github.com/okou-ai/okou/commit/40612fc8e5b64953367f02b51a71531f352f7560))
+
 ## [0.55.1](https://github.com/okou-ai/okou/compare/android-v0.55.0...android-v0.55.1) (2026-11-24)
 
 

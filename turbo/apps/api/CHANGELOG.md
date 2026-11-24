@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.121.0](https://github.com/okou-ai/okou/compare/api-v2.120.0...api-v2.121.0) (2026-11-24)
+
+
+### Features
+
+* add subscription-gated custom domains for hosted sites ([#50462](https://github.com/okou-ai/okou/issues/50462)) ([a898459](https://github.com/okou-ai/okou/commit/a8984599f91d9596a3721b0c6d8fa67274c9f985))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.124.0
+    * @okouai/core bumped to 8.872.0
+    * @okouai/db bumped to 2.67.0
+    * @okouai/pi-agent-runtime bumped to 1.52.66
+
 ## [2.120.0](https://github.com/okou-ai/okou/compare/api-v2.119.1...api-v2.120.0) (2026-11-24)
 
 
