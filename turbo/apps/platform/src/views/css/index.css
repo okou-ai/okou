@@ -1102,11 +1102,9 @@ body {
    product's own Amber brand stop and would duplicate Default. */
 [data-color-theme="golden-hour"] {
   --okou-color-theme-primary: 33.1 74.6% 41.9%;
-  --okou-color-theme-primary-foreground: 0 0% 0%;
+  --okou-color-theme-primary-foreground: 0 0% 100%;
   --okou-color-theme-primary-dark: var(--okou-color-theme-primary);
-  --okou-color-theme-primary-dark-foreground: var(
-    --okou-color-theme-primary-foreground
-  );
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #f4e33c;
   --okou-color-theme-hue: 33.1;
@@ -1142,7 +1140,7 @@ body {
   --okou-color-theme-primary: 342 62% 47%;
   --okou-color-theme-primary-foreground: 0 0% 100%;
   --okou-color-theme-primary-dark: 342 62% 58%;
-  --okou-color-theme-primary-dark-foreground: 0 0% 0%;
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #e4abc8;
   --okou-color-theme-hue: 342;
@@ -1172,7 +1170,7 @@ body {
   --okou-color-theme-primary: 221.3 49.1% 42.4%;
   --okou-color-theme-primary-foreground: 0 0% 100%;
   --okou-color-theme-primary-dark: 221.3 62% 64%;
-  --okou-color-theme-primary-dark-foreground: 0 0% 0%;
+  --okou-color-theme-primary-dark-foreground: 0 0% 100%;
   --okou-color-theme-anchor: hsl(var(--okou-color-theme-primary));
   --okou-color-theme-companion: #b5d4e5;
   --okou-color-theme-hue: 221.3;

@@ -106,6 +106,25 @@ class PaletteColorsTest {
     }
 
     @Test
+    fun goldenHourBerryBlushAndBlueHorizonUseTheSpecifiedBlackForeground() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val palettes =
+            listOf(
+                UserPreferencesColorTheme.GOLDEN_HOUR to false,
+                UserPreferencesColorTheme.GOLDEN_HOUR to true,
+                UserPreferencesColorTheme.BERRY_BLUSH to true,
+                UserPreferencesColorTheme.BLUE_HORIZON to true,
+            )
+        for ((palette, dark) in palettes) {
+            assertEquals(
+                "$palette/$dark",
+                Color.Black,
+                resolvePalette(context, dark, palette).scheme.onPrimary,
+            )
+        }
+    }
+
+    @Test
     fun defaultReadProgressUsesTheSpecifiedPageAndPanelColors() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val palette = UserPreferencesColorTheme.DEFAULT
