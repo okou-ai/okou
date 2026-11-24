@@ -5,7 +5,9 @@ import SwiftUI
 @MainActor
 struct ConversationRowProjection {
   let conversation: ConversationStore
-  private var history: ChatHistory { conversation.history ?? .empty }
+  /// The conversation's graph value for this render; ChatDetailView resolves it.
+  let transcript: ConversationProjection.Value
+  private var history: ChatHistory { transcript.history ?? .empty }
 
   var rows: [ConversationCollectionRow] {
     let items = conversation.visibleItems
@@ -56,7 +58,7 @@ struct ConversationRowProjection {
               providerMessage: providerMessage))
           continue
         }
-        let pendingRetry = conversation.pending.first { $0.id == message.id }?.needsRetry
+        let pendingRetry = transcript.pending.first { $0.id == message.id }?.needsRetry
         result.append(
           .message(
             message, showsAvatar: !continuesGroup, topSpacing: spacing,
@@ -70,7 +72,7 @@ struct ConversationRowProjection {
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
-    for output in conversation.streamedOutputs {
+    for output in transcript.streamed {
       var continues = false
       if case .message(let previous, _, _, _, _, _, _) = result.last {
         continues = previous.role != .user
@@ -86,7 +88,7 @@ struct ConversationRowProjection {
           isSending: false))
     }
     if conversation.modelSelection?.models.usesFollowupPlaceholder != true,
-      let source = conversation.recommendedFollowups
+      let source = transcript.recommendedFollowups
     {
       result.append(.followups(source, finishedAt: history.latestRunFinishAt))
     }
