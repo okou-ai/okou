@@ -113,7 +113,7 @@ class ConnectorModel(
     private val service: ConnectorService,
     connectivity: Flow<Boolean>,
     private val authorized: () -> Boolean,
-    private val readClock: TimeSource = TimeSource.Monotonic,
+    private val clock: TimeSource = TimeSource.Monotonic,
     private val sessionFailure: (Exception) -> Unit,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(ConnectorUiState())
@@ -608,7 +608,7 @@ class ConnectorModel(
                 is ConnectorAuthorization.Receipt -> finishAuthorization(target, step.connectionId)
                 else -> {
                     val deadline =
-                        TimeSource.Monotonic.markNow() +
+                        clock.markNow() +
                             when (step) {
                                 is ConnectorAuthorization.Device -> step.expiresIn
                                 is ConnectorAuthorization.External -> step.expiresIn
@@ -629,11 +629,8 @@ class ConnectorModel(
         if (!open || !authorized() || action.busy) return
         val step = action.authorization ?: return
         if (authorizationExpired()) {
-            if (step is ConnectorAuthorization.Device) {
-                deviceJob?.cancel()
-                deviceJob = null
-                endDeviceAuthorization(step, ConnectorProblem.DeviceCodeExpired)
-            } else {
+            // The device job may still be receiving the result of a poll sent before expiry.
+            if (step !is ConnectorAuthorization.Device) {
                 updateAction {
                     it.copy(
                         authorization = null,
@@ -895,7 +892,7 @@ class ConnectorModel(
 
     private fun publishAccounts(slug: String, accounts: List<ConnectorSavedAccount>) {
         val confirmed =
-            ConnectorRead(accounts, expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
+            ConnectorRead(accounts, expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
         val cached = recentServices[slug]
         if (cached != null) recentServices[slug] = cached.copy(accounts = confirmed)
         mutableState.update { state ->
@@ -1050,7 +1047,7 @@ class ConnectorModel(
             publish = {
                 publish(
                     if (it.isConfirmed)
-                        it.copy(expiresAt = readClock.markNow() + CONNECTOR_READ_LIFETIME)
+                        it.copy(expiresAt = clock.markNow() + CONNECTOR_READ_LIFETIME)
                     else it,
                 )
             },

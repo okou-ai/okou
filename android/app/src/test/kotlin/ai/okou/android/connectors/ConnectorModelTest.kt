@@ -3,6 +3,7 @@ package ai.okou.android.connectors
 import ai.okou.android.CONNECTOR_AUTHORIZATION_URL
 import ai.okou.android.CONNECTOR_CALENDAR
 import ai.okou.android.CONNECTOR_CALENDAR_PRIMARY
+import ai.okou.android.CONNECTOR_DEVICE_ACCOUNT
 import ai.okou.android.CONNECTOR_DEVICE_EXAMPLE
 import ai.okou.android.CONNECTOR_EXAMPLE_DEVICE_CODE
 import ai.okou.android.CONNECTOR_GMAIL_ACCOUNT
@@ -49,7 +50,7 @@ internal abstract class ConnectorModelTestFixture {
         configure: (ConnectorApiFixture) -> Unit = {},
         connectivity: Flow<Boolean> = emptyFlow(),
         includeGrantExamples: Boolean = false,
-        readClock: TimeSource = TimeSource.Monotonic,
+        clock: TimeSource = TimeSource.Monotonic,
         exercise: suspend (ConnectorApiFixture, ConnectorModel) -> Unit,
     ) = runBlocking {
         ConnectorApiFixture(includeGrantExamples).use { fixture ->
@@ -68,7 +69,7 @@ internal abstract class ConnectorModelTestFixture {
                                                 fixture.service,
                                                 connectivity,
                                                 { true },
-                                                readClock,
+                                                clock,
                                             ) {
                                                 throw AssertionError(
                                                     "Unexpected session failure",
@@ -121,7 +122,7 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
     fun openContentSurvivesExpiryButReentryWithholdsExpiredScopes() {
         val clock = TestTimeSource()
         val online = MutableStateFlow(true)
-        withModel(CONNECTOR_CALENDAR, connectivity = online, readClock = clock) { _, model ->
+        withModel(CONNECTOR_CALENDAR, connectivity = online, clock = clock) { _, model ->
             model.showPermissions()
             model.await {
                 it.browse.data != null && it.permissions.data != null && it.connected.data != null
@@ -171,7 +172,7 @@ internal class ConnectorModelTest : ConnectorModelTestFixture() {
     fun returningToDirectoryScopesOfflineRestoresResultsIncludingConfirmedEmpty() {
         val online = MutableStateFlow(true)
         val clock = TestTimeSource()
-        withModel(CONNECTOR_CALENDAR, connectivity = online, readClock = clock) { _, model ->
+        withModel(CONNECTOR_CALENDAR, connectivity = online, clock = clock) { _, model ->
             val email = ConnectorBrowseFilter(null, "email")
             val missing = ConnectorBrowseFilter("no matching service", null)
             model.setFilter(email)
@@ -588,6 +589,47 @@ internal class ConnectorAccountModelTest : ConnectorModelTestFixture() {
             assertEquals(ConnectorProblem.DeviceCodeExpired, model.uiState.value.action?.problem)
             assertEquals(0, fixture.devicePollRequests.get())
         }
+
+    @Test
+    fun reopeningAtTheDeadlineDoesNotDiscardAnInFlightDeviceCompletion() {
+        val clock = TestTimeSource()
+        val reply = CountDownLatch(1)
+        withModel(
+            CONNECTOR_DEVICE_EXAMPLE,
+            configure = {
+                it.devicePollInterval = 1
+                it.deviceExpiresIn = 30
+                it.devicePollStatus = "complete"
+                it.devicePollReplyGate = reply
+            },
+            includeGrantExamples = true,
+            clock = clock,
+        ) { fixture, model ->
+            try {
+                model.startAuthorization(null, "device-auth", emptyMap())
+                model.await {
+                    it.action?.busy == false &&
+                        it.action.authorization is ConnectorAuthorization.Device
+                }
+                model.openBrowser { true }
+                withContext(Dispatchers.IO) {
+                    assertTrue(fixture.devicePollReplyStarted.await(10, TimeUnit.SECONDS))
+                }
+
+                clock += 30.seconds
+                model.openBrowser { error("An expired device code must not reopen the provider") }
+                assertNull(model.uiState.value.action?.problem)
+            } finally {
+                reply.countDown()
+            }
+
+            val result = model.await { it.action?.result == ConnectorResult.Authorized }
+            assertEquals(CONNECTOR_DEVICE_ACCOUNT, result.action?.target?.connectionId)
+            assertEquals(ConnectorAccountStatus.Connected, result.accounts.data?.single()?.status)
+            assertEquals(1, fixture.deviceStartRequests.get())
+            assertEquals(1, fixture.devicePollRequests.get())
+        }
+    }
 
     @Test
     fun anUnsentRenameRemainsEditableAndReconnectDoesNotSendIt() {
