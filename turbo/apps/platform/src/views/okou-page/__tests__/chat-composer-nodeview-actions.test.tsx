@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -38,8 +38,8 @@ test("A template attachment keeps clipboard metadata without native hover hints"
   const legacy = new DataTransfer();
   legacy.setData("text/html", LEGACY_CLIPBOARD);
   await user.paste(legacy);
-  const preview = await findChipControl("Preview template Legacy deck");
-  const chip = preview.closest<HTMLElement>(
+  const remove = await findChipControl("Remove template Legacy deck");
+  const chip = remove.closest<HTMLElement>(
     "[data-composer-template-attachment]",
   ) as HTMLElement;
   expect(editor).toHaveTextContent("Keep this draft.");
@@ -52,14 +52,7 @@ test("A template attachment keeps clipboard metadata without native hover hints"
 
   expect(copied?.getData("text/html")).toContain('title="Legacy deck"');
 
-  click(preview);
-  const dialog = await screen.findByRole("dialog");
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-
-  click(await findChipControl("Remove template Legacy deck"));
+  click(remove);
 
   await waitFor(() => {
     expect(

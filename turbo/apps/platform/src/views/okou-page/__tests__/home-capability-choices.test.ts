@@ -187,23 +187,19 @@ test("capability-home-page-008 Switching capability within an open tray keeps th
   ]);
   expect(editor).toHaveTextContent("Keep my launch brief.");
 });
-test("capability-home-page-010 The Create header browses Presentation and omits the browse action for Chart", async () => {
+test("capability-home-page-010 Create shows the Presentation shelf and switches to Chart", async () => {
   await home();
   await cover("Create");
   const tray = await screen.findByRole("tabpanel");
   expect(
     within(tray).getAllByText("Presentation", { exact: true }),
   ).toHaveLength(1);
-  click(await findFastControl("button", "View all", tray));
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Presentation", dialog),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  click(await findFastControl("button", "Close", dialog));
+  await within(tray).findByRole("group", { name: "Presentation templates" });
   click(await within(tray).findByText("Chart", { exact: true }));
-  await waitFor(() => {
-    expect(queryFastControl("button", "View all", tray)).toBeNull();
-  });
+  await within(tray).findByRole("region", { name: "Visualization options" });
+  expect(
+    within(tray).queryByRole("group", { name: "Presentation templates" }),
+  ).toBeNull();
   click(await findFastControl("tab", "Find people"));
   await expect(
     screen.findByText(/Customers, creators, decision-makers/),
@@ -272,7 +268,7 @@ test("capability-home-page-005 Moving between capability tabs retains the draft,
   expect(queryFastControl("button", "Tools")).toBeNull();
   expect(editor).toHaveTextContent("Keep my launch brief.");
 });
-test("capability-home-page-012 An advanced workflow recommendation adds Morning brief to the existing draft and opens the workflow catalog", async () => {
+test("capability-home-page-012 An advanced workflow recommendation adds Morning brief to the existing draft and leaves the workflow tray available", async () => {
   const editor = await home();
   await fill(editor, "Focus on customer meetings.");
   await cover("Workflow");
@@ -286,15 +282,6 @@ test("capability-home-page-012 An advanced workflow recommendation adds Morning 
     editor.querySelector("[data-composer-inline-template]"),
   ).toHaveTextContent("Morning brief");
   expect(editor).toHaveTextContent(/meetings.*priorities/i);
-  click(await findFastControl("button", "View all"));
-  const picker = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Workflow", picker),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  await expect(
-    within(picker).findByText("Morning brief", { exact: true }),
-  ).resolves.toBeVisible();
-  click(await findFastControl("button", "Close", picker));
   await closeTray();
   await cover("Workflow");
   click(await findFastControl("radio", "Triggers"));

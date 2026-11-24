@@ -324,6 +324,100 @@ class AppUpdatesTest {
     }
 
     @Test
+    fun manualCheckAdvancesThePendingRetryWithoutAddingAttempts() = runTest {
+        val service = ControlledUpdates().apply { timeoutCheck = true }
+        AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+            )
+            .use { owner ->
+                owner.check()
+                runCurrent()
+                assertEquals(UpdateCheck.Waiting, owner.state.value.check)
+                owner.check()
+                runCurrent()
+                assertEquals(1, service.checks)
+
+                val retry = CompletableDeferred<Unit>()
+                service.heldCheck = retry
+                owner.check(advanceRetry = true)
+                owner.check(advanceRetry = true)
+                runCurrent()
+                assertEquals(UpdateCheck.Checking, owner.state.value.check)
+                assertEquals(2, service.checks)
+                owner.check(advanceRetry = true)
+                runCurrent()
+                assertEquals(2, service.checks)
+
+                service.heldCheck = null
+                retry.complete(Unit)
+                runCurrent()
+                assertEquals(UpdateCheck.Waiting, owner.state.value.check)
+                advanceTimeBy(3_000)
+                runCurrent()
+                assertEquals(UpdateCheck.Failed, owner.state.value.check)
+                assertEquals(3, service.checks)
+
+                service.timeoutCheck = false
+                owner.check(advanceRetry = true)
+                runCurrent()
+                assertEquals(UpdateCheck.Checked, owner.state.value.check)
+                assertEquals(4, service.checks)
+            }
+    }
+
+    @Test
+    fun manualDownloadAdvancesThePendingRetryForTheSelectedRelease() = runTest {
+        val service = ControlledUpdates()
+        val selected = updateRelease()
+        val newer = updateRelease("0.14.0")
+        AppUpdates(
+                service,
+                MemoryUpdateStore(),
+                "0.12.0",
+                35,
+                StandardTestDispatcher(testScheduler),
+            )
+            .use { owner ->
+                owner.check()
+                runCurrent()
+                service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                assertTrue(owner.download(selected))
+                runCurrent()
+                assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
+
+                service.response = AndroidUpdates(null, newer)
+                owner.check()
+                runCurrent()
+                assertFalse(owner.download(newer, advanceRetry = true))
+                service.transfer = CompletableDeferred()
+                assertTrue(owner.download(selected, advanceRetry = true))
+                assertFalse(owner.download(selected, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Downloading(selected), owner.state.value.transfer)
+                assertEquals(listOf(selected, selected), service.downloadedReleases)
+
+                service.transfer.completeExceptionally(SocketTimeoutException("download"))
+                runCurrent()
+                assertEquals(UpdateTransfer.Waiting(selected), owner.state.value.transfer)
+                assertTrue(owner.download(selected, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Failed, owner.state.value.transfer)
+                advanceTimeBy(6_000)
+                runCurrent()
+                assertEquals(List(3) { selected }, service.downloadedReleases)
+
+                service.transfer = CompletableDeferred(File("verified.apk"))
+                assertTrue(owner.download(newer, advanceRetry = true))
+                runCurrent()
+                assertEquals(UpdateTransfer.Ready(newer), owner.state.value.transfer)
+            }
+    }
+
+    @Test
     fun invalidRecoveredPackageFinishesPreparationAndRetainsRequiredPolicy() = runTest {
         val selected = updateRelease()
         val latest = updateRelease("0.14.0")

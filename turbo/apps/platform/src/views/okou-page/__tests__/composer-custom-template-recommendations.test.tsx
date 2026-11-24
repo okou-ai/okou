@@ -144,7 +144,7 @@ test.each([
   ["composer-custom-template-recommendations-007", "Presentation", choices[1]],
   ["composer-custom-template-recommendations-008", "Presentation", choices[2]],
 ] as const)(
-  "%s choosing another gallery category updates the submitted creation task",
+  "%s choosing another recommendation category updates the submitted creation task",
   async (_id, initial, [task, kind]) => {
     const entries = catalog();
     const item = entries.find((e) => {
@@ -155,19 +155,12 @@ test.each([
     const editor = await screen.findByLabelText("Message");
     await fill(editor, "Prepare the briefing");
     click(await findAction("button", initial));
-    click(await findAction("button", "View all"));
-    const gallery = await screen.findByRole("dialog");
-    click(await within(gallery).findByRole("combobox"));
-    click(await screen.findByRole("option", { name: task }));
-    const name = await within(gallery).findByText(item.title, { exact: true });
-    let card: HTMLElement | null = name;
-    while (card && !queryAction("button", "Use", card)) {
-      card = card.parentElement;
-    }
-    if (!card) {
-      throw new Error("No Use action for " + item.title);
-    }
-    click(await findAction("button", "Use", card));
+    const choices = await screen.findByRole("radiogroup", { name: "Create" });
+    click(await within(choices).findByText(task));
+    const shelf = await screen.findByRole("group", {
+      name: task === "Image" ? "Image styles" : task + " templates",
+    });
+    click(await findAction("button", item.title, shelf));
     await waitFor(() => {
       return expect(editor).toHaveTextContent(item.title);
     });

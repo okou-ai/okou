@@ -349,5 +349,5 @@ test("Copy and paste a structured chat message from the keyboard without flatten
   expect(composer).toHaveTextContent("Tighten the launch plan");
   expect(card).toHaveTextContent("Use the revised forecast");
   expect(card).not.toHaveTextContent("Legacy flattened launch notes");
-  expect(control("button", "Preview template Launch deck", card)).toBeEnabled();
+  expect(card).toHaveTextContent("Launch deck");
 });

@@ -137,6 +137,8 @@
     <string name="settings_sign_out_body">Per usare di nuovo Okou su questo dispositivo, accedi di nuovo. Le bozze restano associate a questo account.</string>
     <string name="updates_waiting_to_check">Verifica in attesa</string>
     <string name="updates_waiting_to_install">In attesa di installazione</string>
+    <string name="updates_retry_download">Riprova il download</string>
+    <string name="updates_retry_check">Controlla di nuovo</string>
     <string name="updates_waiting_to_download">Download in attesa</string>
     <string name="instructions_placeholder">Che cosa vuoi che Okou tenga a mente?</string>
     <string name="instructions_save_when_online">Connettiti per salvare le modifiche.</string>

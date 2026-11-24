@@ -1,18 +1,15 @@
 import { LoadingSkeleton } from "../components/loading-skeleton.tsx";
-// The slash overview when the slash-actions switch is on: chat actions first,
-// then Workflows and Templates as single rows whose lists open as the second
-// level in the menu's right half, where template covers already appear.
+// The slash overview when the slash-actions switch is on: actions first,
+// then Workflows, with second-level lists opening beside the first level.
 import { useGet, useSet } from "ccstate-react";
 import type { ReactNode } from "react";
 import {
   Check,
   ChevronLeft,
   ChevronRight,
-  LayoutGrid,
   Plus,
   Route,
   Settings2,
-  SwatchBook,
   type LucideIcon,
 } from "lucide-react";
 import { cn, useMediaQuery } from "@okouai/ui";
@@ -24,10 +21,6 @@ import type {
   ComposerSlashWorkflow,
   ComposerSlashWorkflowMatch,
 } from "../../signals/okou-page/workflow-composer-domain.ts";
-import {
-  setSlashTemplateTab$,
-  slashTemplateTab$,
-} from "../../signals/okou-page/slash-actions.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link } from "../router/link.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
@@ -38,15 +31,8 @@ import {
   SLASH_PANEL_NEW_WORKFLOW_ID,
   SLASH_ROW_MARKED,
   SlashActionRow,
-  SlashTemplateCovers,
   slashActionOptionId,
-  slashTemplateCategoryLabel,
-  useSlashTemplateCount,
 } from "./slash-template-panel.tsx";
-import type {
-  SlashTemplateCategory,
-  SlashTemplatePreview,
-} from "./composer-template-catalog.ts";
 import {
   type SlashAction,
   type SlashSubmenu,
@@ -57,7 +43,6 @@ import {
 } from "./slash-actions.ts";
 
 const WORKFLOWS_ENTRY_ID = "workflows-entry";
-const TEMPLATES_ENTRY_ID = "templates-entry";
 
 /** The indexes one action's second level takes, after the first level. */
 interface SubmenuRange {
@@ -68,16 +53,15 @@ interface SubmenuRange {
 
 /**
  * Where each row sits in the editor's shared suggestion index: the actions,
- * the Workflows and Templates entries, then each action's second level in
- * turn, then the workflow list with its New workflow and Manage workflows rows.
+ * the Workflows entry, then each action's second level in turn, then the
+ * workflow list with its New workflow and Manage workflows rows.
  */
 function slashActionsLayout(
   actions: readonly SlashAction[],
   workflowCount: number,
 ) {
   const workflowsEntry = actions.length;
-  const templatesEntry = workflowsEntry + 1;
-  let next = templatesEntry + 1;
+  let next = workflowsEntry + 1;
   const submenus: SubmenuRange[] = [];
   for (const [entry, action] of actions.entries()) {
     if (action.submenu) {
@@ -90,7 +74,6 @@ function slashActionsLayout(
   const firstWorkflow = next;
   return {
     workflowsEntry,
-    templatesEntry,
     submenus,
     firstWorkflow,
     newWorkflow: firstWorkflow + workflowCount,
@@ -115,9 +98,6 @@ function secondLevelEntry(
   if (index === layout.workflowsEntry || index >= layout.firstWorkflow) {
     return layout.workflowsEntry;
   }
-  if (index === layout.templatesEntry) {
-    return layout.templatesEntry;
-  }
   return (
     layout.submenus.find((submenu) => {
       return index >= submenu.start && index < submenu.end;
@@ -125,7 +105,7 @@ function secondLevelEntry(
   );
 }
 
-/** The indexes an entry's second level takes; Templates has none. */
+/** The indexes an entry's second level takes. */
 function secondLevelRange(
   layout: SlashActionsLayout,
   entry: number,
@@ -201,9 +181,6 @@ function overviewScrollTarget(
   if (index === layout.workflowsEntry) {
     return { id: WORKFLOWS_ENTRY_ID };
   }
-  if (index === layout.templatesEntry) {
-    return { id: TEMPLATES_ENTRY_ID };
-  }
   const row = submenuRowAt(layout, actions, index);
   if (row) {
     return { id: slashSubmenuOptionId(row.action.id, row.item.id) };
@@ -225,7 +202,6 @@ function useSlashActionsOverview({
   insertWorkflow,
   newWorkflow,
   manageWorkflows,
-  browseTemplates,
 }: {
   readonly composer: ComposerSignals;
   readonly actions: readonly SlashAction[];
@@ -234,7 +210,6 @@ function useSlashActionsOverview({
   readonly insertWorkflow: (workflow: ComposerSlashWorkflow) => void;
   readonly newWorkflow: () => void;
   readonly manageWorkflows: () => void;
-  readonly browseTemplates: () => void;
 }): SlashActionsOverview {
   const setSelectedIndex = useSet(
     composer.suggestion.setSelectedSuggestionIndex$,
@@ -300,7 +275,7 @@ function useSlashActionsOverview({
     order:
       inSecondLevel && entry !== null
         ? [entry, ...range(opened[0], opened[1])]
-        : range(0, layout.templatesEntry + 1),
+        : range(0, layout.workflowsEntry + 1),
     select(index) {
       const action = index < layout.workflowsEntry ? actions.at(index) : null;
       if (action) {
@@ -311,8 +286,6 @@ function useSlashActionsOverview({
         }
       } else if (index === layout.workflowsEntry) {
         open(index);
-      } else if (index === layout.templatesEntry) {
-        browseTemplates();
       } else {
         selectSecondLevel(index);
       }
@@ -326,12 +299,7 @@ function useSlashActionsOverview({
         }
         return false;
       }
-      if (
-        !inSecondLevel &&
-        entry !== null &&
-        entry === selectedIndex &&
-        entry !== layout.templatesEntry
-      ) {
+      if (!inSecondLevel && entry !== null && entry === selectedIndex) {
         open(entry);
         return true;
       }
@@ -864,139 +832,28 @@ function SubmenuPage({
   );
 }
 
-/**
- * The Templates entry's second level: one type at a time, each named with its
- * count; pointing at a type shows its covers.
- */
-function TemplatesPane({
-  categories,
-  templateCount,
-  onSelectTemplate,
-  onBrowseAll,
-}: {
-  readonly categories: readonly SlashTemplateCategory[];
-  /** The panel's counts, so a type reads the same number as its entry. */
-  readonly templateCount: (category: SlashTemplateCategory) => number;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-  readonly onBrowseAll: () => void;
-}) {
-  const { t } = useTranslation();
-  const tab = useGet(slashTemplateTab$);
-  const setTab = useSet(setSlashTemplateTab$);
-  const active =
-    categories.find((category) => {
-      return category === tab;
-    }) ?? categories[0];
-  if (active === undefined) {
-    return null;
-  }
-  return (
-    <div
-      className={PANE}
-      role="region"
-      aria-label={t(($) => {
-        return $.chat.composer.slashActions.templates;
-      })}
-      data-slot="slash-templates-detail"
-      data-category={active}
-    >
-      <div className="absolute inset-0 flex flex-col">
-        <div className="flex shrink-0 gap-0.5 overflow-hidden p-1">
-          {categories.map((category) => {
-            return (
-              <button
-                key={category}
-                type="button"
-                aria-pressed={category === active}
-                className={cn(
-                  "inline-flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs transition-colors",
-                  category === active
-                    ? "bg-state-selected text-foreground"
-                    : "text-muted-foreground hover:bg-state-hover hover:text-foreground",
-                )}
-                onMouseMove={() => {
-                  setTab(category);
-                }}
-                onClick={() => {
-                  setTab(category);
-                }}
-              >
-                {slashTemplateCategoryLabel(category)}{" "}
-                {/* A flex row drops the space, so `gap-1` keeps them apart. */}
-                <span className="text-muted-foreground/50">
-                  {templateCount(category)}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="relative min-h-0 flex-1" key={active}>
-          <SlashTemplateCovers
-            category={active}
-            onSelectTemplate={onSelectTemplate}
-          />
-        </div>
-        <div className="shrink-0 border-t border-border/60 p-1">
-          <button
-            type="button"
-            data-slot="slash-browse-all"
-            className={cn(QUIET_ROW, quietRowState(false))}
-            onClick={onBrowseAll}
-          >
-            <QuietRowContent
-              icon={<LayoutGrid size={14} strokeWidth={1.6} aria-hidden />}
-            >
-              {t(($) => {
-                return $.chat.composer.slashPanel.browseAll;
-              })}
-            </QuietRowContent>
-            <ChevronRight
-              size={16}
-              className="ml-auto shrink-0 text-muted-foreground/50"
-              aria-hidden
-            />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function SlashActionsPanel({
   overview,
   workflows,
   workflowsLoading,
-  categories,
   selectedIndex,
   previewIndex,
   onPreview,
   onSelectWorkflow,
-  onSelectTemplate,
-  onBrowseAll,
   onNewWorkflow,
   onManageWorkflows,
 }: {
   readonly overview: SlashActionsOverview;
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly workflowsLoading: boolean;
-  readonly categories: readonly SlashTemplateCategory[];
   readonly selectedIndex: number;
   readonly previewIndex: number | null;
   readonly onPreview: (index: number | null) => void;
   readonly onSelectWorkflow: (workflow: ComposerSlashWorkflowMatch) => void;
-  readonly onSelectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-  readonly onBrowseAll: () => void;
   readonly onNewWorkflow: () => void;
   readonly onManageWorkflows: () => void;
 }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  const templateCount = useSlashTemplateCount();
   const { actions, layout } = overview;
   // The pointer owns the mark while it is inside the panel; the keyboard's
   // selection shows otherwise. An entry and everything its second level
@@ -1035,28 +892,8 @@ export function SlashActionsPanel({
   if (page) {
     return <div {...panelProps}>{page}</div>;
   }
-  // A type with nothing to show gets no tab, as Document has while built-in
-  // documents are off and none of its custom ones exist yet.
-  const templateCategories = categories.filter((category) => {
-    return templateCount(category) > 0;
-  });
-  const templateTotal = templateCategories.reduce((total, category) => {
-    return total + templateCount(category);
-  }, 0);
   const pane = isDesktop
-    ? secondLevelPane({
-        overview,
-        entry: openEntry,
-        list,
-        templates: (
-          <TemplatesPane
-            categories={templateCategories}
-            templateCount={templateCount}
-            onSelectTemplate={onSelectTemplate}
-            onBrowseAll={onBrowseAll}
-          />
-        ),
-      })
+    ? secondLevelPane({ overview, entry: openEntry, list })
     : null;
   return (
     <div {...panelProps}>
@@ -1071,12 +908,10 @@ export function SlashActionsPanel({
           <FirstLevelRows
             overview={overview}
             workflowCount={workflows.length}
-            templateCount={templateCategories.length > 0 ? templateTotal : null}
             markedIndex={markedIndex}
             openEntry={openEntry}
             showsSecondLevel={isDesktop}
             onPreview={onPreview}
-            onBrowseAll={onBrowseAll}
           />
         </div>
       </div>
@@ -1086,29 +921,24 @@ export function SlashActionsPanel({
 }
 
 /**
- * The first level: the actions, then Workflows and Templates. A row that
- * opens a second level stays marked while that level is open.
+ * The first level: the actions, then Workflows. A row that opens a second
+ * level stays marked while that level is open.
  */
 function FirstLevelRows({
   overview,
   workflowCount,
-  templateCount,
   markedIndex,
   openEntry,
   showsSecondLevel,
   onPreview,
-  onBrowseAll,
 }: {
   readonly overview: SlashActionsOverview;
   readonly workflowCount: number;
-  /** Null when no template type has anything to show. */
-  readonly templateCount: number | null;
   readonly markedIndex: number;
   readonly openEntry: number | null;
   /** Whether a second level shows beside the first rather than over it. */
   readonly showsSecondLevel: boolean;
   readonly onPreview: (index: number) => void;
-  readonly onBrowseAll: () => void;
 }) {
   const { t } = useTranslation();
   const { actions, layout } = overview;
@@ -1151,21 +981,6 @@ function FirstLevelRows({
           overview.open(layout.workflowsEntry);
         }}
       />
-      {templateCount !== null && (
-        <SlashEntryRow
-          id={TEMPLATES_ENTRY_ID}
-          Icon={SwatchBook}
-          label={t(($) => {
-            return $.chat.composer.slashActions.templates;
-          })}
-          count={templateCount}
-          index={layout.templatesEntry}
-          marked={openEntry === layout.templatesEntry}
-          open={showsSecondLevel && openEntry === layout.templatesEntry}
-          onPreview={onPreview}
-          onOpen={onBrowseAll}
-        />
-      )}
     </>
   );
 }
@@ -1175,12 +990,10 @@ function secondLevelPane({
   overview,
   entry,
   list,
-  templates,
 }: {
   readonly overview: SlashActionsOverview;
   readonly entry: number | null;
   readonly list: WorkflowListProps;
-  readonly templates: ReactNode;
 }): ReactNode {
   const { actions, layout } = overview;
   if (entry === null) {
@@ -1188,9 +1001,6 @@ function secondLevelPane({
   }
   if (entry === layout.workflowsEntry) {
     return <WorkflowPane {...list} />;
-  }
-  if (entry === layout.templatesEntry) {
-    return templates;
   }
   const action = actions[entry];
   const range = secondLevelRange(layout, entry);
@@ -1267,7 +1077,6 @@ export function useSlashActionsMenu({
     readonly leave: () => void;
     readonly newWorkflow: () => void;
     readonly manageWorkflows: () => void;
-    readonly browseAll: () => void;
   };
 }): SlashActionsMenu {
   const enabled = useSlashActionsEnabled();
@@ -1293,7 +1102,6 @@ export function useSlashActionsMenu({
     insertWorkflow,
     newWorkflow: panel.newWorkflow,
     manageWorkflows: panel.manageWorkflows,
-    browseTemplates: panel.browseAll,
   });
   if (query === undefined) {
     return { overview: null, searchActions: [] };

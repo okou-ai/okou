@@ -1,6 +1,6 @@
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { test, expect } from "vitest";
 import { findAction } from "./connector-integrations-test-helpers.ts";
 import userEvent from "@testing-library/user-event";
@@ -45,41 +45,18 @@ test("composer-website-recommendation-previews-003 closing a website preview lea
     }),
   );
 });
-test("composer-website-recommendation-previews-004 both website previews use the same sandbox and return to the gallery control", async () => {
+test("composer-website-recommendation-previews-004 the sandboxed website preview returns focus to its recommendation", async () => {
   const { editor, sent } = await website();
-  await userEvent.click(
-    await findAction("button", "Preview template " + site.title),
-  );
+  const eye = await findAction("button", "Preview template " + site.title);
+  await userEvent.click(eye);
   const direct = await screen.findByRole("dialog");
   const frame = direct.querySelector("iframe");
   expect(frame).toHaveAttribute("src", site.previewUrl);
   expect(frame).toHaveAttribute("sandbox");
-  const sandbox = frame?.getAttribute("sandbox");
-  await userEvent.keyboard("{Escape}");
-  await userEvent.click(await findAction("button", "View all"));
-  const gallery = await screen.findByRole("dialog");
-  await expect(
-    within(gallery).findByRole("combobox"),
-  ).resolves.toHaveTextContent("Website");
-  const control = await findAction(
-    "button",
-    "Preview website template " + site.title,
-    gallery,
-  );
-  await userEvent.click(control);
-  await waitFor(() => {
-    return expect(
-      document.querySelector(
-        '[role="dialog"] iframe[src="' + site.previewUrl + '"]',
-      ),
-    ).toHaveAttribute("sandbox", sandbox);
-  });
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(control).toHaveFocus();
+    expect(eye).toHaveFocus();
   });
-  expect(gallery).toBeVisible();
-  expect(within(gallery).getByRole("combobox")).toHaveTextContent("Website");
   expect(editor).toHaveTextContent(/^Build a field journal$/);
   expect(sent.settled()).toBeFalsy();
 });

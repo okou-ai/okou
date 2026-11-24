@@ -39,3 +39,9 @@ The contextual Image shelf still accepts WEBP for reusable-style analysis. The p
 ## Review boundaries
 
 The original registrations, related suggestion attribution and navigation tests, and their model, feed and route fixtures were checked against the newly authored journeys. Discord callback case 007 retains the archived 200/400 replay from batch 102. It received no new acceptance. [Discord receipts](../102/discord.json)
+
+## Synchronizing the contextual template shelves
+
+[Production change #50365](https://github.com/okou-ai/okou/pull/50365) removed the standalone picker, its URL and tab navigation, the Templates flyout, gallery-wide search, and opening an attached reference for replacement. The [historical entry ledger](./template-entry-changes.tsv) tracks 58 previously resolved IDs whose entry or assertion was affected. Each links to its archived frozen wording. These rows contribute zero to the reduction of the 143 starting cases.
+
+The retained page paths exercise slash Create, category switching, published recommendations appearing and disappearing while the shelf stays open, built-in choices while personal templates are pending, portable chat references, document and deck viewers, visibility, title editing, and scoped file imports. The Image clipboard and file-input controls remain separate under the pending case above. A shared deck opens with its owner's attribution; the editing controls appear for the owner. Empty titles, rejected and retried renames, and two IME Enter sequences have direct detail-page coverage.

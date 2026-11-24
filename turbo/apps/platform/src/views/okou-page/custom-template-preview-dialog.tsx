@@ -33,9 +33,7 @@ import {
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
 import { isOfficeFilePreview } from "./office-file-preview.ts";
 import {
-  closeCustomTemplate$,
   openCustomTemplateDetail$,
-  openCustomTemplateKind$,
   openCustomTemplatePageIndex$,
   projectCustomTemplate$,
   selectCustomTemplatePage$,
@@ -232,49 +230,49 @@ function CustomTemplatePreviewBody({
  * A dialog rather than a panel takeover, because a document is read inside
  * someone else's viewer and needs a viewport of its own. A deck follows it
  * there so that opening a template means the same thing either way: the same
- * frame, the same management column, and the same way back to the catalog
- * still listed behind it.
+ * frame, management column, and way back to the recommendations.
  */
 export function CustomTemplatePreviewDialog({
+  open,
   onSelect,
   returnFocus,
   onClose,
+  onCloseComplete,
   children,
 }: {
+  readonly open: boolean;
   readonly onSelect: (template: UserTemplateCatalogEntry) => void;
   readonly returnFocus: (interactionType: string) => HTMLElement | null;
-  readonly onClose?: () => void;
+  readonly onClose: () => void;
+  readonly onCloseComplete: () => void;
   readonly children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const openKind = useGet(openCustomTemplateKind$);
   // Realtime refreshes also revalidate the detail. Retain its loaded preview
   // while the request runs, and apply confirmed metadata separately so saving
   // a name or visibility never has to wait for the viewer's readback.
   const detailLoadable = useLastLoadable(openCustomTemplateDetail$);
   const projectTemplate = useGet(projectCustomTemplate$);
-  const close = useSet(closeCustomTemplate$);
-  const closePreview = () => {
-    close();
-    onClose?.();
-  };
   const detail =
     detailLoadable.state === "hasData" && detailLoadable.data !== null
       ? projectTemplate(detailLoadable.data)
       : null;
   return (
     <Dialog
-      open={openKind !== null}
+      open={open}
       onOpenChange={(next) => {
         if (!next) {
-          closePreview();
+          onClose();
+        }
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) {
+          onCloseComplete();
         }
       }}
     >
       <DialogContent
-        // Direct previews close their parent too; let its dialog restore the
-        // shelf trigger instead of focusing the disappearing picker category.
-        finalFocus={onClose ? undefined : returnFocus}
+        finalFocus={returnFocus}
         aria-describedby={undefined}
         closeLabel={t(($) => {
           return $.artifacts.actions.close;
@@ -296,7 +294,7 @@ export function CustomTemplatePreviewDialog({
               <button
                 type="button"
                 className="inline-flex shrink-0 items-center p-0 leading-none text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={closePreview}
+                onClick={onClose}
               >
                 {t(($) => {
                   return $.templates.detail.back;

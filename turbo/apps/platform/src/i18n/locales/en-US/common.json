@@ -682,15 +682,9 @@
       "updated": "Website URL updated"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} active HTML preview",
-      "all": "All",
       "avatar": "Avatar",
-      "categories": "Template categories",
-      "category": "Template category",
       "fullPreview": "{{title}} website full preview",
       "htmlPreview": "{{title}} HTML preview",
-      "illustration": "Illustration",
-      "illustrationPreview": "{{title}} illustration preview",
       "importDeck": "Import your own deck",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Import your own document",
@@ -701,18 +695,10 @@
       "importImageHint": "Save as a style",
       "multiAccent": "Multi-accent",
       "nextSlide": "Preview next slide",
-      "noMatches": "No matches",
-      "previewCurrentSlide": "Preview {{title}} at current slide",
       "previewSlide": "Preview slide {{slideNumber}}",
-      "previewWebsite": "Preview website template {{title}}",
       "previousSlide": "Preview previous slide",
-      "searchConnector": "Search templates",
-      "searchConnectors": "Search templates",
       "selectStyle": "Select style {{style}}",
       "selectTemplate": "Select template {{title}}",
-      "selectWebsite": "Select website template {{title}}",
-      "selectWorkflow": "Select workflow template {{title}}",
-      "showVariant": "Show variant {{variantNumber}}",
       "singleAccent": "Single-accent",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} slide preview",
@@ -740,15 +726,11 @@
         "terracottaClay": "Clay pot",
         "warmSand": "Morning paper"
       },
-      "tryDifferentSearch": "Try a different search.",
-      "use": "Use",
       "useThisTemplate": "Use this template",
       "visibility": {
         "changeLabel": "Change template visibility"
       },
       "website": "Website",
-      "websitePreview": "{{title}} website template preview",
-      "workflow": "Workflow",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Create a workflow that runs when a Gmail label is applied and handles the labeled inbox item.",
@@ -1929,8 +1911,6 @@
       "add": "Add",
       "configureModel": "Configure model",
       "create": {
-        "addStyle": "Add style",
-        "addTemplate": "Add template",
         "documentPlaceholder": "What would you like to include in your document?",
         "imagePlaceholder": "Describe the image you want to create…",
         "presentationPlaceholder": "What is your presentation about?",
@@ -1970,11 +1950,9 @@
         "scheduleHint": "Run this on a schedule",
         "share": "Share chat",
         "shareHint": "Share a link to this chat",
-        "templates": "Templates",
         "unpin": "Unpin chat"
       },
       "slashPanel": {
-        "browseAll": "Browse all templates",
         "hint": "choose an action",
         "useTemplate": "Use template {{title}}"
       },
@@ -2642,7 +2620,6 @@
         "website": "Website",
         "workflow": "Workflow"
       },
-      "viewAll": "View all",
       "visualization": {
         "allCharts": "All charts",
         "back": "Back to visualization options",
@@ -2824,8 +2801,6 @@
         "workflow": "Workflow"
       },
       "previewTemplate": "Preview template {{title}}",
-      "previewWebsite": "Preview website template {{title}}",
-      "previewWorkflow": "Preview workflow template {{title}}",
       "removeTemplate": "Remove template {{title}}",
       "removeWebsite": "Remove website template {{title}}",
       "removeWorkflow": "Remove workflow template {{title}}"
@@ -3916,7 +3891,6 @@
         "overview": "Seller and client details"
       }
     },
-    "filter": "Document category",
     "formats": {
       "pdf": "PDF",
       "word": "Word document"
@@ -3926,10 +3900,8 @@
     "nextPage": "Next sample page",
     "openLarger": "Open larger preview",
     "page": "Page {{page}}",
-    "preview": "Preview {{title}}",
     "previousPage": "Previous sample page",
-    "title": "Document",
-    "useNamed": "Use {{title}}"
+    "title": "Document"
   },
   "featureGuide": {
     "close": "Close feature guide",
@@ -6564,11 +6536,8 @@
   "templates": {
     "actions": {
       "delete": "Delete",
-      "menu": "Actions for {{title}}",
-      "preview": "Preview {{title}}",
       "rename": "Rename template"
     },
-    "builtIn": "Built-in",
     "custom": "Custom",
     "delete": {
       "cancel": "Cancel",
@@ -6583,11 +6552,6 @@
       "page": "Page {{number}}"
     },
     "loadFailed": "Couldn't load templates.",
-    "rename": {
-      "action": "Rename",
-      "cancel": "Cancel",
-      "save": "Save"
-    },
     "renameFailed": "Couldn't rename the template.",
     "sharedBy": "Shared by {{owner}}",
     "sharedByMember": "Shared by an organization member",

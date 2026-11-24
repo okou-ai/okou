@@ -10,7 +10,12 @@ import {
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
-async function openMenu(draft: string, actions: boolean, total = 2) {
+async function openMenu(
+  draft: string,
+  actions: boolean,
+  total = 2,
+  description?: string,
+) {
   const names =
     total === 2
       ? ["axiom-red", "axiom-status"]
@@ -25,7 +30,8 @@ async function openMenu(draft: string, actions: boolean, total = 2) {
           id: "aaaa1000-0000-4000-8000-" + String(i + 1).padStart(12, "0"),
           name,
           displayName: null,
-          description: "Workflow for " + name,
+          description:
+            i === 0 && description ? description : "Workflow for " + name,
         };
       }),
     );
@@ -56,18 +62,21 @@ async function pointer(name: string) {
   fireEvent.mouseMove(button);
   return button;
 }
-test.each([
-  ["chat-composer-slash-panel-001", "Draft /网站", "Website"],
-  ["chat-composer-slash-panel-008", "Draft /", "Presentation"],
-] as const)(
-  "%s Browse opens the picker from %s and removes only its slash token",
-  async (_id, draft, tab) => {
-    const editor = await openMenu(draft, false);
-    click(await findFastControl("button", "Browse all templates"));
-    const dialog = await screen.findByRole("dialog");
-    await expect(findFastControl("tab", tab, dialog)).resolves.toBeVisible();
-    expect(editor).toHaveTextContent(/^Draft\s*$/);
-    expect(queryFastControl("button", "Browse all templates")).toBeNull();
+test.each(["网站", "ウェブサイト", "cafe\u0301"])(
+  "A slash query matches %s in a workflow description and keeps the preceding draft",
+  async (query) => {
+    const editor = await openMenu(
+      "Draft /" + query,
+      false,
+      2,
+      "Track " + query,
+    );
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    click(await findFastControl("button", /\/axiom-red/, menu));
+    await waitFor(() => {
+      expect(editor).toHaveTextContent("Draft /axiom-red");
+    });
+    expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
   },
 );
 test.each([
@@ -107,17 +116,6 @@ test("chat-composer-slash-actions-003 Hovering Workflows exposes creation and ma
     expect(editor).toHaveTextContent("Draft /axiom-status");
   });
   expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
-});
-test("chat-composer-slash-actions-005 The Templates flyout opens the Presentation catalog", async () => {
-  await openMenu("Draft /", true);
-  await pointer("Templates");
-  const pane = await screen.findByRole("region", { name: "Templates" });
-  expect(within(pane).getByText("Presentation")).toBeVisible();
-  click(await findFastControl("button", "Browse all templates", pane));
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Presentation", dialog),
-  ).resolves.toBeVisible();
 });
 test("chat-composer-slash-actions-008 Choosing Every weekday puts the cadence in the editable automation request", async () => {
   const editor = await openMenu("Draft /", true);

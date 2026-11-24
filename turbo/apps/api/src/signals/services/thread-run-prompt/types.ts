@@ -16,7 +16,6 @@ export type PickedThreadInputEvent = Readonly<
     | "id"
     | "chatThreadId"
     | "createdAt"
-    | "seqId"
     | "eventType"
     | "contextType"
     | "contextId"

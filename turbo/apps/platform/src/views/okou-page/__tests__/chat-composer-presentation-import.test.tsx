@@ -32,6 +32,7 @@ async function importDeck(file: File) {
   const input = await screen.findByLabelText("Import your own deck", {
     selector: "input",
   });
+  expect(input).toHaveAttribute("accept", ".pptx,.ppt,.pdf");
   await userEvent.upload(input, file);
 }
 test("chat-composer-presentation-import-001 importing a deck replaces the existing chat's template with a reusable-template request", async () => {

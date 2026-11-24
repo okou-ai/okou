@@ -6,13 +6,9 @@ import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createTemplateGalleryHelpers,
-  openTemplatePicker,
   sendComposerMessage,
 } from "./chat-composer-template-gallery-test-helpers.ts";
-import {
-  findFastControl,
-  queryFastControl,
-} from "./chat-message-experience-test-helpers.ts";
+import { findFastControl } from "./chat-message-experience-test-helpers.ts";
 const context = testContext();
 function preferences(beforeSave?: () => Promise<void>) {
   let disabled = true;
@@ -34,18 +30,15 @@ function preferences(beforeSave?: () => Promise<void>) {
 test("paid-media-creation-004 the disabled image category leaves Website templates available", async () => {
   preferences();
   await setupPage({ context, path: "/" });
-  const menu = await openTemplatePicker(userEvent.setup(), "Image");
-  await within(menu).findByText("Image generation is off for you");
-  click(await findFastControl("tab", "Website", menu));
+  click(await findFastControl("button", "Image"));
+  await screen.findByText("Image generation is off for you");
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  click(await within(types).findByText("Website"));
+  const shelf = await screen.findByRole("group", { name: "Website templates" });
+  expect(screen.queryByText("Image generation is off for you")).toBeNull();
   await expect(
-    findFastControl("tab", "Website", menu),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  await waitFor(() => {
-    expect(within(menu).queryByText(/is off for you/)).toBeNull();
-    expect(
-      queryFastControl("button", "Select website template Coastal Hotel", menu),
-    ).toBeEnabled();
-  });
+    findFastControl("button", /^Use template /, shelf),
+  ).resolves.toBeEnabled();
 });
 
 test("An image prompt reaches the new conversation after the disabled tool is enabled in settings", async () => {
@@ -81,11 +74,10 @@ test("An image prompt reaches the new conversation after the disabled tool is en
   await expect(
     findFastControl("button", "Remove Image"),
   ).resolves.toBeEnabled();
-  click(await findFastControl("button", "Add"));
-  click(await screen.findByText("Add style"));
-  const gallery = await screen.findByRole("dialog");
-  await within(gallery).findAllByLabelText(/^Select template /);
-  await user.keyboard("{Escape}");
+  const shelf = await screen.findByRole("group", { name: "Image styles" });
+  await expect(
+    findFastControl("button", /^Use template /, shelf),
+  ).resolves.toBeEnabled();
   expect(screen.queryByText("Image generation is off for you")).toBeNull();
   const prompt = "Illustrate an observatory under a violet sky.";
   await sendComposerMessage(user, prompt);

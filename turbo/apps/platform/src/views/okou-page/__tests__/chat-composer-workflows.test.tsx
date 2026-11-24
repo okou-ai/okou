@@ -176,7 +176,7 @@ test("chat-composer-workflows-003 a reopened pending lookup resolves and its wor
   });
 });
 
-test("chat-composer-workflows-007 selecting GitHub PR summarizer sends the same workflow reference shown inline", async () => {
+test("chat-composer-workflows-007 selecting Morning brief sends the same workflow reference shown inline", async () => {
   const sent = context.mocks.deferred<UserMessageDocument | undefined>();
   createChatRunFixtures(context).installRunChat({
     onSendRequest: (b) => {
@@ -186,44 +186,31 @@ test("chat-composer-workflows-007 selecting GitHub PR summarizer sends the same 
   await setupPage({ context, path: "/" });
   await screen.findByLabelText("Message");
   click(await findAction("button", "Advanced workflows"));
-  click(await findAction("button", "View all"));
-  const dialog = await screen.findByRole("dialog");
-  const input = dialog.querySelector("input");
-  if (!input) {
-    throw new Error("Missing template search");
-  }
-  await fill(input, "GitHub PR summarizer");
-  click(
-    await findAction(
-      "button",
-      "Select workflow template GitHub PR summarizer",
-      dialog,
-    ),
-  );
+  click(await screen.findByText("Start your day with a clear plan"));
   const editor = await screen.findByLabelText("Message");
   await waitFor(() => {
-    return expect(editor).toHaveTextContent("GitHub PR summarizer");
+    return expect(editor).toHaveTextContent("Morning brief");
   });
   click(await findAction("button", "Send"));
   expect((await sent.promise)?.parts).toContainEqual(
     expect.objectContaining({
       type: "template",
-      titleSnapshot: "GitHub PR summarizer",
+      titleSnapshot: "Morning brief",
       template: {
         type: "workflow",
         selection: {
-          workflowTemplateId: "workflow-template:github-pr-summarizer",
+          workflowTemplateId: "workflow-template:morning-brief",
         },
       },
     }),
   );
-  const title = await screen.findByText("GitHub PR summarizer", {
+  const title = await screen.findByText("Morning brief", {
     selector: '[data-role="user"] [data-structured-template-reference] *',
   });
   expect(title).toBeVisible();
   expect(
     title.closest("[data-structured-template-reference]"),
-  ).toHaveAccessibleDescription("Workflow · GitHub PR summarizer");
+  ).toHaveAccessibleDescription("Workflow · Morning brief");
 });
 
 test("chat-composer-workflows-009 an unfinished file upload holds the selected presentation draft", async () => {

@@ -1,3 +1,4 @@
+import { findAction } from "./connector-integrations-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   type UserTemplateCatalogEntry,
@@ -72,7 +73,7 @@ test.each([
     id: "002",
     path: agentChat,
     kind: "illustration",
-    category: "Illustration",
+    category: "Image",
     builtin: "Cozy Parlor",
     brief: "Illustrate a neighborhood map",
   },
@@ -85,7 +86,7 @@ test.each([
     brief: "Write the studio proposal",
   },
 ] as const)(
-  "chat-composer-slash-custom-templates-$id sends the author's $category selection from the Templates menu",
+  "chat-composer-slash-custom-templates-$id sends the author's $category selection through slash Create",
   async ({ path, kind, category, brief, builtin }) => {
     context.mocks.browser.matchMedia(true);
     const own = published(kind, `My ${category} design`, true);
@@ -95,8 +96,9 @@ test.each([
       "Other department sample",
       false,
     );
+    let available = [unrelated, shared];
     context.mocks.api(userTemplatesContract.list, ({ respond }) => {
-      return respond(200, [unrelated, shared, own]);
+      return respond(200, available);
     });
     const chat = createTemplateGalleryHelpers(context).mockTemplateChat();
     await setupPage({
@@ -105,22 +107,24 @@ test.each([
       featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
     });
     const editor = await findComposerEditor();
-    await fill(editor, brief);
-    await userEvent.paste(" /");
-    await userEvent.hover(
-      await screen.findByText("Templates", { selector: "button span" }),
-    );
-    const menu = await screen.findByRole("region", { name: "Templates" });
-    const choices = within(menu);
-    click(choices.getByText(category, { selector: "button" }));
-    const select = await choices.findByLabelText(`Use template ${own.title}`);
-    expect(
-      choices.getByLabelText(`Use template ${shared.title}`),
-    ).toBeEnabled();
-    expect(choices.getByLabelText(`Use template ${builtin}`)).toBeEnabled();
-    expect(
-      choices.queryByLabelText(`Use template ${unrelated.title}`),
-    ).not.toBeInTheDocument();
+    await fill(editor, brief + " /create");
+    const menu = await screen.findByTestId("slash-workflow-menu");
+    click(await within(menu).findByText("Create", { exact: true }));
+    const types = await screen.findByRole("radiogroup", { name: "Create" });
+    click(await within(types).findByText(category));
+    const shelf = await screen.findByRole("group", {
+      name: category === "Image" ? "Image styles" : category + " templates",
+    });
+    const choices = within(shelf);
+    await choices.findByText(shared.title);
+    expect(choices.queryByText(own.title)).toBeNull();
+    available = [unrelated, own];
+    context.mocks.ably.trigger("presentationTemplatesChanged");
+    await choices.findByText(own.title);
+    expect(choices.queryByText(shared.title)).toBeNull();
+    expect(choices.getByText(builtin)).toBeVisible();
+    expect(choices.queryByText(unrelated.title)).toBeNull();
+    const select = await findAction("button", own.title, shelf);
     // The illustration option displays a published example; the composer chip uses its cover.
     const target =
       kind === "illustration"

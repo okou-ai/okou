@@ -1,4 +1,4 @@
-import { fireEvent, screen, within, waitFor } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -30,7 +30,7 @@ test("chat-composer-slash-panel-013 Workflows lead the desktop list above the co
       return s.startsWith([...names].reverse()[i]!);
     }),
   ).toStrictEqual([true, true, true, true]);
-  expect(rows.at(-1)).toBe("Browse all templates");
+  expect(rows).toHaveLength(7);
   expect(panel.closest("[data-side]")).toHaveAttribute("data-side", "top");
   move(editor, "ArrowUp");
   expect(active(panel)).toHaveTextContent("Find people");
@@ -75,32 +75,18 @@ test("chat-composer-slash-panel-024 Website stays selected as the pointer moves 
   const path = "/chats/b0000000-0000-4000-a000-000000000900";
   const { panel, editor } = await slashMenu(context, { actions: true });
   expect(location.pathname).toBe(path.split("?")[0]);
-  const templates = await within(panel).findByText("Templates", {
-    exact: true,
-  });
-  fireEvent.mouseMove(templates);
-  const website = await waitFor(() => {
-    const el = within(panel).queryByText("Website", { exact: true });
-    if (!el) {
-      throw new Error("Template actions: " + labels(panel).join(" | "));
-    }
-    return el;
-  });
-  fireEvent.mouseMove(website);
-  const cover = await waitFor(() => {
-    const b = panel.querySelector<HTMLButtonElement>(
-      '[data-slot="slash-template-cover"]',
-    );
-    expect(b).toBeVisible();
-    return b!;
-  });
-  const title = cover
-    .getAttribute("aria-label")!
-    .replace(/^Use (?:template )?/i, "");
-  fireEvent.mouseLeave(website, { relatedTarget: cover });
-  fireEvent.mouseEnter(cover, { relatedTarget: website });
+  click(await within(panel).findByText("Create", { exact: true }));
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  const website = within(types).getByText("Website");
+  click(website);
+  const shelf = await screen.findByRole("group", { name: "Website templates" });
+  const cover = (await within(shelf).findAllByLabelText(/^Use template /))[0]!;
+  const title = cover.getAttribute("aria-label")!.replace(/^Use template /, "");
   fireEvent.mouseMove(cover);
-  expect(website.closest("button")).toHaveAttribute("aria-pressed", "true");
+  expect(website.closest('[role="radio"]')).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
   click(cover);
   await closed(panel);
   expect(composerInlineTemplates()).toHaveLength(1);
@@ -124,7 +110,7 @@ test("chat-composer-slash-panel-011 Mobile keyboard selection follows the visibl
       return "/" + name + " Inspect " + name;
     }),
   );
-  expect(rows.at(-1)).toBe("Browse all templates");
+  expect(rows).toHaveLength(7);
   moveTo(editor, panel, "/axiom-traces");
   expect(active(panel)).toHaveTextContent("/axiom-traces");
   move(editor, "ArrowUp");

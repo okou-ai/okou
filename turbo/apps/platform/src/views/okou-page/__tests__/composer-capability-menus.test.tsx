@@ -1,6 +1,6 @@
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -130,20 +130,13 @@ test("The add menu opens each home capability and restores its own trigger only 
   ).toStrictEqual([
     "Attach",
     "Project",
-    "Template",
     "Find people",
     "Research",
     "Create",
     "Workflow",
     "Import skills",
   ]);
-  const template = queryAllByRoleFast("menuitem", menu).find((item) => {
-    return item.textContent?.trim() === "Template";
-  });
-  click(template as HTMLElement);
-  await expect(findPopup("dialog", "Template")).resolves.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
-  await expectComposerFocusedWithDraft();
 
   for (const name of ["Find people", "Research"]) {
     await chooseAddItem(name);
@@ -221,7 +214,6 @@ test("Slash capabilities preserve the draft with SlashActions=false and desktop=
       "Create",
       "Research",
       "Find people",
-      "Browse all templates",
     ]);
   });
 
@@ -254,67 +246,6 @@ test("Slash capabilities preserve the draft with SlashActions=false and desktop=
     expect(editor.textContent?.trim()).toBe(DRAFT);
     expect(window.location.pathname).toBe(`/chats/${THREAD_ID}`);
   }
-});
-
-test("The Templates browser preserves the draft when opening its picker", async () => {
-  useDesktopLayout();
-  mockTemplateChat();
-  await setupPage({
-    context,
-    path: "/",
-    featureSwitches: { [FeatureSwitchKey.SlashActions]: true },
-  });
-  await typeDraft(`${DRAFT} `);
-  const user = userEvent.setup({ delay: null });
-  await user.keyboard("/");
-  const templates = await waitFor(() => {
-    const found = slashMenuItems().find((item) => {
-      return item.textContent?.startsWith("Templates");
-    });
-    if (!found) {
-      throw new Error("Expected the Templates slash entry");
-    }
-    return found;
-  });
-
-  // Pointing at the entry opens its templates beside the menu.
-  fireEvent.mouseMove(templates);
-  const flyout = await waitFor(() => {
-    const found = document.querySelector<HTMLElement>(
-      '[data-slot="slash-flyout"]',
-    );
-    if (!found) {
-      throw new Error("Expected the templates flyout");
-    }
-    return found;
-  });
-  const category = (name: string): HTMLElement | undefined => {
-    return queryAllByRoleFast("button", flyout).find((button) => {
-      return button.textContent?.startsWith(name);
-    });
-  };
-  click(category("Website") as HTMLElement);
-  await waitFor(() => {
-    expect(category("Website")).toHaveAttribute("aria-pressed", "true");
-  });
-
-  const browse = queryAllByRoleFast("button", flyout).find((button) => {
-    return button.textContent?.trim() === "Browse all templates";
-  });
-  click(browse as HTMLElement);
-
-  const picker = await findPopup("dialog", "Template");
-  const selected = queryAllByRoleFast("tab", picker)
-    .filter((tab) => {
-      return tab.getAttribute("aria-selected") === "true";
-    })
-    .map((tab) => {
-      return tab.textContent?.trim();
-    });
-  expect(selected).toStrictEqual(["Presentation"]);
-  const editor = await findComposerEditor();
-  expect(editor.textContent?.trim()).toBe(DRAFT);
-  expect(editor.textContent).not.toContain("/");
 });
 
 test("A successful send dismisses menu discovery in an existing conversation", async () => {

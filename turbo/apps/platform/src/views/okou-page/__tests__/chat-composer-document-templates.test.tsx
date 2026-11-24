@@ -1,12 +1,12 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { getNamedButton } from "./chat-attachment-test-helpers.ts";
-import { clickComposerAddMenuItem } from "./chat-composer-add-menu-test-helpers.ts";
-import { findComposerEditor, tabByText } from "./chat-composer-test-helpers.ts";
+import { findComposerEditor } from "./chat-composer-test-helpers.ts";
 import {
+  openTemplateRecommendations,
   createTemplateGalleryHelpers,
   expectInlineTemplate,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -23,50 +23,14 @@ async function draft(text: string, path = "/") {
 }
 
 async function documentPicker() {
-  await clickComposerAddMenuItem("Template");
-  const picker = await screen.findByRole("dialog");
-  click(tabByText("Document"));
-  return within(picker);
+  return within(await openTemplateRecommendations("Document"));
 }
-
-test("chat-composer-document-templates-001 returns from an invoice preview to the same place in the filtered catalog", async () => {
-  const brief = "Prepare the invoice for my client.";
-  const { editor } = await draft(brief);
-  const picker = await documentPicker();
-  click(picker.getByText("Invoice", { selector: "button" }));
-  const preview = picker.getByLabelText("Preview Simple invoice");
-  const scrollArea = preview.closest<HTMLElement>(
-    "[data-document-template-grid-scroll]",
-  )!;
-  fireEvent.scroll(scrollArea, { target: { scrollTop: 120 } });
-  click(preview);
-  await expect(
-    picker.findByText("Open larger preview"),
-  ).resolves.toBeInTheDocument();
-  await userEvent.keyboard("{Escape}");
-
-  const returned = await picker.findByLabelText("Preview Simple invoice");
-  await waitFor(() => {
-    expect(returned).toHaveFocus();
-  });
-  expect(tabByText("Document")).toHaveAttribute("aria-selected", "true");
-  expect(picker.getByText("Invoice", { selector: "button" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(picker.getAllByLabelText(/^Preview /)).toHaveLength(7);
-  expect(
-    returned.closest("[data-document-template-grid-scroll]"),
-  ).toHaveProperty("scrollTop", 120);
-  expect(within(editor).getByText(brief, { exact: true })).toBeInTheDocument();
-  expect(document.querySelector("[data-role='user']")).not.toBeInTheDocument();
-});
 
 test("chat-composer-document-templates-002 sends Sidebar report with the existing brief only after submission", async () => {
   const brief = "Explain this proposal to my client.";
   const { chat, editor } = await draft(brief);
   const picker = await documentPicker();
-  click(picker.getByLabelText("Use Sidebar report"));
+  click(picker.getByLabelText("Use template Sidebar report"));
   await expectInlineTemplate("Sidebar report");
   expect(within(editor).getByText(brief, { exact: true })).toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -105,13 +69,12 @@ async function openDocumentTray() {
   return editor;
 }
 
-test("chat-composer-document-templates-004 browses Document by keyboard and returns to its draft", async () => {
+test("chat-composer-document-templates-004 opens the document recommendation preview by keyboard and returns to its draft", async () => {
   const editor = await openDocumentTray();
-  const browse = await screen.findByText("View all", { selector: "button" });
-  browse.focus();
+  const eye = await screen.findByLabelText("Preview template Itemized invoice");
+  eye.focus();
   await userEvent.keyboard("{Enter}");
   await screen.findByRole("dialog");
-  expect(tabByText("Document")).toHaveAttribute("aria-selected", "true");
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();

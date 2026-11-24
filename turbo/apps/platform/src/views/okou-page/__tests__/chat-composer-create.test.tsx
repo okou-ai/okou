@@ -1,6 +1,7 @@
+import { openTemplateRecommendations } from "./chat-composer-template-gallery-test-helpers.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -96,41 +97,24 @@ async function openImageStyles(draft?: string) {
   if (draft) {
     await fill(editor, draft);
   }
-  await mode("Image");
-  click(await findFastControl("button", "Add"));
-  click(await screen.findByText("Add style"));
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Image", dialog),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  return { dialog, editor };
+  const shelf = await openTemplateRecommendations("Image");
+  return { shelf, editor };
 }
 
-test("chat-composer-create-008 Add style opens the Image catalog", async () => {
-  const { dialog } = await openImageStyles();
-  await expect(
-    findFastControl("tab", "Image", dialog),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-});
 test("chat-composer-create-003 selecting an image template preserves the existing prompt, mode and model", async () => {
-  const { dialog, editor } = await openImageStyles("Our launch");
-  const first = within(dialog).getAllByLabelText(/^Select template /)[0]!;
-  const title = first
-    .getAttribute("aria-label")!
-    .slice("Select template ".length);
-  click(first);
-  await waitFor(() => {
-    return expect(dialog).not.toBeInTheDocument();
-  });
+  const { shelf, editor } = await openImageStyles("Our launch");
+  const title = ILLUSTRATION_TEMPLATE_ITEMS[0]!.title;
+  click(await findFastControl("button", "Use template " + title, shelf));
+  await within(editor).findByText(title);
   expect(composerInlineTemplates()).toHaveLength(1);
   expect(composerInlineTemplates()[0]).toHaveTextContent(title);
   expect(editor).toHaveTextContent("Our launch");
   await findFastControl("button", "Remove Image");
   await composerModelTrigger("Claude Fable 5.1");
 });
-test("chat-composer-create-005 changing the first saved image style preserves both references and intervening text on send", async () => {
+test("chat-composer-create-005 the saved image styles retain both references and intervening text on send", async () => {
   const thread = continuityThread(778, 1, "Style planning");
-  const [old, next, last] = ILLUSTRATION_TEMPLATE_ITEMS;
+  const [old, , last] = ILLUSTRATION_TEMPLATE_ITEMS;
   const template = (item: typeof old) => {
     return {
       type: "template" as const,
@@ -163,9 +147,6 @@ test("chat-composer-create-005 changing the first saved image style preserves bo
   const editor = await findComposerEditor();
   await within(editor).findByText(old!.title);
   await mode("Image");
-  click(within(editor).getByText(old!.title));
-  const dialog = await screen.findByRole("dialog");
-  click(await within(dialog).findByLabelText("Select template " + next!.title));
   click(await findFastControl("button", "Send"));
   await expect(sent.promise).resolves.toMatchObject({
     parts: expect.arrayContaining([
@@ -176,13 +157,12 @@ test("chat-composer-create-005 changing the first saved image style preserves bo
     ]),
   });
   const msg = JSON.stringify(await sent.promise);
-  expect(msg.indexOf(next!.title)).toBeGreaterThan(-1);
-  expect(msg.indexOf("Our launch")).toBeGreaterThan(msg.indexOf(next!.title));
+  expect(msg.indexOf(old!.title)).toBeGreaterThan(-1);
+  expect(msg.indexOf("Our launch")).toBeGreaterThan(msg.indexOf(old!.title));
   expect(msg.indexOf(last!.title)).toBeGreaterThan(msg.indexOf("Our launch"));
   expect(msg.indexOf("for the cover")).toBeGreaterThan(
     msg.indexOf(last!.title),
   );
-  expect(msg).not.toContain(old!.title);
 });
 test("chat-composer-create-009 leaving Presentation mode sends the edited ordinary draft with its template", async () => {
   const thread = continuityThread(779, 1, "Normal draft");
@@ -256,16 +236,8 @@ test("chat-composer-create-002 queuing a presentation keeps the member's typed i
   });
   await screen.findByText("Review the initial outline");
   const editor = await findComposerEditor();
-  await userEvent.click(editor);
-  await userEvent.keyboard("/");
-  const slash = await screen.findByTestId("slash-workflow-menu");
-  await userEvent.hover(
-    await within(slash).findByText("Templates", { exact: true }),
-  );
-  const slides = await findFastControl("button", /^Presentation\b/, slash);
-  await userEvent.hover(slides);
-  const cover = await findFastControl("button", /^Use (?:template )?./i, slash);
-  click(cover);
+  const shelf = await openTemplateRecommendations("Presentation");
+  click(await within(shelf).findByText("Paper magazine"));
   await findFastControl("button", "Remove Presentation");
   await fill(editor, text);
   click(await screen.findByLabelText("Slide count"));

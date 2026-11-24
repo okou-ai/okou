@@ -22,6 +22,7 @@ final class NativeAuthFlowTests: XCTestCase {
     flow.email = "member@example.invalid"
     await flow.startEmail()?.value
     XCTAssertNil(flow.error)
+    XCTAssertFalse(flow.canUsePassword)
     XCTAssertNil(clerk.session)
     XCTAssertEqual(completions, 0)
 
@@ -37,6 +38,34 @@ final class NativeAuthFlowTests: XCTestCase {
     XCTAssertEqual(clerk.session?.user?.id, "user_native_auth")
     XCTAssertEqual(completions, 1)
     XCTAssertEqual(server.requests.withLock { $0.first?["identifier"] }, "member@example.invalid")
+  }
+
+  func testExistingAccountCanSwitchFromAnEmailCodeAndSignInWithItsPassword() async throws {
+    let fixture = try AuthenticationHTTPFixture()
+    addTeardownBlock { await fixture.close() }
+    let authentication = try await fixture.authentication()
+    let clerk = try XCTUnwrap(authentication.clerk)
+    try await clerk.auth.signOut()
+    let server = NativeAuthIdentityFixture(supportsPassword: true)
+    fixture.identityOverride.withLock { $0 = { try server.response($0) } }
+    let flow = NativeAuthFlow(clerk: clerk) {}
+    addTeardownBlock { @MainActor in flow.cancel() }
+    flow.email = "member@example.invalid"
+    await flow.startEmail()?.value
+    XCTAssertTrue(flow.canUsePassword)
+
+    flow.code = "000000"
+    await flow.verify()?.value
+    XCTAssertNotNil(flow.error)
+    flow.usePassword()
+    XCTAssertEqual(flow.step, .password)
+    XCTAssertTrue(flow.code.isEmpty)
+    XCTAssertNil(flow.error)
+
+    flow.password = "synthetic-test-password"
+    await flow.submitPassword()?.value
+    XCTAssertNil(flow.error)
+    XCTAssertEqual(clerk.session?.user?.id, "user_native_auth")
   }
 
   func testSecondFactorRequirementNeverActivatesOrCompletesTheAccount() async throws {
@@ -98,6 +127,7 @@ final class NativeAuthFlowTests: XCTestCase {
     XCTAssertFalse(completed)
     XCTAssertNil(clerk.session)
     XCTAssertTrue(flow.password.isEmpty)
+    XCTAssertFalse(flow.canUsePassword)
     XCTAssertEqual(clerk.client?.signUp?.unverifiedFields, [.emailAddress])
   }
 }
@@ -106,8 +136,12 @@ final class NativeAuthFlowTests: XCTestCase {
 private final class NativeAuthIdentityFixture: Sendable {
   let requests = Mutex<[[String: String]]>([])
   private let requiresMFA: Bool
+  private let supportsPassword: Bool
 
-  init(requiresMFA: Bool = false) { self.requiresMFA = requiresMFA }
+  init(requiresMFA: Bool = false, supportsPassword: Bool = false) {
+    self.requiresMFA = requiresMFA
+    self.supportsPassword = supportsPassword
+  }
 
   func response(_ request: URLRequest) throws -> ChatHTTPResponse? {
     let path = request.url!.path
@@ -138,8 +172,14 @@ private final class NativeAuthIdentityFixture: Sendable {
       id: "sia_native_auth", status: .needsFirstFactor,
       supportedFirstFactors: [.init(strategy: .emailCode, emailAddressId: "idn_native_email")],
       firstFactorVerification: .init(status: .unverified, strategy: .emailCode))
+    if supportsPassword {
+      signIn.supportedFirstFactors?.append(.init(strategy: .password))
+    }
     if path.hasSuffix("/attempt_first_factor") {
-      if parameters["code"] != "123456" {
+      let validPassword =
+        supportsPassword && parameters["strategy"] == "password"
+        && parameters["password"] == "synthetic-test-password"
+      if parameters["code"] != "123456" && !validPassword {
         return ChatHTTPResponse(
           status: 422,
           body:

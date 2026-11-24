@@ -18,8 +18,11 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -57,6 +60,8 @@ class AssistantRecoveryModel(
     private val authorized: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    retryWhenActive: Flow<Boolean> = emptyFlow(),
+    private val online: () -> Boolean = { true },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(FailureRecoveryState())
     val uiState = mutable.asStateFlow()
@@ -73,6 +78,11 @@ class AssistantRecoveryModel(
             history.uiState.collect {
                 val selected = selection()
                 if (mutable.value.selection != selected) refresh()
+            }
+        }
+        viewModelScope.launch {
+            retryWhenActive.distinctUntilChanged().collect { active ->
+                if (active && mutable.value.phase == ChatReadPhase.Failed) refresh()
             }
         }
     }
@@ -107,7 +117,11 @@ class AssistantRecoveryModel(
             try {
                 val checkpoint =
                     history.checkpoint(selected.threadId) ?: throw RecoveryUnavailable()
-                val data = resources(selected, checkpoint)
+                val data =
+                    ChatDependencyRetry().read(online = online) {
+                        requireCurrent(selected, ticket)
+                        resources(selected, checkpoint)
+                    }
                 requireCurrent(selected)
                 if (ticket == revision)
                     mutable.value = FailureRecoveryState(selected, ChatReadPhase.Ready, data)

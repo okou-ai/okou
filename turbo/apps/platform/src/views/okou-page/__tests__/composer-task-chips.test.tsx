@@ -78,17 +78,15 @@ test("composer-task-chips-002 a launch deck keeps its 16–20 slide setting on t
     screen.findByRole("combobox", { name: "Slide count" }),
   ).resolves.toHaveTextContent(/16.20/);
 });
-test("composer-task-chips-007 choosing an image from the catalog replaces Presentation and sends the image template", async () => {
+test("composer-task-chips-007 choosing an image recommendation replaces Presentation and sends the image template", async () => {
   const { editor, sent } = await home();
   await press("Presentation");
   await fill(editor, draft);
-  await press("View all");
-  const dialog = await screen.findByRole("dialog");
-  click(await findFastControl("tab", "Image", dialog));
-  const pick = await findFastControl("button", /^Select template /i, dialog);
-  const title = pick
-    .getAttribute("aria-label")!
-    .replace(/^Select template /i, "");
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  click(await within(types).findByText("Image"));
+  const shelf = await screen.findByRole("group", { name: "Image styles" });
+  const pick = await findFastControl("button", /^Use template /i, shelf);
+  const title = pick.getAttribute("aria-label")!.replace(/^Use template /i, "");
   click(pick);
   await expectInlineTemplateInComposer(title);
   expect(editor).toHaveTextContent(draft);
@@ -107,21 +105,6 @@ test("composer-task-chips-007 choosing an image from the catalog replaces Presen
     );
   });
 });
-test("composer-task-chips-011 opening and closing the presentation catalog preserves the draft", async () => {
-  const { editor } = await home();
-  await press("Presentation");
-  await fill(editor, draft);
-  await press("View all");
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Presentation", dialog),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-  expect(editor.textContent).toBe(draft);
-});
 test("composer-task-chips-012 Website presents the full recommendation shelf and attaches the chosen template", async () => {
   const { editor } = await home();
   await press("Website");
@@ -131,7 +114,6 @@ test("composer-task-chips-012 Website presents the full recommendation shelf and
     return /^Use template /i.test(button.getAttribute("aria-label") ?? "");
   });
   expect(choices.length).toBeGreaterThan(5);
-  await findFastControl("button", "View all");
   const choice = choices[4]!;
   const title = choice
     .getAttribute("aria-label")!
@@ -154,23 +136,6 @@ test("composer-task-chips-015 Advanced workflows keeps nine ordered recommendati
   await fill(editor, draft);
   expect(editor.textContent).toBe(draft);
   expect(location.pathname).toBe("/");
-  expect(sent.runPrompts).toStrictEqual([]);
-});
-test("composer-task-chips-017 viewing all workflows opens their catalog and preserves the unsent draft", async () => {
-  const { editor, sent } = await home();
-  await workflows();
-  await fill(editor, draft);
-  await press("View all");
-  const dialog = await screen.findByRole("dialog");
-  await expect(
-    findFastControl("tab", "Workflow", dialog),
-  ).resolves.toHaveAttribute("aria-selected", "true");
-  await within(dialog).findByText("Morning brief");
-  await userEvent.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(dialog).not.toBeInTheDocument();
-  });
-  expect(editor.textContent).toBe(draft);
   expect(sent.runPrompts).toStrictEqual([]);
 });
 test("composer-task-chips-018 editing the prepared morning brief keeps focus, the draft and the workflow identity", async () => {
@@ -264,17 +229,12 @@ test.each(["keep", "remove"] as const)(
   async (style) => {
     const { editor, sent } = await draftWithBrief();
     await press("Image");
-    await press("View all");
-    const gallery = await screen.findByRole("dialog");
-    const template = await findFastControl(
-      "button",
-      /^Select template /i,
-      gallery,
-    );
+    const shelf = await screen.findByRole("group", { name: "Image styles" });
+    const template = await findFastControl("button", /^Use template /i, shelf);
     click(template);
     const title = template
       .getAttribute("aria-label")!
-      .replace(/^Select template /i, "");
+      .replace(/^Use template /i, "");
     await expectInlineTemplateInComposer(title);
     await press("Remove Image");
     await press("Presentation");

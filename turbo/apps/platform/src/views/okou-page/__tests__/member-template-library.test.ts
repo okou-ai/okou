@@ -19,7 +19,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createTemplateGalleryHelpers,
   THREAD_ID,
-  openTemplatePicker,
+  openTemplateRecommendations,
   expectInlineTemplate,
   sendComposerMessage,
 } from "./chat-composer-template-gallery-test-helpers.ts";
@@ -58,7 +58,7 @@ async function library(
   category: Category,
   options: {
     entries?: UserTemplateCatalogEntry[];
-    fail?: "list" | "edit";
+    fail?: "list" | "edit" | (() => boolean);
   } = {},
 ) {
   let rows = options.entries ?? [board, brand, quiet, next];
@@ -88,7 +88,11 @@ async function library(
       const row = rows.find((x) => {
         return x.id === params.templateId;
       });
-      if (!row || options.fail === "edit") {
+      if (
+        !row ||
+        options.fail === "edit" ||
+        (typeof options.fail === "function" && options.fail())
+      ) {
         return respond(500, failed);
       }
       const updated = { ...row, ...body };
@@ -106,8 +110,7 @@ async function library(
   });
   await setupPage({ context, path: "/chats/" + THREAD_ID });
   const user = userEvent.setup({ delay: null });
-  const picker = await openTemplatePicker(user);
-  click(await findFastControl("tab", category, picker));
+  const picker = await openTemplateRecommendations(category);
   return { picker, user, chat };
 }
 const button = (root: HTMLElement, name: string | RegExp) => {
@@ -125,25 +128,19 @@ function menuAction(role: "menuitem" | "menuitemradio", name: string) {
   });
 }
 async function preview(picker: HTMLElement, title: string) {
-  click(await button(picker, "Preview " + title));
+  click(await button(picker, "Preview template " + title));
 }
-function selected(picker: HTMLElement, name: Category) {
-  expect(queryFastControl("tab", name, picker)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-}
-test("chat-composer-custom-templates-013 A document without a cover shows its file type", async () => {
+test("chat-composer-custom-templates-013 A document without a cover stays available for selection", async () => {
   const { picker } = await library("Document", {
     entries: [{ ...brand, coverUrl: null, coverHasMorePages: false }],
   });
-  const cover = await button(picker, "Preview Brand report");
-  expect(within(cover).getByText("DOCX")).toBeInTheDocument();
+  const cover = await button(picker, "Use template Brand report");
+  expect(cover).toBeEnabled();
   expect(cover.querySelector("img")).toBeNull();
 });
 test("chat-composer-custom-templates-014 A multi-page report shows its cover and stacked sheets", async () => {
   const { picker } = await library("Document");
-  const cover = await button(picker, "Preview Brand report");
+  const cover = await button(picker, "Use template Brand report");
   expect(cover.querySelector("img")).toHaveAttribute("src", brand.coverUrl);
   expect(within(cover).queryByText("DOCX")).toBeNull();
   expect(within(cover).getAllByTestId("document-cover-sheet")).toHaveLength(2);
@@ -198,27 +195,6 @@ test("chat-composer-custom-templates-010 The board template presents both slides
   expect(queryFastControl("button", "Use this template")).toBeInTheDocument();
   expect(screen.queryByTestId("custom-template-source-preview")).toBeNull();
 });
-async function renameImage(title: string, fail?: "edit") {
-  const { picker } = await library("Image", { fail });
-  click(await button(picker, "Actions for Quiet UI mockup"));
-  click(await menuAction("menuitem", "Rename"));
-  const field = await screen.findByRole("textbox", { name: /rename/i });
-  await fill(field, title);
-  click(await button(document.body, "Save"));
-  return { picker, field };
-}
-test("chat-composer-custom-templates-019 The illustration card takes its trimmed title and stays in Image", async () => {
-  const { picker, field } = await renameImage(" Quiet UI kit ");
-  await within(picker).findByText("Quiet UI kit");
-  expect(field).not.toBeInTheDocument();
-  selected(picker, "Image");
-});
-test("chat-composer-custom-templates-020 Refusing the rename preserves both the rejected edit and the existing card", async () => {
-  const { picker, field } = await renameImage("Quiet UI kit", "edit");
-  await screen.findByText("Couldn't rename the template.");
-  expect(field).toHaveValue("Quiet UI kit");
-  expect(within(picker).getByText(quiet.title)).toBeInTheDocument();
-});
 async function editBoard(value: string) {
   const { picker, user } = await library("Presentation");
   await preview(picker, board.title);
@@ -232,30 +208,42 @@ test("chat-composer-custom-templates-022 Leaving the title field saves its norma
   await within(picker).findByText("Board review FY26");
   expect(within(picker).queryByText(board.title)).toBeNull();
 });
-test("chat-composer-custom-templates-023 IME Enter preserves the pending title until composition is committed", async () => {
-  const value = " 季度   报告 ";
-  const { picker, user, field } = await editBoard(value);
-  fireEvent.compositionStart(field);
-  fireEvent.keyDown(field, { key: "Enter", isComposing: true, keyCode: 229 });
-  expect(field).toHaveFocus();
-  expect(field).toBeEnabled();
-  expect(field).toHaveValue(value);
-  expect(within(picker).getByText(board.title)).toBeInTheDocument();
-  fireEvent.compositionEnd(field);
-  await user.keyboard("{Enter}");
-  await within(picker).findByText("季度 报告");
-  expect(within(picker).queryByText(board.title)).toBeNull();
-});
+test.each(["composing", "final Safari Enter"] as const)(
+  "chat-composer-custom-templates-023 IME Enter preserves the pending title until composition is committed (%s)",
+  async (phase) => {
+    const value = " 季度   报告 ";
+    const { picker, user, field } = await editBoard(value);
+    fireEvent.compositionStart(field);
+    if (phase === "final Safari Enter") {
+      fireEvent.compositionEnd(field);
+    }
+    fireEvent.keyDown(field, {
+      key: "Enter",
+      isComposing: phase === "composing",
+      keyCode: 229,
+    });
+    expect(field).toHaveFocus();
+    expect(field).toBeEnabled();
+    expect(field).toHaveValue(value);
+    expect(within(picker).getByText(board.title)).toBeInTheDocument();
+    if (phase === "composing") {
+      fireEvent.compositionEnd(field);
+    }
+    await user.keyboard("{Enter}");
+    await within(picker).findByText("季度 报告");
+    expect(within(picker).queryByText(board.title)).toBeNull();
+  },
+);
 test("chat-composer-custom-templates-036 A failed custom catalog leaves deck import and the built-in shelf available", async () => {
   const { picker } = await library("Presentation", { fail: "list" });
-  const custom = await within(picker).findByRole("region", { name: "Custom" });
-  await within(custom).findByText("Couldn't load templates.");
-  expect(within(custom).getByLabelText("Import your own deck")).toBeEnabled();
-  expect(
-    within(picker).getByRole("region", { name: "Built-in" }),
-  ).toBeInTheDocument();
+  await expect(
+    within(picker).findByLabelText("Import your own deck", {
+      selector: "input",
+    }),
+  ).resolves.toBeEnabled();
+  await expect(button(picker, "Paper magazine")).resolves.toBeEnabled();
 });
-test("chat-composer-custom-templates-006 Changing catalog category resets the search and scopes the available templates", async () => {
+test("chat-composer-custom-templates-006 Switching the creation type scopes the recommended personal templates", async () => {
   const { picker } = await library("Presentation", {
     entries: [
       board,
@@ -264,56 +252,51 @@ test("chat-composer-custom-templates-006 Changing catalog category resets the se
       next,
     ],
   });
-  const shelf = () => {
-    return within(picker).getByRole("region", { name: "Custom" });
-  };
-  async function only(present: string, absent: readonly string[]) {
-    await within(shelf()).findByText(present);
-    for (const title of absent) {
-      expect(within(shelf()).queryByText(title)).toBeNull();
-    }
+  await within(picker).findByText(board.title);
+  const types = await screen.findByRole("radiogroup", { name: "Create" });
+  for (const [category, present, absent] of [
+    ["Document", brand.title, quiet.title],
+    ["Image", quiet.title, brand.title],
+    ["Presentation", board.title, brand.title],
+  ] as const) {
+    click(await within(types).findByText(category));
+    const shelf = await screen.findByRole("group", {
+      name: category === "Image" ? "Image styles" : category + " templates",
+    });
+    await within(shelf).findByText(present);
+    expect(within(shelf).queryByText(absent)).toBeNull();
   }
-  await only(board.title, [brand.title, quiet.title]);
-  click(await findFastControl("tab", "Document", picker));
-  await only(brand.title, [board.title, quiet.title]);
-  click(await findFastControl("tab", "Image", picker));
-  await only(quiet.title, [brand.title, board.title]);
-  const search = within(picker).getByRole("textbox");
-  await fill(search, "brand-report.docx");
-  await within(picker).findByText("No matches");
-  expect(within(picker).queryByText(quiet.title)).toBeNull();
-  click(await findFastControl("tab", "Document", picker));
-  await only(brand.title, [board.title, quiet.title]);
-  expect(within(picker).getByRole("textbox")).toHaveValue("");
 });
-test("chat-composer-custom-templates-009 Returning from Website keeps the loaded presentation searchable while catalog responses are withheld", async () => {
+test("chat-composer-custom-templates-009 Returning from Website keeps the loaded presentation available while catalog responses are withheld", async () => {
   const { picker } = await library("Presentation");
-  await button(picker, "Preview Q3 board review");
+  await button(picker, "Preview template Q3 board review");
   const gate = context.mocks.deferred<void>();
   context.mocks.api(userTemplatesContract.list, async ({ respond }) => {
     await gate.promise;
     return respond(200, []);
   });
   try {
-    click(await findFastControl("tab", "Website", picker));
-    expect(within(picker).queryByText(board.title)).toBeNull();
-    click(await findFastControl("tab", "Presentation", picker));
-    await button(picker, "Preview Q3 board review");
-    expect(within(picker).getByRole("textbox")).toBeEnabled();
+    const types = await screen.findByRole("radiogroup", { name: "Create" });
+    click(await within(types).findByText("Website"));
+    const website = await screen.findByRole("group", {
+      name: "Website templates",
+    });
+    expect(within(website).queryByText(board.title)).toBeNull();
+    click(await within(types).findByText("Presentation"));
+    const returned = await screen.findByRole("group", {
+      name: "Presentation templates",
+    });
+    await button(returned, "Preview template Q3 board review");
   } finally {
     gate.resolve();
   }
 });
 test("chat-composer-custom-templates-012 Using a board template carries its cover into the composer and sends its row identifier", async () => {
   const { picker, chat, user } = await library("Presentation");
-  const tile = (await button(picker, "Preview Q3 board review")).parentElement;
-  if (!tile) {
-    throw new Error("Missing board template tile");
-  }
-  click(await button(tile, /Use/));
+  click(await button(picker, board.title));
   const chip = await expectInlineTemplate(board.title);
   expect(chip.querySelector("img")).toHaveAttribute("src", board.coverUrl);
-  expect(picker).not.toBeInTheDocument();
+  expect(chip).toHaveTextContent(board.title);
   await sendComposerMessage(user, "Prepare my board review");
   await screen.findByText("Prepare my board review", { exact: false });
   await waitFor(() => {
@@ -322,7 +305,7 @@ test("chat-composer-custom-templates-012 Using a board template carries its cove
     ]);
   });
 });
-test("chat-composer-custom-templates-017 Selecting examples cycles the illustration preview without displaying the source", async () => {
+test("chat-composer-custom-templates-017 The recommendation uses the published example and the attachment uses its cover", async () => {
   const examples = [
     api + "variant-one.png",
     api + "variant-two.png",
@@ -339,19 +322,14 @@ test("chat-composer-custom-templates-017 Selecting examples cycles the illustrat
     }),
   };
   const { picker } = await library("Image", { entries: [row] });
-  const image = await within(picker).findByAltText(
-    "Quiet UI mockup illustration preview",
+  const tile = await button(picker, "Use template " + quiet.title);
+  expect(tile.querySelector("img")).toHaveAttribute("src", examples[0]);
+  click(tile);
+  const attachment = await expectInlineTemplate(quiet.title);
+  expect(attachment.querySelector("img")).toHaveAttribute(
+    "src",
+    quiet.coverUrl,
   );
-  expect(image).toHaveAttribute("src", examples[0]);
-  const tile = image.closest<HTMLElement>("[data-custom-illustration-card]");
-  if (!tile) {
-    throw new Error("Missing illustration card");
-  }
-  click(await button(tile, "Show variant 2"));
-  expect(image).toHaveAttribute("src", examples[1]);
-  click(image);
-  expect(image).toHaveAttribute("src", examples[2]);
-  expect(image).not.toHaveAttribute("src", api + quiet.sourceFilename);
 });
 async function shareBoard(fail?: "edit") {
   const { picker } = await library("Presentation", { fail });
@@ -366,10 +344,9 @@ test("chat-composer-custom-templates-026 Sharing a private board updates the cat
   await waitFor(() => {
     return expect(trigger).toHaveTextContent("Organization");
   });
-  click(await button(document.body, "Custom templates"));
-  const shelf = within(picker).getByRole("region", { name: "Custom" });
-  await within(shelf).findByText("Organization");
-  expect(within(shelf).queryByText("Private")).toBeNull();
+  await userEvent.keyboard("{Escape}");
+  await preview(picker, board.title);
+  await screen.findByText("Anyone in this organization can use it");
 });
 test("chat-composer-custom-templates-030 A rejected sharing change keeps the owner's private explanation", async () => {
   const { trigger } = await shareBoard("edit");
@@ -379,18 +356,6 @@ test("chat-composer-custom-templates-030 A rejected sharing change keeps the own
   );
   expect(trigger).toHaveTextContent("Private");
   expect(trigger).toHaveTextContent("Only you can see and use it");
-});
-test("chat-composer-custom-templates-027 Deleting one illustration leaves the second in the selected category", async () => {
-  const { picker } = await library("Image");
-  await within(picker).findByText(next.title);
-  click(await button(picker, "Actions for Quiet UI mockup"));
-  click(await menuAction("menuitem", "Delete"));
-  click(await button(document.body, "Delete template"));
-  await waitFor(() => {
-    return expect(within(picker).queryByText(quiet.title)).toBeNull();
-  });
-  expect(within(picker).getByText(next.title)).toBeInTheDocument();
-  selected(picker, "Image");
 });
 test("chat-composer-custom-templates-033 Importing a document sends its analysis request and the publication guidance", async () => {
   const { picker, chat, user } = await library("Document");
@@ -406,7 +371,9 @@ test("chat-composer-custom-templates-033 Importing a document sends its analysis
     url: api + filename,
   });
   await user.upload(
-    within(picker).getByLabelText("Import your own document"),
+    within(picker).getByLabelText("Import your own document", {
+      selector: "input",
+    }),
     file,
   );
   await waitFor(() => {
@@ -423,5 +390,61 @@ test("chat-composer-custom-templates-033 Importing a document sends its analysis
   expect(guidance).toContain("extract-template");
   expect(guidance).toContain("okou-ai/okou-skills");
   expect(guidance).toMatch(/branch.*this file/i);
-  expect(guidance).toMatch(/publish.*--kind.*branch.*Custom/i);
+  expect(guidance).toMatch(/okou user-template publish/);
+});
+
+test("Shared deck details identify its owner and keep the recommendation available after dismissal", async () => {
+  const row = {
+    ...board,
+    visibility: "organization" as const,
+    canManage: false,
+  };
+  const { picker, user } = await library("Presentation", { entries: [row] });
+  const eye = await button(picker, "Preview template " + row.title);
+  await user.click(eye);
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Shared by Avery");
+  expect(
+    within(dialog).queryByRole("textbox", { name: "Rename template" }),
+  ).toBeNull();
+  expect(within(dialog).queryByText("Change template visibility")).toBeNull();
+  expect(queryFastControl("button", "Delete", dialog)).toBeNull();
+  await expect(button(dialog, "Use this template")).resolves.toBeEnabled();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(eye).toHaveFocus();
+  });
+});
+
+test("A restored title survives an empty edit and a rejected rename can be retried", async () => {
+  let refused = true;
+  const { picker, user } = await library("Presentation", {
+    fail: () => {
+      return refused;
+    },
+  });
+  await preview(picker, board.title);
+  const title = await screen.findByRole("textbox", { name: "Rename template" });
+  await fill(title, "");
+  fireEvent.blur(title);
+  await user.keyboard("{Escape}");
+  await preview(picker, board.title);
+  const reopened = await screen.findByRole("textbox", {
+    name: "Rename template",
+  });
+  expect(reopened).toHaveValue(board.title);
+  await fill(reopened, "Autumn board meeting");
+  fireEvent.blur(reopened);
+  await screen.findByText("Couldn't rename the template.");
+  expect(reopened).toHaveValue("Autumn board meeting");
+  expect(within(picker).getByText(board.title)).toBeInTheDocument();
+  refused = false;
+  await user.click(reopened);
+  fireEvent.blur(reopened);
+  await within(picker).findByText("Autumn board meeting");
+  await user.keyboard("{Escape}");
+  await preview(picker, "Autumn board meeting");
+  await expect(
+    screen.findByRole("textbox", { name: "Rename template" }),
+  ).resolves.toHaveValue("Autumn board meeting");
 });

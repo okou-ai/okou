@@ -681,15 +681,9 @@
       "updated": "ウェブサイトの URL を更新しました"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} アクティブな HTML プレビュー",
-      "all": "すべて",
       "avatar": "アバター",
-      "categories": "テンプレートのカテゴリ",
-      "category": "テンプレートカテゴリ",
       "fullPreview": "{{title}} Web サイトの完全なプレビュー",
       "htmlPreview": "{{title}} HTML プレビュー",
-      "illustration": "イラストレーション",
-      "illustrationPreview": "{{title}} イラストのプレビュー",
       "importDeck": "自分のデッキをインポート",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "自分のドキュメントをインポート",
@@ -700,18 +694,10 @@
       "importImageHint": "スタイルとして保存",
       "multiAccent": "マルチアクセント",
       "nextSlide": "次のスライドをプレビューする",
-      "noMatches": "一致しません",
-      "previewCurrentSlide": "現在のスライドで {{title}} をプレビューする",
       "previewSlide": "スライドのプレビュー {{slideNumber}}",
-      "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
       "previousSlide": "前のスライドをプレビューする",
-      "searchConnector": "テンプレートを検索",
-      "searchConnectors": "テンプレートを検索",
       "selectStyle": "スタイル {{style}} を選択してください",
       "selectTemplate": "テンプレート {{title}} を選択します",
-      "selectWebsite": "Web サイト テンプレート {{title}} を選択してください",
-      "selectWorkflow": "ワークフロー テンプレート {{title}} を選択します",
-      "showVariant": "バリアント {{variantNumber}} を表示",
       "singleAccent": "シングルアクセント",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} スライド プレビュー",
@@ -739,15 +725,11 @@
         "terracottaClay": "土鍋",
         "warmSand": "朝刊"
       },
-      "tryDifferentSearch": "別の検索を試してください。",
-      "use": "使用する",
       "useThisTemplate": "このテンプレートを使用してください",
       "visibility": {
         "changeLabel": "テンプレートの公開範囲を変更"
       },
       "website": "ウェブサイト",
-      "websitePreview": "{{title}} Web サイト テンプレートのプレビュー",
-      "workflow": "ワークフロー",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Gmail のラベルが付いたときに実行し、そのメールを処理するワークフローを作成します。",
@@ -1923,8 +1905,6 @@
       "add": "追加",
       "configureModel": "モデルの構成",
       "create": {
-        "addStyle": "スタイルを追加",
-        "addTemplate": "テンプレートを追加",
         "documentPlaceholder": "ドキュメントにどのような内容を含めますか？",
         "imagePlaceholder": "作成したい画像を説明してください…",
         "presentationPlaceholder": "プレゼンテーションのテーマは何ですか？",
@@ -1964,11 +1944,9 @@
         "scheduleHint": "定期的に実行",
         "share": "チャットを共有",
         "shareHint": "この会話のリンクを共有",
-        "templates": "テンプレート",
         "unpin": "ピン留めを解除"
       },
       "slashPanel": {
-        "browseAll": "すべてのテンプレートを見る",
         "hint": "アクションを選択",
         "useTemplate": "テンプレート {{title}} を使う"
       },
@@ -2627,7 +2605,6 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
-      "viewAll": "すべて表示",
       "visualization": {
         "allCharts": "すべてのグラフ",
         "back": "Back to visualization options",
@@ -2809,8 +2786,6 @@
         "workflow": "ワークフロー"
       },
       "previewTemplate": "プレビュー テンプレート {{title}}",
-      "previewWebsite": "Web サイト テンプレートのプレビュー {{title}}",
-      "previewWorkflow": "ワークフロー テンプレートのプレビュー {{title}}",
       "removeTemplate": "テンプレート {{title}} を削除します",
       "removeWebsite": "Web サイト テンプレート {{title}} を削除します",
       "removeWorkflow": "ワークフロー テンプレート {{title}} を削除します"
@@ -3900,7 +3875,6 @@
         "overview": "提供者と顧客の情報"
       }
     },
-    "filter": "文書の分類",
     "formats": {
       "pdf": "PDF",
       "word": "Word 文書"
@@ -3910,10 +3884,8 @@
     "nextPage": "次のサンプルページ",
     "openLarger": "大きいプレビューを開く",
     "page": "{{page}} ページ",
-    "preview": "{{title}} をプレビュー",
     "previousPage": "前のサンプルページ",
-    "title": "ドキュメント",
-    "useNamed": "{{title}} を使用"
+    "title": "ドキュメント"
   },
   "featureGuide": {
     "close": "新機能ガイドを閉じる",
@@ -6539,11 +6511,8 @@
   "templates": {
     "actions": {
       "delete": "削除",
-      "menu": "{{title}} の操作",
-      "preview": "{{title}} をプレビュー",
       "rename": "テンプレート名を変更"
     },
-    "builtIn": "組み込み",
     "custom": "カスタム",
     "delete": {
       "cancel": "キャンセル",
@@ -6558,11 +6527,6 @@
       "page": "{{number}} ページ目"
     },
     "loadFailed": "テンプレートを読み込めませんでした。",
-    "rename": {
-      "action": "名前の変更",
-      "cancel": "キャンセル",
-      "save": "保存"
-    },
     "renameFailed": "テンプレートの名前を変更できませんでした。",
     "sharedBy": "{{owner}} が共有",
     "sharedByMember": "組織のメンバーが共有",

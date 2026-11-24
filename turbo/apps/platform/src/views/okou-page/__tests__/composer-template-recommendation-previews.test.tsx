@@ -121,7 +121,7 @@ test("composer-template-recommendation-previews-001 the themed second slide atta
   );
 });
 
-test("composer-template-recommendation-previews-002 direct and gallery previews restore focus on dismissal", async () => {
+test("composer-template-recommendation-previews-002 direct previews restore focus on dismissal", async () => {
   servePresentationSlides(2);
   const { editor } = await openShelfWithDraft("Presentation");
   const open = await previewControl(title);
@@ -139,27 +139,6 @@ test("composer-template-recommendation-previews-002 direct and gallery previews 
     });
     expect(editor).toHaveTextContent(/^Quarterly review$/);
   }
-  await userEvent.click(await findAction("button", "View all"));
-  const gallery = await screen.findByRole("dialog");
-  const selected = await within(gallery).findByRole("combobox");
-  expect(selected).toHaveTextContent("Presentation");
-  const tile = await findAction(
-    "button",
-    "Preview " + title + " at current slide",
-    gallery,
-  );
-  await userEvent.click(tile);
-  await within(gallery).findByText("1 / 2");
-  await userEvent.keyboard("{Escape}");
-  const restored = await findAction(
-    "button",
-    "Preview " + title + " at current slide",
-    gallery,
-  );
-  await waitFor(() => {
-    return expect(restored).toHaveFocus();
-  });
-  expect(editor).toHaveTextContent(/^Quarterly review$/);
 });
 
 test("composer-template-recommendation-previews-003 the shelf preview is reachable and operable with both keyboard activation keys", async () => {

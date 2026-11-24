@@ -86,13 +86,13 @@ test("chat-capability-voice-forwarding-004 Escape closes suggestions inside the 
   expectForwardDraft(editor, dialog, original);
 });
 
-test("chat-capability-voice-forwarding-002 previewing Document keeps focus and both independent drafts", async () => {
+test("chat-capability-voice-forwarding-002 previewing Schedule keeps focus and both independent drafts", async () => {
   const { editor, original, dialog, menu, user } =
     await openForwardSuggestions(true);
-  await user.keyboard("{ArrowUp}");
-  await user.hover(await within(menu).findByText("Templates", { exact: true }));
-  const documentChoice = await findFastControl("button", /^Document\b/, menu);
-  await user.hover(documentChoice);
-  expect(documentChoice).toHaveAttribute("aria-pressed", "true");
+  const schedule = await findFastControl("button", /^Schedule/, menu);
+  await user.hover(schedule);
+  await expect(
+    within(menu).findByRole("region", { name: "Schedule" }),
+  ).resolves.toBeVisible();
   expectForwardDraft(editor, dialog, original);
 });
