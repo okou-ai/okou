@@ -99,6 +99,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     await workspace.list.refresh()
     workspace.setPhase(.active)
     workspace.selectChat(AttachmentFlowFixture.threadID)
+    workspace.sidebarInteraction.setOpen(false)
     let composer = try XCTUnwrap(workspace.selectedConversation?.composer)
     let voice = try XCTUnwrap(composer.voice)
     let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
