@@ -1,11 +1,12 @@
+import { createDeferredPromise } from "../../utils";
 import { now } from "../../../lib/time";
 import { createHash, randomUUID } from "node:crypto";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { object, string } from "zod";
+import { expect, onTestFinished, test } from "vitest";
+import { object, string, literal } from "zod";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupAppWithRoutes } from "../../../__tests__/test-app";
 import { mockEnv } from "../../../lib/env";
@@ -70,13 +71,21 @@ function domainProvider() {
     correct = true,
     certificate = "pending",
     creates = 0,
-    queries = 0;
+    queries = 0,
+    deletes = 0,
+    loseCreateResponse = false,
+    rejectCreateStatus: 400 | 403 | null = null;
+  let createGate:
+    | {
+        entered: ReturnType<typeof createDeferredPromise<void>>;
+        release: ReturnType<typeof createDeferredPromise<void>>;
+      }
+    | undefined;
   let mode: "cname" | "loop" | "apex" = "cname";
   let provider: {
     id: string;
     hostname: string;
     status: string;
-    custom_metadata: { okou_binding_id: string };
     ssl: { status: string };
   } | null = null;
   server.use(
@@ -138,21 +147,44 @@ function domainProvider() {
         creates++;
         const body = object({
           hostname: string(),
-          custom_metadata: object({ okou_binding_id: string() }),
-        }).parse(await request.json());
+          ssl: object({
+            method: literal("txt"),
+            type: literal("dv"),
+            settings: object({ min_tls_version: literal("1.2") }),
+          }),
+        })
+          .strict()
+          .parse(await request.json());
+        if (rejectCreateStatus) {
+          return HttpResponse.json(
+            { success: false, errors: [{ message: "Create rejected" }] },
+            { status: rejectCreateStatus },
+          );
+        }
         provider = {
           id: randomUUID(),
           hostname: body.hostname,
           status: "active",
-          custom_metadata: body.custom_metadata,
           ssl: { status: certificate },
         };
+        if (createGate) {
+          if (!createGate.entered.settled()) {
+            createGate.entered.resolve(undefined);
+          }
+          await createGate.release.promise;
+        }
+        if (loseCreateResponse) {
+          return HttpResponse.error();
+        }
         return HttpResponse.json({ success: true, result: provider });
       },
     ),
     http.get(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
-      () => {
+      ({ params }) => {
+        if (params.id !== provider?.id) {
+          return HttpResponse.json({ success: false }, { status: 404 });
+        }
         return HttpResponse.json({
           success: true,
           result: provider && { ...provider, ssl: { status: certificate } },
@@ -162,6 +194,7 @@ function domainProvider() {
     http.delete(
       "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
       () => {
+        deletes++;
         provider = null;
         return HttpResponse.json({ success: true, result: {} });
       },
@@ -179,6 +212,50 @@ function domainProvider() {
     ),
   );
   return {
+    deletes: () => {
+      return deletes;
+    },
+    loseCreateResponse: () => {
+      loseCreateResponse = true;
+    },
+    rejectCreate: (status: 400 | 403 | null) => {
+      rejectCreateStatus = status;
+    },
+    holdCreate: () => {
+      const gate = {
+        entered: createDeferredPromise<void>(context.signal),
+        release: createDeferredPromise<void>(context.signal),
+      };
+      createGate = gate;
+      onTestFinished(() => {
+        for (const deferred of [gate.entered, gate.release]) {
+          if (!deferred.settled()) {
+            deferred.resolve(undefined);
+          }
+        }
+      });
+      return {
+        entered: gate.entered.promise,
+        finish: () => {
+          if (!gate.release.settled()) {
+            gate.release.resolve(undefined);
+          }
+        },
+      };
+    },
+    preexisting: (hostname: string) => {
+      provider = {
+        id: randomUUID(),
+        hostname,
+        status: "active",
+        ssl: { status: "active" },
+      };
+    },
+    renameProvider: (hostname: string) => {
+      if (provider) {
+        provider.hostname = hostname;
+      }
+    },
     apex: () => {
       mode = "apex";
     },
@@ -483,6 +560,17 @@ test("temporary provider failures retain prior verification but a removed provid
   expect(removed.domains[0]?.verification?.checks.provider.status).toBe(
     "failed",
   );
+  server.use(
+    http.get(
+      "https://api.cloudflare.com/client/v4/zones/:zone/custom_hostnames/:id",
+      () => {
+        return HttpResponse.json({}, { status: 503 });
+      },
+    ),
+  );
+  const stillRemoved = (await verify()).body;
+  expect(stillRemoved.domains[0]?.verification?.status).toBe("unavailable");
+  expect(stillRemoved.domains[0]?.ready).toBeFalsy();
   expect(
     (
       await accept(
@@ -675,4 +763,113 @@ test("private website sessions trust only the exact custom origin and do not sur
       )
     ).body.allowed,
   ).toBeFalsy();
+});
+
+function verifyDomainRequest(
+  fixture: Awaited<ReturnType<typeof scenario>>,
+  domain: { readonly id: string; readonly revision: string },
+) {
+  return fixture.api.verifySiteDomain({
+    headers,
+    params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+    body: { expectedRevision: domain.revision },
+  });
+}
+function removeDomainRequest(
+  fixture: Awaited<ReturnType<typeof scenario>>,
+  domain: { readonly id: string; readonly revision: string },
+) {
+  return fixture.api.removeSiteDomain({
+    headers,
+    params: { siteId: fixture.prepared.siteId, domainId: domain.id },
+    body: { expectedRevision: domain.revision },
+  });
+}
+test("does not adopt or delete a preexisting provider resource by hostname", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  external.preexisting(domain.hostname);
+  const blocked = await accept(verifyDomainRequest(fixture, domain), [409]);
+  expect(blocked.body.error.code).toBe("DOMAIN_IN_USE");
+  const removed = await accept(removeDomainRequest(fixture, domain), [200]);
+  expect(removed.body.domains).toHaveLength(0);
+  expect(external.creates()).toBe(0);
+  expect(external.deletes()).toBe(0);
+});
+test("can retry a definitively rejected provider creation without an enterprise feature", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  external.rejectCreate(403);
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  const unavailable = await accept(verifyDomainRequest(fixture, domain), [200]);
+  expect(unavailable.body.domains[0]?.verification?.status).toBe("unavailable");
+  external.rejectCreate(null);
+  const verified = await accept(verifyDomainRequest(fixture, domain), [200]);
+  expect(verified.body.domains[0]?.ready).toBeTruthy();
+  await accept(removeDomainRequest(fixture, domain), [200]);
+  expect(external.deletes()).toBe(1);
+});
+test("keeps an uncertain provider creation disconnected instead of adopting or deleting by name", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  external.loseCreateResponse();
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  const uncertain = await accept(verifyDomainRequest(fixture, domain), [200]);
+  expect(uncertain.body.domains[0]?.ready).toBeFalsy();
+  const retry = await accept(verifyDomainRequest(fixture, domain), [503]);
+  expect(retry.body.error.code).toBe("DOMAIN_PROVIDER_UNCONFIRMED");
+  await accept(removeDomainRequest(fixture, domain), [503]);
+  const settings = await accept(
+    fixture.api.siteDomains({
+      headers,
+      params: { siteId: fixture.prepared.siteId },
+    }),
+    [200],
+  );
+  expect(settings.body.domains[0]?.removing).toBeTruthy();
+  expect(settings.body.effectiveUrl).toBe(added.defaultUrl);
+  expect(external.creates()).toBe(1);
+  expect(external.deletes()).toBe(0);
+});
+test("records the exact provider ID when removal wins during creation and allows safe cleanup", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  const creating = external.holdCreate();
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  const verifying = verifyDomainRequest(fixture, domain);
+  await creating.entered;
+  const removing = await removeDomainRequest(fixture, domain);
+  creating.finish();
+  const verified = await verifying;
+  expect(removing.status).toBe(503);
+  expect(verified.status).toBe(409);
+  const removed = await accept(removeDomainRequest(fixture, domain), [200]);
+  expect(removed.body.domains).toHaveLength(0);
+  expect(external.deletes()).toBe(1);
+});
+test("a provider identity mismatch disables selection and never deletes another hostname", async () => {
+  const fixture = await scenario();
+  const external = domainProvider();
+  external.ready();
+  const added = await add(fixture);
+  const domain = added.domains[0]!;
+  external.setTxt(domain.records[0]!.value);
+  await accept(verifyDomainRequest(fixture, domain), [200]);
+  external.renameProvider("another.customer-example.net");
+  const mismatch = await accept(verifyDomainRequest(fixture, domain), [200]);
+  expect(mismatch.body.domains[0]?.ready).toBeFalsy();
+  await accept(removeDomainRequest(fixture, domain), [503]);
+  expect(external.deletes()).toBe(0);
 });

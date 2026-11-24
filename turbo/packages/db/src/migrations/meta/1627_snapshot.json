@@ -1,5 +1,5 @@
 {
-  "id": "f2a68843-54a4-4224-8f5e-ecfe2e1d0234",
+  "id": "cd49c5ee-f402-4dc2-9a6e-a86b1e0f398f",
   "prevId": "95e9e7d4-e1c1-49dd-850a-9f67a19a1591",
   "version": "7",
   "dialect": "postgresql",
@@ -18609,18 +18609,6 @@
         "verification": {
           "name": "verification",
           "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verifying_id": {
-          "name": "verifying_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verifying_until": {
-          "name": "verifying_until",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

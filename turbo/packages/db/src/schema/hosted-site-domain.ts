@@ -39,8 +39,6 @@ export const hostedSiteDomains = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     releasedAt: timestamp("released_at", { withTimezone: true }),
     verification: jsonb("verification").$type<HostedDomainVerification>(),
-    verifyingId: uuid("verifying_id"),
-    verifyingUntil: timestamp("verifying_until", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

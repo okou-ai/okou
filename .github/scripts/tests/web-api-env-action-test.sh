@@ -734,4 +734,41 @@ kill "$REGISTRY_PID"
 wait "$REGISTRY_PID" 2>/dev/null || true
 REGISTRY_PID=""
 
+# Custom-domain configuration is scoped to the API and its Doppler environment.
+hosted_domain_keys=(
+  HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN
+  HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID
+  HOSTED_SITE_CUSTOM_DOMAIN_TARGET
+  HOSTED_SITE_CUSTOM_DOMAIN_WORKER
+  HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES
+)
+for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+  assert_env_key_absent "$success_env_file" "$hosted_domain_key"
+  assert_env_key_absent "$production_api_env_file" "$hosted_domain_key"
+done
+for hosted_domain_mode in api:preview api:production web:production; do
+  hosted_domain_app="${hosted_domain_mode%%:*}"
+  hosted_domain_environment="${hosted_domain_mode##*:}"
+  hosted_domain_dir="$(mktemp -d)"
+  TEMP_DIRS+=("$hosted_domain_dir")
+  hosted_domain_json="$(build_doppler_secrets_json | jq -c --arg environment "$hosted_domain_environment" '. + {
+    HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN: ("fixture-domain-token-" + $environment),
+    HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    HOSTED_SITE_CUSTOM_DOMAIN_TARGET: ("connect-" + $environment + ".example.test"),
+    HOSTED_SITE_CUSTOM_DOMAIN_WORKER: "zero-host-worker",
+    HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES: "203.0.113.3"
+  }')"
+  hosted_domain_output="$(run_action "$hosted_domain_json" "$hosted_domain_dir" "$hosted_domain_app" "$hosted_domain_environment" 2>&1)"
+  hosted_domain_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${hosted_domain_dir}/github-output")"
+  assert_not_contains "$hosted_domain_output" "fixture-domain-token-"
+  for hosted_domain_key in "${hosted_domain_keys[@]}"; do
+    if [[ "$hosted_domain_app" == "api" ]]; then
+      hosted_domain_expected="$(jq -r --arg key "$hosted_domain_key" '.[$key]' <<< "$hosted_domain_json")"
+      assert_env_value "$hosted_domain_env_file" "$hosted_domain_key" "$hosted_domain_expected"
+    else
+      assert_env_key_absent "$hosted_domain_env_file" "$hosted_domain_key"
+    fi
+  done
+done
+
 echo "web-api-env-action-test: ok"

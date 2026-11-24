@@ -63,6 +63,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use recordings as chat attachments instead of dictation for everyone in this workspace.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",

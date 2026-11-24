@@ -17,8 +17,6 @@ CREATE TABLE "hosted_site_domains" (
 	"revoked_at" timestamp with time zone,
 	"released_at" timestamp with time zone,
 	"verification" jsonb,
-	"verifying_id" uuid,
-	"verifying_until" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "hosted_site_domains_site_id_id" UNIQUE("site_id","id")
 );

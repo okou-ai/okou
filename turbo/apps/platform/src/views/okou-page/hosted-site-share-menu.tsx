@@ -614,7 +614,12 @@ function WebsiteUrlEditor({
       >
         {domainNotice ??
           (customDomain
-            ? `https://${customDomain.hostname}`
+            ? t(
+                ($) => {
+                  return $.artifacts.customDomain.urlPreview;
+                },
+                { hostname: customDomain.hostname },
+              )
             : feedback.message)}
       </p>
       <WebsiteCustomDomainRow session={session} saving={saving} />

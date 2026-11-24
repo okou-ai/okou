@@ -119,7 +119,9 @@ function NewDomainForm({ session, operations }: DomainPanelProps) {
         id={`${session.inputId}-hostname`}
         autoFocus
         value={hostname}
-        placeholder="www.example.com"
+        placeholder={t(($) => {
+          return $.artifacts.customDomain.hostnameExample;
+        })}
         autoCapitalize="none"
         autoComplete="off"
         spellCheck={false}

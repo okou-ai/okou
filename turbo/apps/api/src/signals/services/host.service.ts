@@ -2135,8 +2135,6 @@ const takeHostedSiteOffline$ = command(
         .update(hostedSiteDomains)
         .set({
           revokedAt: deleted.updatedAt,
-          verifyingId: null,
-          verifyingUntil: null,
         })
         .where(
           and(

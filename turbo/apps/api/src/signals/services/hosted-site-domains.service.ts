@@ -12,7 +12,7 @@ import { settle, settleIncludingAbort } from "../utils";
 import { availableForSite$ } from "./hosted-site-url-availability.service";
 import { randomBytes, randomUUID } from "node:crypto";
 import { command } from "ccstate";
-import { and, eq, exists, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, exists, isNotNull, isNull, sql } from "drizzle-orm";
 import { orgTierSchema } from "@okouai/api-contracts/contracts/orgs";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
@@ -383,10 +383,6 @@ export const addHostedSiteDomain$ = command(
           and(
             eq(hostedSiteDomains.id, domain.id),
             eq(hostedSiteDomains.revision, domain.revision),
-            or(
-              isNull(hostedSiteDomains.verifyingUntil),
-              lt(hostedSiteDomains.verifyingUntil, nowDate()),
-            ),
           ),
         );
       signal.throwIfAborted();
@@ -400,7 +396,7 @@ const notChecked = () => {
     message: "Verify to check this step",
   };
 };
-const claimHostedDomainVerification$ = command(
+const prepareHostedDomainVerification$ = command(
   async ({ set }, args: DomainArgs, signal: AbortSignal) => {
     const site = await set(ownedSite$, args, signal);
     signal.throwIfAborted();
@@ -424,111 +420,176 @@ const claimHostedDomainVerification$ = command(
         "Add this hostname again to generate a fresh TXT record",
       );
     }
-    const operationId = randomUUID();
-    const started = nowDate();
-    const [claimed] = await set(writeDb$)
+    return { domain, started: nowDate() };
+  },
+);
+const resetRejectedHostedDomainCreation$ = command(
+  async ({ set }, domainId: string, error: unknown, signal: AbortSignal) => {
+    if (
+      !(error instanceof HostedDomainDependencyError) ||
+      error.dependency !== "provider" ||
+      !error.status ||
+      error.status < 400 ||
+      error.status >= 499 ||
+      error.status === 408
+    ) {
+      return;
+    }
+    await set(writeDb$)
       .update(hostedSiteDomains)
-      .set({
-        verifyingId: operationId,
-        verifyingUntil: new Date(started.getTime() + 15_000),
-      })
+      .set({ providerStarted: false })
       .where(
         and(
-          eq(hostedSiteDomains.id, domain.id),
-          eq(hostedSiteDomains.revision, args.expectedRevision),
-          isNull(hostedSiteDomains.revokedAt),
-          or(
-            isNull(hostedSiteDomains.verifyingUntil),
-            lt(hostedSiteDomains.verifyingUntil, started),
-          ),
+          eq(hostedSiteDomains.id, domainId),
+          isNull(hostedSiteDomains.providerId),
         ),
-      )
-      .returning();
-    signal.throwIfAborted();
-    if (!claimed) {
-      throw new HostedDomainError(
-        409,
-        "VERIFY_IN_PROGRESS",
-        "A verification is already in progress. Try again when it finishes.",
       );
-    }
-    return { domain, operationId, started };
+    signal.throwIfAborted();
   },
 );
 const provisionHostedDomain$ = command(
   async (
     { set },
     domain: Domain,
-    operationId: string,
     bounded: AbortSignal,
     signal: AbortSignal,
   ) => {
-    const providerIntent = await set(writeDb$)
+    if (domain.providerId) {
+      const provider = await readHostedDomain(domain.providerId, bounded);
+      signal.throwIfAborted();
+      return provider;
+    }
+    if (domain.providerStarted) {
+      throw new HostedDomainError(
+        503,
+        "DOMAIN_PROVIDER_UNCONFIRMED",
+        "Domain setup has not been confirmed. Try Verify after the current request finishes; contact support if it remains unconfirmed.",
+      );
+    }
+    const existing = await findHostedDomain(domain.hostname, bounded);
+    signal.throwIfAborted();
+    // A matching name is not proof that this website created the resource.
+    if (existing.length) {
+      throw new HostedDomainError(
+        409,
+        "DOMAIN_IN_USE",
+        "This domain is already connected to another website",
+      );
+    }
+    const [started] = await set(writeDb$)
       .update(hostedSiteDomains)
       .set({ providerStarted: true })
       .where(
         and(
           eq(hostedSiteDomains.id, domain.id),
-          eq(hostedSiteDomains.verifyingId, operationId),
+          eq(hostedSiteDomains.revision, domain.revision),
+          eq(hostedSiteDomains.providerStarted, false),
           isNull(hostedSiteDomains.revokedAt),
+          isNull(hostedSiteDomains.releasedAt),
         ),
       )
       .returning({ id: hostedSiteDomains.id });
     signal.throwIfAborted();
-    if (!providerIntent.length) {
+    if (!started) {
       throw new HostedDomainError(
         409,
         "DOMAIN_CHANGED",
         "The domain changed. Reopen its settings and try again.",
       );
     }
-    let provider = domain.providerId
-      ? await readHostedDomain(domain.providerId, bounded)
-      : null;
-    if (!provider) {
-      const existing = await findHostedDomain(domain.hostname, bounded);
-      signal.throwIfAborted();
-      provider =
-        existing.find((item) => {
-          return item.custom_metadata?.okou_binding_id === domain.id;
-        }) ?? null;
-      if (existing.length && !provider) {
-        throw new HostedDomainError(
-          409,
-          "DOMAIN_IN_USE",
-          "This domain is already connected to another website",
-        );
-      }
-      provider ??= await createHostedDomain(
-        domain.hostname,
+    const created = await settleIncludingAbort(
+      createHostedDomain(domain.hostname, bounded),
+    );
+    signal.throwIfAborted();
+    if (!created.ok) {
+      await set(
+        resetRejectedHostedDomainCreation$,
         domain.id,
-        bounded,
+        created.error,
+        signal,
       );
+      signal.throwIfAborted();
+      throw created.error;
     }
-    if (
-      provider.hostname !== domain.hostname ||
-      provider.custom_metadata?.okou_binding_id !== domain.id
-    ) {
+    const provider = created.value;
+    if (provider.hostname !== domain.hostname) {
       throw new HostedDomainError(
         409,
         "DOMAIN_IN_USE",
         "The provider binding does not belong to this website",
       );
     }
-    await set(writeDb$)
+    // Keep a confirmed provider ID even when removal revoked the binding while
+    // the request was in flight. That ID is needed for safe cleanup, not serving.
+    const [recorded] = await set(writeDb$)
       .update(hostedSiteDomains)
       .set({ providerId: provider.id })
       .where(
         and(
           eq(hostedSiteDomains.id, domain.id),
-          eq(hostedSiteDomains.verifyingId, operationId),
-          isNull(hostedSiteDomains.revokedAt),
+          eq(hostedSiteDomains.providerStarted, true),
+          isNull(hostedSiteDomains.providerId),
         ),
-      );
+      )
+      .returning({ id: hostedSiteDomains.id });
     signal.throwIfAborted();
+    if (!recorded) {
+      throw new Error("The created domain provider ID could not be recorded");
+    }
     return provider;
   },
 );
+async function removeHostedDomainProvider(
+  domain: Pick<Domain, "providerId" | "providerStarted" | "hostname">,
+  signal: AbortSignal,
+) {
+  if (!domain.providerId) {
+    if (domain.providerStarted) {
+      throw new HostedDomainError(
+        503,
+        "DOMAIN_PROVIDER_UNCONFIRMED",
+        "The domain is disconnected, but setup has not been confirmed. Try Remove after setup finishes; contact support if it remains unconfirmed.",
+      );
+    }
+    return;
+  }
+  const remote = await settleIncludingAbort(
+    readHostedDomain(domain.providerId, signal),
+  );
+  if (!remote.ok) {
+    if (
+      remote.error instanceof HostedDomainDependencyError &&
+      remote.error.dependency === "provider" &&
+      remote.error.status === 404
+    ) {
+      return;
+    }
+    throw remote.error;
+  }
+  if (
+    remote.value.id !== domain.providerId ||
+    remote.value.hostname !== domain.hostname
+  ) {
+    throw new HostedDomainError(
+      503,
+      "DOMAIN_CLEANUP_PENDING",
+      "The provider binding changed. Keep the hostname reserved until cleanup is confirmed.",
+    );
+  }
+  const removed = await settleIncludingAbort(
+    deleteHostedDomain(domain.providerId, signal),
+  );
+  if (
+    !removed.ok &&
+    !(
+      removed.error instanceof HostedDomainDependencyError &&
+      removed.error.dependency === "provider" &&
+      removed.error.status === 404
+    )
+  ) {
+    throw removed.error;
+  }
+}
 async function verifyHostedDomainIngress(
   domain: Domain,
   verification: HostedDomainVerification,
@@ -568,10 +629,7 @@ async function verifyHostedDomainIngress(
 const checkHostedDomain$ = command(
   async (
     { set },
-    {
-      domain,
-      operationId,
-    }: { readonly domain: Domain; readonly operationId: string },
+    domain: Domain,
     verification: HostedDomainVerification,
     bounded: AbortSignal,
     signal: AbortSignal,
@@ -596,11 +654,21 @@ const checkHostedDomain$ = command(
       const provider = await set(
         provisionHostedDomain$,
         domain,
-        operationId,
         bounded,
         signal,
       );
       signal.throwIfAborted();
+      if (
+        provider.hostname !== domain.hostname ||
+        (domain.providerId && provider.id !== domain.providerId)
+      ) {
+        verification.checks.provider = {
+          status: "failed",
+          message:
+            "The provider binding no longer matches this domain. Remove and reconnect it.",
+        };
+        return;
+      }
       verification.validationRecords = providerDomainRecords(provider);
       verification.checks.provider = {
         status: provider.status === "active" ? "passed" : "pending",
@@ -636,71 +704,48 @@ const checkHostedDomain$ = command(
     }
   },
 );
-const recordHostedDomainFailure$ = command(
-  async (
-    { set },
-    {
-      domain,
-      operationId,
-    }: { readonly domain: Domain; readonly operationId: string },
-    verification: HostedDomainVerification,
-    error: unknown,
-    signal: AbortSignal,
-  ) => {
-    signal.throwIfAborted();
-    if (error instanceof HostedDomainError) {
-      await set(writeDb$)
-        .update(hostedSiteDomains)
-        .set({ verifyingId: null, verifyingUntil: null })
-        .where(
-          and(
-            eq(hostedSiteDomains.id, domain.id),
-            eq(hostedSiteDomains.verifyingId, operationId),
-          ),
-        );
-      signal.throwIfAborted();
-      throw error;
-    }
-    if (
-      !(error instanceof HostedDomainDependencyError) &&
-      !(error instanceof ZodError)
-    ) {
-      throw error;
-    }
-    verification.status = "unavailable";
-    if (
-      error instanceof HostedDomainDependencyError &&
-      error.dependency === "provider" &&
-      error.status === 404
-    ) {
-      verification.status = "incomplete";
-      verification.checks.provider = {
-        status: "failed",
-        message:
-          "The provider binding was removed. Remove and reconnect this domain.",
-      };
-    }
-    const check = Object.values(verification.checks).find((item) => {
-      return item.status === "not_checked" || item.status === "pending";
-    });
-    if (check) {
-      check.status = "unavailable";
-      check.message =
-        "We couldn’t finish checking your domain. Click Verify to try again.";
-    }
-  },
-);
+function applyHostedDomainVerificationFailure(
+  verification: HostedDomainVerification,
+  error: unknown,
+) {
+  if (
+    !(error instanceof HostedDomainDependencyError) &&
+    !(error instanceof ZodError)
+  ) {
+    throw error;
+  }
+  verification.status = "unavailable";
+  if (
+    error instanceof HostedDomainDependencyError &&
+    error.dependency === "provider" &&
+    error.status === 404
+  ) {
+    verification.status = "incomplete";
+    verification.checks.provider = {
+      status: "failed",
+      message:
+        "The provider binding was removed. Remove and reconnect this domain.",
+    };
+  }
+  const check = Object.values(verification.checks).find((item) => {
+    return item.status === "not_checked" || item.status === "pending";
+  });
+  if (check) {
+    check.status = "unavailable";
+    check.message =
+      "We couldn’t finish checking your domain. Click Verify to try again.";
+  }
+}
 const persistHostedDomainVerification$ = command(
   async (
     { set },
     domain: Domain,
-    operationId: string,
     verification: HostedDomainVerification,
     signal: AbortSignal,
   ) => {
     verification.eligibleForSelection =
       verification.status === "ready" ||
-      (domain.verifiedAt !== null &&
+      (hostedDomainReady(domain) &&
         verification.status === "unavailable" &&
         !Object.values(verification.checks).some((check) => {
           return check.status === "failed" || check.status === "pending";
@@ -714,14 +759,14 @@ const persistHostedDomainVerification$ = command(
             verification.status === "ready"
               ? (domain.verifiedAt ?? nowDate())
               : domain.verifiedAt,
-          verifyingId: null,
-          verifyingUntil: null,
         })
         .where(
           and(
             eq(hostedSiteDomains.id, domain.id),
-            eq(hostedSiteDomains.verifyingId, operationId),
             eq(hostedSiteDomains.revision, domain.revision),
+            domain.verification === null
+              ? isNull(hostedSiteDomains.verification)
+              : eq(hostedSiteDomains.verification, domain.verification),
             isNull(hostedSiteDomains.revokedAt),
           ),
         )
@@ -751,8 +796,8 @@ const persistHostedDomainVerification$ = command(
 );
 export const verifyHostedSiteDomain$ = command(
   async ({ set }, args: DomainArgs, signal: AbortSignal) => {
-    const { domain, operationId, started } = await set(
-      claimHostedDomainVerification$,
+    const { domain, started } = await set(
+      prepareHostedDomainVerification$,
       args,
       signal,
     );
@@ -772,32 +817,14 @@ export const verifyHostedSiteDomain$ = command(
     };
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
     const attempt = await settleIncludingAbort(
-      set(
-        checkHostedDomain$,
-        { domain, operationId },
-        verification,
-        bounded,
-        signal,
-      ),
+      set(checkHostedDomain$, domain, verification, bounded, signal),
     );
     signal.throwIfAborted();
     if (!attempt.ok) {
-      await set(
-        recordHostedDomainFailure$,
-        { domain, operationId },
-        verification,
-        attempt.error,
-        signal,
-      );
+      applyHostedDomainVerificationFailure(verification, attempt.error);
     }
     signal.throwIfAborted();
-    await set(
-      persistHostedDomainVerification$,
-      domain,
-      operationId,
-      verification,
-      signal,
-    );
+    await set(persistHostedDomainVerification$, domain, verification, signal);
     signal.throwIfAborted();
     return set(readHostedSiteDomains$, args, signal);
   },
@@ -933,34 +960,24 @@ export const removeHostedSiteDomain$ = command(
     if (domain.releasedAt) {
       return set(readHostedSiteDomains$, args, signal);
     }
-    // A late completion cannot race removal or publish an unrecorded provider ID.
-    if (domain.verifyingUntil && domain.verifyingUntil > nowDate()) {
-      throw new HostedDomainError(
-        409,
-        "VERIFY_IN_PROGRESS",
-        "Wait for verification to finish before removing this domain",
-      );
-    }
     const db = set(writeDb$);
     const revoked = db.$with("revoked_domain").as(
       db
         .update(hostedSiteDomains)
         .set({
           revokedAt: domain.revokedAt ?? nowDate(),
-          verifyingId: null,
-          verifyingUntil: null,
         })
         .where(
           and(
             eq(hostedSiteDomains.id, domain.id),
             eq(hostedSiteDomains.revision, args.expectedRevision),
-            or(
-              isNull(hostedSiteDomains.verifyingUntil),
-              lt(hostedSiteDomains.verifyingUntil, nowDate()),
-            ),
           ),
         )
-        .returning({ id: hostedSiteDomains.id }),
+        .returning({
+          id: hostedSiteDomains.id,
+          providerId: hostedSiteDomains.providerId,
+          providerStarted: hostedSiteDomains.providerStarted,
+        }),
     );
     const fallback = db.$with("fallback_address").as(
       db
@@ -991,43 +1008,33 @@ export const removeHostedSiteDomain$ = command(
     );
     const rows = await db
       .with(revoked, fallback, sessions)
-      .select({ id: revoked.id })
+      .select({
+        id: revoked.id,
+        providerId: revoked.providerId,
+        providerStarted: revoked.providerStarted,
+      })
       .from(revoked);
     signal.throwIfAborted();
-    if (!rows.length) {
+    const current = rows[0];
+    if (!current) {
       throw new HostedDomainError(
         409,
-        "VERIFY_IN_PROGRESS",
-        "Wait for verification to finish before removing this domain",
+        "REVISION_CONFLICT",
+        "The domain changed. Reload and try again.",
       );
     }
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(8000)]);
-    const cleanup = await settleIncludingAbort(async () => {
-      if (domain.providerStarted) {
-        const candidates = await findHostedDomain(domain.hostname, bounded);
-        signal.throwIfAborted();
-        const provider = candidates.find((item) => {
-          return item.custom_metadata?.okou_binding_id === domain.id;
-        });
-        if (
-          provider &&
-          domain.providerId &&
-          provider.id !== domain.providerId
-        ) {
-          throw new HostedDomainError(
-            503,
-            "DOMAIN_CLEANUP_PENDING",
-            "The provider binding changed. Keep the hostname reserved until cleanup is confirmed.",
-          );
-        }
-        if (provider) {
-          await deleteHostedDomain(provider.id, bounded);
-        }
-        signal.throwIfAborted();
-      }
-    });
+    const cleanup = await settleIncludingAbort(
+      removeHostedDomainProvider(
+        { ...current, hostname: domain.hostname },
+        bounded,
+      ),
+    );
     signal.throwIfAborted();
     if (!cleanup.ok) {
+      if (cleanup.error instanceof HostedDomainError) {
+        throw cleanup.error;
+      }
       throw new HostedDomainError(
         503,
         "DOMAIN_CLEANUP_PENDING",
@@ -1100,7 +1107,7 @@ export const hostedDomainProbe$ = command(
           isNull(hostedSites.deletedAt),
           isNull(hostedSiteDomains.revokedAt),
           isNull(hostedSiteDomains.releasedAt),
-          isNotNull(hostedSiteDomains.verifyingId),
+          isNotNull(hostedSiteDomains.providerId),
         ),
       )
       .limit(1);
@@ -1108,8 +1115,8 @@ export const hostedDomainProbe$ = command(
     return {
       proof:
         row &&
-        row.domain.verifyingUntil &&
-        row.domain.verifyingUntil > nowDate() &&
+        (row.domain.verifiedAt !== null ||
+          row.domain.challengeExpiresAt > nowDate()) &&
         (await set(customDomainsAllowed$, row.orgId, signal))
           ? args.proof
           : null,

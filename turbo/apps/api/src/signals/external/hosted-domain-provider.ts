@@ -3,14 +3,13 @@ import {
   fetchHostedDomainJson,
   HostedDomainDependencyError,
 } from "./hosted-domain-request";
-import { array, boolean, object, record, string, unknown } from "zod";
+import { array, boolean, object, string, unknown } from "zod";
 import { env } from "../../lib/env";
 
 const hostnameSchema = object({
   id: string(),
   hostname: string(),
   status: string(),
-  custom_metadata: record(string(), string()).nullish(),
   ownership_verification: object({ name: string(), value: string() }).nullish(),
   ssl: object({
     status: string(),
@@ -99,7 +98,6 @@ export async function readHostedDomain(id: string, signal: AbortSignal) {
 }
 export async function createHostedDomain(
   hostname: string,
-  bindingId: string,
   signal: AbortSignal,
 ) {
   return hostnameSchema.parse(
@@ -114,7 +112,6 @@ export async function createHostedDomain(
             type: "dv",
             settings: { min_tls_version: "1.2" },
           },
-          custom_metadata: { okou_binding_id: bindingId },
         }),
       },
       signal,

@@ -310,6 +310,21 @@ runs:
         add_var R2_HOSTED_SITES_BUCKET_NAME R2_HOSTED_SITES_BUCKET_NAME
         add_secret R2_HOSTED_SITES_ACCESS_KEY_ID R2_HOSTED_SITES_ACCESS_KEY_ID
         add_secret R2_HOSTED_SITES_SECRET_ACCESS_KEY R2_HOSTED_SITES_SECRET_ACCESS_KEY
+        if [[ "$INPUT_APP" == "api" ]]; then
+          # Optional until the default-off custom-domain feature is provisioned.
+          # Both API runtimes consume this same resolved environment file.
+          for hosted_domain_key in \
+            HOSTED_SITE_CUSTOM_DOMAIN_API_TOKEN \
+            HOSTED_SITE_CUSTOM_DOMAIN_ZONE_ID \
+            HOSTED_SITE_CUSTOM_DOMAIN_TARGET \
+            HOSTED_SITE_CUSTOM_DOMAIN_WORKER \
+            HOSTED_SITE_CUSTOM_DOMAIN_APEX_ADDRESSES; do
+            hosted_domain_value="$(doppler_secret "$hosted_domain_key")"
+            if [[ -n "$hosted_domain_value" ]]; then
+              add_env "$hosted_domain_key" "$hosted_domain_value"
+            fi
+          done
+        fi
         add_var OKOU_PUBLIC_HOST_DOMAIN OKOU_PUBLIC_HOST_DOMAIN
         add_var OKOU_HOST_SCHEME OKOU_HOST_SCHEME
         add_secret SECRETS_ENCRYPTION_KEY SECRETS_ENCRYPTION_KEY
