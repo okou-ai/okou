@@ -94,9 +94,15 @@ async def test_routing_metadata_in_network_log(
     if mode == "stream":
         attempts.append({"provider": "Fallback Host", "model": "author/model", "status": 200})
         available.append({"provider": "Fallback Host", "model": "author/model", "selected": True})
+    reported_attempts = attempts
+    if mode == "json_error":
+        reported_attempts = [
+            *attempts,
+            {"provider": "😀" * 65, "model": "author/model", "status": 502},
+        ]
     envelope: dict[str, object] = {
         "openrouter_metadata": {
-            "attempts": attempts,
+            "attempts": reported_attempts,
             "endpoints": {"available": available},
             "pipeline": [{"data": "private-canary"}],
         }
@@ -138,6 +144,8 @@ async def test_routing_metadata_in_network_log(
     expected: dict[str, object] = {"generation_id": "gen-header"}
     if mode != "interrupted":
         expected["attempts"] = attempts
+    if mode == "json_error":
+        expected["attempts_incomplete"] = True
     if mode == "stream":
         expected.update({"provider": "Fallback Host", "model": "author/model"})
     assert entry["openrouter"] == expected

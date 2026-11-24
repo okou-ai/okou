@@ -5,15 +5,18 @@ import re
 
 from mitmproxy import http
 
+from http_header_syntax import single_header_value
 from usage.sse import SseUsageScanner
 
 HEADER = "X-OpenRouter-Metadata"
 _OPTED_IN = "_openrouter_routing_opted_in"
 _OBSERVATION = "_openrouter_routing_observation"
 _GENERATION_ID = re.compile(r"gen-[A-Za-z0-9-]{1,124}")
+_MAX_HEADER_FIELDS = 512
+_MAX_GENERATION_ID_BYTES = 128
 _MAX_DOCUMENT_BYTES = 64 * 1024
 _MAX_ATTEMPTS = 32
-_MAX_LABEL_LENGTH = 128
+_MAX_LABEL_UTF16_BYTES = 256
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
 
@@ -29,10 +32,17 @@ def is_enabled(flow: http.HTTPFlow) -> bool:
 
 def observe_headers(flow: http.HTTPFlow) -> None:
     if is_enabled(flow) and flow.response is not None:
-        generation_id = flow.response.headers.get("X-Generation-Id", "")
         observation = RoutingObservation()
-        if _GENERATION_ID.fullmatch(generation_id):
-            observation.fields["generation_id"] = generation_id
+        raw_id = single_header_value(
+            flow.response.headers.fields,
+            b"x-generation-id",
+            max_fields=_MAX_HEADER_FIELDS,
+            max_value_bytes=_MAX_GENERATION_ID_BYTES,
+        )
+        if raw_id is not None:
+            generation_id = raw_id.decode("ascii", errors="replace")
+            if _GENERATION_ID.fullmatch(generation_id):
+                observation.fields["generation_id"] = generation_id
         flow.metadata[_OBSERVATION] = observation
 
 
@@ -55,7 +65,13 @@ def release(flow: http.HTTPFlow) -> None:
 
 
 def _label(value: object) -> str | None:
-    if isinstance(value, str) and 0 < len(value) <= _MAX_LABEL_LENGTH and value.isprintable():
+    # Match the UTF-16 code-unit limit in the network log webhook validator.
+    if (
+        isinstance(value, str)
+        and 0 < len(value) <= _MAX_LABEL_UTF16_BYTES // 2
+        and value.isprintable()
+        and len(value.encode("utf-16-le")) <= _MAX_LABEL_UTF16_BYTES
+    ):
         return value
     return None
 
