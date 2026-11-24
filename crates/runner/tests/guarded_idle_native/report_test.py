@@ -57,6 +57,14 @@ def witness_receipt(
     }
 
 
+def witness_for_phase(witnesses, phase, *, case=None):
+    """Return the first original witness for a phase and optional case."""
+    return next(
+        witness for witness in witnesses
+        if witness["phase"] == phase and (case is None or witness["case"] == case)
+    )
+
+
 def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
     """Serialize synthetic consumer inputs; callers own evidence and log order."""
     (root / "report.json").write_text(json.dumps(collector))

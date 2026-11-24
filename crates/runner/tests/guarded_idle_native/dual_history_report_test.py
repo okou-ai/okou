@@ -91,7 +91,7 @@ class DualHistoryReportTests(unittest.TestCase):
                 ))
 
     def event(self, phase):
-        return next(e for e in self.duals if e["phase"] == phase)
+        return report_test.witness_for_phase(self.duals, phase)
 
     def write(self):
         replacement_test.ReplacementReportTests.write(self)
