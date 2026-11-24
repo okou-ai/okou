@@ -1268,7 +1268,7 @@ private fun ChatAction(label: Int, action: () -> Unit, enabled: Boolean = true) 
 }
 
 @Composable
-private fun ChatListTextAction(
+internal fun ChatListTextAction(
     @StringRes label: Int,
     @DrawableRes icon: Int? = null,
     enabled: Boolean = true,
