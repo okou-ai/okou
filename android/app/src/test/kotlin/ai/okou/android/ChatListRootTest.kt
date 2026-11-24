@@ -1932,8 +1932,10 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("search_type_Messages").performClick()
         compose.onNodeWithTag("chat_search_query").performTextInput(fixture.keyword)
-        val result = hasText(fixture.hit) and hasAnyAncestor(hasTestTag("chat_search_results"))
+        val results = hasAnyAncestor(hasTestTag("chat_search_results"))
+        val result = hasText(fixture.hit) and results
         compose.waitUntilExactlyOneExists(result, 5_000)
+        compose.onNode(hasText(fixture.otherHit) and results).assertIsDisplayed()
         compose.onNode(result).performClick()
 
         val focused = hasTestTag("conversation_find_hit") and isFocused()
