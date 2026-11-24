@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1174.0](https://github.com/okou-ai/okou/compare/app-v0.1173.2...app-v0.1174.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** log managed openrouter routing metadata ([#50392](https://github.com/okou-ai/okou/issues/50392)) ([637a49c](https://github.com/okou-ai/okou/commit/637a49cc6646031aa023c8a631863e88be17ee5d))
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.117.0
+    * @okouai/core bumped to 8.868.1
+    * @okouai/ui bumped to 1.22.4
+
 ## [0.1173.2](https://github.com/okou-ai/okou/compare/app-v0.1173.1...app-v0.1173.2) (2026-11-24)
 
 
