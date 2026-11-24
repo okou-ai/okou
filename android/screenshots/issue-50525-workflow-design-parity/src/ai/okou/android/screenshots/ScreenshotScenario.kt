@@ -5,14 +5,20 @@ import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.WorkflowApiFixture
+import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
+import ai.okou.android.api.generated.WorkflowAutomation
+import ai.okou.android.auth.SessionModel
 import ai.okou.android.testAuthenticationState
 import ai.okou.android.testPreferences
+import ai.okou.android.workflows.WorkflowModel
+import ai.okou.android.workflows.WorkflowService
 import android.graphics.Rect
 import android.view.KeyEvent
 import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -25,6 +31,7 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Assert.assertEquals
@@ -63,9 +70,12 @@ class ScreenshotScenario {
         val catalogFailure = AtomicBoolean(false)
         val toggleEntered = CountDownLatch(1)
         val releaseToggle = CountDownLatch(1)
+        val toggleApplied = AtomicBoolean(false)
+        val observedError = AtomicReference<String>()
         val readbackEntered = CountDownLatch(1)
         val releaseReadback = CountDownLatch(1)
         val disablePath = "/api/workflow-automations/weekday/disable"
+        var workflowModel: WorkflowModel? = null
 
         fun text(label: String): UiObject2 =
             checkNotNull(
@@ -94,7 +104,16 @@ class ScreenshotScenario {
         }
 
         fun pendingState(label: String): Rect {
+            val observed = mutableListOf<String>()
             fun find(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+                if (
+                    node.packageName?.toString() == app.packageName &&
+                        (node.stateDescription != null ||
+                            node.contentDescription?.toString() == "暂停")
+                ) {
+                    observed +=
+                        "name=${node.contentDescription}, state=${node.stateDescription}, enabled=${node.isEnabled}"
+                }
                 if (
                     node.packageName?.toString() == app.packageName &&
                         node.stateDescription?.toString() == label
@@ -112,13 +131,17 @@ class ScreenshotScenario {
                 checkNotNull(
                     device.wait(
                         object : Condition<UiDevice, AccessibilityNodeInfo?> {
-                            override fun apply(device: UiDevice): AccessibilityNodeInfo? =
-                                instrumentation.uiAutomation.rootInActiveWindow?.let(::find)
+                            override fun apply(device: UiDevice): AccessibilityNodeInfo? {
+                                observed.clear()
+                                return instrumentation.uiAutomation.rootInActiveWindow?.let(::find)
+                            }
                         },
                         10_000,
                     ),
                 ) {
-                    "Missing disabled Pause state: $label"
+                    "Missing disabled Pause state: $label. Observed: $observed; " +
+                        "write result: ${observedError.get()}; " +
+                        "toggle: ${workflowModel?.state?.value?.toggles?.get("weekday")}"
                 }
             assertEquals("暂停", pending.contentDescription?.toString())
             assertFalse(pending.isEnabled)
@@ -150,14 +173,15 @@ class ScreenshotScenario {
                     disablePath -> {
                         toggleEntered.countDown()
                         assertTrue(releaseToggle.await(20, TimeUnit.SECONDS))
-                        response(request)
-                        MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
+                        val applied = response(request)
+                        toggleApplied.set(true)
+                        applied.setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
                     }
                     else -> response(request)
                 }
             }
             fixture.beforeReleaseDetailRead = {
-                if (toggleEntered.count == 0L) {
+                if (toggleApplied.get()) {
                     readbackEntered.countDown()
                     assertTrue(releaseReadback.await(20, TimeUnit.SECONDS))
                 }
@@ -165,7 +189,26 @@ class ScreenshotScenario {
             fixture.active.set(true)
             app.chatService = fixture.service
             app.composerService = fixture.service
-            app.workflows = fixture.service
+            app.workflows =
+                object : WorkflowService by fixture.service {
+                    override suspend fun setAutomationEnabled(
+                        id: String,
+                        enabled: Boolean,
+                    ): WorkflowAutomation =
+                        try {
+                            fixture.service.setAutomationEnabled(id, enabled)
+                        } catch (error: Exception) {
+                            observedError.set(
+                                when (error) {
+                                    is ApiFailure.Network ->
+                                        "Network(${error.cause?.javaClass?.simpleName}, connectionFailed=${error.connectionFailed})"
+                                    is ApiFailure.Http -> "HTTP ${error.status}"
+                                    else -> error.javaClass.simpleName
+                                },
+                            )
+                            throw error
+                        }
+                }
             app.connectivity.value = true
             app.initialPreferences =
                 testPreferences()
@@ -234,6 +277,14 @@ class ScreenshotScenario {
                 action("自动化").click()
                 text("触发规则")
                 text("已启用")
+                scenario.onActivity {
+                    workflowModel =
+                        ViewModelProvider(it)[SessionModel::class.java]
+                            .uiState
+                            .value
+                            .ready
+                            ?.workflows
+                }
                 text("已暂停 · 需连接")
                 val pause = action("暂停")
                 val original = pause.visibleBounds
