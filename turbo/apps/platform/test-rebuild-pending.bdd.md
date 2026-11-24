@@ -1096,7 +1096,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-conversati
 - **When** The user selects the first conversation marker.
 - **Then** The first question is brought into the viewport at its top edge, and its message receives landing feedback.
 
-**Unverified clauses.** 96e318f041 恢复的 Vitest 30 轮注册在几何替身上覆盖顶边、落点、卸载。原生 Chromium 已证 24 个标记、点击第一问、落点、24/30 卸载，但稳定布局中首问锚点距视口顶边 60px。 #49915 撤回分页，#50032 恢复分页；#50327 是 staff scroll-room 开关，未提供修改精确顶边子句的依据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** 96e318f041 恢复的 Vitest 30 轮注册在几何替身上覆盖顶边、落点、卸载。原生 Chromium 已证 24 个标记、点击第一问、落点、24/30 卸载，但稳定布局中首问锚点距视口顶边 60px。 #49915 撤回分页，#50032 恢复分页；#50327 是 staff scroll-room 开关，未提供修改精确顶边子句的依据。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv). 第103批用恰好八轮的对话在原生 Chromium 中点选首个标记。720px 与 960px 两种窗口下，首问均从未挂载变为可见且获得落点反馈。滚动稳定后锚点距滚动视口顶部 60px，问题文本距顶部 74px。点第四个标记产生不同的落点。精确顶边子句保留。 [Batch 103 measurements](../../../test-rebuild-evidence/103/locator.json).
 
 ## `src/views/okou-page/__tests__/chat-list-cache.test.tsx`
 

@@ -1,0 +1,62 @@
+[
+  {
+    "height": 720,
+    "turns": 8,
+    "before": {
+      "mounted": false,
+      "id": "aa970000-0000-4000-8000-000000000001"
+    },
+    "first": {
+      "id": "aa970000-0000-4000-8000-000000000001",
+      "mounted": true,
+      "question": "Question number 1",
+      "renderedText": "Question number 1",
+      "anchorOffset": 60,
+      "questionOffset": 74,
+      "scrollTop": 0,
+      "viewport": 496,
+      "landed": true
+    },
+    "fourth": {
+      "id": "aa970000-0000-4000-8000-000000000010",
+      "mounted": true,
+      "question": "Question number 4",
+      "renderedText": "Question number 4",
+      "anchorOffset": 139,
+      "questionOffset": 153,
+      "scrollTop": 1469,
+      "viewport": 496,
+      "landed": true
+    }
+  },
+  {
+    "height": 960,
+    "turns": 8,
+    "before": {
+      "mounted": false,
+      "id": "aa970000-0000-4000-8000-000000000001"
+    },
+    "first": {
+      "id": "aa970000-0000-4000-8000-000000000001",
+      "mounted": true,
+      "question": "Question number 1",
+      "renderedText": "Question number 1",
+      "anchorOffset": 60,
+      "questionOffset": 74,
+      "scrollTop": 0,
+      "viewport": 736,
+      "landed": true
+    },
+    "fourth": {
+      "id": "aa970000-0000-4000-8000-000000000010",
+      "mounted": true,
+      "question": "Question number 4",
+      "renderedText": "Question number 4",
+      "anchorOffset": 206,
+      "questionOffset": 220,
+      "scrollTop": 1402,
+      "viewport": 736,
+      "landed": true
+    }
+  }
+]

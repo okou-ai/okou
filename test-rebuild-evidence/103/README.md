@@ -30,11 +30,15 @@ The homepage prefetch and For you still share the scoped feed resource. Batch 10
 
 The archived test kept the returning metadata promise pending when checking for an absent chat region. The missing-thread view gives a confirmed miss a region labelled “Chat thread”. The legacy Agents destination has been replaced by Workflows. These sources establish the revised observations at the pending and settled boundaries. [Original regression](https://github.com/okou-ai/okou/pull/38731) · [Missing-thread view](https://github.com/okou-ai/okou/pull/26014) · [Agent navigation](https://github.com/okou-ai/okou/pull/49556) · [Retained destination](https://github.com/okou-ai/okou/pull/49838)
 
-A member opened a new chat with a known title, left for Workflows and received the abandoned 200 there. Workflows kept its title. The same member then deleted the disposable chat through the local product API (204). On returning, the page had no chat region or old title while its fresh lookup was pending. Decoding the real 404 with the canonical list held left the region absent. Delivering the empty canonical list mounted the named “Chat thread not found” region. The old title and composer stayed absent. The permanent routed suite also compares releasing and withholding the abandoned response. [Member, thread and delivery boundaries](./metadata.json)
+A member opened a new chat with a known title, left for Workflows and received the abandoned 200 there. Workflows kept its title. The same member then deleted the disposable chat through the local product API (204). On returning, the page had no chat region or old title while its fresh lookup was pending. Decoding the real 404 with the canonical list held left the region absent. Delivering the same member’s authenticated, empty canonical thread snapshot mounted the named “Chat thread not found” region. The old title and composer stayed absent. The permanent routed suite also compares releasing and withholding the abandoned response. [Member, thread and delivery boundaries](./metadata.json)
 
 ## composer-custom-template-recommendations-009
 
 The contextual Image shelf still accepts WEBP for reusable-style analysis. The product import scenario used the file input. The newer removal of the standalone gallery preserved contextual imports. The existing paired App journeys exercise actual clipboard paste and a file selection. Pasting attaches the PDF to the composer, while the input filters the PDF. The frozen paste clause remains open. [Original import](https://github.com/okou-ai/okou/pull/39648) · [Contextual recommendations](https://github.com/okou-ai/okou/pull/50365)
+
+## chat-conversation-locator-002
+
+The native Chromium page loaded a conversation with exactly eight turns. At both 1280 × 720 and 1280 × 960, it showed eight markers and the first question started unmounted. Selecting the first marker brought the original question into view, with landing feedback attached to its own event. After layout settled the scroll position was zero. The event anchor was 60 px below the scroll viewport's top edge and the question text began 74 px below it at both heights. Selecting the fourth marker instead moved the scroll position and attached feedback to the fourth event. The exact top-edge clause remains open. [Viewport and message measurements](./locator.json)
 
 ## Review boundaries
 
