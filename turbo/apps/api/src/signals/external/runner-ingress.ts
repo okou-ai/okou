@@ -221,7 +221,7 @@ function dispatchPoolDimensions(
   const stats = transport?.poolStats?.(origin);
   return (
     stats && {
-      api_dispatch_pool: "preview_retained_http1",
+      api_dispatch_pool: "retained_http1",
       api_dispatch_pool_connected: stats.connected,
       api_dispatch_pool_pending: stats.pending,
     }

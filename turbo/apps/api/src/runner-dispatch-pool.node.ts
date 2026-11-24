@@ -3,7 +3,7 @@ import type { RunnerDispatchRequest } from "./signals/external/runner-dispatch-t
 
 const IDLE_MS = 30_000;
 
-export function createPreviewRunnerDispatchPool() {
+export function createRunnerDispatchPool() {
   const dispatcher = new Agent({
     allowH2: false,
     connections: 4,

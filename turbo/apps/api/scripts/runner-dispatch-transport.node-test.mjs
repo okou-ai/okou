@@ -16,7 +16,7 @@ import {
   setDefaultCACertificates,
 } from "node:tls";
 import "../src/__tests__/global-setup-env.ts";
-import { createPreviewRunnerDispatchPool } from "../src/runner-dispatch-pool.node.ts";
+import { createRunnerDispatchPool } from "../src/runner-dispatch-pool.node.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
 
@@ -294,16 +294,16 @@ test(
 );
 
 test(
-  "shares the Preview socket across reserved and direct POSTs after an idle gap",
+  "shares the socket across reserved and direct POSTs after an idle gap",
   { timeout: 12_000 },
   async (t) => {
-    const pool = createPreviewRunnerDispatchPool();
+    const pool = createRunnerDispatchPool();
     try {
       await withPeer(
         t.signal,
         async (peer) => {
           const { transport, origin } = peer;
-          reserve(transport, "preview", origin, t.signal);
+          reserve(transport, "retained", origin, t.signal);
           await peer.firstHandshake;
           assert.deepEqual(peer.requestPaths, []);
           peer.releaseHandshake();

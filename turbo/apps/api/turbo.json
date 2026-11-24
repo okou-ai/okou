@@ -1,9 +1,0 @@
-{
-  "$schema": "https://turborepo.com/schema.json",
-  "extends": ["//"],
-  "tasks": {
-    "build": {
-      "env": ["OKOU_PREVIEW_JOB_REF"]
-    }
-  }
-}

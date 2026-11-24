@@ -17,9 +17,7 @@ export default defineConfig({
   plugins: [
     build({
       emptyOutDir: true,
-      entry: /^pr-\d+$/.test(process.env.OKOU_PREVIEW_JOB_REF ?? "")
-        ? "./src/index.preview.ts"
-        : "./src/index.ts",
+      entry: "./src/index.ts",
       // Keep the prebuilt Vercel function's Node req/res entry on the same
       // adapter as the standalone server; v2 removed the /vercel export.
       entryContentAfterHooks: [
