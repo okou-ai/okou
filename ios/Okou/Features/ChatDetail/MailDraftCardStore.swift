@@ -24,6 +24,8 @@ final class MailDraftCardStore {
   /// What the card shows besides the draft: whether its row is active, and the attempt.
   struct Presentation: Equatable {
     var isActive = false
+    /// Counts activations. Each activation asks the row to load the draft again.
+    var activation = 0
     var attempt = Attempt()
   }
 
@@ -33,6 +35,7 @@ final class MailDraftCardStore {
   let requested: Computed<Bool>
   let presentation: Computed<Presentation>
   private let attempt = CCState.State(Attempt())
+  private let activation = CCState.State(0)
   private let available = CCState.State(false)
   private let demand = CCState.State(false)
   private let revision = CCState.State(0)
@@ -71,11 +74,13 @@ final class MailDraftCardStore {
     let revision = revision
     let source = source
     let attempt = attempt
+    let activation = activation
     requested = Computed { get in try get(available) && get(demand) }
     presentation = Computed { get in
       let isActive = try get(available)
+      let activations = try get(activation)
       let current = try get(attempt)
-      return Presentation(isActive: isActive, attempt: current)
+      return Presentation(isActive: isActive, activation: activations, attempt: current)
     }
     request = Command { context, refresh in
       guard try context.get(available) else { throw CancellationError() }
@@ -87,7 +92,9 @@ final class MailDraftCardStore {
     }
     setAvailability = Command { context, active in
       try context.set(available, active)
-      if !active {
+      if active {
+        try context.set(activation, update: { $0 + 1 })
+      } else {
         try context.set(demand, false)
         try context.set(source, .remote)
       }

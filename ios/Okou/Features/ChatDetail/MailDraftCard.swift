@@ -33,7 +33,11 @@ private struct MailDraftDemandView: View {
 
   var body: some View {
     content
-      .task(id: loadsState && current.isActive) { if loadsState { await store.load() } }
+      // Deactivation drops the read's demand, so every activation is a new load request,
+      // including one whose inactive state this row never rendered.
+      .task(id: loadsState && current.isActive ? current.activation : 0) {
+        if loadsState { await store.load() }
+      }
   }
 
   @ViewBuilder private var content: some View {
