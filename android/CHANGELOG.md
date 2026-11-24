@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.0](https://github.com/okou-ai/okou/compare/android-v0.52.2...android-v0.53.0) (2026-11-24)
+
+
+### Features
+
+* **native:** manage member-wide connector account access ([#50496](https://github.com/okou-ai/okou/issues/50496)) ([eda9b10](https://github.com/okou-ai/okou/commit/eda9b103a4531c6c23058180f5150e11a3a986e9))
+
 ## [0.52.2](https://github.com/okou-ai/okou/compare/android-v0.52.1...android-v0.52.2) (2026-11-24)
 
 
