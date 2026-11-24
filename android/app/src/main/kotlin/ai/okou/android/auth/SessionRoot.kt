@@ -360,7 +360,7 @@ private fun WorkspaceSettingsContent(
                             HorizontalDivider()
                             SettingsRow(
                                 stringResource(R.string.settings_built_in_tools),
-                                leading = { SettingsIcon(R.drawable.ic_extension) },
+                                leading = { SettingsIcon(R.drawable.ic_build) },
                                 modifier = focusFor(SettingsDestination.BuiltInTools),
                                 onClick = { openPage(SettingsDestination.BuiltInTools) },
                             )

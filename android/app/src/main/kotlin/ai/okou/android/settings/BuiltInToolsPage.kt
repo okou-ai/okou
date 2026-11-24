@@ -29,6 +29,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.InputMode
@@ -141,15 +142,17 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
     val title = stringResource(R.string.settings_tool_image_model)
     val selectedModel = state.displayedImage
     val selected = imageToolOptions.firstOrNull { it.id == selectedModel }
+    val enabled =
+        selectedModel != null &&
+            state.enabled(imageGenerationTool) == true &&
+            imageGenerationTool !in state.savingTools &&
+            !state.savingImage
     SettingsPickerRow(
         title,
         value = selected?.title ?: selectedModel,
         leading = { SettingsIcon(R.drawable.ic_memory) },
-        enabled =
-            selectedModel != null &&
-                state.enabled(imageGenerationTool) == true &&
-                imageGenerationTool !in state.savingTools &&
-                !state.savingImage,
+        enabled = enabled,
+        modifier = if (enabled) Modifier else Modifier.alpha(0.38f),
     ) { dismiss ->
         val options =
             if (selected != null && selected !in publicImageToolOptions)
@@ -195,8 +198,22 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
             }
         }
     }
-    if (state.savingImage) LinearProgressIndicator(Modifier.fillMaxWidth())
-    if (state.imageFailed) ToolStatus(stringResource(R.string.settings_tool_image_save_failed))
+    val status =
+        when {
+            state.savingImage -> R.string.settings_saving
+            state.imageFailed -> R.string.settings_tool_image_save_failed
+            else -> null
+        }
+    if (status != null) {
+        Text(
+            stringResource(status),
+            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp).semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     if (state.imageUnavailable && state.enabled(imageGenerationTool) == true)
         ToolStatus(stringResource(R.string.settings_tools_unavailable))
 }

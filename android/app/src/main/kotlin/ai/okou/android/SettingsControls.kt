@@ -274,6 +274,7 @@ internal fun SettingsPickerRow(
     enabled: Boolean = true,
     visible: Boolean = true,
     fallbackFocus: FocusRequester? = null,
+    modifier: Modifier = Modifier,
     sheet: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     SettingsTrigger(
@@ -281,8 +282,15 @@ internal fun SettingsPickerRow(
         visible = visible,
         fallbackFocus = fallbackFocus,
         content = sheet,
-    ) { modifier, open ->
-        SettingsRow(title, leading, modifier, value, onClick = open, enabled = enabled)
+    ) { triggerModifier, open ->
+        SettingsRow(
+            title,
+            leading,
+            modifier.then(triggerModifier),
+            value,
+            onClick = open,
+            enabled = enabled,
+        )
     }
 }
 
