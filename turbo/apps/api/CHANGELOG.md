@@ -10,6 +10,24 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.114.0](https://github.com/okou-ai/okou/compare/api-v2.113.0...api-v2.114.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+* scope composer voice recordings to the organization ([#50373](https://github.com/okou-ai/okou/issues/50373)) ([4e0340a](https://github.com/okou-ai/okou/commit/4e0340a5ffea0390e87b43e77fefdd217abc1cbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/db bumped to 2.63.3
+    * @okouai/pi-agent-runtime bumped to 1.52.56
+
 ## [2.113.0](https://github.com/okou-ai/okou/compare/api-v2.112.1...api-v2.113.0) (2026-11-24)
 
 

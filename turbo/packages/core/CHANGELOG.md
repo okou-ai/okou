@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.867.0](https://github.com/okou-ai/okou/compare/core-v8.866.0...core-v8.867.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+* scope composer voice recordings to the organization ([#50373](https://github.com/okou-ai/okou/issues/50373)) ([4e0340a](https://github.com/okou-ai/okou/commit/4e0340a5ffea0390e87b43e77fefdd217abc1cbd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+
 ## [8.866.0](https://github.com/okou-ai/okou/compare/core-v8.865.1...core-v8.866.0) (2026-11-24)
 
 
