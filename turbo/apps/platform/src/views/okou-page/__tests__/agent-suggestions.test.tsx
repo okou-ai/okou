@@ -27,6 +27,14 @@ import {
   findFastControl,
   queryFastControl,
 } from "./chat-message-experience-test-helpers.ts";
+import { setMockFeatureSwitches } from "../../../mocks/handlers/api-feature-switches.helpers.ts";
+import {
+  acme,
+  design,
+  directory,
+  switchButton,
+  switchMenu,
+} from "./switcher-directory-fixture.ts";
 
 const context = testContext();
 test("agent-suggestions-039 the empty For you destination reports zero remaining items", async () => {
@@ -1005,4 +1013,181 @@ test("agent-suggestions-022 revised inline direction sends the card file while t
   await expect(
     screen.findByRole("textbox", { name: /message/i }),
   ).resolves.toHaveTextContent(homeText);
+});
+
+test("agent-suggestions-007 a member returning to For you sees only the selected workspace's card", async () => {
+  const first = proposal("Reserve the Acme lab");
+  const second = proposal("Review the design proofs");
+  const feeds = new Map([
+    [`Bearer ${acme.id}`, first],
+    [`Bearer ${design.id}`, second],
+  ]);
+  context.mocks.api(feedContract.list, ({ request, respond }) => {
+    const card = feeds.get(request.headers.get("authorization") ?? "");
+    if (!card) {
+      throw new Error("The feed request has no workspace credential");
+    }
+    return respond(200, { items: [card] });
+  });
+  setMockFeatureSwitches({ [FeatureSwitchKey.AgentSuggestion]: true });
+  await directory(context, () => {
+    return Promise.resolve();
+  });
+
+  click(await findFastControl("link", /For you/));
+  await expect(activeCard(first)).resolves.toBeVisible();
+  expect(
+    screen.queryByRole("article", { name: second.content.title }),
+  ).toBeNull();
+
+  click(await findFastControl("link", "Workflows"));
+  await screen.findByRole("heading", { name: "Workflows" });
+  const menu = await switchMenu();
+  click(within(menu).getByText(design.name));
+  await expect(
+    within(await switchButton()).findByRole("img", { name: design.name }),
+  ).resolves.toBeInTheDocument();
+
+  click(await findFastControl("link", /For you/));
+  await expect(activeCard(second)).resolves.toBeVisible();
+  expect(
+    screen.queryByRole("article", { name: first.content.title }),
+  ).toBeNull();
+});
+
+test("agent-suggestions-012 a suggested dispatch goes into the running conversation with its source link", async () => {
+  const target = RUN_THREAD_ID;
+  const runId = crypto.randomUUID();
+  const reference = {
+    type: "chat_thread" as const,
+    threadId: target,
+    titleSnapshot: "Dispatch archive",
+  };
+  const suggestion = proposal("Schedule a dispatch");
+  const action = suggestion.content.options[0]!;
+  action.threadId = target;
+  action.draft.draftUserMessage!.parts.push(reference);
+  feed([suggestion]);
+  context.mocks.api(feedContract.consume, ({ respond }) => {
+    return respond(200, suggestion);
+  });
+  const queued = context.mocks.deferred<UserMessageDocument | undefined>();
+  createChatRunFixtures(context).installRunChat({
+    threadId: target,
+    activeRunIds: [runId],
+    chatEvents: [
+      promptEvent({
+        id: crypto.randomUUID(),
+        seqId: 1,
+        runId,
+        text: "Prepare today's shipping manifest",
+      }),
+    ],
+    onQueuedEventAppend: ({ userMessage }) => {
+      return queued.resolve(userMessage);
+    },
+  });
+
+  await openDeck();
+  click(
+    await findFastControl("button", action.label, await activeCard(suggestion)),
+  );
+  const composer = await screen.findByRole("textbox", { name: /message/i });
+  await waitFor(() => {
+    expect(composer).toHaveTextContent("Draft Schedule a dispatch");
+    expect(composer).toHaveTextContent(reference.titleSnapshot);
+  });
+  expect(location.pathname).toBe("/chats/" + target);
+  await screen.findByText("Prepare today's shipping manifest");
+  const send = await findFastControl("button", "Send");
+  await waitFor(() => {
+    return expect(send).toBeEnabled();
+  });
+  click(send);
+  await expect(queued.promise).resolves.toMatchObject({
+    parts: [{ type: "text", text: "Draft Schedule a dispatch" }, reference],
+  });
+  await screen.findByText("Draft Schedule a dispatch");
+  expect(composer).not.toHaveTextContent("Draft Schedule a dispatch");
+});
+
+test("agent-suggestions-013 the new conversation keeps the displayed option after the server returns a changed destination", async () => {
+  const loaded = proposal("Confirm the Baltic crossing");
+  const alternate = crypto.randomUUID();
+  const source = {
+    type: "chat_thread" as const,
+    threadId: alternate,
+    titleSnapshot: "Dispatch archive",
+  };
+  loaded.content.options[0]!.draft.draftUserMessage!.parts.push(source);
+  const later = structuredClone(loaded);
+  const changed = later.content.options[0]!;
+  changed.threadId = alternate;
+  changed.draft.draftUserMessage = {
+    version: 1,
+    parts: [{ type: "text", text: "Divert the shipment to Oslo" }],
+  };
+  later.state = {
+    ...later.state,
+    status: "consumed",
+    selectedOptionId: changed.id,
+  };
+  feed([loaded]);
+
+  const consumed = context.mocks.deferred<unknown>();
+  const read = Response.prototype.json;
+  vi.spyOn(Response.prototype, "json").mockImplementation(async function (
+    this: Response,
+  ) {
+    const result: unknown = await read.call(this);
+    if (
+      this.ok &&
+      this.url.endsWith(`/api/feed/items/${loaded.id}/suggestion/consume`)
+    ) {
+      consumed.resolve(result);
+    }
+    return result;
+  });
+  context.mocks.api(feedContract.consume, ({ respond }) => {
+    return respond(200, later);
+  });
+  const created = context.mocks.deferred<string | undefined>();
+  const submitted = context.mocks.deferred<{
+    thread?: string;
+    message?: UserMessageDocument;
+  }>();
+  createChatRunFixtures(context).installRunChat({
+    onThreadCreate: ({ clientThreadId }) => {
+      return created.resolve(clientThreadId);
+    },
+    onSendRequest: ({ clientThreadId, threadId, userMessage }) => {
+      return submitted.resolve({
+        thread: clientThreadId ?? threadId,
+        message: userMessage,
+      });
+    },
+  });
+
+  await openDeck();
+  const choice = await findFastControl(
+    "button",
+    loaded.content.options[0]!.label,
+    await activeCard(loaded),
+  );
+  click(choice);
+  await expect(consumed.promise).resolves.toMatchObject({
+    id: loaded.id,
+    content: { options: [changed] },
+  });
+  await screen.findByText("All caught up");
+  const { thread, message } = await submitted.promise;
+  expect(message?.parts).toStrictEqual([
+    { type: "text", text: "Draft Confirm the Baltic crossing" },
+    source,
+  ]);
+  expect(thread).toBeTruthy();
+  expect(thread).not.toBe(alternate);
+  await expect(created.promise).resolves.toBe(thread);
+  await screen.findByText("Sent to a new chat");
+  expect(location.pathname).toBe("/for-you");
 });

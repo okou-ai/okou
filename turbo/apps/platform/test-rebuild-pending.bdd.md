@@ -966,36 +966,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 
 **Unverified clauses.** 首页近身预加载旧卡后，实际读到旧响应和行内 Unread，再触发持有的新一轮详情并打开 For you。此时新旧卡均未出现，放行后只见替换卡。冷重开对照同样须先交付详情。保留响应前显示卡片的缺口。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
 
-### agent-suggestions-007
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-007)
-
-- **Given** For you initially shows one workspace's cards; the user views Agents before changing workspaces.
-- **When** The active workspace changes and the user opens For you again.
-- **Then** The new workspace's card appears, and the previous workspace's card does not.
-
-**Unverified clauses.** 次级 Agents 入口退役有上游出处；原工作区和新工作区卡片分别归属哪个工作区仍需从保留入口验证。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### agent-suggestions-012
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-012)
-
-- **Given** A suggestion action targets a chat with a run already in progress.
-- **When** The user chooses the action and then sends it from the chat composer.
-- **Then** The existing chat opens with the suggested content in its composer, and sending queues the message in the running chat with the referenced chat included.
-
-**Unverified clauses.** #37169 明确普通 runless 文本的呈现，不能据此证明这条建议的入队及交付结果。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### agent-suggestions-013
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-013)
-
-- **Given** The user has loaded a suggestion action for a new chat.
-- **When** The server responds to consumption with a later version of that option that points to a different chat and contains different text.
-- **Then** The loaded action is sent to a new chat with its originally loaded content, not the later server content, and the user remains on For you.
-
-**Unverified clauses.** 迟到的选项提供不同文本和聊天。最初的发送及 All caught up 在消费结果返回前就出现。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ### agent-suggestions-015
 
 Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-015)
@@ -1410,7 +1380,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/discord-oauth-c
 - **When** The callback page starts approval and the opener closes immediately afterward.
 - **Then** It reports that authorization was interrupted or refreshed, does not show an Open Discord link, submits exactly one approval request, and removes the proof from the URL.
 
-**Unverified clauses.** 原生 opener 丢失后，Discord 的 proof 从 URL 移除，显示中断提示且无打开 Discord 链接。相同审批重复抵达能否产生不同业务回执仍缺证。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
+**Unverified clause.** Exactly one approval submission. Closing the opener after the API admitted the page’s approval produced the interrupted message, no Open Discord link and a proof-free URL. Replaying the identical payload at the relay produced an additional 400 under the same state digest with the same page outcome. [Batch 102 receipts](../../../test-rebuild-evidence/102/discord.json).
 
 ## `src/views/okou-page/__tests__/get-started-entry.test.tsx`
 
