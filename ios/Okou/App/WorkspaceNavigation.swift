@@ -51,7 +51,7 @@ struct WorkspaceNavigation<Sidebar: View, Chat: View>: UIViewControllerRepresent
     let presentation: WorkspaceChatPresentation
     let chat: WorkspaceChatHostingController
     var requestedSidebarOpen: Bool
-    private weak var navigation: UINavigationController?
+    private weak var navigation: WorkspaceNavigationController?
     private var transitionTarget: Bool?
 
     init(sidebar: SidebarInteraction) {
