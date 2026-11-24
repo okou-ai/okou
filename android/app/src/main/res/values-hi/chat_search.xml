@@ -27,6 +27,7 @@
     <string name="chat_search_short">खोजें</string>
     <string name="chat_search_partial_local">कुछ नतीजे लोड नहीं हो सके। सिर्फ़ सेव की गई चैट दिखाई जा रही हैं।</string>
     <string name="chat_search_saved_chats">अपडेट नहीं हो सका। सेव की गई चैट दिखाई जा रही हैं।</string>
+    <string name="chat_search_saved_chats_no_matches">खोज सिर्फ़ सेव की गई चैट तक सीमित है। कोई मिलान नहीं मिला।</string>
     <string name="chat_search_saved_results">अपडेट नहीं हो सका। पिछले नतीजे दिखाई जा रहे हैं।</string>
     <string name="chat_search_messages_failed">मैसेज में खोज नहीं हो सकी</string>
     <string name="chat_search_workflows_failed">वर्कफ़्लो में खोज नहीं हो सकी</string>
