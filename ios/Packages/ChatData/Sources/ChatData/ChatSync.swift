@@ -6,6 +6,9 @@ public actor ChatSync {
   public struct ThreadList: Sendable {
     public let threads: [ChatThread]
     public let eventIDs: Set<String>
+    public let deletedThreadIDs: Set<String>
+    public let removedThreadIDs: Set<String>
+    public let removalsToAcknowledge: Set<String>
     public let cursor: ChatCacheCursor
   }
 
@@ -53,21 +56,19 @@ public actor ChatSync {
     return true
   }
 
+  public func markThreadUnavailable(_ id: String) async throws {
+    try await cache?.markThreadUnavailable(id)
+  }
+
   public func cachedThreads() async -> [ChatThread]? {
     await cachedThreadList()?.threads
   }
 
   /// A committed list at or below `sequence` needs no new presentation projection.
-  public func cachedThreadList(newerThan sequence: Int? = nil) async -> (
-    threads: [ChatThread], cursor: ChatCacheCursor
-  )? {
+  public func cachedThreadList(newerThan sequence: Int? = nil) async -> ThreadList? {
     guard let cached = await readCachedThreadList(newerThan: sequence) else { return nil }
-    return (
-      ChatThreadReplay.sidebarOrder(
-        ChatThreadReplay.replay(
-          snapshot: cached.snapshot.map(\.thread), events: cached.events.map(\.change))),
-      cached.cursor
-    )
+    let unavailable = await unavailableThreads()
+    return cached.list(unavailable: unavailable, persisted: true)
   }
 
   public func cachedHistory(threadID: String) async -> ChatHistory? {
@@ -75,6 +76,9 @@ public actor ChatSync {
     return try? ChatEventProjection.history(rows: cached.rows.map(\.event), recovering: false)
   }
 
+}
+
+extension ChatSync {
   public func threads() async throws -> [ChatThread] {
     try await threadsWithIndicators().threads
   }
@@ -119,18 +123,20 @@ public actor ChatSync {
   private func synchronizeThreadList(requirePersistence: Bool) async throws -> ThreadList {
     let cached = await readCachedThreadList()
     var state: ThreadListState
+    let baseline: ChatCacheCursor?
     if let cached {
       state = cached
+      baseline = cached.cursor
     } else {
+      // Legacy projections may not decode. Still guard their durable cursor during repair.
+      baseline = try? await cache?.threadListCursor()
       state = try await fetchThreadSnapshot()
     }
-    let previousIDs = Set(
-      ChatThreadReplay.replay(
-        snapshot: state.snapshot.map(\.thread), events: state.events.map(\.change)
-      ).map(\.id))
+    let previousIDs = Set(state.threads.map(\.id))
     state = try await catchUpThreadEvents(state)
     // A snapshot rebase can compact events observed during this catch-up.
     var eventIDs = Set(state.events.map(\.id))
+    var deletedIDs = state.deletedThreadIDs
     if !state.replaced && state.events.count > threadEventRebaseThreshold {
       let rebased: ThreadListState?
       do {
@@ -147,15 +153,32 @@ public actor ChatSync {
       if let rebased { state = try await catchUpThreadEvents(rebased) }
     }
     eventIDs.formUnion(state.events.map(\.id))
-    if !(await persistThreadList(state)), requirePersistence { throw ChatCacheError.unavailable }
-    if let durable = await readCachedThreadList(newerThan: state.cursor.seqID) {
-      state = durable
-      eventIDs.formUnion(durable.events.map(\.id))
+    deletedIDs.formUnion(state.deletedThreadIDs)
+    var persisted = false
+    do {
+      persisted = try await persistThreadList(
+        state, startingAt: baseline ?? ChatCacheCursor(eventID: nil, seqID: 0),
+        deletions: deletedIDs)
+      if let durable = await readCachedThreadList(newerThan: persisted ? state.cursor.seqID : nil) {
+        state = durable
+        if !persisted { deletedIDs.removeAll() }
+        eventIDs.formUnion(durable.events.map(\.id))
+        deletedIDs.formUnion(durable.deletedThreadIDs)
+      } else if !persisted, requirePersistence {
+        throw ChatCacheError.unavailable
+      }
+    } catch {
+      if requirePersistence { throw error }
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error(
+          "event=chat.cache.list.save.failed error=\(error.localizedDescription, privacy: .private)"
+        )
     }
-    let current = ChatThreadReplay.sidebarOrder(
-      ChatThreadReplay.replay(
-        snapshot: state.snapshot.map(\.thread), events: state.events.map(\.change)))
-    for removedID in previousIDs.subtracting(current.map(\.id)) {
+    let unavailable = await unavailableThreads()
+    let list = state.list(
+      previouslyListed: previousIDs, observedEvents: eventIDs, deleted: deletedIDs,
+      unavailable: unavailable, persisted: persisted)
+    for removedID in list.removedThreadIDs {
       histories.removeValue(forKey: removedID)
       do {
         try await cache?.deleteHistory(threadID: removedID)
@@ -166,9 +189,12 @@ public actor ChatSync {
           )
       }
     }
-    return ThreadList(threads: current, eventIDs: eventIDs, cursor: state.cursor)
+    return list
   }
 
+}
+
+extension ChatSync {
   public func cachedIndicators() async -> CachedChatIndicators? {
     guard let cache else { return indicatorState.snapshot }
     do {
@@ -376,7 +402,9 @@ public actor ChatSync {
   }
 
   public func cancellationRecoveryPending(threadID: String) async throws -> Bool {
-    let detail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
+    let detail: ThreadDetail = try await withExistingChatThread(threadID) {
+      try await self.client.request("/api/chat-threads/\(threadID)")
+    }
     return detail.cancellationRecoveryPending
   }
 

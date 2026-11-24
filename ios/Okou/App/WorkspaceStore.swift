@@ -94,6 +94,7 @@ final class WorkspaceStore {
   private(set) var newChatProjectID: String?
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
+  private var unverifiedDraftThreads = Set<String>()
   private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
@@ -147,6 +148,8 @@ final class WorkspaceStore {
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
+    didDelete: { [weak self] in self?.discardDeletedThread($0) ?? false },
+    confirmAbsences: { [weak self] in await self?.confirmAbsences($0) ?? [] },
     didChangeReadState: { [weak self] in self?.notificationReadStateChanged() },
     readRetrySleep: readRetrySleep, indicatorsBootstrap: indicatorsBootstrap,
     lifecycleTasks: lifecycleTasks)
@@ -529,9 +532,58 @@ final class WorkspaceStore {
   func reportWorkspaceFailure(_ failure: Error) { handle(failure) }
 
   private func handle(_ failure: Error) {
-    guard !closed, (failure as? APIClientError)?.statusCode == 426 else { return }
-    needsUpgrade = true
-    close()
+    guard !closed else { return }
+    if let unavailable = failure as? UnavailableChatThread {
+      if list.confirmUnavailable(unavailable.id) { requestRefresh(.threadList) }
+    } else if (failure as? APIClientError)?.statusCode == 426 {
+      needsUpgrade = true
+      close()
+    }
   }
 
+}
+
+extension WorkspaceStore {
+  /// A complete list can omit a chat after rollback. Only the parent can authorize draft cleanup.
+  private func confirmAbsences(_ absent: Set<String>) async -> Set<String> {
+    for id in absent
+    where selectedThreadID == id || hasDraft(id) || draftStorage?.hasThreadDraft(id) == true {
+      unverifiedDraftThreads.insert(id)
+    }
+    var confirmed = Set<String>()
+    for id in unverifiedDraftThreads {
+      guard !closed, !Task.isCancelled else { break }
+      do {
+        _ = try await sync.cancellationRecoveryPending(threadID: id)
+      } catch is UnavailableChatThread {
+        confirmed.insert(id)
+      } catch {
+        handle(error)
+        // Retry on the next list refresh without touching the draft.
+        continue
+      }
+      unverifiedDraftThreads.remove(id)
+    }
+    return confirmed
+  }
+
+  private func discardDeletedThread(_ id: String) -> Bool {
+    guard !closed else { return false }
+    unverifiedDraftThreads.remove(id)
+    let wasSelected = selectedThreadID == id
+    conversations.discardDeletedThread(id)
+    if wasSelected { selectedThreadID = nil }
+    navigation.threadUnavailable(id, wasSelected: wasSelected)
+    sidebarDrafts.noteReleased(id, hasDraft: false)
+    guard let draftStorage else { return true }
+    do {
+      try ComposerDraftStore.removeStoredDraft(id, from: draftStorage)
+      return true
+    } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatDraft")
+        .error(
+          "event=chat.draft.remove.failed error=\(error.localizedDescription, privacy: .private)")
+      return false
+    }
+  }
 }

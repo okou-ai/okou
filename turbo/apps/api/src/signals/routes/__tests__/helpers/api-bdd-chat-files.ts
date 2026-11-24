@@ -398,8 +398,18 @@ export function createChatFilesBddApi(context: TestContext) {
     return chatFilesApp(context)(chatThreadMetadataContract);
   }
 
-  function threadDraftClient() {
-    return chatFilesApp(context)(chatThreadDraftContract);
+  async function requestReadThreadDraft<Status extends 200 | 404>(
+    actor: ApiTestUser,
+    threadId: string,
+    statuses: readonly Status[],
+  ) {
+    return await accept(
+      chatFilesApp(context)(chatThreadDraftContract).get({
+        headers: authenticate(context, actor),
+        params: { id: threadId },
+      }),
+      statuses,
+    );
   }
 
   function threadEventsClient() {
@@ -802,17 +812,12 @@ export function createChatFilesBddApi(context: TestContext) {
       );
     },
 
+    requestReadThreadDraft,
     async readThreadDraft(
       actor: ApiTestUser,
       threadId: string,
     ): Promise<ChatThreadDraft> {
-      const response = await accept(
-        threadDraftClient().get({
-          headers: authenticate(context, actor),
-          params: { id: threadId },
-        }),
-        [200],
-      );
+      const response = await requestReadThreadDraft(actor, threadId, [200]);
       return response.body;
     },
 
@@ -824,6 +829,7 @@ export function createChatFilesBddApi(context: TestContext) {
         readonly draftUserMessage: UserMessageInputDocument | null;
         readonly draftAttachments?: readonly PersistedAttachment[] | null;
       },
+      expectedStatus: 204 | 404 = 204,
     ): Promise<void> {
       const requestBody = {
         suggestionPreset: body.suggestionPreset,
@@ -843,7 +849,7 @@ export function createChatFilesBddApi(context: TestContext) {
           params: { id: threadId },
           body: chatThreadDraftSchema.parse(requestBody),
         }),
-        [204],
+        [expectedStatus],
       );
     },
 

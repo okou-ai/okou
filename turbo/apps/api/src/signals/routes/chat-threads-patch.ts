@@ -6,7 +6,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { updateChatThreadDraft$ } from "../services/chat-thread.service";
 import { canWriteProjectReferences } from "../services/project-reference.service";
-import { badRequestMessage } from "../../lib/error";
+import { badRequestMessage, notFound } from "../../lib/error";
 import type { RouteEntry } from "../route-entry";
 
 const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -22,7 +22,7 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return badRequestMessage("Projects unavailable");
   }
   signal.throwIfAborted();
-  await set(
+  const saved = await set(
     updateChatThreadDraft$,
     {
       threadId: params.id,
@@ -36,6 +36,9 @@ const patchInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   );
   signal.throwIfAborted();
 
+  if (!saved) {
+    return notFound("Chat thread not found");
+  }
   return { status: 204 as const, body: undefined };
 });
 

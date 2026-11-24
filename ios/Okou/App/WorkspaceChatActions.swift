@@ -360,6 +360,16 @@ final class WorkspaceChatActions {
       action: { [weak self] in self?.selectChat(thread.id) })
   }
 
+  func threadUnavailable(_ id: String, wasSelected: Bool) {
+    if openingThreadID == id { cancelOpening() }
+    dismissChatPreview(id)
+    if wasSelected {
+      threadFeedback = ChatThreadFeedback(
+        threadID: id, message: String(localized: "This chat is no longer available."),
+        actionTitle: nil, kind: .error, action: {})
+    }
+  }
+
   func close() {
     closed = true
     cancelOpening()

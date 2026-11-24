@@ -51,6 +51,33 @@ final class ChatDraftTests: XCTestCase {
     } catch APIClientError.incompatibleData {}
   }
 
+  func testOnlyCanonicalThreadDraftMissesRetireTheParent() async throws {
+    let code = Mutex("NOT_FOUND")
+    let fixture = ChatHTTPFixture { _ in
+      let current = code.withLock { $0 }
+      return ChatHTTPResponse(
+        status: 404, body: #"{"error":{"code":"\#(current)","message":"Missing"}}"#)
+    }
+    let repository = ChatDraftRepository(client: fixture.client)
+    do {
+      _ = try await repository.load(.thread("chat"))
+      XCTFail("Reading a draft must report the missing parent")
+    } catch let error as UnavailableChatThread { XCTAssertEqual(error.id, "chat") }
+    do {
+      try await repository.save(ComposerDraft(), to: .thread("chat"))
+      XCTFail("Saving or clearing must report the missing parent")
+    } catch let error as UnavailableChatThread { XCTAssertEqual(error.id, "chat") }
+    do {
+      _ = try await repository.load(.workspace)
+      XCTFail("The workspace draft request must fail independently")
+    } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 404) }
+    code.withLock { $0 = "OTHER_RESOURCE_NOT_FOUND" }
+    do {
+      _ = try await repository.load(.thread("chat"))
+      XCTFail("An unrelated 404 must remain a request error")
+    } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 404) }
+  }
+
   func testMemberAndThreadDraftsUseTheirOwnRoutes() async throws {
     let writes = Mutex<[String: ComposerDraft]>([:])
     let paths = Mutex<[String]>([])

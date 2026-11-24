@@ -6,6 +6,7 @@ import { computed } from "ccstate";
 import { chatThreadDraftContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
+import { notFound } from "../../lib/error";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf } from "../context/request";
 import { chatThreadDraft } from "../services/chat-thread.service";
@@ -21,6 +22,9 @@ const getThreadDraftInner$ = computed(async (get) => {
       userId: auth.userId,
     }),
   );
+  if (!draft) {
+    return notFound("Chat thread not found");
+  }
   return {
     status: 200 as const,
     body: draft,

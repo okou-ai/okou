@@ -64,7 +64,11 @@ final class ThreadListStore {
   private var refreshAgain = false
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
-  private var appliedThreadSequence = 0
+  private var appliedCursor: ChatCacheCursor?
+  // A failed local cleanup stays hidden and is retried when the confirmed deletion is replayed.
+  private var cleanedUnavailableThreads: [String: Bool] = [:]
+  private let didDelete: @MainActor (String) -> Bool
+  private let confirmAbsences: @MainActor (Set<String>) async -> Set<String>
   private var appliedIndicatorsRevision = 0
   // Online running state can arrive before its list event. Keep the current
   // server set so later metadata can project it; running state is never persisted.
@@ -90,6 +94,8 @@ final class ThreadListStore {
     client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
+    didDelete: @escaping @MainActor (String) -> Bool = { _ in true },
+    confirmAbsences: @escaping @MainActor (Set<String>) async -> Set<String> = { _ in [] },
     didChangeReadState: @escaping @MainActor () -> Void = {},
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
@@ -113,6 +119,8 @@ final class ThreadListStore {
     self.resources = resources
     self.commands = commands
     self.didRefresh = didRefresh
+    self.didDelete = didDelete
+    self.confirmAbsences = confirmAbsences
     self.didChangeReadState = didChangeReadState
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
@@ -122,15 +130,17 @@ final class ThreadListStore {
   func restoreCached() async {
     guard !closed, !Task.isCancelled else { return }
     let revision = creationRevision
-    let sequence = hasLoadedThreads ? appliedThreadSequence : nil
+    let cursor = appliedCursor
     var restoredThreads = false
-    if let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
-      revision == creationRevision,
-      !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
+    if let cached = await sync.cachedThreadList(newerThan: cursor?.seqID), !closed,
+      !Task.isCancelled,
+      revision == creationRevision, appliedCursor == cursor
     {
       let restored = ThreadListReadProjection.restoring(cached.threads, preserving: threads)
-      appliedThreadSequence = cached.cursor.seqID
+      appliedCursor = cached.cursor
+      for id in cached.deletedThreadIDs { retireThread(id) }
       projectThreads(restored)
+      await acknowledgeCleanup(cached)
       restoredThreads = true
     }
     // Read changes need not advance the thread-list event cursor. Re-read the
@@ -172,17 +182,22 @@ final class ThreadListStore {
           do {
             let revision = readRevision
             let creation = creationRevision
+            let cursor = appliedCursor
             let response = try await ChatReadRecovery.read("chat list", sleep: readRetrySleep) {
               try await self.sync.threadList()
             }
             var result = response.threads
+            // Compaction can remove a row without retaining its deletion event.
+            let absent = response.removedThreadIDs.union(threads.map(\.id))
+              .subtracting(result.map(\.id)).subtracting(response.deletedThreadIDs)
+            let confirmed = await confirmAbsences(absent)
             let cachedUnread = await sync.cachedIndicators()
             try Task.checkCancellation()
             try signal.checkCancellation()
             guard !closed else { throw CancellationError() }
             actions.settleOptimisticChanges(eventIDs: response.eventIDs)
-            // A read started before creation cannot remove its acknowledged thread.
-            guard creation == creationRevision else {
+            // Only the read that still owns this projection may replace it, including on rollback.
+            guard creation == creationRevision, cursor == appliedCursor else {
               refreshAgain = true
               continue
             }
@@ -207,9 +222,10 @@ final class ThreadListStore {
               appliedIndicatorsRevision = cachedUnread.revision
               unreadThreadIDs = Set(cachedUnread.unreadAt.keys)
             }
-            guard response.cursor.seqID >= appliedThreadSequence else { continue }
-            appliedThreadSequence = response.cursor.seqID
+            appliedCursor = response.cursor
+            for id in response.deletedThreadIDs.union(confirmed) { retireThread(id) }
             projectThreads(result)
+            await acknowledgeCleanup(response)
           } catch {
             try Task.checkCancellation()
             try signal.checkCancellation()
@@ -437,8 +453,8 @@ final class ThreadListStore {
 
   private func publishThreads(_ result: [ChatThread]) {
     hasLoadedThreads = true
-    if threads != result { threads = result }
-    didRefresh(result)
+    threads = result.filter { cleanedUnavailableThreads[$0.id] == nil }
+    didRefresh(threads)
   }
 
   @discardableResult
@@ -552,6 +568,36 @@ final class ThreadListStore {
 }
 
 extension ThreadListStore {
+  @discardableResult
+  private func retireThread(_ id: String) -> Bool {
+    guard !closed, cleanedUnavailableThreads[id] != true else { return false }
+    let first = cleanedUnavailableThreads[id] == nil
+    cleanedUnavailableThreads[id] = didDelete(id)
+    return first
+  }
+
+  private func acknowledgeCleanup(_ list: ChatSync.ThreadList) async {
+    let cleaned = list.removalsToAcknowledge.filter { cleanedUnavailableThreads[$0] == true }
+    await sync.acknowledgeRemovedThreads(cleaned)
+  }
+
+  @discardableResult
+  func confirmUnavailable(_ id: String) -> Bool {
+    guard retireThread(id) else { return false }
+    publishThreads(threads)
+    // A detail response can arrive before the corresponding list event, even across a restart.
+    let task = Task { [sync] in
+      do { try await sync.markThreadUnavailable(id) } catch {
+        Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+          .error(
+            "event=chat.cache.unavailable.save.failed error=\(error.localizedDescription, privacy: .private)"
+          )
+      }
+    }
+    lifecycleTasks.track(task)
+    return true
+  }
+
   func canWrite(_ id: String) -> Bool {
     actions.canWrite(id)
   }

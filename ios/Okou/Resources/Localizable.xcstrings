@@ -22011,6 +22011,43 @@
         }
       }
     },
+    "This chat is no longer available.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Dieser Chat ist nicht mehr verfügbar." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Este chat ya no está disponible." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Cette discussion n’est plus disponible." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "यह चैट अब उपलब्ध नहीं है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Chat ini sudah tidak tersedia." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Questa chat non è più disponibile." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "このチャットは利用できなくなりました。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 채팅은 더 이상 사용할 수 없습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Esta conversa não está mais disponível." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "此会话已不可用。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "此對話已無法使用。" }
+        }
+      }
+    },
     "This draft can no longer be sent.": {
       "localizations": {
         "de": {

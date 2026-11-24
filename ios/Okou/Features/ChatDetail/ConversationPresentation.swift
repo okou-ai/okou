@@ -151,7 +151,16 @@ final class ConversationPresentation {
           let reads = try readResources.refresh()
           // A failed history read must retire its unused recovery without waiting for it.
           defer { reads.cancel() }
-          let events = try await reads.history.value
+          let events: ChatHistory
+          do {
+            events = try await reads.history.value
+          } catch let error as APIClientError
+            where error.statusCode == 404 && error.serverCode == "NOT_FOUND"
+          {
+            // A history subresource can be missing. Let the parallel parent read confirm it.
+            _ = try await reads.recovery.value
+            throw error
+          }
           // Keep a confirmed recovery visible until its independent read finishes.
           let result = events.withCancellationRecoveryPending(
             history?.executionState == .recovering)

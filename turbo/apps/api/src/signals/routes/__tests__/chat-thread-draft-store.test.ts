@@ -208,6 +208,10 @@ describe("thread drafts", () => {
     const sibling = await chat.createThread(fixture.actor, {
       title: `Sibling ${randomUUID()}`,
     });
+    await chat.patchThread(fixture.actor, sibling.id, {
+      draftUserMessage: null,
+      draftAttachments: null,
+    });
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("mine"));
 
     await expect(
@@ -220,19 +224,8 @@ describe("thread drafts", () => {
     await expect(chat.listThreadDrafts(foreign)).resolves.not.toContain(
       fixture.threadId,
     );
-    // Another user's thread and a missing thread read as the empty draft.
-    await expect(
-      chat.readThreadDraft(foreign, fixture.threadId),
-    ).resolves.toStrictEqual({
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-    await expect(
-      chat.readThreadDraft(fixture.actor, randomUUID()),
-    ).resolves.toStrictEqual({
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
+    await chat.requestReadThreadDraft(foreign, fixture.threadId, [404]);
+    await chat.requestReadThreadDraft(fixture.actor, randomUUID(), [404]);
   });
 
   it("isolates drafts between the same user's workspaces", async () => {
@@ -243,46 +236,33 @@ describe("thread drafts", () => {
       other,
       fixture.threadId,
       draftBody("wrong workspace"),
+      404,
     );
-    await chat.patchThread(other, fixture.threadId, {
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
+    await chat.patchThread(
+      other,
+      fixture.threadId,
+      { draftUserMessage: null, draftAttachments: null },
+      404,
+    );
     await expect(chat.listThreadDrafts(other)).resolves.not.toContain(
       fixture.threadId,
     );
-    await expect(
-      chat.readThreadDraft(other, fixture.threadId),
-    ).resolves.toStrictEqual({
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
+    await chat.requestReadThreadDraft(other, fixture.threadId, [404]);
     await expect(servedDraftText(fixture)).resolves.toBe("owned");
   });
 
-  it("keeps a write to another user's thread out of the owner's draft", async () => {
+  it("returns the same miss for another owner's private thread as for a deleted thread", async () => {
     const fixture = await createDraftFixture();
     await chat.patchThread(fixture.actor, fixture.threadId, draftBody("owned"));
-    const foreign = bdd.user({ orgId: fixture.actor.orgId });
-
-    // The write is accepted but keyed to the caller, so the owner's draft and
-    // the owner's listing are untouched.
-    await chat.patchThread(foreign, fixture.threadId, draftBody("not mine"));
-
+    const peer = bdd.user({ orgId: fixture.actor.orgId });
+    await chat.patchThread(peer, fixture.threadId, draftBody("not mine"), 404);
+    await chat.patchThread(
+      peer,
+      fixture.threadId,
+      { draftUserMessage: null, draftAttachments: null },
+      404,
+    );
     await expect(servedDraftText(fixture)).resolves.toBe("owned");
-    await expect(
-      chat.readThreadDraft(foreign, fixture.threadId),
-    ).resolves.toStrictEqual({
-      draftUserMessage: draftDocument("not mine"),
-      draftAttachments: null,
-    });
-    await chat.patchThread(fixture.actor, fixture.threadId, {
-      draftUserMessage: null,
-      draftAttachments: null,
-    });
-    await expect(
-      chat.readThreadDraft(foreign, fixture.threadId),
-    ).resolves.toMatchObject({ draftUserMessage: draftDocument("not mine") });
   });
 
   it("removes the draft with the thread it belongs to", async () => {
@@ -295,6 +275,21 @@ describe("thread drafts", () => {
     await expect(listedDraftIds(fixture)).resolves.toContain(fixture.threadId);
 
     await chat.deleteThread(fixture.actor, fixture.threadId);
+    await expect(
+      chat.requestReadThreadDraft(fixture.actor, fixture.threadId, [404]),
+    ).resolves.toMatchObject({ body: { error: { code: "NOT_FOUND" } } });
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      draftBody("late save"),
+      404,
+    );
+    await chat.patchThread(
+      fixture.actor,
+      fixture.threadId,
+      { draftUserMessage: null, draftAttachments: null },
+      404,
+    );
 
     await expect(listedDraftIds(fixture)).resolves.not.toContain(
       fixture.threadId,
