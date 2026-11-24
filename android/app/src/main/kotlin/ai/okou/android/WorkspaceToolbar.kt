@@ -377,7 +377,7 @@ internal fun WorkspaceToolbarActions(
     showFilter: Boolean,
     list: ChatListUiState,
     selectFilter: ((ChatListFilter) -> Unit)?,
-    markAllRead: () -> Unit,
+    markAllRead: (() -> Unit)?,
     update: UpdateToolbarAction?,
     settingsFocus: FocusRequester,
     openSettings: ((restoreFocus: Boolean) -> Unit)?,
@@ -442,10 +442,12 @@ internal fun WorkspaceToolbarActions(
                             WorkspaceMenuItem(
                                 stringResource(R.string.chat_mark_all_read),
                                 R.drawable.ic_done_all,
-                                enabled = remember(list) { list.markAllReadTargets().isNotEmpty() },
+                                enabled =
+                                    markAllRead != null &&
+                                        remember(list) { list.markAllReadTargets().isNotEmpty() },
                             ) {
                                 closeMenu()
-                                markAllRead()
+                                markAllRead?.invoke()
                             },
                         )
                         for (choice in ChatListFilter.entries) {

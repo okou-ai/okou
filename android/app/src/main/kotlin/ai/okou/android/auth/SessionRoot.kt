@@ -113,6 +113,7 @@ internal fun SessionRoot(
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         val ready = state.ready
         val opened = state.opening as? OpeningWorkspace.Authorized
+        val cached = state.opening as? OpeningWorkspace.Cached
         val identity = ready?.identity ?: state.opening?.identity
         val organization = ready?.organization ?: opened?.organization
         val workspaceName =
@@ -159,7 +160,11 @@ internal fun SessionRoot(
                                 ?.collectAsStateWithLifecycle()
                                 ?.value
                                 ?.timezone ?: java.util.TimeZone.getDefault().id,
-                        projectExpansion = ready?.projectExpansion ?: opened?.projectExpansion,
+                        projectExpansion =
+                            ready?.projectExpansion
+                                ?: opened?.projectExpansion
+                                ?: cached?.projectExpansion,
+                        cachedStartupChats = cached?.chats,
                         renamePresentation =
                             ready?.renamePresentation ?: opened?.renamePresentation,
                         settingsContent = { destination, open, close ->
