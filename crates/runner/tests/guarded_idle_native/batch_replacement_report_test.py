@@ -15,7 +15,7 @@ import cleanup_report as cleanup
 import report
 import report_test
 import status_failure_report_test as failure_test
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class ReplacementReportTests(unittest.TestCase):
@@ -50,9 +50,10 @@ class ReplacementReportTests(unittest.TestCase):
                            idle_sandboxes=[{"reuse_key":reuse,"sandbox_id":new}])
             empty = {k:v for k,v in current.items() if k != "idle_sandboxes"}
             empty["updated_at"] = "2026-10-19T01:00:03Z"
-            reads = [{"started_ns":at(offset),"finished_ns":at(offset)+1000,
-                "read_start_offset_ns":offset*1_000_000,"available_bytes":32*1024**3,
-                "age_ns":2,"read_duration_ns":1} for offset in (7,8,33)]
+            reads = [
+                memory_read_receipt(at(offset), at(offset) + 1000, offset * 1_000_000)
+                for offset in (7, 8, 33)
+            ]
             values = (
                 {"policy":self.policy,"status_path":str(self.root/f"case-{index}"/"status.json"),
                  "published_status":initial,"selected_revision":1,

@@ -15,7 +15,7 @@ import snapshot_report_fixture
 import report
 import report_test
 import snapshot_report as startup
-from progress_report_fixture import foreground_heartbeat, joined_observer
+from progress_report_fixture import foreground_heartbeat, joined_observer, memory_read_receipt
 
 
 class CreateCancellationTests(unittest.TestCase):
@@ -44,8 +44,8 @@ class CreateCancellationTests(unittest.TestCase):
                 {"created":{"home_path":path,"home_bytes":report.NATIVE_HOME_BYTES,"ext4_magic":"53ef",
                     "superblock_hex":block.hex(),"superblock_sha256":hashlib.sha256(block).hexdigest(),"held_ns":clock(490)},
                  "state":"Ready","available_bytes":32*1024**3,"samples":[
-                    {"started_ns":clock(ms),"finished_ns":clock(ms)+3,"read_start_offset_ns":ms*1_000_000,
-                     "available_bytes":32*1024**3,"age_ns":2,"read_duration_ns":1} for ms in (200,400)],
+                    memory_read_receipt(clock(ms), clock(ms) + 3, ms * 1_000_000)
+                    for ms in (200, 400)],
                  "accounting":held,"allocated":[4,8192,2],"release_byte_withheld":True},
                 {"cancelled_ns":clock(510),"first_dropped_ns":clock(520),"second_pending_ns":clock(530),
                  "foreground_acquired_ns":clock(540),"first_pending":True,"first_dropped":True,"second_pending":True,
