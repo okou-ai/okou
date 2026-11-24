@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.115.0](https://github.com/okou-ai/okou/compare/api-v2.114.1...api-v2.115.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** add connector management and align chat account controls ([#50371](https://github.com/okou-ai/okou/issues/50371)) ([b6afd7e](https://github.com/okou-ai/okou/commit/b6afd7e2be27cb0356358062dc7bb813200d18f9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.116.0
+    * @okouai/core bumped to 8.868.0
+    * @okouai/db bumped to 2.63.5
+    * @okouai/pi-agent-runtime bumped to 1.52.58
+
 ## [2.114.1](https://github.com/okou-ai/okou/compare/api-v2.114.0...api-v2.114.1) (2026-11-24)
 
 
