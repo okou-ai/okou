@@ -12,6 +12,7 @@ import { feishuChatIngress } from "@okouai/db/schema/feishu-chat-ingress";
 import { slackChatIngress } from "@okouai/db/schema/slack-chat-ingress";
 import { command } from "ccstate";
 import { randomUUID } from "node:crypto";
+import { string } from "zod";
 import {
   eq,
   and,
@@ -47,6 +48,10 @@ type IntegrationIngressReceipt =
       readonly claimToken: string;
     }
   | { readonly kind: "slack" | "feishu"; readonly ingressId: string };
+
+const integrationAppendResultSchema = chatEventAppendResultSchema.extend({
+  userId: string(),
+});
 
 type IntegrationContext = Exclude<
   NonNullable<ReturnType<typeof prepareChatEvent>["displayContext"]>,
@@ -317,7 +322,7 @@ export const enqueueIntegrationChatInput$ = command(
     // A conflicting context still permits the canonical event attempt; only its
     // returned identity may replace the model or advance the queue's timestamp.
     const [event] = parseRawRows(
-      chatEventAppendResultSchema,
+      integrationAppendResultSchema,
       await db.execute(sql`
       WITH claimed_ingress AS (${claim}),
       integration_context AS (${contextWrite}),
@@ -339,15 +344,16 @@ export const enqueueIntegrationChatInput$ = command(
         ON CONFLICT (chat_thread_id) DO UPDATE
           SET queued_at = ${queue.conflict.set.queuedAt}
       )
-      SELECT id, created_at::text AS "createdAt", seq_id AS "seqId",
-        run_event_sequence_number AS "sequenceNumber" FROM inserted
+      SELECT inserted.id, inserted.created_at::text AS "createdAt", inserted.seq_id AS "seqId",
+        inserted.run_event_sequence_number AS "sequenceNumber", ${chatThreads.userId} AS "userId"
+      FROM inserted JOIN ${chatThreads} ON ${chatThreads.id} = ${chatThreadId}::uuid
     `),
     );
     signal.throwIfAborted();
     if (!event) {
       return null;
     }
-    const { userId } = args.input;
+    const { userId } = event;
     await publishChatIndicatorsChangedSafely({ userId, orgId: args.orgId });
     signal.throwIfAborted();
     return event.id;
