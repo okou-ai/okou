@@ -18,6 +18,18 @@ def observer(value, begin, end):
         raise ValueError("foreground observer did not complete a new joined real read inside the held wait")
 
 
+def held_pool_observer(pool, begin, end, message):
+    """Validate clocks and a joined read while the pool and status locks are held."""
+    held, status_held, heartbeat_pending = [
+        pool.get(key) for key in ("pool_held_ns", "status_held_ns", "heartbeat_pending_ns")
+    ]
+    if (not all(report.positive_integer(t) for t in (held, status_held, heartbeat_pending))
+            or not begin < held <= status_held < heartbeat_pending < end):
+        raise ValueError(message)
+    observer(pool.get("observer"), heartbeat_pending, end)
+    return held, status_held, heartbeat_pending
+
+
 def heartbeat(value, sequence, begin, end, allocated=(2, 4096)):
     if (not isinstance(value, dict) or set(value) != {"receipt", "send_joined", "completed_ns"}
             or value["send_joined"] is not True or not report.positive_integer(value["completed_ns"])):
