@@ -26,6 +26,7 @@ import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import android.app.LocaleManager
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.os.LocaleList
 import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.core.app.ActivityScenario
@@ -223,12 +224,32 @@ class ScreenshotScenario {
                 awaitIme(true)
                 find(field).setText("访谈计划")
                 val action = text(R.string.chat_project_create_confirm)
-                if (!device.hasObject(action)) {
-                    val panel = find(By.pkg(app.packageName).scrollable(true).hasDescendant(field))
-                    checkNotNull(panel.scrollUntil(Direction.DOWN, Until.findObject(action)))
+                val imeBounds = Rect()
+                checkNotNull(
+                    instrumentation.uiAutomation.windows.firstOrNull {
+                        it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD
+                    },
+                ).getBoundsInScreen(imeBounds)
+                try {
+                    val visibleAction = object : Condition<UiObject2, Boolean> {
+                        override fun apply(panel: UiObject2) =
+                            device.findObject(action)?.visibleBounds?.bottom?.let { it <= imeBounds.top } == true
+                    }
+                    val panel = generateSequence(find(field)) { it.parent }.firstOrNull { it.isScrollable }
+                    val button = device.findObject(action)
+                    if (button == null || button.visibleBounds.bottom > imeBounds.top) {
+                        checkNotNull(panel) { "Project naming form has no visible scroll region above the keyboard" }
+                        check(panel.scrollUntil(Direction.DOWN, visibleAction) == true)
+                    }
+                    val createButton = find(action).button()
+                    check(createButton.isEnabled && createButton.visibleBounds.bottom <= imeBounds.top) {
+                        "Create must be reachable above the keyboard: ${createButton.visibleBounds}, IME $imeBounds"
+                    }
+                    ScreenshotCapture.capture("short-name.png")
+                } catch (failure: Throwable) {
+                    ScreenshotCapture.capture("short-diagnostic.png")
+                    throw failure
                 }
-                check(find(action).isEnabled)
-                ScreenshotCapture.capture("short-name.png")
             }
         } catch (failure: Throwable) {
             failures += failure
