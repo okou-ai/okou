@@ -32,10 +32,7 @@ class BatchAbaReportTests(unittest.TestCase):
             terminal = copy.deepcopy(originals[index*6:index*6+6])
             for event, offset in zip(terminal, (0,1,36,37,46,60)):
                 event.update(case=case, monotonic_ns=at(offset), unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             old, backing = terminal[1]["sandbox_id"], terminal[1]["backing_generation"]
             runner = str(uuid.uuid4())

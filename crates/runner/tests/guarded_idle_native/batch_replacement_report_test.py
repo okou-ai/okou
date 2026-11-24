@@ -34,10 +34,7 @@ class ReplacementReportTests(unittest.TestCase):
             for event, offset in zip(terminal,(0,1,9,10,26,65)):
                 event.update(case=case,sandbox_id=old,backing_generation=backing,
                              monotonic_ns=at(offset),unix_ns=at(offset)+1000)
-                reading = copy.deepcopy(sample)
-                reading["monotonic_ns"] = at(offset)+1
-                reading["processes"][0]["observed_monotonic_ns"] = at(offset)+1
-                self.samples.append(reading)
+                self.samples.append(report_test.residency_sample_at(sample, at(offset) + 1))
             self.events.extend(terminal)
             zero = dict.fromkeys(cleanup.COUNTS,0) | {"closed":False}
             active = zero | {"registered_operations":3,"queued":2,"started":1,"tracked_tasks":1,
