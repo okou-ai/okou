@@ -9,6 +9,7 @@ import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.WorkspaceFeedbackHost
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.settingsPanelContentPadding
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
@@ -174,9 +175,7 @@ private fun DefaultModelSheet(
     val windowHeight = currentWindowSizeDp().height
     val fullScreen = windowHeight < 480
     val scroll = rememberScrollState()
-    val size =
-        if (fullScreen) Modifier.fillMaxHeight()
-        else Modifier.heightIn(max = windowHeight.dp * 0.86f).animateContentSize()
+    val size = if (fullScreen) Modifier.fillMaxHeight() else Modifier.animateContentSize()
     val selected = state.selected
     SettingsModal(dismiss, fullScreen = fullScreen) { centered ->
         val routeFeedback by rememberUpdatedState(onFeedbackInOverlay)
@@ -202,12 +201,8 @@ private fun DefaultModelSheet(
         Column(
             Modifier.fillMaxWidth()
                 .then(size)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered && !fullScreen) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                ),
+                .padding(settingsPanelContentPadding(compactHeight = fullScreen))
+                .padding(top = if (centered && !fullScreen) 16.dp else 0.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = dismiss) {
