@@ -80,9 +80,9 @@ test("enabling Codex in Lab preserves a saved Ultra preference that Pi cannot us
     "aria-pressed",
     "true",
   );
-  const row = (await screen.findByText("Codex execution (test only)")).closest(
-    "li",
-  );
+  const row = (
+    await screen.findByText(FeatureSwitchKey.CodexExecution)
+  ).closest("li");
   if (!(row instanceof HTMLElement)) {
     throw new Error("Codex execution test switch row was not found");
   }
