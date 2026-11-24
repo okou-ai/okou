@@ -44,6 +44,7 @@ class ScreenshotScenario {
     private val intro = "发布摘要已准备好。"
     private val media = "用于发布公告、首页和社区帖子的头像与横幅素材预览"
     private val followUp = "准备分享的成果也放在下面了。"
+    private val previewTitle = "summary.md"
 
     @Test
     fun captureConversationArtifactCardsAndPreview() {
@@ -162,7 +163,7 @@ class ScreenshotScenario {
         assertTrue(artifacts.requestedReferences.isEmpty())
         ScreenshotCapture.capture("cards-phone.png")
         tap(cardBounds(artifacts.summary.title))
-        verifyPreview(artifacts)
+        verifyPreview()
         assertEquals(1, artifacts.requestedReferences.size)
         ScreenshotCapture.capture("preview-phone.png")
         assertTrue(device.pressBack())
@@ -176,9 +177,9 @@ class ScreenshotScenario {
         focusWithTab(title)
         ScreenshotCapture.capture("cards-wide.png")
         assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
-        verifyPreview(artifacts)
+        verifyPreview()
         val leftPane = bounds(By.desc("成果"))
-        val preview = bounds(By.text(title))
+        val preview = bounds(By.text(previewTitle))
         assertTrue(leftPane.right < preview.left)
         see(By.text(artifacts.sourceTitle))
         assertFalse(device.hasObject(By.text(artifacts.checklist.title).pkg(app.packageName)))
@@ -188,8 +189,8 @@ class ScreenshotScenario {
         awaitCardFocus(title)
     }
 
-    private fun verifyPreview(artifacts: ArtifactApiFixture) {
-        see(By.text(artifacts.summary.title))
+    private fun verifyPreview() {
+        see(By.text(previewTitle))
         see(By.textContains("仅供预览"))
         see(By.textContains("帮助团队继续推进在手工作"))
         assertFalse(device.hasObject(By.text("保存文件").pkg(app.packageName)))
