@@ -23793,6 +23793,43 @@
         }
       }
     },
+    "Use password instead": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Stattdessen Passwort verwenden" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Usar la contraseña en su lugar" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Utiliser le mot de passe à la place" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "इसके बजाय पासवर्ड इस्तेमाल करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Gunakan kata sandi sebagai gantinya" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Usa la password invece del codice" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "代わりにパスワードを使用" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "대신 비밀번호 사용" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Usar senha em vez do código" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "改用密码登录" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "改用密碼登入" }
+        }
+      }
+    },
     "Use this account": {
       "extractionState": "manual",
       "localizations": {
