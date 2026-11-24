@@ -89,7 +89,7 @@ screenshots = json.loads(subprocess.check_output(
 
 # A path or pin mismatch changes the Actions cache version even when the key matches.
 restores = []
-for consumer in (android['build-test'], android['build'], android['lint'], android['instrumentation'],
+for consumer in (android['build-test'], android['build'], android['instrumentation'],
                  android['release-smoke'], screenshots, job):
     setup, = (step for step in consumer['steps'] if step.get('uses', '').startswith('gradle/actions/setup-gradle@'))
     assert setup['with']['cache-provider'] == 'external'
@@ -119,7 +119,7 @@ assert 'if' not in history
 assert build_steps.index(shallow) < build_steps.index(history)
 assert 'detect-release' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
-for native in ['build', 'build-test', 'lint', 'instrumentation', 'release-smoke']:
+for native in ['build', 'build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
 for sharded in ['build-test', 'instrumentation']:
     assert android[sharded]['strategy'] == {'fail-fast': False, 'matrix': {'shard': [0, 1, 2]}}
@@ -127,15 +127,12 @@ jvm_steps = android['build-test']['steps']
 jvm_step, = (step for step in jvm_steps if step.get('name') == 'Run Debug JVM test shard')
 assert all(step.get('name') != shallow['name'] for step in jvm_steps)
 assert 'continue-on-error' not in jvm_step
-assert {'build', 'build-test', 'lint'} <= set(android['ci-gate-android']['needs'])
-build_step, = (step for step in build_steps if step.get('name') == 'Run source checks and build the Debug APK')
+assert {'build', 'build-test'} <= set(android['ci-gate-android']['needs'])
+build_step, = (step for step in build_steps if step.get('name') == 'Run source checks, lint, and build the Debug APK')
 assert 'continue-on-error' not in build_step
 debug_artifact, = (step for step in build_steps if step.get('with', {}).get('name', '').startswith('okou-android-debug-'))
 assert debug_artifact['with']['retention-days'] == 1
 assert not any(step.get('with', {}).get('name', '').startswith('okou-android-debug-') for step in jvm_steps)
-assert 'continue-on-error' not in android['lint']
-lint_step, = (step for step in android['lint']['steps'] if step.get('name') == 'Run Android lint')
-assert 'continue-on-error' not in lint_step
 native_results, = (
     step['with'] for step in android['instrumentation']['steps']
     if step.get('with', {}).get('name', '').startswith('android-native-results-')
@@ -175,12 +172,8 @@ with tempfile.TemporaryDirectory() as temp:
     assert result.returncode == 7, result.stderr
     assert result.stdout.splitlines() == [
         'spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug', ':app:assembleDebug', '--no-daemon',
-        '--exclude-task', ':app:testDebugUnitTest', '--exclude-task', ':app:lintDebug',
+        '--exclude-task', ':app:testDebugUnitTest',
     ], result.stdout
-    result = subprocess.run(['bash', '-c', lint_step['run']], cwd=work, env=env | {'GRADLE_EXIT': '7'},
-                            text=True, capture_output=True)
-    assert result.returncode == 7, result.stderr
-    assert result.stdout.splitlines() == [':app:lintDebug', '--no-daemon'], result.stdout
     local = subprocess.check_output(['bash', 'scripts/check.sh'], cwd=work, env=env, text=True)
     assert local.splitlines() == ['spotlessCheck', ':app:testDebugUnitTest', ':app:lintDebug',
                                   ':app:assembleDebug', '--no-daemon']
@@ -233,9 +226,9 @@ print(os.environ['QUEUED_BRANCH'])
     assert failed.returncode != 0, failed.stderr
 
     gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
-                    NEEDED='true', BUILD='success', JVM='success', LINT='success',
+                    NEEDED='true', BUILD='success', JVM='success',
                     INSTRUMENTATION='success', RELEASE_SMOKE='success')
-    skipped = dict(BUILD='skipped', JVM='skipped', LINT='skipped', INSTRUMENTATION='skipped', RELEASE_SMOKE='skipped')
+    skipped = dict(BUILD='skipped', JVM='skipped', INSTRUMENTATION='skipped', RELEASE_SMOKE='skipped')
     for values, passed in [
         ({}, True),
         (skipped | {'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': ''}, True),
@@ -247,7 +240,6 @@ print(os.environ['QUEUED_BRANCH'])
         ({'DETECT': 'failure'}, False),
         ({'BUILD': 'failure'}, False),
         ({'JVM': 'failure'}, False),
-        ({'LINT': 'failure'}, False),
         ({'INSTRUMENTATION': 'cancelled'}, False),
         ({'INSTRUMENTATION': 'skipped'}, False),
         ({'RELEASE_SMOKE': 'failure'}, False),

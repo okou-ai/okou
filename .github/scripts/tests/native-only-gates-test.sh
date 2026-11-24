@@ -246,7 +246,7 @@ for event in ['pull_request', 'merge_group', 'push']:
 # Android must publish a result even when detection fails or native work is skipped.
 android = workflow('android')
 android_gate = android['ci-gate-android']
-parallel_jobs = ['build', 'build-test', 'lint', 'instrumentation', 'release-smoke']
+parallel_jobs = ['build', 'build-test', 'instrumentation', 'release-smoke']
 assert {'detect-release', 'detect', *parallel_jobs} <= set(android_gate['needs'])
 for needed in ['true', 'false']:
     values = {

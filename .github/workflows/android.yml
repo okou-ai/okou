@@ -148,9 +148,9 @@ jobs:
           android/gradlew -p android :app:dependencies --configuration debugCompileClasspath --no-daemon
       - *android-complete-history
       - *android-sdk
-      - name: Run source checks and build the Debug APK
+      - name: Run source checks, lint, and build the Debug APK
         working-directory: android
-        run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest --exclude-task :app:lintDebug
+        run: bash scripts/check.sh --exclude-task :app:testDebugUnitTest
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-android-debug-${{ github.sha }}
@@ -158,22 +158,6 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 1
-
-  lint:
-    needs: detect
-    if: needs.detect.outputs.needed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    steps:
-      - *android-checkout
-      - *android-java
-      - *android-gradle
-      - *restore-android-gradle-dependencies
-      - *android-complete-history
-      - *android-sdk
-      - name: Run Android lint
-        working-directory: android
-        run: ./gradlew :app:lintDebug --no-daemon
 
   instrumentation:
     needs: detect
@@ -386,7 +370,6 @@ jobs:
         detect,
         build,
         build-test,
-        lint,
         instrumentation,
         release-smoke,
       ]
@@ -402,7 +385,6 @@ jobs:
           NEEDED: ${{ needs.detect.outputs.needed }}
           BUILD: ${{ needs.build.result }}
           JVM: ${{ needs.build-test.result }}
-          LINT: ${{ needs.lint.result }}
           INSTRUMENTATION: ${{ needs.instrumentation.result }}
           RELEASE_SMOKE: ${{ needs.release-smoke.result }}
         run: |
@@ -422,15 +404,15 @@ jobs:
             echo "::error::Android change detection must succeed; got $DETECT"
             exit 1
           fi
-          case "$NEEDED:$BUILD:$JVM:$LINT:$INSTRUMENTATION:$RELEASE_SMOKE" in
-            true:success:success:success:success:success)
+          case "$NEEDED:$BUILD:$JVM:$INSTRUMENTATION:$RELEASE_SMOKE" in
+            true:success:success:success:success)
               echo 'All Android jobs succeeded.'
               ;;
-            false:skipped:skipped:skipped:skipped:skipped)
+            false:skipped:skipped:skipped:skipped)
               echo 'Android checks were not needed for these changes.'
               ;;
             *)
-              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, build-test=$JVM, lint=$LINT, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
+              echo "::error::Unexpected Android CI results: needed=$NEEDED, build=$BUILD, build-test=$JVM, instrumentation=$INSTRUMENTATION, release-smoke=$RELEASE_SMOKE"
               exit 1
               ;;
           esac
