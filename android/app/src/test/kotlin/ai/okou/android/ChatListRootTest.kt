@@ -103,6 +103,8 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+private const val FEEDBACK_TIMEOUT_MILLIS = 5_000L
+
 open class ChatListApplication : TestOkouApplication() {
     lateinit var fixture: ChatListApiFixture
     lateinit var cacheSnapshot: ChatCacheSnapshot
@@ -1379,8 +1381,8 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(unavailable, 10_000)
         compose.onNode(unavailable).assertIsDisplayed()
         compose.onNode(undo).assertDoesNotExist()
-        compose.waitUntilExactlyOneExists(undo and isEnabled(), 10_000)
-        compose.onNode(undo).assertIsDisplayed()
+        compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
+        compose.onNode(undo and isEnabled()).assertIsDisplayed()
     }
 
     @Test
@@ -3380,7 +3382,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         compose.waitUntilExactlyOneExists(failure, 10_000)
         compose.onNode(undo).assertDoesNotExist()
 
-        compose.waitUntilExactlyOneExists(undo, 10_000)
+        compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
         compose.onNode(failure).assertDoesNotExist()
         compose.onNode(undo).performClick()
         compose.waitUntilExactlyOneExists(hasTestTag("chat_$CHAT_PERSONAL"), 10_000)
@@ -3440,9 +3442,11 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         val secondError = hasText("Could not mark chats as read.") and listHost
         compose.onNode(firstError).assertIsDisplayed()
         compose.onNode(secondError).assertDoesNotExist()
-        compose.waitUntilExactlyOneExists(secondError, 10_000)
+        compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
+        compose.onNode(secondError).assertIsDisplayed()
         compose.onNode(undo and conversationHost).assertIsDisplayed()
-        compose.waitUntilExactlyOneExists(undo and listHost, 10_000)
+        compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
+        compose.onNode(undo and listHost).assertIsDisplayed()
         compose.onNode(undo and conversationHost).assertIsDisplayed()
     }
 
@@ -4093,7 +4097,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                     CHAT_PROJECT
             }
 
-            compose.waitUntilExactlyOneExists(projectError, 10_000)
+            compose.mainClock.advanceTimeBy(FEEDBACK_TIMEOUT_MILLIS)
             compose.onNode(projectError).assertIsDisplayed()
         } finally {
             releaseDelete.countDown()
