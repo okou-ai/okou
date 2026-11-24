@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">Impossible d’annuler la modification.</string>
     <string name="chat_undo_unconfirmed">Impossible de confirmer l’annulation.</string>
     <string name="chat_feedback_dismiss">Fermer</string>
-    <string name="chat_list_offline">Hors ligne</string>
     <string name="chat_list_first_load_failed">Chargement temporairement indisponible</string>
     <string name="chat_list_load_when_online">Les chats se chargeront dès que vous serez de nouveau en ligne.</string>
     <string name="chat_list_title">Discussions</string>
