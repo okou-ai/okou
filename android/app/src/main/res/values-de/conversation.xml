@@ -14,7 +14,6 @@
     <string name="conversation_new_reply">Neue Antwort</string>
     <string name="conversation_view_progress">Fortschritt ansehen</string>
     <string name="conversation_processing">In Bearbeitung…</string>
-    <string name="conversation_history_offline">Der Chatverlauf wird geladen, sobald du online bist.</string>
     <string name="conversation_offline_send">Geh zum Senden online. Dein Entwurf bleibt hier.</string>
     <string name="conversation_work">Arbeitsverlauf</string>
     <string name="conversation_reply_actions">Antwortaktionen</string>

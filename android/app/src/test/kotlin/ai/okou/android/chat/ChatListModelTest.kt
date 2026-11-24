@@ -4841,7 +4841,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                     title = "Seen after reconnect",
                 ),
             )
-            model.updates.retry()
+            realtime.invalidate()
             model.refresh()
             runCurrent()
             assertEquals(initialList + 1, listReads)

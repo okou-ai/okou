@@ -4,11 +4,6 @@
     <string name="auth_check_failed">Zugriff konnte nicht geprüft werden.</string>
     <string name="auth_selection_failed">Arbeitsbereich konnte nicht geöffnet werden.</string>
     <string name="auth_sign_out_failed">Abmeldung fehlgeschlagen.</string>
-    <string name="composer_sync_loading">Gespeicherten Entwurf laden…</string>
-    <string name="composer_sync_saving">Entwurf synchronisieren…</string>
-    <string name="composer_sync_failed">Entwurf konnte nicht synchronisiert werden. Deine Eingabe bleibt auf diesem Gerät.</string>
-    <string name="composer_sync_unsupported">Diesen Entwurf kannst du im Web weiterbearbeiten. Deine Eingabe bleibt auf diesem Gerät; die automatische Synchronisierung pausiert.</string>
-    <string name="composer_sync_retry">Entwurf erneut synchronisieren</string>
     <string name="composer_restore_draft">Behaltenen Entwurf wiederherstellen</string>
     <string name="controls_storage_failed">Ausstehende Steuerbefehle können nicht gespeichert werden.</string>
     <string name="controls_stop">Laufende Arbeit stoppen</string>
@@ -89,7 +84,6 @@
     <string name="composer_retry">Dieselbe Nachricht erneut senden</string>
     <string name="composer_not_observed">Die Nachricht ist noch nicht sichtbar. Ihre Zustellung bleibt unbestätigt.</string>
     <string name="composer_request_failed">Die Anfrage ist fehlgeschlagen. Entwurf und ausstehende Nachricht bleiben erhalten.</string>
-    <string name="composer_saving">Entwurf wird auf diesem Gerät gespeichert…</string>
     <string name="updates_title">App-Updates</string>
     <string name="updates_installed">Aktuelle Version: %1$s</string>
     <string name="updates_current">Du verwendest die neueste Version</string>
@@ -128,8 +122,6 @@
     <string name="updates_error_install">Android konnte das Update nicht installieren.</string>
     <string name="updates_unavailable">Ein passendes Update ist noch nicht verfügbar.</string>
     <string name="updates_android_unsupported">Dieses Update benötigt eine neuere Android-Systemversion.</string>
-    <string name="realtime_connecting">Live-Aktualisierungen werden verbunden…</string>
-    <string name="realtime_unavailable">Live-Aktualisierungen sind nicht verfügbar. Du kannst weiterhin manuell aktualisieren.</string>
     <string name="settings_account">Konto</string>
     <string name="settings_cancel">Abbrechen</string>
     <string name="settings_saving">Wird gespeichert…</string>

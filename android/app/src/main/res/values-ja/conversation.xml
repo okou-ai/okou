@@ -13,7 +13,6 @@
     <string name="conversation_new_reply">新しい返信</string>
     <string name="conversation_view_progress">進捗を確認</string>
     <string name="conversation_processing">処理中…</string>
-    <string name="conversation_history_offline">オンラインになるとチャット履歴が表示されます。</string>
     <string name="conversation_offline_send">送信するには接続してください。下書きは残ります。</string>
     <string name="conversation_work">作業の経過</string>
     <string name="conversation_reply_actions">返信の操作</string>

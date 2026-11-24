@@ -2,9 +2,8 @@
 <resources>
     <string name="history_syncing">Menyinkronkan pesan…</string>
     <string name="history_loading">Memuat percakapan…</string>
-    <string name="history_failed">Percakapan tidak dapat diperbarui. Coba lagi.</string>
+    <string name="history_failed">Percakapan ini tidak dapat dimuat.</string>
     <string name="history_missing">Percakapan ini telah dihapus atau tidak tersedia.</string>
-    <string name="history_read_failed">Status baca tidak dapat dikonfirmasi. Segarkan untuk mencoba lagi.</string>
     <string name="history_empty">Belum ada pesan.</string>
     <string name="history_queued">Dalam antrean</string>
     <string name="history_rejected">Tidak terkirim</string>
