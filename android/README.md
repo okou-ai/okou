@@ -38,7 +38,7 @@ verification. Preference controls become available after the app loads the
 server preferences, which take precedence and refresh the cache. Remote
 workspace content and operations require online confirmation.
 Temporary workspace metadata and preference failures after authorization retry
-in the foreground and on reconnect. Cached chats stay usable, and the workspace
+while the app is in the foreground. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.
 
 My Okou in Settings reads and edits the signed-in user's personal Instructions
@@ -128,9 +128,8 @@ Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
 after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
 the wait.
-Known loss of connectivity pauses reads. Reconnecting retries immediately,
-subject to a server `Retry-After` deadline. A first read with no available list
-shows the skeleton after 250 ms. Failures keep the available list or skeleton
+Recoverable request failures follow this schedule. A first read with no
+available list shows the skeleton after 250 ms. Failures keep the available list or skeleton
 in place. With a confirmed list, the progress bar appears during an active
 read once the last confirmation is more than ten minutes old, or immediately
 after three consecutive read failures. It stays visible through retry gaps

@@ -145,8 +145,6 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
         val editor = compose.onNode(hasSetTextAction() and hasContentDescription("Chat title"))
         val failure = "Could not save. Your changes are still here."
 
@@ -251,7 +249,7 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         editor.performTextReplacement("New draft")
         editor.performTextInputSelection(TextRange(0, 3))
         events.add(24L to checkNotNull(write.get()))
-        reconnectList(app)
+        refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.any {
                 it.id == CHAT_PERSONAL && it.title == "First title"
@@ -301,8 +299,6 @@ internal class ChatRenameFormRootTest : ChatListRootTestFixture() {
         compose.activityRule.scenario.recreate()
         compose.waitUntilExactlyOneExists(hasText("Check result"), 10_000)
         editor.assertTextContains("   Design notes  ").assertIsFocused()
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
         compose.waitUntilExactlyOneExists(hasText("Check result") and isEnabled(), 10_000)
         events.add(24L to checkNotNull(write.get()))
         compose.onNodeWithText("Check result").assertIsEnabled().performClick()
@@ -421,10 +417,17 @@ internal abstract class ChatListRootTestFixture {
             ?.value
     }
 
-    protected fun reconnectList(app: ChatListApplication) {
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
-        compose.runOnIdle { app.connectivity.value = true }
+    protected fun refreshWorkspaceChats() {
+        compose.runOnIdle {
+            checkNotNull(
+                    ViewModelProvider(compose.activity)[SessionModel::class.java]
+                        .uiState
+                        .value
+                        .ready,
+                )
+                .chats
+                .refresh()
+        }
     }
 }
 
@@ -1173,7 +1176,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun aFailedRefreshAfterReconnectKeepsAnEmptyFilterVisible() {
+    fun aFailedRefreshKeepsAnEmptyFilterVisible() {
         val app = compose.activity.application as ChatListApplication
         app.responseGate.countDown()
         awaitListAndNames()
@@ -1182,7 +1185,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         compose.onNodeWithText("No archived chats").assertExists()
 
         app.fixture.events = { okhttp3.mockwebserver.MockResponse().setResponseCode(503) }
-        reconnectList(app)
+        refreshWorkspaceChats()
 
         compose.waitUntil(10_000) {
             currentList()?.listPhase == ai.okou.android.chat.ChatReadPhase.Failed
@@ -1345,7 +1348,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         val project = compose.onNodeWithText("Research")
         val before = project.getUnclippedBoundsInRoot()
         app.fixture.projectEvents = { MockResponse().setResponseCode(503) }
-        reconnectList(app)
+        refreshWorkspaceChats()
         val message = "Project information is temporarily unavailable."
         compose.waitUntilExactlyOneExists(hasText(message), 10_000)
         compose.onNodeWithText(message).assertIsDisplayed()
@@ -1373,9 +1376,6 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         }
         app.responseGate.countDown()
         awaitListAndNames()
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
-        compose.onNodeWithText("Offline").assertDoesNotExist()
         compose.onNodeWithText("New chat").assertIsDisplayed()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Short pane chat 1"))
         compose.onNodeWithText("Short pane chat 1").assertIsDisplayed()
@@ -1504,7 +1504,7 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
         remoteEvents.add(
             24L to chatEventWire(UUID.randomUUID().toString(), 24, CHAT_IN_PROJECT, "deleted"),
         )
-        reconnectList(app)
+        refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.threads?.none { it.id == CHAT_IN_PROJECT } == true
         }
@@ -1515,22 +1515,19 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun offlineMessageLinkUsesCachedHistoryAndReturnsToSourceWhenHistoryIsUnavailable() {
+    fun messageLinkUsesCachedHistoryWhenTheRequestFails() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.historyReply = "[Project update](/chats/$CHAT_IN_PROJECT#event-output)"
         app.fixture.historyCatchUp = { jsonResponse("""{"events":{},"notFoundThreads":[]}""") }
         val historyRows = app.fixture.historyRows
+        val historyUnavailable = AtomicBoolean(false)
         app.fixture.historyRows = { request ->
             if (
-                !app.connectivity.value &&
+                historyUnavailable.get() &&
                     request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_IN_PROJECT
             )
                 MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST)
             else historyRows(request)
-        }
-        fun setConnected(value: Boolean) {
-            compose.runOnIdle { app.connectivity.value = value }
-            compose.waitUntil(10_000) { currentList()?.offline == !value }
         }
         app.responseGate.countDown()
         awaitListAndNames()
@@ -1540,20 +1537,13 @@ internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
         val hit = hasTestTag("conversation_find_hit")
         val unavailable = hasText("This conversation link is unavailable")
 
-        setConnected(false)
-        link.performFirstLinkClick()
-        compose.waitUntilExactlyOneExists(unavailable, 10_000)
-        compose.onNodeWithText("Personal chat").assertIsDisplayed()
-
-        setConnected(true)
-        awaitInlineLink("Project update")
         link.performFirstLinkClick()
         compose.waitUntilExactlyOneExists(hit, 10_000)
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Personal chat").assertIsDisplayed()
         awaitInlineLink("Project update")
 
-        setConnected(false)
+        historyUnavailable.set(true)
         link.performFirstLinkClick()
         compose.waitUntilExactlyOneExists(hit, 10_000)
         compose.onNodeWithText("Project chat").assertIsDisplayed()
@@ -1988,7 +1978,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterReconnect() {
+    fun workspaceMessageSearchReportsMissingChatListAndShowsTheHitAfterRefresh() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
         val chatEvents = fixture.events
@@ -2006,8 +1996,6 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         app.responseGate.countDown()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("search_type_Messages").performClick()
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(5_000) { currentList()?.offline == true }
         compose.onNodeWithTag("chat_search_query").performTextInput("history")
 
         val results = hasAnyAncestor(hasTestTag("chat_search_results"))
@@ -2025,7 +2013,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
             chatEvents(request)
         }
         try {
-            compose.runOnIdle { app.connectivity.value = true }
+            refreshWorkspaceChats()
             compose.waitUntil(5_000) { readStarted.count == 0L }
             compose.onNode(retry).assertDoesNotExist()
         } finally {
@@ -2897,7 +2885,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         }
         row.assert(!unreadBadge)
         indicatorsUnavailable.set(false)
-        reconnectList(app)
+        refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.indicatorsPhase == ai.okou.android.chat.ChatReadPhase.Ready
         }
@@ -3066,8 +3054,6 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             releaseRename.countDown()
         }
         awaitRowActionSettled(CHAT_PERSONAL)
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
         assertEquals(2, commands.size)
         try {
             undo.assertIsEnabled().performClick()
@@ -3244,7 +3230,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             val row = compose.onNodeWithTag(rowTag)
             compose.onNodeWithTag("chat_list").performScrollToNode(hasTestTag(rowTag))
             holdRead.set(true)
-            reconnectList(app)
+            refreshWorkspaceChats()
             compose.waitUntil(10_000) { compose.runOnIdle { reading.count == 0L } }
             row.performTouchInput { swipe(center.copy(x = width * 0.8f), center) }
             compose.waitUntil(10_000) { compose.runOnIdle { writing.count == 0L } }
@@ -3873,8 +3859,6 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         }
         compose.waitUntilExactlyOneExists(hasText("Check result"), 10_000)
         editor.assertTextContains("  Field notes  ")
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
         val readsBeforeCheck = reads.get()
         compose.onNodeWithText("Check result").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
@@ -4016,7 +4000,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun projectDeletionCanBeAttemptedOfflineAndRejectionStaysInTheConfirmation() {
+    fun projectDeletionRejectionStaysInTheConfirmation() {
         InstrumentationRegistry.getInstrumentation().setInTouchMode(false)
         compose.activityRule.scenario.recreate()
         val app = compose.activity.application as ChatListApplication
@@ -4042,8 +4026,6 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         compose
             .onNode(hasText("Research", substring = true).and(hasAnyAncestor(isDialog())))
             .assertIsDisplayed()
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { currentList()?.offline == true }
         assertEquals(0, deletes.get())
         val confirm = compose.onNodeWithText("Delete Project")
         try {
@@ -4250,7 +4232,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
         compose.onNodeWithText(deletionMessage).assertDoesNotExist()
 
         chatReadAvailable.set(true)
-        reconnectList(app)
+        refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText(deletionMessage).fetchSemanticsNodes().isNotEmpty()
         }
@@ -4363,7 +4345,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
                     extra = ",\"pinOrder\":${lost.getValue("pinOrder")}",
                 ),
         )
-        reconnectList(app)
+        refreshWorkspaceChats()
         compose.waitUntil(10_000) {
             currentList()?.confirmedThreads?.single { it.id == CHAT_PERSONAL }?.pinOrder == "a2"
         }

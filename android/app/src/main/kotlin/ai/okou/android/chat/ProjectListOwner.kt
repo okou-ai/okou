@@ -61,7 +61,6 @@ internal class ProjectListOwner(
     private val cache: ChatCacheStore.Lease,
     private val scope: CoroutineScope,
     private val current: () -> Boolean,
-    private val offline: () -> Boolean,
     private val onFailure: (Exception) -> Unit,
     private val dispatcher: CoroutineDispatcher,
     private val wallMillis: () -> Long,
@@ -370,7 +369,7 @@ internal class ProjectListOwner(
     }
 
     fun refresh(verifyWrite: Boolean = false) {
-        if (current() && (verifyWrite || !offline()) && projectsJob?.isActive != true) {
+        if (current() && projectsJob?.isActive != true) {
             val retry = if (verifyWrite) null else ChatDependencyRetry()
             projectsRetry = retry
             state = state.copy(phase = ChatReadPhase.Loading)
@@ -384,9 +383,7 @@ internal class ProjectListOwner(
                         projectsInvalidated = false
                         return projectSync.synchronize(checkpoint)
                     }
-                    val result =
-                        retry?.read(online = { current() && !offline() }, fetch = ::fetch)
-                            ?: fetch()
+                    val result = retry?.read(isCurrent = current, fetch = ::fetch) ?: fetch()
                     val candidate =
                         if (result.changed) replayConfirmedProjects(result.checkpoint)
                         else checkNotNull(previous)

@@ -873,7 +873,7 @@ class SessionModelTest : SessionModelTestFixture() {
     }
 
     @Test
-    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhenActiveAndOnline() {
+    fun temporaryPreparationFailuresRetryWithTheSameOwnerWhileSystemReportsOffline() {
         val auth =
             TestAuthentication(
                 testAuthenticationState()
@@ -882,7 +882,7 @@ class SessionModelTest : SessionModelTestFixture() {
                             listOf(MembershipAccess("org-a", "org:member", emptyList())),
                     ),
             )
-        val connected = MutableStateFlow(true)
+        val connected = MutableStateFlow(false)
         var organizations = 0
         var preferences = 0
         check(
@@ -916,11 +916,9 @@ class SessionModelTest : SessionModelTestFixture() {
             assertEquals(1, preferences)
 
             model.foregroundChanged(false)
-            connected.value = false
             runCurrent()
             advanceTimeBy(10_000)
             runCurrent()
-            connected.value = true
             runCurrent()
             assertEquals(1, preferences)
 

@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val authentication = session
+        val connectivity = (application as OkouApplication).connectivity
         if (savedInstanceState == null) keepColdStartWindow(authentication)
         setContent {
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
@@ -187,6 +188,7 @@ class MainActivity : AppCompatActivity() {
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
+                        connectivity,
                         { authentication.retry(presentedGeneration) },
                         { id -> authentication.chooseWorkspace(id, presentedGeneration) },
                         { authentication.signOut(presentedGeneration) },

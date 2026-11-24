@@ -91,10 +91,12 @@ import com.clerk.api.ui.ClerkColors
 import com.clerk.api.ui.ClerkTheme
 import com.clerk.api.ui.ClerkTypography
 import com.clerk.ui.auth.AuthView
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 internal fun SessionRoot(
     state: SessionUiState,
+    connectivity: Flow<Boolean>,
     retry: () -> Unit,
     chooseWorkspace: (String) -> Unit,
     signOut: () -> Unit,
@@ -134,6 +136,9 @@ internal fun SessionRoot(
                 val presentation = rememberWorkspacePresentationState()
                 val workspaceContent: @Composable () -> Unit = {
                     if (ready != null) WorkspaceRealtimeLifecycle(ready.chats.updates)
+                    val workspaceOffline =
+                        ready != null &&
+                            !connectivity.collectAsStateWithLifecycle(initialValue = true).value
                     val snackbar = remember { SnackbarHostState() }
                     var feedbackInOverlay by remember { mutableStateOf(false) }
                     if (ready != null) DefaultModelFeedback(ready.settings.defaultModel, snackbar)
@@ -165,6 +170,7 @@ internal fun SessionRoot(
                                 ?: opened?.projectExpansion
                                 ?: cached?.projectExpansion,
                         cachedStartupChats = cached?.chats,
+                        catalogOffline = workspaceOffline,
                         renamePresentation =
                             ready?.renamePresentation ?: opened?.renamePresentation,
                         settingsContent = { destination, open, close ->
@@ -181,6 +187,7 @@ internal fun SessionRoot(
                                 appUpdates,
                                 retry,
                                 snackbar,
+                                workspaceOffline,
                                 feedbackInOverlay,
                                 { feedbackInOverlay = it },
                             )
@@ -310,6 +317,7 @@ private fun WorkspaceSettingsContent(
     appUpdates: @Composable (() -> Unit)?,
     retry: () -> Unit,
     snackbar: SnackbarHostState,
+    offline: Boolean,
     feedbackInOverlay: Boolean,
     onFeedbackInOverlay: (Boolean) -> Unit,
 ) {
@@ -455,8 +463,7 @@ private fun WorkspaceSettingsContent(
                 },
             )
             if (instructionsOpen && ready != null) {
-                val chatState by ready.chats.uiState.collectAsStateWithLifecycle()
-                PersonalInstructionsSettings(ready.instructions, close, chatState.offline)
+                PersonalInstructionsSettings(ready.instructions, close, offline)
             }
         }
     }

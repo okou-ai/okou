@@ -49,7 +49,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -195,13 +194,9 @@ class SessionModel(
     private var workspaceSwitchJob: Job? = null
     private var signOutJob: Job? = null
     private val foreground = MutableStateFlow(false)
-    private val connected = MutableStateFlow(true)
-    private val canRetryPreparation =
-        combine(foreground, connected) { active, online -> active && online }
 
     init {
         viewModelScope.launch { authentication.state.collect { reconcile(it) } }
-        viewModelScope.launch { connectivity.collect { connected.value = it } }
         viewModelScope.launch {
             updatesRequired.collect { required ->
                 if (required && !requiredUpdate) enterRequiredUpdate()
@@ -494,8 +489,7 @@ class SessionModel(
                         { current(ticket, snapshot) },
                         { workspaceFailure(ticket, snapshot, it) },
                         dispatcher,
-                        retryWhenActive = canRetryPreparation,
-                        online = { connected.value },
+                        retryWhenActive = foreground,
                     )
                 }
                 val composer = store.workspaceModel {
@@ -676,7 +670,6 @@ class SessionModel(
             onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
             dispatcher = dispatcher,
             realtime = owner,
-            connectivity = connectivity,
             initialFilter =
                 workspaceFilters[identity.userId to identity.workspaceId] ?: ChatListFilter.Inbox,
             networkEnabled = {
@@ -714,7 +707,7 @@ class SessionModel(
                         )
                 }
                 delay(maxOf(backoff, retryAfter))
-                canRetryPreparation.first { it }
+                foreground.first { it }
                 if (failures >= 2) backoff = (backoff * 2).coerceAtMost(48_000L)
             }
         }
@@ -916,9 +909,9 @@ class SessionModel(
                         delay(maxOf(backoff, retryAfter))
                         false
                     } else {
-                        withTimeoutOrNull(backoff) { canRetryPreparation.first { !it } } != null
+                        withTimeoutOrNull(backoff) { foreground.first { !it } } != null
                     }
-                canRetryPreparation.first { it }
+                foreground.first { it }
                 backoff = if (interrupted) 5_000L else (backoff * 2).coerceAtMost(60_000L)
             }
         }

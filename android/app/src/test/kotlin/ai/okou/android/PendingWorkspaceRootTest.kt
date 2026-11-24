@@ -504,26 +504,6 @@ class PendingWorkspaceRootTest {
     }
 
     @Test
-    @Config(application = FreshWorkspaceAccessApplication::class)
-    fun offlineVerificationRetainsCachedRowsUntilReconnect() {
-        awaitCachedRow()
-        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
-        compose.runOnIdle {
-            app.connectivity.value = false
-            val failed = app.authorizationResponse
-            app.authorizationResponse = CompletableDeferred(Unit)
-            failed.completeExceptionally(ApiFailure.Network(java.io.IOException("offline")))
-        }
-        compose.waitUntil(10_000) {
-            sessionState().stage == SessionStage.Unavailable && listState()?.offline == true
-        }
-        row.assertIsDisplayed().assertIsEnabled()
-        compose.runOnIdle { app.connectivity.value = true }
-        compose.waitUntil(10_000) { sessionState().opening is OpeningWorkspace.Authorized }
-        row.assertIsDisplayed().assertIsEnabled()
-    }
-
-    @Test
     @Config(application = CachedConversationWorkspaceApplication::class)
     fun clerkDenialRetiresTheLocallyRestoredConversation() {
         awaitCachedRow()
@@ -541,7 +521,8 @@ class PendingWorkspaceRootTest {
 
     @Test
     @Config(application = CachedConversationWorkspaceApplication::class)
-    fun cachedConversationOpensAndStaysOpenAcrossVerification() {
+    fun cachedConversationSynchronizesAfterVerificationWhileSystemReportsOffline() {
+        compose.runOnIdle { app.connectivity.value = false }
         awaitCachedRow()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
         awaitLocalTranscript()
@@ -557,7 +538,8 @@ class PendingWorkspaceRootTest {
         compose.waitUntil(10_000) {
             app.historyRequested.isCompleted &&
                 app.detailRequested.isCompleted &&
-                app.readRequested.isCompleted
+                app.readRequested.isCompleted &&
+                app.listRequested.isCompleted
         }
         compose.onNodeWithText("Cached transcript for this device").assertIsDisplayed()
         compose.onNodeWithContentDescription("Back").performClick()
@@ -692,7 +674,7 @@ class PendingWorkspaceRootTest {
     }
 
     @Test
-    fun temporaryPreferenceFailureRecoversOnReconnectWithoutInterruptingCachedChats() {
+    fun temporaryPreferenceFailureKeepsCachedChatsUsable() {
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         awaitCachedRow()
         compose.onNodeWithContentDescription("Search workspace").performClick()
@@ -728,18 +710,7 @@ class PendingWorkspaceRootTest {
         row.performClick()
         compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithText("Try again").assertDoesNotExist()
-        compose.runOnIdle {
-            app.connectivity.value = false
-            app.organizationResponse = CompletableDeferred()
-            app.preferencesResponse = CompletableDeferred()
-        }
-        compose.waitUntil(10_000) { listState()?.offline == true }
-        compose.runOnIdle { app.connectivity.value = true }
-        compose.onNodeWithTag("conversation").assertExists()
         compose.onNodeWithTag("message_input").assertDoesNotExist()
-        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
-        compose.waitUntil(10_000) { sessionState().stage == SessionStage.Ready }
-        compose.onNodeWithTag("message_input").assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
         row.assertExists()
         compose.onNodeWithContentDescription("Settings").assertExists()
@@ -755,13 +726,13 @@ class PendingWorkspaceRootTest {
             list?.source == ChatListSource.Network && list.projectsSource != null
         }
 
-        compose.runOnIdle { app.listResponse = CompletableDeferred() }
-        compose.runOnIdle { app.connectivity.value = false }
-        compose.waitUntil(10_000) { listState()?.offline == true }
-        compose.runOnIdle { app.connectivity.value = true }
+        val chats = listModel()
+        compose.runOnIdle {
+            app.listResponse = CompletableDeferred()
+            checkNotNull(chats).refresh()
+        }
         compose.waitUntil(10_000) {
-            val list = listState()
-            list?.offline == false && list.listPhase == ChatReadPhase.Loading
+            listState()?.listPhase == ChatReadPhase.Loading
         }
         compose.onNodeWithText("Refreshing chats…").assertDoesNotExist()
         val row = hasTestTag("chat_$CHAT_PERSONAL")
@@ -797,14 +768,14 @@ class PendingWorkspaceRootTest {
         ViewModelProvider(compose.activity)[SessionModel::class.java].uiState.value
     }
 
-    private fun listState() =
+    private fun listModel() =
         sessionState().let {
-            (it.ready?.chats
-                    ?: (it.opening as? OpeningWorkspace.Authorized)?.chats
-                    ?: (it.opening as? OpeningWorkspace.Cached)?.chats)
-                ?.uiState
-                ?.value
+            it.ready?.chats
+                ?: (it.opening as? OpeningWorkspace.Authorized)?.chats
+                ?: (it.opening as? OpeningWorkspace.Cached)?.chats
         }
+
+    private fun listState() = listModel()?.uiState?.value
 }
 
 private const val CACHED_CHAT = "Saved startup chat"

@@ -72,7 +72,7 @@ completes. The cache is scoped to the API origin, user, workspace, role and
 permissions. Local filtering and read-only cached conversations are available
 during verification. Workspace API calls, read receipts, and conversation
 mutations wait for online confirmation. Recoverable failures keep
-the cached list visible and retry when the app is active and online. Explicit
+cached chats and history visible and retry while the app is active. Explicit
 denial or a changed scope retires the cached presentation. When local evidence
 is incomplete, startup still checks Clerk before displaying workspace content.
 

@@ -615,6 +615,7 @@ class ChatComposerRootTest {
     @Test
     fun heldDefaultReadAndDisconnectedSendPreserveNavigationNewerEditingAndOriginalReceipt() {
         val app = compose.activity.application as ComposerRootApplication
+        compose.runOnIdle { app.connectivity.value = false }
         compose.onNodeWithText("New chat").performClick()
         compose
             .onNodeWithTag("message_input")
