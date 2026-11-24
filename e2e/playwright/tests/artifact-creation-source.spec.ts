@@ -393,6 +393,16 @@ test("resolve authenticated artifact sources through publication, navigation and
     const firstSite = record(
       (await json(await request(`/api/artifacts/catalog/${websiteId}`))).site,
     );
+    const firstSlidesSite = record(
+      (await json(await request(`/api/artifacts/catalog/${slidesId}`))).site,
+    );
+    const firstWebsiteVersion = firstSite.deploymentVersion;
+    const firstSlidesVersion = firstSlidesSite.deploymentVersion;
+    if (
+      typeof firstWebsiteVersion !== "number" ||
+      typeof firstSlidesVersion !== "number"
+    )
+      throw new Error("Initial hosted deployment versions unavailable");
     const snapshot = await json(
       await request(
         `/api/chat-threads/${first.threadId}/shared-threads`,
@@ -540,16 +550,26 @@ test("resolve authenticated artifact sources through publication, navigation and
     const secondSite = record(
       (await json(await request(`/api/artifacts/catalog/${websiteId}`))).site,
     );
-    expect(secondSite.deploymentVersion).not.toEqual(
-      firstSite.deploymentVersion,
+    const secondSlidesSite = record(
+      (await json(await request(`/api/artifacts/catalog/${slidesId}`))).site,
+    );
+    expect(secondSite.deploymentVersion).toBeGreaterThan(firstWebsiteVersion);
+    expect(secondSlidesSite.deploymentVersion).toBeGreaterThan(
+      firstSlidesVersion,
     );
     expect(await source(websiteId)).toEqual(expectedRun);
     expect(await source(slidesId)).toEqual(expectedRun);
     evidence.original = first;
     evidence.redeployment = second;
     evidence.deployments = {
-      before: firstSite.deploymentVersion,
-      after: secondSite.deploymentVersion,
+      website: {
+        before: firstWebsiteVersion,
+        after: secondSite.deploymentVersion,
+      },
+      presentation: {
+        before: firstSlidesVersion,
+        after: secondSlidesSite.deploymentVersion,
+      },
     };
     evidence.provenance =
       "Original Run and Chat retained after actual redeployment; generic file is Chat-only";
