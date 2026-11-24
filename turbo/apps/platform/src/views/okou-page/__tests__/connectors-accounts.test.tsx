@@ -289,6 +289,7 @@ test("Manage member-wide access and renew an expired account for one hour", asyn
       manager,
     ),
   ).resolves.toBeEnabled();
+  expect(within(manager).getByText("1h", { exact: true })).toBeInTheDocument();
   await expect(
     findFastControl("button", "Work access, Allow, Always", manager),
   ).resolves.toBeEnabled();

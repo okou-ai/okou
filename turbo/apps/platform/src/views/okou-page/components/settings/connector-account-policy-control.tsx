@@ -15,15 +15,12 @@ import {
 } from "@okouai/ui";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { now } from "../../../../lib/time.ts";
 import { permissionGrantExpiryText } from "../../../../signals/permission-allow/permission-grant-expiration.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./use-connector-account-label.ts";
 
-export function AccountPolicyControl({
-  account,
-  policy,
-  updatePolicy$,
-}: {
+interface AccountPolicyControlProps {
   readonly account: ConnectorAccountConnection;
   readonly policy:
     | { readonly enabled: boolean; readonly expiresAt: string | null }
@@ -32,7 +29,13 @@ export function AccountPolicyControl({
     Promise<void>,
     [string, ConnectorAccountPolicyChoice, AbortSignal]
   >;
-}) {
+}
+
+export function AccountPolicyControl({
+  account,
+  policy,
+  updatePolicy$,
+}: AccountPolicyControlProps) {
   const { t } = useTranslation();
   const [saving, update] = useLoadableSet(updatePolicy$);
   const signal = useGet(pageSignal$);
@@ -47,13 +50,17 @@ export function AccountPolicyControl({
     return $.connectors.permissions.actions.deny;
   });
   const status = policy.enabled ? allow : deny;
+  const nowMs = now();
   const duration = policy.expiresAt
-    ? permissionGrantExpiryText(policy.expiresAt)
+    ? permissionGrantExpiryText(policy.expiresAt, nowMs)
     : policy.enabled
       ? t(($) => {
           return $.connectors.permissions.always;
         })
       : null;
+  const visibleDuration = policy.expiresAt
+    ? permissionGrantExpiryText(policy.expiresAt, nowMs, "compact")
+    : duration;
   const accessLabel = t(
     ($) => {
       return $.connectorChatAccess.accountAccess;
@@ -107,9 +114,9 @@ export function AccountPolicyControl({
           }
         >
           <span>{status}</span>
-          {duration && (
+          {visibleDuration && (
             <span className="max-w-28 truncate text-xs text-muted-foreground">
-              {duration}
+              {visibleDuration}
             </span>
           )}
           <ChevronDown size={14} aria-hidden />
