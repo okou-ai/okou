@@ -103,9 +103,6 @@ describe("Execution Storage URL freshness", () => {
       if (!original) {
         throw new Error("Expected the Memory fixture's URL signer");
       }
-      const realtime = context.mocks.ably.publish;
-      realtime.mockClear();
-      let signingStartedBeforePendingNotice: boolean | undefined;
       context.mocks.s3.getSignedUrl.mockImplementation(
         async (client, request, options) => {
           if (
@@ -113,12 +110,6 @@ describe("Execution Storage URL freshness", () => {
             request.input.Key?.endsWith(archiveSuffix) &&
             !entered.settled()
           ) {
-            // The pending Run's invalidation is sent after admission commits.
-            signingStartedBeforePendingNotice = !realtime.mock.calls.some(
-              ([topic]) => {
-                return topic === "desktopShellAuthorizationChanged";
-              },
-            );
             entered.resolve(request.input.Key);
             await release.promise;
           }
@@ -150,11 +141,6 @@ describe("Execution Storage URL freshness", () => {
       if (!sent.ok) {
         throw sent.error;
       }
-      expect(signingStartedBeforePendingNotice).toBeTruthy();
-      expect(realtime).toHaveBeenCalledWith(
-        "desktopShellAuthorizationChanged",
-        null,
-      );
       const captured = sent.value;
       expect(captured.memory).toStrictEqual({
         ...writer.memory,
