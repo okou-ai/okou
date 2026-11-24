@@ -1350,6 +1350,40 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS", application = ChatListApplication::class)
 internal class ChatConversationLinkRootTest : ChatListRootTestFixture() {
     @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun unavailableLinkTemporarilyReplacesConversationUndo() {
+        val app = compose.activity.application as ChatListApplication
+        app.fixture.historyReply =
+            "[Unavailable conversation](/chats/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa)"
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            if (request.requestUrl?.encodedPath != "/api/chat-threads/$CHAT_PERSONAL/archive") null
+            else {
+                events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                MockResponse().setResponseCode(204)
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        awaitInlineLink("Unavailable conversation")
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Archive chat").performClick()
+        val feedback = hasAnyAncestor(hasTestTag("conversation_feedback"))
+        val undo = hasText("Undo") and feedback
+        compose.waitUntilExactlyOneExists(undo and isEnabled(), 10_000)
+
+        compose.onNodeWithText("Unavailable conversation", substring = true).performFirstLinkClick()
+        val unavailable = hasText("This conversation link is unavailable") and feedback
+        compose.waitUntilExactlyOneExists(unavailable, 10_000)
+        compose.onNode(unavailable).assertIsDisplayed()
+        compose.onNode(undo).assertDoesNotExist()
+        compose.waitUntilExactlyOneExists(undo and isEnabled(), 10_000)
+        compose.onNode(undo).assertIsDisplayed()
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w960dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
     fun messageLinkOpensTheNativeReadingTargetAndReturnsToTheSourceDraft() {
