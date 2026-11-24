@@ -21,6 +21,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import type {
+  ImageModelPreference,
   UpdateUserModelPreferenceRequest,
   UserModelPreferenceResponse,
 } from "@okouai/api-contracts/contracts/user-model-preference";
@@ -393,8 +394,11 @@ export const updateUserPreferences$ = command(
  * being cleared can never blank another that the same request also set.
  */
 function userModelPreferenceColumns(
-  preference: UpdateUserModelPreferenceRequest,
+  preference: ModelPreferenceWrite,
 ): Partial<typeof orgMembersMetadata.$inferInsert> {
+  if (!("selectedModel" in preference)) {
+    return { selectedImageModel: preference.selectedImageModel };
+  }
   return {
     // Nullable PR1 intents and canonical Auto both write the explicit selection.
     ...(preference.selectedModel === null ||
@@ -419,8 +423,11 @@ function userModelPreferenceColumns(
   };
 }
 
+type ModelPreferenceWrite =
+  UpdateUserModelPreferenceRequest | ImageModelPreference;
+
 interface UserModelPreferenceWriteArgs extends UserScopedQuery {
-  readonly preference: UpdateUserModelPreferenceRequest;
+  readonly preference: ModelPreferenceWrite;
 }
 
 const writeUserModelPreference$ = command(
@@ -432,12 +439,16 @@ const writeUserModelPreference$ = command(
     const writeDb = set(writeDb$);
     const updatedAt = nowDate();
     const columns = userModelPreferenceColumns(args.preference);
-    const modelSettingsPatch = args.preference.modelSettingsPatch;
+    const modelSettingsPatch =
+      "modelSettingsPatch" in args.preference
+        ? args.preference.modelSettingsPatch
+        : undefined;
     await writeDb
       .insert(orgMembersMetadata)
       .values({
         orgId: args.orgId,
         userId: args.userId,
+        selectedModel: AUTO_SELECTED_MODEL,
         ...columns,
         createdAt: updatedAt,
         updatedAt,
