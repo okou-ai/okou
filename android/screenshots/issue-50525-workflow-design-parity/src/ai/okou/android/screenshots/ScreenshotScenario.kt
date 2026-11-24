@@ -236,46 +236,6 @@ class ScreenshotScenario {
                 assertTrue(action(fixture.releaseTitle).visibleBounds.height() >= 80)
                 ScreenshotCapture.capture("phone-directory.png")
 
-                val search =
-                    checkNotNull(
-                        device.wait(
-                            Until.findObject(By.pkg(app.packageName).desc("搜索工作流")),
-                            10_000,
-                        ),
-                    ) { "Missing workflow query control" }
-                search.click()
-                instrumentation.waitForIdleSync()
-                device.executeShellCommand("input text unmatched-workflow")
-                text("没有匹配的工作流")
-                scenario.onActivity { it.window.insetsController?.hide(WindowInsets.Type.ime()) }
-                assertTrue(
-                    device.wait(
-                        object : Condition<UiDevice, Boolean> {
-                            override fun apply(device: UiDevice): Boolean {
-                                var hidden = false
-                                scenario.onActivity {
-                                    hidden =
-                                        it.window.decorView.rootWindowInsets?.isVisible(
-                                            WindowInsets.Type.ime(),
-                                        ) == false
-                                }
-                                return hidden
-                            }
-                        },
-                        10_000,
-                    ),
-                )
-                val empty = text("没有匹配的工作流").visibleBounds
-                val all = action("全部").visibleBounds
-                val clear = action("清除关键词")
-                val clearBounds = clear.visibleBounds
-                assertEquals(12, empty.left - all.left)
-                assertEquals(24, empty.top - all.bottom - 8)
-                assertEquals(8, clearBounds.top - empty.bottom)
-                assertTrue(clearBounds.height() >= 48)
-                ScreenshotCapture.capture("phone-directory-empty.png")
-                clear.click()
-
                 text(fixture.releaseTitle).click()
                 text("工作流说明")
                 val use = action("在聊天中使用").visibleBounds
@@ -376,6 +336,56 @@ class ScreenshotScenario {
                 assertTrue(shared.visibleBounds.left >= 16)
                 assertTrue(shared.visibleBounds.right <= 304)
                 ScreenshotCapture.capture("phone-large-text.png")
+            }
+
+            device.executeShellCommand("wm size 412x892")
+            device.executeShellCommand("settings put system font_scale 1.0")
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                scenario.onActivity {
+                    assertEquals(412, it.resources.configuration.screenWidthDp)
+                    assertEquals(1f, it.resources.configuration.fontScale)
+                }
+                openDirectory()
+                val search =
+                    checkNotNull(
+                        device.wait(
+                            Until.findObject(By.pkg(app.packageName).desc("搜索工作流")),
+                            10_000,
+                        ),
+                    ) { "Missing workflow query control" }
+                search.click()
+                instrumentation.waitForIdleSync()
+                device.executeShellCommand("input text unmatched-workflow")
+                text("没有匹配的工作流")
+                scenario.onActivity { it.window.insetsController?.hide(WindowInsets.Type.ime()) }
+                assertTrue(
+                    device.wait(
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice): Boolean {
+                                var hidden = false
+                                scenario.onActivity {
+                                    hidden =
+                                        it.window.decorView.rootWindowInsets?.isVisible(
+                                            WindowInsets.Type.ime(),
+                                        ) == false
+                                }
+                                return hidden
+                            }
+                        },
+                        10_000,
+                    ),
+                )
+                val empty = text("没有匹配的工作流").visibleBounds
+                val scope = action("仅自己").visibleBounds
+                val clear = action("清除关键词")
+                val clearBounds = clear.visibleBounds
+                ScreenshotCapture.capture("phone-directory-empty.png")
+                assertEquals(28, empty.left)
+                assertEquals(24, empty.top - scope.bottom - 8)
+                assertEquals(8, clearBounds.top - empty.bottom)
+                assertTrue(clearBounds.height() >= 48)
+                clear.click()
+                text(fixture.releaseTitle)
             }
         } finally {
             releaseToggle.countDown()
