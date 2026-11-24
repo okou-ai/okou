@@ -4,11 +4,6 @@
     <string name="auth_check_failed">Akses ruang kerja tidak dapat diperiksa.</string>
     <string name="auth_selection_failed">Ruang kerja ini tidak dapat dibuka.</string>
     <string name="auth_sign_out_failed">Tidak dapat keluar.</string>
-    <string name="composer_sync_loading">Memuat draf tersimpan…</string>
-    <string name="composer_sync_saving">Menyinkronkan draf…</string>
-    <string name="composer_sync_failed">Sinkronisasi draf gagal. Teks Anda tetap tersimpan di perangkat ini.</string>
-    <string name="composer_sync_unsupported">Draf ini berisi konten yang dapat diedit di Web. Teks Anda tetap di perangkat ini; sinkronisasi otomatis dijeda.</string>
-    <string name="composer_sync_retry">Coba sinkronkan lagi</string>
     <string name="composer_restore_draft">Pulihkan draf tersimpan</string>
     <string name="controls_storage_failed">Permintaan kontrol tertunda tidak dapat disimpan.</string>
     <string name="controls_stop">Hentikan pekerjaan berjalan</string>
@@ -89,7 +84,6 @@
     <string name="composer_retry">Coba lagi pesan yang sama</string>
     <string name="composer_not_observed">Pesan belum terlihat. Pengirimannya masih belum terkonfirmasi.</string>
     <string name="composer_request_failed">Permintaan gagal. Draf dan pesan tertunda tetap disimpan.</string>
-    <string name="composer_saving">Menyimpan draf di perangkat ini…</string>
     <string name="updates_title">Pembaruan aplikasi</string>
     <string name="updates_installed">Versi saat ini: %1$s</string>
     <string name="updates_current">Anda menggunakan versi terbaru</string>
@@ -128,8 +122,6 @@
     <string name="updates_error_install">Android tidak dapat menginstal pembaruan.</string>
     <string name="updates_unavailable">Pembaruan yang sesuai belum tersedia.</string>
     <string name="updates_android_unsupported">Pembaruan ini memerlukan versi sistem Android yang lebih baru.</string>
-    <string name="realtime_connecting">Menghubungkan pembaruan langsung…</string>
-    <string name="realtime_unavailable">Pembaruan langsung tidak tersedia. Anda tetap dapat menyegarkan secara manual.</string>
     <string name="settings_account">Akun</string>
     <string name="settings_cancel">Batal</string>
     <string name="settings_saving">Menyimpan…</string>

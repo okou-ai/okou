@@ -2368,6 +2368,7 @@ internal class ChatSearchRootTest : ChatListRootTestFixture() {
         compose.onNodeWithTag("conversation_find").assertDoesNotExist()
         compose.onNodeWithText("Native history reply").assertDoesNotExist()
         compose.onNodeWithText(missing).assertIsDisplayed()
+        compose.onNodeWithTag("message_input").assertDoesNotExist()
     }
 
     @Test

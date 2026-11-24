@@ -19,7 +19,9 @@ import ai.okou.android.jsonResponse
 import androidx.test.core.app.ApplicationProvider
 import java.io.File
 import java.io.IOException
+import java.net.ConnectException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -1072,7 +1074,7 @@ internal class ConversationHistoryReadStateTest : ConversationHistoryTestFixture
     }
 
     @Test
-    fun staleDisplayReceiptsCannotMarkNewContentAndReadFailuresWaitForExplicitRetry() = runTest {
+    fun staleReceiptsAndUncertainWritesWaitForNewConfirmation() = runTest {
         var failRead = true
         val service =
             object : Service() {
@@ -1135,6 +1137,54 @@ internal class ConversationHistoryReadStateTest : ConversationHistoryTestFixture
         } finally {
             model.close()
             lease.close()
+        }
+    }
+
+    @Test
+    fun automaticReadRetriesSafeConnectionFailuresButYieldsToANewerExplicitWrite() = runTest {
+        val explicit = CompletableDeferred<Unit>()
+        val expected = HistoryConfirmation(1, 1, HistoryCursor(HISTORY_LAST_EVENT, 37))
+        var preceding: Job? = null
+        val service =
+            object : Service() {
+                override suspend fun markRead(threadId: String): ReadState {
+                    markCount++
+                    throw ApiFailure.Network(
+                        ConnectException("Read acknowledgement did not connect"),
+                    )
+                }
+            }
+        val visit =
+            ConversationReadSession(
+                CHAT_PERSONAL,
+                service,
+                backgroundScope,
+                { true },
+                { expected },
+                {},
+                {},
+                { preceding },
+            )
+        try {
+            visit.confirmDisplayed(expected)
+            runCurrent()
+            assertEquals(1, service.markCount)
+            assertNull(visit.pendingAutomaticRead)
+            advanceTimeBy(2_999)
+            runCurrent()
+            assertEquals(1, service.markCount)
+            advanceTimeBy(1)
+            runCurrent()
+            assertEquals(2, service.markCount)
+            preceding = explicit
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(2, service.markCount)
+            assertNull(visit.pendingAutomaticRead)
+            assertEquals(HistoryReadState.Idle, visit.readState.value)
+        } finally {
+            explicit.complete(Unit)
+            visit.close()
         }
     }
 

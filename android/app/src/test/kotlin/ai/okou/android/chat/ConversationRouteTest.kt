@@ -8,7 +8,6 @@ import ai.okou.android.OkouTheme
 import ai.okou.android.R
 import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.TestOkouApplication
-import ai.okou.android.TestRealtimeService
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.generated.ChatArchive
 import ai.okou.android.api.generated.HistorySnapshot
@@ -32,7 +31,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -335,19 +333,18 @@ class ConversationRouteTest {
         val successfulRead = fixture.historyMarkRead
         fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
         compose.runOnIdle { visible.value = true }
-        val readFailed = compose.activity.getString(R.string.history_read_failed)
         compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isNotEmpty()
+            compose.runOnIdle {
+                model.history.readSessionFor(CHAT_IN_PROJECT)?.readState?.value ==
+                    HistoryReadState.Failed
+            }
         }
-        compose.onNodeWithText(readFailed).assertExists()
-        compose.waitForIdle()
+        compose.onNodeWithText(compose.activity.getString(R.string.retry)).assertDoesNotExist()
+        compose.onNodeWithText("Native history", substring = true).assertExists()
         assertEquals(5, fixture.readRequests.get())
         fixture.historyMarkRead = successfulRead
-        compose.onNodeWithText(compose.activity.getString(R.string.retry)).performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(readFailed).fetchSemanticsNodes().isEmpty() &&
-                fixture.readRequests.get() >= 6
-        }
+        compose.runOnIdle { model.history.invalidate() }
+        compose.waitUntil(10_000) { compose.runOnIdle { fixture.readRequests.get() >= 6 } }
         assertEquals(6, fixture.readRequests.get())
     }
 
@@ -650,53 +647,42 @@ class ConversationRouteTest {
 
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
-    fun conversationRecoversAnInitialHistoryFailureAndKeepsRealtimeRetryReachable() {
-        val realtime = TestRealtimeService()
-        val model = createListModel(realtime)
+    fun conversationKeepsOneSkeletonAcrossTheFirstReadAndVisitRetry() {
+        val visible = mutableStateOf(false)
+        val model = createListModel()
         val historyRows = fixture.historyRows
-        val markRead = fixture.historyMarkRead
         fixture.historyRows = { MockResponse().setResponseCode(503) }
         fixture.historyCatchUp = { MockResponse().setResponseCode(503) }
-        compose.runOnIdle { model.updates.foreground(true) }
         compose.setContent {
             val list by model.uiState.collectAsStateWithLifecycle()
             OkouTheme {
-                ConversationRoute(model.history, CHAT_IN_PROJECT, list, realtime = model.updates)
+                ConversationRoute(model.history, CHAT_IN_PROJECT, list, visible = visible.value)
             }
         }
         compose.waitUntil(10_000) {
-            compose.runOnIdle {
-                model.uiState.value.listPhase == ChatReadPhase.Ready &&
-                    model.updates.phase.value == RealtimePhase.Connected
-            }
+            compose.runOnIdle { model.uiState.value.listPhase == ChatReadPhase.Ready }
         }
         compose.runOnIdle {
             model.history.open(model.uiState.value.threads.single { it.id == CHAT_IN_PROJECT })
         }
         val retryLabel = compose.activity.getString(R.string.retry)
         val skeleton = hasContentDescription(compose.activity.getString(R.string.history_loading))
+        compose.waitUntil(5_000) {
+            compose.runOnIdle { model.history.uiState.value.phase == HistoryPhase.Failed }
+        }
         compose.waitUntilExactlyOneExists(skeleton, 5_000)
+        compose.onNode(skeleton).assertIsDisplayed()
+        val bounds = compose.onNode(skeleton).getUnclippedBoundsInRoot()
+        compose.onNodeWithText(retryLabel).assertDoesNotExist()
+        compose.runOnIdle { visible.value = true }
         compose.waitUntil(5_000) {
             compose.runOnIdle { model.history.uiState.value.consecutiveReadFailures > 0 }
         }
         compose.onNode(skeleton).assertIsDisplayed()
-        fixture.historyMarkRead = { MockResponse().setResponseCode(503) }
+        assertEquals(bounds, compose.onNode(skeleton).getUnclippedBoundsInRoot())
+        compose.onNodeWithText(retryLabel).assertDoesNotExist()
         fixture.historyRows = historyRows
         compose.waitUntilDoesNotExist(skeleton, 10_000)
-        val readFailure = compose.activity.getString(R.string.history_read_failed)
-        compose.waitUntilExactlyOneExists(hasText(readFailure), 5_000)
-        compose.onNodeWithText("Hello history").assertExists()
-
-        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Unavailable)
-        val realtimeFailure = compose.activity.getString(R.string.realtime_unavailable)
-        compose.waitUntilExactlyOneExists(hasText(realtimeFailure), 5_000)
-        val opened = realtime.opened.get()
-        fixture.historyMarkRead = markRead
-        compose.onNodeWithText(retryLabel).performClick()
-        compose.waitUntil(5_000) { realtime.opened.get() > opened }
-        realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Connected)
-        compose.waitUntilDoesNotExist(hasText(realtimeFailure), 5_000)
-        compose.waitUntilDoesNotExist(hasText(readFailure), 5_000)
         compose.onNodeWithText("Hello history").assertExists()
     }
 
@@ -917,7 +903,6 @@ class ConversationRouteTest {
     }
 
     private fun createListModel(
-        realtime: RealtimeService? = null,
         wallMillis: () -> Long = System::currentTimeMillis,
     ): ChatListModel = compose.runOnIdle {
         val storage = ChatCacheStore(compose.activity.application, temporary.newFolder())
@@ -932,7 +917,6 @@ class ConversationRouteTest {
                             fixture.identity,
                             { true },
                             {},
-                            realtime = realtime,
                             wallMillis = wallMillis,
                         )
                     }

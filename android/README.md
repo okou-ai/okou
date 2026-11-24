@@ -719,8 +719,9 @@ separate evidence; a configured Secret name proves only its presence.
 The native text composer reads and saves the same server draft as Web. Existing
 conversations use their thread ID; My Okou and Project new-chat editors share the
 workspace composer draft. Project selection only changes the new conversation context.
-Draft GET does not delay the initial screen. Edits persist locally before PATCH,
-with Web's 500ms debounce and immediate explicit clears. Requests are serialized
+Draft GET does not delay the initial screen. Hydration and synchronization leave
+the editor layout in place. Edits persist locally before PATCH, with Web's 500ms
+debounce and immediate explicit clears. Requests are serialized
 per target, and delayed hydration/save completions cannot replace newer local
 input. Independent clients retain Web's existing unconditional last-writer
 behavior; no server compare-and-swap or revision protocol is added.
@@ -731,7 +732,9 @@ Divergent legacy Project drafts remain available for explicit restoration into
 an empty editor. Failed reads are never interpreted as empty. Rich documents,
 attachments or unknown content pause automatic synchronization rather than
 publishing a plain-text subset; the full server draft remains available on Web
-and local text stays on this device. Retry rechecks the server before saving.
+and local text stays on this device. Draft reads allow two retries for transient
+failures. PATCH retries apply only to confirmed connection failures and the same
+still-current durable draft.
 Foreground/manual opening refreshes a clean editor; automatic live draft events
 remain later work. Sending and clearing a saved draft are separate operations;
 uncertain submissions retain their original identities in memory. Legacy pending
@@ -854,14 +857,14 @@ held-background independence, stale foreground/background publication and
 stop/restart/retirement. Parallel recovery can increase concurrent network and
 memory use; its resource owner still cancels every child on STOP or retirement.
 
-The native connection notice reports connecting or unavailable with explicit
-retry; transport attachment is not a claim of confirmed-data freshness. Ordinary
-manual refresh/navigation remains available. The generated empty-object
+The native conversation uses canonical history to show reading progress. The
+workspace observes realtime transport independently of that UI. The generated empty-object
 `POST /api/realtime/token` consumer uses the existing authenticated API transport
 and required-update handling. SDK callbacks obtain fresh single-use signed token
 requests for renewal; no API credentials are sent to Ably.
-A failed canonical token request closes that observation and offers explicit
-retry; a later transport callback cannot erase its authentication/update failure.
+A failed canonical token request closes that observation. The foreground owner
+reopens it after backoff for a retryable failure. Authentication and required
+updates follow the session flow. A connected SDK requests canonical catch-up.
 
 The pinned `io.ably.pubsub:device:2.0.0` supports the API24/JDK17 baseline. Its
 unused Firebase Messaging dependency is excluded: this slice registers no push

@@ -309,25 +309,6 @@ private fun ComposerFeedback(
             Text(stringResource(R.string.retry))
         }
     }
-    when (state.sync(target)) {
-        ComposerSync.Loading -> Text(stringResource(R.string.composer_sync_loading))
-        ComposerSync.Saving -> Text(stringResource(R.string.composer_sync_saving))
-        ComposerSync.Failed,
-        ComposerSync.NetworkFailed,
-        ComposerSync.Unsupported -> {
-            Text(
-                stringResource(
-                    if (state.sync(target) == ComposerSync.Unsupported)
-                        R.string.composer_sync_unsupported
-                    else R.string.composer_sync_failed,
-                ),
-            )
-            TextButton(onClick = { model.retrySync(target) }, colors = actionColors) {
-                Text(stringResource(R.string.composer_sync_retry))
-            }
-        }
-        else -> Unit
-    }
     state.journal?.retainedDrafts?.forEach { (key, text) ->
         Text(text, maxLines = 2, overflow = TextOverflow.Ellipsis)
         TextButton(
@@ -373,6 +354,4 @@ private fun ComposerFeedback(
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
     if (target.key in state.failed && !connectorSetupFailed)
         Text(stringResource(R.string.composer_request_failed))
-    if (state.persistence == ComposerPersistence.Pending)
-        Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }

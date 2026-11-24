@@ -290,7 +290,11 @@ class ConversationHistoryModel(
                         publish(
                             state.copy(
                                 phase = HistoryPhase.Failed,
-                                initialReadFailed = state.transcript == null,
+                                // A transient read can end before the visible visit starts its
+                                // retries. Keep the same initial feedback across that handoff.
+                                initialReadFailed =
+                                    state.transcript == null &&
+                                        chatReadRetryAfterMillis(error) == null,
                                 syncProgressDelayMillis = null,
                                 consecutiveReadFailures = 0,
                             ),
