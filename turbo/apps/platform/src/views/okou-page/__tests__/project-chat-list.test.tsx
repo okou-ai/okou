@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   projectsContract,
   type Project,
@@ -39,6 +40,7 @@ async function open(
   projects: Project[],
   threads: ChatThreadSnapshotProjection[],
   current?: string,
+  archiveMenuEnabled?: boolean,
 ) {
   const auth = chatListAuth(848);
   context.mocks.api(projectsContract.snapshot, ({ respond }) => {
@@ -75,6 +77,13 @@ async function open(
     context,
     path: current ? "/chats/" + current : "/",
     auth,
+    ...(archiveMenuEnabled === undefined
+      ? {}
+      : {
+          featureSwitches: {
+            [FeatureSwitchKey.ProjectArchive]: archiveMenuEnabled,
+          },
+        }),
     sharedWorkerTestTransport: "message-port",
     cachedChatThreadEvents: cachedChatListEvents(848, threads),
   });
@@ -250,7 +259,9 @@ test("The archive shows both chats in a retired project and only the archived ch
   click(await findFastControl("button", "Open chat list menu"));
   const filters = within(await screen.findByRole("menu"));
   click(await filters.findByText("Archived"));
-  click(await handle(retired.name));
+  const archivedRow = await handle(retired.name);
+  expect(archivedRow).not.toHaveTextContent("Archived");
+  click(archivedRow);
   click(await handle(current.name));
   await waitFor(() => {
     expect(titles(retired).sort()).toStrictEqual([
@@ -260,3 +271,19 @@ test("The archive shows both chats in a retired project and only the archived ch
     expect(titles(current)).toStrictEqual(["Prior fieldwork"]);
   });
 });
+
+test.each([true, false])(
+  "Project archive action follows the workspace switch (%s)",
+  async (enabled) => {
+    const client = project("Seaside research", "a0");
+    await open([client], [], undefined, enabled);
+    click(await findFastControl("button", "Options for Seaside research"));
+    const menu = within(await screen.findByRole("menu"));
+    expect(await menu.findByText("Rename")).toBeVisible();
+    if (enabled) {
+      expect(menu.getByText("Archive")).toBeVisible();
+    } else {
+      expect(menu.queryByText("Archive")).toBeNull();
+    }
+  },
+);

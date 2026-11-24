@@ -46,12 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.VoiceMessages]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Send voice messages and transcribe their recordings with model credits.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",
@@ -132,6 +126,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Copy or quote selected Markdown passages into the owning chat in desktop split view.",
     enabled: false,
+  },
+  [FeatureSwitchKey.ProjectArchive]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Project archiving",
+    description: "Archive and restore Projects from their row menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.ProjectTitleReveal]: {
     maintainer: "ming@okou.ai",

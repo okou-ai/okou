@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
-  VoiceMessages = "voiceMessages",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   MemberConnectorAccountAccess = "memberConnectorAccountAccess",
@@ -13,6 +12,7 @@ export enum FeatureSwitchKey {
   PresentationOutputFormat = "presentationOutputFormat",
   MarkdownFirstOutput = "markdownFirstOutput",
   MarkdownArtifactQuote = "markdownArtifactQuote",
+  ProjectArchive = "projectArchive",
   ProjectTitleReveal = "projectTitleReveal",
   OkouAnimatedAvatar = "okouAnimatedAvatar",
   DesktopShell = "desktopShell",
