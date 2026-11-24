@@ -1315,7 +1315,7 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             model.markAllRead()
             runCurrent()
-            assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
+            assertFalse(model.uiState.value.isUnread(CHAT_PERSONAL))
 
             source.statusRead = { newer }
             model.refreshIndicators()
@@ -1378,20 +1378,20 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             model.selectFilter(ChatListFilter.Unread)
             model.markAllRead()
             runCurrent()
-            assertEquals(unreadBefore.unreadAt.keys, model.uiState.value.unreadChatIds())
+            assertTrue(model.uiState.value.unreadChatIds().isEmpty())
 
             personal.complete(ReadState(CHAT_DATE))
             runCurrent()
             val partial = model.uiState.value
             assertTrue(partial.markingAllRead)
-            assertEquals(setOf(CHAT_IN_PROJECT), partial.unreadChatIds())
+            assertTrue(partial.unreadChatIds().isEmpty())
 
             source.statusRead = { unreadAfter }
             other.completeExceptionally(ApiFailure.Http(409, null, null, null))
             advanceUntilIdle()
             val settled = model.uiState.value
             assertEquals(setOf(CHAT_IN_PROJECT), settled.unreadChatIds())
-            assertEquals(ChatMarkAllReadResult(1, 2), settled.markAllReadResult)
+            assertEquals(ChatMarkAllReadResult(1, 2, rejected = 1), settled.markAllReadResult)
         }
     }
 
@@ -1421,7 +1421,10 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
                 advanceUntilIdle()
                 val state = model.uiState.value
                 assertEquals(connectionFailed, state.isUnread(CHAT_PERSONAL))
-                assertEquals(ChatMarkAllReadResult(0, 1, connectionFailed), state.markAllReadResult)
+                assertEquals(
+                    ChatMarkAllReadResult(0, 1, rejected = if (connectionFailed) 1 else 0),
+                    state.markAllReadResult,
+                )
             }
         }
     }
@@ -1456,7 +1459,10 @@ internal class ChatListUnreadModelTest : ChatListModelTestFixture() {
             model.markAllRead()
             advanceUntilIdle()
             assertEquals(2, attempts)
-            assertEquals(ChatMarkAllReadResult(0, 1, true), model.uiState.value.markAllReadResult)
+            assertEquals(
+                ChatMarkAllReadResult(0, 1, rejected = 1),
+                model.uiState.value.markAllReadResult,
+            )
             assertTrue(model.uiState.value.isUnread(CHAT_PERSONAL))
         }
     }
