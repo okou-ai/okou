@@ -1,5 +1,6 @@
 package ai.okou.android.screenshots
 
+import ai.okou.android.ConnectorApiFixture
 import ai.okou.android.MainActivity
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
@@ -52,6 +53,7 @@ class ScreenshotScenario {
         val previousChats = app.chatService
         val previousComposer = app.composerService
         val previousWorkflows = app.workflows
+        val previousConnectors = app.connectorService
         val previousConnectivity = app.connectivity.value
         val previousPreferences = app.initialPreferences
         val previousPreferenceData = app.snapshotApiPreferences()
@@ -67,6 +69,7 @@ class ScreenshotScenario {
                 ?.get(1)
         val originalScale = device.executeShellCommand("settings get system font_scale").trim()
         val fixture = WorkflowApiFixture(chinese = true)
+        val connectors = ConnectorApiFixture()
         val catalogFailure = AtomicBoolean(false)
         val toggleEntered = CountDownLatch(1)
         val releaseToggle = CountDownLatch(1)
@@ -189,6 +192,7 @@ class ScreenshotScenario {
             fixture.active.set(true)
             app.chatService = fixture.service
             app.composerService = fixture.service
+            app.connectorService = connectors.service
             app.workflows =
                 object : WorkflowService by fixture.service {
                     override suspend fun setAutomationEnabled(
@@ -286,6 +290,7 @@ class ScreenshotScenario {
                             ?.workflows
                 }
                 text("已暂停 · 需连接")
+                assertTrue(action("查看连接").isEnabled)
                 val pause = action("暂停")
                 val original = pause.visibleBounds
                 assertTrue(original.height() >= 48)
@@ -339,11 +344,12 @@ class ScreenshotScenario {
                 app.chatService = previousChats
                 app.composerService = previousComposer
                 app.workflows = previousWorkflows
+                app.connectorService = previousConnectors
                 app.connectivity.value = previousConnectivity
                 app.initialPreferences = previousPreferences
                 app.restoreApiPreferences(previousPreferenceData)
                 auth.state.value = previousAuth
-                fixture.close()
+                connectors.use { fixture.close() }
             } finally {
                 if (originalScale.toFloatOrNull() == null) {
                     device.executeShellCommand("settings delete system font_scale")
