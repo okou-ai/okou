@@ -71,7 +71,7 @@ describe("/api/feature-switches", () => {
     const current = await accept(api.get({ headers }), [200]);
     expect(current.body.switches).not.toHaveProperty(key);
     expect(current.body.switches).not.toHaveProperty(FeatureSwitchKey.Dummy);
-    expect(current.body.effectiveSwitches).not.toHaveProperty(key);
+    expect(current.body.effectiveSwitches[key]).toBe(false);
   });
 
   it("enables presentation format for staff with personal opt-out overrides", async () => {

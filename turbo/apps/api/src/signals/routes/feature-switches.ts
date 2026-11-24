@@ -29,20 +29,21 @@ function featureSwitchResponseBody(params: {
   readonly switches: Record<string, boolean>;
 }) {
   const switches = { ...params.switches };
-  const effectiveSwitches: Record<string, boolean> = {
-    ...getAllFeatureStates({
-      orgId: params.orgId,
-      userId: params.userId,
-      overrides: switches,
-    }),
-    // Older iOS builds require this response field to review and apply batches.
-    batchConnectorPermissions: true,
-  };
   if (!isStaffOrg(params.orgId)) {
     delete switches[FeatureSwitchKey.GeminiAntigravity];
-    delete effectiveSwitches[FeatureSwitchKey.GeminiAntigravity];
   }
-  return { switches, effectiveSwitches };
+  return {
+    switches,
+    effectiveSwitches: {
+      ...getAllFeatureStates({
+        orgId: params.orgId,
+        userId: params.userId,
+        overrides: switches,
+      }),
+      // Older iOS builds require this response field to review and apply batches.
+      batchConnectorPermissions: true,
+    },
+  };
 }
 
 const featureSwitchesResponse$ = command(
