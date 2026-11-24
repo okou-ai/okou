@@ -91,6 +91,19 @@ extension XCTestCase {
       line: line, message: message(), predicate)
   }
 
+  /// Waits for a predicate over a conversation's transcript: confirmed history, pending
+  /// messages, streamed output and the items they project.
+  func waitForBusinessResult(
+    watching conversation: ConversationStore,
+    timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
+    _ predicate: @escaping @MainActor () -> Bool
+  ) async throws {
+    try await waitForBusinessResult(
+      watching: conversation.transcript, in: conversation.graph, timeout: timeout, file: file,
+      line: line, message: message(), predicate)
+  }
+
   func waitForFileRemoval(
     at url: URL, file: StaticString = #filePath, line: UInt = #line,
     removing: @MainActor () -> Void

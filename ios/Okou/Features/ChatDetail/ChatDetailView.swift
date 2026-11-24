@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 import Textual
@@ -20,6 +21,8 @@ struct ChatDetailView: View {
   @State private var composerHeight: CGFloat = 0
   @State private var activityOwner = UUID()
   @State private var usageDetails: UsageDetails?
+  /// The transcript's graph value, kept in the workspace session's Store.
+  @ResolvedValue private var resolvedTranscript: ConversationProjection.Value?
 
   private struct UsageDetails: Identifiable { let id: String }
 
@@ -39,11 +42,16 @@ struct ChatDetailView: View {
     self.onFirstMessagePresented = onFirstMessagePresented
     self.fork = fork
     _scrolling = State(initialValue: ConversationScrollCoordinator(conversation: conversation))
+    _resolvedTranscript = ResolvedValue(conversation.transcript)
   }
 
-  private var history: ChatHistory { conversation.history ?? .empty }
+  /// This render's transcript. The synchronous read only covers a missing first resolution.
+  private var transcript: ConversationProjection.Value {
+    resolvedTranscript ?? conversation.currentTranscript
+  }
+  private var history: ChatHistory { transcript.history ?? .empty }
   private var rows: [ConversationCollectionRow] {
-    ConversationRowProjection(conversation: conversation).rows
+    ConversationRowProjection(conversation: conversation, transcript: transcript).rows
   }
 
   var body: some View {
@@ -57,7 +65,7 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom,
       sendTransition: scrolling.sendTransition,
-      isLoadingHistory: conversation.isLoading && conversation.history == nil,
+      isLoadingHistory: conversation.isLoading && transcript.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: { id in
         scrolling.rowsPresented(firstItemID: id)
@@ -78,7 +86,7 @@ struct ChatDetailView: View {
     )
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
-      if conversation.history == nil && conversation.historySyncError != nil {
+      if transcript.history == nil && conversation.historySyncError != nil {
         OkouEmptyState(
           "Unable to load chat", icon: "message-circle-warning",
           description: Text("Check your connection and try again. Your draft is still here.")
@@ -224,7 +232,7 @@ struct ChatDetailView: View {
             mentionSource: mentionSource,
             workflowSource: conversation.workflowSource,
             sendTransition: scrolling.sendTransition,
-            recommendedFollowup: conversation.recommendedFollowups?.followups.first?.prompt
+            recommendedFollowup: transcript.recommendedFollowups?.followups.first?.prompt
           )
         }
       }

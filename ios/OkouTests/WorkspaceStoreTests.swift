@@ -482,7 +482,9 @@ final class WorkspaceRefreshTests: XCTestCase {
       await refresh.value
     }
     await fulfillment(of: [sidebarStarted], timeout: 3)
-    try await waitForBusinessResult { conversation.messages.contains { $0.text == "Fresh answer" } }
+    try await waitForBusinessResult(watching: conversation) {
+      conversation.messages.contains { $0.text == "Fresh answer" }
+    }
     releaseSidebar.open()
     await refresh.value
     XCTAssertNil(conversation.error)

@@ -74,7 +74,15 @@ final class ConversationStore {
     didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
-  @ObservationIgnored private let projection = ConversationProjection()
+  // Its values live in the workspace session's Store; views read `transcript`.
+  @ObservationIgnored private let projection: ConversationProjection
+  /// What the transcript renders. ChatDetailView reads it through CCStateSwiftUI; the
+  /// synchronous accessors below serve owner logic and actions, not view bodies.
+  var transcript: Computed<ConversationProjection.Value> { projection.value }
+  /// The synchronous value of `transcript`, for a render whose graph read has not resolved.
+  var currentTranscript: ConversationProjection.Value { projection.currentValue }
+  /// The workspace session's Store, which keeps this conversation's graph values.
+  var graph: CCState.Store { projection.store }
   private(set) var history: ChatHistory? {
     get { projection.history }
     set {
@@ -92,9 +100,6 @@ final class ConversationStore {
       projection.replacePending(newValue)
       persistPending()
     }
-  }
-  var recommendedFollowups: ChatRecommendedFollowupSource? {
-    pending.isEmpty ? history?.recommendedFollowups : nil
   }
   var messages: [ChatMessage] { projection.messages }
   var visibleItems: [ConversationItem] { reading.visibleItems }
@@ -214,6 +219,7 @@ final class ConversationStore {
   ) {
     let lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
     self.lifecycleTasks = lifecycleTasks
+    projection = ConversationProjection(store: graph)
     self.modelSelection = modelSelection
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
@@ -222,8 +228,8 @@ final class ConversationStore {
       lifecycleTasks: lifecycleTasks)
     self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
-      sync: sync, threadID: thread.id, didRequireUpgrade: didFail, sleep: activitySleep,
-      lifecycleTasks: lifecycleTasks)
+      sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
+      sleep: activitySleep, lifecycleTasks: lifecycleTasks)
     self.thread = thread
     measurements = ConversationMeasurementCache(
       namespace: measurementScope.map {
