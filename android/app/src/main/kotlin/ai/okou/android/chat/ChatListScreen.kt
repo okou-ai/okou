@@ -1173,7 +1173,7 @@ private fun ChatRow(
         ) {
             if (hasDraft) {
                 Icon(
-                    painterResource(R.drawable.ic_edit),
+                    painterResource(R.drawable.ic_edit_note),
                     contentDescription = null,
                     tint = colors.onSurfaceVariant,
                     modifier = Modifier.size(ChatListLeadingIconSize).testTag("chat_draft_icon"),

@@ -460,7 +460,7 @@ internal class ChatListDraftRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun openedChatsDraftReadUpdatesThePencilAfterAnOlderIndex() {
+    fun openedChatsDraftReadUpdatesTheMarkerAfterAnOlderIndex() {
         val app = compose.activity.application as ChatListApplication
         val webDraft = "Draft saved on Web"
         app.responseGate.countDown()
@@ -484,7 +484,7 @@ internal class ChatListDraftRootTest : ChatListRootTestFixture() {
     }
 
     @Test
-    fun draftPencilAppearsBesideTheTitleAndKeepsTheActivityState() {
+    fun draftMarkerAppearsBesideTheTitleAndKeepsTheActivityState() {
         val app = compose.activity.application as ChatListApplication
         app.fixture.setThreadDraft(CHAT_PERSONAL, "Existing draft")
         val releaseIndex = CountDownLatch(1)
