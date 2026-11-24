@@ -208,17 +208,38 @@ class ScreenshotScenario {
                         device.displayWidth < 1_200 && device.hasObject(input)
                     }
                     readOwner()
-                    historyStatus.set(403)
-                    scenario.onActivity { model.history.invalidate() }
-                    awaitState("confirmed access loss") {
+                    fun accessUnavailable(): Boolean =
                         model.history.uiState.value.phase == HistoryPhase.Missing &&
                             device.hasObject(unavailable) &&
                             !device.hasObject(input) &&
                             !device.hasObject(progress) &&
                             !device.hasObject(retry) &&
                             !device.hasObject(editor)
+                    historyStatus.set(403)
+                    scenario.onActivity { model.history.invalidate() }
+                    awaitState("confirmed access loss", ::accessUnavailable)
+
+                    val recheckRequested = CountDownLatch(1)
+                    val completeRecheck = CountDownLatch(1)
+                    val activeRows = chat.historyRows
+                    chat.historyRows = { request ->
+                        if (request.requestUrl?.pathSegments?.getOrNull(2) == CHAT_PERSONAL) {
+                            recheckRequested.countDown()
+                            check(completeRecheck.await(20, TimeUnit.SECONDS))
+                        }
+                        activeRows(request)
                     }
-                    ScreenshotCapture.capture("05-conversation-unavailable.png")
+                    try {
+                        historyStatus.set(200)
+                        scenario.onActivity { model.history.invalidate() }
+                        awaitState("access feedback remains visible during a held recheck") {
+                            recheckRequested.count == 0L && accessUnavailable()
+                        }
+                        ScreenshotCapture.capture("05-conversation-unavailable.png")
+                    } finally {
+                        completeRecheck.countDown()
+                    }
+                    recoverHistory()
                 }
             } finally {
                 releaseDraft.countDown()
