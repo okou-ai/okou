@@ -16,6 +16,7 @@ final class ComposerConnectorResources {
   private let service: ChatComposerAccess
 
   private let threadID: String?
+  private let includesRemote: Bool
   private let sleep: @Sendable (Duration) async throws -> Void
   private let didLoadConnected: @MainActor ([ChatComposerConnector]) -> Void
   private let didLoadRemote: @MainActor (Remote) -> Void
@@ -30,6 +31,7 @@ final class ComposerConnectorResources {
 
   init(
     service: ChatComposerAccess, threadID: String?, options: ChatComposerOptions,
+    includesRemote: Bool = true,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didLoadConnected: @escaping @MainActor ([ChatComposerConnector]) -> Void,
     didLoadRemote: @escaping @MainActor (Remote) -> Void,
@@ -37,6 +39,7 @@ final class ComposerConnectorResources {
   ) {
     self.service = service
     self.threadID = threadID
+    self.includesRemote = includesRemote
     self.sleep = sleep
     self.didLoadConnected = didLoadConnected
     self.didLoadRemote = didLoadRemote
@@ -64,6 +67,7 @@ final class ComposerConnectorResources {
           let value = try await read {
             try await service.validate(threadID: threadID)
             try Task.checkCancellation()
+            if !includesRemote { return try await service.managedConnectors() }
             return try await service.connectors(threadID: threadID, options: pending)
           }
           try Task.checkCancellation()

@@ -24,7 +24,7 @@ public struct ChatConnectorPermissionState: Sendable {
   public let grants: [ChatPermissionRule]
 }
 
-public struct ChatPermissionEdit: Encodable, Sendable {
+public struct ChatPermissionEdit: Encodable, Equatable, Sendable {
   public let permission: String
   public let action: String
   public let expiresIn: String?

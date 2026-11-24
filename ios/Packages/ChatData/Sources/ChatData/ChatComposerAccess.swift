@@ -51,6 +51,8 @@ public struct ChatComposerConnector: Identifiable, Sendable {
   public var icon: ChatConnectorIcon?
   public var access: ChatConnectorAccess
   public var currentAccount: ChatConnectorAccount?
+  public var reconnectAccountIDs: [String] = []
+  public var needsAttention: Bool { !reconnectAccountIDs.isEmpty }
   public var id: String { target.key }
 }
 
