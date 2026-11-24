@@ -19,7 +19,7 @@ import {
   readConnectorAccount$,
   renameConnectorAccount$,
   settingsConnectorAccounts,
-  createConnectorAccountDefaultSignals,
+  createConnectorAccountAccessSettingsSignals,
 } from "./connector-accounts.ts";
 import { resetBuiltinManualGrantForm$ } from "./connectors.ts";
 
@@ -130,7 +130,7 @@ export const customAccountManager$ = computed((get) => {
   return get(internalCustomAccountManager$);
 });
 
-export const managedConnectorAccountDefaults$ = computed((get) => {
+export const managedConnectorAccountAccessSettings$ = computed((get) => {
   const builtin = get(internalBuiltinAccountManager$);
   const custom = get(internalCustomAccountManager$);
   const target: ConnectorAccountTarget | null = builtin
@@ -138,21 +138,21 @@ export const managedConnectorAccountDefaults$ = computed((get) => {
     : custom
       ? { kind: "custom", customConnectorId: custom.id }
       : null;
-  return target ? createConnectorAccountDefaultSignals(target) : null;
+  return target ? createConnectorAccountAccessSettingsSignals(target) : null;
 });
 
-const openManagedAccountDefaults$ = command(
+const openManagedAccountAccessSettings$ = command(
   ({ get, set }, signal: AbortSignal) => {
-    const defaults = get(managedConnectorAccountDefaults$);
-    if (defaults) {
-      set(defaults.open$, signal);
+    const settings = get(managedConnectorAccountAccessSettings$);
+    if (settings) {
+      set(settings.open$, signal);
     }
   },
 );
-const closeManagedAccountDefaults$ = command(({ get, set }) => {
-  const defaults = get(managedConnectorAccountDefaults$);
-  if (defaults) {
-    set(defaults.close$);
+const closeManagedAccountAccessSettings$ = command(({ get, set }) => {
+  const settings = get(managedConnectorAccountAccessSettings$);
+  if (settings) {
+    set(settings.close$);
   }
 });
 
@@ -176,12 +176,12 @@ export const openBuiltinAccountManager$ = command(
       },
       signal,
     );
-    set(openManagedAccountDefaults$, signal);
+    set(openManagedAccountAccessSettings$, signal);
   },
 );
 
 export const closeBuiltinAccountManager$ = command(({ set }) => {
-  set(closeManagedAccountDefaults$);
+  set(closeManagedAccountAccessSettings$);
   set(internalBuiltinAccountManager$, null);
   set(settingsConnectorAccounts.clearTarget$);
 });
@@ -192,7 +192,7 @@ export const openBuiltinAccountConnectDialog$ = command(
     connector: PlatformConnectorCatalogStatusItem,
     mode: ConnectorAccountConnectMode,
   ) => {
-    set(closeManagedAccountDefaults$);
+    set(closeManagedAccountAccessSettings$);
     set(resetBuiltinManualGrantForm$, connector.slug);
     set(internalBuiltinAccountManager$, null);
     set(settingsConnectorAccounts.clearTarget$);
@@ -216,12 +216,12 @@ export const openCustomAccountManager$ = command(
       },
       signal,
     );
-    set(openManagedAccountDefaults$, signal);
+    set(openManagedAccountAccessSettings$, signal);
   },
 );
 
 export const closeCustomAccountManager$ = command(({ set }) => {
-  set(closeManagedAccountDefaults$);
+  set(closeManagedAccountAccessSettings$);
   set(internalCustomAccountManager$, null);
   set(settingsConnectorAccounts.clearTarget$);
 });
@@ -232,7 +232,7 @@ export const openCustomAccountConnectDialog$ = command(
     connector: CustomConnectorResponse,
     mode: ConnectorAccountConnectMode,
   ) => {
-    set(closeManagedAccountDefaults$);
+    set(closeManagedAccountAccessSettings$);
     set(internalCustomAccountManager$, null);
     set(settingsConnectorAccounts.clearTarget$);
     set(internalCustomAccountConnectDialog$, { connector, mode });
@@ -563,7 +563,7 @@ export const resetConnectorAccountManagerDrafts$ = command(({ set }) => {
 });
 
 export const resetConnectorAccountDialogs$ = command(({ set }) => {
-  set(closeManagedAccountDefaults$);
+  set(closeManagedAccountAccessSettings$);
   set(internalBuiltinAccountManager$, null);
   set(internalBuiltinAccountConnectDialog$, null);
   set(internalCustomAccountManager$, null);

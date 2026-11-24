@@ -3009,6 +3009,8 @@
     "accountsInChat": "Choisissez les comptes activés dans cette conversation.",
     "enableByDefault": "Activer {{account}} par défaut",
     "manageAccounts": "Gérer les comptes",
+    "memberPolicyLoadFailed": "Impossible de charger l’accès aux comptes.",
+    "memberSettingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations.",
     "permissions": "Autorisations",
     "permissionsDescription": "Ces règles s’appliquent à ce connecteur dans toutes vos discussions et tous vos comptes.",
     "settingsDescription": "Choisissez les comptes {{connector}} qu’Okou peut utiliser dans vos conversations. Vous pouvez modifier l’accès dans chaque conversation.",
