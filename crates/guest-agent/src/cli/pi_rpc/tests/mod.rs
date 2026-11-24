@@ -1,3 +1,4 @@
+use crate::cli::session_output::SESSION_OUTPUT_DELTA_MAX_BYTES;
 use std::future::Future;
 use std::process::Stdio;
 use std::time::Duration;
@@ -341,7 +342,7 @@ fn projection_matches_shared_public_event_fixtures() {
 
 #[test]
 fn streaming_uses_native_content_indices_and_reconciles_each_response() {
-    let (output, mut output_rx) = super::super::pi_session_output::test_channel(32, "run-id");
+    let (output, mut output_rx) = super::super::session_output::test_channel(32, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
     let mut projection =
@@ -547,7 +548,7 @@ fn streaming_uses_native_content_indices_and_reconciles_each_response() {
 
 #[test]
 fn streaming_overflow_preserves_the_authoritative_message_and_result() {
-    let (output, _output_rx) = super::super::pi_session_output::test_channel(1, "run-id");
+    let (output, _output_rx) = super::super::session_output::test_channel(1, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
     let mut projection =
@@ -611,7 +612,7 @@ fn streaming_overflow_preserves_the_authoritative_message_and_result() {
 
 #[test]
 fn streaming_splits_utf8_deltas_at_the_request_byte_bound() {
-    let (output, mut output_rx) = super::super::pi_session_output::test_channel(8, "run-id");
+    let (output, mut output_rx) = super::super::session_output::test_channel(8, "run-id");
     let (responses, _responses_rx) = response_channel();
     let masker = SecretMasker::from_raw("");
     let mut projection =
@@ -657,7 +658,7 @@ fn streaming_extension_failure_does_not_flush_a_pending_secret_tail() {
 
     let secret = "audit-secret-12345";
     let masker = SecretMasker::from_raw(&base64::engine::general_purpose::STANDARD.encode(secret));
-    let (output, mut output_rx) = super::super::pi_session_output::test_channel(8, "run-id");
+    let (output, mut output_rx) = super::super::session_output::test_channel(8, "run-id");
     let (responses, _responses_rx) = response_channel();
     let mut projection =
         PiRpcProjection::new("run-id", "thread-id").with_session_output(output, &masker);

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlsplit
 
 
@@ -13,15 +14,30 @@ class InferenceHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         path = urlsplit(self.path).path
-        effort = body["generationConfig"]["thinkingConfig"]["thinkingLevel"]
+        effort = (
+            body.get("generationConfig", {})
+            .get("thinkingConfig", {})
+            .get("thinkingLevel")
+        )
         self.server.requests.append((path, effort))
         self.server.last_contents = body["contents"]
+        parts = [{"text": self.server.reply}]
+        if self.server.tool_script is not None:
+            if not body.get("tools"):
+                # The real CLI can request a secondary safety assessment.
+                parts = [{"text": "{}"}]
+            else:
+                self.server.system_instructions.append(
+                    body.get("systemInstruction", {})
+                )
+                if self.server.tool_script:
+                    parts = [{"functionCall": self.server.tool_script.pop(0)}]
         response = {
             "candidates": [
                 {
                     "content": {
                         "role": "model",
-                        "parts": [{"text": self.server.reply}],
+                        "parts": parts,
                     },
                     "finishReason": "STOP",
                 }
@@ -43,7 +59,7 @@ class InferenceHandler(BaseHTTPRequestHandler):
         pass
 
 
-def run_turn(slug, home, endpoint, *extra_args):
+def run_turn(slug, home, endpoint, *extra_args, workspace=None, settings=None):
     # This synthetic key selects the local Gemini protocol fixture. Never inherit
     # a real key, a Google account, a keyring session, or a remote model endpoint.
     env = {
@@ -61,7 +77,7 @@ def run_turn(slug, home, endpoint, *extra_args):
             "agy",
             *extra_args,
             "--settings",
-            '{"modelProvider":"gemini"}',
+            json.dumps({"modelProvider": "gemini", **(settings or {})}),
             "--model",
             slug,
             "--input-format",
@@ -71,7 +87,7 @@ def run_turn(slug, home, endpoint, *extra_args):
         ],
         check=False,
         env=env,
-        cwd=home,
+        cwd=workspace or home,
         input=json.dumps({"event": "user", "message": {"content": "Reply briefly."}})
         + "\n",
         capture_output=True,
@@ -83,6 +99,8 @@ def run_turn(slug, home, endpoint, *extra_args):
 
 
 with ThreadingHTTPServer(("127.0.0.1", 0), InferenceHandler) as server:
+    server.tool_script = None
+    server.system_instructions = []
     server.requests = []
     server.reply = "fixture answer"
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -143,4 +161,69 @@ with ThreadingHTTPServer(("127.0.0.1", 0), InferenceHandler) as server:
             if content.get("role") == "model"
             for part in content["parts"]
         ), "the resumed model request did not include the earlier answer"
+    for family in ("neon", "carbon", "hydrogen"):
+        with tempfile.TemporaryDirectory(prefix="agy-tools-") as root:
+            # Match the Guest ordering where /home/user/workspace precedes /tmp.
+            work = Path(root, "a-workspace")
+            rules = Path(root, "z-instructions")
+            home = Path(root, "home")
+            for directory in (work, rules, home):
+                directory.mkdir()
+            (rules / "AGENTS.md").write_text("Use the Okou fixture system rule.")
+            (work / "test_answer.py").write_text(
+                "from unittest import TestCase\nfrom answer import answer\n"
+                "class Check(TestCase):\n    def test_answer(self):\n        self.assertEqual(answer, 42)\n"
+            )
+            server.tool_script = [
+                {
+                    "name": "write_file",
+                    "args": {
+                        "Path": str(work / "answer.py"),
+                        "Content": "answer = 42\n",
+                    },
+                },
+                {
+                    "name": "run_command",
+                    "args": {
+                        "CommandLine": "python3 -B -m unittest -q test_answer && echo AGY_TEST_PASSED",
+                        "toolSummary": "Run workspace test",
+                        "WaitMsBeforeAsync": 5000,
+                    },
+                },
+            ]
+            server.reply = "Finished the workspace test."
+            server.system_instructions.clear()
+            status, events = run_turn(
+                f"gemini-4-{family}-medium",
+                str(home),
+                endpoint,
+                "--mode",
+                "accept-edits",
+                "--disable-slash-commands",
+                "--add-dir",
+                str(rules),
+                "--add-dir",
+                str(work),
+                workspace=str(work),
+                settings={
+                    "toolPermission": "proceed-in-sandbox",
+                    "enableTerminalSandbox": True,
+                    "allowNonWorkspaceAccess": False,
+                    "useG1Credits": False,
+                },
+            )
+            assert status == 0 and events[-1]["result"]["status"] == "SUCCESS", family
+            assert (work / "answer.py").read_text().strip() == "answer = 42", family
+            assert not server.tool_script, family
+            assert any(
+                "Use the Okou fixture system rule." in json.dumps(s)
+                for s in server.system_instructions
+            ), family
+            assert any(
+                step.get("tool_name") == "run_command"
+                and step.get("state") == "DONE"
+                and "AGY_TEST_PASSED" in step.get("tool_info", {}).get("output", "")
+                for event in events
+                if (step := event.get("step_update"))
+            ), family
     server.shutdown()
