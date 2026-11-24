@@ -19,6 +19,7 @@ import { clerk$ } from "./auth.ts";
 import { webFilesContract } from "@okouai/api-contracts/client/web-files";
 import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifact-shares";
 import { accept } from "../lib/accept.ts";
+import { now } from "../lib/time.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
 import {
@@ -228,17 +229,44 @@ export function createAttachmentPreviewSignals(
       set(refresh$);
     }
   });
-  // Opening a retained file renews its grant and retries failed resolution.
-  const refreshOnOpen$ = command(({ set }) => {
-    if (!refreshOnArtifactChange) {
-      set(refresh$);
-    }
-  });
   const presignedToken$ = resolvedToken
     ? computed(() => {
         return Promise.resolve(resolvedToken);
       })
     : createAttachmentPresignedToken$(url, refreshVersion$);
+  const refreshOnOpen$ = command(
+    async (
+      { get, set },
+      content$: Computed<Promise<unknown>> | undefined,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      if (refreshOnArtifactChange) {
+        return;
+      }
+      const [resolution] = await Promise.allSettled([get(presignedToken$)]);
+      signal.throwIfAborted();
+      const expiresAt =
+        resolution.status === "fulfilled" ? resolution.value?.expiresAt : null;
+      // Preserve successful previews; deliberate reopening can retry failures.
+      if (
+        resolution.status === "rejected" ||
+        (expiresAt !== null &&
+          expiresAt !== undefined &&
+          Date.parse(expiresAt) <= now())
+      ) {
+        set(refresh$);
+        return;
+      }
+      if (content$) {
+        const [content] = await Promise.allSettled([get(content$)]);
+        signal.throwIfAborted();
+        if (content.status === "rejected") {
+          set(refresh$);
+        }
+      }
+    },
+  );
   const resourceUrl$ = computed(async (get) => {
     return currentHostedSiteUrl(
       (await get(presignedToken$))?.token ?? url,

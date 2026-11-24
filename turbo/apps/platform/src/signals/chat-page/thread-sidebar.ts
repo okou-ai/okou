@@ -339,6 +339,32 @@ function createThreadSidebarSessionSignals(dispose$: Command<void, []>) {
   return { resetSidebarSessionSignal$, startSession$ };
 }
 
+function createOpenAttachmentCommand(
+  startSession$: Command<AbortSignal, [AbortSignal]>,
+  publishTarget$: Command<void, [NonMailThreadSidebarTarget]>,
+  previewContext: ThreadArtifactPreviewContext,
+) {
+  return command(
+    ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
+      const sessionSignal = set(startSession$, signal);
+      const ref = materializeArtifactRef(input, previewContext, sessionSignal);
+      set(publishTarget$, {
+        type: "artifact",
+        source: {
+          kind: "attachment",
+          ownerSignal: sessionSignal,
+          ref,
+        },
+      });
+      detach(
+        set(ref.refreshOnOpen$, ref.text$, sessionSignal),
+        Reason.DomCallback,
+        "retry attachment preview on open",
+      );
+    },
+  );
+}
+
 function createThreadSidebarTargetSignals(
   threadId: string,
   mailRegistry: MailDraftCardSignalsRegistry,
@@ -416,6 +442,7 @@ function createThreadSidebarPreviewSignals(
   );
   return {
     diagram,
+    contentReady$: preview.contentReady$,
     selectedArtifactText$: preview.text$,
     selectedArtifactMarkdownTree$: preview.markdownTree$,
     selectedArtifactResourceUrl$: preview.resourceUrl$,
@@ -478,33 +505,29 @@ export function createThreadSidebarSignals(
         type: "artifact",
         source: { kind: "catalog", artifactId, ownerSignal: sessionSignal },
       });
-      const preview = await set(
+      const selectedPreview = await set(
         artifactCatalog.ensureSelectedArtifactPreview$,
         artifactId,
         sessionSignal,
       );
       signal.throwIfAborted();
       sessionSignal.throwIfAborted();
-      if (preview) {
-        set(preview.refreshOnOpen$);
+      if (selectedPreview) {
+        await set(
+          selectedPreview.refreshOnOpen$,
+          preview.contentReady$,
+          sessionSignal,
+        );
+        signal.throwIfAborted();
+        sessionSignal.throwIfAborted();
       }
     },
   );
 
-  const openAttachment$ = command(
-    ({ set }, input: ArtifactRefInput, signal: AbortSignal): void => {
-      const sessionSignal = set(startSession$, signal);
-      const ref = materializeArtifactRef(input, previewContext, sessionSignal);
-      set(ref.refreshOnOpen$);
-      set(publishTarget$, {
-        type: "artifact",
-        source: {
-          kind: "attachment",
-          ownerSignal: sessionSignal,
-          ref,
-        },
-      });
-    },
+  const openAttachment$ = createOpenAttachmentCommand(
+    startSession$,
+    publishTarget$,
+    previewContext,
   );
 
   const dismiss$ = command(({ get, set }) => {

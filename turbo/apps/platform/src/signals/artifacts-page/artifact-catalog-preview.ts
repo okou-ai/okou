@@ -4,7 +4,11 @@ import type { ArtifactCatalogViewSignals } from "./create-artifact-catalog-signa
 import type { MermaidDiagramPreviewCommand } from "../mermaid-diagram.ts";
 import { createMarkdownPreviewTree } from "../markdown-preview-tree.ts";
 import { createZipArtifactPreviewScope } from "../zip-artifact-preview.ts";
-import { fetchPreviewText, type TextPreviewContent } from "../text-preview.ts";
+import {
+  fetchPreviewText,
+  isTextPreviewKind,
+  type TextPreviewContent,
+} from "../text-preview.ts";
 
 import { publicAttachmentUrl } from "../../views/okou-page/attachment-url.ts";
 import {
@@ -49,7 +53,14 @@ export function createCatalogArtifactPreviewSignals(
     }
     return fetchPreviewText(resourceUrl);
   });
+  const contentReady$ = computed(async (get) => {
+    const detail = await get(artifactCatalog.selectedArtifactDetail$);
+    if (detail && isTextPreviewKind(artifactDetailPreview(detail).kind)) {
+      await get(text$);
+    }
+  });
   return {
+    contentReady$,
     resourceUrl$,
     imageUrl$,
     shareUrl$,

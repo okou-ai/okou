@@ -49,7 +49,8 @@ const TOPIC = chatArtifactCatalogChangedEvent(NAVIGATION_ARTIFACT_THREAD_ID);
 async function setupPublication(
   entry: "message" | "raw" | "catalog",
   source: "authenticated" | "reference" = "authenticated",
-  resolverInitiallyUnavailable = false,
+  initialGrant:
+    "healthy" | "unavailable" | "expired" | "body-unavailable" = "healthy",
 ) {
   const url =
     source === "authenticated"
@@ -64,8 +65,9 @@ async function setupPublication(
     url,
   });
   let selectedFile = original;
-  let oldResolverUnavailable = resolverInitiallyUnavailable;
-  let oldBodyUnavailable = false;
+  let oldResolverUnavailable = initialGrant === "unavailable";
+  let expiredGrant = initialGrant === "expired";
+  let oldBodyUnavailable = initialGrant === "body-unavailable";
   const summary = artifactSummary(ARTIFACT_ID, "file", TITLE);
   const catalog = [summary];
   const artifacts = [original];
@@ -118,10 +120,16 @@ async function setupPublication(
     if (query.file_id === FILE_ID && oldResolverUnavailable) {
       return respond(503, { error: { message: "Preview grant unavailable" } });
     }
+    const grant = expiredGrant
+      ? {
+          url: new URL("?expired=1", BODY_URL).href,
+          expiresAt: "2000-01-01T00:00:00.000Z",
+        }
+      : { url: BODY_URL, expiresAt: "2099-01-01T00:00:00.000Z" };
+    expiredGrant = false;
     return respond(200, {
-      url: BODY_URL,
-      downloadUrl: new URL("?download=1", BODY_URL).href,
-      expiresAt: "2099-01-01T00:00:00.000Z",
+      ...grant,
+      downloadUrl: new URL("?download=1", grant.url).href,
       publicUrl: null,
     });
   });
@@ -137,9 +145,10 @@ async function setupPublication(
           target: { kind: "file", id: FILE_ID },
         });
   });
-  context.mocks.http.get(BODY_URL, () => {
+  context.mocks.http.get(BODY_URL, ({ request }) => {
     // Successful reads always return the same immutable bytes.
-    return oldBodyUnavailable
+    return oldBodyUnavailable ||
+      new URL(request.url).searchParams.has("expired")
       ? new HttpResponse(null, { status: 503 })
       : HttpResponse.text(`# Release plan\n\n${PASSAGE}`);
   });
@@ -291,10 +300,27 @@ test.each([
   },
 );
 
-test.each(["message", "catalog"] as const)(
-  "Reopening a failed %s file preview retries the same immutable file",
-  async (entry) => {
-    const publication = await setupPublication(entry, "authenticated", true);
+test("Opening a private file with an expired grant renews the same file", async () => {
+  const publication = await setupPublication(
+    "message",
+    "authenticated",
+    "expired",
+  );
+  const sidebar = await publication.open();
+  expect(within(sidebar).getByText(PASSAGE)).toBeInTheDocument();
+  await quoteAndSend(PASSAGE);
+  expectQuotedFile(await publication.sent.promise, PASSAGE, FILE_ID, FILENAME);
+});
+
+test.each([
+  { entry: "message", failure: "unavailable" },
+  { entry: "catalog", failure: "unavailable" },
+  { entry: "message", failure: "body-unavailable" },
+  { entry: "catalog", failure: "body-unavailable" },
+] as const)(
+  "Reopening a $failure $entry preview retries the same immutable file",
+  async ({ entry, failure }) => {
+    const publication = await setupPublication(entry, "authenticated", failure);
     if (entry === "catalog") {
       await openResourceArtifact(TITLE);
     } else {
@@ -304,7 +330,7 @@ test.each(["message", "catalog"] as const)(
     }
     const sidebar = await screen.findByTestId("artifact-sidebar");
     await expect(
-      within(sidebar).findByText("Preview unavailable."),
+      within(sidebar).findByText(/preview unavailable\./i),
     ).resolves.toBeInTheDocument();
     if (entry === "catalog") {
       await closeResources();

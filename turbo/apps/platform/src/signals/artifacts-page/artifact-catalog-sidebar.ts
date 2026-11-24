@@ -71,7 +71,13 @@ export function createArtifactCatalogSidebarSignals(
         signal.throwIfAborted();
         openSignal.throwIfAborted();
         if (selectedPreview) {
-          set(selectedPreview.refreshOnOpen$);
+          await set(
+            selectedPreview.refreshOnOpen$,
+            preview.contentReady$,
+            openSignal,
+          );
+          signal.throwIfAborted();
+          openSignal.throwIfAborted();
         }
         await set(refreshWorkspaceLayout$, openSignal);
       },
