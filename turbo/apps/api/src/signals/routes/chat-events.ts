@@ -122,7 +122,7 @@ export const sendValidatedChatEvent$ = command(
     });
     const bootstrap = set(
       startNormalSendBootstrap$,
-      { body: data, auth, requireVisibleThread },
+      { body: data, auth, requireVisibleThread, enqueueTiming: timing },
       signal,
     );
     const document = data.userMessage;
