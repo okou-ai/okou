@@ -98,9 +98,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 
 @Composable
-internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () -> Unit) {
+internal fun ConnectorsPage(
+    model: ConnectorModel,
+    listWidth: Int?,
+    initialSlug: String? = null,
+    initialAccountId: String? = null,
+    close: () -> Unit,
+) {
     val state by model.uiState.collectAsStateWithLifecycle()
-    val route = rememberConnectorDirectory()
+    val route = rememberConnectorDirectory(initialSlug)
     val discoverPosition = rememberLazyListState()
     val connectedPosition = rememberLazyListState()
     val focus = LocalFocusManager.current
@@ -131,7 +137,7 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
     fun back() {
         focus.clearFocus()
         keyboard?.hide()
-        if (!wide && selected != null) {
+        if (initialSlug == null && !wide && selected != null) {
             restoreRow = selected
             route.slug = null
         } else {
@@ -217,6 +223,8 @@ internal fun ConnectorsPage(model: ConnectorModel, listWidth: Int?, close: () ->
                         matchingState ?: ConnectorUiState(offline = state.offline),
                         entry,
                         wide,
+                        initialAccountId = initialAccountId.takeIf { selected == initialSlug },
+                        onCloseInitialAccount = close,
                     )
                 }
             }
@@ -353,6 +361,16 @@ private fun ConnectorDirectory(
             ::clearQuery,
             setCategory,
         )
+        val initialFailure =
+            entries == null &&
+                (failure == ConnectorReadFailure.Unavailable || !state.offline && failure != null)
+        if (initialFailure) {
+            ConnectorReadError(
+                R.string.connector_load_failed,
+                Modifier.testTag("connector-directory"),
+            )
+            return@Column
+        }
         val restoreFocus = remember { FocusRequester() }
         LazyColumn(
             modifier = Modifier.weight(1f).fillMaxWidth().testTag("connector-directory"),
@@ -364,11 +382,8 @@ private fun ConnectorDirectory(
                     when {
                         entries == null ->
                             when {
-                                failure == ConnectorReadFailure.Unavailable ->
-                                    ConnectorEmpty(R.string.connector_load_failed)
                                 state.offline ->
                                     ConnectorLoadWhenOnline(Modifier.padding(horizontal = 12.dp))
-                                failure != null -> ConnectorEmpty(R.string.connector_load_failed)
                                 else ->
                                     key(route.connected, filter) {
                                         ConnectorSkeleton(
@@ -433,8 +448,7 @@ private fun ConnectorDirectory(
         }
         if (entries != null) {
             if (state.offline) ConnectorStatusBanner(R.string.connector_offline)
-            else if (failure == ConnectorReadFailure.Sustained)
-                ConnectorStatusBanner(R.string.connector_refresh_failed)
+            else if (failure != null) ConnectorStatusBanner(R.string.connector_refresh_failed)
         }
     }
 }
@@ -737,7 +751,7 @@ internal fun ConnectorChevron() {
 
 @Composable
 internal fun ConnectorSkeleton(label: String, rows: Int) {
-    if (!rememberChatWaitIndicator(waiting = true)) return
+    if (!rememberChatWaitIndicator(waiting = true, delayMillis = 250)) return
     Column(Modifier.fillMaxWidth().semantics { contentDescription = label }) {
         repeat(rows) {
             Row(
@@ -793,6 +807,18 @@ private fun ConnectorEmpty(title: Int, action: Int? = null, onAction: () -> Unit
                 treatment = ConnectorButtonTreatment.Text,
             )
     }
+}
+
+@Composable
+internal fun ConnectorReadError(message: Int, modifier: Modifier = Modifier) {
+    Text(
+        stringResource(message),
+        modifier.fillMaxWidth().padding(start = 12.dp, top = 24.dp, end = 12.dp).semantics {
+            liveRegion = LiveRegionMode.Polite
+        },
+        style = connectorFeedbackType(),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @Composable

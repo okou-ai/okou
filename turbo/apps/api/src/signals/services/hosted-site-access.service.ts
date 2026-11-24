@@ -16,6 +16,7 @@ import { hostedSiteVisibility } from "@okouai/db/schema/hosted-site-visibility";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle } from "../utils";
+import { claimHostedSiteShareAccess$ } from "./hosted-site-share-access.service";
 
 type Owner = {
   readonly userId: string;
@@ -66,6 +67,15 @@ export const checkHostedSiteAccess$ = command(
       return { allowed: false, decision: "authenticate" };
     }
     if (args.userId === policy.site.userId) {
+      return { allowed: true, decision: "allow" };
+    }
+    if (
+      await set(
+        claimHostedSiteShareAccess$,
+        { siteId: args.siteId, userId: args.userId },
+        signal,
+      )
+    ) {
       return { allowed: true, decision: "allow" };
     }
     if (policy.visibility === "private") {

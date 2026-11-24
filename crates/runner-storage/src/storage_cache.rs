@@ -130,9 +130,9 @@ const CONCURRENCY: usize = 4;
 const FRESH_DELIVERY_HTTP_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Bound a stalled first response without shortening body or later-attempt allowance.
 const FRESH_DELIVERY_FIRST_HEADERS_TIMEOUT: Duration = Duration::from_secs(5);
+const FRESH_DELIVERY_SLOW_HEADERS: Duration = Duration::from_millis(100);
 /// Extra background fills target workloads where avoiding remote request waves
 /// can materially shorten a follow-up start.
-const BACKGROUND_FILL_SLOW_HEADERS: Duration = Duration::from_millis(100);
 const BACKGROUND_FILL_SLOW_HEADERS_MIN_SAMPLES: usize = 2;
 const FRESH_DELIVERY_SCAN_LIMIT: usize = 64;
 const FRESH_DELIVERY_PER_RUN_LIMIT: usize = 4;
@@ -461,6 +461,14 @@ struct FreshArchivePhaseRecord {
     archive_connection_attempt: Option<ArchiveConnectionAttempt>,
 }
 
+impl FreshArchivePhaseRecord {
+    fn is_slow_header_response(&self) -> bool {
+        self.operation.action_type == STORAGE_CACHE_FRESH_DELIVERY_HEADERS
+            && self.operation.success
+            && self.operation.duration >= FRESH_DELIVERY_SLOW_HEADERS
+    }
+}
+
 /// At most eight phases per archive: headers/body for three attempts, then
 /// apply-wait/publication once. Four admitted archives therefore retain at most
 /// 32 records. Records live outside fetch tasks so aborting and joining retains
@@ -472,6 +480,14 @@ struct FreshArchivePhaseRecords {
 }
 
 impl FreshArchivePhaseRecords {
+    fn has_slow_header_response(&self) -> bool {
+        self.records
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .any(FreshArchivePhaseRecord::is_slow_header_response)
+    }
+
     fn record_to(&self, telemetry: &mut JobTelemetry) -> usize {
         let records = std::mem::take(
             &mut *self
@@ -481,10 +497,7 @@ impl FreshArchivePhaseRecords {
         );
         let mut slow_headers = 0;
         for record in records {
-            if record.operation.action_type == STORAGE_CACHE_FRESH_DELIVERY_HEADERS
-                && record.operation.success
-                && record.operation.duration >= BACKGROUND_FILL_SLOW_HEADERS
-            {
+            if record.is_slow_header_response() {
                 slow_headers += 1;
             }
             telemetry.record_archive_phase_at(
@@ -1098,6 +1111,33 @@ struct GuestStageRecorder<'a> {
     metrics: &'a mut StorageCacheStageMetrics,
 }
 
+impl GuestStageRecorder<'_> {
+    async fn write_batch<'write>(
+        &mut self,
+        writes: impl ExactSizeIterator<Item = &'write GuestStageWrite>,
+        content_bytes: usize,
+    ) -> RunnerResult<()> {
+        let started_at = Instant::now();
+        let mut timing = sandbox::FileWriteTiming::default();
+        let file_count = writes.len();
+        let (lock_wait, result) = {
+            let files = writes
+                .map(GuestStageWrite::as_file_entry)
+                .collect::<Vec<_>>();
+            self.guest_writes
+                .write_files(self.sandbox, &files, &mut timing)
+                .await
+        };
+        self.metrics.record_write_result(
+            self.telemetry,
+            started_at,
+            &result,
+            crate::StorageStageWrite::new(file_count, content_bytes, lock_wait, &timing),
+        );
+        result
+    }
+}
+
 struct ProcessedGroupTask {
     group: CacheTargetGroup,
     metrics: CacheProcessMetrics,
@@ -1401,26 +1441,9 @@ async fn flush_guest_stage_batch(
     if batch.writes.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .writes
-            .iter()
-            .map(GuestStageWrite::as_file_entry)
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.writes.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(batch.writes.iter(), batch.content_bytes)
+        .await?;
     batch.writes.clear();
     batch.content_bytes = 0;
     Ok(())
@@ -1449,26 +1472,12 @@ async fn flush_fresh_guest_stage_batch(
     if batch.entries.is_empty() {
         return Ok(());
     }
-    let started_at = Instant::now();
-    let mut timing = sandbox::FileWriteTiming::default();
-    let (lock_wait, result) = {
-        let writes = batch
-            .entries
-            .iter()
-            .map(|entry| entry.write.as_file_entry())
-            .collect::<Vec<_>>();
-        stage
-            .guest_writes
-            .write_files(stage.sandbox, &writes, &mut timing)
-            .await
-    };
-    stage.metrics.record_write_result(
-        stage.telemetry,
-        started_at,
-        &result,
-        crate::StorageStageWrite::new(batch.entries.len(), batch.content_bytes, lock_wait, &timing),
-    );
-    result?;
+    stage
+        .write_batch(
+            batch.entries.iter().map(|entry| &entry.write),
+            batch.content_bytes,
+        )
+        .await?;
     // Moving groups into outcomes must not release capacity while other
     // entries in this successful batch still need their bookkeeping.
     let mut retained_permits = Vec::with_capacity(batch.entries.len());
@@ -1710,8 +1719,8 @@ async fn populate_cache_inner(
             // Keep the existing four-body envelope: cold bodies retain their
             // admission until staging, including bodies already downloaded.
             let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
-            // A saturated delivery can hand off decoded inputs and direct URLs
-            // early when none of the ordinary groups needs a cache body read.
+            // Decoded inputs make an early handoff useful at saturation. Any
+            // ordinary cache reads must wait for fresh staging to free slots.
             let has_ready_inputs = application.is_some() && !decoded_outcomes.is_empty();
             if !owned_keys.is_empty()
                 && !target_groups.is_empty()

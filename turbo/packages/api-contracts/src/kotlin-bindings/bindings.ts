@@ -2,11 +2,13 @@ import type { ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
+import { emailSubscriptionContract } from "../contracts/email-subscription";
 import { apiErrorSchema } from "../contracts/api-error";
 import { androidUpgradeRequiredSchema } from "../contracts/android-client-compatibility";
 import { androidUpdatesContract } from "../contracts/android-updates";
 import {
   chatThreadsContract,
+  chatSearchContract,
   chatThreadSnapshotArchiveSchema,
   chatThreadEventsContract,
   chatThreadByIdContract,
@@ -34,12 +36,16 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { runModelsMainContract } from "../contracts/run-models";
 import { userModelPreferenceContract } from "../contracts/user-model-preference";
 import { featureSwitchesContract } from "../contracts/feature-switches";
+import { feedContract } from "../contracts/feed";
+import { morningBriefPreferenceContract } from "../contracts/morning-brief-preference";
+import { proactiveSuggestionsContract } from "../contracts/proactive-suggestions";
 import { thirdPartySubscriptionsMainContract } from "../contracts/third-party-subscriptions";
 import {
   billingStatusContract,
   billingUsagePackCreditsContract,
 } from "../contracts/billing";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
+import { chatRelationsContract } from "../contracts/chat-relations";
 import { artifactDownloadsContract } from "../contracts/artifact-downloads";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { hostContract } from "../contracts/host";
@@ -98,6 +104,11 @@ const chatReadBindings = [
     route: chatThreadsContract.indicators,
   },
   {
+    name: "chatDraftIndex",
+    response: "ChatDraftIndex",
+    route: chatThreadsContract.drafts,
+  },
+  {
     name: "projectSnapshot",
     response: "ProjectSnapshot",
     route: projectsContract.snapshot,
@@ -110,6 +121,16 @@ const chatReadBindings = [
 ] satisfies readonly KotlinRouteBinding[];
 
 const historyReadBindings = [
+  {
+    name: "relatedCreatedChats",
+    response: "RelatedCreatedChats",
+    route: chatRelationsContract.children,
+  },
+  {
+    name: "relatedCommunicatingChats",
+    response: "RelatedCommunicatingChats",
+    route: chatRelationsContract.communications,
+  },
   {
     name: "historyCatchUp",
     request: "HistoryCatchUpRequest",
@@ -158,6 +179,17 @@ const connectorBindings = [
     name: "connectorOverview",
     response: "ConnectorOverview",
     route: chatConnectorAccessContract.overview,
+  },
+  {
+    name: "chatConnectorAccess",
+    response: "ChatConnectorAccess",
+    route: chatConnectorAccessContract.getThread,
+  },
+  {
+    name: "chatConnectorOverride",
+    response: "ChatConnectorAccess",
+    request: "ChatConnectorOverrideRequest",
+    route: chatConnectorAccessContract.setThreadOverride,
   },
   {
     name: "connectorAccountDefaults",
@@ -346,13 +378,18 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: workflowAutomationsContract.disable,
   },
   {
+    name: "searchChatMessages",
+    response: "ChatMessageSearchResponse",
+    route: chatSearchContract.search,
+  },
+  {
     name: "workspaceDraft",
     response: "ComposerDraft",
     route: composerDraftContract.get,
   },
   {
     name: "threadDraft",
-    response: "ComposerDraft",
+    response: "ThreadDraft",
     route: chatThreadDraftContract.get,
   },
   {
@@ -389,9 +426,47 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userModelPreferenceContract.update,
   },
   {
+    name: "emailSubscription",
+    response: "EmailSubscription",
+    route: emailSubscriptionContract.get,
+  },
+  {
+    name: "updateEmailSubscription",
+    request: "UpdateEmailSubscriptionRequest",
+    response: "EmailSubscriptionUpdate",
+    route: emailSubscriptionContract.update,
+  },
+  {
     name: "featureSwitches",
     response: "FeatureSwitches",
     route: featureSwitchesContract.get,
+  },
+  {
+    name: "morningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.get,
+  },
+  {
+    name: "updateMorningBriefPreference",
+    request: "SetMorningBriefPreference",
+    response: "MorningBriefPreference",
+    route: morningBriefPreferenceContract.update,
+  },
+  {
+    name: "proactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.get,
+  },
+  {
+    name: "updateProactiveSuggestionsWithFeed",
+    request: "SetProactiveSuggestionsPreference",
+    response: "ProactiveSuggestionsPreference",
+    route: proactiveSuggestionsContract.updateWithFeed,
+  },
+  {
+    name: "suggestionFeedSources",
+    response: "SuggestionFeedSources",
+    route: feedContract.sources,
   },
   {
     name: "recoverySubscriptions",
@@ -697,6 +772,11 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "ChatMessageSearchResponse",
+    schema: chatSearchContract.search.responses[200],
+    direction: "output",
+  },
+  {
     name: "RenameProjectRequest",
     schema: projectsContract.update.body,
     direction: "input",
@@ -738,6 +818,12 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     representation: "raw-object",
   },
   {
+    name: "ThreadDraft",
+    schema: chatThreadDraftContract.get.responses[200],
+    direction: "output",
+    representation: "raw-object",
+  },
+  {
     name: "SaveWorkspaceDraft",
     schema: composerDraftContract.patch.body,
     direction: "input",
@@ -773,11 +859,52 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
     direction: "input",
   },
   {
+    name: "EmailSubscription",
+    schema: emailSubscriptionContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "UpdateEmailSubscriptionRequest",
+    schema: emailSubscriptionContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "EmailSubscriptionUpdate",
+    schema: emailSubscriptionContract.update.responses[200],
+    direction: "output",
+  },
+  {
     name: "FeatureSwitches",
     schema: featureSwitchesContract.get.responses[200],
     readSchema: featureSwitchesContract.get.responses[200].pick({
       effectiveSwitches: true,
     }),
+    direction: "output",
+  },
+  {
+    name: "MorningBriefPreference",
+    schema: morningBriefPreferenceContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetMorningBriefPreference",
+    schema: morningBriefPreferenceContract.update.body,
+    direction: "input",
+  },
+  {
+    name: "ProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.get.responses[200],
+    direction: "output",
+  },
+  {
+    name: "SetProactiveSuggestionsPreference",
+    schema: proactiveSuggestionsContract.updateWithFeed.body,
+    direction: "input",
+  },
+  {
+    name: "SuggestionFeedSources",
+    schema: feedContract.sources.responses[200],
+    readSchema: feedContract.sources.responses[200].pick({ suggestions: true }),
     direction: "output",
   },
   {

@@ -13,18 +13,18 @@ fn slow_headers_skip_fast_responses_failures_and_body_time() {
     let phases = FreshArchivePhaseRecords::default();
     let mut telemetry = new_telemetry();
     let records = [
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 99, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 100, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 101, true),
-        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 150, false),
-        (STORAGE_CACHE_FRESH_DELIVERY_BODY, 250, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 99, true, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 150, false, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_BODY, 250, true, false),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 100, true, true),
+        (STORAGE_CACHE_FRESH_DELIVERY_HEADERS, 101, true, true),
     ];
-    phases
-        .records
-        .lock()
-        .unwrap()
-        .extend(
-            records.map(|(action, elapsed_ms, success)| FreshArchivePhaseRecord {
+    for (action, elapsed_ms, success, has_slow_response) in records {
+        phases
+            .records
+            .lock()
+            .unwrap()
+            .push(FreshArchivePhaseRecord {
                 operation: SandboxOpRecord::new(
                     action,
                     Duration::from_millis(elapsed_ms),
@@ -34,10 +34,12 @@ fn slow_headers_skip_fast_responses_failures_and_body_time() {
                 completed_at: Utc::now(),
                 archive_size_mismatch: None,
                 archive_connection_attempt: None,
-            }),
-        );
+            });
+        assert_eq!(phases.has_slow_header_response(), has_slow_response);
+    }
 
     assert_eq!(phases.record_to(&mut telemetry), 2);
+    assert!(!phases.has_slow_header_response());
     assert_eq!(phases.record_to(&mut telemetry), 0);
     assert_eq!(phase_ops(&telemetry).len(), 5);
 }

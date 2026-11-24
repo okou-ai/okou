@@ -239,7 +239,11 @@ test("Review full scopes grouped by connector and apply the selected duration to
   await expect(
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
-  expect(within(reopened).getByText("Permissions allowed")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(reopened).not.toBeInTheDocument();
+  });
+  const details = await openPermissions(card, "View permission details");
+  expect(within(details).getByText("Permissions allowed")).toBeInTheDocument();
   expect(applied).toStrictEqual([
     {
       target: { kind: "builtin", connectorSlug: "calendar-service" },
@@ -352,7 +356,9 @@ test("Review every scope in a large batch as metadata and grants arrive separate
   await expect(
     within(card).findByText("Permissions allowed"),
   ).resolves.toBeInTheDocument();
-  expect(within(dialog).getByText("Permissions allowed")).toBeInTheDocument();
+  await waitFor(() => {
+    expect(dialog).not.toBeInTheDocument();
+  });
   expect(applied).toStrictEqual(
     ["calendar-service", "reports-service"].map((connectorSlug) => {
       return {
@@ -409,6 +415,28 @@ test("Approve only missing scopes without reapplying or extending active grants"
       ],
     },
   ]);
+});
+
+test("Keep the dialog open if the permission response omits requested grants", async () => {
+  installMetadata();
+  installGrants();
+  context.mocks.api(connectorPermissionsContract.apply, ({ body, respond }) => {
+    return respond(200, connectorPermissionsResponse(body.target, []));
+  });
+  installConversation(batchUrl());
+
+  await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
+  await readyChat();
+  const card = await screen.findByTestId("permission-batch-action-card");
+  const dialog = await openPermissions(card);
+  await waitFor(() => {
+    expect(getButton("Allow all 3 permissions", dialog)).toBeEnabled();
+  });
+  click(getButton("Allow all 3 permissions", dialog));
+
+  await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
+    "Couldn't update permissions",
+  );
 });
 
 test("Keep the whole batch unavailable when one connector's delayed authoritative metadata fails", async () => {

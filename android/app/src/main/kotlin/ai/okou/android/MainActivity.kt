@@ -20,8 +20,9 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.Settings
-import android.widget.Toast
+import android.view.ViewTreeObserver
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -95,6 +96,8 @@ class MainActivity : AppCompatActivity() {
                     app.memberAppearanceCache,
                     app.projectExpansionStore,
                     app.defaultModelStore,
+                    settingsCache = app.workspaceSettingsCache,
+                    searchRecents = app.searchRecents,
                     updatesRequired = app.updates.required,
                     connectivity = app.connectivity,
                 )
@@ -106,6 +109,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val authentication = session
+        if (savedInstanceState == null) keepColdStartWindow(authentication)
         setContent {
             val sessionState by authentication.uiState.collectAsStateWithLifecycle()
             val account by authentication.account.collectAsStateWithLifecycle(initialValue = null)
@@ -160,9 +164,15 @@ class MainActivity : AppCompatActivity() {
                     ?: UserPreferencesColorTheme.DEFAULT,
             ) {
                 val updateDetails = rememberUpdateDetailsOpen()
-                val installProgress = updateInstall.progressLabel
                 val attempt = updateInstall.attempt
                 val pending = updateInstall.automaticRelease
+                val installProgress =
+                    updateInstall.progressLabel
+                        ?: R.string.updates_waiting_to_install.takeIf {
+                            pending != null &&
+                                updateState.canInstall &&
+                                updateState.selectedRelease == pending
+                        }
                 LaunchedEffect(
                     attempt,
                     pending,
@@ -196,23 +206,20 @@ class MainActivity : AppCompatActivity() {
                         { authentication.signOut(presentedGeneration) },
                         account = account,
                         openWorkspaceSetup = {
-                            try {
-                                startActivity(
-                                    Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri()),
-                                )
-                            } catch (_: ActivityNotFoundException) {
-                                Toast.makeText(
-                                        this,
-                                        R.string.auth_browser_unavailable,
-                                        Toast.LENGTH_LONG,
+                            authentication.openWorkspaceSetup(presentedGeneration) {
+                                try {
+                                    startActivity(
+                                        Intent(Intent.ACTION_VIEW, BuildConfig.WEB_ORIGIN.toUri()),
                                     )
-                                    .show()
+                                    true
+                                } catch (_: ActivityNotFoundException) {
+                                    false
+                                }
                             }
                         },
                         appUpdates = {
                             AppUpdateSettings(
                                 updateState,
-                                installProgress,
                                 openUpdates,
                                 updateDetails.value,
                             )
@@ -325,6 +332,27 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         session.foregroundChanged(false)
         super.onPause()
+    }
+
+    private fun keepColdStartWindow(authentication: SessionModel) {
+        val content = findViewById<android.view.View>(android.R.id.content)
+        // Leave the launch window up briefly. A slow Clerk initialization must not hold drawing.
+        val deadline = SystemClock.uptimeMillis() + 500
+        content.viewTreeObserver.addOnPreDrawListener(
+            object : ViewTreeObserver.OnPreDrawListener {
+                override fun onPreDraw(): Boolean {
+                    if (
+                        authentication.uiState.value.stage == SessionStage.Restoring &&
+                            SystemClock.uptimeMillis() < deadline
+                    ) {
+                        content.postInvalidateOnAnimation()
+                        return false
+                    }
+                    content.viewTreeObserver.removeOnPreDrawListener(this)
+                    return true
+                }
+            },
+        )
     }
 
     private fun canInstallPackages() =

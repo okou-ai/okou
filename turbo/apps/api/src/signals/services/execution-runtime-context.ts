@@ -10,10 +10,7 @@ import { billableFirewallsForPermissions } from "./built-in-route-pricing";
 import type { AdmittedExecutionFacts } from "./admitted-execution-facts";
 import { NATIVE_CONTEXT_RECOVERY_PROMPT } from "./chat-session-continuity.service";
 import { dataRouterEnvironment } from "./data-router-environment";
-import {
-  type AcceptedMemoryMount,
-  prepareExecutionMemoryMount$,
-} from "./execution-storage.service";
+import type { ExecutionMemoryMount } from "./execution-storage.service";
 import type { ExecutionPackageMounts } from "./execution-workflow-selection";
 import type { ModelFirstPin } from "./model-selection.service";
 import {
@@ -25,7 +22,7 @@ import {
   DEFAULT_DISALLOWED_TOOLS,
   runPlatformEnvironment,
 } from "./run-execution-defaults";
-import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
+import type { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
 import {
   modelProviderEnvironment,
   paidToolPlatformEnvironment,
@@ -52,8 +49,14 @@ export type ExecutionContextRun = Pick<
 type ExecutionInput = {
   readonly run: ExecutionContextRun;
   readonly facts: AdmittedExecutionFacts;
-  readonly memoryMount: AcceptedMemoryMount;
 };
+
+export interface ExecutionRuntimeResources {
+  readonly memory: Promise<ExecutionMemoryMount>;
+  readonly networkPolicyInputs: ReturnType<
+    (typeof prepareExecutionNetworkPolicy$)["write"]
+  >;
+}
 
 function executionPlatform({ run, facts }: ExecutionInput) {
   const framework = run.framework;
@@ -109,9 +112,10 @@ function executionEnvironment(input: ExecutionInput) {
 
 export const prepareExecutionRuntimeContext$ = command(
   async (
-    { set },
+    _context,
     input: ExecutionInput,
     packages: ExecutionPackageMounts,
+    resources: ExecutionRuntimeResources,
     signal: AbortSignal,
   ) => {
     const { run, facts } = input;
@@ -124,11 +128,7 @@ export const prepareExecutionRuntimeContext$ = command(
     const [prepared, networkPolicyInputs] = await joinAllInOrder(
       [
         (async () => {
-          const memory = await set(
-            prepareExecutionMemoryMount$,
-            input.memoryMount,
-            signal,
-          );
+          const memory = await resources.memory;
           signal.throwIfAborted();
           const prepared: PreparedExecutionContext = {
             ...executionModelConfiguration(
@@ -176,10 +176,7 @@ export const prepareExecutionRuntimeContext$ = command(
             readyAt: monotonicNow(),
           };
         })(),
-        set(prepareExecutionNetworkPolicy$, {
-          connectorRuntimeTargets,
-          networkPolicyInputs: facts.connectorNetworkPolicyInputs,
-        }),
+        resources.networkPolicyInputs,
       ],
       signal,
     );

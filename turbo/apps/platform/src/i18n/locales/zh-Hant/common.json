@@ -430,7 +430,6 @@
       "close": "關閉",
       "closeArtifact": "關閉成果",
       "closeNamed": "關閉 {{title}}",
-      "closePreviewMenu": "關閉預覽選單",
       "download": "下載",
       "downloadArtifact": "下載成果",
       "downloadMarkdownAs": "下載為 {{format}}",
@@ -573,6 +572,28 @@
     "metadata": {
       "generated": "生成於 {{date}}",
       "updated": "更新於 {{date}}"
+    },
+    "people": {
+      "accounts": "符合的工作區成員",
+      "anyone": "任何人",
+      "empty": "尚未邀請其他人。",
+      "hint": "邀請工作區外的使用者？請輸入對方的完整電子郵件地址。",
+      "invitationProcessed": "分享邀請已處理",
+      "label": "分享給指定使用者",
+      "noAccounts": "找不到符合的工作區成員。請輸入完整電子郵件地址邀請。",
+      "placeholder": "姓名或電子郵件地址",
+      "remove": "移除 {{email}} 的存取權限",
+      "removed": "已移除存取權限",
+      "restricted": "受邀人員",
+      "restrictedDescription": "僅你和受邀人員",
+      "searching": "正在搜尋工作區成員…",
+      "searchUnavailable": "成員搜尋暫時無法使用，請稍後重試。",
+      "share": "邀請",
+      "updateUnavailable": "暫時無法更新分享設定，請稍後重試。",
+      "viewers": "有權存取的使用者",
+      "workspace": "工作區",
+      "workspaceDescription": "{{organization}} 成員和受邀人員",
+      "workspaceDescriptionUnnamed": "工作區成員和受邀人員"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音訊預覽",
@@ -1931,7 +1952,7 @@
       },
       "slashPanel": {
         "browseAll": "瀏覽全部模板",
-        "hint": "搜尋工作流程或選擇範本…",
+        "hint": "選擇一項操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "臨時切換到",
@@ -2128,6 +2149,12 @@
         },
         "inReview": "稽核中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} 積分",
+            "confirm": "回去幹活",
+            "description": "積分用來支付真正的工作：每一次執行、每一份成果、每一個按時間執行的工作流。",
+            "title": "今天這一步完成了"
+          },
           "connector": {
             "confirm": "瀏覽全部連接器",
             "connected": "已連線",
@@ -2561,13 +2588,6 @@
       "unsupported": "不支援手動重設；用量將自然恢復。"
     },
     "taskChips": {
-      "defaultOutputFormat": "預設輸出格式",
-      "presentationFormat": "預設簡報格式",
-      "presentationFormatHint": "點選後儲存為此瀏覽器的預設格式。",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {
@@ -2840,6 +2860,7 @@
       "storageFailed": "音訊未能儲存。只能使用已儲存在此裝置上的音訊。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在轉寫",
+      "uploadingRecording": "正在上傳錄音…",
       "useRecording": "使用錄音"
     },
     "walletAction": {
@@ -2971,6 +2992,7 @@
       "edit": "編輯",
       "grant": "授予",
       "reconnect": "重新連線",
+      "returnToOkou": "返回 Okou",
       "revoke": "撤銷",
       "save": "儲存",
       "saving": "正在儲存…",
@@ -5145,6 +5167,7 @@
     }
   },
   "projects": {
+    "archiveProject": "封存",
     "back": "返回",
     "close": "Close",
     "collapse": "收合",
@@ -5153,7 +5176,7 @@
     "delete": "删除",
     "deleteChoiceDescription": "可以只刪除 Project 並保留聊天，也可以同時刪除其中的聊天。",
     "deleteError": "无法删除 Project",
-    "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天…",
+    "deleteProjectAndThreads_other": "刪除 Project 和 {{count}} 個聊天",
     "deleteProjectOnly": "僅刪除 Project",
     "deleteThreadsDescription_other": "永久刪除此 Project 和 {{count}} 個聊天，包括封存聊天及其歷史記錄。正在執行的任務會停止，關聯的自動化會暫停。此操作無法復原。",
     "deleteThreadsError": "刪除已停止。部分聊天可能已被永久刪除，請檢查 Project 和剩餘聊天後再繼續。",
@@ -5181,6 +5204,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "還原專案",
     "retryThreads": "重新載入聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
@@ -6328,17 +6352,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部標為已讀",
     "noResults": "沒有找到結果",
     "resultCount_other": "{{count}} 條結果",
     "searching": "搜尋中…",
     "searchWorkspace": "搜尋工作區…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "訊息",
-      "workflows": "工作流"
+      "threads": "對話串"
     }
   },
   "ssh": {

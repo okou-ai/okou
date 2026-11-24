@@ -115,10 +115,12 @@ internal fun SettingsRow(
     valueLeading: (@Composable () -> Unit)? = null,
     supportingText: String? = null,
     valueMaxWidth: Dp = 144.dp,
+    reserveValueSpace: Boolean = false,
+    valueBelowTitle: Boolean =
+        currentWindowSizeDp().width < 360 || LocalDensity.current.fontScale > 1.3f,
 ) {
     val colors = MaterialTheme.colorScheme
     val muted = colors.onSurfaceVariant
-    val expandedText = currentWindowSizeDp().width < 360 || LocalDensity.current.fontScale > 1.3f
     val action =
         if (onClick == null) Modifier
         else Modifier.clickable(enabled = enabled, role = Role.Button, onClick = onClick)
@@ -150,7 +152,7 @@ internal fun SettingsRow(
                         ),
                 )
             }
-            if (expandedText && value != null) {
+            if (valueBelowTitle && value != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -166,10 +168,11 @@ internal fun SettingsRow(
                 }
             }
         }
-        if (!expandedText && value != null) {
+        if (!valueBelowTitle && value != null) {
             Row(
+                modifier = if (reserveValueSpace) Modifier.weight(0.8f) else Modifier,
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
             ) {
                 valueLeading?.invoke()
                 Text(
@@ -199,14 +202,20 @@ internal fun SettingsSwitchRow(
     leading: @Composable () -> Unit,
     checked: Boolean?,
     onCheckedChange: ((Boolean) -> Unit)?,
+    modifier: Modifier = Modifier,
     supportingText: String? = null,
 ) {
     val action =
-        if (checked == null || onCheckedChange == null) {
+        if (checked == null) {
             Modifier.semantics(mergeDescendants = true) { disabled() }
-        } else Modifier.toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
+        } else {
+            Modifier.toggleable(checked, enabled = onCheckedChange != null, role = Role.Switch) {
+                onCheckedChange?.invoke(it)
+            }
+        }
     Row(
-        Modifier.fillMaxWidth()
+        modifier
+            .fillMaxWidth()
             .then(action)
             .heightIn(min = if (supportingText == null) 56.dp else 72.dp)
             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -314,7 +323,7 @@ internal fun SettingsModal(
             Surface(
                 if (fullScreen) Modifier.fillMaxSize()
                 else Modifier.padding(horizontal = 24.dp).widthIn(max = 460.dp).fillMaxWidth(),
-                shape = if (fullScreen) RectangleShape else RoundedCornerShape(28.dp),
+                shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface,
             ) {
                 content(true)
@@ -331,8 +340,6 @@ internal fun SettingsModal(
                     confirmValueChange = { it != SheetValue.Hidden || allowDismiss },
                 ),
             sheetGesturesEnabled = dismissible,
-            sheetMaxWidth = 460.dp,
-            shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
             containerColor = MaterialTheme.colorScheme.surface,
             properties =
                 ModalBottomSheetProperties(
@@ -345,42 +352,61 @@ internal fun SettingsModal(
     }
 }
 
+internal fun settingsPanelContentPadding(compactHeight: Boolean) =
+    PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
+
 @Composable
 internal fun SettingsSheet(
     title: String,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
     actions: (@Composable () -> Unit)? = null,
+    titleInset: Dp = 0.dp,
+    progress: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height.dp
     val scroll = rememberScrollState()
     SettingsModal(onDismiss) { centered ->
         Column(
-            Modifier.fillMaxWidth()
+            modifier
+                .fillMaxWidth()
                 .heightIn(max = windowHeight * 0.80f)
-                .padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = if (centered) 16.dp else 0.dp,
-                    bottom = 16.dp,
-                )
+                .padding(settingsPanelContentPadding(compactHeight = windowHeight < 480.dp))
+                .padding(top = if (centered) 16.dp else 0.dp)
                 .verticalScroll(scroll),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                title,
-                Modifier.semantics { heading() },
-                style =
-                    MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 28.sp),
-            )
+            Box(Modifier.fillMaxWidth()) {
+                Text(
+                    title,
+                    Modifier.padding(start = titleInset, end = titleInset, bottom = 8.dp)
+                        .semantics { heading() },
+                    style =
+                        MaterialTheme.typography.titleLarge.copy(
+                            fontSize = 22.sp,
+                            lineHeight = 28.sp,
+                        ),
+                )
+                if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
+            }
             Column(
                 Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 content = content,
             )
-            actions?.invoke()
+            if (actions != null) Box(Modifier.padding(top = 8.dp)) { actions() }
         }
     }
+}
+
+@Composable
+internal fun SettingsSheetDescription(text: String) {
+    Text(
+        text,
+        Modifier.padding(horizontal = 8.dp),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
+    )
 }
 
 @Composable

@@ -52,7 +52,6 @@ const TEST_APP_ROUTES = Object.freeze([
 
 const context = testContext();
 const bdd = createBddApi(context);
-const api = createRunsApi(context);
 const mocks = createRouteMocks(context);
 const wf = createWorkflowsBddApi(context);
 const runsApi = createRunsApi(context);
@@ -97,16 +96,15 @@ interface Scenario {
 
 async function setup(): Promise<Scenario> {
   const runnerGroup = await runsApi.configureRunnerGroup();
-  const { actor, customerId } = await wf.setupWorkflowOrg({ tier: "team" });
+  // Queue ordering uses claimable native runs; Pi route tests select their
+  // own model instead of inheriting this fixture's selection.
+  const { actor, customerId } = await wf.setupWorkflowOrg({
+    tier: "team",
+    model: "claude-fable-5-1",
+  });
   if (!actor.orgId) {
     throw new Error("Expected an org-scoped workflow actor");
   }
-  // Queue ordering uses claimable native runs; Pi route tests select their
-  // own model instead of inheriting this fixture's selection.
-  await runsApi.ensurePersonalSubscriptionModel(actor);
-  await api.ensurePersonalSubscriptionModel(actor, {
-    model: "claude-fable-5-1",
-  });
   const workflowId = await wf.createWorkflow(actor, {
     name: WORKFLOW_NAME,
   });
@@ -644,10 +642,9 @@ describe("workflow queue", () => {
       "A signed webhook request was received.",
     );
 
-    const firstExecution = await completeRunThroughSandbox(
-      scenario,
-      firstRunId,
-    );
+    const firstExecution = await runsApi.executionInput(firstRunId);
+    await requestExecutionCompletionThroughSandbox(firstRunId, firstExecution);
+    await flushWaitUntilForTest();
     expect(firstExecution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\nSummary: signed workflow webhook received`,
     );
@@ -665,7 +662,6 @@ describe("workflow queue", () => {
 
     const runIds = await workflowRunIds(automation.threadId);
     expect(runIds).toHaveLength(2);
-    await runsApi.heartbeatRunner(scenario.runnerGroup);
     const secondExecution = await runsApi.executionInput(runIds[1]!);
     expect(secondExecution.prompt).toContain(
       `/${WORKFLOW_NAME}\n\nAutomation event\nType: webhook-received\nSummary: signed workflow webhook received`,
@@ -1102,7 +1098,7 @@ describe("workflow queue", () => {
     const signing = holdDownloadSigning(context);
     const preparation = await settleIncludingAbort(async () => {
       const admitted = await requestAutomationNow(automation.automationId);
-      await signing.entered;
+      await signing.waitForPending();
       const admittedRunId = await latestThreadRunId(admitted.body.chatThreadId);
       const requested = await requestAutomationNow(automation.automationId);
       const threadId = requested.body.chatThreadId;
@@ -1261,8 +1257,7 @@ describe("workflow queue", () => {
     expect(rejectedEvent.userMessage).toStrictEqual(admittedEvent.userMessage);
     expect(chatEventDisplayText(admittedEvent)).toBe(rejectedDisplayPrompt);
     // Reconnect the thread's model so the next trigger can launch.
-    await runsApi.ensurePersonalSubscriptionModel(scenario.actor);
-    await api.ensurePersonalSubscriptionModel(scenario.actor, {
+    await runsApi.ensurePersonalSubscriptionModel(scenario.actor, {
       model: "claude-fable-5-1",
     });
     const runId = await expectAcceptedRunId(

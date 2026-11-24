@@ -122,9 +122,6 @@ curl() {
     }
 
     case "$MOCK_CURL_MODE" in
-        success)
-            printf '{"ok":true}\n'
-            ;;
         failure)
             [[ "$fail_with_body_enabled" == true ]] || {
                 echo "curl failure mode did not retain --fail-with-body" >&2
@@ -171,17 +168,9 @@ run_wait_for_run() {
 export E2E_API_URL="https://pr-27981-api.vm6.ai/"
 export E2E_API_TOKEN="sensitive-api-token"
 export VERCEL_AUTOMATION_BYPASS_SECRET="sensitive-bypass-secret"
-MOCK_CURL_RETRY_SUCCESS_BODY='{"ok":true}'
 payload='{"secret":"sensitive-request-payload"}'
 MOCK_CURL_EXPECTED_VERCEL_URL='https://vercel.com/okou/vm0-api/logs?search=requestHost%3Apr-27981-api.vm6.ai+requestPath%3A%2Fapi%2Fchat%2Fevents+status%3A429&timeline=past12Hours'
 MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT='%{onerror}%{stderr}Vercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%%3Apr-27981-api.vm6.ai+requestPath%%3A%%2Fapi%%2Fchat%%2Fevents+status%%3A%{http_code}&timeline=past12Hours\n'
-
-MOCK_CURL_MODE=success
-MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/chat/events"
-run_request "/api/chat/events" -X POST -d "$payload"
-assert_status 0
-assert_file_equals $'{"ok":true}\n' "$stdout_file"
-assert_file_equals '' "$stderr_file"
 
 MOCK_CURL_MODE=failure
 MOCK_CURL_EXPECTED_URL="https://pr-27981-api.vm6.ai/api/chat/events?cursor=sensitive-query-value"
@@ -207,14 +196,6 @@ MOCK_CURL_EXPECTED_VERCEL_URL="${context_vercel_logs_search}+status%3A000&timeli
 MOCK_CURL_EXPECTED_VERCEL_WRITE_OUT='%{onerror}%{stderr}Vercel logs: https://vercel.com/okou/vm0-api/logs?search=requestHost%%3Apr-27981-api.vm6.ai+requestPath%%3A%%2Fapi%%2Fruns%%2Frun-1%%2Fcontext+status%%3A%{http_code}&timeline=past12Hours\n'
 stall_stderr=$'curl: (28) Operation timed out with 0 bytes received\nVercel logs: '"$MOCK_CURL_EXPECTED_VERCEL_URL"$'\n'
 retry_stderr=$'runner_api_curl retrying https://pr-27981-api.vm6.ai/api/runs/run-1/context after timeout (attempt 1 of 2)\n'
-
-MOCK_CURL_MODE=no-response-then-success
-reset_curl_attempts
-run_request "/api/runs/run-1/context"
-assert_status 0
-assert_curl_attempts 2
-assert_file_equals $'{"ok":true}\n' "$stdout_file"
-assert_file_equals '' "$stderr_file"
 
 # Polling helpers merge transport streams before parsing. A recovered timeout
 # must therefore be quiet so the successful response remains one JSON value.

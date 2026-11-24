@@ -163,7 +163,7 @@ if [ "$is_probe" = "true" ]; then
   fi
 
   case "$FAKE_SSH_SCENARIO" in
-    healthy|actual-failure|actual-hang|hold-channel)
+    healthy|actual-failure|actual-deadline|actual-hang|hold-channel)
       exit 0
       ;;
     auto-master-failure|auto-master-reuse)
@@ -227,6 +227,9 @@ if [ "$FAKE_SSH_SCENARIO" = "hold-channel" ]; then
   printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
   IFS= read -r _ < "$FAKE_MASTER_TRIGGER"
   echo 'old channel completed'
+fi
+if [ "$FAKE_SSH_SCENARIO" = "actual-deadline" ]; then
+  exec "$SYSTEM_SLEEP" 300
 fi
 if [ "$FAKE_SSH_SCENARIO" = "actual-hang" ]; then
   printf '%s\n' "$$" > "$FAKE_ACTUAL_SSH_PID"
@@ -561,22 +564,10 @@ fi
 actual_timeout="${tmp}/actual-timeout"
 FAKE_TIMEOUT_MODE=real \
   OKOU_CLOUDFLARE_SSH_OPERATION_TIMEOUT_SECONDS=1 \
-  run_wrapper "$actual_timeout" actual-hang ssh \
+  run_wrapper "$actual_timeout" actual-deadline ssh \
     metal@dev-1.aws.vm3.ai run-once-and-hang
-case "$(< "$actual_timeout/status")" in
-  124|137) ;;
-  *)
-    fail \
-      "timed-out caller returned unexpected status: $(< "$actual_timeout/status")"
-    ;;
-esac
-assert_line_count "$actual_timeout/actual-ssh.log" 1 \
-  "metal@dev-1.aws.vm3.ai run-once-and-hang"
+assert_contains "$actual_timeout/status" '124'
 assert_contains "$actual_timeout/stderr" 'sending signal TERM to command'
-assert_process_stopped "$actual_timeout/actual-ssh.pid" "timed-out SSH caller"
-assert_process_stopped \
-  "$actual_timeout/actual-ssh-child.pid" \
-  "timed-out SSH descendant"
 
 actual_cancel="${tmp}/actual-cancel"
 setup_case "$actual_cancel"

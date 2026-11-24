@@ -90,6 +90,13 @@ class ChatListApiFixture : Closeable {
     @Volatile var commandResponse: (RecordedRequest) -> MockResponse? = { null }
     @Volatile var beforeHistoryResponse: (RecordedRequest) -> Unit = {}
     @Volatile var historyThreadIds = setOf(CHAT_PERSONAL, CHAT_IN_PROJECT)
+    @Volatile
+    var searchMessages: (RecordedRequest) -> MockResponse = { jsonResponse("""{"results":[]}""") }
+    @Volatile
+    var searchArtifacts: (RecordedRequest) -> MockResponse = {
+        jsonResponse("""{"artifacts":[],"nextCursor":null}""")
+    }
+    @Volatile var searchWorkflows: () -> MockResponse = { jsonResponse("[]") }
 
     @Volatile var historyReply = "**Native history** reply"
 
@@ -193,7 +200,13 @@ class ChatListApiFixture : Closeable {
     }
     val identity: WorkspaceIdentity
     val service: CanonicalWorkspaceSession
+    @Volatile var draftIndex: () -> MockResponse = { jsonResponse("""{"draftThreadIds":[]}""") }
+
     private val composerDrafts = ConcurrentHashMap<String, JsonObject>()
+
+    fun setThreadDraft(threadId: String, text: String) {
+        composerDrafts["chat-threads:$threadId"] = plainDraftDocument(text)
+    }
 
     init {
         server.dispatcher =
@@ -238,6 +251,10 @@ class ChatListApiFixture : Closeable {
                         return when (segments.getOrNull(3)) {
                             "event-snapshot" -> historySnapshot()
                             "event-rows" -> historyRows(request)
+                            "relations" ->
+                                if (segments.getOrNull(4) in setOf("children", "communications")) {
+                                    jsonResponse("""{"items":[]}""")
+                                } else MockResponse().setResponseCode(404)
                             "mark-read" -> {
                                 readRequests.incrementAndGet()
                                 historyMarkRead()
@@ -247,9 +264,17 @@ class ChatListApiFixture : Closeable {
                         }
                     }
                     return when (request.requestUrl?.encodedPath) {
+                        "/api/chat/search" -> searchMessages(request)
+                        "/api/workflows" -> searchWorkflows()
+                        "/api/artifacts/catalog" -> searchArtifacts(request)
                         "/api/chat/events/catch-up" -> historyCatchUp(request)
                         "/api/chat-threads/snapshot" -> snapshot()
                         "/api/chat-threads/events" -> events(request)
+                        "/api/chat-thread-drafts" -> draftIndex()
+                        "/api/onboarding/status" ->
+                            jsonResponse(
+                                """{"needsOnboarding":false,"onboardingComplete":true,"isAdmin":false,"hasOrg":true}""",
+                            )
                         "/api/indicators" -> indicators()
                         "/api/projects/snapshot" -> projects()
                         "/api/projects/events" -> projectEvents(request)

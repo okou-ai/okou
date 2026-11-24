@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.20](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.19...ably-subscriber-v2.0.20) (2026-11-23)
+
+
+### Refactoring
+
+* **ably:** share messagepack map key conversion ([#50283](https://github.com/okou-ai/okou/issues/50283)) ([d040741](https://github.com/okou-ai/okou/commit/d0407414225d60df80c7a2c706cdd28c94babd7a))
+
 ## [2.0.19](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.18...ably-subscriber-v2.0.19) (2026-11-22)
 
 

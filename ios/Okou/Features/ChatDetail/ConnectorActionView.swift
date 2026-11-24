@@ -197,6 +197,7 @@ private struct ConnectorActionCardContent: View {
 }
 
 struct ConnectorAuthorizationSheet: View {
+  @Environment(\.scenePhase) private var scenePhase
   @Bindable var flow: ConnectorAuthorizationFlow
   let store: ConnectorActionStore
 
@@ -324,9 +325,23 @@ struct ConnectorAuthorizationSheet: View {
       }
       .sheet(
         isPresented: Binding(
-          get: { flow.browserURL != nil }, set: { if !$0 { store.browserDismissed() } })
+          get: { flow.browserURL != nil && !flow.usesSystemAuthenticationSession },
+          set: { if !$0, !flow.usesSystemAuthenticationSession { store.browserDismissed() } })
       ) {
         if let url = flow.browserURL { ConnectorSafariView(url: url) { store.browserDismissed() } }
+      }
+      .background {
+        ConnectorAuthenticationSessionView(
+          url: flow.usesSystemAuthenticationSession ? flow.browserURL : nil
+        ) { url, error in
+          store.authenticationFinished(flow: flow, url: url, error: error)
+        }
+        .frame(width: 0, height: 0)
+        .accessibilityHidden(true)
+      }
+      .onOpenURL { store.receiveProviderReturn($0) }
+      .onChange(of: scenePhase) { _, phase in
+        store.providerSceneActive(phase == .active)
       }
     }
   }

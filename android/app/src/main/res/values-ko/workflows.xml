@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">채팅 실행 종료</string>
     <string name="workflow_clear_search">검색어 지우기</string>
     <string name="workflow_connect_provider">이 규칙을 활성화하려면 %1$s에 연결하세요.</string>
-    <string name="workflow_connection_unavailable">연결을 열 수 없습니다.</string>
     <string name="workflow_create_uncertain">생성을 확인할 수 없습니다. 편집기를 닫고 규칙을 확인한 후 다시 시도하세요.</string>
     <string name="workflow_creation_prompt">비공개 워크플로를 만들고 싶습니다. workflow-setup 스킬을 사용하세요. 반복할 작업이 무엇인지 물어보고, 저장하기 전에 지침을 보여 주고 확인을 받으세요. 자동화는 제가 요청할 때만 생성하세요.</string>
     <string name="workflow_daily">매일</string>
@@ -44,6 +43,7 @@
     <string name="workflow_instructions_heading">워크플로 지침</string>
     <string name="workflow_keep_editing">계속 편집</string>
     <string name="workflow_load_failed">워크플로를 불러올 수 없습니다</string>
+    <string name="workflow_rules_load_failed">트리거 규칙을 불러올 수 없습니다.</string>
     <string name="workflow_mail_from_contains">보낸 사람이 %1$s 포함</string>
     <string name="workflow_mail_labeled">Gmail 라벨 적용됨</string>
     <string name="workflow_mail_received">Gmail 메일 수신</string>
@@ -66,8 +66,6 @@
     <string name="workflow_notion_child">Notion 하위 페이지 생성됨</string>
     <string name="workflow_notion_item">Notion 데이터베이스 항목 생성됨</string>
     <string name="workflow_notion_updated">Notion 페이지 업데이트됨</string>
-    <string name="workflow_offline">워크플로를 불러오려면 연결하세요</string>
-    <string name="workflow_offline_cache">오프라인 · 마지막으로 불러온 데이터 표시</string>
     <string name="workflow_offline_changes">저장하려면 연결하세요. 변경사항은 유지됩니다.</string>
     <string name="workflow_pause">일시 중지</string>
     <string name="workflow_paused">자동화 일시 중지됨</string>
@@ -113,7 +111,6 @@
     <string name="workflow_history_event">이벤트</string>
     <string name="workflow_history_failed">실행 기록을 불러오지 못했습니다</string>
     <string name="workflow_history_loading">실행 기록을 불러오는 중…</string>
-    <string name="workflow_history_offline">연결하여 실행 기록 불러오기</string>
     <string name="workflow_history_open_chat">관련 채팅 열기</string>
     <string name="workflow_history_unavailable">실행 기록을 사용할 수 없습니다</string>
     <string name="workflow_run_pending">대기 중</string>

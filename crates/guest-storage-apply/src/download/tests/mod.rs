@@ -68,7 +68,7 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
             download.task.logical_mount_path(),
         )
     }));
-    let mut scheduler = DownloadScheduler::new(pending, 4);
+    let mut scheduler = DownloadScheduler::new(pending, 4, true);
     let (send, receive) = mpsc::sync_channel(4);
     assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
     let first = (0..4)
@@ -98,6 +98,46 @@ fn scheduler_front_loads_one_archive_then_dispatches_original_order() {
 }
 
 #[test]
+fn local_scheduler_starts_one_ready_artifact_alongside_the_largest_archive() {
+    for (artifact_path, artifact_bytes, allow_priority, expected) in [
+        ("/artifact", 512 * 1024, true, [3, 5, 0, 1]),
+        ("/artifact", 2 * 1024 * 1024, true, [5, 0, 1, 2]),
+        ("/artifact", 512 * 1024, false, [3, 0, 1, 2]),
+        ("/ordinary-0/child", 512 * 1024, true, [3, 0, 1, 2]),
+    ] {
+        let mut pending = (0..5)
+            .map(|id| pending_at(id, &format!("/ordinary-{id}")))
+            .collect::<VecDeque<_>>();
+        pending[3].estimated_work = 1024 * 1024;
+        let mut artifact = pending_at(5, artifact_path);
+        artifact.task.task = DownloadTask::artifact(
+            "artifact".into(),
+            "file:///tmp/artifact.tar.gz".into(),
+            artifact_path.into(),
+        );
+        artifact.estimated_work = artifact_bytes;
+        pending.push_back(artifact);
+        let mut telemetry = DownloadRunTelemetry::start(pending.iter().map(|download| {
+            (
+                download.task.task.telemetry,
+                download.task.logical_mount_path(),
+            )
+        }));
+        let mut scheduler = DownloadScheduler::new(pending, 4, allow_priority);
+        let (send, receive) = mpsc::sync_channel(4);
+
+        assert!(scheduler.start_ready_attempts(&send, &mut telemetry));
+        assert_eq!(
+            (0..4)
+                .map(|_| receive.try_recv().unwrap().id)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        telemetry.finish();
+    }
+}
+
+#[test]
 fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
     for (hints, gated, prioritize_large, expected) in [
         ([0, 0, 0], false, true, 0),
@@ -120,7 +160,16 @@ fn ready_archive_priority_preserves_fifo_ties_and_source_gates() {
             })
             .collect();
         assert_eq!(
-            find_startable_download(&pending, &[], prioritize_large, &mut |_, _, _, _| {}),
+            find_startable_download(
+                &pending,
+                &[],
+                if prioritize_large {
+                    DownloadSelection::Largest
+                } else {
+                    DownloadSelection::Fifo
+                },
+                &mut |_, _, _, _| {},
+            ),
             Some((expected, expected))
         );
     }
@@ -151,7 +200,7 @@ fn large_archive_priority_respects_logical_and_physical_reservations() {
             find_startable_download(
                 &VecDeque::from([first, large]),
                 &reservations,
-                true,
+                DownloadSelection::Largest,
                 &mut |_, _, _, _| {},
             ),
             Some((0, 0))
@@ -179,12 +228,22 @@ fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_wor
         child.estimated_work = 100;
         let pending = VecDeque::from([first, child, pending_at(2, "/independent")]);
         assert_eq!(
-            find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
+            find_startable_download(
+                &pending,
+                &[],
+                DownloadSelection::Largest,
+                &mut |_, _, _, _| {}
+            ),
             Some((2, 2))
         );
         gate.store(true, Ordering::Release);
         assert_eq!(
-            find_startable_download(&pending, &[], true, &mut |_, _, _, _| {}),
+            find_startable_download(
+                &pending,
+                &[],
+                DownloadSelection::Largest,
+                &mut |_, _, _, _| {}
+            ),
             Some((0, 0))
         );
     }
@@ -295,7 +354,7 @@ fn find_startable_download_observes_conflict_and_selects_later_task() {
     let selected = find_startable_download(
         &pending,
         &reservations,
-        false,
+        DownloadSelection::Fifo,
         &mut |pending_id, _, active_id, _| {
             conflicts.push((pending_id, active_id));
         },
@@ -326,7 +385,7 @@ fn find_startable_download_reports_first_active_conflict_on_each_scan() {
         let selected = find_startable_download(
             &pending,
             &reservations,
-            false,
+            DownloadSelection::Fifo,
             &mut |pending_id, _, active_id, _| {
                 conflicts.push((pending_id, active_id));
             },

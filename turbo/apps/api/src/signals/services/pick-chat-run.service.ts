@@ -33,7 +33,10 @@ import {
   dispatchPreparedRun$,
   type DirectRunDispatchResult,
 } from "./direct-run-dispatch.service";
-import { publishDirectRunCache$ } from "./direct-run-preparation.service";
+import {
+  prepareExecutionBundleUrls$,
+  publishDirectRunCache$,
+} from "./direct-run-preparation.service";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
   CHAT_THREAD_LEASE_MS,
@@ -491,14 +494,24 @@ function createPickObjects() {
       waitUntil(settle(get(claimed.inputResources$)));
       signal.throwIfAborted();
       const preparation = set(claimed.prepareRunAdmission$, signal);
-      const bundleCache = settle(get(claimed.executionBundleCache$));
-      // The pick owns the in-flight cache read even when admission loses.
-      waitUntil(bundleCache);
-      const prepared = await preparation;
+      const bundleUrls = set(
+        prepareExecutionBundleUrls$,
+        get(claimed.executionBundleCache$),
+        signal,
+      );
+      // The pick owns preparation even if admission loses.
+      waitUntil(settle(bundleUrls));
+      waitUntil(settle(preparation.resources.memoryArchive));
+      waitUntil(settle(preparation.resources.networkPolicyInputs));
+      const prepared = await preparation.context;
       signal.throwIfAborted();
-      const pending = prepared
-        ? await set(claimed.admitRun$, prepared, signal)
+      const admitted = prepared
+        ? set(claimed.admitRun$, prepared, preparation.resources, signal)
         : null;
+      if (admitted) {
+        waitUntil(settle(admitted.resources.memory));
+      }
+      const pending = admitted ? await admitted.pending : null;
       signal.throwIfAborted();
       // Admission can append a claim or a public rejection. This pick owns
       // publication for its captured thread, independently of Runner dispatch.
@@ -513,7 +526,7 @@ function createPickObjects() {
           signal,
         ),
       );
-      if (!pending) {
+      if (!admitted || !pending) {
         await set(releaseClaim$, claim, signal);
         return { kind: "none" };
       }
@@ -537,7 +550,8 @@ function createPickObjects() {
           set(
             prepareDirectRunDispatch$,
             pending.admittedLaunch,
-            bundleCache,
+            bundleUrls,
+            admitted.resources,
             signal,
           ),
         ],

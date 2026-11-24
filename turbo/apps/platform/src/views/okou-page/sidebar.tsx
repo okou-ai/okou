@@ -453,20 +453,6 @@ export function ThreeColumnSearchDialogContainer() {
           pathParams: { threadId },
         });
       }}
-      onSelectWorkflow={(workflowId) => {
-        navigate("/workflows/:workflowId", {
-          pathParams: { workflowId },
-        });
-      }}
-      onSelectArtifact={(artifact) => {
-        const searchParams = new URLSearchParams({
-          artifact: artifact.id,
-        });
-        if (artifact.kind !== "presentation") {
-          searchParams.set("tab", artifact.kind);
-        }
-        navigate("/artifacts", { searchParams });
-      }}
     />
   );
 }

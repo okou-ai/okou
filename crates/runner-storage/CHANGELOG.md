@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.12.16](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.15...runner-storage-v0.12.16) (2026-11-23)
+
+
+### Refactoring
+
+* **runner-storage:** share guest staging batch writes ([#50324](https://github.com/okou-ai/okou/issues/50324)) ([6f559bc](https://github.com/okou-ai/okou/commit/6f559bcd48c29ca08a95cf82e7323cbfbb8b6157))
+
+## [0.12.15](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.14...runner-storage-v0.12.15) (2026-11-23)
+
+## [0.12.14](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.13...runner-storage-v0.12.14) (2026-11-23)
+
+
+### Performance Improvements
+
+* **runner-storage:** overlap warm cache staging with slow fresh delivery ([#50143](https://github.com/okou-ai/okou/issues/50143)) ([a569b71](https://github.com/okou-ai/okou/commit/a569b71a2bbc79d7b1bd4b9babfb298b3bd143bb))
+
 ## [0.12.13](https://github.com/okou-ai/okou/compare/runner-storage-v0.12.12...runner-storage-v0.12.13) (2026-11-23)
 
 

@@ -249,6 +249,19 @@ impl Decoder {
         })
     }
 
+    /// Return a streamed frame's buffer once the receiver has finished with it.
+    /// Keep existing buffered bytes and respect the decoder's normal capacity limit.
+    pub fn reuse_incomplete_frame_buffer(&mut self, mut frame: IncompleteFrame) {
+        let capacity = frame.prefix.capacity();
+        if self.buf.is_empty()
+            && capacity > self.buf.capacity()
+            && capacity <= OVERSIZED_BUFFER_CAPACITY
+        {
+            frame.prefix.clear();
+            self.buf = frame.prefix;
+        }
+    }
+
     /// Check all frame lengths visible in a buffer, including the header of
     /// an incomplete trailing frame, without visiting any messages.
     pub fn validate_buffered_framing(bytes: &[u8]) -> Result<(), ProtocolError> {

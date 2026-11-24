@@ -10,7 +10,13 @@ import {
   hostedSiteAudiences,
   acknowledgeHostedSiteVisibility,
   type HostedSiteCliVisibility,
+  hostedSiteEmailRecipients,
+  shareHostedSitePrivately,
 } from "./visibility";
+import {
+  assertHostedSiteEmailSharing,
+  type HostedSiteShare,
+} from "../api/domains/hosted-site-sharing";
 
 interface PublishStaticSiteProgress {
   readonly phase: "preparing" | "uploading";
@@ -20,6 +26,7 @@ interface PublishStaticSiteProgress {
 
 interface PublishStaticSiteResult {
   readonly visibility: HostedSiteCliVisibility;
+  readonly shares?: readonly HostedSiteShare[];
   readonly title: string;
   readonly siteId: string;
   readonly deploymentId: string;
@@ -37,6 +44,7 @@ interface PublishStaticSiteResult {
 
 interface PublishStaticSiteOptions {
   readonly visibility?: HostedSiteCliVisibility;
+  readonly emails?: readonly string[];
   readonly dir: string;
   readonly site: string;
   readonly title: string;
@@ -63,9 +71,29 @@ async function uploadHostedFile(
   }
 }
 
+async function applyEmailVisibility(
+  visibility: HostedSiteCliVisibility | undefined,
+  site: { readonly siteId: string; readonly publicSlug: string },
+  emails: readonly string[],
+): Promise<{ readonly shares?: readonly HostedSiteShare[] }> {
+  if (visibility !== "email") {
+    return {};
+  }
+  const sharing = await shareHostedSitePrivately(
+    site.publicSlug,
+    emails,
+    site.siteId,
+  );
+  return { shares: sharing.shares };
+}
+
 export async function publishStaticSite(
   options: PublishStaticSiteOptions,
 ): Promise<PublishStaticSiteResult> {
+  const emails = hostedSiteEmailRecipients(options.visibility, options.emails);
+  if (options.visibility === "email") {
+    await assertHostedSiteEmailSharing();
+  }
   const artifactKind = options.artifactKind ?? "hosted-site";
   const scan = await scanStaticSite(
     options.dir,
@@ -162,10 +190,22 @@ export async function publishStaticSite(
     );
   }
 
+  const sharing = await applyEmailVisibility(
+    options.visibility,
+    prepared,
+    emails,
+  ).catch((cause: unknown) => {
+    throw new Error(
+      `The website was published at ${completed.url}, but email sharing was not completed. Update its sharing settings without publishing again.`,
+      { cause },
+    );
+  });
+
   return {
     ...publicationResult(completed, scan.files.length, totalSize),
     title: prepared.title,
     ...visibility,
+    ...sharing,
   };
 }
 

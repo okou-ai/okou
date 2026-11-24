@@ -444,7 +444,6 @@
       "close": "Fermer",
       "closeArtifact": "Fermer l'artéfact",
       "closeNamed": "Fermer {{title}}",
-      "closePreviewMenu": "Fermer le menu d'aperçu",
       "download": "Télécharger",
       "downloadArtifact": "Télécharger l'artéfact",
       "downloadMarkdownAs": "Télécharger au format {{format}}",
@@ -590,6 +589,28 @@
     "metadata": {
       "generated": "Généré le {{date}}",
       "updated": "Mis à jour le {{date}}"
+    },
+    "people": {
+      "accounts": "Membres correspondants de l’espace de travail",
+      "anyone": "Tout le monde",
+      "empty": "Personne d’autre n’a encore accès.",
+      "hint": "En dehors de votre espace de travail ? Utilisez leur adresse e-mail complète.",
+      "invitationProcessed": "Invitation de partage traitée",
+      "label": "Partager avec des personnes",
+      "noAccounts": "Aucun membre correspondant. Saisissez une adresse e-mail complète pour inviter.",
+      "placeholder": "Nom ou adresse e-mail",
+      "remove": "Retirer l’accès de {{email}}",
+      "removed": "Accès retiré",
+      "restricted": "Personnes invitées",
+      "restrictedDescription": "Vous et les personnes invitées uniquement",
+      "searching": "Recherche de membres de l’espace de travail…",
+      "searchUnavailable": "La recherche de membres est temporairement indisponible. Réessayez dans un instant.",
+      "share": "Inviter",
+      "updateUnavailable": "Impossible de mettre à jour le partage. Réessayez dans un instant.",
+      "viewers": "Personnes ayant accès",
+      "workspace": "Espace de travail",
+      "workspaceDescription": "Membres de {{organization}} et personnes invitées",
+      "workspaceDescriptionUnnamed": "Membres de l’espace de travail et personnes invitées"
     },
     "preview": {
       "audioLabel": "Aperçu audio pour {{filename}}",
@@ -1967,7 +1988,7 @@
       },
       "slashPanel": {
         "browseAll": "Parcourir tous les modèles",
-        "hint": "Rechercher un workflow ou choisir un modèle…",
+        "hint": "Choisir une action",
         "useTemplate": "Utiliser le modèle {{title}}"
       },
       "temporarilySwitchTo": "Passer temporairement à",
@@ -2173,6 +2194,12 @@
         },
         "inReview": "En cours d'examen",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} crédits",
+            "confirm": "Retour au travail",
+            "description": "Les crédits paient le travail lui-même : chaque exécution, chaque artefact, chaque workflow qui tourne à l'heure dite.",
+            "title": "C'est fait pour aujourd'hui"
+          },
           "connector": {
             "confirm": "Voir tous les connecteurs",
             "connected": "Connecté",
@@ -2626,13 +2653,6 @@
       "unsupported": "La réinitialisation manuelle n’est pas prise en charge ; l’utilisation se rétablit naturellement."
     },
     "taskChips": {
-      "defaultOutputFormat": "Format de sortie par défaut",
-      "presentationFormat": "Format de présentation par défaut",
-      "presentationFormatHint": "Votre choix devient le format par défaut dans ce navigateur.",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
@@ -2905,6 +2925,7 @@
       "storageFailed": "Le son n’a pas pu être sauvegardé. Seul le son déjà enregistré sur cet appareil est disponible.",
       "textTakingShape": "Le texte prend forme",
       "transcribing": "Transcription",
+      "uploadingRecording": "Envoi de l’enregistrement…",
       "useRecording": "Utiliser l’enregistrement"
     },
     "walletAction": {
@@ -3042,6 +3063,7 @@
       "edit": "Modifier",
       "grant": "Accorder",
       "reconnect": "Reconnecter",
+      "returnToOkou": "Revenir à Okou",
       "revoke": "Révoquer",
       "save": "Enregistrer",
       "saving": "Enregistrement...",
@@ -5227,6 +5249,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archiver",
     "back": "Back",
     "close": "Close",
     "collapse": "Replier",
@@ -5235,9 +5258,9 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
-    "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread",
+    "deleteProjectAndThreads_many": "Delete project and {{count}} threads",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsDescription_many": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
@@ -5267,6 +5290,7 @@
     "removeFromNewChat": "Retirer {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restaurer le projet",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6423,7 +6447,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Tout",
     "markAllRead": "Tout marquer comme lu",
     "noResults": "Aucun résultat trouvé",
     "resultCount_one": "{{count}} résultat",
@@ -6432,10 +6455,8 @@
     "searching": "Recherche...",
     "searchWorkspace": "Rechercher dans l’espace de travail...",
     "sections": {
-      "artifacts": "Artefacts",
-      "chats": "Chats",
       "messages": "Messages",
-      "workflows": "Workflows"
+      "threads": "Fils de discussion"
     }
   },
   "ssh": {

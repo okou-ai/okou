@@ -426,12 +426,12 @@ const matchedFirewallAuthContextSchema = object({
 
 export const webhookFirewallAuthContract = c.router({
   /**
-   * POST /api/webhooks/agent/firewall/auth
+   * POST /api/webhooks/run/firewall/auth
    * Resolve firewall auth templates and refresh access tokens on demand.
    */
   resolve: {
     method: "POST",
-    path: "/api/webhooks/agent/firewall/auth",
+    path: "/api/webhooks/run/firewall/auth",
     headers: authHeadersSchema,
     body: object({
       authHeaders: record(string(), string()),
@@ -1053,7 +1053,7 @@ export type WebhookStoragesCommitContract =
   typeof webhookStoragesCommitContract;
 
 /**
- * Webhook usage event contract for /api/webhooks/agent/usage-event
+ * Webhook usage event contract for /api/webhooks/run/usage-event
  *
  * Receives billing usage records from the sandbox for persistence in the
  * `usage_event` ledger. Reporters send `{ runId, events }` batches, and the
@@ -1071,7 +1071,7 @@ const webhookUsageEventItemSchema = object({
 export const webhookUsageEventContract = c.router({
   send: {
     method: "POST",
-    path: "/api/webhooks/agent/usage-event",
+    path: "/api/webhooks/run/usage-event",
     headers: authHeadersSchema,
     body: object({
       runId: string().min(1, "runId is required"),
@@ -1146,14 +1146,8 @@ export const runWebhookContract = c.router({
   events: webhookEventsContract.send,
   complete: webhookCompleteContract.complete,
   heartbeat: webhookHeartbeatContract.send,
-  firewallAuth: {
-    ...webhookFirewallAuthContract.resolve,
-    path: "/api/webhooks/run/firewall/auth",
-  },
-  usageEvent: {
-    ...webhookUsageEventContract.send,
-    path: "/api/webhooks/run/usage-event",
-  },
+  firewallAuth: webhookFirewallAuthContract.resolve,
+  usageEvent: webhookUsageEventContract.send,
   sessionOutput: webhookSessionOutputContract.send,
   telemetry: webhookTelemetryContract.send,
   storagePrepare: webhookStoragesPrepareContract.prepare,

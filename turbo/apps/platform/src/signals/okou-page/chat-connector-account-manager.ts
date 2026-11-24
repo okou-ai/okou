@@ -11,11 +11,9 @@ import {
 } from "../external/connectors.ts";
 import { resetSignal } from "../utils.ts";
 import {
-  builtinAccountManager$,
   builtinAccountConnectDialog$,
   customAccountConnectDialog$,
   connectorAccountNamePrompt$,
-  customAccountManager$,
   openBuiltinAccountManager$,
   openCustomAccountManager$,
   resetConnectorAccountDialogs$,
@@ -103,12 +101,6 @@ export function createChatConnectorAccountManagerSignals() {
     }),
     active$: computed((get) => {
       return get(active$);
-    }),
-    managerOpen$: computed((get) => {
-      return (
-        get(active$) &&
-        Boolean(get(builtinAccountManager$) || get(customAccountManager$))
-      );
     }),
   };
 }

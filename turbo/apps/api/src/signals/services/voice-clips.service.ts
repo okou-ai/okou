@@ -3,21 +3,17 @@ import { command } from "ccstate";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { runUploadedFiles } from "@okouai/db/schema/run-uploaded-file";
 import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { MAX_VOICE_CLIPS } from "@okouai/api-contracts/contracts/voice-clips";
-import {
-  badRequestMessage,
-  notFound,
-  resourceUnavailable,
-} from "../../lib/error";
+  MAX_TOTAL_AUDIO_BYTES,
+  MAX_VOICE_CLIPS,
+} from "@okouai/api-contracts/contracts/voice-clips";
+import { badRequestMessage, notFound } from "../../lib/error";
 import { db$ } from "../external/db";
-import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
-import { privateArtifactFromRow } from "./private-artifact-storage.service";
+import {
+  privateArtifactFromRow,
+  readPrivateAttachmentRows,
+  type PrivateAttachmentRow,
+} from "./private-artifact-storage.service";
 
-export const MAX_TOTAL_AUDIO_BYTES = 25 * 1024 * 1024;
 const audioTypes = zEnum([
   "audio/wav",
   "audio/mpeg",
@@ -36,13 +32,7 @@ type VoiceClipRequest = {
   readonly fileIds: readonly string[];
 };
 
-export function voiceClipRequestError(
-  fileIds: readonly string[],
-  context: FeatureSwitchContext,
-) {
-  if (!isFeatureEnabled(FeatureSwitchKey.VoiceMessages, context)) {
-    return resourceUnavailable("Voice messages are disabled");
-  }
+export function voiceClipRequestError(fileIds: readonly string[]) {
   if (fileIds.length > MAX_VOICE_CLIPS) {
     return badRequestMessage("Too many voice clips");
   }
@@ -51,7 +41,7 @@ export function voiceClipRequestError(
 
 export function resolveVoiceClipRecords(
   args: VoiceClipRequest,
-  records: ReadonlyMap<string, typeof runUploadedFiles.$inferSelect>,
+  records: ReadonlyMap<string, PrivateAttachmentRow>,
 ) {
   const clips = [];
   let total = 0;
@@ -86,31 +76,24 @@ export function resolveVoiceClipRecords(
 }
 
 export const resolveVoiceClips$ = command(
-  async ({ get, set }, args: VoiceClipRequest, signal: AbortSignal) => {
-    const context = await set(
-      loadUserFeatureSwitchContext$,
-      args.orgId,
-      args.userId,
-      signal,
-    );
-    const error = voiceClipRequestError(args.fileIds, context);
+  async ({ get }, args: VoiceClipRequest, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const error = voiceClipRequestError(args.fileIds);
     if (error) {
       return error;
     }
     const ids = args.fileIds.map((id) => {
       return id.toLowerCase();
     });
-    const rows = await get(db$)
-      .select()
-      .from(runUploadedFiles)
-      .where(
-        and(
-          eq(runUploadedFiles.orgId, args.orgId),
-          eq(runUploadedFiles.userId, args.userId),
-          isNull(runUploadedFiles.deletedAt),
-          inArray(runUploadedFiles.id, ids),
-        ),
-      );
+    const rows = await readPrivateAttachmentRows(
+      get(db$),
+      and(
+        eq(runUploadedFiles.orgId, args.orgId),
+        eq(runUploadedFiles.userId, args.userId),
+        isNull(runUploadedFiles.deletedAt),
+        inArray(runUploadedFiles.id, ids),
+      ),
+    );
     signal.throwIfAborted();
     const records = new Map(
       rows.map((row) => {

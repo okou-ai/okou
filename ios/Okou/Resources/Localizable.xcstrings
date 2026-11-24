@@ -1,6 +1,125 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Voice message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "语音消息" }
+        }
+      }
+    },
+    "Uploading recording…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在上传录音…" }
+        }
+      }
+    },
+    "Sends now · new chat": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "立即发送 · 新聊天" }
+        }
+      }
+    },
+    "Opens a draft in “%@”": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "去「%@」编辑草稿" }
+        }
+      }
+    },
+    "Tell Okou why. It shapes what comes next.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "告诉 Okou 原因，之后的推荐会更准。" }
+        }
+      }
+    },
+    "Just dismiss": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "直接忽略" }
+        }
+      }
+    },
+    "Handled just now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "刚刚处理的" }
+        }
+      }
+    },
+    "Back to chats": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "回到聊天" }
+        }
+      }
+    },
+    "System update": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "系统更新" }
+        }
+      }
+    },
+    "Enable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "启用" }
+        }
+      }
+    },
+    "We paused this automation after %lld consecutive run attempts didn’t complete successfully. This gives you time to review what happened before it runs again.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这项自动化连续 %lld 次运行尝试未能成功完成，所以我们先暂停了它，方便你在恢复前查看发生了什么。" }
+        }
+      }
+    },
+    "An automatic recovery attempt was scheduled.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "系统已安排一次自动恢复尝试。" }
+        }
+      }
+    },
+    "Paused on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "%@ 暂停" }
+        }
+      }
+    },
+    "Sent · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已发送 · %@" }
+        }
+      }
+    },
+    "Draft ready · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "草稿已备好 · %@" }
+        }
+      }
+    },
+    "Enabled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已启用" }
+        }
+      }
+    },
+    "Dismissed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已忽略" }
+        }
+      }
+    },
     "What do you have in mind?": {
       "localizations": {
         "zh-Hans": {
@@ -96,20 +215,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "Okou 为你挑出的待处理事项" }
-        }
-      }
-    },
-    "Next suggestion": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "下一条建议" }
-        }
-      }
-    },
-    "Previous suggestion": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "上一条建议" }
         }
       }
     },
@@ -215,20 +320,6 @@
       "localizations": {
         "zh-Hans": {
           "stringUnit": { "state": "translated", "value": "自动化已暂停" }
-        }
-      }
-    },
-    "Re-enable automation": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "重新启用自动化" }
-        }
-      }
-    },
-    "Paused after %lld consecutive failures.": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "连续失败 %lld 次后已暂停。" }
         }
       }
     },
@@ -2200,43 +2291,6 @@
         }
       }
     },
-    "Add credits": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Guthaben hinzufügen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Añadir créditos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Ajouter des crédits" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "क्रेडिट जोड़ें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tambah kredit" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Aggiungi crediti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "クレジットを追加" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "크레딧 추가" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Adicionar créditos" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "充值积分" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "充值積分" }
-        }
-      }
-    },
     "Add to chat": {
       "localizations": {
         "de": {
@@ -2961,6 +3015,46 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "永久" }
+        }
+      }
+    },
+    "Delete account": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Konto löschen" }
+        },
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Delete account" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Eliminar cuenta" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Supprimer le compte" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "खाता हटाएँ" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Hapus akun" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Elimina account" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "アカウントを削除" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "계정 삭제" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Excluir conta" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除账号" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "刪除帳號" }
         }
       }
     },
@@ -4721,40 +4815,40 @@
         }
       }
     },
-    "Checking billing permissions…": {
+    "Checking credits…": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Abrechnungsberechtigungen werden geprüft…" }
+          "stringUnit": { "state": "translated", "value": "Guthaben wird geprüft…" }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Comprobando permisos de facturación…" }
+          "stringUnit": { "state": "translated", "value": "Consultando los créditos…" }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Vérification des autorisations de facturation…" }
+          "stringUnit": { "state": "translated", "value": "Vérification des crédits…" }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "बिलिंग अनुमतियाँ जाँची जा रही हैं…" }
+          "stringUnit": { "state": "translated", "value": "क्रेडिट की जाँच हो रही है…" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Memeriksa izin penagihan…" }
+          "stringUnit": { "state": "translated", "value": "Memeriksa kredit…" }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Verifica delle autorizzazioni di fatturazione…" }
+          "stringUnit": { "state": "translated", "value": "Verifica dei crediti…" }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "請求の権限を確認中…" }
+          "stringUnit": { "state": "translated", "value": "クレジットを確認中…" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "결제 권한 확인 중…" }
+          "stringUnit": { "state": "translated", "value": "크레딧 확인 중…" }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Verificando permissões de cobrança…" }
+          "stringUnit": { "state": "translated", "value": "Verificando os créditos…" }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在检查账单权限…" }
+          "stringUnit": { "state": "translated", "value": "正在检查额度…" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在檢查帳單權限…" }
+          "stringUnit": { "state": "translated", "value": "正在檢查額度…" }
         }
       }
     },
@@ -12097,47 +12191,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "登入或建立你的帳號。" }
-        }
-      }
-    },
-    "Manage plan": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Tarif verwalten" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Manage plan" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Gestionar plan" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Gérer le forfait" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "प्लान प्रबंधित करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kelola paket" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Gestisci piano" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "プランを管理" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "요금제 관리" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Gerenciar plano" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "管理套餐" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "管理方案" }
         }
       }
     },
@@ -21732,6 +21785,43 @@
         }
       }
     },
+    "This action is unavailable on your current plan.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Diese Aktion ist in deinem aktuellen Tarif nicht verfügbar." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Esta acción no está disponible en tu plan actual." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Cette action est indisponible avec votre forfait actuel." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "यह कार्रवाई आपके मौजूदा प्लान में उपलब्ध नहीं है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Tindakan ini tidak tersedia pada paket Anda saat ini." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Questa operazione non è disponibile con il tuo piano attuale." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "現在のプランではこの操作は利用できません。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "현재 요금제에서는 이 작업을 사용할 수 없습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Esta ação não está disponível no seu plano atual." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "当前套餐不支持此操作。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "目前的方案不支援此操作。" }
+        }
+      }
+    },
     "This action no longer matches an available connector in this chat.": {
       "extractionState": "manual",
       "localizations": {
@@ -23343,43 +23433,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "正在更新聊天…" }
-        }
-      }
-    },
-    "Upgrade to Pro": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Upgrade auf Pro" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Actualizar a Pro" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Passer à Pro" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "प्रो में अपग्रेड करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Upgrade ke Pro" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Passa a Pro" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "Pro にアップグレード" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "Pro로 업그레이드" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Fazer upgrade para o Pro" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "升级到 Pro" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "升級到 Pro" }
         }
       }
     },
@@ -25569,6 +25622,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "昨天" }
+        }
+      }
+    },
+    "Your voice input limit has been reached.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Du hast dein Limit für die Spracheingabe erreicht." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Has alcanzado el límite de entrada de voz." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Vous avez atteint la limite de saisie vocale." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आप वॉइस इनपुट की सीमा तक पहुँच गए हैं।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Anda telah mencapai batas input suara." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Hai raggiunto il limite per l’input vocale." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "音声入力の上限に達しました。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "음성 입력 한도에 도달했습니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Você atingiu o limite de entrada de voz." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "已达到语音输入上限。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "已達到語音輸入上限。" }
         }
       }
     },

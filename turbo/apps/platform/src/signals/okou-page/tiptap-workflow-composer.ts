@@ -1,4 +1,8 @@
 import {
+  createVoicePlayer,
+  type VoicePlayer,
+} from "../chat-page/voice-player.ts";
+import {
   createProjectMentionNode,
   projectMentionText,
 } from "./composer-project-mention-node.ts";
@@ -58,6 +62,7 @@ import {
   type ComposerFeedbackModel,
   type ComposerFeedbackSignals,
   type FeedbackItem,
+  type FeedbackSource,
 } from "./chat-feedback.ts";
 import {
   findActiveChatThreadSuggestionRange,
@@ -79,9 +84,12 @@ import {
 } from "./workflow-composer-domain.ts";
 import {
   PROJECT_MENTION_NODE_NAME,
+  VOICE_CLIP_NODE_NAME,
   CHAT_THREAD_MENTION_NODE_NAME,
   createEditorDocumentSnapshot,
   draftToEditorDoc,
+  feedbackSourceFromNode,
+  feedbackSourceToNodeAttributes,
   INLINE_TEMPLATE_NODE_NAME,
   TEMPLATE_ATTACHMENT_NODE_NAME,
   type EditorDocumentSnapshot,
@@ -212,7 +220,14 @@ export interface WorkflowComposerSubmissionSnapshot {
   readonly editorDocument: EditorDocumentSnapshot;
 }
 
+export interface ComposerVoiceChip {
+  readonly key: string;
+  readonly dom: HTMLSpanElement;
+  readonly player: VoicePlayer;
+}
+
 export interface WorkflowComposerSignals {
+  readonly voiceChips$: Computed<readonly ComposerVoiceChip[]>;
   readonly editor: Editor;
   readonly setContainerRef$: Command<
     (() => void) | undefined,
@@ -238,7 +253,7 @@ export interface WorkflowComposerSignals {
   readonly slashWorkflowsExpanded$: Computed<boolean>;
   /** The open menu's inner height when its workflows were revealed. */
   readonly slashWorkflowsExpandedHeight$: Computed<number | null>;
-  readonly recentWorkflowIds$: Computed<readonly string[]>;
+  readonly recentWorkflowIds$: Computed<Promise<readonly string[]>>;
   readonly expandSlashWorkflows$: Command<void, []>;
   /** The composer edge the open slash menu hugs: the half its `/` is in. */
   readonly slashMenuSide$: Computed<SlashMenuSide>;
@@ -267,6 +282,7 @@ export interface WorkflowComposerSignals {
     void,
     [OpenComposerTemplatePickerIntent]
   >;
+  readonly insertVoiceClip$: Command<void, [string]>;
   readonly insertText$: Command<void, [string]>;
   readonly readVoiceContext$: Command<VoiceIoEditorContext, []>;
   readonly selectOrAppendText$: Command<void, [string]>;
@@ -453,6 +469,83 @@ function createChatThreadMentionNodeView(node: ProseMirrorNode): NodeView {
   };
 }
 
+function voiceClipLabel() {
+  return i18n.t(($) => {
+    return $.chat.messageDocument.voice;
+  });
+}
+
+function createVoiceClipNode(runtime: WorkflowComposerRuntime) {
+  return Node.create({
+    name: VOICE_CLIP_NODE_NAME,
+    group: "inline",
+    inline: true,
+    atom: true,
+    addAttributes() {
+      return { fileId: { default: null } };
+    },
+    parseHTML() {
+      return [
+        {
+          tag: "span[data-voice-clip]",
+          getAttrs: (element) => {
+            return { fileId: element.dataset.voiceClip };
+          },
+        },
+      ];
+    },
+    renderHTML({ node }) {
+      const fileId: unknown = node.attrs.fileId;
+      return ["span", { "data-voice-clip": fileId }, voiceClipLabel()];
+    },
+    renderText: voiceClipLabel,
+    addNodeView() {
+      return ({ node }) => {
+        const fileId: unknown = node.attrs.fileId;
+        if (typeof fileId !== "string") {
+          throw new Error("Voice clip file ID is missing");
+        }
+        const dom = document.createElement("span");
+        dom.dataset.voiceClip = fileId;
+        dom.className = inlineReferenceVariants({
+          selectable: true,
+          padding: "none",
+          className:
+            "max-w-full select-none gap-0 overflow-hidden whitespace-nowrap",
+        });
+        dom.contentEditable = "false";
+        const chip: ComposerVoiceChip = {
+          dom,
+          key: crypto.randomUUID(),
+          player: createVoicePlayer([{ fileId }]),
+        };
+        runtime.setVoiceChipMounted?.(chip, true);
+        return {
+          dom,
+          destroy() {
+            runtime.setVoiceChipMounted?.(chip, false);
+          },
+          selectNode() {
+            dom.dataset.selected = "";
+          },
+          deselectNode() {
+            delete dom.dataset.selected;
+          },
+          stopEvent(event) {
+            return (
+              event.target instanceof Element &&
+              event.target.closest("button") !== null
+            );
+          },
+          ignoreMutation() {
+            return true;
+          },
+        };
+      };
+    },
+  });
+}
+
 const ChatThreadMentionNode = Node.create({
   name: CHAT_THREAD_MENTION_NODE_NAME,
   group: "inline",
@@ -506,10 +599,7 @@ interface FeedbackItemNodeAttributes {
   readonly eventId: string | null;
   readonly rangeStart: number | null;
   readonly rangeEnd: number | null;
-  readonly sourceType: "mail" | null;
-  readonly sourceId: string | null;
-  readonly sourceStatus: "draft" | "sent" | null;
-  readonly sourceSentId: string | null;
+  readonly source?: FeedbackSource;
   readonly suggestionContext: SuggestionContext | null;
 }
 
@@ -551,24 +641,13 @@ function feedbackItemNodeAttributes(
   const showDivider: unknown = node.attrs.showDivider;
   const fill: unknown = node.attrs.fill;
   const location = feedbackItemLocationAttributes(node);
-  const sourceType: unknown = node.attrs.sourceType;
-  const sourceId: unknown = node.attrs.sourceId;
-  const sourceStatus: unknown = node.attrs.sourceStatus;
-  const sourceSentId: unknown = node.attrs.sourceSentId;
+  const source = feedbackSourceFromNode(node);
   if (
     typeof feedbackId !== "number" ||
     typeof quote !== "string" ||
     typeof showDivider !== "boolean" ||
     typeof fill !== "boolean" ||
-    (sourceType !== null && sourceType !== "mail") ||
-    (sourceId !== null && typeof sourceId !== "string") ||
-    (sourceStatus !== null &&
-      sourceStatus !== "draft" &&
-      sourceStatus !== "sent") ||
-    (sourceSentId !== null && typeof sourceSentId !== "string") ||
-    (sourceType === null) !== (sourceId === null) ||
-    (sourceType === null) !== (sourceStatus === null) ||
-    (sourceType === null && sourceSentId !== null)
+    source === null
   ) {
     throw new Error("Feedback item node attributes are invalid");
   }
@@ -578,10 +657,7 @@ function feedbackItemNodeAttributes(
     showDivider,
     fill,
     ...location,
-    sourceType,
-    sourceId,
-    sourceStatus,
-    sourceSentId,
+    ...(source ? { source } : {}),
     suggestionContext: suggestionContextSchema
       .nullable()
       .parse(node.attrs.suggestionContext ?? null),
@@ -747,14 +823,22 @@ function buildFeedbackChromeDecorations(
     if (child.type.name !== FEEDBACK_ITEM_NODE_NAME) {
       continue;
     }
-    const { feedbackId, quote, suggestionContext } =
+    const { feedbackId, quote, source, suggestionContext } =
       feedbackItemNodeAttributes(child);
     decorations.push(
       Decoration.widget(
         childPosition + 1,
         () => {
           return buildFeedbackItemChrome(
-            suggestionContext?.titleSnapshot ?? quote,
+            suggestionContext?.titleSnapshot ??
+              (source?.type === "artifact"
+                ? `${i18n.t(
+                    ($) => {
+                      return $.chat.feedback.sourcePartHeading;
+                    },
+                    { description: source.filenameSnapshot },
+                  )}: ${quote}`
+                : quote),
             suggestionContext
               ? undefined
               : () => {
@@ -767,7 +851,7 @@ function buildFeedbackChromeDecorations(
           // widget replaces a contenteditable=false element right next to the
           // caret, and WebKit loses the caret when that happens at an IME
           // composition boundary (typing or backspacing the first character).
-          key: `feedback-chrome-${feedbackId}-${suggestionContext?.contextVersion ?? ""}-${i18n.language}`,
+          key: `feedback-chrome-${feedbackId}-${JSON.stringify(source ?? null)}-${suggestionContext?.contextVersion ?? ""}-${i18n.language}`,
           side: -2,
           ignoreSelection: true,
           stopEvent: () => {
@@ -1231,20 +1315,7 @@ function feedbackItemFromNode(node: ProseMirrorNode): FeedbackItem {
           },
         }
       : {}),
-    ...(attributes.sourceType === "mail" &&
-    attributes.sourceId !== null &&
-    attributes.sourceStatus !== null
-      ? {
-          source: {
-            type: attributes.sourceType,
-            id: attributes.sourceId,
-            status: attributes.sourceStatus,
-            ...(attributes.sourceSentId !== null
-              ? { sentId: attributes.sourceSentId }
-              : {}),
-          },
-        }
-      : {}),
+    ...(attributes.source ? { source: attributes.source } : {}),
   };
 }
 
@@ -1259,10 +1330,7 @@ function feedbackItemNode(editor: Editor, item: FeedbackItem): ProseMirrorNode {
       eventId: item.eventId ?? null,
       rangeStart: item.range?.start ?? null,
       rangeEnd: item.range?.end ?? null,
-      sourceType: item.source?.type ?? null,
-      sourceId: item.source?.id ?? null,
-      sourceStatus: item.source?.status ?? null,
-      sourceSentId: item.source?.sentId ?? null,
+      ...feedbackSourceToNodeAttributes(item.source),
       suggestionContext: item.suggestionContext ?? null,
     },
     content: feedbackNoteContent(item.note),
@@ -1291,7 +1359,7 @@ function withFeedbackItemLayout(transaction: Transaction): Transaction {
       continue;
     }
     transaction.setNodeMarkup(nodePosition, undefined, {
-      ...attributes,
+      ...node.attrs,
       showDivider,
       fill,
     });
@@ -1428,6 +1496,9 @@ function valueToWorkflowComposerDoc(value: string): JSONContent {
 }
 
 function composerLeafText(node: ProseMirrorNode): string {
+  if (node.type.name === VOICE_CLIP_NODE_NAME) {
+    return voiceClipLabel();
+  }
   if (node.type.name === PROJECT_MENTION_NODE_NAME) {
     return projectMentionText(node);
   }
@@ -1641,6 +1712,9 @@ function workflowHighlightStorage(editor: Editor): WorkflowHighlightStorage {
 }
 
 interface WorkflowComposerRuntime {
+  readonly voiceChips$: State<readonly ComposerVoiceChip[]>;
+  readonly setVoiceChipMounted$: Command<void, [ComposerVoiceChip, boolean]>;
+  setVoiceChipMounted?: (chip: ComposerVoiceChip, mounted: boolean) => void;
   update(editor: Editor): void;
   selectionUpdate(editor: Editor): void;
   focus(editor: Editor): void;
@@ -1775,6 +1849,9 @@ function createFeedbackItemNode(
         sourceId: { default: null },
         sourceStatus: { default: null },
         sourceSentId: { default: null },
+        sourceFileId: { default: null },
+        sourceFilenameSnapshot: { default: null },
+        sourceArtifactId: { default: null },
         suggestionContext: { default: null, rendered: false },
       };
     },
@@ -1808,6 +1885,7 @@ function createWorkflowEditor(runtime: WorkflowComposerRuntime): Editor {
       createFeedbackItemNode(runtime),
       createProjectMentionNode(),
       ChatThreadMentionNode,
+      createVoiceClipNode(runtime),
       WorkflowHighlight,
       UrlHighlight,
     ],
@@ -1960,6 +2038,7 @@ function refreshWorkflowComposerLocalization(
 }
 
 function resetMountedWorkflowRuntime(runtime: WorkflowComposerRuntime): void {
+  delete runtime.setVoiceChipMounted;
   runtime.update = () => {};
   runtime.selectionUpdate = () => {};
   runtime.focus = () => {};
@@ -2411,6 +2490,9 @@ function createMountEditorCommand({
   const removeFeedback$ = createRemoveFeedbackCommand(editor, draft, feedback);
   return onRef(
     command(async ({ get, set }, element: HTMLElement, signal: AbortSignal) => {
+      runtime.setVoiceChipMounted = (chip, mounted) => {
+        set(runtime.setVoiceChipMounted$, chip, mounted);
+      };
       runtime.update = (updatedEditor) => {
         set(legacyTemplateAttachment.sync$);
         set(templateSelection.sync$);
@@ -2510,6 +2592,7 @@ function createMountEditorCommand({
       signal.addEventListener("abort", () => {
         compositionGate.cancel(signal.reason);
         resetMountedWorkflowRuntime(runtime);
+        set(runtime.voiceChips$, []);
         set(legacyTemplateAttachment.reset$);
         set(draft.setInputSyncTarget$, null);
         set(previewSuggestionIndexState$, null);
@@ -2674,6 +2757,21 @@ function createInsertTextCommands(editor: Editor) {
 
   return {
     readVoiceContext$,
+    insertVoiceClip$: command((_context, fileId: string) => {
+      const doc = editor.state.doc;
+      const clip = { type: VOICE_CLIP_NODE_NAME, attrs: { fileId } };
+      const lastIsParagraph = doc.lastChild?.type.name === "paragraph";
+      const position = doc.content.size - (lastIsParagraph ? 1 : 0);
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(
+          position,
+          lastIsParagraph ? clip : { type: "paragraph", content: [clip] },
+        )
+        .scrollIntoView()
+        .run();
+    }),
     insertText$,
     insertPromptMarkdown$,
     ...createPromptTextCommands(editor),
@@ -2963,6 +3061,7 @@ function createInsertUserMessageCommand(editor: Editor) {
   return command((_context, value: UserMessageDocument) => {
     const insertableParts = value.parts.filter((part) => {
       return (
+        part.type === "voice" ||
         part.type === "text" ||
         part.type === "chat_thread" ||
         part.type === "feedback" ||
@@ -3019,7 +3118,23 @@ function createWorkflowComposerRuntime(
     suggestionContext: SuggestionContext | null,
   ) => string,
 ): WorkflowComposerRuntime {
+  const voiceChips$ = state<readonly ComposerVoiceChip[]>([]);
+  const setVoiceChipMounted$ = command(
+    ({ get, set }, chip: ComposerVoiceChip, mounted: boolean) => {
+      const chips = get(voiceChips$);
+      set(
+        voiceChips$,
+        mounted
+          ? [...chips, chip]
+          : chips.filter((item) => {
+              return item !== chip;
+            }),
+      );
+    },
+  );
   return {
+    voiceChips$,
+    setVoiceChipMounted$,
     update(_editor: Editor): void {},
     selectionUpdate(_editor: Editor): void {},
     focus(_editor: Editor): void {},
@@ -3402,10 +3517,17 @@ export function createWorkflowComposerSignals(
   );
   return {
     editor,
+    voiceChips$: computed((get) => {
+      return get(runtime.voiceChips$);
+    }),
     setContainerRef$,
     focus$,
     hasInput$: computed((get) => {
-      return get(draft.hasInput$) || get(feedback.active$);
+      return (
+        get(draft.hasInput$) ||
+        get(runtime.voiceChips$).length > 0 ||
+        get(feedback.active$)
+      );
     }),
     hasTemplateAttachment$: templates.legacy.active$,
     templateRequests$: templates.selection.requests$,

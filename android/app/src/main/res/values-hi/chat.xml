@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">चैट सिंक हो रही हैं…</string>
     <string name="workspace_workflows">वर्कफ़्लो</string>
     <string name="workspace_connectors">कनेक्टर्स</string>
     <string name="workspace_artifacts">आर्टिफ़ैक्ट</string>
@@ -6,22 +7,20 @@
     <string name="chat_undo_unarchived">चैट संग्रह से निकाली गई</string>
     <string name="chat_undo_marked_read">चैट पढ़ी हुई चिह्नित की गई</string>
     <string name="chat_undo">पूर्ववत करें</string>
-    <string name="chat_undo_connection_failed">बदलाव पूर्ववत नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_action_connection_failed">कनेक्ट नहीं हो सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
     <string name="chat_undo_checking">पूर्ववत करने का नतीजा जाँचा जा रहा है…</string>
     <string name="chat_undo_failed">बदलाव पूर्ववत नहीं किया जा सका।</string>
     <string name="chat_undo_unconfirmed">पुष्टि नहीं हो सकी कि बदलाव पूर्ववत हुआ।</string>
     <string name="chat_feedback_dismiss">बंद करें</string>
     <string name="chat_list_offline">ऑफ़लाइन</string>
-    <string name="chat_list_refresh_failed">चैट सूची रीफ़्रेश नहीं हुई</string>
     <string name="chat_list_first_load_failed">फ़िलहाल लोड नहीं हो सका</string>
     <string name="chat_list_load_when_online">फिर से ऑनलाइन होने पर चैट लोड होंगी।</string>
     <string name="chat_list_title">चैट</string>
     <string name="chat_refresh">चैट रीफ़्रेश करें</string>
     <string name="chat_loading">चैट लोड हो रही हैं…</string>
-    <string name="chat_refresh_failed">रीफ़्रेश नहीं हो सका। पिछली लोड की गई चैट दिखाई जा रही हैं।</string>
+    <string name="chat_refresh_failed">अपठित स्थिति रीफ़्रेश नहीं हो सकी।</string>
     <string name="chat_cache_unavailable">ऑफ़लाइन स्टोरेज उपलब्ध नहीं है। दोबारा शुरू करने के बाद ये चैट उपलब्ध न हों।</string>
-    <string name="chat_metadata_unavailable">कुछ Okou या प्रोजेक्ट की जानकारी उपलब्ध नहीं है।</string>
+    <string name="chat_metadata_unavailable">प्रोजेक्ट की जानकारी फ़िलहाल उपलब्ध नहीं है।</string>
     <string name="chat_inbox">इनबॉक्स</string>
     <string name="chat_mark_all_read">सभी को पढ़ा हुआ चिह्नित करें</string>
     <string name="chat_mark_all_read_unconfirmed">कुछ चैट अब भी अपठित हो सकती हैं।</string>
@@ -37,6 +36,7 @@
     <string name="chat_back_to_inbox">इनबॉक्स पर वापस जाएँ</string>
     <string name="chat_more_actions">और कार्रवाइयाँ</string>
     <string name="chat_unread">अपठित</string>
+    <string name="chat_has_draft">ड्राफ़्ट मौजूद है</string>
     <string name="chat_archived">संग्रहीत</string>
     <string name="chat_muted">म्यूट</string>
     <string name="chat_project_empty">इस प्रोजेक्ट में कोई चैट नहीं है।</string>
@@ -72,6 +72,7 @@
     <string name="chat_rename_confirm">नाम बदलें</string>
     <string name="chat_rename_cancel">रद्द करें</string>
     <string name="chat_delete">चैट हटाएं</string>
+    <string name="chat_delete_rejected">चैट हटाई नहीं जा सकी।</string>
     <string name="chat_delete_title">चैट हटाएं?</string>
     <string name="chat_delete_description">“%1$s” के संदेश और ड्राफ़्ट हमेशा के लिए हट जाएँगे। चल रहे काम रुक जाएँगे और जुड़े ऑटोमेशन रोक दिए जाएँगे।</string>
     <string name="chat_delete_confirm">हटाएँ</string>
@@ -94,4 +95,6 @@
     <string name="chat_project_deleted">प्रोजेक्ट हटा दिया गया और उसकी चैट बाहर ले जाई गईं।</string>
     <string name="chat_project_delete_rejected">प्रोजेक्ट हटाया नहीं जा सका।</string>
     <string name="chat_project_delete_unconfirmed">प्रोजेक्ट हटाए जाने की पुष्टि नहीं हो सकी।</string>
+    <string name="chat_row_action_rejected_named">“%1$s” पूरा नहीं किया जा सका।</string>
+    <string name="chat_row_action_offline_named">“%1$s” पूरा नहीं किया जा सका। कनेक्शन जाँचें और फिर कोशिश करें।</string>
 </resources>

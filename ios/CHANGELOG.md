@@ -1,5 +1,79 @@
 # Changelog
 
+## [0.60.0](https://github.com/okou-ai/okou/compare/ios-v0.59.2...ios-v0.60.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **ios:** slide chat feedback out from its drag position ([#50328](https://github.com/okou-ai/okou/issues/50328)) ([2b8f121](https://github.com/okou-ai/okou/commit/2b8f121778cb8bf819e69ac616bcc89ac3a23204))
+* **ios:** use touch displacement to arbitrate chat swipe back ([#50323](https://github.com/okou-ai/okou/issues/50323)) ([845fc22](https://github.com/okou-ai/okou/commit/845fc225c04e06afd813173ebd272d03193e553f))
+
+## [0.59.2](https://github.com/okou-ai/okou/compare/ios-v0.59.1...ios-v0.59.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* remove the Okou symbol from default workspace avatars ([#50313](https://github.com/okou-ai/okou/issues/50313)) ([caf7355](https://github.com/okou-ai/okou/commit/caf73558c2663ca0345dd35943f05379213c4c4f))
+
+## [0.59.1](https://github.com/okou-ai/okou/compare/ios-v0.59.0...ios-v0.59.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard up when an attachment finishes uploading ([#50298](https://github.com/okou-ai/okou/issues/50298)) ([d6f92a0](https://github.com/okou-ai/okou/commit/d6f92a03ce1b2937b3b053d1fbea640774620f8d))
+
+## [0.59.0](https://github.com/okou-ai/okou/compare/ios-v0.58.0...ios-v0.59.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** follow the finger through the for you deck ([#50252](https://github.com/okou-ai/okou/issues/50252)) ([b5cfa65](https://github.com/okou-ai/okou/commit/b5cfa6513ee993e11a9e436c6b0a1bd883fe99ea))
+
+
+### Bug Fixes
+
+* **ios:** hide unavailable image preview navigation ([#50226](https://github.com/okou-ai/okou/issues/50226)) ([8e503c2](https://github.com/okou-ai/okou/commit/8e503c2c908538eea5b470b2b1111e9d7fdea908)) [#50204](https://github.com/okou-ai/okou/issues/50204)
+* **ios:** match draft attachment glass to the composer ([#50244](https://github.com/okou-ai/okou/issues/50244)) ([8b3f19c](https://github.com/okou-ai/okou/commit/8b3f19c2a7346b8c05966fa0457b8d78952539ee))
+
+## [0.58.0](https://github.com/okou-ai/okou/compare/ios-v0.57.0...ios-v0.58.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+## [0.57.0](https://github.com/okou-ai/okou/compare/ios-v0.56.1...ios-v0.57.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** rework the for you page around its directions ([#50196](https://github.com/okou-ai/okou/issues/50196)) ([6cbc8e2](https://github.com/okou-ai/okou/commit/6cbc8e2dea0e7c095eae00a6510f3deeb29ecc42))
+
+
+### Bug Fixes
+
+* **ios:** keep the keyboard down under a sheet when the return key refreshes ([#50193](https://github.com/okou-ai/okou/issues/50193)) ([76b22ce](https://github.com/okou-ai/okou/commit/76b22ce30c83afe73b2619dc495bf6683477525a))
+* **ios:** remove purchase guidance from chat ([#50192](https://github.com/okou-ai/okou/issues/50192)) ([178d62c](https://github.com/okou-ai/okou/commit/178d62c4525156146c89cf5ec8816e4f0b323934))
+
+## [0.56.1](https://github.com/okou-ai/okou/compare/ios-v0.56.0...ios-v0.56.1) (2026-11-23)
+
+
+### Bug Fixes
+
+* **ios:** link to web account deletion from settings ([#50177](https://github.com/okou-ai/okou/issues/50177)) ([bb798bd](https://github.com/okou-ai/okou/commit/bb798bdb47506ec28dfd5f8386179e3be7a2de0d))
+
+## [0.56.0](https://github.com/okou-ai/okou/compare/ios-v0.55.0...ios-v0.56.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** add the native for you deck ([#50086](https://github.com/okou-ai/okou/issues/50086)) ([8ff411e](https://github.com/okou-ai/okou/commit/8ff411ea4757a12255c04401bcceb0b47246fd35))
+
 ## [0.55.0](https://github.com/okou-ai/okou/compare/ios-v0.54.0...ios-v0.55.0) (2026-11-23)
 
 

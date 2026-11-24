@@ -291,12 +291,10 @@ import {
 } from "./custom-connectors";
 import {
   dataRouterHistoryContract as OriginalDataRouterHistoryContract,
-  dataRouterRequestContract as OriginalDataRouterRequestContract,
   runDataRouterRequestContract as OriginalRunDataRouterRequestContract,
 } from "../contracts/data-router";
 import {
   dataRouterHistoryContract,
-  dataRouterRequestContract,
   runDataRouterRequestContract,
 } from "./data-router";
 import { debugMorningBriefContract as OriginalDebugMorningBriefContract } from "../contracts/debug-morning-brief";
@@ -348,6 +346,8 @@ import { healthContract as OriginalHealthContract } from "../contracts/health";
 import { healthContract } from "./health";
 import { hostContract as OriginalHostContract } from "../contracts/host";
 import { hostContract } from "./host";
+import { hostedSiteSharingContract as OriginalHostedSiteSharingContract } from "../contracts/hosted-site-sharing";
+import { hostedSiteSharingContract } from "./hosted-site-sharing";
 import { imageIoGenerateContract as OriginalImageIoGenerateContract } from "../contracts/image-io-generate";
 import { imageIoGenerateContract } from "./image-io-generate";
 import { instructionsContract as OriginalInstructionsContract } from "../contracts/instructions";
@@ -1018,7 +1018,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [customConnectorValuesContract, OriginalCustomConnectorValuesContract],
   [customConnectorsContract, OriginalCustomConnectorsContract],
   [dataRouterHistoryContract, OriginalDataRouterHistoryContract],
-  [dataRouterRequestContract, OriginalDataRouterRequestContract],
   [runDataRouterRequestContract, OriginalRunDataRouterRequestContract],
   [debugMorningBriefContract, OriginalDebugMorningBriefContract],
   [
@@ -1047,6 +1046,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [githubOauthContract, OriginalGithubOauthContract],
   [healthContract, OriginalHealthContract],
   [hostContract, OriginalHostContract],
+  [hostedSiteSharingContract, OriginalHostedSiteSharingContract],
   [imageIoGenerateContract, OriginalImageIoGenerateContract],
   [instructionsContract, OriginalInstructionsContract],
   [integrationsAgentPhoneContract, OriginalIntegrationsAgentPhoneContract],

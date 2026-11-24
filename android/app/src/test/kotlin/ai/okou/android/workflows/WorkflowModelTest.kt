@@ -44,8 +44,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class WorkflowModelTest {
-    private val recentRun =
+internal abstract class WorkflowModelTestFixture {
+    protected val recentRun =
         WorkflowRunHistoryEntry(
             id = "48da3630-376b-4a70-82ce-f1d8e17a4433",
             createdAt = "2026-11-23T01:00:00.000Z",
@@ -54,7 +54,7 @@ class WorkflowModelTest {
             eventType = null,
             chatThreadId = "80d3cd3c-76aa-477f-90de-bdf6d58705d6",
         )
-    private val earlierRun =
+    protected val earlierRun =
         recentRun.copy(
             id = "f84ea6d9-3243-450b-a58e-488fd5428130",
             createdAt = "2026-11-22T01:00:00.000Z",
@@ -62,86 +62,202 @@ class WorkflowModelTest {
             chatThreadId = null,
         )
 
-    @Test
-    fun reopeningRevalidatesEachRangeAndOnlyShowsItsUnexpiredCache() = check { service, model ->
-        val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
-        val connections = CompletableDeferred<Set<String>>()
-        service.rulesRead = { rules.await() }
-        service.connectionsRead = { connections.await() }
+    protected fun check(action: suspend TestScope.(Service, WorkflowModel) -> Unit) = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val service = Service()
+        val store = ViewModelStore()
+        val model =
+            ViewModelProvider(
+                store,
+                viewModelFactory {
+                    initializer {
+                        WorkflowModel(service, { true }, { throw it }) { testScheduler.currentTime }
+                    }
+                },
+            )[WorkflowModel::class.java]
+        try {
+            model.foregroundChanged(true)
+            action(service, model)
+        } finally {
+            store.clear()
+            runCurrent()
+            Dispatchers.resetMain()
+        }
+    }
 
-        fun reopen() {
-            model.visibilityChanged(false)
+    protected class Service : WorkflowService {
+        val historyCursors = mutableListOf<String?>()
+        var historyRead: suspend (String, String?) -> WorkflowRunHistory = { _, _ ->
+            WorkflowRunHistory(emptyList(), null)
+        }
+        val summary =
+            WorkflowSummary(
+                id = "a1111111-1111-4111-8111-111111111111",
+                name = "release-review",
+                displayName = "Release review",
+                description = null,
+                visibility = WorkflowSummaryVisibility.PRIVATE,
+                ownerUserId = "user-a",
+                createdAt = CHAT_DATE,
+                canManage = true,
+                canPublish = true,
+                official = null,
+                importSource = null,
+            )
+        var detail =
+            WorkflowDetail(
+                id = summary.id,
+                name = summary.name,
+                displayName = summary.displayName,
+                description = null,
+                visibility = WorkflowDetailVisibility.PRIVATE,
+                ownerUserId = summary.ownerUserId,
+                createdAt = CHAT_DATE,
+                canManage = true,
+                canPublish = true,
+                official = null,
+                importSource = null,
+                createdByUserId = summary.ownerUserId,
+                updatedByUserId = summary.ownerUserId,
+                updatedAt = CHAT_DATE,
+                instruction = null,
+                files = null,
+                fileContents = null,
+                automations = emptyList(),
+            )
+        var catalogRead: suspend () -> List<WorkflowSummary> = { listOf(summary) }
+        var detailRead: suspend (String) -> WorkflowDetail = { detail }
+        var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
+        var connectionsRead: suspend () -> Set<String> = { emptySet() }
+        var detailReads = 0
+            private set
+
+        var catalogReads = 0
+            private set
+
+        var ruleReads = 0
+            private set
+
+        var connectionReads = 0
+            private set
+
+        var createAttempts = 0
+            private set
+
+        fun weeklyRule() =
+            WorkflowAutomationVariant1(
+                id = "weekly",
+                ownerUserId = summary.ownerUserId,
+                enabled = true,
+                chatThreadId = null,
+                nextRunAt = CHAT_DATE,
+                lastRunAt = null,
+                official = null,
+                kind = WorkflowAutomationVariant1Kind.SCHEDULE,
+                schedule =
+                    WorkflowAutomationVariant1ScheduleVariant1(
+                        WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
+                        "0 9 * * 1",
+                        "UTC",
+                    ),
+                scheduleSummary = "Weekly at 09:00",
+            )
+
+        override suspend fun workflows(): List<WorkflowSummary> {
+            catalogReads++
+            return catalogRead()
+        }
+
+        override suspend fun workflow(id: String): WorkflowDetail {
+            detailReads++
+            return detailRead(id)
+        }
+
+        override suspend fun workflowRunHistory(id: String, cursor: String?): WorkflowRunHistory {
+            historyCursors.add(cursor)
+            return historyRead(id, cursor)
+        }
+
+        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations {
+            ruleReads++
+            return rulesRead()
+        }
+
+        override suspend fun workflowConnections(): Set<String> {
+            connectionReads++
+            return connectionsRead()
+        }
+
+        override suspend fun updateWorkflow(
+            id: String,
+            request: UpdateWorkflowRequest,
+        ): WorkflowDetail {
+            detail =
+                detail.copy(instruction = (request.instruction as CanonicalOptional.Present).value)
+            return detail
+        }
+
+        override suspend fun createAutomation(
+            workflowId: String,
+            request: CreateWorkflowAutomationRequest,
+        ): Nothing {
+            createAttempts++
+            throw ApiFailure.Network(IOException("Automation response was lost"))
+        }
+
+        override suspend fun updateAutomation(
+            id: String,
+            request: UpdateWorkflowAutomationRequest,
+        ) = error("Unexpected automation update")
+
+        override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
+            error("Unexpected automation toggle")
+    }
+}
+
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class WorkflowModelTest : WorkflowModelTestFixture() {
+    @Test
+    fun workspaceSearchReusesTheUnexpiredCatalogAndSharesItsRefreshWithTheDirectory() =
+        check { service, model ->
             model.visibilityChanged(true)
             runCurrent()
+            model.visibilityChanged(false)
+            val saved = listOf(service.summary)
+            val refresh = CompletableDeferred<Unit>()
+            service.catalogRead = {
+                refresh.await()
+                throw ApiFailure.Http(503, null, null, null)
+            }
+
+            model.searchVisibilityChanged(true)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
+            assertEquals(2, service.catalogReads)
+            assertEquals(1, service.ruleReads)
+            assertEquals(1, service.connectionReads)
+
+            model.visibilityChanged(true)
+            runCurrent()
+            assertEquals(2, service.catalogReads)
+            model.visibilityChanged(false)
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
+            assertNull(model.state.value.catalogFailure)
+
+            model.searchVisibilityChanged(false)
+            advanceTimeBy(600_000)
+            val newCatalog = CompletableDeferred<List<WorkflowSummary>>()
+            service.catalogRead = { newCatalog.await() }
+            model.searchVisibilityChanged(true)
+            runCurrent()
+            assertNull(model.state.value.catalog)
+            assertNull(model.state.value.catalogFailure)
+            newCatalog.complete(saved)
+            runCurrent()
+            assertEquals(saved, model.state.value.catalog)
         }
-
-        model.visibilityChanged(true)
-        runCurrent()
-        advanceTimeBy(1_000)
-        rules.complete(emptyList())
-        runCurrent()
-        advanceTimeBy(1_000)
-        connections.complete(setOf("gmail"))
-        runCurrent()
-        advanceTimeBy(1_000)
-        model.select(service.summary.id)
-        runCurrent()
-
-        val refresh = CompletableDeferred<Unit>()
-        service.catalogRead = {
-            refresh.await()
-            listOf(service.summary)
-        }
-        service.rulesRead = {
-            refresh.await()
-            emptyList()
-        }
-        service.connectionsRead = {
-            refresh.await()
-            setOf("gmail")
-        }
-        service.detailRead = {
-            refresh.await()
-            service.detail
-        }
-
-        reopen()
-        assertEquals(listOf(service.summary), model.state.value.catalog)
-        assertTrue(model.state.value.rules?.isEmpty() == true)
-        assertEquals(setOf("gmail"), model.state.value.connections)
-        assertEquals(service.detail, model.state.value.detail)
-        assertEquals(2, service.catalogReads)
-        assertEquals(2, service.ruleReads)
-        assertEquals(2, service.connectionReads)
-        assertEquals(2, service.detailReads)
-
-        advanceTimeBy(597_000)
-        assertEquals(listOf(service.summary), model.state.value.catalog)
-        reopen()
-        assertNull(model.state.value.catalog)
-        assertTrue(model.state.value.rules?.isEmpty() == true)
-        assertEquals(setOf("gmail"), model.state.value.connections)
-        assertEquals(service.detail, model.state.value.detail)
-
-        advanceTimeBy(1_000)
-        reopen()
-        assertNull(model.state.value.rules)
-        assertEquals(setOf("gmail"), model.state.value.connections)
-        assertEquals(service.detail, model.state.value.detail)
-
-        advanceTimeBy(1_000)
-        reopen()
-        assertNull(model.state.value.connections)
-        assertEquals(service.detail, model.state.value.detail)
-
-        advanceTimeBy(1_000)
-        reopen()
-        assertNull(model.state.value.detail)
-        refresh.complete(Unit)
-        runCurrent()
-        assertEquals(listOf(service.summary), model.state.value.catalog)
-        assertEquals(service.detail, model.state.value.detail)
-    }
 
     @Test
     fun switchingBackShowsCachedDetailAndReadsTheLatestWhileItIsVisible() =
@@ -176,242 +292,99 @@ class WorkflowModelTest {
         }
 
     @Test
-    fun historyKeepsLoadedPagesDuringRefreshAndClearsExpiredCacheOnReturn() =
-        check { service, model ->
-            val id = service.summary.id
-            fun page(cursor: String?) =
-                if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
-                else WorkflowRunHistory(listOf(earlierRun), null)
-            service.historyRead = { workflowId, cursor ->
-                assertEquals(id, workflowId)
-                page(cursor)
-            }
-            model.visibilityChanged(true)
-            model.select(id)
-            runCurrent()
-            assertTrue(service.historyCursors.isEmpty())
-
-            model.select(id, WorkflowTab.History)
-            runCurrent()
-            assertEquals(listOf(recentRun), model.state.value.history?.runs)
-            model.loadEarlierRuns()
-            model.loadEarlierRuns()
-            runCurrent()
-            assertEquals(listOf(null, "earlier"), service.historyCursors)
-            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
-
-            val refresh = CompletableDeferred<Unit>()
-            service.historyRead = { _, cursor ->
-                refresh.await()
-                val page = page(cursor)
-                if (cursor == null)
-                    page.copy(
-                        runs =
-                            listOf(
-                                recentRun.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED),
-                            ),
-                    )
-                else page
-            }
-            model.select(id)
-            model.select(id, WorkflowTab.History)
-            runCurrent()
-            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
-            advanceTimeBy(600_000)
-            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
-            model.visibilityChanged(false)
-            model.visibilityChanged(true)
-            assertNull(model.state.value.history)
-            refresh.complete(Unit)
-            runCurrent()
-            assertEquals(
-                listOf(
-                    WorkflowRunHistoryEntryStatus.COMPLETED,
-                    WorkflowRunHistoryEntryStatus.FAILED,
-                ),
-                model.state.value.history?.runs?.map { it.status },
-            )
-            assertEquals(listOf(null, "earlier"), service.historyCursors.takeLast(2))
+    fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
+        var reachable = false
+        service.catalogRead = {
+            if (!reachable) throw ApiFailure.Network(IOException("Offline"))
+            listOf(service.summary)
         }
-
-    @Test
-    fun historyRefreshPreservesTheBoundaryForLoadingEarlierRuns() = check { service, model ->
-        val id = service.summary.id
-        val olderRun =
-            earlierRun.copy(
-                id = "4af530dc-2f2d-4be2-9e85-8fd801a20828",
-                createdAt = "2026-11-21T01:00:00.000Z",
-            )
-        val oldestRun =
-            earlierRun.copy(
-                id = "ebce6d58-1225-4eeb-80fb-861035eeac7d",
-                createdAt = "2026-11-20T01:00:00.000Z",
-            )
-        val runs = mutableListOf(recentRun, earlierRun, olderRun, oldestRun)
-        service.historyRead = { _, cursor ->
-            val start = if (cursor == null) 0 else runs.indexOfFirst { it.id == cursor } + 1
-            val page = runs.drop(start).take(2)
-            WorkflowRunHistory(page, page.last().id.takeIf { start + page.size < runs.size })
-        }
-        model.visibilityChanged(true)
-        model.select(id, WorkflowTab.History)
-        runCurrent()
-        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
-
-        val newRun =
-            recentRun.copy(
-                id = "0fdf0291-fad4-4896-a33e-c7931f51a086",
-                createdAt = "2026-11-23T02:00:00.000Z",
-            )
-        runs.add(0, newRun)
-        model.select(id)
-        model.select(id, WorkflowTab.History)
-        runCurrent()
-        assertEquals(listOf(newRun, recentRun, earlierRun), model.state.value.history?.runs)
-
-        val newestRun =
-            newRun.copy(
-                id = "c98de40b-6ac1-429d-989d-2b5be0b330f3",
-                createdAt = "2026-11-23T03:00:00.000Z",
-            )
-        runs.add(0, newestRun)
-        model.select(id)
-        model.select(id, WorkflowTab.History)
-        runCurrent()
-        assertEquals(
-            listOf(newestRun, newRun, recentRun, earlierRun),
-            model.state.value.history?.runs,
-        )
-        assertEquals(listOf(null, null, recentRun.id, null, newRun.id), service.historyCursors)
-
-        model.loadEarlierRuns()
-        runCurrent()
-        assertEquals(earlierRun.id, service.historyCursors.last())
-        assertEquals(runs, model.state.value.history?.runs)
-        assertNull(model.state.value.history?.nextCursor)
-    }
-
-    @Test
-    fun revokedHistoryClearsTheCachedRange() = check { service, model ->
-        val id = service.summary.id
-        model.visibilityChanged(true)
-        model.select(id, WorkflowTab.History)
-        runCurrent()
-        assertNotNull(model.state.value.history)
-        service.historyRead = { _, _ -> throw ApiFailure.Http(404, null, null, null) }
-        model.select(id)
-        model.select(id, WorkflowTab.History)
-        assertNotNull(model.state.value.history)
-        runCurrent()
-        assertNull(model.state.value.history)
-        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.historyFailure)
-        model.select(id)
-        model.select(id, WorkflowTab.History)
-        assertNull(model.state.value.history)
-    }
-
-    @Test
-    fun restoringWorkflowAccessReloadsTheSelectedHistory() = check { service, model ->
-        val id = service.summary.id
-        model.visibilityChanged(true)
-        model.select(id, WorkflowTab.History)
-        runCurrent()
-        assertNotNull(model.state.value.history)
-
-        service.catalogRead = { emptyList() }
-        service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
-        model.foregroundChanged(false)
-        model.foregroundChanged(true)
-        runCurrent()
-        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
-        assertNull(model.state.value.history)
-
-        val restored = CompletableDeferred<WorkflowDetail>()
-        service.catalogRead = { listOf(service.summary) }
-        service.detailRead = { restored.await() }
-        model.foregroundChanged(false)
-        val historyReads = service.historyCursors.size
-        model.foregroundChanged(true)
-        runCurrent()
-        assertEquals(historyReads, service.historyCursors.size)
-
-        restored.complete(service.detail)
-        runCurrent()
-        assertNull(model.state.value.detailFailure)
-        assertNotNull(model.state.value.history)
-        assertEquals(historyReads + 1, service.historyCursors.size)
-    }
-
-    @Test
-    fun reconnectResumesTheRequestedEarlierHistoryPage() = check { service, model ->
-        var reachable = true
-        service.historyRead = { _, cursor ->
-            if (!reachable) throw ApiFailure.Network(IOException())
-            if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
-            else WorkflowRunHistory(listOf(earlierRun), null)
-        }
-        model.visibilityChanged(true)
-        model.select(service.summary.id, WorkflowTab.History)
-        runCurrent()
-
-        reachable = false
         model.connectivityChanged(true)
-        model.loadEarlierRuns()
+        model.visibilityChanged(true)
         runCurrent()
-        assertEquals(WorkflowReadFailure.Offline, model.state.value.historyFailure)
-        assertEquals(listOf(recentRun), model.state.value.history?.runs)
+
+        assertEquals(1, service.catalogReads)
+        assertNull(model.state.value.catalogFailure)
+        assertNull(model.state.value.catalog)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(3, service.catalogReads)
+        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
 
         reachable = true
         model.connectivityChanged(false)
         runCurrent()
-        assertNull(model.state.value.historyFailure)
-        assertEquals(listOf(null, "earlier", "earlier"), service.historyCursors)
-        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
-    }
-
-    @Test
-    fun openingOfflineAttemptsAReadThenResumesOnReconnect() = check { service, model ->
-        var reads = 0
-        service.catalogRead = {
-            reads++
-            if (reads == 1) throw ApiFailure.Network(IOException("Offline"))
-            listOf(service.summary)
-        }
-        model.connectivityChanged(true)
-        model.visibilityChanged(true)
-        runCurrent()
-
-        assertEquals(1, reads)
-        assertEquals(WorkflowReadFailure.Offline, model.state.value.catalogFailure)
-        assertNull(model.state.value.catalog)
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertEquals(1, reads)
-
-        model.connectivityChanged(false)
-        runCurrent()
-        assertEquals(2, reads)
+        assertEquals(4, service.catalogReads)
         assertEquals(listOf(service.summary), model.state.value.catalog)
         assertNull(model.state.value.catalogFailure)
     }
 
     @Test
-    fun reconnectDoesNotWaitForTheCurrentBackoff() = check { service, model ->
+    fun reconnectRefreshesTheFailedCatalogWhileOnlySearchIsOpen() = check { service, model ->
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        val saved = listOf(service.summary)
+        assertEquals(saved, model.state.value.catalog)
+        model.searchVisibilityChanged(false)
+
+        model.connectivityChanged(true)
+        service.catalogRead = { throw ApiFailure.Network(IOException("Offline")) }
+        model.searchVisibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(4, service.catalogReads)
+        assertEquals(saved, model.state.value.catalog)
+        assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+
+        val refreshed = listOf(service.summary.copy(displayName = "Refreshed"))
+        service.catalogRead = { refreshed }
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+        assertEquals(refreshed, model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+        assertEquals(0, service.ruleReads)
+        assertEquals(0, service.connectionReads)
+
+        model.searchVisibilityChanged(false)
+        advanceTimeBy(600_000)
+        model.connectivityChanged(true)
+        model.connectivityChanged(false)
+        runCurrent()
+        assertEquals(5, service.catalogReads)
+    }
+
+    @Test
+    fun reconnectKeepsAnActiveReadOnItsServerSchedule() = check { service, model ->
         service.catalogRead = {
-            if (service.catalogReads == 1) throw ApiFailure.Network(IOException("Offline"))
+            when (service.catalogReads) {
+                1 -> throw ApiFailure.Http(429, null, null, 9)
+                2 -> throw ApiFailure.Http(503, null, null, 1)
+            }
             listOf(service.summary)
         }
         model.visibilityChanged(true)
         runCurrent()
-        assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+        assertNull(model.state.value.catalogFailure)
 
         model.connectivityChanged(true)
         model.connectivityChanged(false)
+        advanceTimeBy(8_999)
         runCurrent()
-
-        assertEquals(listOf(service.summary), model.state.value.catalog)
-        assertNull(model.state.value.catalogFailure)
+        assertEquals(1, service.catalogReads)
+        advanceTimeBy(1)
+        runCurrent()
         assertEquals(2, service.catalogReads)
+        advanceTimeBy(2_999)
+        runCurrent()
+        assertEquals(2, service.catalogReads)
+        assertNull(model.state.value.catalogFailure)
+        advanceTimeBy(1)
+        runCurrent()
+
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertNull(model.state.value.catalogFailure)
+        assertEquals(3, service.catalogReads)
         assertEquals(1, service.connectionReads)
     }
 
@@ -421,14 +394,15 @@ class WorkflowModelTest {
             val connections = CompletableDeferred<Set<String>>()
             service.connectionsRead = { connections.await() }
             service.detailRead = {
-                if (service.detailReads == 1) throw ApiFailure.Network(IOException("Offline"))
+                if (service.detailReads <= 3) throw ApiFailure.Network(IOException("Offline"))
                 service.detail
             }
             model.connectivityChanged(true)
             model.select(service.summary.id)
             model.visibilityChanged(true)
+            advanceTimeBy(6_000)
             runCurrent()
-            assertEquals(WorkflowReadFailure.Offline, model.state.value.detailFailure)
+            assertEquals(WorkflowReadFailure.Network, model.state.value.detailFailure)
 
             model.connectivityChanged(false)
             runCurrent()
@@ -438,7 +412,7 @@ class WorkflowModelTest {
         }
 
     @Test
-    fun cachedReadsBackOffIndependentlyAndOnlyWarnAfterSustainedFailure() =
+    fun cachedReadsWaitForTwoRetriesAndRetainTheEditorOnTerminalFailure() =
         check { service, model ->
             model.select(service.summary.id)
             model.visibilityChanged(true)
@@ -449,34 +423,60 @@ class WorkflowModelTest {
             model.edit(editing)
 
             val catalogAttempts = mutableListOf<Long>()
+            val start = testScheduler.currentTime
             service.catalogRead = {
-                catalogAttempts += testScheduler.currentTime - 600_000
+                catalogAttempts += testScheduler.currentTime - start
                 if (catalogAttempts.size <= 3) throw ApiFailure.Network(IOException("Offline"))
                 listOf(service.summary)
             }
             model.foregroundChanged(false)
-            advanceTimeBy(600_000)
             model.foregroundChanged(true)
             runCurrent()
 
-            advanceTimeBy(29_999)
+            advanceTimeBy(5_999)
             runCurrent()
-            assertEquals(listOf(0L, 5_000L, 15_000L), catalogAttempts)
+            assertEquals(listOf(0L, 3_000L), catalogAttempts)
             assertEquals(listOf(service.summary), model.state.value.catalog)
-            assertEquals(WorkflowReadFailure.CouldNotLoad, model.state.value.catalogFailure)
+            assertNull(model.state.value.catalogFailure)
             assertNull(model.state.value.detailFailure)
             assertEquals(editing, model.state.value.editor)
             assertEquals(2, service.detailReads)
 
             advanceTimeBy(1)
             runCurrent()
-            assertEquals(WorkflowReadFailure.RefreshFailed, model.state.value.catalogFailure)
-            advanceTimeBy(5_000)
+            assertEquals(WorkflowReadFailure.Network, model.state.value.catalogFailure)
+            assertEquals(listOf(service.summary), model.state.value.catalog)
+            assertEquals(editing, model.state.value.editor)
+            advanceTimeBy(60_000)
             runCurrent()
-            assertEquals(listOf(0L, 5_000L, 15_000L, 35_000L), catalogAttempts)
+            assertEquals(listOf(0L, 3_000L, 6_000L), catalogAttempts)
+
+            model.connectivityChanged(true)
+            model.connectivityChanged(false)
+            runCurrent()
+            assertEquals(listOf(0L, 3_000L, 6_000L, 66_000L), catalogAttempts)
             assertNull(model.state.value.catalogFailure)
             assertEquals(2, service.detailReads)
         }
+
+    @Test
+    fun leavingTheDirectoryCancelsScheduledReadRetries() = check { service, model ->
+        service.catalogRead = { throw ApiFailure.Http(503, null, null, null) }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(1, service.catalogReads)
+
+        model.visibilityChanged(false)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(1, service.catalogReads)
+
+        service.catalogRead = { listOf(service.summary) }
+        model.visibilityChanged(true)
+        runCurrent()
+        assertEquals(2, service.catalogReads)
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+    }
 
     @Test
     fun olderDetailCannotReplaceNewerCatalogAndRules() = check { service, model ->
@@ -743,156 +743,288 @@ class WorkflowModelTest {
         runCurrent()
         assertEquals(1, service.createAttempts)
     }
+}
 
-    private fun check(action: suspend TestScope.(Service, WorkflowModel) -> Unit) = runTest {
-        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
-        val service = Service()
-        val store = ViewModelStore()
-        val model =
-            ViewModelProvider(
-                store,
-                viewModelFactory {
-                    initializer {
-                        WorkflowModel(service, { true }, { throw it }) { testScheduler.currentTime }
-                    }
-                },
-            )[WorkflowModel::class.java]
-        try {
-            model.foregroundChanged(true)
-            action(service, model)
-        } finally {
-            store.clear()
+@OptIn(ExperimentalCoroutinesApi::class)
+internal class WorkflowHistoryModelTest : WorkflowModelTestFixture() {
+    @Test
+    fun reopeningRevalidatesEachRangeAndOnlyShowsItsUnexpiredCache() = check { service, model ->
+        val rules = CompletableDeferred<WorkspaceWorkflowAutomations>()
+        val connections = CompletableDeferred<Set<String>>()
+        service.rulesRead = { rules.await() }
+        service.connectionsRead = { connections.await() }
+
+        fun reopen() {
+            model.visibilityChanged(false)
+            model.visibilityChanged(true)
             runCurrent()
-            Dispatchers.resetMain()
         }
+
+        model.visibilityChanged(true)
+        runCurrent()
+        advanceTimeBy(1_000)
+        rules.complete(emptyList())
+        runCurrent()
+        advanceTimeBy(1_000)
+        connections.complete(setOf("gmail"))
+        runCurrent()
+        advanceTimeBy(1_000)
+        model.select(service.summary.id)
+        runCurrent()
+
+        val refresh = CompletableDeferred<Unit>()
+        service.catalogRead = {
+            refresh.await()
+            listOf(service.summary)
+        }
+        service.rulesRead = {
+            refresh.await()
+            emptyList()
+        }
+        service.connectionsRead = {
+            refresh.await()
+            setOf("gmail")
+        }
+        service.detailRead = {
+            refresh.await()
+            service.detail
+        }
+
+        reopen()
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertTrue(model.state.value.rules?.isEmpty() == true)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+        assertEquals(2, service.catalogReads)
+        assertEquals(2, service.ruleReads)
+        assertEquals(2, service.connectionReads)
+        assertEquals(2, service.detailReads)
+
+        advanceTimeBy(597_000)
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        reopen()
+        assertNull(model.state.value.catalog)
+        assertTrue(model.state.value.rules?.isEmpty() == true)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.rules)
+        assertEquals(setOf("gmail"), model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.connections)
+        assertEquals(service.detail, model.state.value.detail)
+
+        advanceTimeBy(1_000)
+        reopen()
+        assertNull(model.state.value.detail)
+        refresh.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(service.summary), model.state.value.catalog)
+        assertEquals(service.detail, model.state.value.detail)
     }
 
-    private class Service : WorkflowService {
-        val historyCursors = mutableListOf<String?>()
-        var historyRead: suspend (String, String?) -> WorkflowRunHistory = { _, _ ->
-            WorkflowRunHistory(emptyList(), null)
-        }
-        val summary =
-            WorkflowSummary(
-                id = "a1111111-1111-4111-8111-111111111111",
-                name = "release-review",
-                displayName = "Release review",
-                description = null,
-                visibility = WorkflowSummaryVisibility.PRIVATE,
-                ownerUserId = "user-a",
-                createdAt = CHAT_DATE,
-                canManage = true,
-                canPublish = true,
-                official = null,
-                importSource = null,
+    @Test
+    fun historyKeepsLoadedPagesDuringRefreshAndClearsExpiredCacheOnReturn() =
+        check { service, model ->
+            val id = service.summary.id
+            fun page(cursor: String?) =
+                if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
+                else WorkflowRunHistory(listOf(earlierRun), null)
+            service.historyRead = { workflowId, cursor ->
+                assertEquals(id, workflowId)
+                page(cursor)
+            }
+            model.visibilityChanged(true)
+            model.select(id)
+            runCurrent()
+            assertTrue(service.historyCursors.isEmpty())
+
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recentRun), model.state.value.history?.runs)
+            model.loadEarlierRuns()
+            model.loadEarlierRuns()
+            runCurrent()
+            assertEquals(listOf(null, "earlier"), service.historyCursors)
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+
+            val refresh = CompletableDeferred<Unit>()
+            service.historyRead = { _, cursor ->
+                refresh.await()
+                val page = page(cursor)
+                if (cursor == null)
+                    page.copy(
+                        runs =
+                            listOf(
+                                recentRun.copy(status = WorkflowRunHistoryEntryStatus.COMPLETED),
+                            ),
+                    )
+                else page
+            }
+            model.select(id)
+            model.select(id, WorkflowTab.History)
+            runCurrent()
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+            advanceTimeBy(600_000)
+            assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
+            model.visibilityChanged(false)
+            model.visibilityChanged(true)
+            assertNull(model.state.value.history)
+            refresh.complete(Unit)
+            runCurrent()
+            assertEquals(
+                listOf(
+                    WorkflowRunHistoryEntryStatus.COMPLETED,
+                    WorkflowRunHistoryEntryStatus.FAILED,
+                ),
+                model.state.value.history?.runs?.map { it.status },
             )
-        var detail =
-            WorkflowDetail(
-                id = summary.id,
-                name = summary.name,
-                displayName = summary.displayName,
-                description = null,
-                visibility = WorkflowDetailVisibility.PRIVATE,
-                ownerUserId = summary.ownerUserId,
-                createdAt = CHAT_DATE,
-                canManage = true,
-                canPublish = true,
-                official = null,
-                importSource = null,
-                createdByUserId = summary.ownerUserId,
-                updatedByUserId = summary.ownerUserId,
-                updatedAt = CHAT_DATE,
-                instruction = null,
-                files = null,
-                fileContents = null,
-                automations = emptyList(),
+            assertEquals(listOf(null, "earlier"), service.historyCursors.takeLast(2))
+        }
+
+    @Test
+    fun historyRefreshPreservesTheBoundaryForLoadingEarlierRuns() = check { service, model ->
+        val id = service.summary.id
+        val olderRun =
+            earlierRun.copy(
+                id = "4af530dc-2f2d-4be2-9e85-8fd801a20828",
+                createdAt = "2026-11-21T01:00:00.000Z",
             )
-        var catalogRead: suspend () -> List<WorkflowSummary> = { listOf(summary) }
-        var detailRead: suspend (String) -> WorkflowDetail = { detail }
-        var rulesRead: suspend () -> WorkspaceWorkflowAutomations = { emptyList() }
-        var connectionsRead: suspend () -> Set<String> = { emptySet() }
-        var detailReads = 0
-            private set
-
-        var catalogReads = 0
-            private set
-
-        var ruleReads = 0
-            private set
-
-        var connectionReads = 0
-            private set
-
-        var createAttempts = 0
-            private set
-
-        fun weeklyRule() =
-            WorkflowAutomationVariant1(
-                id = "weekly",
-                ownerUserId = summary.ownerUserId,
-                enabled = true,
-                chatThreadId = null,
-                nextRunAt = CHAT_DATE,
-                lastRunAt = null,
-                official = null,
-                kind = WorkflowAutomationVariant1Kind.SCHEDULE,
-                schedule =
-                    WorkflowAutomationVariant1ScheduleVariant1(
-                        WorkflowAutomationVariant1ScheduleVariant1Type.CRON,
-                        "0 9 * * 1",
-                        "UTC",
-                    ),
-                scheduleSummary = "Weekly at 09:00",
+        val oldestRun =
+            earlierRun.copy(
+                id = "ebce6d58-1225-4eeb-80fb-861035eeac7d",
+                createdAt = "2026-11-20T01:00:00.000Z",
             )
-
-        override suspend fun workflows(): List<WorkflowSummary> {
-            catalogReads++
-            return catalogRead()
+        val runs = mutableListOf(recentRun, earlierRun, olderRun, oldestRun)
+        service.historyRead = { _, cursor ->
+            val start = if (cursor == null) 0 else runs.indexOfFirst { it.id == cursor } + 1
+            val page = runs.drop(start).take(2)
+            WorkflowRunHistory(page, page.last().id.takeIf { start + page.size < runs.size })
         }
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
 
-        override suspend fun workflow(id: String): WorkflowDetail {
-            detailReads++
-            return detailRead(id)
+        val newRun =
+            recentRun.copy(
+                id = "0fdf0291-fad4-4896-a33e-c7931f51a086",
+                createdAt = "2026-11-23T02:00:00.000Z",
+            )
+        runs.add(0, newRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(listOf(newRun, recentRun, earlierRun), model.state.value.history?.runs)
+
+        val newestRun =
+            newRun.copy(
+                id = "c98de40b-6ac1-429d-989d-2b5be0b330f3",
+                createdAt = "2026-11-23T03:00:00.000Z",
+            )
+        runs.add(0, newestRun)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertEquals(
+            listOf(newestRun, newRun, recentRun, earlierRun),
+            model.state.value.history?.runs,
+        )
+        assertEquals(listOf(null, null, recentRun.id, null, newRun.id), service.historyCursors)
+
+        model.loadEarlierRuns()
+        runCurrent()
+        assertEquals(earlierRun.id, service.historyCursors.last())
+        assertEquals(runs, model.state.value.history?.runs)
+        assertNull(model.state.value.history?.nextCursor)
+    }
+
+    @Test
+    fun revokedHistoryClearsTheCachedRange() = check { service, model ->
+        val id = service.summary.id
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertNotNull(model.state.value.history)
+        service.historyRead = { _, _ -> throw ApiFailure.Http(404, null, null, null) }
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNotNull(model.state.value.history)
+        runCurrent()
+        assertNull(model.state.value.history)
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.historyFailure)
+        model.select(id)
+        model.select(id, WorkflowTab.History)
+        assertNull(model.state.value.history)
+    }
+
+    @Test
+    fun restoringWorkflowAccessReloadsTheSelectedHistory() = check { service, model ->
+        val id = service.summary.id
+        model.visibilityChanged(true)
+        model.select(id, WorkflowTab.History)
+        runCurrent()
+        assertNotNull(model.state.value.history)
+
+        service.catalogRead = { emptyList() }
+        service.detailRead = { throw ApiFailure.Http(404, null, null, null) }
+        model.foregroundChanged(false)
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Unavailable, model.state.value.detailFailure)
+        assertNull(model.state.value.history)
+
+        val restored = CompletableDeferred<WorkflowDetail>()
+        service.catalogRead = { listOf(service.summary) }
+        service.detailRead = { restored.await() }
+        model.foregroundChanged(false)
+        val historyReads = service.historyCursors.size
+        model.foregroundChanged(true)
+        runCurrent()
+        assertEquals(historyReads, service.historyCursors.size)
+
+        restored.complete(service.detail)
+        runCurrent()
+        assertNull(model.state.value.detailFailure)
+        assertNotNull(model.state.value.history)
+        assertEquals(historyReads + 1, service.historyCursors.size)
+    }
+
+    @Test
+    fun reconnectResumesTheRequestedEarlierHistoryPage() = check { service, model ->
+        var reachable = true
+        service.historyRead = { _, cursor ->
+            if (!reachable) throw ApiFailure.Network(IOException())
+            if (cursor == null) WorkflowRunHistory(listOf(recentRun), "earlier")
+            else WorkflowRunHistory(listOf(earlierRun), null)
         }
+        model.visibilityChanged(true)
+        model.select(service.summary.id, WorkflowTab.History)
+        runCurrent()
 
-        override suspend fun workflowRunHistory(id: String, cursor: String?): WorkflowRunHistory {
-            historyCursors.add(cursor)
-            return historyRead(id, cursor)
-        }
+        reachable = false
+        model.connectivityChanged(true)
+        model.loadEarlierRuns()
+        runCurrent()
+        assertNull(model.state.value.historyFailure)
+        advanceTimeBy(6_000)
+        runCurrent()
+        assertEquals(WorkflowReadFailure.Network, model.state.value.historyFailure)
+        assertEquals(listOf(recentRun), model.state.value.history?.runs)
 
-        override suspend fun workflowAutomations(): WorkspaceWorkflowAutomations {
-            ruleReads++
-            return rulesRead()
-        }
-
-        override suspend fun workflowConnections(): Set<String> {
-            connectionReads++
-            return connectionsRead()
-        }
-
-        override suspend fun updateWorkflow(
-            id: String,
-            request: UpdateWorkflowRequest,
-        ): WorkflowDetail {
-            detail =
-                detail.copy(instruction = (request.instruction as CanonicalOptional.Present).value)
-            return detail
-        }
-
-        override suspend fun createAutomation(
-            workflowId: String,
-            request: CreateWorkflowAutomationRequest,
-        ): Nothing {
-            createAttempts++
-            throw ApiFailure.Network(IOException("Automation response was lost"))
-        }
-
-        override suspend fun updateAutomation(
-            id: String,
-            request: UpdateWorkflowAutomationRequest,
-        ) = error("Unexpected automation update")
-
-        override suspend fun setAutomationEnabled(id: String, enabled: Boolean) =
-            error("Unexpected automation toggle")
+        reachable = true
+        model.connectivityChanged(false)
+        runCurrent()
+        assertNull(model.state.value.historyFailure)
+        assertEquals(
+            listOf(null, "earlier", "earlier", "earlier", "earlier"),
+            service.historyCursors,
+        )
+        assertEquals(listOf(recentRun, earlierRun), model.state.value.history?.runs)
     }
 }

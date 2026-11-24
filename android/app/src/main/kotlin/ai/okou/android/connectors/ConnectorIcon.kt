@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImagePainter
@@ -54,6 +55,13 @@ internal fun ConnectorIcon(
             .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
         contentAlignment = Alignment.Center,
     ) {
+        ConnectorMark(icon, if (large) 24.dp else 20.dp)
+    }
+}
+
+@Composable
+internal fun ConnectorMark(icon: ConnectorBrandIcon?, size: Dp, modifier: Modifier = Modifier) {
+    Box(modifier.size(size)) {
         if (icon != null)
             key(icon.url) {
                 val context = LocalPlatformContext.current
@@ -82,7 +90,7 @@ internal fun ConnectorIcon(
                     painter = painter,
                     contentDescription = null,
                     modifier =
-                        Modifier.size(if (large) 24.dp else 20.dp).clipToBounds().graphicsLayer {
+                        Modifier.size(size).clipToBounds().graphicsLayer {
                             scaleX = icon.scale
                             scaleY = icon.scale
                             alpha = if (cached) 1f else opacity

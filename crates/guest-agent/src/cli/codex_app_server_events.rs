@@ -764,29 +764,60 @@ fn normalize_reasoning(
     method: &str,
 ) -> Result<Value, CodexAppServerEventError> {
     let mut normalized = base_item(item, method, "reasoning")?;
-    let text_metrics = reasoning_text_metrics(item, method)?;
+    let mut text_metrics = ReasoningTextMetrics::default();
+    visit_reasoning_text_parts(item, method, |part| text_metrics.add_part(part))?;
+
     if text_metrics.part_count > 0 {
         let mut text = String::with_capacity(text_metrics.joined_byte_len());
         let mut has_part = false;
-        append_reasoning_text_parts(
-            &mut text,
-            &mut has_part,
-            item,
-            method,
-            "summary",
-            "item.summary",
-        )?;
-        append_reasoning_text_parts(
-            &mut text,
-            &mut has_part,
-            item,
-            method,
-            "content",
-            "item.content",
-        )?;
+        visit_reasoning_text_parts(item, method, |part| {
+            if has_part {
+                text.push('\n');
+            }
+            text.push_str(part);
+            has_part = true;
+        })?;
         normalized.insert("text".to_string(), Value::String(text));
     }
     Ok(Value::Object(normalized))
+}
+
+#[derive(Default)]
+struct ReasoningTextMetrics {
+    part_count: usize,
+    byte_len: usize,
+}
+
+impl ReasoningTextMetrics {
+    fn add_part(&mut self, part: &str) {
+        self.part_count += 1;
+        self.byte_len += part.len();
+    }
+
+    fn joined_byte_len(&self) -> usize {
+        self.byte_len + self.part_count.saturating_sub(1)
+    }
+}
+
+fn visit_reasoning_text_parts(
+    item: &Map<String, Value>,
+    method: &str,
+    mut visit: impl FnMut(&str),
+) -> Result<(), CodexAppServerEventError> {
+    for (key, field) in [("summary", "item.summary"), ("content", "item.content")] {
+        let parts = match item.get(key) {
+            Some(Value::Array(parts)) => parts,
+            None | Some(Value::Null) => continue,
+            Some(_) => return Err(invalid_field_for_method(method, field)),
+        };
+        for value in parts {
+            let part = value
+                .as_str()
+                .ok_or_else(|| invalid_field_for_method(method, field))?;
+            visit(part);
+        }
+    }
+    Ok(())
 }
 
 fn normalize_command_execution(
@@ -1498,89 +1529,6 @@ fn parse_item_status(status: &str) -> Option<ItemStatus> {
         "declined" => Some(ItemStatus::Declined),
         _ => None,
     }
-}
-
-#[derive(Default)]
-struct ReasoningTextMetrics {
-    part_count: usize,
-    byte_len: usize,
-}
-
-impl ReasoningTextMetrics {
-    fn add_part(&mut self, part: &str) {
-        self.part_count += 1;
-        self.byte_len += part.len();
-    }
-
-    fn joined_byte_len(&self) -> usize {
-        self.byte_len + self.part_count.saturating_sub(1)
-    }
-}
-
-fn reasoning_text_metrics(
-    object: &Map<String, Value>,
-    method: &str,
-) -> Result<ReasoningTextMetrics, CodexAppServerEventError> {
-    let mut metrics = ReasoningTextMetrics::default();
-    add_string_array_text_metrics(&mut metrics, object, method, "summary", "item.summary")?;
-    add_string_array_text_metrics(&mut metrics, object, method, "content", "item.content")?;
-    Ok(metrics)
-}
-
-fn add_string_array_text_metrics(
-    metrics: &mut ReasoningTextMetrics,
-    object: &Map<String, Value>,
-    method: &str,
-    key: &str,
-    field: &'static str,
-) -> Result<(), CodexAppServerEventError> {
-    for value in optional_string_array_values(object, method, key, field)? {
-        let part = value
-            .as_str()
-            .ok_or_else(|| invalid_field_for_method(method, field))?;
-        metrics.add_part(part);
-    }
-    Ok(())
-}
-
-fn append_reasoning_text_parts(
-    text: &mut String,
-    has_part: &mut bool,
-    object: &Map<String, Value>,
-    method: &str,
-    key: &str,
-    field: &'static str,
-) -> Result<(), CodexAppServerEventError> {
-    for value in optional_string_array_values(object, method, key, field)? {
-        let part = value
-            .as_str()
-            .ok_or_else(|| invalid_field_for_method(method, field))?;
-        if *has_part {
-            text.push('\n');
-        } else {
-            *has_part = true;
-        }
-        text.push_str(part);
-    }
-    Ok(())
-}
-
-fn optional_string_array_values<'a>(
-    object: &'a Map<String, Value>,
-    method: &str,
-    key: &str,
-    field: &'static str,
-) -> Result<&'a [Value], CodexAppServerEventError> {
-    let Some(values) = object.get(key) else {
-        return Ok(&[]);
-    };
-    if values.is_null() {
-        return Ok(&[]);
-    }
-    values
-        .as_array()
-        .map(Vec::as_slice)
-        .ok_or_else(|| invalid_field_for_method(method, field))
 }
 
 fn copy_optional_field(

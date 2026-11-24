@@ -1,4 +1,5 @@
 <resources>
+    <string name="chat_syncing">Menyinkronkan chat…</string>
     <string name="workspace_workflows">Alur kerja</string>
     <string name="workspace_connectors">Konektor</string>
     <string name="workspace_artifacts">Artefak</string>
@@ -6,22 +7,20 @@
     <string name="chat_undo_unarchived">Chat dikeluarkan dari arsip</string>
     <string name="chat_undo_marked_read">Chat ditandai sudah dibaca</string>
     <string name="chat_undo">Urungkan</string>
-    <string name="chat_undo_connection_failed">Perubahan tidak dapat diurungkan. Periksa koneksi dan coba lagi.</string>
     <string name="chat_action_connection_failed">Tidak dapat terhubung. Periksa koneksi dan coba lagi.</string>
     <string name="chat_undo_checking">Memeriksa hasil pengurungan…</string>
     <string name="chat_undo_failed">Perubahan tidak dapat diurungkan.</string>
     <string name="chat_undo_unconfirmed">Pengurungan perubahan tidak dapat dikonfirmasi.</string>
     <string name="chat_feedback_dismiss">Tutup</string>
     <string name="chat_list_offline">Offline</string>
-    <string name="chat_list_refresh_failed">Daftar chat gagal diperbarui</string>
     <string name="chat_list_first_load_failed">Untuk sementara tidak dapat dimuat</string>
     <string name="chat_list_load_when_online">Chat akan dimuat saat Anda kembali online.</string>
     <string name="chat_list_title">Chat</string>
     <string name="chat_refresh">Muat ulang chat</string>
     <string name="chat_loading">Memuat chat…</string>
-    <string name="chat_refresh_failed">Tidak dapat memperbarui. Menampilkan chat terakhir yang dimuat.</string>
+    <string name="chat_refresh_failed">Status belum dibaca tidak dapat diperbarui.</string>
     <string name="chat_cache_unavailable">Penyimpanan offline tidak tersedia. Chat ini mungkin tidak tersedia setelah aplikasi dimulai ulang.</string>
-    <string name="chat_metadata_unavailable">Sebagian informasi Okou atau Proyek tidak tersedia.</string>
+    <string name="chat_metadata_unavailable">Informasi proyek untuk sementara tidak tersedia.</string>
     <string name="chat_inbox">Kotak masuk</string>
     <string name="chat_mark_all_read">Tandai semua sebagai telah dibaca</string>
     <string name="chat_mark_all_read_unconfirmed">Beberapa chat mungkin masih belum dibaca.</string>
@@ -35,6 +34,7 @@
     <string name="chat_back_to_inbox">Kembali ke Kotak Masuk</string>
     <string name="chat_more_actions">Tindakan lainnya</string>
     <string name="chat_unread">Belum dibaca</string>
+    <string name="chat_has_draft">Ada draf</string>
     <string name="chat_archived">Diarsipkan</string>
     <string name="chat_muted">Dibisukan</string>
     <string name="chat_project_empty">Belum ada chat dalam Proyek ini.</string>
@@ -70,6 +70,7 @@
     <string name="chat_rename_confirm">Ubah nama</string>
     <string name="chat_rename_cancel">Batal</string>
     <string name="chat_delete">Hapus chat</string>
+    <string name="chat_delete_rejected">Chat tidak dapat dihapus.</string>
     <string name="chat_delete_title">Hapus chat?</string>
     <string name="chat_delete_description">Pesan dan draf di “%1$s” akan dihapus secara permanen. Tugas yang sedang berjalan akan dihentikan dan automasi tertaut akan dijeda.</string>
     <string name="chat_delete_confirm">Hapus</string>
@@ -92,4 +93,6 @@
     <string name="chat_project_deleted">Proyek dihapus dan chatnya dipindahkan ke luar proyek.</string>
     <string name="chat_project_delete_rejected">Proyek tidak dapat dihapus.</string>
     <string name="chat_project_delete_unconfirmed">Penghapusan proyek tidak dapat dikonfirmasi.</string>
+    <string name="chat_row_action_rejected_named">Tidak dapat menyelesaikan “%1$s”.</string>
+    <string name="chat_row_action_offline_named">Tidak dapat menyelesaikan “%1$s”. Periksa koneksi dan coba lagi.</string>
 </resources>

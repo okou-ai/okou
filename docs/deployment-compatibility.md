@@ -405,12 +405,12 @@ body transform. The same two-proof policy applies independently to iOS:
   in the source-controlled iOS policy. Verify the exact new minimum was
   publicly released and every supported storefront offers that version
   or the same newer public replacement. Review must verify that the client
-  at the new floor and any build under review tolerate the changed contract.
+  at the new floor tolerates the changed contract.
   Enabling the first App Store floor is a separate change from breaking APIs.
 - **(B) Response transform.** Register the same method, path and `2xx` status in
   [`client-transforms/ios.ts`](../turbo/packages/api-contracts/src/client-transforms/ios.ts).
-  Use `maxVersion: null` or cover both the verified public App Store version
-  and any review candidate. Mount the transform on its owning route.
+  Use `maxVersion: null` or cover the verified public App Store version. Mount
+  the transform on its owning route.
   Request or route changes require proof A or preservation of the old API.
 
 TestFlight may have a higher minimum. Both floors only move up, with separate
@@ -419,15 +419,11 @@ If the online iOS inventory is unavailable, the check uses the base branch
 contract when available. A TestFlight check or floor increase never proves an API contraction. Without
 public evidence, an unbounded response transform can still preserve compatibility.
 
-Before submitting an App Store build, run the TestFlight verification and
-register its exact `reviewCandidate` (`version`, `build`, `commit`) in a policy
-PR. With the actual build, verify production sign-in, sending a message and
-viewing the result. Keep this lock in effect for the duration of review. Both
-minimums are capped at the review version, including in a change that removes
-or replaces the lock. On public release verify every launch storefront and
-enable or raise the App Store floor in a separate PR. To abandon a review,
-withdraw it in App Store Connect before clearing the lock. API deployment
-activates a reviewed policy change.
+[Submit iOS for App Review](../ios/TESTFLIGHT.md#submit-an-existing-build-for-app-review)
+submits a selected TestFlight build directly to Apple. On public release,
+verify availability in every configured storefront before enabling or raising
+the App Store minimum in a separate policy PR. API deployment activates
+changes to the minimum versions.
 
 Lowered or removed floors and unreachable transforms fail even without schema
 findings. The base branch's already-proven findings remain inherited warnings,

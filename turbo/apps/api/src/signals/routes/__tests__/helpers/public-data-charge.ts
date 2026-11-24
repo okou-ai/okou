@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { expect } from "vitest";
 import { http, HttpResponse } from "msw";
 import { chatInputStatusContract } from "@okouai/api-contracts/contracts/chat-input-status";
-import { dataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
+import { runDataRouterRequestContract } from "@okouai/api-contracts/contracts/data-router";
 import { accept, type TestContext } from "../../../../__tests__/test-context";
 import { setupApp } from "../../../../__tests__/test-helpers";
 import { mockEnv } from "../../../../lib/env";
@@ -29,7 +29,7 @@ export async function registerPublicDataUsage(
   mockEnv("OKOU_DATA_TOKEN", "billing-fixture-data-token");
   await accept(
     setupApp({ context, routes: webhooksAgentDataRequestRoutes })(
-      dataRouterRequestContract,
+      runDataRouterRequestContract,
     ).register({
       headers: { authorization: `Bearer ${sandboxToken}` },
       body: { runId, requestId },

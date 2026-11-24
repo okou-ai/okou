@@ -731,11 +731,16 @@ function createDraftSync(threadId: string, draft: DraftSignals) {
       attachments: persisted,
     });
 
+    const direction = get(draft.suggestionDirection$);
     await set(
       patchChatThreadDraft$,
       {
         threadId,
         ...payload,
+        suggestionPreset:
+          payload.userMessage && direction?.direction_type === "preset"
+            ? direction
+            : undefined,
       },
       signal,
     );
@@ -2468,6 +2473,23 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    refreshArtifactPreviews$: command(({ get, set }) => {
+      set(resources.artifactCardSignals.refresh$);
+      const target = get(effects.sidebar.target$);
+      if (target?.type !== "artifact" || target.source.kind !== "attachment") {
+        return;
+      }
+      const refresh$ = target.source.ref.refresh$;
+      // Raw URLs own a graph outside the card registry; shared card refs
+      // were already invalidated above.
+      if (
+        !get(resources.artifactCardSignals.values$).some((card) => {
+          return card.refresh$ === refresh$;
+        })
+      ) {
+        set(refresh$);
+      }
+    }),
     resourceCatalog: effects.resourceCatalog,
     imageNavigation: createThreadImageNavigationSignals(
       projections.eventImageGroups$,
@@ -2556,7 +2578,11 @@ interface RunTrackingDeps {
   threadId: string;
   messages: Pick<
     MessageListSignals,
-    "setup$" | "catchUp$" | "subscribeBrowserSessions$" | "sidebar"
+    | "setup$"
+    | "catchUp$"
+    | "subscribeBrowserSessions$"
+    | "sidebar"
+    | "refreshArtifactPreviews$"
   >;
   subscribeSessionOutput$: Command<void, [AbortSignal]>;
   subscribeThinkingSummaries$: ThreadActivitySummarySignals["subscribe$"];
@@ -3018,9 +3044,13 @@ function createRunTracking({
         {
           threadId,
           invalidations: {
-            artifactCatalog: [messages.sidebar.artifactCatalog.reload$],
+            artifactCatalog: [
+              messages.sidebar.artifactCatalog.reload$,
+              messages.refreshArtifactPreviews$,
+            ],
             artifacts: [
               messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
+              messages.refreshArtifactPreviews$,
             ],
             threadDetail: [
               cancellationRecovery.reload$,
@@ -3230,6 +3260,9 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         generationTemplate,
         attachments: result.attachments,
       });
+      const suggestionDirection = request.options?.editorDocument
+        ? get(draft.suggestionDirection$)
+        : undefined;
       set(cancelDraftSync$);
       set(draft.clear$);
       const { runOptions, realAgentInPreviewEnabled } = sendRuntimeOptions(
@@ -3242,13 +3275,16 @@ function createPerformSendMessage(deps: SendMessageDeps) {
         }),
         set(
           sendEvent$,
-          sendInputForRequest({
-            request,
-            result,
-            userMessage,
-            runOptions,
-            realAgentInPreviewEnabled,
-          }),
+          {
+            suggestionDirection,
+            ...sendInputForRequest({
+              request,
+              result,
+              userMessage,
+              runOptions,
+              realAgentInPreviewEnabled,
+            }),
+          },
           signal,
         ),
       ]);
@@ -3330,6 +3366,7 @@ function createQueueMessage(deps: SendMessageDeps) {
       const features = await get(featureSwitches$);
       signal.throwIfAborted();
       const userMessage = queueUserMessage(options, result);
+      const suggestionDirection = get(draft.suggestionDirection$);
 
       set(cancelDraftSync$);
       set(draft.clear$);
@@ -3345,6 +3382,7 @@ function createQueueMessage(deps: SendMessageDeps) {
           {
             kind: "input",
             delivery: "queue",
+            suggestionDirection,
             prompt: result.prompt,
             hasTextContent: result.hasTextContent,
             userMessage,

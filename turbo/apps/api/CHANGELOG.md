@@ -10,6 +10,197 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.112.1](https://github.com/okou-ai/okou/compare/api-v2.112.0...api-v2.112.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove voice messages feature switch ([#50338](https://github.com/okou-ai/okou/issues/50338)) ([35e38a9](https://github.com/okou-ai/okou/commit/35e38a9a333962f7477ff090634b8c38b723f55c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.865.1
+    * @okouai/db bumped to 2.63.1
+    * @okouai/pi-agent-runtime bumped to 1.52.54
+
+## [2.112.0](https://github.com/okou-ai/okou/compare/api-v2.111.1...api-v2.112.0) (2026-11-23)
+
+
+### Features
+
+* archive projects in the chat sidebar ([#50306](https://github.com/okou-ai/okou/issues/50306)) ([8c9f004](https://github.com/okou-ai/okou/commit/8c9f004ac760d95f3f47e8e3fa83d470f2de28c6))
+
+
+### Bug Fixes
+
+* **api:** read subscription oauth client ids from doppler ([#50330](https://github.com/okou-ai/okou/issues/50330)) ([916d81b](https://github.com/okou-ai/okou/commit/916d81b3cb93a6fb0d03dc90ef05b2631fe6a523))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.113.0
+    * @okouai/connectors bumped to 3.23.3
+    * @okouai/core bumped to 8.865.0
+    * @okouai/db bumped to 2.63.0
+    * @okouai/pi-agent-runtime bumped to 1.52.53
+
+## [2.111.1](https://github.com/okou-ai/okou/compare/api-v2.111.0...api-v2.111.1) (2026-11-23)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.864.1
+    * @okouai/db bumped to 2.62.1
+    * @okouai/pi-agent-runtime bumped to 1.52.52
+
+## [2.111.0](https://github.com/okou-ai/okou/compare/api-v2.110.0...api-v2.111.0) (2026-11-23)
+
+
+### Features
+
+* **workflows:** sync recent usage across devices ([#50189](https://github.com/okou-ai/okou/issues/50189)) ([6f67414](https://github.com/okou-ai/okou/commit/6f674143c8776b90c2fbc6410baebbfc02eb4443))
+
+
+### Refactoring
+
+* **api:** remove obsolete agent webhook and telemetry routes ([#50195](https://github.com/okou-ai/okou/issues/50195)) ([2e9ac02](https://github.com/okou-ai/okou/commit/2e9ac02642d6365caa2e1c3da02fe3b15dfa58c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.112.0
+    * @okouai/core bumped to 8.864.0
+    * @okouai/db bumped to 2.62.0
+    * @okouai/pi-agent-runtime bumped to 1.52.51
+
+## [2.110.0](https://github.com/okou-ai/okou/compare/api-v2.109.0...api-v2.110.0) (2026-11-23)
+
+
+### Features
+
+* persist presentation output format preference ([#50220](https://github.com/okou-ai/okou/issues/50220)) ([c68256f](https://github.com/okou-ai/okou/commit/c68256fc724a9baf19e9c099443be1a2d86b513e))
+
+
+### Bug Fixes
+
+* **api:** repair stale calendar and notion listener accounts ([#50218](https://github.com/okou-ai/okou/issues/50218)) ([fe10a84](https://github.com/okou-ai/okou/commit/fe10a84819276c22396cee7a1de7e31cc3385eb7))
+
+
+### Performance Improvements
+
+* **api:** narrow run startup sql projections ([#50236](https://github.com/okou-ai/okou/issues/50236)) ([42d9ddf](https://github.com/okou-ai/okou/commit/42d9ddf056b6df7bc9d7112e7f95b6034be2cb74))
+* **api:** narrow startup model and plan projections ([#50268](https://github.com/okou-ai/okou/issues/50268)) ([e1d3482](https://github.com/okou-ai/okou/commit/e1d34828328c22ee31c106d806d7b987fb85ed4f))
+* **api:** skip redundant incomplete chat history reads ([#50265](https://github.com/okou-ai/okou/issues/50265)) ([70488be](https://github.com/okou-ai/okou/commit/70488bef11ccc03ceb0251cd895fc9a3878f69a7))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.111.0
+    * @okouai/core bumped to 8.863.0
+    * @okouai/db bumped to 2.61.0
+    * @okouai/pi-agent-runtime bumped to 1.52.50
+
+## [2.109.0](https://github.com/okou-ai/okou/compare/api-v2.108.0...api-v2.109.0) (2026-11-23)
+
+
+### Features
+
+* **ios:** authorize strava through the installed app ([#50179](https://github.com/okou-ai/okou/issues/50179)) ([f98f068](https://github.com/okou-ai/okou/commit/f98f068841b3ff663dcf250beec2267eb5122f66))
+
+
+### Performance Improvements
+
+* **api:** advance captured run launch preparation ([#50219](https://github.com/okou-ai/okou/issues/50219)) ([54b522f](https://github.com/okou-ai/okou/commit/54b522f197475f6089cda41f179eaa29d16b234f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.110.0
+    * @okouai/core bumped to 8.862.1
+    * @okouai/db bumped to 2.60.1
+    * @okouai/pi-agent-runtime bumped to 1.52.49
+
+## [2.108.0](https://github.com/okou-ai/okou/compare/api-v2.107.0...api-v2.108.0) (2026-11-23)
+
+
+### Features
+
+* share hosted websites with accounts and email invitations ([#50054](https://github.com/okou-ai/okou/issues/50054)) ([124f0fd](https://github.com/okou-ai/okou/commit/124f0fdba68d55c83ac0723181cc6d0a3041afec))
+
+
+### Performance Improvements
+
+* **api:** gzip large runner dispatch bodies ([#50184](https://github.com/okou-ai/okou/issues/50184)) ([df24b62](https://github.com/okou-ai/okou/commit/df24b62fb3ef693aa8f3372624d4138477b93e40))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.109.0
+    * @okouai/core bumped to 8.862.0
+    * @okouai/db bumped to 2.60.0
+    * @okouai/pi-agent-runtime bumped to 1.52.48
+
+## [2.107.0](https://github.com/okou-ai/okou/compare/api-v2.106.0...api-v2.107.0) (2026-11-23)
+
+
+### Features
+
+* **app:** track suggestion card impressions and outcomes ([#50158](https://github.com/okou-ai/okou/issues/50158)) ([d1cb596](https://github.com/okou-ai/okou/commit/d1cb596036a9079ecd0eb85072610dce8d44f5fb))
+
+
+### Performance Improvements
+
+* **api:** prepare run launch resources before admission ([#50174](https://github.com/okou-ai/okou/issues/50174)) ([288d064](https://github.com/okou-ai/okou/commit/288d0649dda1e7cf22a90cb61944018da3596875))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.108.0
+    * @okouai/core bumped to 8.861.1
+    * @okouai/db bumped to 2.59.0
+    * @okouai/pi-agent-runtime bumped to 1.52.47
+
+## [2.106.0](https://github.com/okou-ai/okou/compare/api-v2.105.1...api-v2.106.0) (2026-11-23)
+
+
+### Features
+
+* **core:** expand artifact timing to staff workspaces ([#50130](https://github.com/okou-ai/okou/issues/50130)) ([c1660c4](https://github.com/okou-ai/okou/commit/c1660c425117954b973d5439ccee5f866079787b))
+* **ios:** add the native for you deck ([#50086](https://github.com/okou-ai/okou/issues/50086)) ([8ff411e](https://github.com/okou-ai/okou/commit/8ff411ea4757a12255c04401bcceb0b47246fd35))
+* **runner:** accept gzip direct dispatch bodies ([#50128](https://github.com/okou-ai/okou/issues/50128)) ([dcb3ce1](https://github.com/okou-ai/okou/commit/dcb3ce10bce5c4d9e8f7c27586b5ccb876fcf290))
+
+
+### Performance Improvements
+
+* **api:** consolidate suggestion validation and prefetch send checks ([#50131](https://github.com/okou-ai/okou/issues/50131)) ([5a0dc63](https://github.com/okou-ai/okou/commit/5a0dc6316ac1457cc1ee8220800ec3977dc0dec8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.107.0
+    * @okouai/core bumped to 8.861.0
+    * @okouai/db bumped to 2.58.17
+    * @okouai/pi-agent-runtime bumped to 1.52.46
+
 ## [2.105.1](https://github.com/okou-ai/okou/compare/api-v2.105.0...api-v2.105.1) (2026-11-23)
 
 

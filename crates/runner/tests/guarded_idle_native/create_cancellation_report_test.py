@@ -97,34 +97,11 @@ class CreateCancellationTests(unittest.TestCase):
     def test_every_ownership_data_clock_and_completion_field_is_required(self):
         original=copy.deepcopy(self.witnesses)
         self.witnesses=original
-        def leaves(value,path=()):
-            if isinstance(value,dict):
-                for key,item in value.items(): yield from leaves(item,path+(key,))
-            elif isinstance(value,list):
-                for index,item in enumerate(value): yield from leaves(item,path+(index,))
-            else: yield path,value
-        for index,event in enumerate(original[:6]):
-            for path,value in leaves(event):
-                node=event
-                for key in path[:-1]: node=node[key]
-                try:
-                    node[path[-1]]=(not value) if type(value) is bool else (-1 if type(value) is int else "corrupted")
-                    with self.subTest(index=index,path=path):
-                        with self.assertRaises((ValueError,KeyError,TypeError)): self.validate()
-                finally:
-                    node[path[-1]]=value
+        report_test.assert_scalar_refusals(self, original[:6], self.validate)
         self.validate()
 
     def test_missing_duplicate_identity_and_real_file_source_are_refused(self):
-        original=self.witnesses
-        for index in range(len(original)):
-            self.witnesses=original.copy()
-            self.witnesses.pop(index)
-            with self.assertRaises(ValueError): self.validate()
-        self.witnesses=original.copy()
-        self.validate()
-        self.witnesses.append(copy.deepcopy(original[-1]))
-        with self.assertRaises(ValueError): self.validate()
+        report_test.assert_witness_omission_and_duplication_refused(self)
 
 
 if __name__ == "__main__": unittest.main()

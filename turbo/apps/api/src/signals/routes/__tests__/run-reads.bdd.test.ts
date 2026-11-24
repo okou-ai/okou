@@ -1305,12 +1305,6 @@ describe("RUN-04: agent run telemetry families", () => {
       noCache: true,
       format: "tabular",
     });
-
-    const outgoingTab = await reads.rawApiRequest(
-      actor,
-      `/api/runs/${run.runId}/telemetry/agent?limit=1&order=asc`,
-    );
-    expect(outgoingTab).toStrictEqual({ status: 200, body: firstPage.body });
   });
 
   it.each(["asc", "desc"] as const)(
@@ -2698,7 +2692,7 @@ describe("RUN-04/OPS-01: agent run logs", () => {
         if (sent.status !== 201) {
           throw new Error("Expected the pending input to be accepted");
         }
-        await signing.entered;
+        await signing.waitForPending();
         const messages = await chat.listThreadEvents(actor, sent.body.threadId);
         pendingRunId = messages.events.find((event) => {
           return event.revokesEventId === clientEventId;

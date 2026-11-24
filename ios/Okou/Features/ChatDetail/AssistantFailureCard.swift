@@ -92,19 +92,12 @@ private struct FailureBillingCard: View {
 struct AssistantFailureCard: View {
   let state: AssistantFailureState
   @Bindable var conversation: ConversationStore
-  /// The provider's own error line from the same run, shown instead of the generic description.
+  /// The provider's own error line from the same run.
   var providerMessage: String?
   @State private var showsModels = false
 
-  private var copy: (title: String, description: String) {
-    let content = AssistantFailureCopy.content(state)
-    if let providerMessage {
-      return (content.title, providerMessage)
-    }
-    return content
-  }
-
   var body: some View {
+    let copy = AssistantFailureCopy.content(state, providerMessage: providerMessage)
     VStack(alignment: .leading, spacing: OkouSpace.md) {
       ChatCardHeader(
         title: copy.title,
@@ -139,7 +132,7 @@ struct AssistantFailureCard: View {
           OkouLoadErrorRow(message: error)
         }
       }
-      if let outputError = state.failure.outputError,
+      if state.recovery.kind != .billing, let outputError = state.failure.outputError,
         outputError != copy.description && !outputError.isEmpty
       {
         DisclosureGroup("Details") {
@@ -170,22 +163,11 @@ struct AssistantFailureCard: View {
 
   @ViewBuilder private var actions: some View {
     if state.recovery.kind == .billing {
-      if let billing = state.billing {
-        if billing.canManageBilling && !billing.hasCredits {
-          Link(
-            billing.canBuyCredits ? "Add credits" : "Upgrade to Pro",
-            destination: conversation.webURL.appending(queryItems: [
-              URLQueryItem(name: "settings", value: "billing"),
-              URLQueryItem(name: "billingView", value: billing.canBuyCredits ? "credits" : "plans")
-            ])
-          )
-          .buttonStyle(ChatCardButtonStyle())
-          .accessibilityIdentifier("failure-billing")
-        }
+      if state.billing != nil {
         Button("Check credits") { Task { await conversation.refreshFailureAccounts() } }
           .disabled(state.isBusy)
       } else if state.billingError == nil {
-        OkouLoadingRow("Checking billing permissions…")
+        OkouLoadingRow("Checking credits…")
       }
     } else {
       ViewThatFits(in: .horizontal) {
@@ -243,27 +225,39 @@ struct AssistantFailureCard: View {
 }
 
 enum AssistantFailureCopy {
-  static func content(_ state: AssistantFailureState) -> (title: String, description: String) {
+  static func billing(_ reason: ChatFailure.BillingReason) -> (title: String, description: String) {
+    switch reason {
+    case .insufficientCredits:
+      structured(.insufficientCredits)
+    case .planRestricted:
+      (
+        String(localized: "Plan restricted"),
+        String(localized: "This model is restricted by your plan.")
+      )
+    }
+  }
+
+  static func content(_ state: AssistantFailureState, providerMessage: String? = nil)
+    -> (title: String, description: String)
+  {
+    if let reason = state.failure.billingReason {
+      if reason == .insufficientCredits, state.billing?.hasCredits == true {
+        return (
+          String(localized: "Credits available", table: "RunFailures"),
+          String(localized: "You can continue chatting.", table: "RunFailures")
+        )
+      }
+      return billing(reason)
+    }
+    let copy = recoveryContent(state)
+    return (copy.title, providerMessage ?? copy.description)
+  }
+
+  private static func recoveryContent(_ state: AssistantFailureState) -> (
+    title: String, description: String
+  ) {
     let recovery = state.recovery
     let outputError = state.failure.outputError ?? ""
-    if recovery.kind == .billing {
-      guard let billing = state.billing else {
-        return state.isCurrent
-          ? ("Out of credits", "Checking billing permissions…")
-          : ("Workspace billing needs attention", "Check your workspace's plan or credit balance.")
-      }
-      if billing.hasCredits {
-        return ("Credits available", "Credits added. You can continue chatting.")
-      }
-      let title = billing.canBuyCredits ? "Out of credits" : "Upgrade to run"
-      let description =
-        billing.canManageBilling
-        ? (billing.canBuyCredits ? "Add credits to continue." : "Upgrade your plan to continue.")
-        : (billing.canBuyCredits
-          ? "Ask your workspace admin to add credits."
-          : "Ask your workspace admin to upgrade the plan.")
-      return (title, description)
-    }
     if recovery.kind == .usage {
       let title: String
       if !state.failure.isRunFailure, let framework = recovery.framework {

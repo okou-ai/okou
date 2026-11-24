@@ -162,6 +162,10 @@ impl DownloadTaskTelemetry {
         matches!(self.url_kind, DownloadUrlKind::Remote)
     }
 
+    pub(crate) fn is_artifact(self) -> bool {
+        self.archive_kind == ArchiveKind::Artifact
+    }
+
     pub(crate) fn remote_metrics(self) -> Option<RemoteArchiveTaskMetrics> {
         self.is_remote().then(RemoteArchiveTaskMetrics::default)
     }

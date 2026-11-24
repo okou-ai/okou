@@ -7,6 +7,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { chatThreadConnectorSelectionContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatConnectorAccessRoutes } from "../chat-connector-access";
 import {
   workflowAutomationsContract,
@@ -732,6 +733,68 @@ async function completeRunThroughSandbox(
 }
 
 describe("POST /api/webhooks/gmail", () => {
+  it("skips a listener event when member access expires before queue admission", async () => {
+    configureGmailEnv();
+    configureGmailWatchMock();
+    await runsApi.configureRunnerGroup();
+    const { actor, workflowId } = await setupFixture();
+    const email = uniqueGmailEmail();
+    const connectionId = await connectGmail(actor, email);
+    await configureWorkspaceModelProvider(actor);
+    await updateFeatureSwitchesForUser(context, actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const expiresAt = now();
+    mockNow(expiresAt - 3_600_000);
+    await accept(
+      setupApp({ context, routes: chatConnectorAccessRoutes })(
+        chatConnectorAccessContract,
+      ).updateAccountPolicy({
+        headers: authHeaders(actor),
+        params: { connectionId },
+        body: {
+          target: { kind: "builtin", connectorSlug: "gmail" },
+          policy: "allow-1h",
+        },
+      }),
+      [200],
+    );
+    const automation = await accept(
+      automationsClient().create({
+        headers: authHeaders(actor),
+        params: { workflowId },
+        body: {
+          kind: "event",
+          eventType: "gmail-new-message",
+          eventConfig: { provider: "gmail", event: "new_message" },
+        },
+      }),
+      [201],
+    );
+    let messageRead = false;
+    configureGmailMessageMocks(email, "gmail-access-token", () => {
+      messageRead = true;
+      mockNow(expiresAt);
+      return Promise.resolve();
+    });
+    mockNow(expiresAt - 1);
+    const response = await postGmailWebhook(
+      gmailPushBody({
+        emailAddress: email,
+        historyId: 101,
+        messageId: "expired-listener-access",
+      }),
+    );
+    expectResponseStatus(response, 200);
+    expect(messageRead).toBeTruthy();
+    expect(response.body).toMatchObject({ dispatched: 0 });
+    await expect(
+      readAutomation(actor, automation.body.id),
+    ).resolves.toMatchObject({
+      lastRunAt: null,
+    });
+  });
+
   it("invalidates Gmail label ids when the selected account is replaced", async () => {
     configureGmailEnv();
     configureGmailWatchMock();

@@ -126,6 +126,7 @@ export function createThreadContext(
     pickedEvent$,
     templateOrgId$,
     sourceSettings.disabledPaidTools$,
+    sourceSettings.featureSwitches$,
     bootstrap,
   );
   const runIds$ = createRunIds();
@@ -155,7 +156,6 @@ export function createThreadContext(
   };
   const resources = createThreadInputResources(
     pickedEvent$,
-    bootstrap,
     integrations,
     inputSources,
   );
@@ -232,7 +232,6 @@ function createThreadModelContext(
 
 function createThreadInputResources(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
-  owner: { readonly userId: string; readonly orgId: string },
   integrations: ReturnType<typeof createThreadIntegrationContexts>,
   context: Pick<
     ThreadContext,
@@ -245,7 +244,7 @@ function createThreadInputResources(
     | "executionPackageSources$"
   >,
 ) {
-  const projectContext$ = createThreadProjectContext(pickedEvent$, owner);
+  const projectContext$ = createThreadProjectContext(pickedEvent$);
   const incompleteContext$ = createIncompletePrompt(pickedEvent$);
   const emailResources$ = computed(async (get) => {
     await Promise.allSettled([

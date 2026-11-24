@@ -10,7 +10,6 @@
     <string name="workflow_chat_finished">Execução do chat encerrada</string>
     <string name="workflow_clear_search">Limpar pesquisa</string>
     <string name="workflow_connect_provider">Conecte %1$s para ativar esta regra.</string>
-    <string name="workflow_connection_unavailable">Não foi possível abrir as conexões.</string>
     <string name="workflow_create_uncertain">Não foi possível confirmar a criação. Feche o editor e verifique as regras antes de tentar novamente.</string>
     <string name="workflow_creation_prompt">Ajude-me a criar um fluxo de trabalho privado. Use a habilidade workflow-setup. Pergunte qual tarefa quero repetir e mostre as instruções para eu confirmar antes de salvar. Crie uma automação só se eu pedir.</string>
     <string name="workflow_daily">Todos os dias</string>
@@ -44,6 +43,7 @@
     <string name="workflow_instructions_heading">Instruções do fluxo de trabalho</string>
     <string name="workflow_keep_editing">Continuar editando</string>
     <string name="workflow_load_failed">Não foi possível carregar os fluxos de trabalho</string>
+    <string name="workflow_rules_load_failed">Não foi possível carregar as regras de acionamento.</string>
     <string name="workflow_mail_from_contains">Remetente contém %1$s</string>
     <string name="workflow_mail_labeled">Marcador do Gmail aplicado</string>
     <string name="workflow_mail_received">Mensagem do Gmail recebida</string>
@@ -66,8 +66,6 @@
     <string name="workflow_notion_child">Subpágina do Notion criada</string>
     <string name="workflow_notion_item">Item de banco de dados do Notion criado</string>
     <string name="workflow_notion_updated">Página do Notion atualizada</string>
-    <string name="workflow_offline">Conecte-se para carregar os fluxos de trabalho</string>
-    <string name="workflow_offline_cache">Offline · Últimos dados carregados</string>
     <string name="workflow_offline_changes">Conecte-se para salvar. Suas alterações foram preservadas.</string>
     <string name="workflow_pause">Pausar</string>
     <string name="workflow_paused">Automações pausadas</string>
@@ -115,7 +113,6 @@
     <string name="workflow_history_event">Evento</string>
     <string name="workflow_history_failed">Não foi possível carregar o histórico de execuções</string>
     <string name="workflow_history_loading">Carregando histórico de execuções…</string>
-    <string name="workflow_history_offline">Conecte-se para carregar o histórico de execuções</string>
     <string name="workflow_history_open_chat">Abrir o chat de origem</string>
     <string name="workflow_history_unavailable">Histórico de execuções indisponível</string>
     <string name="workflow_run_pending">Pendente</string>

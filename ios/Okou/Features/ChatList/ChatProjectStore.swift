@@ -245,6 +245,18 @@ final class ChatProjectStore {
     return project != nil
   }
 
+  func setArchived(_ id: String, archived: Bool) async {
+    _ = await mutate(
+      key: id, payload: "archive:\(archived)",
+      body: { [service] eventID in
+        try await service.setArchived(id, archived: archived, eventID: eventID)
+      },
+      confirm: { [self] project in
+        if let index = projects.firstIndex(where: { $0.id == id }) { projects[index] = project }
+        await sync.persistProjects(projects)
+      })
+  }
+
   @discardableResult
   func delete(_ id: String) async -> Bool {
     let result = await mutate(

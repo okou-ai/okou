@@ -26,6 +26,34 @@ public struct ChatFailure: Equatable, Sendable {
   public enum Framework: String, Sendable { case codex, claude }
   public enum Window: Equatable, Sendable { case fiveHour, weekly, model, unknown }
 
+  public enum BillingReason: String, Sendable {
+    case insufficientCredits = "insufficient_credits"
+    case planRestricted = "pro_required"
+
+    public init?(diagnostic: String) {
+      // Older errors used an Okou headline followed by an optional web action on a new line.
+      let headline = diagnostic.trimmingCharacters(in: .whitespacesAndNewlines).prefix {
+        !$0.isNewline
+      }
+      switch headline {
+      case "Ask a workspace admin to add credits or upgrade the workspace plan.",
+        "Insufficient credits. This workspace has no spendable credits right now.",
+        "Insufficient credits. Add credits to continue.",
+        "Insufficient credits. Upgrade to Pro to continue.",
+        "Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.",
+        "API Error: 402 Insufficient credits. Add credits or connect a personal Codex or Claude subscription to continue.":
+        self = .insufficientCredits
+      default:
+        self.init(rawValue: headline.lowercased())
+      }
+    }
+  }
+
+  public var billingReason: BillingReason? {
+    if let outputError { return BillingReason(diagnostic: outputError) }
+    return reason == KnownRunFailureReason.insufficientCredits.rawValue ? .insufficientCredits : nil
+  }
+
   public struct Recovery: Equatable, Sendable {
     public let kind: Kind
     public let framework: Framework?
@@ -59,7 +87,7 @@ public struct ChatFailure: Equatable, Sendable {
     )
     let unsupported = Self.isUnsupportedCodexModel(error)
     let kind: Kind
-    if ["insufficient_credits", "pro_required"].contains(normalized.lowercased()) {
+    if billingReason != nil {
       kind = .billing
     } else if normalized == "This run reached its execution time limit."
       || normalized.range(

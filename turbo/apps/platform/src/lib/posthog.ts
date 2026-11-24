@@ -1,3 +1,4 @@
+import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { command, state } from "ccstate";
 import { posthog, type CaptureResult } from "posthog-js/dist/module.slim";
 import { isStandalonePwa } from "./keyboard-dismiss-gesture.ts";
@@ -597,5 +598,58 @@ export function captureChatWorkHistoryExpanded(args: {
     posthog.capture("chat_work_history_expanded", {
       work_status: args.workStatus,
     });
+  });
+}
+
+export type SuggestionImpression = Pick<
+  SuggestionPreset,
+  "suggestion_id" | "impression_id"
+>;
+export type SuggestionFeedbackKind =
+  | "already_done"
+  | "not_planned"
+  | "dont_nudge"
+  | "less_like_this"
+  | "dismissed";
+export type SuggestionDirection =
+  | (SuggestionImpression & { direction_type: "custom" })
+  | (SuggestionPreset & { direction_type: "preset" });
+
+type SuggestionEvent =
+  | {
+      eventName: "suggestion_card_shown";
+      properties: SuggestionImpression & {
+        option_ids: string[];
+        option_count: number;
+      };
+    }
+  | {
+      eventName: "suggestion_card_action_clicked";
+      properties:
+        | (SuggestionImpression & { action: "view_source" | "open_custom" })
+        | (SuggestionPreset & { action: "select_option" });
+    }
+  | {
+      eventName: "suggestion_card_feedback_recorded";
+      properties: SuggestionImpression & {
+        feedback_kind: SuggestionFeedbackKind;
+        operation: "apply" | "undo";
+      };
+    }
+  | {
+      eventName: "suggestion_card_message_sent";
+      properties: SuggestionDirection;
+    };
+
+export function captureSuggestionCard(
+  { eventName, properties }: SuggestionEvent,
+  eventId?: string,
+): void {
+  runPostHog(() => {
+    posthog.capture(
+      eventName,
+      { surface: "home_suggestions", ...properties },
+      eventId ? { uuid: eventId } : undefined,
+    );
   });
 }

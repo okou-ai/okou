@@ -1,3 +1,5 @@
+import type { UserMessageInputDocument } from "@okouai/api-contracts/contracts/chat-threads";
+import type { SuggestionPreset } from "@okouai/api-contracts/validators/chat-threads";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatThreadOrganizationPredicate } from "./chat-thread-organization.service";
 import type {
@@ -15,7 +17,8 @@ interface ChatThreadDraftWrite {
   readonly orgId: string;
   readonly chatThreadId: string;
   readonly userId: string;
-  readonly draftUserMessage: ChatThreadDraftUserMessage | null;
+  readonly draftUserMessage: UserMessageInputDocument | null;
+  readonly suggestionPreset?: SuggestionPreset;
   readonly draftAttachments: ChatThreadDraftAttachments | null;
 }
 
@@ -49,7 +52,16 @@ export const persistChatThreadDraft$ = command(
       signal.throwIfAborted();
       return;
     }
-    const draftUserMessage = repairUserMessageText(draft.draftUserMessage);
+    const document = repairUserMessageText(draft.draftUserMessage);
+    const draftUserMessage: ChatThreadDraftUserMessage = draft.suggestionPreset
+      ? {
+          version: 1,
+          parts: [
+            ...document.parts,
+            { type: "suggestion_preset", preset: draft.suggestionPreset },
+          ],
+        }
+      : document;
     await db
       .insert(chatThreadDrafts)
       .select(

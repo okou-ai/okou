@@ -430,7 +430,6 @@
       "close": "关闭",
       "closeArtifact": "关闭成果",
       "closeNamed": "关闭 {{title}}",
-      "closePreviewMenu": "关闭预览菜单",
       "download": "下载",
       "downloadArtifact": "下载成果",
       "downloadMarkdownAs": "下载为 {{format}}",
@@ -573,6 +572,28 @@
     "metadata": {
       "generated": "生成于 {{date}}",
       "updated": "更新于 {{date}}"
+    },
+    "people": {
+      "accounts": "匹配的工作区成员",
+      "anyone": "任何人",
+      "empty": "尚未邀请其他人。",
+      "hint": "邀请工作区外的用户？请输入对方的完整邮箱。",
+      "invitationProcessed": "分享邀请已处理",
+      "label": "分享给指定用户",
+      "noAccounts": "未找到匹配的工作区成员。请输入完整邮箱邀请。",
+      "placeholder": "姓名或邮箱地址",
+      "remove": "移除 {{email}} 的访问权限",
+      "removed": "已移除访问权限",
+      "restricted": "受邀人员",
+      "restrictedDescription": "仅你和受邀人员",
+      "searching": "正在搜索工作区成员…",
+      "searchUnavailable": "成员搜索暂时不可用，请稍后重试。",
+      "share": "邀请",
+      "updateUnavailable": "暂时无法更新分享设置，请稍后重试。",
+      "viewers": "有权访问的用户",
+      "workspace": "工作区",
+      "workspaceDescription": "{{organization}} 成员和受邀人员",
+      "workspaceDescriptionUnnamed": "工作区成员和受邀人员"
     },
     "preview": {
       "audioLabel": "{{filename}} 的音频预览",
@@ -1931,7 +1952,7 @@
       },
       "slashPanel": {
         "browseAll": "浏览全部模板",
-        "hint": "搜索工作流或选择模板…",
+        "hint": "选择一个操作",
         "useTemplate": "使用模板 {{title}}"
       },
       "temporarilySwitchTo": "临时切换到",
@@ -2128,6 +2149,12 @@
         },
         "inReview": "审核中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} 积分",
+            "confirm": "回去干活",
+            "description": "积分用来支付真正的工作：每一次运行、每一份成果、每一个按时间运行的工作流。",
+            "title": "今天这一步完成了"
+          },
           "connector": {
             "confirm": "浏览全部连接器",
             "connected": "已连接",
@@ -2561,13 +2588,6 @@
       "unsupported": "不支持手动重置；用量将自然恢复。"
     },
     "taskChips": {
-      "defaultOutputFormat": "默认输出格式",
-      "presentationFormat": "默认演示文稿格式",
-      "presentationFormatHint": "点击后保存为此浏览器的默认格式。",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {
@@ -2840,6 +2860,7 @@
       "storageFailed": "音频未能保存。只能使用已保存在此设备上的音频。",
       "textTakingShape": "文字正在成形",
       "transcribing": "正在转写",
+      "uploadingRecording": "正在上传录音…",
       "useRecording": "使用录音"
     },
     "walletAction": {
@@ -2971,6 +2992,7 @@
       "edit": "编辑",
       "grant": "授予",
       "reconnect": "重新连接",
+      "returnToOkou": "返回 Okou",
       "revoke": "撤销",
       "save": "保存",
       "saving": "正在保存…",
@@ -5145,6 +5167,7 @@
     }
   },
   "projects": {
+    "archiveProject": "归档",
     "back": "返回",
     "close": "Close",
     "collapse": "收起",
@@ -5153,7 +5176,7 @@
     "delete": "删除",
     "deleteChoiceDescription": "可以只删除 Project 并保留聊天，也可以同时删除其中的聊天。",
     "deleteError": "无法删除 Project",
-    "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天…",
+    "deleteProjectAndThreads_other": "删除 Project 和 {{count}} 个聊天",
     "deleteProjectOnly": "仅删除 Project",
     "deleteThreadsDescription_other": "永久删除此 Project 和 {{count}} 个聊天，包括归档聊天及其历史记录。正在运行的任务会停止，关联的自动化会暂停。此操作无法撤销。",
     "deleteThreadsError": "删除已停止。部分聊天可能已被永久删除，请检查 Project 和剩余聊天后再继续。",
@@ -5181,6 +5204,7 @@
     "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
+    "restoreProject": "恢复项目",
     "retryThreads": "重新加载聊天",
     "save": "保存",
     "saveError": "无法保存 Project",
@@ -6328,17 +6352,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "全部",
     "markAllRead": "全部标为已读",
     "noResults": "没有找到结果",
     "resultCount_other": "{{count}} 条结果",
     "searching": "搜索中…",
     "searchWorkspace": "搜索工作区…",
     "sections": {
-      "artifacts": "成果",
-      "chats": "聊天",
       "messages": "消息",
-      "workflows": "工作流"
+      "threads": "会话"
     }
   },
   "ssh": {

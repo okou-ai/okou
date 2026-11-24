@@ -23,10 +23,7 @@ export interface AcceptedMemoryMount {
     readonly writeback: true;
     readonly missingRootPolicy: "preserveParentVersion";
   };
-  readonly s3Key: string;
-  readonly archiveSize: number;
-  readonly fileCount: number;
-  readonly archiveCache: MemberMemoryHead["archiveCache"];
+  readonly head: MemberMemoryHead;
 }
 
 export function buildMemberMemoryMount(
@@ -46,47 +43,50 @@ export function buildMemberMemoryMount(
   if (!isMemberMemoryIdentity(mount) || mount.orgId === SYSTEM_ORG_ID) {
     throw new Error("Execution writeback requires member Memory");
   }
-  return {
-    mount,
-    s3Key: head.s3Key,
-    archiveSize: head.archiveSize,
-    fileCount: head.fileCount,
-    archiveCache: head.archiveCache,
-  };
+  return { mount, head };
 }
 
-interface ExecutionMemoryMount {
+export interface ExecutionMemoryMount {
   readonly mount: StoredStorageMountEntry;
   readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
 }
 
-/** Sign the accepted archive at dispatch time using its captured cache row. */
-export const prepareExecutionMemoryMount$ = command(
+interface ExecutionMemoryArchive {
+  readonly entry:
+    | { readonly empty: true }
+    | { readonly archiveUrl: string; readonly archiveSize?: number };
+  readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+}
+
+export function executionMemoryMount(
+  mount: AcceptedMemoryMount["mount"],
+  archive: ExecutionMemoryArchive,
+): ExecutionMemoryMount {
+  const { version, ...identity } = mount;
+  return {
+    mount: { ...identity, versionId: version, ...archive.entry },
+    cacheWrites: archive.cacheWrites,
+  };
+}
+
+/** Prepare the selected archive before the runner mount path is known. */
+export const prepareExecutionMemoryArchive$ = command(
   async (
     { get },
-    memory: AcceptedMemoryMount,
+    owner: MemberMemoryOwner,
+    head: MemberMemoryHead,
     signal: AbortSignal,
-  ): Promise<ExecutionMemoryMount> => {
+  ): Promise<ExecutionMemoryArchive> => {
     signal.throwIfAborted();
-    const { mount, s3Key, archiveSize, fileCount, archiveCache } = memory;
-    const identity = {
-      orgId: mount.orgId,
-      userId: mount.userId,
-      storageId: mount.storageId,
-      versionId: mount.version,
-      name: mount.name,
-      mountPath: mount.mountPath,
-      writeback: mount.writeback,
-      missingRootPolicy: mount.missingRootPolicy,
-    };
+    const { s3Key, archiveSize, fileCount, archiveCache, versionId } = head;
     if (fileCount === 0) {
-      return { mount: { ...identity, empty: true }, cacheWrites: [] };
+      return { entry: { empty: true }, cacheWrites: [] };
     }
     const request = readOnlyStorageSigningRequest({
       bucket: env("R2_USER_STORAGES_BUCKET_NAME"),
       objectKey: `${s3Key}/archive.tar.gz`,
-      storageVersionId: mount.version,
-      resolvedOrgId: mount.orgId,
+      storageVersionId: versionId,
+      resolvedOrgId: owner.orgId,
     });
     const signed = await signStoragePresignedUrls({
       requests: [request],
@@ -99,8 +99,7 @@ export const prepareExecutionMemoryMount$ = command(
       throw new Error("Prepared Memory archive URL is missing");
     }
     return {
-      mount: {
-        ...identity,
+      entry: {
         archiveUrl,
         ...(archiveSize > 0 ? { archiveSize } : {}),
       },

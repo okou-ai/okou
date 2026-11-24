@@ -48,14 +48,14 @@ def validate(directory):
             raise ValueError("physical rollback evidence missing")
         initial = steps[0]["evidence"]["published_status"]["idle_sandboxes"][0]
         history = canonical_uuid(value.get("original_history_run_id"))
-        if initial["reuse_key"] != "thread:native-guarded-"+history or history in runs:
+        if initial["reuse_key"] != report.GUARDED_IDLE_REUSE_KEY_PREFIX+history or history in runs:
             raise ValueError("physical rollback replaced original history")
         runs.add(history)
         started = batch.clock(value.get("started_ns"), steps[0]["monotonic_ns"], event["monotonic_ns"])
         cycles = value.get("cycles")
         if not isinstance(cycles, list) or len(cycles) != 2:
             raise ValueError("physical rollback requires both observed cycles")
-        expected_digest = hashlib.sha256((history.encode()*((65536+len(history)-1)//len(history)))[:65536]).hexdigest()
+        expected_digest = hashlib.sha256(report.history_payload(history)).hexdigest()
         previous = started
         for cycle in cycles:
             if not isinstance(cycle, dict):
@@ -85,7 +85,7 @@ def validate(directory):
               "original_sandbox_id":initial["sandbox_id"],
               "original_backing_generation":steps[0]["backing_generation"],"reuse_key":initial["reuse_key"],
               "cycles":cycles,"revision":revision,"same_insertion":False,"restored_original":True,
-              "image_size_bytes":report.NATIVE_HOME_BYTES,"payload_bytes":65536,"allocated":[2,4096,1],
+              "image_size_bytes":report.NATIVE_HOME_BYTES,"payload_bytes":report.HISTORY_PAYLOAD_BYTES,"allocated":[2,4096,1],
               "provider_awaits_outside_pool_status":True}, "physical rollback changed its restored original")
     return {**result,"format":"native-batch-repark-report-v1","native_batch_repark_complete":True,
             "batch_aba_scope":"physical speculative rollback then logical insertion race and new guarded recovery",

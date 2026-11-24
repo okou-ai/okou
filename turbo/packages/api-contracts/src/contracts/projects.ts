@@ -64,7 +64,15 @@ export const projectsContract = c.router({
     path: "/api/projects/:id",
     headers: authHeadersSchema,
     pathParams: object({ id: uuid() }),
-    body: object({ eventId: uuid(), name: projectSchema.shape.name }).strict(),
+    body: object({
+      eventId: uuid(),
+      name: projectSchema.shape.name.optional(),
+      archived: boolean().optional(),
+    })
+      .strict()
+      .refine(({ name, archived }) => {
+        return (name === undefined) !== (archived === undefined);
+      }, "Provide a name or an archive state"),
     responses: { 200: projectSchema, ...errors },
   },
   delete: {

@@ -22,8 +22,19 @@ export const orgMembersMetadata = pgTable(
         sql`jsonb_typeof(${table.modelSettings}) = 'object' AND NOT jsonb_path_exists(${table.modelSettings}, '$.keyvalue() ? (@.key == "auto" || @.key == "okou-1.0" || @.key == "okou-1.0-pro" || @.key == "okou-1.0-max" || @.key starts with "@preset/")')`,
       ),
       check(
+        "org_members_metadata_recent_workflow_ids_check",
+        sql`${table.recentWorkflowIds} IS NULL OR (
+          jsonb_typeof(${table.recentWorkflowIds}) = 'array'
+          AND NOT jsonb_path_exists(${table.recentWorkflowIds}, '$[*] ? (@.type() != "string" || !(@ like_regex "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))')
+        )`,
+      ),
+      check(
         "chk_org_members_metadata_service_tier",
         sql`${table.serviceTier} IS NULL OR ${table.serviceTier} = 'priority'`,
+      ),
+      check(
+        "chk_org_members_metadata_presentation_format",
+        sql`${table.presentationFormat} IS NULL OR ${table.presentationFormat} IN ('html', 'pptx')`,
       ),
     ];
   },

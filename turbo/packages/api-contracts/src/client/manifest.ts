@@ -260,11 +260,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "data-router",
-    contracts: [
-      "dataRouterHistoryContract",
-      "dataRouterRequestContract",
-      "runDataRouterRequestContract",
-    ],
+    contracts: ["dataRouterHistoryContract", "runDataRouterRequestContract"],
   },
   {
     module: "debug-morning-brief",
@@ -357,6 +353,10 @@ export const clientDescriptorManifest = [
   {
     module: "host",
     contracts: ["hostContract"],
+  },
+  {
+    module: "hosted-site-sharing",
+    contracts: ["hostedSiteSharingContract"],
   },
   {
     module: "image-io-generate",

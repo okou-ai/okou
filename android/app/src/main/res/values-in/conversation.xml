@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">Antrean (%1$d)</string>
+    <string name="conversation_queue_empty">Tidak ada item dalam antrean</string>
+    <string name="conversation_queue_message">Pesan</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">Pesan · %d lampiran</item>
+    </plurals>
+    <string name="conversation_run_queued">Menunggu untuk dimulai</string>
     <string name="conversation_welcome">Apa yang ingin Anda kerjakan?</string>
     <string name="conversation_welcome_detail">Beri tahu Okou apa yang ingin Anda lakukan.</string>
     <string name="conversation_jump_latest">Ke pesan terbaru</string>
@@ -12,8 +19,12 @@
     <string name="conversation_reply_actions">Tindakan balasan</string>
     <string name="conversation_copy_reply">Salin balasan</string>
     <string name="conversation_reply_copied">Balasan disalin</string>
-    <string name="conversation_revoke">Tarik</string>
-    <string name="conversation_stop">Hentikan</string>
+    <string name="conversation_revoke">Tarik pesan dari antrean</string>
+    <string name="conversation_queue">Antrean</string>
+    <string name="conversation_queue_automation">Otomatisasi alur kerja</string>
+    <string name="conversation_skip_automation">Lewati otomatisasi ini</string>
+    <string name="conversation_withdraw_failed">Pesan tidak dapat ditarik</string>
+    <string name="conversation_skip_failed">Otomatisasi tidak dapat dilewati</string>
     <string name="conversation_find">Cari pesan</string>
     <string name="conversation_find_turns">Jelajahi giliran percakapan</string>
     <string name="conversation_find_empty">Tidak ada pesan untuk dicari</string>

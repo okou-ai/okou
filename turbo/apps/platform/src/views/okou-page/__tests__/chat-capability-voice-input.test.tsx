@@ -1,10 +1,21 @@
+import {
+  ATTACHMENT_THREAD_ID,
+  queryNamedButtons,
+  findNamedButton,
+  mockAttachmentChat,
+  mockPrivateUrlSequence,
+  userMessage,
+} from "./chat-attachment-test-helpers.ts";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
+import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import { artifactReferencePath } from "@okouai/api-contracts/contracts/artifact-references";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { voiceIoQuotaContract } from "@okouai/api-contracts/contracts/voice-io-quota";
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
@@ -343,3 +354,150 @@ test("Finish a provider no-speech response and preserve the input", async () => 
   await userEvent.type(currentComposer(), "New words", { skipClick: true });
   expect(normalizedComposerText()).toBe("New words");
 });
+
+test("Send a recording from the composer as a voice-only message", async () => {
+  const fileId = "b0000000-0000-4000-a000-000000000611";
+  const uploadUrl = "https://storage.example.test/private-voice";
+  mockPrivateUrlSequence(context, {
+    [fileId]: ["https://private-files.example/recording.wav"],
+  });
+  const filename = "Voice recording.wav";
+  const url = new URL(artifactReferencePath(fileId, filename), location.origin)
+    .href;
+  const submitted: unknown[] = [];
+  installRunChat({
+    onRunCreate: ({ userMessage }) => {
+      submitted.push(userMessage);
+    },
+  });
+  context.mocks.browser.voiceInput({ rms: 0.12 });
+  const dictationRequests: string[] = [];
+  context.mocks.http.post(
+    "*/api/voice-io/transcribe/segment",
+    ({ request }) => {
+      dictationRequests.push(request.url);
+      return HttpResponse.json({
+        transcript: "Unexpected dictation",
+        language: "en",
+      });
+    },
+  );
+  context.mocks.http.post("*/api/voice-io/polish/segments", ({ request }) => {
+    dictationRequests.push(request.url);
+    return HttpResponse.json({ text: "Unexpected dictation" });
+  });
+  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
+    return respond(200, {
+      switches: {},
+      effectiveSwitches: { composerVoiceMessages: true },
+    });
+  });
+  context.mocks.api(uploadsContract.preparePrivate, ({ body, respond }) => {
+    expect(body.requirePrivateArtifact).toBeTruthy();
+    expect(body.contentType).toBe("audio/wav");
+    return respond(200, {
+      id: fileId,
+      filename,
+      url,
+      contentType: body.contentType,
+      size: body.size,
+      uploadUrl,
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(uploadUrl, () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, ({ body, respond }) => {
+    return respond(200, {
+      id: body.id,
+      filename,
+      url,
+      contentType: "audio/wav",
+      size: 32_044,
+    });
+  });
+  await setupPage({ context, path: RUN_PATH });
+  click(await readyVoiceInput());
+  click(await activeVoiceDraftStopButton());
+  const composer = currentComposer();
+  const play = await findNamedButton("Play voice message", composer);
+  const [audio, metadata] = play.querySelectorAll("audio");
+  if (!audio || !metadata) {
+    throw new Error("Missing recording media");
+  }
+  vi.spyOn(audio, "play").mockResolvedValue();
+  vi.spyOn(audio, "pause").mockImplementation(() => {});
+  Object.defineProperty(metadata, "duration", { value: 12 });
+  fireEvent.durationChange(metadata);
+  await waitFor(() => {
+    expect(play).toHaveTextContent("0:12");
+  });
+  click(play);
+  click(await findNamedButton("Pause voice message", composer));
+  await findNamedButton("Play voice message", composer);
+  expect(submitted).toHaveLength(0);
+  click(await findEnabledButton("Send"));
+  await waitFor(() => {
+    expect(submitted).toStrictEqual([
+      { version: 1, parts: [{ type: "voice", clips: [{ fileId }] }] },
+    ]);
+  });
+  expect(dictationRequests).toHaveLength(0);
+});
+
+test.each(["Backspace", "Delete"] as const)(
+  "%s removes only the adjacent draft recording",
+  async (key) => {
+    const fileId = "b0000000-0000-4000-a000-000000000612";
+    const clip = { type: "voice" as const, clips: [{ fileId }] };
+    const reference = {
+      type: "chat_thread" as const,
+      threadId: ATTACHMENT_THREAD_ID,
+      titleSnapshot: "Project notes",
+    };
+    const text = { type: "text" as const, text: "Please summarize " };
+    const submitted: unknown[] = [];
+    mockAttachmentChat(context, {
+      draft: {
+        draftUserMessage: { version: 1, parts: [clip, text, clip, reference] },
+        draftAttachments: null,
+      },
+      onSendRequest: (body) => {
+        submitted.push(body.userMessage);
+      },
+    });
+    mockPrivateUrlSequence(context, {
+      [fileId]: ["https://private-files.example/recording.wav"],
+    });
+    await setupPage({ context, path: `/chats/${ATTACHMENT_THREAD_ID}` });
+    const editor = await screen.findByRole("textbox", { name: "Message" });
+    await waitFor(() => {
+      expect(queryNamedButtons("Play voice message", editor)).toHaveLength(2);
+    });
+    expect(queryNamedButtons("Remove voice draft", editor)).toHaveLength(0);
+    editor.focus();
+    placeCaret(editor, text.text, key === "Backspace" ? 0 : text.text.length);
+    document.dispatchEvent(new Event("selectionchange"));
+    fireEvent.keyDown(editor, {
+      key,
+      code: key,
+      keyCode: key === "Backspace" ? 8 : 46,
+    });
+    await waitFor(() => {
+      expect(queryNamedButtons("Play voice message", editor)).toHaveLength(1);
+    });
+    expect(editor).toHaveTextContent("Please summarize");
+    expect(editor).toHaveTextContent("Project notes");
+    click(await findEnabledButton("Send"));
+    await waitFor(() => {
+      expect(submitted).toStrictEqual([
+        userMessage(
+          key === "Backspace"
+            ? [text, clip, reference]
+            : [clip, text, reference],
+        ),
+      ]);
+    });
+  },
+);

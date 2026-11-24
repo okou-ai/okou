@@ -13,7 +13,6 @@ import { getHostedSiteShareScope } from "../../signals/hosted-site-sharing.ts";
 import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
 
 type ArtifactPreviewActionGroupProps = {
-  readonly enabled: boolean;
   readonly artifactId?: string;
   readonly children: ReactNode;
   readonly metadataPending?: boolean;
@@ -23,13 +22,6 @@ type ArtifactPreviewActionGroupProps = {
   readonly surface: "dialog" | "sidebar";
   readonly url: string;
 };
-
-export function ArtifactPreviewActionGroup({
-  enabled,
-  ...props
-}: ArtifactPreviewActionGroupProps) {
-  return enabled ? <ReadyArtifactPreviewActions {...props} /> : props.children;
-}
 
 function usePreviewActionPending(
   action$: Computed<Promise<unknown>> | undefined,
@@ -43,7 +35,7 @@ function usePreviewActionPending(
   );
 }
 
-function ReadyArtifactPreviewActions({
+export function ArtifactPreviewActionGroup({
   artifactId,
   children,
   metadataPending,
@@ -52,7 +44,7 @@ function ReadyArtifactPreviewActions({
   shareUrl,
   surface,
   url,
-}: Omit<ArtifactPreviewActionGroupProps, "enabled">) {
+}: ArtifactPreviewActionGroupProps) {
   const deletion = artifactPreviewDeletionScope(surface);
   const deletionSession = useGet(deletion.session$);
   const ownershipPending = usePreviewActionPending(

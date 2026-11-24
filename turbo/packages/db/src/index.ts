@@ -1,4 +1,6 @@
 import * as voiceTranscriptionSchema from "./schema/voice-transcription";
+import * as hostedSiteShareSchema from "./schema/hosted-site-share";
+import * as hostedSiteShareRateLimitSchema from "./schema/hosted-site-share-rate-limit";
 import * as larkOfficialAppTicketSchema from "./schema/lark-official-app-ticket";
 import * as phoneUseSchema from "./schema/phone-use";
 import * as marketingContentGrantSchema from "./schema/marketing-content-grant";
@@ -326,6 +328,8 @@ export const schema = {
   ...builtinConnectorDcrRegistrationSchema,
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
+  ...hostedSiteShareSchema,
+  ...hostedSiteShareRateLimitSchema,
   ...hostedSiteBrowserSessionSchema,
   ...artifactSchema,
   ...sharedThreadSchema,

@@ -89,6 +89,8 @@ import {
   createExecutionBundleCache,
   type AdmittedRunLaunch,
 } from "./direct-run-preparation.service";
+import type { ExecutionRuntimeResources } from "./execution-runtime-context";
+import { prepareExecutionNetworkPolicy$ } from "./run-execution-publication.service";
 import { selectExecutionContentBundles } from "./execution-content-bundle";
 import {
   prepareRunPackageMounts,
@@ -260,6 +262,8 @@ import {
 } from "./member-memory-head.service";
 import {
   buildMemberMemoryMount,
+  executionMemoryMount,
+  prepareExecutionMemoryArchive$,
   type AcceptedMemoryMount,
 } from "./execution-storage.service";
 
@@ -605,6 +609,13 @@ interface ThreadRunContext {
   readonly launchRecord: ClaimLaunchRecord;
 }
 
+interface RunResourcePreparation {
+  readonly memoryArchive: Promise<Awaited<
+    ReturnType<(typeof prepareExecutionMemoryArchive$)["write"]>
+  > | null>;
+  readonly networkPolicyInputs: ExecutionRuntimeResources["networkPolicyInputs"];
+}
+
 function claimCommitArguments(
   args: ThreadRunPersistenceArgs,
 ): ThreadRunContext["input"]["args"] {
@@ -787,12 +798,22 @@ export interface ThreadClaimRunObjects {
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
   readonly executionBundleCache$: ReturnType<typeof createExecutionBundleCache>;
   readonly prepareRunAdmission$: Command<
-    Promise<ThreadRunContext | null>,
+    {
+      readonly context: Promise<ThreadRunContext | null>;
+      readonly resources: RunResourcePreparation;
+    },
     [signal: AbortSignal]
   >;
   readonly admitRun$: Command<
-    Promise<PendingClaimRun | null>,
-    [context: ThreadRunContext, signal: AbortSignal]
+    {
+      readonly pending: Promise<PendingClaimRun | null>;
+      readonly resources: ExecutionRuntimeResources;
+    },
+    [
+      context: ThreadRunContext,
+      resources: RunResourcePreparation,
+      signal: AbortSignal,
+    ]
   >;
   readonly publishPendingRun$: Command<
     Promise<void>,
@@ -1869,7 +1890,6 @@ export function createThreadClaimRunObjects(
             modelProvider,
             modelProviderPermissions: runtime.providerPermissions,
             connectorEnvironment: runtime.connector.environment,
-            connectorNetworkPolicyInputs: runtime.connector.networkPolicyInputs,
             userTimezone: runPrompt.userTimezone,
           },
           apiStartTime: await get(runnerApiStartTime$),
@@ -2075,6 +2095,9 @@ export function createThreadClaimRunObjects(
     return ready && validSource;
   });
   // The pick captured Memory alongside the predecessor session binding.
+  const memoryHead$ = computed(async (get) => {
+    return decodeMemberMemoryHead((await get(preparation$)).memoryHead);
+  });
   const preparedMemory$ = computed(async (get) => {
     if (!(await get(resourceAllowed$))) {
       return null;
@@ -2084,7 +2107,7 @@ export function createThreadClaimRunObjects(
       return plan;
     }
     return {
-      head: decodeMemberMemoryHead((await get(preparation$)).memoryHead),
+      head: await get(memoryHead$),
     };
   });
   const runnerPackages$ = computed(async (get) => {
@@ -2144,7 +2167,7 @@ export function createThreadClaimRunObjects(
       },
     };
   });
-  const bundleHashes$ = computed(async (get) => {
+  const executionBundles$ = computed(async (get) => {
     const [automation, captureNetworkBodies] = await Promise.all([
       get(isAutomation$),
       get(captureNetworkBodiesGate$),
@@ -2171,11 +2194,9 @@ export function createThreadClaimRunObjects(
       }
     }
     const packagePlan = await get(runnerPackages$);
-    return isRouteError(packagePlan)
-      ? null
-      : packagePlan.packages.bundles.hashes;
+    return isRouteError(packagePlan) ? null : packagePlan.packages.bundles;
   });
-  const executionBundleCache$ = createExecutionBundleCache(bundleHashes$);
+  const executionBundleCache$ = createExecutionBundleCache(executionBundles$);
   /** The run token makes runner input a command; its result is passed on. */
   const prepareRunnerInput$ = command(
     async ({ get, set }, args: ThreadRunnerFacts, signal: AbortSignal) => {
@@ -2193,7 +2214,7 @@ export function createThreadClaimRunObjects(
       return {
         launch: prepareRunnerLaunch({
           args,
-          packages: packagePlan.packages,
+          packageMounts: packagePlan.packages.mounts,
           okouToken,
           disabledPaidTools,
         }),
@@ -2725,11 +2746,39 @@ export function createThreadClaimRunObjects(
       throw error;
     },
   );
-  const prepareRunAdmission$ = command(
-    async ({ get, set }, signal: AbortSignal) => {
-      const event = await get(pickedEvent$);
+  const prepareRunAdmission$ = command(({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const event = get(pickedEvent$);
+    const memoryArchive = (async () => {
+      const head = await get(memoryHead$);
+      return head
+        ? await set(prepareExecutionMemoryArchive$, memoryOwner, head, signal)
+        : null;
+    })();
+    const networkPolicyInputs = (async () => {
+      const picked = await event;
       signal.throwIfAborted();
-      if (!event) {
+      if (
+        !picked ||
+        (picked.contextType === "automation" &&
+          (await get(automationSource$)).kind === "rejected")
+      ) {
+        return null;
+      }
+      signal.throwIfAborted();
+      const connector = await get(connectorAdmission$);
+      signal.throwIfAborted();
+      return isRouteError(connector)
+        ? null
+        : await set(prepareExecutionNetworkPolicy$, {
+            connectorRuntimeTargets: connector.environment.runtimeTargets,
+            networkPolicyInputs: connector.networkPolicyInputs,
+          });
+    })();
+    const context = (async () => {
+      const picked = await event;
+      signal.throwIfAborted();
+      if (!picked) {
         return null;
       }
       const prepared = await settle(
@@ -2739,21 +2788,44 @@ export function createThreadClaimRunObjects(
       return prepared.ok
         ? prepared.value
         : await set(failRunAdmission$, prepared.error, signal);
-    },
-  );
+    })();
+    return { context, resources: { memoryArchive, networkPolicyInputs } };
+  });
   const admitRun$ = command(
-    async ({ get, set }, context: ThreadRunContext, signal: AbortSignal) => {
-      const committed = await settle(
-        set(
-          createRun$,
-          { claim, context, timing: get(claimRunTiming$) },
+    (
+      { get, set },
+      context: ThreadRunContext,
+      { memoryArchive, networkPolicyInputs }: RunResourcePreparation,
+      signal: AbortSignal,
+    ) => {
+      const memory = (async () => {
+        const { mount, head } = context.launch.memoryMount;
+        // Missing Memory is supplied by the initializer's accepted revision.
+        const archive =
+          (await memoryArchive) ??
+          (await set(
+            prepareExecutionMemoryArchive$,
+            memoryOwner,
+            head,
+            signal,
+          ));
+        signal.throwIfAborted();
+        return executionMemoryMount(mount, archive);
+      })();
+      const pending = (async () => {
+        const committed = await settle(
+          set(
+            createRun$,
+            { claim, context, timing: get(claimRunTiming$) },
+            signal,
+          ),
           signal,
-        ),
-        signal,
-      );
-      return committed.ok
-        ? committed.value
-        : await set(failRunAdmission$, committed.error, signal);
+        );
+        return committed.ok
+          ? committed.value
+          : await set(failRunAdmission$, committed.error, signal);
+      })();
+      return { pending, resources: { memory, networkPolicyInputs } };
     },
   );
   return {
@@ -2791,7 +2863,7 @@ interface PreparedRunnerLaunch {
   readonly profile: string;
   readonly reuseKey: string;
   readonly facts: AdmittedExecutionFacts;
-  readonly packages: AdmittedRunLaunch["packages"];
+  readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly memoryMount: AcceptedMemoryMount;
 }
 
@@ -3038,11 +3110,10 @@ function prepareAtomicLaunchPersistence(
   const rowsArgs = preparedLaunchRowsArgs(commit);
   return {
     rows: { rowsArgs, metadata: launchRunMetadataValues(rowsArgs) },
-    diagnosticRegistrationPayload:
-      agentRunConnectorDiagnosticRegistrationPayloadSchema.parse({
-        version: 1,
-        targets: commit.launch.facts.connectorEnvironment.runtimeTargets,
-      }),
+    diagnosticRegistrationPayload: {
+      version: 1,
+      targets: [...commit.launch.facts.connectorEnvironment.runtimeTargets],
+    },
   };
 }
 
@@ -3268,7 +3339,6 @@ interface ThreadRunnerFacts {
     | "modelProvider"
     | "modelProviderPermissions"
     | "connectorEnvironment"
-    | "connectorNetworkPolicyInputs"
     | "userTimezone"
   >;
   readonly nativeContinuation: ChatThreadContinuation["executionSnapshot"]["nativeContinuation"];
@@ -3282,7 +3352,7 @@ interface ThreadRunnerFacts {
 /** Capture selectors and request receipts; admitted preparation assembles runtime input. */
 function prepareRunnerLaunch(input: {
   readonly args: ThreadRunnerFacts;
-  readonly packages: AdmittedRunLaunch["packages"];
+  readonly packageMounts: AdmittedRunLaunch["packageMounts"];
   readonly okouToken: string;
   readonly disabledPaidTools: readonly PaidToolId[];
 }): Omit<PreparedRunnerLaunch, "memoryMount"> {
@@ -3306,7 +3376,7 @@ function prepareRunnerLaunch(input: {
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
-    packages: input.packages,
+    packageMounts: input.packageMounts,
   };
 }
 
@@ -3533,15 +3603,8 @@ function admittedRunLaunch(
       reasoningEffort: metadata.reasoningEffort,
       codexServiceTier: metadata.codexServiceTier,
     },
-    memoryMount: args.launch.memoryMount,
-    packages: args.launch.packages,
-    facts: {
-      ...args.launch.facts,
-      connectorEnvironment: {
-        ...args.launch.facts.connectorEnvironment,
-        runtimeTargets: args.persistence.diagnosticRegistrationPayload.targets,
-      },
-    },
+    packageMounts: args.launch.packageMounts,
+    facts: args.launch.facts,
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,

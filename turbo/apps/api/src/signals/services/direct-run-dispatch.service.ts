@@ -15,16 +15,19 @@ import { API_INVOCATION_MAX_DURATION_SECONDS } from "../../lib/invocation-budget
 import { monotonicNow, now, nowDate } from "../../lib/time";
 import { apiStartTime$ } from "../context/hono";
 import {
+  gzipRunnerDispatchBody,
   postRunnerDispatch,
   reserveRunnerDispatch,
+  runnerDispatchEncoding,
 } from "../external/runner-ingress";
 import { failUnacceptedRun$ } from "./agent-run-terminal-transition.service";
 import {
   prepareDirectRun$,
   type AdmittedRunLaunch,
   type DirectRunCachePublication,
-  type ExecutionBundleCacheRead,
+  type ExecutionBundleUrlsRead,
 } from "./direct-run-preparation.service";
+import type { ExecutionRuntimeResources } from "./execution-runtime-context";
 import {
   selectDirectRunOwner$,
   readDirectRunState$,
@@ -65,22 +68,17 @@ export const prepareDirectRunDispatch$ = command(
   async (
     { set },
     input: AdmittedRunLaunch,
-    bundleCache: ExecutionBundleCacheRead,
+    bundleUrls: ExecutionBundleUrlsRead,
+    resources: ExecutionRuntimeResources,
     signal: AbortSignal,
   ): Promise<DirectRunDispatchPreparation> => {
     signal.throwIfAborted();
     const prepared = await settleIncludingAbort(async () => {
       const [publication, placement] = await joinAll([
-        set(prepareDirectRun$, input, bundleCache, signal),
+        set(prepareDirectRun$, input, bundleUrls, resources, signal),
         (async () => {
           const candidates = await set(readDirectRunCandidates$, input, signal);
           const candidatesReadyAt = monotonicNow();
-          const target = candidates[0];
-          if (target) {
-            safeSync(() => {
-              reserveRunnerDispatch(target, input.run.id, signal);
-            });
-          }
           return { candidates, candidatesReadyAt };
         })(),
       ]);
@@ -126,11 +124,28 @@ interface DispatchOffer extends SerializedDispatch {
   };
 }
 
+interface WireDispatchOffer extends Omit<DispatchOffer, "body"> {
+  readonly body: string | Uint8Array<ArrayBuffer>;
+  readonly gzipEncodeMs?: number;
+}
+
 const mayHaveTakenCustody = {
   busy: false,
   "not-delivered": false,
   unknown: true,
 } as const;
+
+function createDeliveryWindow(apiStartTime: number): DeliveryWindow {
+  // A queued input's latency marker can originate in an earlier invocation.
+  const notAfter = Math.min(
+    now() + 30_000,
+    apiStartTime + API_INVOCATION_MAX_DURATION_SECONDS * 1000 - 10_000,
+  );
+  return {
+    notAfter,
+    monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
+  };
+}
 
 function remainingDelivery(window: DeliveryWindow): number {
   return Math.min(
@@ -209,6 +224,53 @@ function failureInput(input: AdmittedRunLaunch, owner: DirectRunTarget | null) {
   };
 }
 
+async function encodeDispatchOffer(
+  offer: DispatchOffer,
+  window: DeliveryWindow,
+): Promise<WireDispatchOffer> {
+  if (
+    runnerDispatchEncoding(offer.bodyBytes) === "identity" ||
+    remainingDelivery(window) <= 0
+  ) {
+    return offer;
+  }
+  const gzip = await gzipRunnerDispatchBody(offer.body, offer.bodyBytes);
+  return {
+    ...offer,
+    body: gzip.bytes ?? offer.body,
+    gzipEncodeMs: gzip.elapsedMs,
+  };
+}
+
+function reserveFirstOffer(
+  target: DirectRunTarget,
+  runId: string,
+  bodyBytes: number,
+  signal: AbortSignal,
+) {
+  safeSync(() => {
+    reserveRunnerDispatch(
+      target,
+      runId,
+      signal,
+      runnerDispatchEncoding(bodyBytes),
+    );
+  });
+}
+
+function busyRetryRemaining(
+  observation: keyof typeof mayHaveTakenCustody,
+  busyRetry: DispatchOffer["busyRetry"],
+  finalAttempt: boolean,
+) {
+  if (observation !== "busy" || !busyRetry || finalAttempt) {
+    return undefined;
+  }
+  const remaining = busyRetry.until - now();
+  // A busy response sent during deferral can arrive after it expires.
+  return remaining > 0 ? remaining : busyRetry.retryAtExpiry ? 0 : undefined;
+}
+
 /** One process retains every ambiguous attempt until this original window ends. */
 const offerToProcess$ = command(
   async (
@@ -218,6 +280,7 @@ const offerToProcess$ = command(
       readonly runId: string;
       readonly body: SerializedDispatch;
       readonly envelope: DispatchEnvelope;
+      readonly preparedFirstOffer: WireDispatchOffer | undefined;
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly firstCandidateReadyAt: number | undefined;
@@ -228,20 +291,28 @@ const offerToProcess$ = command(
     let uncertain = false;
     let retry = 0;
     let firstCandidateReadyAt = args.firstCandidateReadyAt;
-    let offer: DispatchOffer | undefined;
-    for (;;) {
-      // Runner reconciles cancellation asynchronously after binding the supplied
-      // input. Check ownership immediately before the first offer and after waits.
-      const state = await set(readDirectRunState$, args.runId, signal);
-      if (!isCurrentOwner(state, args.target)) {
-        return uncertain ? ("uncertain" as const) : ("stopped" as const);
-      }
-      offer ??= createDispatchOffer(
-        args.envelope,
-        args.body,
-        args.target.preference,
+    const offer =
+      args.preparedFirstOffer ??
+      (await encodeDispatchOffer(
+        createDispatchOffer(
+          args.envelope,
+          args.body,
+          args.target.preference,
+          args.window,
+        ),
         args.window,
-      );
+      ));
+    signal.throwIfAborted();
+    let gzipEncodeMs = offer.gzipEncodeMs;
+    let checkOwner = args.preparedFirstOffer === undefined;
+    for (;;) {
+      if (checkOwner) {
+        const state = await set(readDirectRunState$, args.runId, signal);
+        if (!isCurrentOwner(state, args.target)) {
+          return uncertain ? ("uncertain" as const) : ("stopped" as const);
+        }
+      }
+      checkOwner = true;
       const remaining = remainingDelivery(args.window);
       if (remaining <= 0) {
         return uncertain ? ("uncertain" as const) : ("not-accepted" as const);
@@ -255,6 +326,7 @@ const offerToProcess$ = command(
           runId: args.runId,
           body: offer.body,
           bodyBytes: offer.bodyBytes,
+          gzipEncodeMs,
           serviceToken: args.token,
           timeoutMs: Math.min(15_000, remaining),
           firstRankedTarget: args.firstCandidateReadyAt !== undefined,
@@ -262,6 +334,7 @@ const offerToProcess$ = command(
         },
         signal,
       );
+      gzipEncodeMs = undefined;
       firstCandidateReadyAt = undefined;
       if (observation === "accepted") {
         return "accepted" as const;
@@ -270,19 +343,14 @@ const offerToProcess$ = command(
         return "not-accepted" as const;
       }
       uncertain ||= mayHaveTakenCustody[observation];
-      let busyRemaining = Infinity;
-      if (!uncertain) {
-        if (observation !== "busy" || !busyRetry || finalAttempt) {
-          return "not-accepted" as const;
-        }
-        busyRemaining = busyRetry.until - now();
-        if (busyRemaining <= 0) {
-          if (!busyRetry.retryAtExpiry) {
-            return "not-accepted" as const;
-          }
-          // A busy response sent during deferral can arrive after it expires.
-          continue;
-        }
+      const busyRemaining = uncertain
+        ? Infinity
+        : busyRetryRemaining(observation, busyRetry, finalAttempt);
+      if (busyRemaining === undefined) {
+        return "not-accepted" as const;
+      }
+      if (busyRemaining === 0) {
+        continue;
       }
       const wait = Math.min(
         remainingDelivery(args.window),
@@ -316,17 +384,7 @@ export const dispatchPreparedRun$ = command(
     let uncertain = false;
     const outcome = await settleIncludingAbort(async () => {
       const { executionContext, candidates } = args;
-      // A queued input's latency marker can originate in an earlier invocation.
-      const notAfter = Math.min(
-        now() + 30_000,
-        get(apiStartTime$) +
-          API_INVOCATION_MAX_DURATION_SECONDS * 1000 -
-          10_000,
-      );
-      const window = {
-        notAfter,
-        monotonicDeadline: performance.now() + Math.max(0, notAfter - now()),
-      };
+      const window = createDeliveryWindow(get(apiStartTime$));
       const token = `${OFFICIAL_RUNNER_TOKEN_PREFIX}${env("OFFICIAL_RUNNER_SECRET")}`;
       for (const target of candidates) {
         if (remainingDelivery(window) <= 0) {
@@ -336,11 +394,23 @@ export const dispatchPreparedRun$ = command(
           runnerId: target.runnerId,
           heartbeatGeneration: target.heartbeatGeneration,
           profile: input.profile,
-          notAfter,
+          notAfter: window.notAfter,
           executionContext,
         };
         const body = serializeDispatch(envelope);
         if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
+          break;
+        }
+        if (owner === null) {
+          reserveFirstOffer(target, input.run.id, body.bodyBytes, signal);
+        }
+        // Finish ordinary first-send preparation before the conditional write.
+        // The Runner reconciles cancellations committed after that write.
+        const preparedFirstOffer =
+          owner === null && !target.preference
+            ? await encodeDispatchOffer(body, window)
+            : undefined;
+        if (preparedFirstOffer && remainingDelivery(window) <= 0) {
           break;
         }
         const selected = await set(
@@ -374,6 +444,7 @@ export const dispatchPreparedRun$ = command(
             runId: input.run.id,
             body,
             envelope,
+            preparedFirstOffer,
             token,
             window,
             firstCandidateReadyAt: firstOwner

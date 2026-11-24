@@ -300,7 +300,7 @@ export const clientContractImportManifest = [
       {
         name: "chatThreadDraftSchema",
         source: "validators/chat-threads",
-        imported: "composerDraftSchema",
+        imported: "chatThreadDraftSchema",
       },
       {
         name: "chatThreadEventSchema",
@@ -789,11 +789,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "data-router",
-    contracts: [
-      "dataRouterHistoryContract",
-      "dataRouterRequestContract",
-      "runDataRouterRequestContract",
-    ],
+    contracts: ["dataRouterHistoryContract", "runDataRouterRequestContract"],
     bindings: [],
   },
   {
@@ -972,6 +968,11 @@ export const clientContractImportManifest = [
         imported: "isHostedSiteDocument",
       },
     ],
+  },
+  {
+    module: "hosted-site-sharing",
+    contracts: ["hostedSiteSharingContract"],
+    bindings: [],
   },
   {
     module: "image-io-generate",

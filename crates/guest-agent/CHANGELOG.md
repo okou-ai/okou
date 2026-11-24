@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.110.30](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.29...guest-agent-v0.110.30) (2026-11-24)
+
+## [0.110.29](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.28...guest-agent-v0.110.29) (2026-11-23)
+
+## [0.110.28](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.27...guest-agent-v0.110.28) (2026-11-23)
+
+
+### Refactoring
+
+* **guest-agent:** share codex reasoning text traversal ([#50163](https://github.com/okou-ai/okou/issues/50163)) ([f5c5ac6](https://github.com/okou-ai/okou/commit/f5c5ac634155895e15fb803f6951da7e512a3380))
+
 ## [0.110.27](https://github.com/okou-ai/okou/compare/guest-agent-v0.110.26...guest-agent-v0.110.27) (2026-11-23)
 
 

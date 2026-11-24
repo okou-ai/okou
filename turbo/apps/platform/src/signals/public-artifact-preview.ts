@@ -1,6 +1,8 @@
 import { command, computed, state } from "ccstate";
 import { captureArtifactAction } from "../lib/posthog.ts";
 import { artifactDownloadType } from "../lib/artifact-download-type.ts";
+import { isZipArtifact } from "../lib/zip-artifact.ts";
+import { createZipArtifactPreviewScope } from "./zip-artifact-preview.ts";
 
 import type { ArtifactSignals } from "./chat-page/artifact-card-signals.ts";
 import { attachmentDownloadSource$ } from "./attachment-download-source.ts";
@@ -42,7 +44,17 @@ function storedArtifactPreview(
   const title = label.trim() || artifact.filename;
   const kind = artifact.kind;
   if (!isTextPreviewKind(kind)) {
-    return { title, preview: { ...base, kind } };
+    return {
+      title,
+      preview: {
+        ...base,
+        kind,
+        ...(kind === "file" &&
+        isZipArtifact(artifact.filename, artifact.contentType)
+          ? { zipPreview: createZipArtifactPreviewScope(base.resourceUrl$) }
+          : {}),
+      },
+    };
   }
   // Read the body through the credential the card already resolved: the URL
   // argument only applies when no resource is supplied.

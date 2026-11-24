@@ -29,13 +29,15 @@
     <string name="artifact_empty_type">此類別沒有成果</string>
     <string name="artifact_no_matches">沒有符合的成果</string>
     <string name="artifact_show_all">查看全部</string>
-    <string name="artifact_offline_cached">離線顯示已快取的成果</string>
-    <string name="artifact_offline_catalog">連上網路後可查看成果</string>
+    <string name="artifact_catalog_load_failed">暫時無法載入成果</string>
+    <string name="artifact_catalog_refresh_failed">暫時無法更新，顯示已載入的成果</string>
+    <string name="artifact_catalog_page_failed">暫時無法載入更多成果</string>
+    <string name="chat_resources_load_failed">暫時無法載入對話資料</string>
+    <string name="chat_resources_syncing">正在同步對話資料</string>
     <string name="artifact_access_denied">你無權存取此成果</string>
-    <string name="artifact_missing">此成果已無法使用</string>
-    <string name="artifact_unavailable">暫時無法載入</string>
     <string name="artifact_preview_unsupported">此檔案無法預覽</string>
-    <string name="artifact_online_preview">連上網路後可預覽</string>
+    <string name="artifact_preview_unavailable">暫時無法載入預覽</string>
+    <string name="artifact_preview_source_unavailable">來源無法使用</string>
     <string name="artifact_preview_only">僅供預覽</string>
     <string name="artifact_source_name">來源對話 · %1$s</string>
     <string name="artifact_view_source">查看來源對話</string>
@@ -47,4 +49,9 @@
     <string name="artifact_open_website">在瀏覽器中開啟</string>
     <string name="artifact_browser_unavailable">無法開啟瀏覽器</string>
     <string name="artifact_play_media">媒體播放</string>
+    <string name="artifact_catalog_access_denied">你無權存取此成果目錄</string>
+    <string name="artifact_catalog_missing">此成果目錄已無法使用</string>
+    <string name="chat_resources_related">關聯聊天</string>
+    <string name="chat_resources_related_load_failed">暫時無法載入關聯聊天</string>
+    <string name="chat_resources_related_access_lost">關聯聊天已無法使用</string>
 </resources>

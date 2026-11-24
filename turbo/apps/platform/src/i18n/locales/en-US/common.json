@@ -430,7 +430,6 @@
       "close": "Close",
       "closeArtifact": "Close artifact",
       "closeNamed": "Close {{title}}",
-      "closePreviewMenu": "Close preview menu",
       "download": "Download",
       "downloadArtifact": "Download artifact",
       "downloadMarkdownAs": "Download as {{format}}",
@@ -574,6 +573,28 @@
     "metadata": {
       "generated": "Generated {{date}}",
       "updated": "Updated at {{date}}"
+    },
+    "people": {
+      "accounts": "Matching workspace members",
+      "anyone": "Anyone",
+      "empty": "No one else has access yet.",
+      "hint": "Outside your workspace? Use their full email.",
+      "invitationProcessed": "Sharing invitation processed",
+      "label": "Share with people",
+      "noAccounts": "No workspace matches. Enter a full email to invite.",
+      "placeholder": "Name or email address",
+      "remove": "Remove access for {{email}}",
+      "removed": "Access removed",
+      "restricted": "Invited people",
+      "restrictedDescription": "Only you and invited people",
+      "searching": "Searching workspace members…",
+      "searchUnavailable": "Member search is temporarily unavailable. Try again shortly.",
+      "share": "Invite",
+      "updateUnavailable": "Could not update sharing. Try again shortly.",
+      "viewers": "People with access",
+      "workspace": "Workspace",
+      "workspaceDescription": "{{organization}} members and invited people",
+      "workspaceDescriptionUnnamed": "Workspace members and invited people"
     },
     "preview": {
       "audioLabel": "Audio preview for {{filename}}",
@@ -1937,7 +1958,7 @@
       },
       "slashPanel": {
         "browseAll": "Browse all templates",
-        "hint": "Search workflows or choose a template…",
+        "hint": "choose an action",
         "useTemplate": "Use template {{title}}"
       },
       "temporarilySwitchTo": "Temporarily switch to",
@@ -2137,6 +2158,12 @@
         },
         "inReview": "In review",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} credits",
+            "confirm": "Back to work",
+            "description": "Credits pay for the work itself: every run, every artifact, every workflow that runs on a schedule.",
+            "title": "Checked in for today"
+          },
           "connector": {
             "confirm": "Browse all connectors",
             "connected": "Connected",
@@ -2576,13 +2603,6 @@
       "unsupported": "Manual reset is not supported; usage recovers naturally."
     },
     "taskChips": {
-      "defaultOutputFormat": "Default output format",
-      "presentationFormat": "Default presentation format",
-      "presentationFormatHint": "Your choice becomes the default in this browser.",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {
@@ -2855,6 +2875,7 @@
       "storageFailed": "Audio could not be saved. Only audio already saved on this device is available.",
       "textTakingShape": "Text is taking shape",
       "transcribing": "Transcribing",
+      "uploadingRecording": "Uploading recording…",
       "useRecording": "Use recording"
     },
     "walletAction": {
@@ -2987,6 +3008,7 @@
       "edit": "Edit",
       "grant": "Grant",
       "reconnect": "Reconnect",
+      "returnToOkou": "Return to Okou",
       "revoke": "Revoke",
       "save": "Save",
       "saving": "Saving...",
@@ -5164,6 +5186,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archive",
     "back": "Back",
     "close": "Close",
     "collapse": "Collapse",
@@ -5172,8 +5195,8 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
@@ -5202,6 +5225,7 @@
     "removeFromNewChat": "Remove {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Restore project",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6350,7 +6374,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "All",
     "markAllRead": "Mark all read",
     "noResults": "No results found",
     "resultCount_one": "{{count}} result",
@@ -6358,10 +6381,8 @@
     "searching": "Searching...",
     "searchWorkspace": "Search workspace...",
     "sections": {
-      "artifacts": "Artifacts",
-      "chats": "Chats",
       "messages": "Messages",
-      "workflows": "Workflows"
+      "threads": "Threads"
     }
   },
   "ssh": {

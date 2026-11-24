@@ -5,7 +5,6 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-references";
 import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { chatThreadArtifactsContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
@@ -169,14 +168,11 @@ function mockPreview({
   });
 }
 
-async function openPreview(groupedActions = true) {
+async function openPreview() {
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: groupedActions,
-    },
   });
   click(await findNamedLink(report.title));
   return screen.findByTestId("artifact-sidebar");
@@ -190,33 +186,28 @@ function readyDownload(preview: HTMLElement) {
   });
 }
 
-test.each([{ groupedActions: false }, { groupedActions: true }] as const)(
-  "the sidebar places fullscreen after the separator with action grouping $groupedActions",
-  async ({ groupedActions }) => {
-    mockPreview();
-    const preview = await openPreview(groupedActions);
-    const download = await readyDownload(preview);
-    const lastArtifactAction = groupedActions
-      ? buttonNamed("More artifact actions", preview)
-      : download;
-    const separator = within(preview).getByRole("separator");
-    const fullscreen = buttonNamed("Enter fullscreen", preview);
-    const close = buttonNamed("Close artifact", preview);
-    expect(separator).toHaveAttribute("aria-orientation", "vertical");
-    expect(
-      lastArtifactAction.compareDocumentPosition(separator) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      separator.compareDocumentPosition(fullscreen) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(
-      fullscreen.compareDocumentPosition(close) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-  },
-);
+test("the sidebar places fullscreen after the separator", async () => {
+  mockPreview();
+  const preview = await openPreview();
+  await readyDownload(preview);
+  const lastArtifactAction = buttonNamed("More artifact actions", preview);
+  const separator = within(preview).getByRole("separator");
+  const fullscreen = buttonNamed("Enter fullscreen", preview);
+  const close = buttonNamed("Close artifact", preview);
+  expect(separator).toHaveAttribute("aria-orientation", "vertical");
+  expect(
+    lastArtifactAction.compareDocumentPosition(separator) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    separator.compareDocumentPosition(fullscreen) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    fullscreen.compareDocumentPosition(close) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
 
 test("replacing the sidebar from another chat waits for that chat's metadata", async () => {
   const leftThreadId = "b0000000-0000-4000-a000-000000000941";
@@ -315,9 +306,6 @@ test("replacing the sidebar from another chat waits for that chat's metadata", a
     context,
     path: `/chats/${leftThreadId}?sidebar=${rightThreadId}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ArtifactPreviewActionGroup]: true,
-    },
   });
   click(await findNamedLink(leftName));
   const firstPreview = await screen.findByTestId("artifact-sidebar");
@@ -371,7 +359,7 @@ test.each([{ first: "ownership" }, { first: "sharing" }] as const)(
   },
 );
 
-test("the %s waits for artifact metadata before choosing its actions", async () => {
+test("the sidebar waits for artifact metadata before choosing its actions", async () => {
   const metadata = context.mocks.deferred<void>();
   mockPreview({ metadataReady: metadata.promise });
   const preview = await openPreview();
@@ -385,7 +373,7 @@ test("the %s waits for artifact metadata before choosing its actions", async () 
   expect(buttonNamed("More artifact actions", preview)).toBeVisible();
 });
 
-test("the %s can close during action loading and reopen normally", async () => {
+test("the sidebar can close during action loading and reopen normally", async () => {
   const ownership = context.mocks.deferred<void>();
   mockPreview({ ownershipReady: ownership.promise });
   const preview = await openPreview();
@@ -404,7 +392,7 @@ test("the %s can close during action loading and reopen normally", async () => {
   await readyDownload(reopened);
 });
 
-test("the %s keeps Download separate from deletion and restores More focus on cancel", async () => {
+test("the sidebar keeps Download separate from deletion and restores More focus on cancel", async () => {
   const user = userEvent.setup({ delay: null });
   const browser = context.mocks.browser.blobDownload();
   let removed = false;
@@ -462,7 +450,7 @@ test("the %s keeps Download separate from deletion and restores More focus on ca
   });
 });
 
-test("a read-only %s offers link copy and Download without an empty management menu", async () => {
+test("a read-only sidebar offers link copy and Download without an empty management menu", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   mockPreview({ owned: false });
   const preview = await openPreview();

@@ -35,7 +35,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 
@@ -183,7 +182,6 @@ class AppUpdates(
     private val connectivityReady = CompletableDeferred<Unit>()
     private val persistence = Mutex()
     private var checkedAt = 0L
-    private var attemptedAt: Long? = null
     private var checkJob: Job? = null
     private var transferJob: Job? = null
     @Volatile private var transferTicket = 0L
@@ -253,17 +251,13 @@ class AppUpdates(
             connectivityReady.await()
             val snapshot = mutable.value
             if (snapshot.offline) return@launch
-            if (!manual) {
-                val time = now()
-                val lastAttempt = attemptedAt
-                if (lastAttempt != null && time - lastAttempt in 0 until 60_000) return@launch
-                if (
+            if (
+                !manual &&
                     !snapshot.needsRequiredRelease &&
-                        checkedAt > 0 &&
-                        time - checkedAt in 0 until 10.minutes.inWholeMilliseconds
-                )
-                    return@launch
-            }
+                    checkedAt > 0 &&
+                    now() - checkedAt in 0 until 10.minutes.inWholeMilliseconds
+            )
+                return@launch
             val info = readRelease() ?: return@launch
             val floor = higherMinimum(mutable.value.minimum, info.minimumSupportedVersion)
             val blocked =
@@ -288,20 +282,21 @@ class AppUpdates(
     }
 
     private suspend fun readRelease(): AndroidUpdates? {
+        var retries = 0
         while (true) {
-            attemptedAt = now()
             mutable.update { it.copy(check = UpdateCheck.Checking) }
             try {
                 return service.check().also { currentCoroutineContext().ensureActive() }
             } catch (error: Exception) {
                 currentCoroutineContext().ensureActive()
                 classify(error, UpdateProblem.Check)
-                val transient = error.isTemporaryNetworkFailure()
+                val retry = error.isTemporaryNetworkFailure() && retries < 2
                 mutable.update {
-                    it.copy(check = if (transient) UpdateCheck.Waiting else UpdateCheck.Failed)
+                    it.copy(check = if (retry) UpdateCheck.Waiting else UpdateCheck.Failed)
                 }
-                if (!transient) return null
-                delay(60_000)
+                if (!retry) return null
+                retries++
+                delay(3_000)
                 state.first { !it.offline }
             }
         }
@@ -344,7 +339,7 @@ class AppUpdates(
     }
 
     private suspend fun downloadSelected(release: AndroidUpdatesRelease, ticket: Long) {
-        var backoff = 5_000L
+        var retries = 0
         while (ticket == transferTicket) {
             try {
                 persist()
@@ -366,22 +361,18 @@ class AppUpdates(
                 currentCoroutineContext().ensureActive()
                 if (ticket != transferTicket) return
                 val failure = classify(error, UpdateProblem.Download)
-                val transient = error.isTemporaryNetworkFailure()
+                val retry = error.isTemporaryNetworkFailure() && retries < 2
                 mutable.update {
                     it.copy(
                         transfer =
-                            if (transient) UpdateTransfer.Waiting(release)
-                            else UpdateTransfer.Failed,
+                            if (retry) UpdateTransfer.Waiting(release) else UpdateTransfer.Failed,
                         problem = failure,
                     )
                 }
-                if (!transient) return
-                withTimeoutOrNull(backoff) {
-                    state.first { it.offline }
-                    state.first { !it.offline }
-                }
+                if (!retry) return
+                retries++
+                delay(3_000)
                 state.first { !it.offline }
-                backoff = (backoff * 2).coerceAtMost(60_000)
                 if (ticket != transferTicket) return
                 mutable.update {
                     it.copy(transfer = UpdateTransfer.Downloading(release), problem = null)

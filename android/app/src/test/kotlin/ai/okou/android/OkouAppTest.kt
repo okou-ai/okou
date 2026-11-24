@@ -52,7 +52,6 @@ import androidx.compose.ui.test.assertWidthIsEqualTo
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -322,7 +321,7 @@ class OkouAppTest {
         val retry =
             compose
                 .onNodeWithContentDescription(
-                    compose.activity.getString(R.string.updates_retry_download),
+                    compose.activity.getString(R.string.updates_download_failed),
                 )
                 .assertIsDisplayed()
         val actionBounds = retry.getUnclippedBoundsInRoot()
@@ -570,7 +569,7 @@ class OkouAppTest {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h520dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun newChatKeepsSendAndRetryReachableWhenTheAvailableHeightShrinks() {
+    fun newChatKeepsSendReachableWhenTheAvailableHeightShrinks() {
         val density = compose.activity.resources.displayMetrics.density
         compose.runOnIdle {
             windowSize.value = IntSize((400 * density).toInt(), (520 * density).toInt())
@@ -612,11 +611,6 @@ class OkouAppTest {
                 .config[SemanticsProperties.EditableText]
                 .text,
         )
-        // The fixture rejects thread creation, leaving the original command available to retry.
-        send.performClick()
-        val retry = hasText("Retry this same message") and isEnabled()
-        compose.waitUntilExactlyOneExists(retry, 10_000)
-        compose.onNode(retry).performScrollTo().assertIsDisplayed().assertIsEnabled()
     }
 
     @Test
@@ -719,7 +713,7 @@ class OkouAppTest {
         compose.onNodeWithText("Zeitzone").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithContentDescription("Zurück").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("Chats").assertIsDisplayed()
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Chats werden geladen…").assertIsDisplayed()
         initialListResponse.complete(Unit)
 

@@ -102,4 +102,13 @@
     <plurals name="connector_impact_count">
         <item quantity="other">%d 件のチャットでこのアカウントが明示的に選択されています。</item>
     </plurals>
+    <string name="chat_options_title">チャットオプション</string>
+    <string name="chat_options_settings">会話の設定</string>
+    <string name="chat_connector_scope">このチャットに適用されます。初期設定ではワークスペースの既定のアカウントを使用します。</string>
+    <string name="chat_connector_empty">このワークスペースには接続済みのアカウントがありません。</string>
+    <string name="chat_connector_manage">コネクターを管理</string>
+    <string name="chat_connector_restore_defaults">ワークスペースの既定値に戻す</string>
+    <string name="chat_connector_saving">コネクターの選択を保存中…</string>
+    <string name="chat_connector_save_failed">コネクターの選択を保存できませんでした。</string>
+    <string name="chat_connector_first_send_failed">コネクターの選択を適用できませんでした。チャットオプションで確認してから、このメッセージの送信を再試行してください。</string>
 </resources>

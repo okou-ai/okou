@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="conversation_queue_count">佇列（%1$d）</string>
+    <string name="conversation_queue_empty">目前沒有排隊項目</string>
+    <string name="conversation_queue_message">訊息</string>
+    <plurals name="conversation_queue_attachments">
+        <item quantity="other">訊息 · %d 個附件</item>
+    </plurals>
+    <string name="conversation_run_queued">排隊中</string>
     <string name="conversation_welcome">今天想推進什麼？</string>
     <string name="conversation_welcome_detail">把想做的事告訴 Okou。</string>
     <string name="conversation_jump_latest">回到最新</string>
@@ -12,8 +19,12 @@
     <string name="conversation_reply_actions">回覆操作</string>
     <string name="conversation_copy_reply">複製回覆</string>
     <string name="conversation_reply_copied">已複製回覆</string>
-    <string name="conversation_revoke">撤回</string>
-    <string name="conversation_stop">停止</string>
+    <string name="conversation_revoke">撤回排隊訊息</string>
+    <string name="conversation_queue">佇列</string>
+    <string name="conversation_queue_automation">工作流程自動化</string>
+    <string name="conversation_skip_automation">略過此次自動化</string>
+    <string name="conversation_withdraw_failed">未能撤回訊息</string>
+    <string name="conversation_skip_failed">未能略過自動化</string>
     <string name="conversation_find">尋找訊息</string>
     <string name="conversation_find_turns">按輪次瀏覽</string>
     <string name="conversation_find_empty">暫無可搜尋的訊息</string>

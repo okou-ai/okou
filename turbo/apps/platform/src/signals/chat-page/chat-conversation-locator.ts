@@ -87,6 +87,7 @@ export interface ChatConversationLocatorSignals {
   readonly engaged$: Computed<boolean>;
   /** The sampled turn sequence the ticks are drawn from. */
   readonly sampledTurns$: Computed<readonly LocatorTurn[]>;
+  readonly latestUserTurnId$: Computed<string | undefined>;
   /** Track the pointer's position along the tick scale. */
   readonly trackPointer$: Command<void, [number]>;
   readonly leaveRail$: Command<void, []>;
@@ -409,6 +410,10 @@ export function createChatConversationLocatorSignals({
       return get(engaged$);
     }),
     sampledTurns$,
+    latestUserTurnId$: computed((get) => {
+      // Sampling includes both endpoints of the complete transcript.
+      return get(sampledTurns$).at(-1)?.eventId;
+    }),
     trackPointer$,
     leaveRail$,
     jumpToPointer$,

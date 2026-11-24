@@ -25,6 +25,8 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -41,6 +43,7 @@ class MemberPreferencesModelTest {
             .TestAssistantRecoveryService(),
         ai.okou.android.chat.RealtimeService by ai.okou.android.TestRealtimeService(),
         ChatListService by TestChatService(),
+        ai.okou.android.chat.WorkspaceSearchService by ai.okou.android.EmptyWorkspaceSearchService,
         ai.okou.android.chat.ChatComposerService by ai.okou.android.TestChatComposerService() {
         override val artifacts: ArtifactService
             get() = error("Artifacts are outside this fixture")
@@ -64,6 +67,14 @@ class MemberPreferencesModelTest {
             accountId: String,
         ): ai.okou.android.api.generated.ActivatedModelAccount =
             error("Accounts are outside this fixture")
+
+        override suspend fun emailSubscription(): ai.okou.android.api.generated.EmailSubscription =
+            error("Email subscriptions are outside this fixture")
+
+        override suspend fun updateEmailSubscription(
+            subscribed: Boolean,
+        ): ai.okou.android.api.generated.EmailSubscriptionUpdate =
+            error("Email subscriptions are outside this fixture")
 
         override suspend fun sendControl(
             request: ai.okou.android.api.generated.SendRequest,
@@ -139,6 +150,36 @@ class MemberPreferencesModelTest {
     }
 
     @Test
+    fun preferenceRefreshKeepsConfirmedDataThroughTwoRetries() {
+        check { model, service, _ ->
+            val confirmed = model.uiState.value.confirmed
+            val attempts = mutableListOf<Long>()
+            service.load = {
+                attempts += currentTime
+                throw ApiFailure.Http(503, null, null, null)
+            }
+            val started = currentTime
+            model.refresh()
+            advanceTimeBy(6_000)
+            assertEquals(listOf(started, started + 3_000), attempts)
+            assertEquals(PreferenceStatus.Refreshing, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+
+            runCurrent()
+            assertEquals(listOf(started, started + 3_000, started + 6_000), attempts)
+            assertEquals(PreferenceStatus.RefreshFailed, model.uiState.value.status)
+            assertEquals(confirmed, model.uiState.value.confirmed)
+            advanceTimeBy(60_000)
+            assertEquals(3, attempts.size)
+
+            service.load = { confirmed.copy(locale = UserPreferencesLocale.JA_JP) }
+            model.refresh()
+            runCurrent()
+            assertEquals(UserPreferencesLocale.JA_JP, model.uiState.value.confirmed.locale)
+        }
+    }
+
+    @Test
     fun absentPaletteAndUnavailableSavedLocaleHaveDisplayDefaultsWithoutAWrite() {
         val service =
             Service().apply {
@@ -159,6 +200,20 @@ class MemberPreferencesModelTest {
             assertTrue(api.requests.isEmpty())
             assertEquals(UserPreferencesLocale.JA_JP, api.stored.locale)
         }
+    }
+
+    @Test
+    fun missingServerTimezoneCanConfirmTheExistingLocalZone() = check { model, api, _ ->
+        val timezone = model.uiState.value.timezone
+        model.selectTimezone(timezone)
+        runCurrent()
+        assertTrue(api.requests.isEmpty())
+
+        model.selectTimezone(timezone, missingOnServer = true)
+        runCurrent()
+        assertEquals(listOf(timezone), api.requests.map { it.timezone })
+        assertEquals(timezone, model.uiState.value.confirmed.timezone)
+        assertEquals(1L, model.uiState.value.timezoneConfirmation)
     }
 
     @Test

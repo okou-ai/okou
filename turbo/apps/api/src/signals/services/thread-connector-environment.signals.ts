@@ -1,4 +1,7 @@
-import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import {
+  connectorRuntimeTargetsSchema,
+  type SecretConnectorMetadata,
+} from "@okouai/api-contracts/contracts/runners";
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import { expandVariablesInString } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
@@ -60,7 +63,13 @@ export function createConnectorAdmissionSignals(
         return await buildPreparedPermissionManifest(input);
       },
     );
-    const environment = connectorEnvironmentFromSnapshot(input, permissions);
+    const captured = connectorEnvironmentFromSnapshot(input, permissions);
+    const environment = {
+      ...captured,
+      runtimeTargets: connectorRuntimeTargetsSchema.parse(
+        captured.runtimeTargets,
+      ),
+    };
     const builtinTargets = environment.runtimeTargets.some((target) => {
       return target.kind === "builtin";
     });

@@ -16,7 +16,7 @@ const context = testContext();
 const { mockBillingCapabilities, mockPersonalModelRoutes } =
   createChatComposerHelpers(context);
 
-const HINT = " Search workflows or choose a template…";
+const HINT = " choose an action";
 
 function slashHint(editor: HTMLElement): HTMLElement | null {
   // The visible copy is generated content, like the quoted-note placeholder.

@@ -42,21 +42,14 @@ reset_log() {
   : >"${tmp_dir}/gh.log"
 }
 
-# pull_request resolves through the API using the event's PR number.
-reset_log
-output="$(run_resolve env EVENT_NAME=pull_request PR_NUMBER=42 REPO=okou-ai/okou)"
-[ "$output" = "feat(api): title from the api for pr 42" ] ||
-  fail "pull_request should resolve the title from the api, got: $output"
-grep -q 'pr view 42 --repo okou-ai/okou --json title --jq .title' "${tmp_dir}/gh.log" ||
-  fail "pull_request should call gh pr view with the event pr number"
-
-# Regression guard: a stale payload title must never win over the live title.
-# This is the whole point of the check; a revert to a payload read fails here.
+# Resolve the live title using the event's PR number even when the payload is stale.
 reset_log
 output="$(run_resolve env EVENT_NAME=pull_request PR_NUMBER=42 REPO=okou-ai/okou \
   PR_TITLE="feat(api): Stale Title From The Event Payload")"
 [ "$output" = "feat(api): title from the api for pr 42" ] ||
-  fail "pull_request must ignore a payload title, got: $output"
+  fail "pull_request should resolve the title from the api, got: $output"
+grep -q 'pr view 42 --repo okou-ai/okou --json title --jq .title' "${tmp_dir}/gh.log" ||
+  fail "pull_request should call gh pr view with the event pr number"
 
 # merge_group resolves the pr number out of the queue ref.
 reset_log

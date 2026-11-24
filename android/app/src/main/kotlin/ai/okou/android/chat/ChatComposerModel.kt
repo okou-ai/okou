@@ -1,6 +1,8 @@
 package ai.okou.android.chat
 
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.connectors.ChatConnectorOverride
+import ai.okou.android.connectors.ConnectorService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
@@ -15,6 +17,7 @@ class ChatComposerModel(
     recovery: AssistantRecoveryModel? = null,
     history: ConversationHistoryModel? = recovery?.history,
     chatList: ChatListModel? = null,
+    connectors: ConnectorService? = null,
 ) : ViewModel() {
     private val connection =
         ChatComposerOwner.Connection(
@@ -26,6 +29,7 @@ class ChatComposerModel(
             recovery,
             history,
             chatList,
+            connectors,
         )
     private val owner = store.attach(identity, connection)
     val uiState = owner.uiState
@@ -36,7 +40,7 @@ class ChatComposerModel(
                 history.uiState.collect { state ->
                     val threadId = state.thread?.id ?: return@collect
                     val transcript = state.transcript ?: return@collect
-                    owner.reconcileMessages(connection, threadId, transcript.persistedIds)
+                    owner.reconcileMessages(connection, threadId, transcript)
                     if (recovery != null)
                         history.checkpoint(threadId)?.let {
                             owner.reconcileRecovery(connection, it)
@@ -56,6 +60,9 @@ class ChatComposerModel(
         owner.prefillNew(connection, prefix)
 
     fun edit(target: ComposerTarget, text: String) = owner.edit(connection, target, text)
+
+    internal fun editConnectorOverride(target: ComposerTarget, choice: ChatConnectorOverride?) =
+        owner.editConnectorOverride(connection, target, choice)
 
     fun send(target: ComposerTarget) = owner.send(connection, target)
 

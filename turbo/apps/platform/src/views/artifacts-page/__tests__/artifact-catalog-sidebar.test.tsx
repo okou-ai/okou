@@ -6,7 +6,10 @@ import {
   artifactReferencePath,
   artifactReferencesContract,
 } from "@okouai/api-contracts/contracts/artifact-references";
-import { screen, waitFor, within } from "@testing-library/react";
+import { hostContract } from "@okouai/api-contracts/contracts/host";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import { strToU8, zipSync } from "fflate";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -131,6 +134,62 @@ test("A routed website preview opens in the sidebar and Close returns to its cat
   ).resolves.toBeInTheDocument();
 });
 
+test("The catalog sidebar refreshes a private website after publication changes", async () => {
+  let version = 1;
+  const title = "Private release website";
+  mockCatalog({
+    ...artifact({ title, kind: "hosted-site" }),
+    kind: "hosted-site",
+    site: {
+      id: "f0000000-0000-4000-a000-000000000002",
+      slug: "private-release",
+      publicSlug: "private-release",
+      url: "https://private-release.okou.app/",
+      deploymentVersion: 1,
+      entrypoint: "index.html",
+      spaFallback: false,
+    },
+  });
+  context.mocks.api(hostContract.sitePreview, ({ respond }) => {
+    return respond(200, {
+      url: `https://pv-private-release-v${version}.okou.app/`,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    });
+  });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=hosted-site",
+    host: "app.okou.ai",
+  });
+  await waitFor(() => {
+    expect(context.mocks.ably.hasSubscription("artifact:changed")).toBeTruthy();
+  });
+  click(await findArtifactAction(title));
+  await expect(screen.findByTitle(`${title} preview`)).resolves.toHaveAttribute(
+    "src",
+    "https://pv-private-release-v1.okou.app/",
+  );
+
+  version = 2;
+  await act(() => {
+    context.mocks.ably.trigger("artifact:changed", { artifactId: ARTIFACT_ID });
+  });
+  await waitFor(() => {
+    expect(screen.getByTitle(`${title} preview`)).toHaveAttribute(
+      "src",
+      "https://pv-private-release-v2.okou.app/",
+    );
+  });
+  const sidebar = screen.getByTestId("artifact-sidebar");
+  click(getButtonByName("Close artifact", sidebar));
+  await expect(findArtifactAction(title)).resolves.toBeInTheDocument();
+  click(await findArtifactAction(title));
+  await expect(screen.findByTitle(`${title} preview`)).resolves.toHaveAttribute(
+    "src",
+    "https://pv-private-release-v2.okou.app/",
+  );
+});
+
 test("Binary artifacts open a download-capable sidebar instead of downloading on click", async () => {
   const browser = context.mocks.browser.blobDownload();
   mockCatalog(fileDetail("release-bundle.zip", "application/zip"));
@@ -146,6 +205,77 @@ test("Binary artifacts open a download-capable sidebar instead of downloading on
   expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
   expect(browser.downloads).toHaveLength(0);
   expect(screen.queryByTestId("attachment-lightbox")).not.toBeInTheDocument();
+});
+
+test("A ZIP lists nested files and opens a selected entry in the existing preview", async () => {
+  const archive = zipSync({
+    "docs/notes.txt": strToU8("Notes from inside the archive"),
+    "docs/report.md": strToU8("# Inside the release report"),
+    "index.html": strToU8("<p>Website source</p>"),
+  });
+  const detail = fileDetail("release-bundle.zip", "application/zip");
+  mockCatalog({
+    ...detail,
+    file: { ...detail.file, size: archive.byteLength },
+  });
+  context.mocks.http.get(detail.file.url, () => {
+    return new HttpResponse(archive.slice().buffer, {
+      headers: { "Content-Type": "application/zip" },
+    });
+  });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+    featureSwitches: { [FeatureSwitchKey.ZipArtifactPreview]: true },
+  });
+
+  click(await findArtifactAction("release-bundle.zip"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  const notes = await within(preview).findByText("docs/notes.txt");
+  expect(within(preview).getByText("index.html").closest("button")).toBeNull();
+  expect(
+    within(preview).queryByText("Notes from inside the archive"),
+  ).not.toBeInTheDocument();
+  click(notes);
+  await expect(
+    within(preview).findByText("Notes from inside the archive"),
+  ).resolves.toBeInTheDocument();
+  click(within(preview).getByText("docs/report.md"));
+  await expect(
+    within(preview).findByRole("heading", {
+      name: "Inside the release report",
+    }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    within(preview).queryByText("Notes from inside the archive"),
+  ).not.toBeInTheDocument();
+  expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
+});
+
+test("A ZIP larger than 5 MiB keeps the download fallback without fetching the archive", async () => {
+  const detail = fileDetail("large.zip", "application/zip");
+  mockCatalog({
+    ...detail,
+    file: { ...detail.file, size: 5 * 1024 * 1024 + 1 },
+  });
+  let requests = 0;
+  context.mocks.http.get(detail.file.url, () => {
+    requests += 1;
+    return HttpResponse.text("Unexpected archive request");
+  });
+  await setupPage({
+    context,
+    path: "/artifacts?tab=file",
+    featureSwitches: { [FeatureSwitchKey.ZipArtifactPreview]: true },
+  });
+
+  click(await findArtifactAction("large.zip"));
+  const preview = await screen.findByTestId("artifact-sidebar");
+  await expect(
+    within(preview).findByText("No inline preview available for this file."),
+  ).resolves.toBeInTheDocument();
+  expect(getButtonByName("Download artifact", preview)).toBeInTheDocument();
+  expect(requests).toBe(0);
 });
 
 test("An avatar sidebar reuses the private video URL already shown by its card", async () => {

@@ -76,6 +76,28 @@ final class ChatDraftDocumentTests: XCTestCase {
       document)
   }
 
+  func testArtifactFeedbackSourcesSurviveRawDocumentRoundTrip() throws {
+    let data = Data(
+      #"""
+      {"version":1,"parts":[
+        {"type":"feedback","quote":"Original passage","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Original.md","artifactId":"artifact"}},
+        {"type":"feedback","quote":"Later passage","note":[],"source":{"type":"artifact","fileId":"file-a","filenameSnapshot":"Renamed.md"}}
+      ]}
+      """#.utf8)
+    let document = try JSONDecoder().decode(ChatDraftDocument.self, from: data)
+    let encoded = try JSONEncoder().encode(document)
+    let reopened = try JSONDecoder().decode(ChatDraftDocument.self, from: encoded)
+    XCTAssertEqual(reopened, document)
+    let message = try JSONDecoder().decode(ChatUserMessage.self, from: encoded)
+    try message.validate()
+    XCTAssertEqual(
+      message.bodyParts.map(\.source),
+      [
+        .artifact(fileId: "file-a", filenameSnapshot: "Original.md", artifactId: "artifact"),
+        .artifact(fileId: "file-a", filenameSnapshot: "Renamed.md", artifactId: nil)
+      ])
+  }
+
   func testUnsupportedPartsStayLosslessAndAreExplicitlyUnsupported() throws {
     let data = Data(
       #"{"version":2,"parts":[{"type":"future","nested":{"flag":true,"value":12.125,"null":null,"array":[1,"two"]}}]}"#

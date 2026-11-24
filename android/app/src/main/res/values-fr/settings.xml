@@ -1,5 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_email_updates">Actualités par e-mail</string>
+    <string name="settings_email_scope">Recevez les résumés, rappels et actualités de tous vos espaces de travail.</string>
+    <string name="settings_email_receive">Recevoir les e-mails</string>
+    <string name="settings_email_unavailable">E-mail indisponible</string>
+    <string name="settings_email_check_address">Vérifier l’adresse e-mail du compte</string>
+    <string name="settings_email_load_failed">Les paramètres d’e-mail sont temporairement indisponibles.</string>
+    <string name="settings_email_refresh_failed">Synchronisation impossible. Le dernier abonnement enregistré est affiché.</string>
+    <string name="settings_email_refreshing">Synchronisation de l’abonnement par e-mail</string>
+    <string name="settings_email_save_failed">Impossible de mettre à jour l’abonnement par e-mail.</string>
+    <string name="settings_email_save_unconfirmed">La mise à jour de l’abonnement par e-mail n’est pas encore confirmée.</string>
     <string name="settings_models">Modèles</string>
     <string name="settings_tools">Outils</string>
     <string name="settings_my_okou">Mon Okou</string>
@@ -29,7 +39,8 @@
     <string name="settings_account_select">Sélectionner</string>
     <string name="settings_account_reconnect">Reconnexion nécessaire</string>
     <string name="settings_account_switching">Changement en cours…</string>
-    <string name="settings_account_switch_failed">Impossible de changer de compte.</string>
+    <string name="settings_account_switch_unconfirmed">Changement non confirmé</string>
+    <string name="settings_account_switch_failed">Impossible de changer de compte de modèle.</string>
     <string name="settings_quota">Quota</string>
     <string name="settings_hour_quota">Quota de %1$d h</string>
     <string name="settings_day_quota">Quota de %1$d jours</string>
@@ -70,4 +81,27 @@
     <string name="settings_model_effort_extra">Très élevé</string>
     <string name="settings_model_effort_max">Maximum</string>
     <string name="settings_model_effort_ultra">Ultra</string>
+    <string name="settings_refreshing_model_accounts">Actualisation des comptes de modèles</string>
+    <string name="settings_refreshing_credit_balance">Actualisation du solde de crédits</string>
+    <string name="settings_proactive_services">Services proactifs</string>
+    <string name="settings_proactive_scope">Ces paramètres s’appliquent dans « %1$s ».</string>
+    <string name="settings_proactive_loading">Chargement des services proactifs</string>
+    <string name="settings_proactive_offline">Hors connexion. Connectez-vous pour modifier ce paramètre.</string>
+    <string name="settings_proactive_needs_timezone">Choisissez un fuseau horaire pour programmer l’envoi.</string>
+    <string name="settings_proactive_read_failed">Impossible de charger ce paramètre pour le moment.</string>
+    <string name="settings_proactive_refresh_failed">Échec de la synchronisation. Le dernier paramètre confirmé est affiché.</string>
+    <string name="settings_proactive_preparing">Préparation de la planification…</string>
+    <string name="settings_proactive_schedule_failed">Votre choix a été enregistré. Vérifiez la planification.</string>
+    <string name="settings_proactive_save_unconfirmed">L’enregistrement n’est pas encore confirmé.</string>
+    <string name="settings_morning_brief">Résumé matinal</string>
+    <string name="settings_morning_brief_detail">Livré avant 7 h dans le fuseau horaire choisi</string>
+    <string name="settings_morning_brief_save_failed">Impossible d’enregistrer le résumé matinal. Le paramètre précédent a été rétabli.</string>
+    <string name="settings_suggestions">Suggestions</string>
+    <string name="settings_suggestions_detail">Consulter le contenu connecté, mettre à jour votre profil et proposer des suggestions</string>
+    <string name="settings_suggestions_partial">Activation partielle</string>
+    <string name="settings_suggestions_hourly_only">Actuellement, seuls le contenu et le profil sont vérifiés et mis à jour.</string>
+    <string name="settings_suggestions_cards_only">Actuellement, seules les cartes de suggestions sont envoyées.</string>
+    <string name="settings_suggestions_enable_both">Activer les deux</string>
+    <string name="settings_suggestions_disable_both">Désactiver les deux</string>
+    <string name="settings_suggestions_save_failed">Impossible d’enregistrer les suggestions. Le paramètre précédent a été rétabli.</string>
 </resources>

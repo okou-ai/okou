@@ -120,6 +120,9 @@ export function createThreadDraftLoad(
       const removedUnavailableAttachments = await set(
         draft.seed$,
         {
+          suggestionDirection: threadDraft.suggestionPreset
+            ? { ...threadDraft.suggestionPreset, direction_type: "preset" }
+            : undefined,
           content: restoredDraft.content,
           userMessage: restoredDraft.userMessage,
           generationTemplate: undefined,

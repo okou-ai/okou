@@ -8,6 +8,7 @@ import ai.okou.android.SettingsPickerRow
 import ai.okou.android.SettingsRadioOptions
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
+import ai.okou.android.SettingsSheetDescription
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
@@ -21,7 +22,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
@@ -44,7 +44,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -131,7 +130,7 @@ internal fun MemberPreferencesSettings(
                 }
             }
             HorizontalDivider()
-            TimezonePicker(state?.timezone, model?.let { it::selectTimezone })
+            TimezonePicker(state?.timezone, model?.let { owner -> { owner.selectTimezone(it) } })
         }
         if (model != null && state != null && state.pending?.cloudBrowser == null) {
             PreferenceFeedback(state, model::retry)
@@ -166,7 +165,7 @@ private val commonTimezones =
     )
 
 @Composable
-private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
+internal fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     val title = stringResource(R.string.settings_timezone)
     SettingsPickerRow(
         title,
@@ -176,13 +175,7 @@ private fun TimezonePicker(current: String?, onSelect: ((String) -> Unit)?) {
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
         SettingsSheet(title, dismiss) {
-            Text(
-                stringResource(R.string.settings_timezone_hint),
-                Modifier.padding(horizontal = 8.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                style =
-                    MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 20.sp),
-            )
+            SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
             val options =
                 if (current in commonTimezones) commonTimezones
                 else

@@ -27,6 +27,7 @@ import ai.okou.android.chat.ChatReadPhase
 import ai.okou.android.chat.HistoryCursor
 import ai.okou.android.chat.HistoryEvent
 import ai.okou.android.chat.HistoryPage
+import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.cursor
 import ai.okou.android.preferences.MemberAppearance
 import ai.okou.android.updates.ControlledUpdates
@@ -397,7 +398,7 @@ class PendingWorkspaceRootTest {
     fun cacheMissWaitsForChatsInTheIdentifiedWorkspaceShell() {
         compose.runOnIdle { app.authorizationResponse.complete(Unit) }
         compose.waitUntil(10_000) { listState()?.listPhase == ChatReadPhase.Loading }
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         val empty = compose.activity.getString(R.string.chat_empty)
         compose.onNodeWithText(empty).assertDoesNotExist()
@@ -410,6 +411,38 @@ class PendingWorkspaceRootTest {
             compose.onAllNodesWithText(empty).fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
+    }
+
+    @Test
+    @Config(application = UncachedWorkspaceApplication::class)
+    fun aFastChatListReadShowsTheEmptyStateWithoutASkeleton() {
+        compose.onNodeWithTag("chat_list").assertExists()
+        val skeleton = compose.onNodeWithContentDescription("Loading chats…")
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.mainClock.advanceTimeBy(160)
+            skeleton.assertDoesNotExist()
+            compose.runOnIdle {
+                app.listResponse.complete(Unit)
+                app.authorizationResponse.complete(Unit)
+            }
+            compose.waitUntil(10_000) {
+                val state = listState()
+                state?.source == ChatListSource.Network &&
+                    state.projectsPhase == ChatReadPhase.Ready
+            }
+            val empty = compose.activity.getString(R.string.chat_empty)
+            compose.waitUntil(10_000) {
+                compose.mainClock.advanceTimeByFrame()
+                skeleton.assertDoesNotExist()
+                compose.onAllNodesWithText(empty).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.mainClock.advanceTimeBy(160)
+            compose.onNodeWithText(empty).assertIsDisplayed()
+            skeleton.assertDoesNotExist()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
     }
 
     @Test
@@ -431,7 +464,7 @@ class PendingWorkspaceRootTest {
     @Test
     fun authorizedCacheOpensChatAndSearchWhilePreferencesAndLiveChatsWait() {
         compose.onNodeWithTag("chat_list").assertExists()
-        compose.mainClock.advanceTimeBy(120)
+        compose.mainClock.advanceTimeBy(304)
         compose.onNodeWithContentDescription("Loading chats…").assertExists()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
         compose.onNodeWithContentDescription("Search workspace").assertDoesNotExist()
@@ -474,6 +507,33 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithContentDescription("Settings").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
+    }
+
+    @Test
+    fun workspaceSearchWaitsForAllIncludedScopesWhilePreferencesLoad() {
+        compose.runOnIdle { app.organizationResponse.complete(Unit) }
+        awaitCachedRow()
+        compose.onNodeWithContentDescription("Search workspace").performClick()
+        compose.onNodeWithTag("chat_search_query").performTextReplacement("unmatched term")
+        compose.waitUntil(10_000) {
+            val opening = sessionState().opening as? OpeningWorkspace.Authorized
+            (opening?.search?.results?.value?.messages as? SearchRead.Ready)?.rows?.isEmpty() ==
+                true
+        }
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithText("No matching results").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Searching…").assertExists()
+
+        compose.onNodeWithTag("search_type_Workflows").performClick()
+        compose.mainClock.advanceTimeBy(280)
+        compose.onNodeWithText("Couldn’t search workflows").assertDoesNotExist()
+        compose.onNodeWithContentDescription("Searching…").assertExists()
+
+        compose.onNodeWithTag("search_type_All").performClick()
+        compose.runOnIdle { app.preferencesResponse.complete(Unit) }
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("No matching results").fetchSemanticsNodes().isNotEmpty()
+        }
     }
 
     @Test

@@ -158,21 +158,6 @@ pub enum IdleParkCandidate {
 }
 
 impl IdleParkCandidate {
-    pub fn into_finalizing_handoff(
-        self,
-        successor_run_id: RunId,
-        predecessor_run_id: RunId,
-    ) -> super::entry::FinalizingHandoffCandidate {
-        match self {
-            Self::Ordinary(candidate) => {
-                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
-            }
-            Self::Immediate(candidate) => {
-                candidate.into_finalizing_handoff(successor_run_id, predecessor_run_id)
-            }
-        }
-    }
-
     pub fn with_last_completed_at(self, last_completed_at: String) -> Self {
         match self {
             Self::Ordinary(candidate) => {

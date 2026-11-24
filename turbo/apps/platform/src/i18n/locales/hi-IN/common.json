@@ -430,7 +430,6 @@
       "close": "बंद करना",
       "closeArtifact": "आर्टिफ़ैक्ट बंद करें",
       "closeNamed": "{{title}} बंद करें",
-      "closePreviewMenu": "पूर्वावलोकन मेनू बंद करें",
       "download": "डाउनलोड करना",
       "downloadArtifact": "आर्टिफ़ैक्ट डाउनलोड करें",
       "downloadMarkdownAs": "{{format}} के रूप में डाउनलोड करें",
@@ -574,6 +573,28 @@
     "metadata": {
       "generated": "{{date}} उत्पन्न किया गया",
       "updated": "{{date}} को अपडेट किया गया"
+    },
+    "people": {
+      "accounts": "मेल खाने वाले कार्यक्षेत्र सदस्य",
+      "anyone": "कोई भी",
+      "empty": "अभी किसी और के पास एक्सेस नहीं है।",
+      "hint": "कार्यक्षेत्र से बाहर के व्यक्ति को आमंत्रित करने के लिए उनका पूरा ईमेल दर्ज करें।",
+      "invitationProcessed": "साझा करने का आमंत्रण संसाधित किया गया",
+      "label": "लोगों के साथ साझा करें",
+      "noAccounts": "कोई सदस्य नहीं मिला। आमंत्रित करने के लिए पूरा ईमेल दर्ज करें।",
+      "placeholder": "नाम या ईमेल पता",
+      "remove": "{{email}} का ऐक्सेस हटाएँ",
+      "removed": "ऐक्सेस हटाया गया",
+      "restricted": "आमंत्रित लोग",
+      "restrictedDescription": "केवल आप और आमंत्रित लोग",
+      "searching": "कार्यक्षेत्र के सदस्य खोजे जा रहे हैं…",
+      "searchUnavailable": "सदस्यों की खोज अस्थायी रूप से उपलब्ध नहीं है। कुछ देर बाद फिर कोशिश करें।",
+      "share": "आमंत्रित करें",
+      "updateUnavailable": "साझा करने की सेटिंग अपडेट नहीं हो सकीं। कुछ देर बाद फिर कोशिश करें।",
+      "viewers": "ऐक्सेस वाले लोग",
+      "workspace": "कार्यक्षेत्र",
+      "workspaceDescription": "{{organization}} के सदस्य और आमंत्रित लोग",
+      "workspaceDescriptionUnnamed": "कार्यक्षेत्र के सदस्य और आमंत्रित लोग"
     },
     "preview": {
       "audioLabel": "{{filename}} के लिए ऑडियो पूर्वावलोकन",
@@ -1937,7 +1958,7 @@
       },
       "slashPanel": {
         "browseAll": "सभी टेम्पलेट देखें",
-        "hint": "वर्कफ़्लो खोजें या टेम्पलेट चुनें…",
+        "hint": "कोई कार्रवाई चुनें",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
       "temporarilySwitchTo": "अस्थायी रूप से इस पर स्विच करें",
@@ -2137,6 +2158,12 @@
         },
         "inReview": "समीक्षा में",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} क्रेडिट",
+            "confirm": "काम पर लौटें",
+            "description": "क्रेडिट असली काम के लिए लगते हैं: हर रन, हर आउटपुट, और शेड्यूल पर चलने वाला हर वर्कफ़्लो।",
+            "title": "आज का हिस्सा पूरा"
+          },
           "connector": {
             "confirm": "सभी कनेक्टर देखें",
             "connected": "कनेक्टेड",
@@ -2576,13 +2603,6 @@
       "unsupported": "मैन्युअल रीसेट समर्थित नहीं है; उपयोग अपने आप पुनः उपलब्ध होगा।"
     },
     "taskChips": {
-      "defaultOutputFormat": "डिफ़ॉल्ट आउटपुट प्रारूप",
-      "presentationFormat": "डिफ़ॉल्ट प्रस्तुति प्रारूप",
-      "presentationFormatHint": "आपका चयन इस ब्राउज़र में डिफ़ॉल्ट प्रारूप के रूप में सहेजा जाता है।",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
@@ -2855,6 +2875,7 @@
       "storageFailed": "ऑडियो सेव नहीं हो सका। केवल इस डिवाइस पर पहले से सेव ऑडियो उपलब्ध है।",
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
+      "uploadingRecording": "रिकॉर्डिंग अपलोड हो रही है…",
       "useRecording": "रिकॉर्डिंग इस्तेमाल करें"
     },
     "walletAction": {
@@ -2989,6 +3010,7 @@
       "edit": "संपादन करना",
       "grant": "अनुदान",
       "reconnect": "रिकनेक्ट",
+      "returnToOkou": "Okou पर वापस जाएँ",
       "revoke": "रद्द करना",
       "save": "बचाना",
       "saving": "सहेजा जा रहा है...",
@@ -5166,6 +5188,7 @@
     }
   },
   "projects": {
+    "archiveProject": "संग्रहित करें",
     "back": "Back",
     "close": "Close",
     "collapse": "संक्षिप्त करें",
@@ -5174,8 +5197,8 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
@@ -5204,6 +5227,7 @@
     "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "प्रोजेक्ट बहाल करें",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6352,7 +6376,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "सभी",
     "markAllRead": "सभी को पढ़ा दिखाएं",
     "noResults": "कोई परिणाम नहीं मिला",
     "resultCount_one": "{{count}} परिणाम",
@@ -6360,10 +6383,8 @@
     "searching": "खोज जारी है...",
     "searchWorkspace": "वर्कस्पेस में खोजें...",
     "sections": {
-      "artifacts": "आर्टिफ़ैक्ट्स",
-      "chats": "चैट",
       "messages": "संदेश",
-      "workflows": "वर्कफ़्लो"
+      "threads": "थ्रेड"
     }
   },
   "ssh": {

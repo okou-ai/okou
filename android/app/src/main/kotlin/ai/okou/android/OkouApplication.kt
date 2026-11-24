@@ -11,9 +11,11 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlJournalStore
+import ai.okou.android.chat.SearchRecentChatsStore
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
 import ai.okou.android.preferences.MemberAppearanceCache
 import ai.okou.android.settings.DefaultModelStore
+import ai.okou.android.settings.WorkspaceSettingsCache
 import ai.okou.android.updates.AndroidUpdateClient
 import ai.okou.android.updates.AppUpdates
 import ai.okou.android.updates.FileUpdateStore
@@ -63,6 +65,13 @@ open class OkouApplication : Application() {
             },
         )
     }
+    internal val searchRecents by lazy {
+        SearchRecentChatsStore(
+            PreferenceDataStoreFactory.create {
+                noBackupFilesDir.resolve("workspace-search-recents.preferences_pb")
+            },
+        )
+    }
     val memberAppearanceCache by lazy {
         MemberAppearanceCache({ noBackupFilesDir.resolve("member-appearance") })
     }
@@ -76,6 +85,12 @@ open class OkouApplication : Application() {
         )
     }
     open val instructionsDrafts by lazy { PersonalInstructionsDraftStore(this) }
+    internal val workspaceSettingsCache by lazy {
+        val storageScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        WorkspaceSettingsCache.create(storageScope) {
+            noBackupFilesDir.resolve("workspace-settings.preferences_pb")
+        }
+    }
     open val composerJournal by lazy { ComposerJournalStore(this) }
     open val runControlJournal by lazy { RunControlJournalStore(this) }
     val authentication by lazy { createAuthentication() }

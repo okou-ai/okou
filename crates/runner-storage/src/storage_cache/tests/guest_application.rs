@@ -1,10 +1,18 @@
 use super::phase_diagnostics::GatedResponse;
 use super::*;
+use sandbox_mock::MockSandboxOverrides;
 use std::sync::atomic::AtomicBool;
 
 #[tokio::test]
-async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
-    for cache_state in ["missing", "warm", "lock", "abort"] {
+async fn saturated_delivery_reuses_staged_slots_before_remaining_fresh_bodies() {
+    for (cache_state, guest_eligible, abort) in [
+        ("missing", true, false),
+        ("warm", true, false),
+        ("locked", true, false),
+        ("missing", true, true),
+        ("warm", true, true),
+        ("warm", false, false),
+    ] {
         let temp = tempfile::tempdir().unwrap();
         let home = home_at(&temp);
         let cache = decoded::DecodedCache::new(home.clone());
@@ -18,12 +26,21 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             .unwrap();
 
         let ordinary_url = "https://example.test/ordinary";
-        if cache_state == "warm" {
+        if matches!(cache_state, "warm" | "locked") {
             write_cached_archive(&home, "ordinary", "v1", &archive);
         }
-        if cache_state == "lock" {
-            write_storage_lock(&home, "ordinary", "v1");
-        }
+        let _writer = if cache_state == "locked" {
+            let lock::TryLock::Acquired(writer) =
+                lock::try_acquire_or_busy(home.storage_lock("ordinary", "v1"))
+                    .await
+                    .unwrap()
+            else {
+                panic!("ordinary writer is already held");
+            };
+            Some(writer)
+        } else {
+            None
+        };
         let mut storages = Vec::new();
         let mut requests = Vec::new();
         for index in 0..FRESH_DELIVERY_PER_RUN_LIMIT {
@@ -63,6 +80,15 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         .await
         .unwrap();
         assert_eq!(plan.decoded_mount_count(), 1);
+        if cache_state != "missing" {
+            // Seed the observed header delay without sleeping in this test.
+            let mut phase = FreshArchivePhaseGuard::new(
+                &delivery.phase_records,
+                STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+            );
+            phase.started_at -= FRESH_DELIVERY_SLOW_HEADERS;
+            phase.finish(Ok(()));
+        }
         let cancel = delivery.cancellation_token();
         let mut held_bodies = Vec::new();
         let mut servers = Vec::new();
@@ -81,7 +107,22 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         );
 
         let runtime = temp.path().join("runtime");
-        let sandbox = Arc::new(MockSandbox::new("saturated-archive-delivery"));
+        let marker_gate = MockLifecycleGate::new();
+        let overrides = Arc::new(MockSandboxOverrides::new());
+        if cache_state == "warm" && guest_eligible {
+            overrides.set_private_write_file_lifecycle_gate(marker_gate.clone());
+        }
+        let sandbox = Arc::new(MockSandbox::with_overrides(
+            "saturated-archive-delivery",
+            overrides.clone(),
+        ));
+        if !guest_eligible {
+            sandbox.push_exec_result(Ok(sandbox::ExecResult::new(
+                0,
+                b"false\n".to_vec(),
+                Vec::new(),
+            )));
+        }
         let (send, receive) = oneshot::channel();
         let application = GuestApplication::new(
             send,
@@ -110,10 +151,15 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             }
         });
 
-        let early = matches!(cache_state, "missing" | "abort");
-        if early {
-            held_bodies.remove(0).send(()).unwrap();
-        } else {
+        held_bodies.remove(0).send(()).unwrap();
+        if !guest_eligible {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while sandbox.storage_manifest_calls().is_empty() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
             for body in held_bodies.drain(..) {
                 body.send(()).unwrap();
             }
@@ -138,14 +184,40 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         };
         assert_eq!(ordinary.archive_url.as_deref(), Some(expected_url.as_str()));
         let readiness = input.initial.manifest.archive_readiness;
-        assert_eq!(readiness.is_some(), early);
+        assert_eq!(readiness.is_some(), guest_eligible);
         if let Some(readiness) = &readiness {
             assert_eq!(readiness.sources.len(), FRESH_DELIVERY_PER_RUN_LIMIT);
-            assert!(sandbox.write_files_calls().len() <= 1);
+            if cache_state == "warm" {
+                let paths = sandbox
+                    .write_files_calls()
+                    .into_iter()
+                    .flat_map(|batch| batch.files)
+                    .map(|file| file.path)
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    paths,
+                    [
+                        guest_archive_path("fresh-0", "v1"),
+                        guest_archive_path("ordinary", "v1"),
+                    ]
+                );
+                assert_eq!(
+                    admission.permits.available_permits(),
+                    FRESH_DELIVERY_RUNNER_LIMIT - FRESH_DELIVERY_PER_RUN_LIMIT + 1
+                );
+                marker_gate
+                    .wait_entered(1, Duration::from_secs(5))
+                    .await
+                    .unwrap();
+                marker_gate.release_one();
+                overrides.clear_private_write_file_lifecycle_gate();
+            } else {
+                assert!(sandbox.write_files_calls().len() <= 1);
+            }
             assert!(sandbox.private_write_files_calls().len() <= 1);
             assert!(!task.is_finished());
         }
-        if cache_state == "abort" {
+        if abort {
             cancel.cancel();
         } else {
             for body in held_bodies.drain(..) {
@@ -157,7 +229,25 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
             .await
             .unwrap()
             .unwrap();
-        if cache_state == "abort" {
+        if cache_state == "warm"
+            && let Some(readiness) = &readiness
+        {
+            let staged_url = format!("file://{}", guest_archive_path("fresh-0", "v1"));
+            let index = readiness
+                .sources
+                .iter()
+                .position(|url| *url == staged_url)
+                .unwrap();
+            let batches = sandbox.private_write_files_calls();
+            let [notice] = batches.first().unwrap().files.as_slice() else {
+                panic!("the first notice must publish the pre-staged body only");
+            };
+            assert_eq!(
+                Path::new(&notice.path),
+                readiness.ready_path(&runtime, index)
+            );
+        }
+        if abort {
             assert!(matches!(result, Err(RunnerError::Cancelled)));
             let abort = sandbox.private_write_file_calls();
             assert_eq!(abort.len(), 1);
@@ -194,7 +284,8 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
                     .collect::<Vec<_>>();
                 assert_eq!(published, expected);
             } else {
-                assert!(sandbox.storage_manifest_calls().is_empty());
+                assert_eq!(sandbox.storage_manifest_calls().len(), 1);
+                assert!(sandbox.private_write_files_calls().is_empty());
             }
         }
         assert_eq!(
@@ -206,6 +297,157 @@ async fn saturated_delivery_overlaps_only_untouched_ordinary_cache_slots() {
         }
         admission.shutdown().await;
     }
+}
+
+#[tokio::test]
+async fn saturated_cold_failure_cancels_delivery_during_a_cached_write() {
+    let temp = tempfile::tempdir().unwrap();
+    let home = home_at(&temp);
+    let cache = decoded::DecodedCache::new(home.clone());
+    let archive = tarball_bytes();
+    write_cached_archive(&home, "decoded", "v1", &archive);
+    write_storage_lock(&home, "decoded", "v1");
+    cache.warm_from_archive("decoded", "v1").await.unwrap();
+    write_cached_archive(&home, "warm", "v1", &archive);
+
+    let (reject, release) = oneshot::channel();
+    let mut rejecting_peer = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+        release,
+        response: http_response("404 Not Found", b""),
+    }])
+    .await;
+    let mut storages = vec![storage_entry_with_archive_size(
+        "/mnt/rejected".into(),
+        format!("{}/archive", rejecting_peer.url()),
+        "rejected",
+        "v1",
+        Some(archive.len() as u64),
+    )];
+    let mut cold_peers = Vec::new();
+    for index in 1..FRESH_DELIVERY_PER_RUN_LIMIT {
+        let peer = GatedResponse::start(archive.clone()).await;
+        let name = format!("cold-{index}");
+        storages.push(storage_entry_with_archive_size(
+            format!("/mnt/{name}"),
+            peer.url.clone(),
+            &name,
+            "v1",
+            Some(archive.len() as u64),
+        ));
+        cold_peers.push(peer);
+    }
+    for name in ["warm", "decoded"] {
+        storages.push(storage_entry(
+            format!("/mnt/{name}"),
+            format!("https://example.test/{name}"),
+            name,
+            "v1",
+        ));
+    }
+    let mut plan = plan_from_entries(storages, Vec::new(), None);
+    let admission = FreshArchiveDeliveryAdmission::new();
+    let mut telemetry = new_telemetry();
+    let delivery = prepare_fresh_archive_delivery(
+        &mut plan,
+        &home,
+        &admission,
+        &CancellationToken::new(),
+        &mut telemetry,
+        Some(&cache),
+    )
+    .await
+    .unwrap();
+    assert_eq!(plan.decoded_mount_count(), 1);
+    let mut phase = FreshArchivePhaseGuard::new(
+        &delivery.phase_records,
+        STORAGE_CACHE_FRESH_DELIVERY_HEADERS,
+    );
+    phase.started_at -= FRESH_DELIVERY_SLOW_HEADERS;
+    phase.finish(Ok(()));
+    let cancel = delivery.cancellation_token();
+
+    assert!(
+        rejecting_peer
+            .next_request("cold archive GET")
+            .await
+            .starts_with("GET /archive HTTP/1.1\r\n")
+    );
+    let mut pending_bodies = Vec::new();
+    let mut servers = Vec::new();
+    for peer in cold_peers {
+        tokio::time::timeout(Duration::from_secs(5), peer.requested)
+            .await
+            .unwrap()
+            .unwrap();
+        peer.headers.send(()).unwrap();
+        pending_bodies.push(peer.body);
+        servers.push(peer.task);
+    }
+    let sandbox = Arc::new(MockSandbox::new("saturated-cold-failure"));
+    let gate = MockLifecycleGate::new();
+    sandbox.set_write_file_lifecycle_gate(gate.clone());
+    let (send, receive) = oneshot::channel();
+    let application = GuestApplication::new(
+        send,
+        temp.path().join("runtime"),
+        "saturated-cold-failure".into(),
+        Duration::from_secs(300),
+        Arc::new(AtomicBool::new(false)),
+    )
+    .unwrap();
+    let task = tokio::spawn({
+        let sandbox = Arc::clone(&sandbox);
+        async move {
+            let mut prepared = PreparedStorage { plan, delivery };
+            let result = populate_cache_for_guest(
+                &mut prepared,
+                sandbox.as_ref(),
+                &home,
+                &mut telemetry,
+                &cache,
+                application,
+            )
+            .await;
+            cache.shutdown().await;
+            result
+        }
+    });
+
+    pending_bodies.remove(0).send(()).unwrap();
+    gate.wait_entered(1, Duration::from_secs(5)).await.unwrap();
+    gate.release_one();
+    gate.wait_entered(2, Duration::from_secs(5)).await.unwrap();
+    let writes = sandbox.write_files_calls();
+    assert_eq!(writes[1].files[0].path, guest_archive_path("warm", "v1"));
+    reject.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), cancel.cancelled())
+        .await
+        .expect("cold failure must cancel delivery before the cached write settles");
+    assert!(!task.is_finished());
+    gate.release_one();
+
+    let error = tokio::time::timeout(Duration::from_secs(5), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .err()
+        .expect("cold failure must fail population");
+    assert!(
+        error.to_string().contains("http-status (status=404)"),
+        "got: {error}"
+    );
+    assert!(receive.await.is_err());
+    assert_eq!(sandbox.write_files_calls().len(), 2);
+    assert!(sandbox.storage_manifest_calls().is_empty());
+    assert_eq!(
+        admission.permits.available_permits(),
+        FRESH_DELIVERY_RUNNER_LIMIT
+    );
+    rejecting_peer.assert_finished().await;
+    for server in servers {
+        server.finish().await;
+    }
+    admission.shutdown().await;
 }
 
 #[tokio::test]

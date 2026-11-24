@@ -34,6 +34,7 @@ data class ChatChanges(
     val readCursor: Boolean = false,
     val messageThreads: Set<String> = emptySet(),
     val detailThreads: Set<String> = emptySet(),
+    val artifactThreads: Set<String> = emptySet(),
 ) {
     operator fun plus(other: ChatChanges) =
         ChatChanges(
@@ -43,6 +44,7 @@ data class ChatChanges(
             readCursor || other.readCursor,
             messageThreads + other.messageThreads,
             detailThreads + other.detailThreads,
+            artifactThreads + other.artifactThreads,
         )
 }
 
@@ -67,6 +69,7 @@ internal fun chatChanges(topic: String?): ChatChanges? {
     return when (name) {
         "chatThreadMessageCreated" -> ChatChanges(messageThreads = setOf(id))
         "chatThreadDetailChanged" -> ChatChanges(detailThreads = setOf(id))
+        "chatArtifactCatalogChanged" -> ChatChanges(artifactThreads = setOf(id))
         else -> null
     }
 }

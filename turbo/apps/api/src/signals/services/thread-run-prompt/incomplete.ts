@@ -33,7 +33,7 @@ import type { PickedThreadInputEvent } from "./types";
 
 type IncompletePromptEvent = Pick<
   PickedThreadInputEvent,
-  "chatThreadId" | "contextType" | "thread"
+  "chatThreadId" | "contextType" | "preparation"
 >;
 
 type IncompleteRunStatus = "cancelled" | "failed" | "timeout";
@@ -119,40 +119,6 @@ function truncateIncomplete(value: string): string {
 
 const INCOMPLETE_EVENT_CHAR_CAP = 4000;
 
-function needsIncompleteHistory(event: IncompletePromptEvent) {
-  const predecessorId = event.thread.frameworkSessionRunId;
-  if (predecessorId === null) {
-    return undefined;
-  }
-  const query = new QueryBuilder();
-  return notExists(
-    query
-      .select({ id: agentRuns.id })
-      .from(agentRuns)
-      .where(
-        and(
-          eq(agentRuns.id, predecessorId),
-          eq(agentRuns.chatThreadId, event.chatThreadId),
-          eq(agentRuns.userId, event.thread.userId),
-          eq(agentRuns.status, "completed"),
-          exists(
-            query
-              .select({ id: chatEvents.id })
-              .from(chatEvents)
-              .where(
-                and(
-                  eq(chatEvents.chatThreadId, event.chatThreadId),
-                  eq(chatEvents.runId, predecessorId),
-                  runOwnedChatEventCondition(),
-                  visibleChatEventCondition(),
-                ),
-              ),
-          ),
-        ),
-      ),
-  );
-}
-
 function recentRoundAnchors(event: IncompletePromptEvent) {
   const query = new QueryBuilder();
   const anchor = alias(chatEvents, "incomplete_anchor");
@@ -173,9 +139,6 @@ function recentRoundAnchors(event: IncompletePromptEvent) {
       .innerJoin(agentRuns, eq(agentRuns.id, anchor.runId))
       .where(
         and(
-          // A visible completed predecessor supplies native session history.
-          // Evaluate this once before scanning the anchors in the same snapshot.
-          needsIncompleteHistory(event),
           eq(anchor.chatThreadId, event.chatThreadId),
           ne(anchor.eventType, "control.interrupt"),
           inArray(agentRuns.status, [
@@ -219,7 +182,11 @@ export function createIncompletePrompt(
 ): Computed<Promise<string>> {
   return computed(async (get) => {
     const event = await get(pickedEvent$);
-    if (!event?.contextType || !isWebChatContextType(event.contextType)) {
+    if (
+      !event?.contextType ||
+      !isWebChatContextType(event.contextType) ||
+      event.preparation.hasCompletedPredecessorHistory
+    ) {
       return "";
     }
     const db = get(db$);

@@ -57,12 +57,74 @@ def witness_receipt(
     }
 
 
+def witness_for_phase(witnesses, phase, *, case=None):
+    """Return the first original witness for a phase and optional case."""
+    return next(
+        witness for witness in witnesses
+        if witness["phase"] == phase and (case is None or witness["case"] == case)
+    )
+
+
 def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
     """Serialize synthetic consumer inputs; callers own evidence and log order."""
     (root / "report.json").write_text(json.dumps(collector))
     (root / "samples.jsonl").write_text("\n".join(json.dumps(sample) for sample in samples))
     lines = [prefix + json.dumps(record) for prefix, records in log_groups for record in records]
     (root / "stdout.log").write_text("\n".join(lines) + stdout_suffix)
+
+
+def assert_scalar_refusals(test, witnesses, validate):
+    """Corrupt one witness leaf per subtest and restore it after validation."""
+
+    def leaves(value, path=()):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                yield from leaves(item, path + (key,))
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                yield from leaves(item, path + (index,))
+        else:
+            yield path, value
+
+    for index, event in enumerate(witnesses):
+        for path, value in leaves(event):
+            node = event
+            for key in path[:-1]:
+                node = node[key]
+            try:
+                node[path[-1]] = (
+                    not value if type(value) is bool else (-1 if type(value) is int else "corrupted")
+                )
+                with test.subTest(index=index, path=path):
+                    with test.assertRaises((ValueError, KeyError, TypeError)):
+                        validate()
+            finally:
+                node[path[-1]] = value
+
+
+def assert_indexed_witness_refusals(test, original, changes):
+    """Check each mutation against a fresh copy of the saved witnesses."""
+    for index, change in enumerate(changes):
+        with test.subTest(change=index):
+            test.witnesses = copy.deepcopy(original)
+            change()
+            with test.assertRaises(ValueError):
+                test.validate()
+
+
+def assert_witness_omission_and_duplication_refused(test):
+    """Check every omission and a duplicate final witness through the reader."""
+    original = test.witnesses
+    for index in range(len(original)):
+        test.witnesses = original.copy()
+        test.witnesses.pop(index)
+        with test.assertRaises(ValueError):
+            test.validate()
+    test.witnesses = original.copy()
+    test.validate()
+    test.witnesses.append(copy.deepcopy(original[-1]))
+    with test.assertRaises(ValueError):
+        test.validate()
 
 
 def prepare_snapshot_record(root, artifacts):

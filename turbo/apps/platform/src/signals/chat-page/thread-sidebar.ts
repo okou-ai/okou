@@ -16,6 +16,11 @@ import {
 import type { ArtifactCatalogViewSignals } from "../artifacts-page/create-artifact-catalog-signals.ts";
 import { createCatalogArtifactPreviewSignals } from "../artifacts-page/artifact-catalog-preview.ts";
 import {
+  createZipArtifactPreviewScope,
+  type ZipArtifactPreviewScope,
+} from "../zip-artifact-preview.ts";
+import { isZipArtifact } from "../../lib/zip-artifact.ts";
+import {
   createTextPreviewComputed,
   isTextPreviewKind,
   type TextPreviewComputed,
@@ -101,6 +106,7 @@ export type ArtifactRef = {
   readonly text$?: TextPreviewComputed;
   /** The prepared tree for markdown-kind refs, diagram signals embedded. */
   readonly markdownTree$?: MarkdownPreviewTreeComputed;
+  readonly zipPreview?: ZipArtifactPreviewScope;
 };
 
 export type ArtifactFileRef = {
@@ -119,7 +125,10 @@ export type ArtifactMetadataRef = {
 
 export type ArtifactRefInput = string | ArtifactFileRef | ArtifactMetadataRef;
 
-function artifactRefFromUrl(url: string): ArtifactRef {
+type AttachmentArtifactRef = ArtifactRef &
+  Pick<AttachmentPreviewSignals, "refresh$">;
+
+function artifactRefFromUrl(url: string): AttachmentArtifactRef {
   const attachment = previewAttachmentFromUrl(url);
   return {
     url,
@@ -135,12 +144,14 @@ interface ThreadArtifactPreviewContext {
   readonly threadId: string;
 }
 
-function withTextPreview(
-  ref: ArtifactRef,
+function withContentPreview(
+  ref: AttachmentArtifactRef,
   { openDiagram$, threadId }: ThreadArtifactPreviewContext,
-): ArtifactRef {
+): AttachmentArtifactRef {
   if (!isTextPreviewKind(ref.kind)) {
-    return ref;
+    return ref.kind === "file" && isZipArtifact(ref.filename, ref.contentType)
+      ? { ...ref, zipPreview: createZipArtifactPreviewScope(ref.resourceUrl$) }
+      : ref;
   }
   const text$ =
     ref.text$ ?? createTextPreviewComputed(ref.url, ref.resourceUrl$);
@@ -163,12 +174,12 @@ function materializeArtifactRef(
   input: ArtifactRefInput,
   previewContext: ThreadArtifactPreviewContext,
   signal: AbortSignal,
-): ArtifactRef {
+): AttachmentArtifactRef {
   if (typeof input === "string") {
-    return withTextPreview(artifactRefFromUrl(input), previewContext);
+    return withContentPreview(artifactRefFromUrl(input), previewContext);
   }
   if (!("file" in input)) {
-    return withTextPreview(
+    return withContentPreview(
       {
         url: input.url,
         ...attachmentPreviewSignalsFor(input),
@@ -188,7 +199,7 @@ function materializeArtifactRef(
     );
   }
   const resource = createObjectUrlResource(input.file, signal);
-  return withTextPreview(
+  return withContentPreview(
     {
       url: resource.url,
       ...createAttachmentPreviewSignals(resource.url),
@@ -215,7 +226,7 @@ export type ThreadSidebarArtifactSource =
     }
   | {
       readonly kind: "attachment";
-      readonly ref: ArtifactRef;
+      readonly ref: AttachmentArtifactRef;
       readonly ownerSignal: AbortSignal;
     };
 
@@ -254,6 +265,7 @@ export interface ThreadSidebarSignals {
   readonly selectedArtifactResourceUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactImageUrl$: Computed<Promise<string | null>>;
   readonly selectedArtifactShareUrl$: Computed<Promise<string | null>>;
+  readonly selectedArtifactZipPreview: ZipArtifactPreviewScope;
   readonly close$: Command<void, []>;
   /** Clear presentation before another navigation owns the URL. */
   readonly dismiss$: Command<void, []>;
@@ -401,6 +413,7 @@ function createThreadSidebarPreviewSignals(
     selectedArtifactResourceUrl$: preview.resourceUrl$,
     selectedArtifactImageUrl$: preview.imageUrl$,
     selectedArtifactShareUrl$: preview.shareUrl$,
+    selectedArtifactZipPreview: preview.zipPreview,
   };
 }
 

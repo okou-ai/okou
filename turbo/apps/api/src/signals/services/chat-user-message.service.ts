@@ -395,18 +395,27 @@ function formatFeedbackParts(
   chatRunSourceTitle: string | undefined,
   suggestionBackground = false,
 ): string {
-  const firstMailSource = parts[0]?.source;
-  const commonMailSource =
-    firstMailSource !== undefined &&
+  const firstSource = parts[0]?.source;
+  const commonSource =
+    firstSource !== undefined &&
     parts.every((part) => {
+      const source = part.source;
+      if (firstSource.type === "artifact") {
+        return (
+          source?.type === "artifact" &&
+          source.fileId === firstSource.fileId &&
+          source.filenameSnapshot === firstSource.filenameSnapshot &&
+          source.artifactId === firstSource.artifactId
+        );
+      }
       return (
-        part.source?.type === "mail" &&
-        part.source.id === firstMailSource.id &&
-        part.source.status === firstMailSource.status &&
-        part.source.sentId === firstMailSource.sentId
+        source?.type === "mail" &&
+        source.id === firstSource.id &&
+        source.status === firstSource.status &&
+        source.sentId === firstSource.sentId
       );
     })
-      ? firstMailSource
+      ? firstSource
       : null;
   const hasSourceContext = parts.some((part) => {
     return part.source !== undefined;
@@ -417,11 +426,14 @@ function formatFeedbackParts(
       note: serializeFeedbackNote(part.note, serializeTemplate).trim(),
     };
   });
-  const mailSourceLabel = (
+  const sourceLabel = (
     source: NonNullable<
       Extract<UserMessagePart, { type: "feedback" }>["source"]
     >,
   ) => {
+    if (source.type === "artifact") {
+      return `a file "${source.filenameSnapshot}" (file ID: ${source.fileId})`;
+    }
     return source.status === "draft"
       ? `an email draft (mail draft ID: ${source.id})`
       : `a sent email (mail ID: ${source.id}${source.sentId ? `, sent ID: ${source.sentId}` : ""})`;
@@ -434,8 +446,8 @@ function formatFeedbackParts(
       })
       .join("\n");
     const source =
-      commonMailSource === null && part.source?.type === "mail"
-        ? `Source: ${mailSourceLabel(part.source)}\n\n`
+      commonSource === null && part.source !== undefined
+        ? `Source: ${sourceLabel(part.source)}\n\n`
         : "";
     return note.length === 0
       ? `${source}${quoted}`
@@ -447,20 +459,20 @@ function formatFeedbackParts(
       ? parts.length === 1
         ? `The user forwarded this from the chat "${chatRunSourceTitle}":`
         : `The user forwarded ${parts.length} parts from the chat "${chatRunSourceTitle}":`
-      : commonMailSource
+      : commonSource
         ? parts.length === 1
-          ? `The user quoted this part of ${mailSourceLabel(commonMailSource)}:`
-          : `The user quoted ${parts.length} parts of ${mailSourceLabel(commonMailSource)}:`
+          ? `The user quoted this part of ${sourceLabel(commonSource)}:`
+          : `The user quoted ${parts.length} parts of ${sourceLabel(commonSource)}:`
         : hasSourceContext
           ? `The user quoted ${parts.length} selected ${parts.length === 1 ? "passage" : "passages"}:`
           : parts.length === 1
             ? "The user quoted this part of your reply:"
             : `The user quoted ${parts.length} parts of your reply:`;
-  const commonMailContext =
-    chatRunSourceTitle && commonMailSource
-      ? `Source: ${mailSourceLabel(commonMailSource)}\n\n`
+  const commonSourceContext =
+    chatRunSourceTitle && commonSource
+      ? `Source: ${sourceLabel(commonSource)}\n\n`
       : "";
-  return `${intro}\n\n${commonMailContext}${blocks.join("\n\n---\n\n")}`;
+  return `${intro}\n\n${commonSourceContext}${blocks.join("\n\n---\n\n")}`;
 }
 
 type FeedbackPart = Extract<UserMessagePart, { type: "feedback" }>;
@@ -662,7 +674,7 @@ export function projectUserMessage(
 
 /**
  * Project a user message into static public text. User-visible snapshots are
- * retained while internal IDs, source links, and mail identifiers are omitted.
+ * retained while internal IDs, source links, and mail/artifact identities are omitted.
  * Files are published separately as structured shared-message attachments.
  */
 export function projectUserMessageForPublicShare(

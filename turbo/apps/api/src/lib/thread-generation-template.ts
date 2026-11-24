@@ -20,6 +20,7 @@ export function resolveThreadGenerationTemplates(args: {
   readonly explicit: LiveGenerationTemplate | null | undefined;
   readonly explicitTemplates?: readonly LiveGenerationTemplate[];
   readonly includeManagedImageInstructions: boolean;
+  readonly presentationOutputFormatEnabled?: boolean;
   /**
    * Private template row ids whose packages the run being built will mount.
    * Required rather than optional so every caller states what its run carries.
@@ -36,6 +37,7 @@ export function resolveThreadGenerationTemplates(args: {
 } {
   const options = {
     includeManagedImageInstructions: args.includeManagedImageInstructions,
+    presentationOutputFormatEnabled: args.presentationOutputFormatEnabled,
     mountedUserPresentationTemplateIds: args.mountedUserPresentationTemplateIds,
     mountedUserTemplates: args.mountedUserTemplates,
   };

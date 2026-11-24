@@ -2,8 +2,12 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.connectors.ChatConnectorOptions
+import ai.okou.android.connectors.ConnectorAccountTarget
+import ai.okou.android.connectors.connectorFeedbackType
 import ai.okou.android.currentWindowSizeDp
 import ai.okou.android.state.rememberJournalEditor
+import ai.okou.android.workspaceListPaneWidth
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -43,6 +47,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
@@ -51,8 +57,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -64,12 +72,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable
-fun ChatComposerField(
+internal fun ChatComposerField(
     model: ChatComposerModel,
     target: ComposerTarget,
     modifier: Modifier = Modifier,
     offline: Boolean = false,
     beforeSend: () -> Unit = {},
+    connectorOptions: ChatConnectorOptions? = null,
+    manageConnectors: (ConnectorAccountTarget?) -> Unit = {},
 ) {
     val state by model.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -78,11 +88,12 @@ fun ChatComposerField(
     val input = rememberJournalEditor(state.journal?.let { entry.text }, target.key)
     val window = currentWindowSizeDp()
     val shortWindow = window.height < 480
+    val wide = workspaceListPaneWidth(window.width, window.height) != null
     val horizontalInset = composerHorizontalInset(window)
     val bottomInset =
         when {
             shortWindow -> 8.dp
-            window.width >= 840 -> 24.dp
+            wide -> ChatPaneBottomInset
             else -> 14.dp
         }
     val colors = MaterialTheme.colorScheme
@@ -102,6 +113,7 @@ fun ChatComposerField(
         if (shortWindow) minimumTextHeight
         else maxOf(minimumTextHeight, (window.height * 0.3f).dp.coerceIn(48.dp, 160.dp))
     var inputFocused by remember { mutableStateOf(false) }
+    val editorFocus = remember(target.key) { FocusRequester() }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(model, target, lifecycle) {
         fun open() {
@@ -115,7 +127,9 @@ fun ChatComposerField(
         open()
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val cardVerticalPadding = 5.dp
+    val cardOutline = 1.dp
+    // The normal outline is drawn inside the measured card, along with the inner padding.
+    val cardVerticalPadding = if (wide) cardOutline + 3.dp else 5.dp
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
@@ -135,9 +149,10 @@ fun ChatComposerField(
             ComposerFeedback(model, target, state, entry)
             Row(
                 Modifier.fillMaxWidth()
+                    .testTag("chat_input_card")
                     .background(colors.surface, cardShape)
                     .border(
-                        width = if (inputFocused) 2.dp else 1.dp,
+                        width = if (inputFocused) 2.dp else cardOutline,
                         color =
                             if (inputFocused) LocalActivityStatusColor.current else colors.outline,
                         shape = cardShape,
@@ -151,6 +166,17 @@ fun ChatComposerField(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.Bottom,
             ) {
+                if (connectorOptions != null)
+                    ChatConnectorOptionsButton(
+                        connectorOptions,
+                        model,
+                        state,
+                        target,
+                        offline,
+                        inputFocused,
+                        editorFocus,
+                        manageConnectors,
+                    )
                 BasicTextField(
                     value = input.value,
                     onValueChange = {
@@ -160,6 +186,7 @@ fun ChatComposerField(
                     modifier =
                         Modifier.weight(1f)
                             .heightIn(min = minimumTextHeight, max = availableTextHeight)
+                            .focusRequester(editorFocus)
                             .onFocusChanged { inputFocused = it.isFocused }
                             .testTag("message_input")
                             .semantics { contentDescription = label },
@@ -312,7 +339,24 @@ private fun ComposerFeedback(
         }
     }
     val busy = target.key in state.busy
-    if (entry.pending != null && (!busy || target.key in state.checking)) {
+    val connectorSetupFailed = state.connectorSetupFailed(target.key)
+    if (connectorSetupFailed) {
+        Column(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp)) {
+            Text(
+                stringResource(R.string.chat_connector_first_send_failed),
+                Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = connectorFeedbackType(),
+            )
+            TextButton(onClick = { model.retry(target) }, enabled = !busy, colors = actionColors) {
+                Text(stringResource(R.string.composer_retry))
+            }
+        }
+    } else if (
+        entry.pending != null &&
+            entry.pending.started == null &&
+            (!busy || target.key in state.checking)
+    ) {
         FlowRow {
             TextButton(
                 onClick = { model.observe(target) },
@@ -327,7 +371,8 @@ private fun ComposerFeedback(
         }
     }
     if (target.key in state.unobserved) Text(stringResource(R.string.composer_not_observed))
-    if (target.key in state.failed) Text(stringResource(R.string.composer_request_failed))
+    if (target.key in state.failed && !connectorSetupFailed)
+        Text(stringResource(R.string.composer_request_failed))
     if (state.persistence == ComposerPersistence.Pending)
         Text(stringResource(R.string.composer_saving), style = MaterialTheme.typography.labelSmall)
 }

@@ -12,7 +12,10 @@ import { ConnectorPermissionsDialog } from "./components/settings/connector-perm
 import { DocumentTemplatePreviewPage } from "./document-template-preview-page.tsx";
 
 import { ScrollArea } from "@base-ui/react/scroll-area";
-import type { ComposerVoiceInputStatus } from "../../signals/okou-page/composer-voice-input.ts";
+import {
+  composerVoiceQuota$,
+  type ComposerVoiceInputStatus,
+} from "../../signals/okou-page/composer-voice-input.ts";
 import {
   startComposerSubmission,
   useComposerActions,
@@ -154,7 +157,6 @@ import {
   COMPOSER_VOICE_INPUT_SHORTCUT,
 } from "../../lib/composer-voice-input-shortcut.ts";
 import { ensurePushSubscription$ } from "../../lib/push-notifications.ts";
-import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import type { PlatformConnectorCatalogStatusItem } from "../../signals/connector-domain.ts";
 import {
   connectorCatalogStatus$,
@@ -204,10 +206,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
 import { Reason, detach, onDomEventFn } from "../../signals/utils.ts";
-import {
-  audioInputAvailable$,
-  audioInputQuota$,
-} from "../../signals/voice-io/voice-io-stt.ts";
+import { audioInputAvailable$ } from "../../signals/voice-io/voice-io-stt.ts";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 import {
   SubscriptionLinkingComposerMenu,
@@ -4236,14 +4235,7 @@ function ConnectorsPopoverButton({
 }) {
   const { t } = useTranslation();
   const popoverOpen = useGet(signals.connector.popoverOpen$);
-  const remoteAccessDialogOpen = useGet(
-    signals.connector.remoteAccessDialogOpen$,
-  );
   const setPopoverOpen = useSet(signals.connector.setPopoverOpen$);
-  const chatPermissions = useGet(signals.connector.chatAccess.permissions$);
-  const accountManagerOpen = useGet(
-    signals.connector.chatAccess.accountManager.managerOpen$,
-  );
   const setTriggerRef = useSet(signals.connector.setTriggerRef$);
   const phoneUseSetupOpen = useGet(signals.connector.phoneUseSetupOpen$);
   const downloadDialogOpen = useGet(
@@ -4285,17 +4277,6 @@ function ConnectorsPopoverButton({
         </Tooltip>
       </TooltipProvider>
       <PopoverContent
-        initialFocus={isMobileTextInputDevice() ? false : undefined}
-        // The modal takes focus during the handoff; ordinary dismissal still
-        // returns to this popover's trigger through Base UI.
-        finalFocus={
-          remoteAccessDialogOpen ||
-          phoneUseSetupOpen ||
-          chatPermissions !== null ||
-          accountManagerOpen
-            ? false
-            : undefined
-        }
         side="top"
         align="start"
         aria-label={t(($) => {
@@ -4394,8 +4375,8 @@ function micButtonTooltip(status: MicButtonStatus): string {
 
 function MicButton({ signals }: { signals: ComposerSignals }) {
   const available = useGet(audioInputAvailable$);
-  const quotaState = useLoadableState(audioInputQuota$);
-  const quotaResolved = useLastResolved(audioInputQuota$) !== undefined;
+  const quotaState = useLoadableState(composerVoiceQuota$);
+  const quotaResolved = useLastResolved(composerVoiceQuota$) !== undefined;
   // The last resolved status keeps this control stable while a composer
   // target reads its stored draft; run$ awaits that read before acting.
   const voiceDraftStatus = useLastResolved(signals.voice.state$)?.status;
@@ -4483,12 +4464,14 @@ function VoiceDraftFooter({
   signals,
   status: draftStatus,
   recordingAvailable,
+  asVoiceMessage,
   voiceMessage,
   children,
 }: {
   signals: ComposerSignals;
   status: ComposerVoiceInputStatus | undefined;
   recordingAvailable: boolean;
+  asVoiceMessage: boolean;
   voiceMessage: string | undefined;
   children: ReactNode;
 }) {
@@ -4548,7 +4531,7 @@ function VoiceDraftFooter({
           data-composer-voice-toggle
           disabled={
             !recordingAvailable ||
-            operation.state === "hasError" ||
+            (!asVoiceMessage && operation.state === "hasError") ||
             voiceMessage !== undefined
           }
           onClick={() => {
@@ -4570,7 +4553,9 @@ function VoiceDraftFooter({
             return $.chat.voice.discarding;
           })
         : t(($) => {
-            return $.chat.voice.transcribing;
+            return asVoiceMessage
+              ? $.chat.voice.uploadingRecording
+              : $.chat.voice.transcribing;
           });
     const outcomeText =
       status === "discarding"
@@ -4578,7 +4563,9 @@ function VoiceDraftFooter({
             return $.chat.voice.returningToComposer;
           })
         : t(($) => {
-            return $.chat.voice.textTakingShape;
+            return asVoiceMessage
+              ? $.chat.voice.returningToComposer
+              : $.chat.voice.textTakingShape;
           });
     return (
       <div
@@ -5910,6 +5897,7 @@ function ComposerFooter({
         signals={signals}
         status={status}
         recordingAvailable={Boolean(voiceDraft?.recording)}
+        asVoiceMessage={Boolean(voiceDraft?.recording?.asVoiceMessage)}
         voiceMessage={
           voiceDraftLoadable.state === "hasError"
             ? t(($) => {

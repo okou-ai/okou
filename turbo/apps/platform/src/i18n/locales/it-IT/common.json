@@ -444,7 +444,6 @@
       "close": "Chiudi",
       "closeArtifact": "Chiudi artefatto",
       "closeNamed": "Chiudi {{title}}",
-      "closePreviewMenu": "Chiudi il menu di anteprima",
       "download": "Scarica",
       "downloadArtifact": "Scarica artefatto",
       "downloadMarkdownAs": "Scarica come {{format}}",
@@ -590,6 +589,28 @@
     "metadata": {
       "generated": "Generato {{date}}",
       "updated": "Aggiornato {{date}}"
+    },
+    "people": {
+      "accounts": "Membri corrispondenti dello spazio di lavoro",
+      "anyone": "Chiunque",
+      "empty": "Nessun altro ha ancora accesso.",
+      "hint": "Fuori dal tuo spazio di lavoro? Usa il loro indirizzo e-mail completo.",
+      "invitationProcessed": "Invito alla condivisione elaborato",
+      "label": "Condividi con persone",
+      "noAccounts": "Nessun membro corrispondente. Inserisci un indirizzo e-mail completo per invitare.",
+      "placeholder": "Nome o indirizzo e-mail",
+      "remove": "Rimuovi l’accesso di {{email}}",
+      "removed": "Accesso rimosso",
+      "restricted": "Persone invitate",
+      "restrictedDescription": "Solo tu e le persone invitate",
+      "searching": "Ricerca dei membri dello spazio di lavoro…",
+      "searchUnavailable": "La ricerca dei membri non è temporaneamente disponibile. Riprova tra poco.",
+      "share": "Invita",
+      "updateUnavailable": "Impossibile aggiornare la condivisione. Riprova tra poco.",
+      "viewers": "Persone con accesso",
+      "workspace": "Spazio di lavoro",
+      "workspaceDescription": "Membri di {{organization}} e persone invitate",
+      "workspaceDescriptionUnnamed": "Membri dello spazio di lavoro e persone invitate"
     },
     "preview": {
       "audioLabel": "Anteprima audio per {{filename}}",
@@ -1967,7 +1988,7 @@
       },
       "slashPanel": {
         "browseAll": "Sfoglia tutti i modelli",
-        "hint": "Cerca flussi di lavoro o scegli un modello…",
+        "hint": "Scegli un'azione",
         "useTemplate": "Usa il modello {{title}}"
       },
       "temporarilySwitchTo": "Passa temporaneamente a",
@@ -2173,6 +2194,12 @@
         },
         "inReview": "In revisione",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} crediti",
+            "confirm": "Torna al lavoro",
+            "description": "I crediti pagano il lavoro vero e proprio: ogni esecuzione, ogni artefatto, ogni workflow che parte da solo.",
+            "title": "Per oggi è fatta"
+          },
           "connector": {
             "confirm": "Vedi tutti i connettori",
             "connected": "Connesso",
@@ -2626,13 +2653,6 @@
       "unsupported": "Il ripristino manuale non è supportato; l’utilizzo si ripristina automaticamente."
     },
     "taskChips": {
-      "defaultOutputFormat": "Formato di output predefinito",
-      "presentationFormat": "Formato di presentazione predefinito",
-      "presentationFormatHint": "La tua scelta viene salvata come predefinita in questo browser.",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
@@ -2905,6 +2925,7 @@
       "storageFailed": "Impossibile salvare l’audio. È disponibile solo l’audio già salvato su questo dispositivo.",
       "textTakingShape": "Il testo sta prendendo forma",
       "transcribing": "Trascrizione",
+      "uploadingRecording": "Caricamento della registrazione…",
       "useRecording": "Usa registrazione"
     },
     "walletAction": {
@@ -3042,6 +3063,7 @@
       "edit": "Modifica",
       "grant": "Concedere",
       "reconnect": "Riconnettiti",
+      "returnToOkou": "Torna a Okou",
       "revoke": "Revoca",
       "save": "Salva",
       "saving": "Salvataggio...",
@@ -5227,6 +5249,7 @@
     }
   },
   "projects": {
+    "archiveProject": "Archivia",
     "back": "Back",
     "close": "Close",
     "collapse": "Comprimi",
@@ -5235,9 +5258,9 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_one": "Delete project and {{count}} thread…",
-    "deleteProjectAndThreads_many": "Delete project and {{count}} threads…",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_one": "Delete project and {{count}} thread",
+    "deleteProjectAndThreads_many": "Delete project and {{count}} threads",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_one": "Permanently delete this Project and {{count}} thread, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsDescription_many": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
@@ -5267,6 +5290,7 @@
     "removeFromNewChat": "Rimuovi {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "Ripristina progetto",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6423,7 +6447,6 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "Tutti",
     "markAllRead": "Segna tutti come letti",
     "noResults": "Nessun risultato trovato",
     "resultCount_one": "{{count}} risultato",
@@ -6432,10 +6455,8 @@
     "searching": "Ricerca in corso...",
     "searchWorkspace": "Cerca nello spazio di lavoro...",
     "sections": {
-      "artifacts": "Artefatti",
-      "chats": "Chat",
       "messages": "Messaggi",
-      "workflows": "Flussi di lavoro"
+      "threads": "Thread"
     }
   },
   "ssh": {

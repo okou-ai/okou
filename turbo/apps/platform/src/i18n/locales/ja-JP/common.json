@@ -430,7 +430,6 @@
       "close": "閉じる",
       "closeArtifact": "アーティファクトを閉じる",
       "closeNamed": "{{title}} を閉じる",
-      "closePreviewMenu": "プレビューメニューを閉じる",
       "download": "ダウンロード",
       "downloadArtifact": "アーティファクトをダウンロードする",
       "downloadMarkdownAs": "{{format}} としてダウンロード",
@@ -573,6 +572,28 @@
     "metadata": {
       "generated": "{{date}} が生成されました",
       "updated": "{{date}} に更新"
+    },
+    "people": {
+      "accounts": "一致するワークスペースメンバー",
+      "anyone": "全員",
+      "empty": "まだ他の人を招待していません。",
+      "hint": "ワークスペース外の人には、完全なメールアドレスを入力してください。",
+      "invitationProcessed": "共有の招待を処理しました",
+      "label": "ユーザーに共有",
+      "noAccounts": "一致するメンバーがいません。完全なメールアドレスで招待できます。",
+      "placeholder": "名前またはメールアドレス",
+      "remove": "{{email}} のアクセス権を削除",
+      "removed": "アクセス権を削除しました",
+      "restricted": "招待した人",
+      "restrictedDescription": "あなたと招待した人のみ",
+      "searching": "ワークスペースメンバーを検索中…",
+      "searchUnavailable": "メンバー検索を一時的に利用できません。しばらくしてからもう一度お試しください。",
+      "share": "招待",
+      "updateUnavailable": "共有設定を更新できませんでした。しばらくしてからもう一度お試しください。",
+      "viewers": "アクセスできるユーザー",
+      "workspace": "ワークスペース",
+      "workspaceDescription": "{{organization}}のメンバーと招待した人",
+      "workspaceDescriptionUnnamed": "ワークスペースのメンバーと招待した人"
     },
     "preview": {
       "audioLabel": "{{filename}} のオーディオ プレビュー",
@@ -1931,7 +1952,7 @@
       },
       "slashPanel": {
         "browseAll": "すべてのテンプレートを見る",
-        "hint": "ワークフローを検索するか、テンプレートを選択…",
+        "hint": "アクションを選択",
         "useTemplate": "テンプレート {{title}} を使う"
       },
       "temporarilySwitchTo": "一時的な切り替え先",
@@ -2128,6 +2149,12 @@
         },
         "inReview": "確認中",
         "intro": {
+          "checkin": {
+            "amount": "+{{amount}} クレジット",
+            "confirm": "仕事に戻る",
+            "description": "クレジットは仕事そのものに使われます。1 回の実行、1 つの成果物、スケジュールで動くワークフローのすべてに。",
+            "title": "今日のぶんは完了です"
+          },
           "connector": {
             "confirm": "すべてのコネクターを見る",
             "connected": "接続済み",
@@ -2561,13 +2588,6 @@
       "unsupported": "手動リセットには対応していません。使用量は自動的に回復します。"
     },
     "taskChips": {
-      "defaultOutputFormat": "デフォルトの出力形式",
-      "presentationFormat": "デフォルトのプレゼンテーション形式",
-      "presentationFormatHint": "選択した形式が、このブラウザーのデフォルトとして保存されます。",
-      "presentationFormats": {
-        "html": "HTML",
-        "pptx": "PPTX"
-      },
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
@@ -2840,6 +2860,7 @@
       "storageFailed": "音声を保存できませんでした。この端末に保存済みの音声のみ利用できます。",
       "textTakingShape": "テキストを作成中",
       "transcribing": "文字起こし",
+      "uploadingRecording": "録音をアップロード中…",
       "useRecording": "録音を使う"
     },
     "walletAction": {
@@ -2971,6 +2992,7 @@
       "edit": "編集",
       "grant": "グラント",
       "reconnect": "再接続",
+      "returnToOkou": "Okou に戻る",
       "revoke": "取り消し",
       "save": "保存",
       "saving": "保存中...",
@@ -5145,6 +5167,7 @@
     }
   },
   "projects": {
+    "archiveProject": "アーカイブ",
     "back": "Back",
     "close": "Close",
     "collapse": "折りたたむ",
@@ -5153,7 +5176,7 @@
     "delete": "Delete",
     "deleteChoiceDescription": "Delete just the Project to keep your threads, or delete it together with its threads.",
     "deleteError": "Could not delete Project",
-    "deleteProjectAndThreads_other": "Delete project and {{count}} threads…",
+    "deleteProjectAndThreads_other": "Delete project and {{count}} threads",
     "deleteProjectOnly": "Delete project only",
     "deleteThreadsDescription_other": "Permanently delete this Project and {{count}} threads, including archived threads and their histories. Running tasks will stop and linked automations will be paused. This cannot be undone.",
     "deleteThreadsError": "Deletion stopped. Some threads may already be permanently deleted. Check the Project and remaining threads before continuing.",
@@ -5181,6 +5204,7 @@
     "removeFromNewChat": "{{name}}を削除",
     "rename": "Rename",
     "renameProject": "Rename Project",
+    "restoreProject": "プロジェクトを復元",
     "retryThreads": "Reload threads",
     "save": "Save",
     "saveError": "Could not save Project",
@@ -6328,17 +6352,14 @@
   },
   "sidebar": {
     "escapeShortcut": "Esc",
-    "filterAll": "すべて",
     "markAllRead": "すべて既読としてマークする",
     "noResults": "結果が見つかりませんでした",
     "resultCount_other": "{{count}} 件の結果",
     "searching": "検索中...",
     "searchWorkspace": "ワークスペースを検索...",
     "sections": {
-      "artifacts": "アーティファクト",
-      "chats": "チャット",
       "messages": "メッセージ",
-      "workflows": "ワークフロー"
+      "threads": "スレッド"
     }
   },
   "ssh": {

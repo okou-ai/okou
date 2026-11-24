@@ -95,6 +95,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 
+private val searchFieldEdge = 12.dp
+private val searchIconSize = 20.dp
+private val searchIconGap = 8.dp
+
 @Composable internal fun workspaceSearchTextStyle() = MaterialTheme.typography.bodyLarge
 
 @Composable
@@ -145,6 +149,7 @@ internal fun WorkspaceSearchField(
     focused: Boolean? = null,
     onClick: (() -> Unit)? = null,
     hasTrailingAction: Boolean = false,
+    iconOnly: Boolean = false,
     shape: Shape = CircleShape,
     content: @Composable RowScope.() -> Unit,
 ) {
@@ -165,14 +170,18 @@ internal fun WorkspaceSearchField(
                 if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick)
                 else Modifier,
             )
-            .padding(start = 12.dp, end = if (hasTrailingAction) 0.dp else 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(
+                start = if (iconOnly) 0.dp else searchFieldEdge,
+                end = if (iconOnly || hasTrailingAction) 0.dp else searchFieldEdge,
+            ),
+        horizontalArrangement =
+            if (iconOnly) Arrangement.Center else Arrangement.spacedBy(searchIconGap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             painterResource(R.drawable.ic_search),
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(searchIconSize),
             tint = colors.onSurfaceVariant,
         )
         content()
@@ -204,22 +213,32 @@ internal fun WorkspaceListToolbar(
             }
         },
         field = { modifier ->
-            WorkspaceSearchField(
-                modifier
-                    .focusRequester(searchFocus)
-                    .onFocusChanged { onSearchFocusChanged(it.isFocused) }
-                    .testTag("workspace_search_entry")
-                    .semantics { if (openSearch != null) contentDescription = label },
-                onClick = openSearch,
-            ) {
-                Text(
-                    label,
-                    Modifier.padding(vertical = 8.dp).clearAndSetSemantics {},
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = workspaceSearchTextStyle(),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            BoxWithConstraints(modifier) {
+                val style = workspaceSearchTextStyle()
+                val em = with(LocalDensity.current) { style.fontSize.toDp() }
+                val textWidth = maxWidth - searchFieldEdge * 2 - searchIconSize - searchIconGap
+                val iconOnly = textWidth < em * 2
+                WorkspaceSearchField(
+                    Modifier.fillMaxWidth()
+                        .focusRequester(searchFocus)
+                        .onFocusChanged { onSearchFocusChanged(it.isFocused) }
+                        .testTag("workspace_search_entry")
+                        .semantics { if (openSearch != null) contentDescription = label },
+                    onClick = openSearch,
+                    iconOnly = iconOnly,
+                ) {
+                    if (!iconOnly) {
+                        Text(
+                            if (textWidth < em * 5) stringResource(R.string.chat_search_short)
+                            else label,
+                            Modifier.padding(vertical = 8.dp).clearAndSetSemantics {},
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = style,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         },
         actions = actions,
@@ -364,7 +383,9 @@ internal fun WorkspaceToolbarActions(
     var anchorFocused by remember { mutableStateOf(false) }
     var restoreSettingsAnchor by remember { mutableStateOf(false) }
     val settingsAnchor =
-        Modifier.focusRequester(settingsFocus).onFocusChanged { anchorFocused = it.isFocused }
+        Modifier.size(48.dp).focusRequester(settingsFocus).onFocusChanged {
+            anchorFocused = it.isFocused
+        }
     val colors = MaterialTheme.colorScheme
     val currentFilter = stringResource(list.filter.label())
     val filterApplied = showFilter && list.filter != ChatListFilter.Inbox
@@ -455,9 +476,10 @@ internal fun WorkspaceToolbarActions(
                     enabled = selectFilter != null,
                     colors = IconButtonDefaults.iconButtonColors(contentColor = filterTint),
                     modifier =
-                        Modifier.focusRequester(filterFocus).then(filterTreatment).semantics {
-                            stateDescription = currentFilter
-                        },
+                        Modifier.size(48.dp)
+                            .focusRequester(filterFocus)
+                            .then(filterTreatment)
+                            .semantics { stateDescription = currentFilter },
                 ) {
                     Icon(
                         painterResource(R.drawable.ic_filter_list),

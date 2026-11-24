@@ -21,6 +21,11 @@ sentry {
 
 val appVersion = rootProject.file("version.txt").readText().trim()
 val screenshotScenarioDir = providers.gradleProperty("okou.screenshotScenarioDir").orNull
+val debugUnitTestForks = providers.gradleProperty("okou.debugUnitTestForks").map(String::toInt)
+val debugUnitTestShardIndex =
+    providers.gradleProperty("okou.debugUnitTestShardIndex").map(String::toInt)
+val debugUnitTestShardCount =
+    providers.gradleProperty("okou.debugUnitTestShardCount").map(String::toInt)
 val apiOrigin = providers.gradleProperty("okou.apiOrigin").getOrElse("https://api.okou.ai")
 val webOrigin = providers.gradleProperty("okou.webOrigin").getOrElse("https://app.okou.ai")
 val clerkPublishableKey =
@@ -136,6 +141,27 @@ android {
 }
 
 kotlin { compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) } }
+
+tasks.withType<Test>().configureEach {
+    if (name == "testDebugUnitTest") {
+        maxParallelForks = debugUnitTestForks.getOrElse(1)
+        val shardIndex = debugUnitTestShardIndex.orNull
+        val shardCount = debugUnitTestShardCount.orNull
+        if (shardIndex != null || shardCount != null) {
+            require(shardIndex != null && shardCount != null && shardIndex in 0 until shardCount) {
+                "Set okou.debugUnitTestShardIndex to a zero-based index within okou.debugUnitTestShardCount"
+            }
+            exclude { candidate ->
+                val path = candidate.path
+                // Keep test classes and their nested classes on the same shard.
+                val className = path.removeSuffix(".class").substringBefore('$').replace('/', '.')
+                !candidate.isDirectory &&
+                    path.endsWith(".class") &&
+                    Math.floorMod(className.hashCode(), shardCount) != shardIndex
+            }
+        }
+    }
+}
 
 room { schemaDirectory("$projectDir/schemas") }
 
