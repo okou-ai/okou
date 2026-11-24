@@ -6,6 +6,7 @@ fn cli_agent_type_selection_covers_known_empty_and_unknown_values() {
         ("claude-code", CliFramework::ClaudeCode),
         ("codex", CliFramework::Codex),
         ("pi", CliFramework::Pi),
+        ("antigravity", CliFramework::Antigravity),
     ] {
         let selection = CliAgentTypeSelection::parse(value);
 

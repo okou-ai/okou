@@ -598,7 +598,6 @@
       "name": "Nom",
       "retry": "Réessayer",
       "search": "Rechercher des artéfacts",
-      "sort": "Trier les artéfacts",
       "sortAscending": "Trier par ordre croissant",
       "sortDescending": "Trier par ordre décroissant",
       "type": "Type"

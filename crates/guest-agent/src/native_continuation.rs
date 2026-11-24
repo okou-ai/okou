@@ -74,6 +74,7 @@ pub(crate) fn retained_session_is_usable(
                 thread_id,
             }
         }
+        Framework::Antigravity => return Ok(false),
         Framework::Pi => {
             let mut sources = match pi_sources(session_id) {
                 Ok(sources) => sources,
@@ -157,6 +158,7 @@ pub(crate) fn retained_session_is_usable(
 fn native_context_record(framework: Framework, value: &record::Record) -> bool {
     let kind = value.kind.as_deref();
     match framework {
+        Framework::Antigravity => false,
         Framework::ClaudeCode => {
             (matches!(kind, Some("user" | "assistant")) && value.message.content)
                 || (kind == Some("summary") && value.summary)

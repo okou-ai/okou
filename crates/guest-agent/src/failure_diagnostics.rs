@@ -161,7 +161,7 @@ pub fn diagnostic_session_history_status_for_config(
     match config.framework {
         env::Framework::ClaudeCode => claude_history_target_status(session_metadata),
         env::Framework::Codex => SessionHistoryStatus::NotApplicable,
-        env::Framework::Pi => SessionHistoryStatus::NotApplicable,
+        env::Framework::Pi | env::Framework::Antigravity => SessionHistoryStatus::NotApplicable,
     }
 }
 

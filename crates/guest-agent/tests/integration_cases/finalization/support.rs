@@ -138,6 +138,7 @@ pub(super) fn finalization_session_metadata(
                 session_id: session_id.clone(),
             },
         ),
+        guest_agent::env::Framework::Antigravity => None,
     };
     guest_agent::session_metadata::CapturedSessionMetadata::for_test(session_id, source)
 }

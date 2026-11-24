@@ -39,6 +39,7 @@ pub(super) fn current_source(
             sessions_dir: format!("{CANONICAL_CODEX_HOME_DIR}/sessions"),
             thread_id: guest_contracts::codex_thread_id::canonical_codex_thread_id(session_id)?,
         }),
+        EffectiveCliFramework::Antigravity => None,
         EffectiveCliFramework::Pi => {
             let SessionHistorySourceRef::Pi {
                 session_path,
@@ -89,10 +90,11 @@ pub(super) async fn verify_home_candidate(
             session_id.to_owned()
         };
         let identity = &binding.proof.identity;
-        if identity.framework
-            != SessionHistoryFramework::from(guest_contracts::env::CliFramework::from(
+        if Some(identity.framework)
+            != SessionHistoryFramework::try_from(guest_contracts::env::CliFramework::from(
                 effective_cli_framework(&context.cli_agent_type),
             ))
+            .ok()
             || identity.session_id_hash
                 != hex::encode(Sha256::digest(expected_session_id.as_bytes()))
         {

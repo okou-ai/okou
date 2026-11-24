@@ -10,7 +10,7 @@ import later_parking_report as later
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, has_accounting_shape, supplied_policy
+from cleanup_report import COUNTS, accounting, exact_coverage, has_accounting_shape, supplied_policy
 from report import exact
 
 PREFIX = "NATIVE_BATCH_REPLACEMENT_WITNESS "
@@ -30,9 +30,8 @@ def covered(value, policy):
             or not policy["tail_growth_bytes"] <= state["cleanup_growth_bytes"]
             <= policy["tail_growth_bytes"] + policy["live_growth_bytes"]):
         raise ValueError("replacement released saving or unused old claims")
-    exact(value, {"allocated": [4,8192,2], "accounting": state,
-                  "original_lease_active": True, "io_release_withheld": True},
-          "replacement lost either full lease or accepted IO")
+    exact_coverage(value, [4, 8192, 2], state,
+                   "replacement lost either full lease or accepted IO")
 
 
 def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy_json"):
