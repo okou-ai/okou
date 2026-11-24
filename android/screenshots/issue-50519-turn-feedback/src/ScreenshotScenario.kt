@@ -6,6 +6,7 @@ import ai.okou.android.ChatCacheSnapshot
 import ai.okou.android.ChatListApiFixture
 import ai.okou.android.MainActivity
 import ai.okou.android.R
+import ai.okou.android.RecoveryApiFixture
 import ai.okou.android.ScreenshotCapture
 import ai.okou.android.TestAuthentication
 import ai.okou.android.TestOkouApplication
@@ -73,8 +74,10 @@ class ScreenshotScenario {
         val originalChat = app.chatService
         val originalComposer = app.composerService
         val originalControls = app.controlService
+        val originalRecovery = app.recoveryService
         val cache = ChatCacheSnapshot(app.noBackupFilesDir.resolve("chat-list"), app.chatCache)
         ChatListApiFixture().use { api ->
+            RecoveryApiFixture(api)
             val fixture = TurnFixture(api)
             device.executeShellCommand("wm size 412x892")
             device.executeShellCommand("wm density 160")
@@ -83,6 +86,7 @@ class ScreenshotScenario {
             app.chatService = api.service
             app.composerService = api.service
             app.controlService = api.service
+            app.recoveryService = api.service
             auth.state.value = testAuthenticationState(user = "turn-feedback-${UUID.randomUUID()}")
             try {
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
@@ -281,6 +285,7 @@ class ScreenshotScenario {
                     app.chatService = originalChat
                     app.composerService = originalComposer
                     app.controlService = originalControls
+                    app.recoveryService = originalRecovery
                     device.executeShellCommand("wm size $originalSize")
                     device.executeShellCommand("wm density $originalDensity")
                     if (font.toFloatOrNull() == null)
@@ -389,6 +394,7 @@ class ScreenshotScenario {
                     """{"runId":$run,"status":"available","messages":[{"id":"blank","text":" "},{"id":"first","text":${JsonPrimitive(copy)}}]}""",
                 )
             }
+            val recoveryResponses = api.commandResponse
             api.commandResponse = { request ->
                 if (request.method == "POST" && request.requestUrl?.encodedPath == "/api/chat/events") {
                     val input = parse(request).jsonObject
@@ -396,7 +402,7 @@ class ScreenshotScenario {
                     stopRequested.countDown()
                     check(releaseStop.await(25, TimeUnit.SECONDS))
                     jsonResponse("""{"threadId":"$CHAT_PERSONAL"}""").setResponseCode(201)
-                } else null
+                } else recoveryResponses(request)
             }
         }
 
