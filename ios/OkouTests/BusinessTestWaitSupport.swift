@@ -93,15 +93,50 @@ extension XCTestCase {
 
   /// Waits for a predicate over a conversation's graph state: its transcript (confirmed
   /// history, pending messages, streamed output and their items) and its composer's draft.
+  /// It is checked again whenever either value changes, and whenever an Observation-tracked
+  /// value it reads changes.
   func waitForBusinessResult(
     watching conversation: ConversationStore,
     timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
     message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
-    try await waitForBusinessResult(
-      watching: waitSignal(conversation), in: conversation.graph, timeout: timeout, file: file,
-      line: line, message: message(), predicate)
+    if predicate() { return }
+    let started = ContinuousClock.now
+    var observed: Duration?
+    let ready = expectation(
+      description: "The production business result became available at \(file):\(line)")
+    let check: @MainActor () -> Void = {
+      guard observed == nil, predicate() else { return }
+      observed = started.duration(to: .now)
+      ready.fulfill()
+    }
+    let store = conversation.graph
+    let transcript = try store.watch(conversation.transcript) { check() }
+    defer {
+      do { try transcript.cancel() } catch { XCTFail("Transcript waiter cleanup: \(error)") }
+    }
+    let draft = try store.watch(conversation.composer.presentation) { check() }
+    defer {
+      do { try draft.cancel() } catch { XCTFail("Draft waiter cleanup: \(error)") }
+    }
+    let observation = Task {
+      for await result in Observations({ predicate() }) where result {
+        check()
+        return
+      }
+    }
+    // A change committed before the listeners were mounted is not replayed to them.
+    check()
+    let result = await XCTWaiter.fulfillment(of: [ready], timeout: timeout)
+    let resumed = started.duration(to: .now)
+    observation.cancel()
+    await observation.value
+    _ = try XCTUnwrap(
+      result == .completed && predicate() ? true : nil,
+      message() + "; conversation waiter=\(result); observed=\(String(describing: observed)); "
+        + "resumed=\(resumed)",
+      file: file, line: line)
   }
 
   func waitForFileRemoval(
@@ -129,21 +164,5 @@ extension XCTestCase {
     source.cancel()
     await fulfillment(of: [stopped], timeout: 3)
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.path), file: file, line: line)
-  }
-}
-
-/// Both graph values a conversation owns, so one waiter wakes for either.
-private struct ConversationWait: Equatable {
-  let transcript: ConversationProjection.Value
-  let draft: ComposerDraftPresentation
-}
-
-/// One signal over a conversation's transcript and its composer's draft.
-@MainActor
-private func waitSignal(_ conversation: ConversationStore) -> Computed<ConversationWait> {
-  let transcript = conversation.transcript
-  let draft = conversation.composer.presentation
-  return Computed { get in
-    ConversationWait(transcript: try get(transcript), draft: try get(draft))
   }
 }
