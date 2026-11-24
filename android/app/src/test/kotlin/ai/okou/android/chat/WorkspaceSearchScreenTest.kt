@@ -145,6 +145,13 @@ class WorkspaceSearchScreenTest {
         all.assertIsSelected()
         artifactTab.assertIsFocused()
         assertTrue(artifactTab.getUnclippedBoundsInRoot().right <= 240.dp)
+
+        all.performSemanticsAction(SemanticsActions.RequestFocus)
+        val workflowTab = compose.onNodeWithTag("search_type_Workflows")
+        workflowTab.performSemanticsAction(SemanticsActions.RequestFocus)
+        workflowTab.assertIsFocused()
+        val end = workflowTab.getUnclippedBoundsInRoot().right
+        assertTrue("The focused filter ends inside the fade at $end", end <= 224.dp)
     }
 
     @Test

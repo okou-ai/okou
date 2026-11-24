@@ -9,9 +9,12 @@ import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -41,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +66,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -254,6 +259,7 @@ internal fun WorkspaceSearchScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchTypes(
     selectedType: WorkspaceSearchType,
@@ -265,60 +271,82 @@ private fun SearchTypes(
     val scroll = rememberScrollState()
     val reveal = remember { WorkspaceSearchType.entries.associateWith { BringIntoViewRequester() } }
     var focusedType by remember { mutableStateOf<WorkspaceSearchType?>(null) }
-    val visibleType = focusedType ?: selectedType
-    LaunchedEffect(visibleType, scroll.maxValue) { reveal.getValue(visibleType).bringIntoView() }
-    Row(
-        modifier
-            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
-            .drawWithContent {
-                drawContent()
-                val rtl = layoutDirection == LayoutDirection.Rtl
-                val fade = 16.dp.toPx()
-                val background = colors.background
-                val transparent = background.copy(alpha = 0f)
-                if (if (rtl) scroll.canScrollForward else scroll.canScrollBackward) {
-                    drawRect(
-                        Brush.horizontalGradient(listOf(background, transparent), endX = fade),
-                        size = Size(fade, size.height),
-                    )
-                }
-                if (if (rtl) scroll.canScrollBackward else scroll.canScrollForward) {
-                    val x = size.width - fade
-                    drawRect(
-                        Brush.horizontalGradient(listOf(transparent, background), startX = x),
-                        topLeft = Offset(x, 0f),
-                        size = Size(fade, size.height),
+    val fade = with(LocalDensity.current) { 16.dp.toPx() }
+    val defaultSpec = LocalBringIntoViewSpec.current
+    val filterSpec =
+        remember(defaultSpec, scroll, fade) {
+            object : BringIntoViewSpec by defaultSpec {
+                override fun calculateScrollDistance(
+                    offset: Float,
+                    size: Float,
+                    containerSize: Float,
+                ): Float {
+                    if (scroll.maxValue == 0) return 0f
+                    // Keep the focused control clear of the fade when it fits with room to spare.
+                    val margin = ((containerSize - size) / 2).coerceIn(0f, fade)
+                    return defaultSpec.calculateScrollDistance(
+                        offset - margin,
+                        size + 2 * margin,
+                        containerSize,
                     )
                 }
             }
-            .horizontalScroll(scroll)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        for (type in WorkspaceSearchType.entries) {
-            val selected = selectedType == type
-            Box(
-                Modifier.widthIn(min = 48.dp)
-                    .heightIn(min = 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .focusRequester(typeFocus.getValue(type))
-                    .focusProperties { canFocus = true }
-                    .background(if (selected) colors.secondaryContainer else colors.background)
-                    .bringIntoViewRequester(reveal.getValue(type))
-                    .onFocusChanged {
-                        if (it.isFocused) focusedType = type
-                        else if (focusedType == type) focusedType = null
+        }
+    val visibleType = focusedType ?: selectedType
+    LaunchedEffect(visibleType, scroll.maxValue) { reveal.getValue(visibleType).bringIntoView() }
+    CompositionLocalProvider(LocalBringIntoViewSpec provides filterSpec) {
+        Row(
+            modifier
+                .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+                .drawWithContent {
+                    drawContent()
+                    val rtl = layoutDirection == LayoutDirection.Rtl
+                    val background = colors.background
+                    val transparent = background.copy(alpha = 0f)
+                    if (if (rtl) scroll.canScrollForward else scroll.canScrollBackward) {
+                        drawRect(
+                            Brush.horizontalGradient(listOf(background, transparent), endX = fade),
+                            size = Size(fade, size.height),
+                        )
                     }
-                    .testTag("search_type_${type.name}")
-                    .selectable(selected, role = Role.Tab) { onSelect(type) }
-                    .padding(horizontal = 8.dp, vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    stringResource(type.label),
-                    style = searchSecondaryStyle(),
-                    color = if (selected) colors.onSecondaryContainer else colors.onSurface,
-                )
+                    if (if (rtl) scroll.canScrollBackward else scroll.canScrollForward) {
+                        val x = size.width - fade
+                        drawRect(
+                            Brush.horizontalGradient(listOf(transparent, background), startX = x),
+                            topLeft = Offset(x, 0f),
+                            size = Size(fade, size.height),
+                        )
+                    }
+                }
+                .horizontalScroll(scroll)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (type in WorkspaceSearchType.entries) {
+                val selected = selectedType == type
+                Box(
+                    Modifier.widthIn(min = 48.dp)
+                        .heightIn(min = 48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .focusRequester(typeFocus.getValue(type))
+                        .focusProperties { canFocus = true }
+                        .background(if (selected) colors.secondaryContainer else colors.background)
+                        .bringIntoViewRequester(reveal.getValue(type))
+                        .onFocusChanged {
+                            if (it.isFocused) focusedType = type
+                            else if (focusedType == type) focusedType = null
+                        }
+                        .testTag("search_type_${type.name}")
+                        .selectable(selected, role = Role.Tab) { onSelect(type) }
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        stringResource(type.label),
+                        style = searchSecondaryStyle(),
+                        color = if (selected) colors.onSecondaryContainer else colors.onSurface,
+                    )
+                }
             }
         }
     }
