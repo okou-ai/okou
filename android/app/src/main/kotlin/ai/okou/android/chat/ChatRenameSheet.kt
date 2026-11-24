@@ -19,10 +19,15 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -31,6 +36,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.filterNotNull
 
 internal enum class RenameStatus {
     Editing,
@@ -62,7 +68,10 @@ internal fun RenameListItemSheet(
     val unconfirmed = checking || status == RenameStatus.Unconfirmed
     val readOnly = unconfirmed || status == RenameStatus.Saving
     val confirmed = submitted != null && submitted == confirmedName && !readOnly
-    LaunchedEffect(confirmed) { if (confirmed) saved() }
+    LaunchedEffect(confirmed, submitted) {
+        if (confirmed && editor.submitted == submitted && input.text.toString().trim() == submitted)
+            saved()
+    }
 
     val hint =
         if (maxLength == null) stringResource(R.string.chat_rename_trim_hint)
@@ -114,6 +123,7 @@ internal fun RenameListItemSheet(
         },
     ) {
         Column {
+            var fieldFocused by remember { mutableStateOf(false) }
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(OkouFormLayout.LabelGap))
             OutlinedTextField(
@@ -122,6 +132,7 @@ internal fun RenameListItemSheet(
                     Modifier.fillMaxWidth()
                         .heightIn(min = OutlinedTextFieldDefaults.MinHeight)
                         .focusRequester(focus)
+                        .onFocusChanged { fieldFocused = it.isFocused }
                         .semantics {
                             contentDescription = label
                             if (validation != null) error(validation)
@@ -135,7 +146,16 @@ internal fun RenameListItemSheet(
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = colors.onSurface),
                 contentPadding = OkouFormLayout.FieldPadding,
             )
-            LaunchedEffect(Unit) { focus.requestFocus() }
+            LaunchedEffect(editor) {
+                focus.requestFocus()
+                // The old field collapses its selection when losing focus during window teardown.
+                val retainedSelection = editor.focusedSelection
+                if (input.selection != retainedSelection)
+                    input.edit { selection = retainedSelection }
+                snapshotFlow { input.selection.takeIf { fieldFocused } }
+                    .filterNotNull()
+                    .collect { editor.focusedSelection = it }
+            }
             Spacer(Modifier.height(OkouFormLayout.SupportingTextGap))
             Text(
                 validation ?: hint,
@@ -155,5 +175,17 @@ internal fun RenameListItemSheet(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun RestoreRenameOriginFocus(
+    request: WorkspaceRenameTarget,
+    focus: FocusRequester,
+    onFinished: (WorkspaceRenameTarget) -> Unit,
+) {
+    LaunchedEffect(request) {
+        focus.requestFocus()
+        onFinished(request)
     }
 }

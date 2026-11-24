@@ -115,10 +115,11 @@ internal fun ChatListScreen(
     requestMove: (String) -> Unit,
     moveFocus: ProjectMoveFocus?,
     onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
-    renameThread: (String) -> Unit,
-    renameProject: (String) -> Unit,
-    renamingThreadId: String?,
+    renameThread: (String, Boolean) -> Unit,
+    renameProject: (String, Boolean) -> Unit,
     renamingProjectId: String?,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     requestDeleteProject: (String) -> Unit,
     confirmingProjectDelete: String?,
     retryProjectRename: (String) -> Unit,
@@ -237,6 +238,13 @@ internal fun ChatListScreen(
                 section.group.threads.any { it.id == request.threadId }
         }
     }
+    val renameFocusKey =
+        when (renameFocus) {
+            is WorkspaceRenameTarget.Chat ->
+                renameFocus.id.takeUnless { renameFocus.fromConversation }
+            is WorkspaceRenameTarget.Project -> projectRowKey(renameFocus.id)
+            null -> null
+        }
     val runningKeys =
         remember(indicators, sections, collapsedActivity) {
             buildSet {
@@ -420,6 +428,21 @@ internal fun ChatListScreen(
                 }
             }
         }
+        if (renameFocus != null && renameFocusKey != null) {
+            LaunchedEffect(renameFocus, sections, leadingItems.size, projectNoticeIds) {
+                val anchor =
+                    sections.findScrollAnchor(
+                        renameFocusKey,
+                        0,
+                        leadingItems.size,
+                        projectNoticeIds,
+                        allowCollapsedChat = false,
+                    )
+                if (anchor == null) onRenameFocusFinished(renameFocus)
+                else if (listState.layoutInfo.visibleItemsInfo.none { it.key == renameFocusKey })
+                    listState.requestScrollToItem(anchor.index)
+            }
+        }
         LazyColumn(
             Modifier.widthIn(max = 720.dp).fillMaxSize().testTag("chat_list").semantics {
                 contentDescription = listLabel
@@ -448,14 +471,17 @@ internal fun ChatListScreen(
                                 row = section.firstRow,
                                 toggle = { projectExpansion?.toggle(project.id) },
                                 newChat = if (newChatEnabled) ({ newChat(project.id) }) else null,
-                                rename = { renameProject(project.id) },
+                                rename = { restore -> renameProject(project.id, restore) },
                                 canRename = canRenameProject,
                                 renaming = state.renamingProjectId == project.id,
                                 delete = { requestDeleteProject(project.id) },
                                 canDelete = state.canDeleteProject,
-                                actionDialogOpen =
-                                    confirmingProjectDelete == project.id ||
-                                        renamingProjectId == project.id,
+                                deleteDialogOpen = confirmingProjectDelete == project.id,
+                                renameFocus =
+                                    (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf {
+                                        it.id == project.id
+                                    },
+                                onRenameFocusFinished = onRenameFocusFinished,
                                 focusAfterMove =
                                     moveFocus?.takeIf {
                                         section === moveFocusSection && section.collapsed
@@ -584,7 +610,13 @@ internal fun ChatListScreen(
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
-                                    actionDialogOpen = deletingId == id || renamingThreadId == id,
+                                    deleteDialogOpen = deletingId == id,
+                                    rename = { restore -> renameThread(id, restore) },
+                                    renameFocus =
+                                        (renameFocus as? WorkspaceRenameTarget.Chat)?.takeIf {
+                                            !it.fromConversation && it.id == id
+                                        },
+                                    onRenameFocusFinished = onRenameFocusFinished,
                                     moveLabel = {
                                         projectMoveLabel(
                                             thread?.let {
@@ -594,7 +626,6 @@ internal fun ChatListScreen(
                                     },
                                     performAction = { action ->
                                         when (action) {
-                                            ChatRowAction.Rename -> renameThread(id)
                                             ChatRowAction.Delete -> deletingId = id
                                             ChatRowAction.MoveProject -> requestMove(id)
                                             else -> performRowAction(id, action)
@@ -701,6 +732,7 @@ private fun List<ChatListSection>.findScrollAnchor(
     offset: Int,
     leadingItemCount: Int,
     projectNoticeIds: Set<String>,
+    allowCollapsedChat: Boolean = true,
 ): ChatListScrollAnchor? {
     var row = leadingItemCount
     for (section in this) {
@@ -715,7 +747,8 @@ private fun List<ChatListSection>.findScrollAnchor(
         val threadIndex = threads.indexOfFirst { it.id == key }
         val pendingIndex = pending.indexOfFirst { it.threadId == key }
         if (threadIndex >= 0 || pendingIndex >= 0) {
-            if (section.collapsed) return ChatListScrollAnchor(header, 0)
+            if (section.collapsed)
+                return ChatListScrollAnchor(header, 0).takeIf { allowCollapsedChat }
             val firstPending = section.pinTail + 1
             val chatIndex =
                 when {
@@ -834,12 +867,14 @@ private fun ProjectRow(
     row: Int,
     toggle: () -> Unit,
     newChat: (() -> Unit)?,
-    rename: () -> Unit,
+    rename: (Boolean) -> Unit,
     canRename: Boolean,
     renaming: Boolean,
     delete: () -> Unit,
     canDelete: Boolean,
-    actionDialogOpen: Boolean,
+    deleteDialogOpen: Boolean,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     focusAfterMove: ProjectMoveFocus?,
     onMoveFocusFinished: (ProjectMoveFocus) -> Unit,
 ) {
@@ -864,6 +899,7 @@ private fun ProjectRow(
             onMoveFocusFinished(focusAfterMove)
         }
     }
+    if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, rowFocus, onRenameFocusFinished)
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
     val openMenu: (() -> Unit)? =
@@ -873,8 +909,8 @@ private fun ProjectRow(
                 restoreMenuFocus = rowFocused
                 menuOpen = true
             })
-    LaunchedEffect(menuOpen, actionDialogOpen) {
-        if (!menuOpen && !actionDialogOpen && restoreMenuFocus) {
+    LaunchedEffect(menuOpen, deleteDialogOpen) {
+        if (!menuOpen && !deleteDialogOpen && restoreMenuFocus) {
             restoreMenuFocus = false
             rowFocus.requestFocus()
         }
@@ -966,9 +1002,9 @@ private fun ProjectRow(
                         R.drawable.ic_edit,
                         enabled = canRename,
                     ) {
-                        restoreMenuFocus = false
                         menuOpen = false
-                        rename()
+                        rename(restoreMenuFocus)
+                        restoreMenuFocus = false
                     },
                 )
                 add(
@@ -1028,17 +1064,21 @@ private fun ChatRow(
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
-    actionDialogOpen: Boolean,
+    deleteDialogOpen: Boolean,
+    rename: (Boolean) -> Unit,
+    renameFocus: WorkspaceRenameTarget?,
+    onRenameFocusFinished: (WorkspaceRenameTarget) -> Unit,
     moveLabel: @Composable () -> String,
     performAction: (ChatRowAction) -> Unit,
     open: () -> Unit,
 ) {
     var menuOpen by remember(actions) { mutableStateOf(false) }
     val rowFocus = remember { FocusRequester() }
+    if (renameFocus != null) RestoreRenameOriginFocus(renameFocus, rowFocus, onRenameFocusFinished)
     var rowFocused by remember { mutableStateOf(false) }
     var restoreMenuFocus by remember { mutableStateOf(false) }
-    LaunchedEffect(menuOpen, actionDialogOpen) {
-        if (!menuOpen && !actionDialogOpen && restoreMenuFocus) {
+    LaunchedEffect(menuOpen, deleteDialogOpen) {
+        if (!menuOpen && !deleteDialogOpen && restoreMenuFocus) {
             restoreMenuFocus = false
             rowFocus.requestFocus()
         }
@@ -1130,7 +1170,10 @@ private fun ChatRow(
                             destructive = action == ChatRowAction.Delete,
                         ) {
                             menuOpen = false
-                            performAction(action)
+                            if (action == ChatRowAction.Rename) {
+                                rename(restoreMenuFocus)
+                                restoreMenuFocus = false
+                            } else performAction(action)
                         }
                     },
                 close = { menuOpen = false },
