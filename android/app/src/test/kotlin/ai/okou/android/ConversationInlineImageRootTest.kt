@@ -1,5 +1,6 @@
 package ai.okou.android
 
+import ai.okou.android.chat.ChatChanges
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
@@ -127,6 +128,54 @@ internal class ConversationInlineImageRootTest : ArtifactCatalogRootTestFixture(
             fixture.references.toSet(),
         )
         assertEquals(2, fixture.references.size)
+        assertTrue(fixture.originals.isEmpty())
+    }
+
+    @Test
+    fun removesAnInvalidatedFilenameFromAnOpenFindVisit() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.install()
+        openConversation()
+        val loaded =
+            hasContentDescription(fixture.readyAlt) and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("Chat actions").performClick()
+        compose.onNodeWithText("Find messages").performClick()
+        val query = compose.onNodeWithTag("conversation_find_query")
+        query.performTextReplacement(fixture.filename)
+        awaitText("1 matching message")
+
+        (app.realtimeService as TestRealtimeService).invalidate(
+            ChatChanges(artifactThreads = setOf(CHAT_PERSONAL)),
+        )
+        awaitText("No matching messages")
+        query.performTextReplacement(fixture.readyAlt)
+        awaitText("1 matching message")
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w360dp-h890dp")
+    fun keepsLinkedImagesInsideTheirScrollableTableCell() {
+        val fixture = InlineImageFixture(app.fixture)
+        fixture.install(
+            latest =
+                "| Evidence | Note | Source |\n| --- | --- | --- |\n" +
+                    "| [![${fixture.readyAlt}](/artifacts/${fixture.readyReference})]" +
+                    "(https://example.com/report) | Passed | Staging |",
+            earlier = false,
+        )
+        openConversation()
+        val loaded =
+            hasContentDescription(fixture.readyAlt) and
+                hasClickAction() and
+                SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription)
+        compose.waitUntil(8_000) { compose.onAllNodes(loaded).fetchSemanticsNodes().isNotEmpty() }
+        val frame = compose.onNode(loaded).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(144.dp, frame.width)
+        assertEquals(130.dp, frame.height)
+        assertEquals(listOf(fixture.readyReference), fixture.thumbnails.toList())
         assertTrue(fixture.originals.isEmpty())
     }
 

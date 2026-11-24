@@ -1479,7 +1479,7 @@ internal fun OkouApp(
                                         rows,
                                         chatArtifacts != null,
                                         restoreFocus,
-                                        chatArtifacts?.inlineImages?.names(selected.id).orEmpty(),
+                                        chatArtifacts?.inlineImages?.names(selected.id),
                                     )
                             }
                         }

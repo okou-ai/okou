@@ -70,7 +70,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -81,10 +84,11 @@ internal class ConversationFindVisit(
     private val rows: List<HistoryEvent>,
     private val artifactCards: Boolean,
     val restoreActionsFocus: Boolean,
-    private val imageNames: Map<String, String> = emptyMap(),
+    private val imageNames: Flow<Map<String, String>>? = null,
 ) {
     private val messages = transcript?.messages.orEmpty()
     private val pendingInputIds = transcript?.pendingInputIds.orEmpty()
+    private var indexedImageNames: Map<String, String>? = null
 
     val hasLoadedMessages: Boolean
         get() = messages.isNotEmpty()
@@ -118,11 +122,17 @@ internal class ConversationFindVisit(
     }
 
     suspend fun prepareIndex() {
-        if (index == null) {
+        (imageNames ?: flowOf(emptyMap())).collectLatest { names ->
+            if (index != null && indexedImageNames == names) return@collectLatest
+            // Remove revoked names from the visible results before rebuilding off Main.
+            if (indexedImageNames.orEmpty().any { (source, name) -> names[source] != name }) {
+                index = null
+            }
             index =
                 withContext(Dispatchers.Default) {
-                    findMessages(messages, rows, pendingInputIds, artifactCards, imageNames)
+                    findMessages(messages, rows, pendingInputIds, artifactCards, names)
                 }
+            indexedImageNames = names
         }
     }
 
@@ -299,14 +309,14 @@ internal fun ConversationFind(visit: ConversationFindVisit, onClose: () -> Unit)
     val index = visit.index
     val keyword = visit.keyword
     val filtered by
-        produceState<Pair<String, List<FindResult>>?>(null, index, keyword) {
+        produceState<Triple<List<FindMessage>, String, List<FindResult>>?>(null, index, keyword) {
             value = index?.let { loaded ->
                 withContext(Dispatchers.Default) {
-                    keyword to conversationFindResults(loaded, keyword)
+                    Triple(loaded, keyword, conversationFindResults(loaded, keyword))
                 }
             }
         }
-    val results = filtered?.takeIf { it.first == keyword }?.second
+    val results = filtered?.takeIf { it.first === index && it.second == keyword }?.third
     LaunchedEffect(visit) {
         if (visit.focusPending && visit.focusedResult == null && inputFocus.requestFocus()) {
             visit.focusRestored()
