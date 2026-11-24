@@ -193,6 +193,10 @@ internal constructor(
         detailLoad = null
     }
 
+    private fun invalidateCachedDetail(id: String) {
+        details[id]?.let { details[id] = it.copy(readAt = null) }
+    }
+
     private fun cancelHistoryRead(keepEarlierRequest: Boolean = false) {
         historyLoad?.cancel()
         historyLoad = null
@@ -218,8 +222,17 @@ internal constructor(
     }
 
     internal fun select(id: String?, tab: WorkflowTab = WorkflowTab.Instructions) {
-        val newSelection = selected != id
+        val previousSelection = selected
+        val newSelection = previousSelection != id
         if (!newSelection && this.tab == tab) return
+        if (
+            newSelection &&
+                previousSelection != null &&
+                mutable.value.toggles.values.any { it.phase == WorkflowTogglePhase.Submitting }
+        ) {
+            // A receipt can arrive while this workflow is no longer selected.
+            invalidateCachedDetail(previousSelection)
+        }
         selected = id
         this.tab = tab
         cancelHistoryRead()
@@ -792,9 +805,13 @@ internal constructor(
         if (detailLoad?.isActive == true) readsAfterWrite.add(WorkflowReadScope.Detail)
         stopWorkflowReads()
         val toggles =
-            if (ruleId != null && toggleTo != null)
-                state.toggles + (ruleId to WorkflowToggle(toggleTo, WorkflowTogglePhase.Submitting))
-            else state.toggles
+            when {
+                ruleId != null && toggleTo != null ->
+                    state.toggles +
+                        (ruleId to WorkflowToggle(toggleTo, WorkflowTogglePhase.Submitting))
+                ruleId != null && ruleId in state.toggles -> state.toggles - ruleId
+                else -> state.toggles
+            }
         mutable.value = state.copy(writing = true, toggles = toggles, issue = null)
         viewModelScope.launch {
             try {
@@ -811,7 +828,7 @@ internal constructor(
                     val current = mutable.value
                     if (ruleId != null && toggleTo != null && error.toggleOutcomeUnknown()) {
                         // Keep the displayed detail. Reentering it must read before toggling again.
-                        details[detail.id]?.let { details[detail.id] = it.copy(readAt = null) }
+                        invalidateCachedDetail(detail.id)
                         mutable.value =
                             current.copy(
                                 toggles =

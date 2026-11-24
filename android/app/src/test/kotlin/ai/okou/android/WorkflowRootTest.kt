@@ -288,6 +288,28 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
     }
 
     @Test
+    fun emptyDirectorySearchKeepsTheRecoveryAtTheStartOfTheResults() {
+        app.gate.countDown()
+        compose.onNodeWithContentDescription("Workflows").performClick()
+        val rowTag = "workflow_row_$WORKFLOW_RELEASE"
+        waitForTag(rowTag)
+
+        compose.onNodeWithTag("workflow_query").performTextReplacement("unmatched workflow")
+        val title = compose.onNodeWithText("No matching workflows").assertIsDisplayed()
+        val clear = compose.onNodeWithText("Clear search").assertIsEnabled()
+        val all = compose.onNodeWithTag("workflow_scope_All").getUnclippedBoundsInRoot()
+        val titleBounds = title.getUnclippedBoundsInRoot()
+        val clearBounds = clear.getUnclippedBoundsInRoot()
+        assertEquals(24.dp, titleBounds.top - all.bottom - 8.dp)
+        assertEquals(12.dp, titleBounds.left - all.left)
+        assertEquals(8.dp, clearBounds.top - titleBounds.bottom)
+        assertTrue(clearBounds.bottom - clearBounds.top >= 48.dp)
+
+        clear.performClick()
+        compose.onNodeWithTag(rowTag).assertIsDisplayed()
+    }
+
+    @Test
     fun workflowDirectoryScopesRulesAndReturnsFromDraftWithoutSending() {
         assertFalse(app.fixture.requests.any { it.requestUrl?.encodedPath == "/api/workflows" })
         compose.onNodeWithContentDescription("Workflows").performClick()

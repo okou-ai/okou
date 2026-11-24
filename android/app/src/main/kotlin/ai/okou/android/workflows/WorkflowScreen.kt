@@ -9,6 +9,7 @@ import ai.okou.android.api.generated.WorkflowDetail
 import ai.okou.android.api.generated.WorkflowDetailVisibility
 import ai.okou.android.api.generated.WorkflowSummary
 import ai.okou.android.api.generated.WorkflowSummaryVisibility
+import ai.okou.android.chat.ChatListTextAction
 import ai.okou.android.chat.ChatSkeletonBlock
 import ai.okou.android.chat.rememberChatWaitIndicator
 import ai.okou.android.state.ChatSearchState
@@ -560,7 +561,7 @@ private fun WorkflowDirectory(
                                     text,
                                     query::reset,
                                     onScope,
-                                    Modifier.fillParentMaxSize(),
+                                    topPadding = if (readFeedback == null) 24.dp else 0.dp,
                                 )
                             }
                         items(rows, key = { it.id }) { row ->
@@ -671,25 +672,31 @@ private fun WorkflowEmpty(
     text: String,
     reset: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
-    modifier: Modifier,
+    topPadding: Dp,
 ) {
-    Column(
-        modifier.padding(16.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    val hasQuery = text.isNotEmpty()
+    val scoped = scope != WorkflowScope.All
+    val title =
         when {
-            text.isNotEmpty() -> {
-                WorkflowSecondary(stringResource(R.string.workflow_no_matches))
-                TextButton(onClick = reset) { Text(stringResource(R.string.workflow_clear_search)) }
-            }
-            scope != WorkflowScope.All -> {
-                WorkflowSecondary(stringResource(R.string.workflow_empty_scope))
-                TextButton(onClick = { onScope(WorkflowScope.All) }) {
-                    Text(stringResource(R.string.workflow_show_all))
-                }
-            }
-            else -> WorkflowSecondary(stringResource(R.string.workflow_empty))
+            hasQuery -> R.string.workflow_no_matches
+            scoped -> R.string.workflow_empty_scope
+            else -> R.string.workflow_empty
+        }
+    Column(
+        Modifier.fillMaxWidth().padding(top = topPadding),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            stringResource(title),
+            Modifier.padding(horizontal = 12.dp).semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            },
+            style = workflowBodyStyle().copy(fontWeight = FontWeight.SemiBold),
+        )
+        when {
+            hasQuery -> ChatListTextAction(R.string.workflow_clear_search, onClick = reset)
+            scoped -> ChatListTextAction(R.string.workflow_show_all) { onScope(WorkflowScope.All) }
         }
     }
 }
