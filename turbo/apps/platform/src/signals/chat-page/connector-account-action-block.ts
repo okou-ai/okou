@@ -36,6 +36,8 @@ import { parseTrustedPlatformUrl } from "./trusted-platform-url.ts";
 
 export interface ConnectorAccountActionDescriptor {
   readonly selection: ConnectorAccountSelection;
+  readonly memberWide: boolean;
+  readonly requestId: string | null;
   readonly originalUrl: string;
   readonly callbackPrompt: string;
   readonly threadId: string;
@@ -74,7 +76,8 @@ type ConnectorAccountActionCardSignalsRegistry = CardSignalsRegistry<
 export function connectorAccountActionResourceKey(
   descriptor: ConnectorAccountActionDescriptor,
 ): string {
-  const path = `/connectors/accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/select`;
+  const action = descriptor.memberWide ? "member-approval" : "select";
+  const path = `/connectors/accounts/${encodeURIComponent(descriptor.selection.connectionId.toLowerCase())}/${action}`;
   const targetKey = connectorAccountTargetKey(descriptor.selection.target);
   const params = new URLSearchParams({
     target:
@@ -84,6 +87,9 @@ export function connectorAccountActionResourceKey(
     threadId: descriptor.threadId.toLowerCase(),
     callbackPrompt: descriptor.callbackPrompt,
   });
+  if (descriptor.requestId) {
+    params.set("requestId", descriptor.requestId);
+  }
   return `${path}?${params.toString()}`;
 }
 
@@ -116,7 +122,7 @@ export function parseConnectorAccountActionUrl(
     return { status: "unrelated" };
   }
   const current = url.pathname.match(
-    /^\/connectors\/accounts\/([^/]+)\/select$/u,
+    /^\/connectors\/accounts\/([^/]+)\/(select|member-approval)$/u,
   );
   const connectionId = current?.[1];
   if (!connectionId) {
@@ -132,10 +138,13 @@ export function parseConnectorAccountActionUrl(
   ) {
     return { status: "invalid", originalUrl: value };
   }
+  const memberWide = current?.[2] === "member-approval";
   return {
     status: "valid",
     descriptor: {
       selection,
+      memberWide,
+      requestId: memberWide ? url.searchParams.get("requestId") : null,
       originalUrl: value,
       callbackPrompt: callback.callbackPrompt,
       threadId: callback.threadId,
@@ -186,8 +195,12 @@ function createConnectorAccountConfirmSignal(
     };
 
     signal.throwIfAborted();
+    const client = get(apiClient$)(runConnectorAccountsContract);
+    const approve = descriptor.memberWide
+      ? client.approveMember
+      : client.approve;
     await accept(
-      get(apiClient$)(runConnectorAccountsContract).approve({
+      approve({
         params: { threadId: descriptor.threadId },
         body: descriptor.selection,
         fetchOptions: { signal },

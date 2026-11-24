@@ -17,6 +17,7 @@ import { settle } from "../utils";
 import { isConnectorAccountDefaultConflict } from "./connector-account-lifecycle.service";
 import {
   accountDefaultEnabledSql,
+  approveMemberConnectorAccountSql,
   connectorAccessSelectionTarget,
   connectorAccessThreadOwner,
   repairChatConnectorSelectionsSql,
@@ -345,6 +346,32 @@ export const setChatConnectorCurrent$ = command(
     );
     signal.throwIfAborted();
     if (rows.length === 0) {
+      return false;
+    }
+    await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);
+    return true;
+  },
+);
+
+export const approveMemberConnectorAccount$ = command(
+  async (
+    { set },
+    owner: ChatConnectorAccessOwner,
+    connectionId: string,
+    signal: AbortSignal,
+  ) => {
+    const at = nowDate();
+    const expiresAt = new Date(
+      at.getTime() + policyDurationHours["allow-1h"] * 3_600_000,
+    );
+    const selected = parseRawRows(
+      object({ connector_id: uuid() }),
+      await set(writeDb$).execute(
+        approveMemberConnectorAccountSql(owner, connectionId, at, expiresAt),
+      ),
+    );
+    signal.throwIfAborted();
+    if (selected.length === 0) {
       return false;
     }
     await set(synchronizeChatConnectorAutomationAccounts$, owner, signal);

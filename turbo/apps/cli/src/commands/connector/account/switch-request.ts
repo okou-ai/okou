@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   connectorAccountTargetKey,
   type ConnectorAccountTarget,
@@ -65,7 +66,7 @@ function availableInspection(
 export const switchConnectorAccountRequestCommand = new Command()
   .name("switch-request")
   .description(
-    "Ask the owner to allow and select one exact account in this Chat",
+    "Ask the owner to allow one exact account and select it in this Chat",
   )
   .argument(
     "<selector>",
@@ -91,7 +92,7 @@ Example:
 
 Notes:
   - First run okou connector account list <slug> --json and use an exact returned connectionId
-  - Owner confirmation allows and selects this exact account in the current Chat
+  - The approval card explains the access scope and selects this exact account in the current Chat
   - ${CALLBACK_PROMPT_GUIDANCE}
   - Use this callback flow only when account switching is this turn's single access action
   - Return the generated URL verbatim with all query parameters, then end the current turn`,
@@ -116,7 +117,7 @@ Notes:
           [
             listConnectorCatalog(),
             listCustomConnectors(),
-            listRunConnectorAccounts(),
+            listRunConnectorAccounts(true),
           ],
         );
         const discoveredConnectors = connectorDiscoveryItems(
@@ -169,9 +170,15 @@ Notes:
           connectionId,
         );
         const origin = await getPlatformOrigin();
-        const path = `/connectors/accounts/${encodeURIComponent(connectionId)}/select`;
+        const memberScope = inventory.approvalScope === "member";
+        const action = memberScope ? "member-approval" : "select";
+        const path = `/connectors/accounts/${encodeURIComponent(connectionId)}/${action}`;
         const actionUrl = new URL(path, origin);
         addTargetSearchParams(actionUrl.searchParams, target);
+        if (memberScope) {
+          // A new approval must load fresh account status even if its callback repeats.
+          actionUrl.searchParams.set("requestId", randomUUID());
+        }
         const url = finalizeActionUrl(actionUrl, options.callbackPrompt);
         const label = connectorAccountCliLabel({
           ...inspection,
@@ -179,7 +186,9 @@ Notes:
         });
 
         console.log(
-          `Allow and select ${label} for ${connector.label} in this Chat: [Confirm account switch](${url})`,
+          memberScope
+            ? `Allow ${label} for ${connector.label} across your Chats for 1 hour and select it in this Chat: [Review account access](${url})`
+            : `Allow and select ${label} for ${connector.label} in this Chat: [Confirm account switch](${url})`,
         );
         printCallbackTurnInstruction();
       },

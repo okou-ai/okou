@@ -21,6 +21,10 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  connectorAccountActionResourceKey,
+  parseConnectorAccountActionUrl,
+} from "../../../signals/chat-page/connector-account-action-block.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { createChatEvent } from "../../../mocks/mock-helpers.ts";
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
@@ -1146,18 +1150,29 @@ function mockOwnedApprovalThread() {
   });
 }
 
-async function exerciseAccountSwitch(entry: "chat" | "direct") {
+async function exerciseAccountSwitch(
+  entry: "chat" | "direct",
+  scope: "chat" | "member",
+) {
   const github = connectorSlugSchema.parse("github");
   const connectionId = "f0000000-0000-4000-a000-000000000901";
   const otherConnectionId = "f0000000-0000-4000-a000-000000000902";
   const iconUrl = "https://icons.example.test/account-switch-github.svg";
+  const action = scope === "member" ? "member-approval" : "select";
+  const button = scope === "member" ? "Allow for 1h" : "Switch";
   const switchUrl = new URL(
-    `https://app.okou.ai/connectors/accounts/${connectionId}/select`,
+    `https://app.okou.ai/connectors/accounts/${connectionId}/${action}`,
   );
   switchUrl.searchParams.set("kind", "builtin");
   switchUrl.searchParams.set("connectorSlug", github);
   switchUrl.searchParams.set("threadId", THREAD_ID);
   switchUrl.searchParams.set("callbackPrompt", "Continue");
+  if (scope === "member") {
+    switchUrl.searchParams.set(
+      "requestId",
+      "f0000000-0000-4000-a000-000000000903",
+    );
+  }
   context.mocks.api(
     connectorAccountsContract.connection,
     ({ params, respond }) => {
@@ -1204,7 +1219,9 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
     },
   );
   context.mocks.api(
-    runConnectorAccountsContract.approve,
+    scope === "member"
+      ? runConnectorAccountsContract.approveMember
+      : runConnectorAccountsContract.approve,
     ({ body, respond }) => {
       expect(body).toStrictEqual({
         ...selection,
@@ -1294,6 +1311,11 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
 
   const card = await screen.findByTestId("connector-account-action-card");
   expect(card).toHaveTextContent("Switch to Work GitHub?");
+  expect(
+    within(card).queryByText(
+      "Allow across your chats. Select this account here.",
+    ) !== null,
+  ).toBe(scope === "member");
   await waitFor(() => {
     expect(card.querySelector(`img[src="${iconUrl}"]`)).toBeInTheDocument();
   });
@@ -1301,7 +1323,7 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   expect(statusReads).toBe(0);
 
   expect(selectionWrites).toBe(0);
-  click(buttonIn(card, "Switch"));
+  click(buttonIn(card, button));
   await waitFor(() => {
     expect(callbackIds).toHaveLength(1);
   });
@@ -1355,10 +1377,10 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   });
   const otherCard = screen.getAllByTestId("connector-account-action-card")[1]!;
   expect(otherCard).toHaveTextContent("Switch to Personal GitHub?");
-  click(buttonIn(otherCard, "Switch"));
+  click(buttonIn(otherCard, button));
   await waitFor(() => {
     expect(otherCard).toHaveTextContent("Switched to Personal GitHub");
-    expect(buttonIn(card, "Switch")).toBeEnabled();
+    expect(buttonIn(card, button)).toBeEnabled();
     expect(callbackIds).toHaveLength(2);
   });
   expect(selectionWrites).toBe(2);
@@ -1372,7 +1394,7 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
     ).toBeInTheDocument();
   }, replyWaitOptions);
 
-  click(buttonIn(card, "Switch"));
+  click(buttonIn(card, button));
   await waitFor(() => {
     expect(card).toHaveTextContent("Switched to Work GitHub");
     expect(callbackIds).toHaveLength(3);
@@ -1403,10 +1425,31 @@ async function exerciseAccountSwitch(entry: "chat" | "direct") {
   }, replyWaitOptions);
 }
 
-test.each(["chat", "direct"] as const)(
-  "Connector account switching from %s",
+test.each([
+  ["chat", "chat"],
+  ["direct", "chat"],
+  ["chat", "member"],
+  ["direct", "member"],
+] as const)(
+  "Connector account switching from %s with %s approval",
   exerciseAccountSwitch,
 );
+
+test("A fresh member connector approval uses a new status read even with the same callback", () => {
+  const key = (requestId: string) => {
+    const result = parseConnectorAccountActionUrl(
+      `https://app.okou.ai/connectors/accounts/${EXACT_CONNECTION_ID}/member-approval?kind=builtin&connectorSlug=github&requestId=${requestId}&threadId=${THREAD_ID}&callbackPrompt=Continue`,
+      { threadId: THREAD_ID },
+    );
+    if (result.status !== "valid") {
+      throw new Error("Expected a valid member connector approval action");
+    }
+    return connectorAccountActionResourceKey(result.descriptor);
+  };
+  expect(key("f0000000-0000-4000-a000-000000000904")).not.toBe(
+    key("f0000000-0000-4000-a000-000000000905"),
+  );
+});
 
 test("Ordinary or code links remain message content", async () => {
   const ordinaryUrl = "https://example.com/reference";
@@ -1486,6 +1529,7 @@ test.each(["chat", "direct"] as const)(
 test.each([
   "/banking/access?reason=Review+spend&",
   "/connectors/accounts/f0000000-0000-4000-a000-000000000901/select?kind=builtin&connectorSlug=github&",
+  "/connectors/accounts/f0000000-0000-4000-a000-000000000901/member-approval?kind=builtin&connectorSlug=github&",
 ])("A direct approval requires access to its Chat (%s)", async (route) => {
   context.mocks.api(chatThreadMetadataContract.get, ({ respond }) => {
     return respond(404, {

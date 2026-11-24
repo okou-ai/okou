@@ -246,6 +246,13 @@ function ReadyConnectorAccountActionCard({
               .filter(Boolean)
               .join(" · ")}
           </div>
+          {signals.memberWide && !selected && (
+            <p className="mt-1 text-xs leading-4 text-muted-foreground">
+              {t(($) => {
+                return $.chat.connectorAccountSwitch.memberScope;
+              })}
+            </p>
+          )}
           <ConnectorAccountActionNotice
             reconnectRequired={
               status.account.connectionStatus === "reconnect-required"
@@ -269,7 +276,9 @@ function ReadyConnectorAccountActionCard({
                 return $.chat.connectorAccountSwitch.switching;
               })
             : t(($) => {
-                return $.chat.connectorAccountSwitch.switch;
+                return signals.memberWide
+                  ? $.chat.connectorAccountSwitch.allowForHour
+                  : $.chat.connectorAccountSwitch.switch;
               })}
         </Button>
       )}

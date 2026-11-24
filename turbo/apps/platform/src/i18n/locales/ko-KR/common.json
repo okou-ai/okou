@@ -1962,8 +1962,10 @@
     "connectorAccountSwitch": {
       "accountFallback": "커넥터 계정",
       "actionFailed": "계정을 전환할 수 없습니다.",
+      "allowForHour": "1시간 동안 허용",
       "customConnector": "사용자 지정 커넥터",
       "loadFailed": "이 커넥터 계정을 불러올 수 없습니다.",
+      "memberScope": "모든 채팅에서 허용하고 이 채팅에서 이 계정을 선택합니다.",
       "reconnectRequired": "다시 연결해야 합니다. 이후 실행에서는 기존 대체 계정을 사용할 수 있습니다.",
       "selected": "{{account}}(으)로 전환됨",
       "switch": "전환",

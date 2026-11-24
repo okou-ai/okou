@@ -508,6 +508,10 @@ export const iosClientContracts: readonly {
     route: runConnectorAccountsContract.approve,
   },
   {
+    id: "ios.runConnectorAccountsContract.approveMember",
+    route: runConnectorAccountsContract.approveMember,
+  },
+  {
     id: "ios.thirdPartySubscriptionsMainContract.list",
     route: thirdPartySubscriptionsMainContract.list,
   },
