@@ -38,6 +38,10 @@ async fn claude_error_result_is_written_to_system_log() -> Result<(), Box<dyn st
             Some(FailureReason::UsageLimit),
         ),
         (
+            "You've hit your Fable limit · resets 6am (Asia/Shanghai). Switch to another model to continue.",
+            Some(FailureReason::UsageLimit),
+        ),
+        (
             "API Error: Your account can't receive replies from Claude right now. You can find the next step in the Anthropic Verification Portal: https://example.invalid/verification?token=private-verification-token",
             Some(FailureReason::AccountVerificationRequired),
         ),

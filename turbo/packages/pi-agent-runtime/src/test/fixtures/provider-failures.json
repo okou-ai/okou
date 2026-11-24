@@ -44,6 +44,30 @@
     "reason": "provider_rate_limited"
   },
   {
+    "message": "{\"error\":{\"code\":403,\"message\":\"Output data may contain inappropriate content.\"}}",
+    "reason": "safety_policy_refusal"
+  },
+  {
+    "message": "{\"error\":{\"code\":403,\"message\":\"Forbidden\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":400,\"message\":\"Output data may contain inappropriate content.\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":\"403\",\"message\":\"Output data may contain inappropriate content.\"}}",
+    "reason": null
+  },
+  {
+    "message": "{\"error\":{\"code\":403,\"type\":\"authentication_error\",\"message\":\"Output data may contain inappropriate content.\"}}",
+    "reason": "invalid_credentials"
+  },
+  {
+    "message": "{\"debug\":{\"error\":{\"code\":403,\"message\":\"Output data may contain inappropriate content.\"}}}",
+    "reason": null
+  },
+  {
     "message": "{\"error\":{\"code\":529,\"message\":\"Specific upstream load failure\"}}",
     "reason": "provider_overloaded"
   },
