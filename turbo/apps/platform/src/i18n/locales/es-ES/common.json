@@ -598,7 +598,6 @@
       "name": "Nombre",
       "retry": "Intentar de nuevo",
       "search": "Buscar artefactos",
-      "sort": "Ordenar artefactos",
       "sortAscending": "Ordenar de forma ascendente",
       "sortDescending": "Ordenar de forma descendente",
       "type": "Tipo"

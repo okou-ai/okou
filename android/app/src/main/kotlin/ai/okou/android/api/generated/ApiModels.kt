@@ -17040,12 +17040,6 @@ enum class ArtifactCatalogQueryKind {
 }
 
 @Serializable
-enum class ArtifactCatalogQuerySort {
-    @SerialName("createdAt") CREATEDAT,
-    @SerialName("title") TITLE,
-}
-
-@Serializable
 enum class ArtifactCatalogQueryDirection {
     @SerialName("asc") ASC,
     @SerialName("desc") DESC,
@@ -17058,7 +17052,6 @@ data class ArtifactCatalogQuery(
     val `kind`: ArtifactCatalogQueryKind? = null,
     val `chatThreadId`: String? = null,
     val `keyword`: String? = null,
-    val `sort`: ArtifactCatalogQuerySort? = null,
     val `direction`: ArtifactCatalogQueryDirection? = null,
 )
 

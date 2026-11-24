@@ -10,7 +10,6 @@ import type {
   ArtifactCatalogKind,
   ArtifactCatalogListClientQuery,
   ArtifactCatalogListResponse,
-  ArtifactCatalogSort,
   ArtifactDetail,
   ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -50,14 +49,10 @@ export interface ArtifactCatalogPage {
   readonly nextCursor: string | null;
 }
 
-export interface ArtifactCatalogOrder {
-  readonly sort: ArtifactCatalogSort;
-  readonly direction: ArtifactCatalogDirection;
-}
-
-export interface ArtifactCatalogQuery extends ArtifactCatalogOrder {
+export interface ArtifactCatalogQuery {
   readonly kind: ArtifactCatalogKind | null;
   readonly search: string;
+  readonly direction: ArtifactCatalogDirection;
 }
 
 type CatalogPageRequest = (
@@ -148,11 +143,8 @@ export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
   readonly search$: Computed<string>;
   readonly setSearch$: Command<Promise<void>, [string, AbortSignal]>;
-  readonly sort$: Computed<ArtifactCatalogOrder>;
-  readonly setSort$: Command<
-    void,
-    [ArtifactCatalogSort, ArtifactCatalogDirection]
-  >;
+  readonly direction$: Computed<ArtifactCatalogDirection>;
+  readonly setDirection$: Command<void, [ArtifactCatalogDirection]>;
   readonly initializeQuery$: Command<void, [ArtifactCatalogQuery, AbortSignal]>;
   readonly cancelQuery$: Command<void, []>;
 }
@@ -183,10 +175,7 @@ function createArtifactLibraryQuerySignals(
 ) {
   const internalSearch$ = state("");
   const internalKeyword$ = state(Promise.resolve(""));
-  const internalSort$ = state<ArtifactCatalogOrder>({
-    sort: "createdAt",
-    direction: "desc",
-  });
+  const internalDirection$ = state<ArtifactCatalogDirection>("desc");
   const internalRequest$ = state<CatalogPageRequest | null>(null);
   const resetRequests$ = resetSignal();
   const resetSearch$ = resetSignal();
@@ -226,13 +215,9 @@ function createArtifactLibraryQuerySignals(
       searchSignal.throwIfAborted();
     },
   );
-  const setSort$ = command(
-    (
-      { set },
-      sort: ArtifactCatalogSort,
-      direction: ArtifactCatalogDirection,
-    ) => {
-      set(internalSort$, { sort, direction });
+  const setDirection$ = command(
+    ({ set }, direction: ArtifactCatalogDirection) => {
+      set(internalDirection$, direction);
     },
   );
   const initialize$ = command(
@@ -241,7 +226,7 @@ function createArtifactLibraryQuerySignals(
       set(resetSearch$);
       set(internalSearch$, query.search);
       set(internalKeyword$, Promise.resolve(query.search.trim()));
-      set(setSort$, query.sort, query.direction);
+      set(setDirection$, query.direction);
       set(restartRequests$, signal);
     },
   );
@@ -259,14 +244,14 @@ function createArtifactLibraryQuerySignals(
     keyword$: computed((get) => {
       return get(internalKeyword$);
     }),
-    sort$: computed((get) => {
-      return get(internalSort$);
+    direction$: computed((get) => {
+      return get(internalDirection$);
     }),
     request$: computed((get) => {
       return get(internalRequest$);
     }),
     setSearch$,
-    setSort$,
+    setDirection$,
     initialize$,
     restartRequests$,
     cancel$,
@@ -284,7 +269,7 @@ function createCatalogSource(
     const kind = get(kind$);
     const enabled = library ? get(library.enabled$) : false;
     const keyword = library ? get(library.keyword$) : "";
-    const sort = library ? get(library.sort$) : null;
+    const direction = library ? get(library.direction$) : null;
     const request = library ? get(library.request$) : null;
     const libraryEnabled = await enabled;
     const trimmedKeyword = libraryEnabled ? (await keyword).trim() : "";
@@ -293,7 +278,7 @@ function createCatalogSource(
         limit: ARTIFACT_CATALOG_PAGE_SIZE,
         ...(kind ? { kind } : {}),
         ...(chatThreadId ? { chatThreadId } : {}),
-        ...(libraryEnabled && sort ? sort : {}),
+        ...(libraryEnabled && direction ? { direction } : {}),
         ...(trimmedKeyword ? { keyword: trimmedKeyword } : {}),
       },
       request,
@@ -660,17 +645,12 @@ export function createArtifactCatalogSignals(
       await set(library.setSearch$, search, signal);
     },
   );
-  const setSort$ = command(
-    (
-      { get, set },
-      sort: ArtifactCatalogSort,
-      direction: ArtifactCatalogDirection,
-    ) => {
-      const previous = get(library.sort$);
-      if (previous.sort === sort && previous.direction === direction) {
+  const setDirection$ = command(
+    ({ get, set }, direction: ArtifactCatalogDirection) => {
+      if (get(library.direction$) === direction) {
         return;
       }
-      set(library.setSort$, sort, direction);
+      set(library.setDirection$, direction);
       set(library.restartRequests$, get(pageSignal$));
       set(resetPages$);
     },
@@ -683,8 +663,8 @@ export function createArtifactCatalogSignals(
     setKind$,
     search$: library.search$,
     setSearch$,
-    sort$: library.sort$,
-    setSort$,
+    direction$: library.direction$,
+    setDirection$,
     initializeQuery$: command(
       ({ set }, query: ArtifactCatalogQuery, signal: AbortSignal) => {
         set(source.kind$, query.kind);

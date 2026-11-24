@@ -582,7 +582,6 @@
       "name": "Name",
       "retry": "Try again",
       "search": "Search artifacts",
-      "sort": "Sort artifacts",
       "sortAscending": "Sort ascending",
       "sortDescending": "Sort descending",
       "type": "Type"
