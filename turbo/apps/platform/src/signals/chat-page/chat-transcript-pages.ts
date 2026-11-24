@@ -339,20 +339,23 @@ function anchorInPageWindow(
   if (!viewport || !anchor || !viewport.clientHeight) {
     return null;
   }
-  const contentOffset = () => {
+  const viewportOffset = () => {
     return (
-      anchor.getBoundingClientRect().top -
-      viewport.getBoundingClientRect().top +
-      viewport.scrollTop
+      anchor.getBoundingClientRect().top - viewport.getBoundingClientRect().top
     );
   };
-  const previous = contentOffset();
-  return () => {
-    if (viewport.contains(anchor) && viewport.clientHeight) {
-      const delta = contentOffset() - previous;
-      if (Math.abs(delta) >= 1) {
-        viewport.scrollTop += delta;
-      }
+  const offset = viewportOffset();
+  const top = viewport.scrollTop;
+  return (sameTask: boolean) => {
+    if (!viewport.contains(anchor) || !viewport.clientHeight) {
+      return;
+    }
+    // During publication even a temporary reduction of scrollHeight can
+    // clamp scrollTop. Across frames, preserve intervening reader movement.
+    const delta =
+      viewportOffset() - offset + (sameTask ? 0 : viewport.scrollTop - top);
+    if (Math.abs(delta) >= 1) {
+      viewport.scrollTop += delta;
     }
   };
 }
@@ -441,6 +444,9 @@ export function createTranscriptPages(
     if (!first || first === previous?.index.pages[previous.first]?.key) {
       return;
     }
+    // Let subscribers publish the prepared rows before the browser starts
+    // another input task. A deferred render can still land on a later frame.
+    await Promise.resolve();
     for (let frame = 0; frame <= 2; frame++) {
       signal.throwIfAborted();
       if (
@@ -453,7 +459,7 @@ export function createTranscriptPages(
         container.querySelector<HTMLElement>("[data-transcript-page]")?.dataset
           .transcriptPage === first
       ) {
-        restore();
+        restore(frame === 0);
         return;
       }
       if (frame < 2) {

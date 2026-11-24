@@ -1626,12 +1626,21 @@ test("Fill a tall viewport from a virtual tail while keeping the latest reply pi
   expect(transcript.queryByText("History answer 1")).toBeNull();
 });
 
-test("Keep the visible message at its offset when an estimated page mounts above it", async () => {
+test("Keep the visible message at its offset when an estimated page mounts above it without native anchoring", async () => {
   const id = THREAD_IDS.incomingHistory;
   mockMutableConversation(id, completedHistoryEvents(26));
   const container = await openConversation(id, "History answer 26");
   const geometry = installChatScrollGeometry(container);
 
+  const css = CSS;
+  vi.stubGlobal("CSS", css);
+  const supports = css.supports.bind(css);
+  vi.spyOn(css, "supports").mockImplementation((property, value?: string) => {
+    if (property === "overflow-anchor") {
+      return false;
+    }
+    return value === undefined ? supports(property) : supports(property, value);
+  });
   const firstMounted = renderedAnchors(container)[0]!;
   const originalTop = container.scrollTop;
   const anchorTop = firstMounted.getBoundingClientRect().top;
