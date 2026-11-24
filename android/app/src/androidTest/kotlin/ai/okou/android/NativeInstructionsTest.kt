@@ -130,17 +130,7 @@ class NativeInstructionsTest {
                 )
             }
             device.awaitChatList(app)
-            checkNotNull(
-                    device.wait(
-                        Until.findObject(
-                            By.pkg(app.packageName)
-                                .desc(app.getString(R.string.settings))
-                                .enabled(true),
-                        ),
-                        10_000,
-                    ),
-                )
-                .click()
+            device.openChatListSettings(app)
             reveal(app.getString(R.string.appearance))
             click(R.string.instructions_title)
             assertTrue(entered.await(10, TimeUnit.SECONDS))

@@ -8,6 +8,7 @@ import ai.okou.android.api.generated.ProjectArchive
 import ai.okou.android.api.generated.ProjectEvents
 import ai.okou.android.api.generated.ProjectSnapshot
 import ai.okou.android.chat.ChatListService
+import ai.okou.android.chat.ConfirmedProject
 import kotlinx.serialization.json.Json
 
 /** Empty external workspace data for shell/preferences tests. */
@@ -45,6 +46,12 @@ open class TestChatService : ChatListService {
 
     override suspend fun deleteThread(threadId: String, eventId: String): Unit =
         error("Unexpected deletion")
+
+    override suspend fun createProject(projectId: String, name: String): ConfirmedProject =
+        error("Unexpected Project creation")
+
+    override suspend fun projectDetail(projectId: String): ConfirmedProject =
+        error("Unexpected Project lookup")
 
     override suspend fun renameProject(projectId: String, name: String, eventId: String): Unit =
         error("Unexpected Project rename")

@@ -54,6 +54,7 @@ import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.ServerDraftTarget
 import ai.okou.android.chat.TextDisposition
 import ai.okou.android.chat.WorkspaceSearchService
+import ai.okou.android.chat.asConfirmedProject
 import ai.okou.android.chat.historyJson
 import ai.okou.android.chat.readHistoryNdjson
 import ai.okou.android.connectors.ConnectorService
@@ -394,6 +395,12 @@ class CanonicalWorkspaceSession(
 
     override suspend fun deleteThread(threadId: String, eventId: String) =
         api.deleteThread(threadId, eventId)
+
+    override suspend fun createProject(projectId: String, name: String) =
+        api.createProject(projectId, name).asConfirmedProject(projectId)
+
+    override suspend fun projectDetail(projectId: String) =
+        api.projectDetail(projectId).asConfirmedProject(projectId)
 
     override suspend fun renameProject(projectId: String, name: String, eventId: String) =
         api.renameProject(projectId, name, eventId)

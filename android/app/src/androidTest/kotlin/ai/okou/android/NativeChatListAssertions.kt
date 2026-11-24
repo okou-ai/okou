@@ -15,6 +15,17 @@ internal fun UiDevice.awaitChatList(context: Context) =
         "The chat list is not visible"
     }
 
+internal fun UiDevice.openChatListSettings(context: Context) {
+    val more =
+        By.pkg(context.packageName)
+            .desc(context.getString(R.string.chat_more_actions))
+            .enabled(true)
+    checkNotNull(wait(Until.findObject(more), 10_000)).click()
+    val settings =
+        By.pkg(context.packageName).text(context.getString(R.string.settings)).enabled(true)
+    checkNotNull(wait(Until.findObject(settings), 10_000)).click()
+}
+
 internal fun UiDevice.awaitKeyboardFocus(selector: BySelector) {
     // Compose can expose the text or icon on a child of the actual focus target.
     val focusedLabel = By.copy(selector).focused(true)

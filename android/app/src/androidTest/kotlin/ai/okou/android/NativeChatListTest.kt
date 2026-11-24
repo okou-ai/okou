@@ -395,7 +395,7 @@ class NativeChatListTest {
                 ),
             )
             takeScreenshot().writeToTestStorage("android-list-loading")
-            click(UiSelector().description(app.getString(R.string.settings)))
+            device.openChatListSettings(app)
             text(app.getString(R.string.settings))
             revealText(app.getString(R.string.appearance), By.pkg(app.packageName))
             gate.countDown()
@@ -554,7 +554,7 @@ class NativeChatListTest {
                 device.awaitKeyboardFocus(inbox)
                 assertTrue(device.pressDPadCenter())
                 revealText("Project chat")
-                click(UiSelector().description(app.getString(R.string.settings)))
+                device.openChatListSettings(app)
                 text(app.getString(R.string.appearance))
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
