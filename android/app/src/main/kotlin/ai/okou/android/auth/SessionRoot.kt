@@ -70,7 +70,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -671,7 +670,7 @@ private fun WorkspaceChooser(
     chooseWorkspace: (String) -> Unit,
     dismiss: () -> Unit,
 ) {
-    var attemptedTarget by rememberSaveable { mutableStateOf<String?>(null) }
+    var attemptedTarget by rememberWorkspaceSwitchTarget()
     val pending = workspaceSwitch?.failed == false
     val pendingDescription = stringResource(R.string.auth_switch_workspace_pending)
     SettingsSheet(
