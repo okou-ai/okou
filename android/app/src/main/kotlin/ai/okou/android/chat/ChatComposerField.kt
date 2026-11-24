@@ -136,7 +136,7 @@ internal fun ChatComposerField(
             .imePadding()
             .padding(
                 start = horizontalInset,
-                top = 4.dp,
+                top = ChatComposerTopInset,
                 end = horizontalInset,
                 bottom = bottomInset,
             )
@@ -255,6 +255,8 @@ internal fun ChatComposerField(
         }
     }
 }
+
+internal val ChatComposerTopInset = 4.dp
 
 internal fun composerHorizontalInset(window: IntSize) =
     when {

@@ -5,7 +5,6 @@
     <string name="auth_selection_failed">Impossible d’ouvrir cet espace de travail.</string>
     <string name="auth_sign_out_failed">Impossible de se déconnecter.</string>
     <string name="composer_restore_draft">Restaurer le brouillon conservé</string>
-    <string name="controls_storage_failed">Impossible de conserver les commandes en attente.</string>
     <string name="controls_stop">Arrêter le travail en cours</string>
     <string name="controls_stop_failed">Impossible d’arrêter la tâche.</string>
     <string name="settings">Paramètres</string>

@@ -472,7 +472,7 @@ private fun ChatRowFailureFeedback(
 }
 
 @Composable
-internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier) {
+internal fun WorkspaceFeedbackTimeout(state: SnackbarHostState) {
     val accessibility = LocalAccessibilityManager.current
     val current = state.currentSnackbarData
     val timed = current?.visuals?.withDismissAction == false
@@ -488,6 +488,15 @@ internal fun WorkspaceFeedbackHost(state: SnackbarHostState, modifier: Modifier)
             current.dismiss()
         }
     }
+}
+
+@Composable
+internal fun WorkspaceFeedbackHost(
+    state: SnackbarHostState,
+    modifier: Modifier,
+    manageTimeout: Boolean = true,
+) {
+    if (manageTimeout) WorkspaceFeedbackTimeout(state)
     SnackbarHost(state) { data ->
         val visuals = data.visuals
         val style = MaterialTheme.typography.bodyMedium.copy(letterSpacing = 0.sp)
