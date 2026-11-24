@@ -13,6 +13,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -523,7 +524,7 @@ internal class WorkflowRootTest : WorkflowRootTestFixture() {
                 save.performClick()
                 save
                     .assertIsNotEnabled()
-                    .assertTextContains("Save")
+                    .assertContentDescriptionEquals("Save")
                     .assert(
                         SemanticsMatcher.expectValue(
                             SemanticsProperties.StateDescription,

@@ -116,6 +116,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -1195,6 +1196,8 @@ internal fun WorkflowAction(
             onClick,
             modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.background).semantics {
                 if (savingLabel != null) {
+                    contentDescription = label
+                    role = Role.Button
                     stateDescription = savingLabel
                     liveRegion = LiveRegionMode.Polite
                 }
@@ -1211,6 +1214,7 @@ internal fun WorkflowAction(
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     label,
+                    modifier = if (saving) Modifier.clearAndSetSemantics {} else Modifier,
                     color = if (saving) Color.Transparent else Color.Unspecified,
                     style = workflowSmallStyle(),
                     textAlign = TextAlign.Center,
