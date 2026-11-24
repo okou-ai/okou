@@ -225,9 +225,14 @@ internal interface ChatCacheDao {
     @Upsert suspend fun putHistoryScope(value: HistoryScopeRecord)
 
     @Query(
-        "SELECT * FROM history_events WHERE scope = :scope AND threadId = :threadId ORDER BY seqId",
+        "SELECT * FROM history_events WHERE scope = :scope AND threadId = :threadId AND seqId >= :start ORDER BY seqId LIMIT :limit",
     )
-    suspend fun historyEvents(scope: String, threadId: String): List<HistoryEventRecord>
+    suspend fun historyEventsPage(
+        scope: String,
+        threadId: String,
+        start: Long,
+        limit: Int,
+    ): List<HistoryEventRecord>
 
     @Insert suspend fun putHistoryEvents(rows: List<HistoryEventRecord>)
 
