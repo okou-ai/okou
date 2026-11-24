@@ -59,11 +59,19 @@ export async function verifyDesktopPreviewCredential(
   routeTemplate: string | undefined,
   previewSecret: string,
 ): Promise<boolean> {
-  const origin = new URL(request.url).origin;
+  // The Vercel edge terminates TLS. Hono's Node adapter uses the internal socket protocol.
+  const url = new URL(request.url);
+  const origin = configuredOrigin?.replace(/\/$/u, "");
+  const https =
+    url.protocol === "https:" ||
+    (url.protocol === "http:" &&
+      request.headers.get("x-forwarded-proto") === "https");
   if (
     token.length > 1024 ||
+    !origin ||
     !PR_API_ORIGIN.test(origin) ||
-    origin !== configuredOrigin?.replace(/\/$/u, "") ||
+    !https ||
+    "https://" + url.host !== origin ||
     !routeTemplate ||
     !routes.includes(request.method + " " + routeTemplate)
   ) {

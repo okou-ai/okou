@@ -141,6 +141,19 @@ describe("createApp", () => {
       expect(
         (await app.request(origin + "/api/auth/me", { headers })).status,
       ).toBe(401);
+      const internalUrl = "http://pr-123-api.vm6.ai/api/auth/me";
+      const viaTlsEdge = { ...headers, "x-forwarded-proto": "https" };
+      expect(
+        (await app.request(internalUrl, { headers: viaTlsEdge })).status,
+      ).toBe(401);
+      expect((await app.request(internalUrl, { headers })).status).toBe(403);
+      expect(
+        (
+          await app.request("http://pr-456-api.vm6.ai/api/auth/me", {
+            headers: viaTlsEdge,
+          })
+        ).status,
+      ).toBe(403);
       const host = "12345678-1234-4123-8123-1234567890ab";
       const wait = await app.request(
         origin + "/api/computer-use/hosts/" + host + "/commands/wait",
