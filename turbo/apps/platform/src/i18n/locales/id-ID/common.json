@@ -430,6 +430,7 @@
       "close": "Tutup",
       "closeArtifact": "Tutup artefak",
       "closeNamed": "Tutup {{title}}",
+      "creationSourceUnavailable": "Sumber pembuatan tidak tersedia",
       "download": "Unduh",
       "downloadArtifact": "Unduh artefak",
       "downloadMarkdownAs": "Unduh sebagai {{format}}",
@@ -446,6 +447,7 @@
       "retry": "Coba lagi",
       "share": "Bagikan",
       "shareArtifact": "Bagikan artefak",
+      "viewCreationSource": "Lihat sumber pembuatan",
       "zoomIn": "Perbesar",
       "zoomOut": "Perkecil"
     },

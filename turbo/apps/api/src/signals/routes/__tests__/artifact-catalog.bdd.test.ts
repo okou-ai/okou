@@ -2247,6 +2247,186 @@ describe("shared thread routes", () => {
   });
 });
 
+async function readCreationSource(actor: ApiTestUser, artifactId: string) {
+  return await accept(
+    setupApp({ context, routes: artifactCatalogRoutes })(
+      artifactCatalogContract,
+    ).creationSource({
+      headers: authenticateSharedThread(actor),
+      params: { artifactId },
+    }),
+    [200],
+  );
+}
+
+describe("artifact creation source provenance", () => {
+  it("returns the verified original Chat, but no guessed Run, after a file projection is replaced", async () => {
+    const owner = await catalogActor("Creation source file owner");
+    const first = await uploadFile({
+      owner,
+      prompt: "Create an original report",
+      filename: "original-report.txt",
+      contentType: "text/plain",
+    });
+    await enableArtifactLibrary(owner.actor);
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    const artifact = catalog.artifacts[0];
+    if (!artifact) {
+      throw new Error("Expected the uploaded report in the catalog");
+    }
+    const expected = {
+      source: { chatThreadId: first.threadId, runId: null },
+    };
+    expect(
+      (await readCreationSource(owner.actor, artifact.id)).body,
+    ).toStrictEqual(expected);
+
+    const second = await uploadFile({
+      owner,
+      prompt: "Reuse this report in a different Chat",
+      filename: "original-report.txt",
+      contentType: "text/plain",
+      fileId: first.fileId,
+    });
+    expect(second.threadId).not.toBe(first.threadId);
+    expect(
+      (await readCreationSource(owner.actor, artifact.id)).body,
+    ).toStrictEqual(expected);
+    await chat.deleteThread(owner.actor, first.threadId);
+    expect(
+      (await readCreationSource(owner.actor, artifact.id)).body,
+    ).toStrictEqual({ source: null });
+  }, 180_000);
+
+  it.each(["hosted-site", "presentation-html"] as const)(
+    "keeps the original %s Run before and after redeploy and never substitutes a surviving newer Chat",
+    async (artifactKind) => {
+      const owner = await catalogActor("Creation source hosted owner");
+      const site = `creation-source-${randomUUID().slice(0, 8)}`;
+      const first = await publishHostedSite({ owner, site, artifactKind });
+      await enableArtifactLibrary(owner.actor);
+      const catalog = await chat.listArtifactCatalog(owner.actor);
+      const artifact = catalog.artifacts[0];
+      if (!artifact) {
+        throw new Error("Expected a hosted catalog artifact");
+      }
+      const expected = {
+        source: { chatThreadId: first.threadId, runId: first.runId },
+      };
+      expect(
+        (await readCreationSource(owner.actor, artifact.id)).body,
+      ).toStrictEqual(expected);
+      const second = await publishHostedSite({ owner, site, artifactKind });
+      expect(second.runId).not.toBe(first.runId);
+      expect(second.threadId).not.toBe(first.threadId);
+      expect(
+        (await readCreationSource(owner.actor, artifact.id)).body,
+      ).toStrictEqual(expected);
+      await chat.deleteThread(owner.actor, first.threadId);
+      expect(
+        (await readCreationSource(owner.actor, artifact.id)).body,
+      ).toStrictEqual({ source: null });
+    },
+    180_000,
+  );
+
+  it("separates a publicly readable shared snapshot from private source permission", async () => {
+    const owner = await catalogActor("Creation source shared snapshot owner");
+    const run = await sendChatRun(owner.actor, {
+      prompt: "Share a private conversation",
+    });
+    await completeChatRunWithMessage(owner, run.runId, "A shareable summary");
+    const events = await listSharedThreadEventRefs(owner.actor, run.threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt" && event.runId === run.runId;
+    });
+    if (!prompt) {
+      throw new Error("Expected a prompt to share");
+    }
+    const snapshot = await createSharedThreadSnapshot(
+      owner.actor,
+      run.threadId,
+      [prompt.id],
+    );
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    const artifact = catalog.artifacts.find((entry) => {
+      return entry.sharedThreadId === snapshot.id;
+    });
+    if (!artifact) {
+      throw new Error("Expected the shared snapshot catalog identity");
+    }
+    await enableArtifactLibrary(owner.actor);
+    expect(
+      (await readCreationSource(owner.actor, artifact.id)).body,
+    ).toStrictEqual({
+      source: { chatThreadId: run.threadId, runId: null },
+    });
+    await readSharedThreadSnapshot(snapshot.id);
+    const viewer = bdd.user({ orgId: owner.actor.orgId });
+    await enableArtifactLibrary(viewer);
+    await accept(
+      setupApp({ context, routes: artifactCatalogRoutes })(
+        artifactCatalogContract,
+      ).creationSource({
+        headers: authenticateSharedThread(viewer),
+        params: { artifactId: artifact.id },
+      }),
+      [404],
+    );
+    await chat.deleteThread(owner.actor, run.threadId);
+    await readSharedThreadSnapshot(snapshot.id);
+    expect(
+      (await readCreationSource(owner.actor, artifact.id)).body,
+    ).toStrictEqual({ source: null });
+  }, 180_000);
+
+  it("rejects a real Runner callback credential without Run-read capability", async () => {
+    const owner = await catalogActor("Creation source capability owner");
+    const run = await sendChatRun(owner.actor, { prompt: "Publish a report" });
+    const { execution, sandboxHeaders } = await runExecution(
+      owner.runnerGroup,
+      run.runId,
+    );
+    await stageAndCompleteFileUpload(
+      owner,
+      `Bearer ${okouTokenFromExecution(execution)}`,
+      {
+        filename: "restricted-source.txt",
+        contentType: "text/plain",
+      },
+    );
+    await enableArtifactLibrary(owner.actor);
+    const catalog = await chat.listArtifactCatalog(owner.actor);
+    const artifact = catalog.artifacts[0];
+    if (!artifact) {
+      throw new Error("Expected the published report");
+    }
+    // The Runner credential is issued by real dispatch, not a fabricated token.
+    context.mocks.clerk.authenticateRequest.mockResolvedValue({
+      isAuthenticated: false,
+      toAuth: () => {
+        return { userId: null, orgId: null, orgRole: null };
+      },
+    });
+    const denied = await accept(
+      setupApp({ context, routes: artifactCatalogRoutes })(
+        artifactCatalogContract,
+      ).creationSource({
+        headers: sandboxHeaders,
+        params: { artifactId: artifact.id },
+      }),
+      [403],
+    );
+    expect(denied.body).toStrictEqual({
+      error: {
+        code: "FORBIDDEN",
+        message: "Missing required capability: agent-run:read",
+      },
+    });
+    await completeChatRunOk(run.runId, sandboxHeaders);
+  }, 180_000);
+});
+
 describe("artifact catalog source identity", () => {
   it("resolves an owned shared conversation without exposing it to other viewers", async () => {
     const owner = await catalogActor("Shared page artifact owner");

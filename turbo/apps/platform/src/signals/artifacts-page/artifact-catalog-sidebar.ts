@@ -3,6 +3,7 @@ import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
+import { artifactSidebarCreationSource } from "../artifact-creation-source.ts";
 import { refreshWorkspaceLayout$ } from "../chat-page/workspace-layout.ts";
 import { createCatalogArtifactPreviewSignals } from "./artifact-catalog-preview.ts";
 import type { ArtifactCatalogSignals } from "./create-artifact-catalog-signals.ts";
@@ -19,6 +20,7 @@ export function createArtifactCatalogSidebarSignals(
   const preview = createCatalogArtifactPreviewSignals(catalog, diagram.open$);
 
   const close$ = command(({ get, set }) => {
+    set(artifactSidebarCreationSource.close$);
     set(resetOpenSignal$);
     set(internalOpen$, false);
     set(internalFullscreen$, false);
@@ -39,6 +41,7 @@ export function createArtifactCatalogSidebarSignals(
     openArtifact$: command(
       async ({ get, set }, artifactId: string, signal: AbortSignal) => {
         signal.throwIfAborted();
+        set(artifactSidebarCreationSource.close$);
         const openSignal = set(resetOpenSignal$, signal);
         set(diagram.dispose$);
         openSignal.addEventListener(

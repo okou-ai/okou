@@ -430,6 +430,7 @@
       "close": "बंद करना",
       "closeArtifact": "आर्टिफ़ैक्ट बंद करें",
       "closeNamed": "{{title}} बंद करें",
+      "creationSourceUnavailable": "बनाने का स्रोत उपलब्ध नहीं है",
       "download": "डाउनलोड करना",
       "downloadArtifact": "आर्टिफ़ैक्ट डाउनलोड करें",
       "downloadMarkdownAs": "{{format}} के रूप में डाउनलोड करें",
@@ -446,6 +447,7 @@
       "retry": "फिर से कोशिश करें",
       "share": "शेयर करें",
       "shareArtifact": "आर्टिफ़ैक्ट शेयर करें",
+      "viewCreationSource": "बनाने का स्रोत देखें",
       "zoomIn": "ज़ूम इन",
       "zoomOut": "ज़ूम आउट"
     },

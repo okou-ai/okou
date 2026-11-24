@@ -10,6 +10,7 @@ import {
   uuid,
   enum as zEnum,
   type ZodType,
+  type infer as zInfer,
 } from "zod";
 
 import { artifactIdPathParamsSchema } from "../validators/artifact-catalog";
@@ -28,6 +29,19 @@ import type {
 } from "./trpc-contract";
 
 const c = initContract();
+
+const artifactCreationSourceSchema = object({
+  chatThreadId: uuid(),
+  runId: uuid().nullable(),
+});
+
+export type ArtifactCreationSource = zInfer<
+  typeof artifactCreationSourceSchema
+>;
+
+export interface ArtifactCreationSourceResponse {
+  source: ArtifactCreationSource | null;
+}
 
 export const ARTIFACT_CATALOG_KINDS = [
   "file",
@@ -216,6 +230,16 @@ export interface ArtifactCatalogGetClientRequest extends ArtifactCatalogRequestO
   readonly query?: ArtifactCatalogGetClientQuery;
 }
 
+export interface ArtifactCatalogCreationSourceServerRequest extends ArtifactCatalogRequestOptions {
+  readonly headers: ArtifactCatalogAuthHeaders;
+  readonly params: ArtifactIdPathParams;
+}
+
+export interface ArtifactCatalogCreationSourceClientRequest extends ArtifactCatalogRequestOptions {
+  readonly headers?: ArtifactCatalogAuthHeaders;
+  readonly params: ArtifactIdPathParams;
+}
+
 export interface ArtifactCatalogDeleteServerRequest extends ArtifactCatalogRequestOptions {
   readonly headers: ArtifactCatalogAuthHeaders;
   readonly params: ArtifactIdPathParams;
@@ -242,6 +266,12 @@ export type ArtifactCatalogGetRouteResponse =
   | ArtifactCatalogApiErrorRouteResponse<403>
   | ArtifactCatalogApiErrorRouteResponse<404>;
 
+export type ArtifactCatalogCreationSourceRouteResponse =
+  | { readonly status: 200; readonly body: ArtifactCreationSourceResponse }
+  | ArtifactCatalogApiErrorRouteResponse<401>
+  | ArtifactCatalogApiErrorRouteResponse<403>
+  | ArtifactCatalogApiErrorRouteResponse<404>;
+
 export type ArtifactCatalogDeleteRouteResponse =
   | { readonly status: 200; readonly body: { readonly deleted: true } }
   | ArtifactCatalogApiErrorRouteResponse<400>
@@ -261,6 +291,12 @@ export interface ArtifactCatalogGetRouteTypes extends AnyRouteTypeSlots {
   readonly serverRequest: ArtifactCatalogGetServerRequest;
   readonly clientRequest: ArtifactCatalogGetClientRequest;
   readonly response: ArtifactCatalogGetRouteResponse;
+}
+
+export interface ArtifactCatalogCreationSourceRouteTypes extends AnyRouteTypeSlots {
+  readonly serverRequest: ArtifactCatalogCreationSourceServerRequest;
+  readonly clientRequest: ArtifactCatalogCreationSourceClientRequest;
+  readonly response: ArtifactCatalogCreationSourceRouteResponse;
 }
 
 export interface ArtifactCatalogDeleteRouteTypes extends AnyRouteTypeSlots {
@@ -425,6 +461,19 @@ const artifactCatalogRuntimeSpec = {
     },
     summary: "Get one artifact with its kind-specific detail",
   },
+  creationSource: {
+    method: "GET",
+    path: "/api/artifacts/catalog/:artifactId/creation-source",
+    headers: authHeadersSchema,
+    pathParams: artifactIdPathParamsSchema,
+    responses: {
+      200: object({ source: artifactCreationSourceSchema.nullable() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Resolve an owned artifact's readable original Chat and Run",
+  },
   delete: {
     method: "DELETE",
     path: "/api/artifacts/catalog/:artifactId",
@@ -442,7 +491,10 @@ const artifactCatalogRuntimeSpec = {
     },
     summary: "Delete an owned artifact and withdraw its Okou links",
   },
-} as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
+} as const satisfies Record<
+  "list" | "get" | "creationSource" | "delete",
+  AppRouteSpec
+>;
 
 type ArtifactCatalogReadResponses<T> = Readonly<Record<number, ZodType>> & {
   readonly 200: ZodType<T>;
@@ -484,6 +536,18 @@ export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
 export type ArtifactCatalogContract = {
   readonly list: ArtifactCatalogListRoute;
   readonly get: ArtifactCatalogGetRoute;
+  readonly creationSource: AppRoute<ArtifactCatalogCreationSourceRouteTypes> & {
+    readonly method: "GET";
+    readonly path: "/api/artifacts/catalog/:artifactId/creation-source";
+    readonly body?: never;
+    readonly query?: never;
+    readonly headers: ZodSchema<
+      ArtifactCatalogAuthHeaders,
+      ArtifactCatalogAuthHeaders
+    >;
+    readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
+    readonly responses: ArtifactCatalogReadResponses<ArtifactCreationSourceResponse>;
+  };
   readonly delete: AppRoute<ArtifactCatalogDeleteRouteTypes> & {
     readonly method: "DELETE";
     readonly path: "/api/artifacts/catalog/:artifactId";

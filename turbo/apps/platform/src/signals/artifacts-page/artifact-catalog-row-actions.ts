@@ -1,6 +1,7 @@
 import { command, computed, state } from "ccstate";
 import { createArtifactDeletionSession } from "../artifact-deletion.ts";
 import { onRef, resetSignal } from "../utils.ts";
+import { artifactRowCreationSource } from "../artifact-creation-source.ts";
 
 function createArtifactCatalogRowDeletionScope() {
   const activeRow$ = state<{
@@ -16,6 +17,7 @@ function createArtifactCatalogRowDeletionScope() {
   const confirmationActive$ = state(false);
   const resetSessionSignal$ = resetSignal();
   const dismiss$ = command(({ set }) => {
+    set(artifactRowCreationSource.close$);
     set(resetSessionSignal$);
     set(confirmationActive$, false);
     set(activeRow$, null);
@@ -47,7 +49,7 @@ function createArtifactCatalogRowDeletionScope() {
       ),
     ),
     menuOpenChanged$: command(
-      (
+      async (
         { get, set },
         artifactId: string,
         change: {
@@ -61,6 +63,7 @@ function createArtifactCatalogRowDeletionScope() {
         if (!open) {
           // Selection hands this session to the confirmation after the menu exits.
           if (get(activeRow$)?.artifactId === artifactId) {
+            set(artifactRowCreationSource.close$);
             if (selectingDelete) {
               set(confirmationActive$, true);
             } else if (!get(confirmationActive$)) {
@@ -86,6 +89,9 @@ function createArtifactCatalogRowDeletionScope() {
           },
           { once: true },
         );
+        await set(artifactRowCreationSource.open$, artifactId, sessionSignal);
+        signal.throwIfAborted();
+        sessionSignal.throwIfAborted();
       },
     ),
     requestFromMenu$: command(

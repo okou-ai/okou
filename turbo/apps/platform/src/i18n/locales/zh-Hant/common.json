@@ -430,6 +430,7 @@
       "close": "關閉",
       "closeArtifact": "關閉成果",
       "closeNamed": "關閉 {{title}}",
+      "creationSourceUnavailable": "建立來源無法使用",
       "download": "下載",
       "downloadArtifact": "下載成果",
       "downloadMarkdownAs": "下載為 {{format}}",
@@ -446,6 +447,7 @@
       "retry": "重試",
       "share": "分享",
       "shareArtifact": "分享成果",
+      "viewCreationSource": "查看建立來源",
       "zoomIn": "放大",
       "zoomOut": "縮小"
     },

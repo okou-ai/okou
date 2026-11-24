@@ -1,5 +1,11 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import type { ComponentProps, Ref } from "react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+} from "ccstate-react";
+import type { ComponentProps, ReactNode, Ref } from "react";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -34,6 +40,9 @@ import {
 } from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactActionTooltip } from "./artifact-actions.tsx";
+import { artifactSidebarCreationSource } from "../../signals/artifact-creation-source.ts";
+import { featureSwitches$ } from "../../signals/external/feature-switch.ts";
+import { ArtifactCreationSourceItem } from "./artifact-creation-source.tsx";
 
 export function ArtifactDeleteMoreMenu({
   triggerRef,
@@ -42,7 +51,9 @@ export function ArtifactDeleteMoreMenu({
   disabled = false,
   loading = false,
   iconSize = 16,
+  creationSource,
 }: {
+  readonly creationSource?: ReactNode;
   readonly triggerRef?: Ref<HTMLButtonElement>;
   readonly onDelete: () => void;
   readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
@@ -73,7 +84,9 @@ export function ArtifactDeleteMoreMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
+        {creationSource}
         <DropdownMenuItem
+          data-artifact-delete-action=""
           className="text-destructive"
           disabled={disabled}
           aria-busy={loading}
@@ -96,18 +109,52 @@ export function ArtifactDeleteMoreMenu({
 function PreviewArtifactDeleteMoreMenu({
   origin,
   iconSize,
+  creationSourceId,
+  disabled = false,
+  loading = false,
 }: {
   readonly origin: ArtifactDeletionOrigin;
   readonly iconSize: number;
+  readonly creationSourceId?: string;
+  readonly disabled?: boolean;
+  readonly loading?: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
   const triggerRef = useSet(scope.menuTriggerRef$);
   const requestDeletion = useSet(scope.requestFromMenu$);
-  return (
+  const openSource = useSet(artifactSidebarCreationSource.open$);
+  const closeSource = useSet(artifactSidebarCreationSource.close$);
+  const sourceMenuRef = useSet(artifactSidebarCreationSource.menuRef$);
+  const moreMenu = (
     <ArtifactDeleteMoreMenu
       triggerRef={triggerRef}
       iconSize={iconSize}
+      disabled={disabled}
+      loading={loading}
+      creationSource={
+        creationSourceId ? (
+          <ArtifactCreationSourceItem
+            artifactId={creationSourceId}
+            scope={artifactSidebarCreationSource}
+          />
+        ) : undefined
+      }
+      onOpenChange={
+        creationSourceId
+          ? (open) => {
+              if (open) {
+                detach(
+                  openSource(creationSourceId, pageSignal),
+                  Reason.DomCallback,
+                  "open catalog sidebar creation source",
+                );
+              } else {
+                closeSource();
+              }
+            }
+          : undefined
+      }
       onDelete={() => {
         detach(
           requestDeletion(pageSignal),
@@ -116,6 +163,13 @@ function PreviewArtifactDeleteMoreMenu({
         );
       }}
     />
+  );
+  return creationSourceId ? (
+    <span ref={sourceMenuRef} className="inline-flex">
+      {moreMenu}
+    </span>
+  ) : (
+    moreMenu
   );
 }
 
@@ -136,7 +190,7 @@ export function ArtifactPageDeleteButton({
   );
 }
 
-/** Owner-only action shared by catalog, chat, and standalone previews. */
+/** Owner-only Delete; catalog menus also resolve source independently. */
 export function ArtifactDeleteButton({
   artifactId,
   sourceKind,
@@ -194,12 +248,22 @@ function PreviewArtifactDeleteButton({
   const pageSignal = useGet(pageSignal$);
   const detail = useLastLoadable(session.detail$);
   const requestDeletion = useSet(session.request$);
+  const switches = useLastResolved(featureSwitches$);
+  const catalogSource =
+    origin.kind === "catalog-sidebar" &&
+    switches?.[FeatureSwitchKey.ArtifactLibrary] === true;
+  const owned = detail.state === "hasData" && Boolean(detail.data);
   return (
     <>
-      {detail.state === "hasData" &&
-        detail.data &&
+      {(owned || (menu && catalogSource)) &&
         (menu ? (
-          <PreviewArtifactDeleteMoreMenu origin={origin} iconSize={iconSize} />
+          <PreviewArtifactDeleteMoreMenu
+            origin={origin}
+            iconSize={iconSize}
+            creationSourceId={catalogSource ? session.artifactId : undefined}
+            disabled={!owned}
+            loading={detail.state === "loading"}
+          />
         ) : (
           <Button
             showTooltip

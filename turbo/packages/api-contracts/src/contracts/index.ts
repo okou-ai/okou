@@ -361,6 +361,8 @@ export {
 } from "./model-providers";
 export {
   artifactCatalogContract,
+  type ArtifactCreationSource,
+  type ArtifactCreationSourceResponse,
   type ArtifactCatalogContract,
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,

@@ -444,6 +444,7 @@
       "close": "Fechar",
       "closeArtifact": "Fechar artefato",
       "closeNamed": "Fechar {{title}}",
+      "creationSourceUnavailable": "Origem da criação indisponível",
       "download": "Baixar",
       "downloadArtifact": "Baixar artefato",
       "downloadMarkdownAs": "Baixar como {{format}}",
@@ -460,6 +461,7 @@
       "retry": "Tentar novamente",
       "share": "Compartilhar",
       "shareArtifact": "Compartilhar artefato",
+      "viewCreationSource": "Ver origem da criação",
       "zoomIn": "Ampliar zoom",
       "zoomOut": "Reduzir zoom"
     },

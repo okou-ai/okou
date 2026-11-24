@@ -430,6 +430,7 @@
       "close": "关闭",
       "closeArtifact": "关闭成果",
       "closeNamed": "关闭 {{title}}",
+      "creationSourceUnavailable": "创建来源不可用",
       "download": "下载",
       "downloadArtifact": "下载成果",
       "downloadMarkdownAs": "下载为 {{format}}",
@@ -446,6 +447,7 @@
       "retry": "重试",
       "share": "分享",
       "shareArtifact": "分享成果",
+      "viewCreationSource": "查看创建来源",
       "zoomIn": "放大",
       "zoomOut": "缩小"
     },

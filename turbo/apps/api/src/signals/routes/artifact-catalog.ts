@@ -1,4 +1,4 @@
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -7,6 +7,8 @@ import { notFound, resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
+import { createArtifactCreationSource } from "../services/artifact-creation-source.service";
 import {
   getArtifactCatalogEntry$,
   listArtifactCatalog$,
@@ -115,6 +117,46 @@ const getArtifactCatalogEntryInner$ = command(
   },
 );
 
+const creationSourceInput$ = computed((get) => {
+  const auth = get(organizationAuthContext$);
+  const { artifactId } = get(
+    pathParamsOf(artifactCatalogContract.creationSource),
+  );
+  return { artifactId, orgId: auth.orgId, userId: auth.userId };
+});
+const artifactCreationSource$ =
+  createArtifactCreationSource(creationSourceInput$);
+
+const getArtifactCreationSourceInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!isFeatureEnabled(FeatureSwitchKey.ArtifactLibrary, featureContext)) {
+      return resourceUnavailable("Artifact library is not available");
+    }
+    const result = await get(artifactCreationSource$);
+    signal.throwIfAborted();
+    return result
+      ? { status: 200 as const, body: result }
+      : notFound("Artifact not found");
+  },
+);
+
+const getArtifactCreationSource$ = authRoute(
+  {
+    requireOrganization: true,
+    missingOrganizationStatus: 401,
+    requiredCapability: "agent-run:read",
+  },
+  getArtifactCreationSourceInner$,
+);
+
 const deleteArtifactInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
@@ -149,6 +191,13 @@ export const artifactCatalogRoutes: readonly RouteEntry[] = [
       },
       getArtifactCatalogEntryInner$,
     ),
+  },
+  {
+    route: artifactCatalogContract.creationSource,
+    handler: command(async ({ set }, signal: AbortSignal) => {
+      set(setResHeader$, "Cache-Control", "private, no-store");
+      return await set(getArtifactCreationSource$, signal);
+    }),
   },
   {
     route: artifactCatalogContract.delete,

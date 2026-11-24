@@ -430,6 +430,7 @@
       "close": "닫기",
       "closeArtifact": "아티팩트 닫기",
       "closeNamed": "{{title}} 닫기",
+      "creationSourceUnavailable": "생성 출처를 사용할 수 없습니다",
       "download": "다운로드",
       "downloadArtifact": "아티팩트 다운로드",
       "downloadMarkdownAs": "{{format}}로 다운로드",
@@ -446,6 +447,7 @@
       "retry": "다시 시도",
       "share": "공유",
       "shareArtifact": "아티팩트 공유",
+      "viewCreationSource": "생성 출처 보기",
       "zoomIn": "확대",
       "zoomOut": "축소"
     },

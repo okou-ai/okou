@@ -430,6 +430,7 @@
       "close": "Close",
       "closeArtifact": "Close artifact",
       "closeNamed": "Close {{title}}",
+      "creationSourceUnavailable": "Creation source unavailable",
       "download": "Download",
       "downloadArtifact": "Download artifact",
       "downloadMarkdownAs": "Download as {{format}}",
@@ -446,6 +447,7 @@
       "retry": "Retry",
       "share": "Share",
       "shareArtifact": "Share artifact",
+      "viewCreationSource": "View creation source",
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out"
     },

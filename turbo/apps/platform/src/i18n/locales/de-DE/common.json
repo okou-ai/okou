@@ -430,6 +430,7 @@
       "close": "Schließen",
       "closeArtifact": "Artefakt schließen",
       "closeNamed": "Schließen {{title}}",
+      "creationSourceUnavailable": "Erstellungsquelle nicht verfügbar",
       "download": "Herunterladen",
       "downloadArtifact": "Artefakt herunterladen",
       "downloadMarkdownAs": "Als {{format}} herunterladen",
@@ -446,6 +447,7 @@
       "retry": "Erneut versuchen",
       "share": "Aktie",
       "shareArtifact": "Artefakt teilen",
+      "viewCreationSource": "Erstellungsquelle anzeigen",
       "zoomIn": "Vergrößern",
       "zoomOut": "Herauszoomen"
     },

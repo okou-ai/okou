@@ -26,6 +26,16 @@ export const artifactCatalogContract: ClientDescriptor<
       404: true,
     },
   },
+  creationSource: {
+    method: "GET",
+    path: "/api/artifacts/catalog/:artifactId/creation-source",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   delete: {
     method: "DELETE",
     path: "/api/artifacts/catalog/:artifactId",

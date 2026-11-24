@@ -114,6 +114,10 @@ export const chatThreadHandlers = [
     return respond(200, { artifacts: [], nextCursor: null });
   }),
 
+  mockApi(artifactCatalogContract.creationSource, ({ respond }) => {
+    return respond(200, { source: null });
+  }),
+
   // Legacy transcript attachment metadata, not the thread resource list.
   mockApi(chatThreadArtifactsContract.list, ({ respond }) => {
     return respond(200, { runs: [] });

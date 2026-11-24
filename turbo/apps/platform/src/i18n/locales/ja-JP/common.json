@@ -430,6 +430,7 @@
       "close": "閉じる",
       "closeArtifact": "アーティファクトを閉じる",
       "closeNamed": "{{title}} を閉じる",
+      "creationSourceUnavailable": "作成元を利用できません",
       "download": "ダウンロード",
       "downloadArtifact": "アーティファクトをダウンロードする",
       "downloadMarkdownAs": "{{format}} としてダウンロード",
@@ -446,6 +447,7 @@
       "retry": "再試行",
       "share": "シェアする",
       "shareArtifact": "アーティファクトを共有する",
+      "viewCreationSource": "作成元を表示",
       "zoomIn": "Zoom 内",
       "zoomOut": "Zoom アウト"
     },
