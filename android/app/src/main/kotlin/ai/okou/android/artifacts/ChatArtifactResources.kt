@@ -80,14 +80,24 @@ internal fun ChatArtifactResources(
     val page = rememberArtifactPageState()
     val saveLauncher = rememberArtifactSaveLauncher(model, page)
     val position = rememberLazyListState()
-    val selected = page.selectedId
     val matchesQuery = state.query == query
     val failure = state.failedRead.takeIf { matchesQuery }
-    val accessLost =
-        failure == ArtifactCatalogFailure.Denied ||
-            failure == ArtifactCatalogFailure.ChatUnavailable ||
-            history.phase == HistoryPhase.Missing
-    val references = history.transcript?.resources.takeUnless { accessLost }
+    val unavailable =
+        when {
+            history.phase == HistoryPhase.Missing -> ArtifactCatalogFailure.ChatUnavailable
+            failure == ArtifactCatalogFailure.Denied ||
+                failure == ArtifactCatalogFailure.ChatUnavailable ||
+                failure == ArtifactCatalogFailure.Missing -> failure
+            else -> null
+        }
+    val selected = page.selectedId.takeIf { unavailable == null }
+    LaunchedEffect(unavailable) {
+        if (unavailable != null) {
+            page.selectedId = null
+            page.restoreRow = null
+        }
+    }
+    val references = history.transcript?.resources.takeIf { unavailable == null }
     val workflowIds = references?.workflowIds.orEmpty().takeIf { onOpenWorkflow != null }.orEmpty()
     LifecycleStartEffect(model, threadId) {
         model.setActive(true, query)
@@ -107,6 +117,16 @@ internal fun ChatArtifactResources(
 
     BackHandler(onBack = ::back)
     val toolbarPadding = if (wide) 28.dp else 12.dp
+    if (unavailable != null) {
+        Column(
+            Modifier.fillMaxSize().testTag("chat_artifact_resources"),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            ArtifactToolbar(R.string.chat_resources, R.string.back, ::back, toolbarPadding)
+            ArtifactInitialReadFailure(unavailable.label(), Modifier.widthIn(max = 768.dp))
+        }
+        return
+    }
     if (selected != null) {
         Column(Modifier.fillMaxSize()) {
             ArtifactToolbar(
@@ -121,7 +141,7 @@ internal fun ChatArtifactResources(
     }
     val result = state.page.takeIf { matchesQuery }
     val reading = state.reading.takeIf { matchesQuery }
-    val related = state.relatedChats.takeIf { matchesQuery && !accessLost }
+    val related = state.relatedChats.takeIf { matchesQuery }
     val workflows = state.workflows.takeIf { matchesQuery && workflowIds.isNotEmpty() }
     val workflowRows = workflows?.confirmed?.items.orEmpty().filter { it.id in workflowIds }
     val showWorkflowSkeleton =
@@ -225,6 +245,14 @@ internal fun ChatArtifactResources(
                 if (showSkeleton) {
                     items(3) { ArtifactRowSkeleton(height = 72.dp, horizontalPadding = 16.dp) }
                 }
+                if (failure != null && failure != ArtifactCatalogFailure.More) {
+                    item(key = "resource-read-failure") {
+                        ArtifactReadNotice(
+                            failure.label(chatResources = true),
+                            Modifier.padding(bottom = 12.dp),
+                        )
+                    }
+                }
                 if (result?.items?.isEmpty() == true) {
                     item {
                         ArtifactReadNotice(
@@ -255,11 +283,11 @@ internal fun ChatArtifactResources(
                         model.select(item.id, item)
                     }
                 }
-                if (failure != null) {
-                    item(key = "resource-read-failure") {
+                if (failure == ArtifactCatalogFailure.More) {
+                    item(key = "resource-page-failure") {
                         ArtifactReadNotice(
                             failure.label(chatResources = true),
-                            Modifier.padding(vertical = 8.dp),
+                            Modifier.padding(top = 12.dp),
                         )
                     }
                 }
