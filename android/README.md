@@ -9,10 +9,11 @@ with a selected workspace opens the native conversation list while access is
 checked. The toolbar uses the bundled workspace logo and shows filter and
 Settings as soon as the selected workspace is identified. The tool shortcuts
 stay in place in the same shell, and a known optional update uses the toolbar.
-A fresh selected membership with known permissions allows cached conversations
-and Projects to appear while the app refreshes the list and loads workspace
-metadata and member preferences. The full membership check and organization
-gate still apply when selected permissions are unavailable.
+A restored active session with known permissions for its selected workspace can
+show matching cached conversations and Projects while Clerk verifies access.
+Local filters and Settings are usable during verification. Online confirmation
+enables chat actions and starts synchronization. The full membership check and
+organization gate still apply when selected permissions are unavailable.
 The workspace chat list uses single-line rows, indented
 Project chats, and separators within groups that have pins and ordinary chats.
 Collapsed Projects summarize unread or running chats. Selecting a chat opens
@@ -33,8 +34,7 @@ while the identified workspace loads. The cache is scoped to the API origin,
 account and workspace and is read off the main thread. Settings can show those
 values after workspace authorization while its preference controls wait for
 the initial response. The server response takes precedence and refreshes the
-cache. Workspace content requires current authorization for the selected
-workspace.
+cache. Remote workspace content and operations require online confirmation.
 Temporary workspace metadata and preference failures after authorization retry
 in the foreground and on reconnect. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.

@@ -382,6 +382,7 @@ class ChatListModel(
     connectivity: Flow<Boolean> = emptyFlow(),
     private val wallMillis: () -> Long = System::currentTimeMillis,
     initialFilter: ChatListFilter = ChatListFilter.Inbox,
+    private val networkEnabled: () -> Boolean = { true },
 ) : ViewModel() {
     private val mutable = MutableStateFlow(ChatListUiState(filter = initialFilter))
     val uiState = mutable.asStateFlow()
@@ -1573,7 +1574,7 @@ class ChatListModel(
     }
 
     fun refresh() {
-        if (!current()) return
+        if (!current() || !networkEnabled()) return
         // Activity resume refreshes this owner even while workspace preferences are loading.
         expireCachedUnread()
         restoreCache()
@@ -1973,7 +1974,7 @@ class ChatListModel(
     }
 
     fun refreshIndicators() {
-        if (!mutable.value.offline) readIndicators()
+        if (networkEnabled() && !mutable.value.offline) readIndicators()
     }
 
     private fun refreshDraftIndex() {

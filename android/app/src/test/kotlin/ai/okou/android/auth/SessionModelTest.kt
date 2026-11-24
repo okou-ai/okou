@@ -716,14 +716,21 @@ class SessionModelTest : SessionModelTestFixture() {
                     ),
             )
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
+        val verification = CompletableDeferred<Unit>()
+        auth.refreshAction = { verification.await() }
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
         check(auth) { model, resources ->
             runCurrent()
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.Cached)
+            val cachedOwner = resources.single()
+            verification.complete(Unit)
+            runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
+            assertTrue(cachedOwner.closed)
             assertEquals(
                 scopeHash(listOf("org:member", "org:member", "known")),
-                resources.single().identity.authorizationScope,
+                resources.last().identity.authorizationScope,
             )
             assertEquals(listOf("org-a"), model.uiState.value.memberships.map { it.id })
             memberships.complete(auth.available)

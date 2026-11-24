@@ -4,7 +4,6 @@ import ai.okou.android.api.ApiFailure
 import ai.okou.android.api.WorkspaceTokenProvider
 import ai.okou.android.api.generated.Organization
 import ai.okou.android.api.generated.OrganizationRole
-import ai.okou.android.api.generated.UserPreferences
 import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.ChatCacheStore
@@ -38,6 +37,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -93,6 +93,12 @@ sealed interface OpeningWorkspace {
     val identity: WorkspaceIdentity
 
     data class CheckingAccess(override val identity: WorkspaceIdentity) : OpeningWorkspace
+
+    data class Cached(
+        override val identity: WorkspaceIdentity,
+        val chats: ChatListModel,
+        val projectExpansion: ProjectExpansionModel,
+    ) : OpeningWorkspace
 
     data class Authorized(
         override val identity: WorkspaceIdentity,
@@ -205,10 +211,11 @@ class SessionModel(
         val state = mutable.value
         val ready = state.ready
         val opened = state.opening as? OpeningWorkspace.Authorized
-        val identity = ready?.identity ?: opened?.identity
+        val cached = state.opening as? OpeningWorkspace.Cached
+        val identity = ready?.identity ?: opened?.identity ?: cached?.identity
         if (identity != null) {
             val key = identity.userId to identity.workspaceId
-            val filter = (ready?.chats ?: opened?.chats)?.uiState?.value?.filter
+            val filter = (ready?.chats ?: opened?.chats ?: cached?.chats)?.uiState?.value?.filter
             if (filter != null) workspaceFilters[key] = filter
             if (ready != null) {
                 val intent = ready.preferences.pendingForWorkspaceRestore()
@@ -303,6 +310,7 @@ class SessionModel(
         snapshot: AuthenticationState,
         checkingFrom: SessionUiState? = null,
         selection: EntrySelection? = null,
+        allowCachedOpening: Boolean = true,
     ) {
         val session = checkNotNull(snapshot.session)
         val ticket = generation
@@ -326,12 +334,13 @@ class SessionModel(
                 ),
         )
         operation = viewModelScope.launch {
-            val observedIdentity = initialIdentity?.let { identity ->
-                snapshot.membershipAccess
-                    ?.firstOrNull {
-                        it.workspaceId == identity.workspaceId && it.permissions != null
-                    }
-                    ?.let { identity.withAccess(it.role, it) }
+            val observedAccess = initialIdentity?.let { identity ->
+                snapshot.membershipAccess?.firstOrNull {
+                    it.workspaceId == identity.workspaceId && it.permissions != null
+                }
+            }
+            val observedIdentity = observedAccess?.let { access ->
+                checkNotNull(initialIdentity).withAccess(access.role, access)
             }
             var preparation = observedIdentity?.let { identity ->
                 async { prepareChatList(identity) }
@@ -361,7 +370,53 @@ class SessionModel(
                     }
             try {
                 val initialEntry = initialIdentity == null && checkingFrom == null
-                val refreshedAccess = if (initialEntry) null else authentication.refresh(session)
+                val cached =
+                    if (
+                        allowCachedOpening &&
+                            observedIdentity != null &&
+                            checkingFrom == null &&
+                            selection == null
+                    ) {
+                        val gate = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
+                        val owner = createWorkspace(observedIdentity, ticket, snapshot, gate)
+                        val store = ViewModelStore()
+                        presentation = store
+                        val cached =
+                            OpeningWorkspace.Cached(
+                                observedIdentity,
+                                store.chatList(owner, observedIdentity, ticket, snapshot, gate),
+                                store.workspaceModel {
+                                    ProjectExpansionModel(projectExpansionStore, observedIdentity)
+                                },
+                            )
+                        cached.chats.restoreStartupCache(checkNotNull(preparation))
+                        preparation = null
+                        mutable.value = mutable.value.copy(opening = cached)
+                        try {
+                            val matches =
+                                readWorkspacePreparation(ticket, snapshot) {
+                                    authentication.refresh(session) == observedAccess
+                                } ?: return@launch
+                            requireCurrent(ticket, snapshot)
+                            if (!matches) {
+                                // Drop the displayed scope before reopening through online
+                                // verification.
+                                retire()
+                                prepare(snapshot, allowCachedOpening = false)
+                                return@launch
+                            }
+                            gate.complete(Unit)
+                            cached
+                        } finally {
+                            if (!gate.isCompleted) gate.cancel()
+                        }
+                    } else null
+                val refreshedAccess =
+                    when {
+                        cached != null -> observedAccess
+                        initialEntry -> null
+                        else -> authentication.refresh(session)
+                    }
                 requireCurrent(ticket, snapshot)
                 val fastAccess = refreshedAccess?.takeIf {
                     it.workspaceId == initialIdentity?.workspaceId && it.permissions != null
@@ -402,55 +457,20 @@ class SessionModel(
                     preparation = async { prepareChatList(identity) }
                 }
                 val owner =
-                    factory.create(
-                        identity,
-                        object : WorkspaceTokenProvider {
-                            private val renewal = Mutex()
-
-                            override suspend fun token(): String? = whileCurrent {
-                                authentication.token(session)
-                            }
-
-                            override suspend fun renew(rejectedToken: String): String? =
-                                renewal.withLock {
-                                    token()?.takeIf { it != rejectedToken }
-                                        ?: whileCurrent { authentication.renewToken(session) }
-                                }
-
-                            private suspend fun whileCurrent(read: suspend () -> String?): String? {
-                                requireCurrent(ticket, snapshot)
-                                val credential = read()
-                                currentCoroutineContext().ensureActive()
-                                requireCurrent(ticket, snapshot)
-                                return credential
-                            }
-                        },
-                    )
-                workspace = owner
+                    if (cached != null) checkNotNull(workspace)
+                    else createWorkspace(identity, ticket, snapshot)
                 // Fresh selected permissions authorize the scoped list while metadata loads.
                 val organization = if (fastAccess == null) owner.organization() else null
                 currentCoroutineContext().ensureActive()
                 requireCurrent(ticket, snapshot)
-                val store = ViewModelStore()
+                val store = presentation ?: ViewModelStore()
                 presentation = store
-                val projectExpansion = store.workspaceModel {
-                    ProjectExpansionModel(projectExpansionStore, identity)
-                }
-                val chats = store.workspaceModel {
-                    ChatListModel(
-                        owner,
-                        chatCache,
-                        identity,
-                        authorized = { current(ticket, snapshot) },
-                        onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
-                        dispatcher = dispatcher,
-                        realtime = owner,
-                        connectivity = connectivity,
-                        initialFilter =
-                            workspaceFilters[identity.userId to identity.workspaceId]
-                                ?: ChatListFilter.Inbox,
-                    )
-                }
+                val projectExpansion =
+                    cached?.projectExpansion
+                        ?: store.workspaceModel {
+                            ProjectExpansionModel(projectExpansionStore, identity)
+                        }
+                val chats = cached?.chats ?: store.chatList(owner, identity, ticket, snapshot)
                 val controls = store.workspaceModel {
                     RunControlsModel(
                         owner,
@@ -600,6 +620,65 @@ class SessionModel(
                 preparation?.cancel()
             }
         }
+    }
+
+    private fun createWorkspace(
+        identity: WorkspaceIdentity,
+        ticket: Long,
+        snapshot: AuthenticationState,
+        verification: CompletableDeferred<Unit>? = null,
+    ): WorkspaceSession {
+        val session = checkNotNull(snapshot.session)
+        return factory
+            .create(
+                identity,
+                object : WorkspaceTokenProvider {
+                    private val renewal = Mutex()
+
+                    override suspend fun token(): String? = whileCurrent {
+                        authentication.token(session)
+                    }
+
+                    override suspend fun renew(rejectedToken: String): String? = renewal.withLock {
+                        token()?.takeIf { it != rejectedToken }
+                            ?: whileCurrent { authentication.renewToken(session) }
+                    }
+
+                    private suspend fun whileCurrent(read: suspend () -> String?): String? {
+                        verification?.await()
+                        requireCurrent(ticket, snapshot)
+                        val credential = read()
+                        currentCoroutineContext().ensureActive()
+                        requireCurrent(ticket, snapshot)
+                        return credential
+                    }
+                },
+            )
+            .also { workspace = it }
+    }
+
+    private fun ViewModelStore.chatList(
+        owner: WorkspaceSession,
+        identity: WorkspaceIdentity,
+        ticket: Long,
+        snapshot: AuthenticationState,
+        verification: CompletableDeferred<Unit>? = null,
+    ) = workspaceModel {
+        ChatListModel(
+            owner,
+            chatCache,
+            identity,
+            authorized = { current(ticket, snapshot) },
+            onFailure = { error -> workspaceFailure(ticket, snapshot, error) },
+            dispatcher = dispatcher,
+            realtime = owner,
+            connectivity = connectivity,
+            initialFilter =
+                workspaceFilters[identity.userId to identity.workspaceId] ?: ChatListFilter.Inbox,
+            networkEnabled = {
+                verification == null || (verification.isCompleted && !verification.isCancelled)
+            },
+        )
     }
 
     private suspend fun readEntryMemberships(
@@ -805,11 +884,11 @@ class SessionModel(
             .collect { appearanceCache.save(opened.identity, it) }
     }
 
-    private suspend fun readWorkspacePreparation(
+    private suspend fun <T : Any> readWorkspacePreparation(
         ticket: Long,
         snapshot: AuthenticationState,
-        read: suspend () -> UserPreferences,
-    ): UserPreferences? {
+        read: suspend () -> T,
+    ): T? {
         var backoff = 5_000L
         while (true) {
             requireCurrent(ticket, snapshot)

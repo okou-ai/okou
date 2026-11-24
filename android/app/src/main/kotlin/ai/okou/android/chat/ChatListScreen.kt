@@ -154,6 +154,7 @@ internal fun ChatListScreen(
     selectedChatId: String?,
     wide: Boolean,
     newChatEnabled: Boolean,
+    chatActionsEnabled: Boolean,
     startupRecovery: @Composable (() -> Unit)?,
     dismissProjectRenameRejection: (ProjectRenameRejection) -> Unit,
     feedback: @Composable () -> Unit,
@@ -167,7 +168,7 @@ internal fun ChatListScreen(
                 )
             }
         }
-    val canRenameProject = state.canRenameProject
+    val canRenameProject = chatActionsEnabled && state.canRenameProject
     var deletingId by remember { mutableStateOf<String?>(null) }
     deletingId?.let { id ->
         val thread = state.threads.firstOrNull { it.id == id && it.hidden != true }
@@ -499,7 +500,7 @@ internal fun ChatListScreen(
                                 canRename = canRenameProject,
                                 renaming = state.renamingProjectId == project.id,
                                 delete = { requestDeleteProject(project.id) },
-                                canDelete = state.canDeleteProject,
+                                canDelete = chatActionsEnabled && state.canDeleteProject,
                                 deleteDialogOpen = confirmingProjectDelete == project.id,
                                 renameFocus =
                                     (renameFocus as? WorkspaceRenameTarget.Project)?.takeIf {
@@ -631,9 +632,11 @@ internal fun ChatListScreen(
                                     row = section.firstChatRow + index,
                                     actions =
                                         thread
+                                            ?.takeIf { chatActionsEnabled }
                                             ?.let { state.rowActions(it, group, threadIndex) }
                                             .orEmpty(),
                                     pendingAction = state.pendingRowActions[id],
+                                    enabled = chatActionsEnabled,
                                     deleteDialogOpen = deletingId == id,
                                     rename = { restore -> renameThread(id, restore) },
                                     renameFocus =
@@ -1093,6 +1096,7 @@ private fun ChatRow(
     row: Int,
     actions: List<ChatRowAction>,
     pendingAction: ChatRowAction?,
+    enabled: Boolean,
     deleteDialogOpen: Boolean,
     rename: (Boolean) -> Unit,
     renameFocus: WorkspaceRenameTarget?,
@@ -1159,6 +1163,7 @@ private fun ChatRow(
                 .combinedClickable(
                     interactionSource = interactions,
                     indication = null,
+                    enabled = enabled,
                     onClick = open,
                     onLongClick = openMenu,
                     onLongClickLabel = stringResource(R.string.chat_actions),

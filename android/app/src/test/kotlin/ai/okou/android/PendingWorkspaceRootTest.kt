@@ -72,10 +72,11 @@ import org.robolectric.annotation.Config
 open class PendingWorkspaceApplication : TestOkouApplication() {
     protected open val selectedAccess: MembershipAccess? = null
     protected open val seedChats = true
-    val authorizationResponse = CompletableDeferred<Unit>()
+    var authorizationResponse = CompletableDeferred<Unit>()
     var membershipsResponse = CompletableDeferred(Unit)
     var organizationResponse = CompletableDeferred<Unit>()
     @Volatile var listResponse = CompletableDeferred<Unit>()
+    val listRequested = CompletableDeferred<Unit>()
     var preferencesResponse = CompletableDeferred<Unit>()
     @Volatile private var editTail = ChatEvents(emptyList(), false)
 
@@ -96,6 +97,7 @@ open class PendingWorkspaceApplication : TestOkouApplication() {
             object : TestChatService() {
 
                 override suspend fun chatEvents(since: Long?): ChatEvents {
+                    listRequested.complete(Unit)
                     listResponse.await()
                     val tail = editTail
                     return if (since == null) tail
@@ -263,9 +265,11 @@ class PendingWorkspaceRootTest {
         val filter = compose.onNodeWithContentDescription("Filter")
         val settings = compose.onNodeWithContentDescription("Settings")
         val search = compose.onNodeWithTag("workspace_search_entry")
+        compose.runOnIdle { app.membershipsResponse = CompletableDeferred() }
+        awaitCachedRow()
         avatar.assertIsDisplayed().assertIsNotEnabled()
-        filter.assertIsDisplayed().assertIsNotEnabled()
-        settings.assertIsDisplayed().assertIsNotEnabled()
+        filter.assertIsDisplayed().assertIsEnabled()
+        settings.assertIsDisplayed().assertIsEnabled()
         val searchBounds = search.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("chat_list")
@@ -275,13 +279,9 @@ class PendingWorkspaceRootTest {
                 compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsNotEnabled()
             }
         val toolBounds = tools.map { it.getUnclippedBoundsInRoot() }
-        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
-
-        compose.runOnIdle {
-            app.membershipsResponse = CompletableDeferred()
-            app.authorizationResponse.complete(Unit)
-        }
-        awaitCachedRow()
+        check(!app.listRequested.isCompleted)
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.assertIsDisplayed().assertIsNotEnabled()
         compose.onNodeWithContentDescription("Loading chats…").assertDoesNotExist()
         assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
@@ -311,6 +311,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
         compose.runOnIdle {
+            app.authorizationResponse.complete(Unit)
             app.renameOnServer("Synced startup chat")
             app.listResponse.complete(Unit)
         }
@@ -370,9 +371,10 @@ class PendingWorkspaceRootTest {
             button.assertIsDisplayed().assertIsEnabled()
             assertEquals(startupBounds, search.getUnclippedBoundsInRoot())
 
+            awaitCachedRow()
             overflow.performClick()
-            compose.onNodeWithText("Filter").assertIsNotEnabled()
-            compose.onNodeWithText("Settings").assertIsNotEnabled()
+            compose.onNodeWithText("Filter").assertIsEnabled()
+            compose.onNodeWithText("Settings").assertIsEnabled()
             compose.runOnIdle { app.authorizationResponse.complete(Unit) }
             awaitCachedRow()
             compose.onNodeWithText("Filter").assertIsEnabled()
@@ -443,6 +445,39 @@ class PendingWorkspaceRootTest {
         } finally {
             compose.mainClock.autoAdvance = true
         }
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun offlineVerificationRetainsCachedRowsUntilReconnect() {
+        awaitCachedRow()
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        compose.runOnIdle {
+            app.connectivity.value = false
+            val failed = app.authorizationResponse
+            app.authorizationResponse = CompletableDeferred(Unit)
+            failed.completeExceptionally(ApiFailure.Network(java.io.IOException("offline")))
+        }
+        compose.waitUntil(10_000) {
+            sessionState().stage == SessionStage.Unavailable && listState()?.offline == true
+        }
+        row.assertIsDisplayed().assertIsNotEnabled()
+        compose.runOnIdle { app.connectivity.value = true }
+        compose.waitUntil(10_000) { sessionState().opening is OpeningWorkspace.Authorized }
+        row.assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test
+    @Config(application = FreshWorkspaceAccessApplication::class)
+    fun clerkDenialRetiresTheLocallyRestoredChatList() {
+        awaitCachedRow()
+        compose.runOnIdle {
+            app.authorizationResponse.completeExceptionally(ApiFailure.Unauthenticated())
+        }
+        compose
+            .onNodeWithText(compose.activity.getString(R.string.auth_access_removed))
+            .assertIsDisplayed()
+        compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
     }
 
     @Test
@@ -670,7 +705,11 @@ class PendingWorkspaceRootTest {
 
     private fun listState() =
         sessionState().let {
-            (it.ready?.chats ?: (it.opening as? OpeningWorkspace.Authorized)?.chats)?.uiState?.value
+            (it.ready?.chats
+                    ?: (it.opening as? OpeningWorkspace.Authorized)?.chats
+                    ?: (it.opening as? OpeningWorkspace.Cached)?.chats)
+                ?.uiState
+                ?.value
         }
 }
 
