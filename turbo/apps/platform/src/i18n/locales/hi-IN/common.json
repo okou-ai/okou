@@ -570,6 +570,23 @@
       "text": "मूलपाठ",
       "video": "वीडियो"
     },
+    "library": {
+      "allArtifacts": "सभी आर्टिफ़ैक्ट",
+      "allTypes": "सभी प्रकार",
+      "clearFilters": "फ़िल्टर हटाएँ",
+      "clearSearch": "खोज साफ़ करें",
+      "created": "बनाया गया",
+      "emptyDescription": "कोई दूसरा नाम या प्रकार आज़माएँ।",
+      "emptyTitle": "कोई आर्टिफ़ैक्ट नहीं मिला",
+      "loadMore": "और लोड करें",
+      "name": "नाम",
+      "retry": "फिर से कोशिश करें",
+      "search": "आर्टिफ़ैक्ट खोजें",
+      "sort": "आर्टिफ़ैक्ट क्रमबद्ध करें",
+      "sortAscending": "आरोही क्रम में लगाएँ",
+      "sortDescending": "अवरोही क्रम में लगाएँ",
+      "type": "प्रकार"
+    },
     "metadata": {
       "generated": "{{date}} उत्पन्न किया गया",
       "updated": "{{date}} को अपडेट किया गया"
@@ -665,15 +682,9 @@
       "updated": "वेबसाइट URL अपडेट किया गया"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} सक्रिय HTML पूर्वावलोकन",
-      "all": "सभी",
       "avatar": "अवतार",
-      "categories": "टेम्पलेट श्रेणियां",
-      "category": "टेम्पलेट श्रेणी",
       "fullPreview": "{{title}} वेबसाइट पूर्ण पूर्वावलोकन",
       "htmlPreview": "{{title}} HTML पूर्वावलोकन",
-      "illustration": "चित्रण",
-      "illustrationPreview": "{{title}} चित्रण पूर्वावलोकन",
       "importDeck": "अपना डेक इंपोर्ट करें",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "अपना दस्तावेज़ आयात करें",
@@ -684,18 +695,10 @@
       "importImageHint": "स्टाइल के रूप में सहेजें",
       "multiAccent": "बहु-उच्चारण",
       "nextSlide": "अगली स्लाइड का पूर्वावलोकन करें",
-      "noMatches": "कोई मेल नहीं",
-      "previewCurrentSlide": "वर्तमान स्लाइड पर {{title}} का पूर्वावलोकन करें",
       "previewSlide": "पूर्वावलोकन स्लाइड {{slideNumber}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "previousSlide": "पिछली स्लाइड का पूर्वावलोकन करें",
-      "searchConnector": "टेम्पलेट खोजें",
-      "searchConnectors": "टेम्पलेट खोजें",
       "selectStyle": "शैली {{style}} चुनें",
       "selectTemplate": "टेम्पलेट {{title}} चुनें",
-      "selectWebsite": "वेबसाइट टेम्पलेट {{title}} चुनें",
-      "selectWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} चुनें",
-      "showVariant": "वैरिएंट {{variantNumber}} दिखाएँ",
       "singleAccent": "एकल-उच्चारण",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} स्लाइड पूर्वावलोकन",
@@ -723,15 +726,11 @@
         "terracottaClay": "मिट्टी के बर्तन",
         "warmSand": "सुबह का अखबार"
       },
-      "tryDifferentSearch": "भिन्न खोज का प्रयास करें.",
-      "use": "उपयोग",
       "useThisTemplate": "इस टेम्पलेट का उपयोग करें",
       "visibility": {
         "changeLabel": "टेम्पलेट की दृश्यता बदलें"
       },
       "website": "वेबसाइट",
-      "websitePreview": "{{title}} वेबसाइट टेम्पलेट पूर्वावलोकन",
-      "workflow": "वर्कफ़्लो",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "ऐसा वर्कफ़्लो बनाएँ जो Gmail लेबल लगते ही चले और उस ईमेल को संभाले।",
@@ -1912,8 +1911,6 @@
       "add": "जोड़ें",
       "configureModel": "मॉडल कॉन्फ़िगर करें",
       "create": {
-        "addStyle": "शैली जोड़ें",
-        "addTemplate": "टेम्पलेट जोड़ें",
         "documentPlaceholder": "आप अपने दस्तावेज़ में क्या शामिल करना चाहते हैं?",
         "imagePlaceholder": "आप जो छवि बनाना चाहते हैं उसका वर्णन करें…",
         "presentationPlaceholder": "आपकी प्रस्तुति का विषय क्या है?",
@@ -1953,11 +1950,9 @@
         "scheduleHint": "शेड्यूल पर चलाएँ",
         "share": "चैट शेयर करें",
         "shareHint": "इस बातचीत का लिंक शेयर करें",
-        "templates": "टेम्पलेट",
         "unpin": "पिन हटाएँ"
       },
       "slashPanel": {
-        "browseAll": "सभी टेम्पलेट देखें",
         "hint": "कोई कार्रवाई चुनें",
         "useTemplate": "टेम्पलेट {{title}} इस्तेमाल करें"
       },
@@ -2625,7 +2620,6 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
-      "viewAll": "सभी देखें",
       "visualization": {
         "allCharts": "सभी चार्ट",
         "back": "Back to visualization options",
@@ -2807,8 +2801,6 @@
         "workflow": "वर्कफ़्लो"
       },
       "previewTemplate": "पूर्वावलोकन टेम्पलेट {{title}}",
-      "previewWebsite": "वेबसाइट टेम्पलेट {{title}} का पूर्वावलोकन करें",
-      "previewWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} का पूर्वावलोकन करें",
       "removeTemplate": "टेम्प्लेट {{title}} हटाएँ",
       "removeWebsite": "वेबसाइट टेम्पलेट {{title}} हटाएँ",
       "removeWorkflow": "वर्कफ़्लो टेम्पलेट {{title}} हटाएँ"
@@ -3901,7 +3893,6 @@
         "overview": "विक्रेता और ग्राहक का विवरण"
       }
     },
-    "filter": "दस्तावेज़ श्रेणी",
     "formats": {
       "pdf": "PDF",
       "word": "Word दस्तावेज़"
@@ -3911,10 +3902,8 @@
     "nextPage": "अगला नमूना पृष्ठ",
     "openLarger": "बड़ा पूर्वावलोकन खोलें",
     "page": "पृष्ठ {{page}}",
-    "preview": "{{title}} का पूर्वावलोकन",
     "previousPage": "पिछला नमूना पृष्ठ",
-    "title": "दस्तावेज़",
-    "useNamed": "{{title}} इस्तेमाल करें"
+    "title": "दस्तावेज़"
   },
   "featureGuide": {
     "close": "नई सुविधाओं की गाइड बंद करें",
@@ -6549,11 +6538,8 @@
   "templates": {
     "actions": {
       "delete": "हटाएँ",
-      "menu": "{{title}} के लिए क्रियाएँ",
-      "preview": "{{title}} का पूर्वावलोकन करें",
       "rename": "टेम्पलेट का नाम बदलें"
     },
-    "builtIn": "बिल्ट-इन",
     "custom": "कस्टम",
     "delete": {
       "cancel": "रद्द करें",
@@ -6568,11 +6554,6 @@
       "page": "पृष्ठ {{number}}"
     },
     "loadFailed": "टेम्पलेट लोड नहीं हो सके।",
-    "rename": {
-      "action": "नाम बदलें",
-      "cancel": "रद्द करें",
-      "save": "सहेजें"
-    },
     "renameFailed": "टेम्पलेट का नाम नहीं बदला जा सका।",
     "sharedBy": "{{owner}} द्वारा साझा किया गया",
     "sharedByMember": "संगठन के एक सदस्य द्वारा साझा किया गया",

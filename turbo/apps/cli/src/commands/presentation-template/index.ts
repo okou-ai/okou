@@ -30,7 +30,7 @@ const publishCommand = new Command()
     `
 This is the publish step, not page rendering. First follow the authoritative reverse-template guide and render ordered page images with okou presentation screenshot. publish uploads the original deck, ordered page PNGs, and guidance package, then commits them together.
 
-The published deck appears under Custom in the template picker, private to you until you share it with your organization. This command uses the same catalog as okou user-template publish --kind presentation.`,
+The published deck appears in Create's Presentation recommendations, private to you until you share it with your organization. This command uses the same catalog as okou user-template publish --kind presentation.`,
   )
   .action(
     withErrorHandler(async (options: PublishOptions) => {

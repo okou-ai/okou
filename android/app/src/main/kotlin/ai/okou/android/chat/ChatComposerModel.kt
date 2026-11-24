@@ -52,6 +52,15 @@ class ChatComposerModel(
     fun recover(target: ComposerTarget, failureId: String, reset: Boolean = false) =
         owner.recover(connection, target, failureId, reset)
 
+    internal fun confirmRecoveryReset(
+        target: ComposerTarget,
+        failureId: String,
+        accountId: String,
+    ) = owner.recover(connection, target, failureId, reset = true, confirmedAccount = accountId)
+
+    internal fun checkRecoveryReset(target: ComposerTarget, failureId: String, key: String) =
+        owner.recover(connection, target, failureId, reset = true, originalResetKey = key)
+
     fun open(target: ComposerTarget) {
         owner.open(connection, target)
     }

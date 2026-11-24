@@ -111,4 +111,7 @@
     <string name="chat_connector_saving">Menyimpan pilihan konektor…</string>
     <string name="chat_connector_save_failed">Pilihan konektor tidak dapat disimpan.</string>
     <string name="chat_connector_first_send_failed">Pilihan konektor tidak dapat diterapkan. Periksa di Opsi chat, lalu coba kirim ulang pesan ini.</string>
+    <string name="connector_device_denied">Penyedia menolak otorisasi.</string>
+    <string name="connector_device_expired">Kode perangkat telah kedaluwarsa. Mulai otorisasi lagi.</string>
+    <string name="connector_device_failed">Otorisasi perangkat tidak dapat diselesaikan.</string>
 </resources>

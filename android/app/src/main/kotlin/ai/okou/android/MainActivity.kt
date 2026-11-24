@@ -194,10 +194,12 @@ class MainActivity : AppCompatActivity() {
                 UpdateHost(
                     updateState.copy(required = updateRequired),
                     { updates.check() },
-                    updateInstall::download,
+                    { updateInstall.download(it) },
                     ::installUpdate,
                     installProgress,
                     detailsOpen = updateDetails,
+                    checkFromDetails = { updates.check(advanceRetry = true) },
+                    downloadFromDetails = { updateInstall.download(it, advanceRetry = true) },
                 ) { openUpdates ->
                     SessionRoot(
                         sessionState,
@@ -227,7 +229,7 @@ class MainActivity : AppCompatActivity() {
                         updateToolbarAction =
                             updateToolbarAction(
                                 updateState,
-                                updateInstall::download,
+                                { updateInstall.download(it) },
                                 ::installUpdate,
                                 installProgress,
                                 openUpdates,
@@ -410,8 +412,8 @@ private class UpdateInstallModel(private val updates: AppUpdates) : ViewModel() 
                 else -> R.string.updates_preparing
             }
 
-    fun download(release: AndroidUpdatesRelease) {
-        if (updates.download(release)) automaticRelease = release
+    fun download(release: AndroidUpdatesRelease, advanceRetry: Boolean = false) {
+        if (updates.download(release, advanceRetry)) automaticRelease = release
     }
 
     fun discardObsoleteDownload() {

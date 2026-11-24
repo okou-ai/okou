@@ -570,6 +570,23 @@
       "text": "Text",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "Alle Artefakte",
+      "allTypes": "Alle Typen",
+      "clearFilters": "Filter zurücksetzen",
+      "clearSearch": "Suche löschen",
+      "created": "Erstellt",
+      "emptyDescription": "Versuche es mit einem anderen Namen oder Typ.",
+      "emptyTitle": "Keine Artefakte gefunden",
+      "loadMore": "Mehr laden",
+      "name": "Name",
+      "retry": "Erneut versuchen",
+      "search": "Artefakte suchen",
+      "sort": "Artefakte sortieren",
+      "sortAscending": "Aufsteigend sortieren",
+      "sortDescending": "Absteigend sortieren",
+      "type": "Typ"
+    },
     "metadata": {
       "generated": "Generiert {{date}}",
       "updated": "Aktualisiert {{date}}"
@@ -665,15 +682,9 @@
       "updated": "Website-URL aktualisiert"
     },
     "templates": {
-      "activeHtmlPreview": "{{title}} aktive HTML-Vorschau",
-      "all": "Alle",
       "avatar": "Avatar",
-      "categories": "Vorlagenkategorien",
-      "category": "Vorlagenkategorie",
       "fullPreview": "Vollständige Vorschau der Website {{title}}",
       "htmlPreview": "{{title}} HTML-Vorschau",
-      "illustration": "Illustration",
-      "illustrationPreview": "{{title}} Illustrationsvorschau",
       "importDeck": "Eigenes Deck importieren",
       "importDeckHint": "(.pptx, .ppt, .pdf)",
       "importDocument": "Eigenes Dokument importieren",
@@ -684,18 +695,10 @@
       "importImageHint": "Als Stil speichern",
       "multiAccent": "Multi-Akzent",
       "nextSlide": "Vorschau der nächsten Folie",
-      "noMatches": "Keine Übereinstimmungen",
-      "previewCurrentSlide": "Vorschau von {{title}} auf der aktuellen Folie",
       "previewSlide": "Vorschaufolie {{slideNumber}}",
-      "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
       "previousSlide": "Vorschau der vorherigen Folie",
-      "searchConnector": "Vorlagen suchen",
-      "searchConnectors": "Vorlagen suchen",
       "selectStyle": "Stil auswählen {{style}}",
       "selectTemplate": "Wählen Sie die Vorlage {{title}} aus.",
-      "selectWebsite": "Wählen Sie die Website-Vorlage {{title}} aus.",
-      "selectWorkflow": "Wählen Sie die Workflow-Vorlage {{title}} aus.",
-      "showVariant": "Variante {{variantNumber}} anzeigen",
       "singleAccent": "Einzelakzent",
       "slideCounter": "{{current}} / {{total}}",
       "slidePreview": "{{title}} Folienvorschau",
@@ -723,15 +726,11 @@
         "terracottaClay": "Tontopf",
         "warmSand": "Morgenzeitung"
       },
-      "tryDifferentSearch": "Versuchen Sie es mit einer anderen Suche.",
-      "use": "Verwenden",
       "useThisTemplate": "Verwenden Sie diese Vorlage",
       "visibility": {
         "changeLabel": "Sichtbarkeit der Vorlage ändern"
       },
       "website": "Webseite",
-      "websitePreview": "{{title}} Vorschau der Website-Vorlage",
-      "workflow": "Workflow",
       "workflowCatalog": {
         "auto-inbox-label": {
           "description": "Erstellen Sie einen Workflow, der startet, sobald ein Gmail-Label gesetzt wird, und die markierte E-Mail bearbeitet.",
@@ -1912,8 +1911,6 @@
       "add": "Hinzufügen",
       "configureModel": "Modell konfigurieren",
       "create": {
-        "addStyle": "Stil hinzufügen",
-        "addTemplate": "Vorlage hinzufügen",
         "documentPlaceholder": "Was möchtest du in deinem Dokument festhalten?",
         "imagePlaceholder": "Beschreibe das gewünschte Bild…",
         "presentationPlaceholder": "Worum geht es in deiner Präsentation?",
@@ -1953,11 +1950,9 @@
         "scheduleHint": "Nach Zeitplan ausführen",
         "share": "Chat teilen",
         "shareHint": "Link zu dieser Unterhaltung teilen",
-        "templates": "Vorlagen",
         "unpin": "Chat lösen"
       },
       "slashPanel": {
-        "browseAll": "Alle Vorlagen durchsuchen",
         "hint": "Aktion auswählen",
         "useTemplate": "Vorlage {{title}} verwenden"
       },
@@ -2625,7 +2620,6 @@
         "website": "Website",
         "workflow": "Workflow"
       },
-      "viewAll": "Alle anzeigen",
       "visualization": {
         "allCharts": "Alle Diagramme",
         "back": "Back to visualization options",
@@ -2807,8 +2801,6 @@
         "workflow": "Workflow"
       },
       "previewTemplate": "Vorschauvorlage {{title}}",
-      "previewWebsite": "Vorschau der Website-Vorlage {{title}}",
-      "previewWorkflow": "Vorschau der Workflow-Vorlage {{title}}",
       "removeTemplate": "Vorlage {{title}} entfernen",
       "removeWebsite": "Website-Vorlage {{title}} entfernen",
       "removeWorkflow": "Workflow-Vorlage {{title}} entfernen"
@@ -3901,7 +3893,6 @@
         "overview": "Angaben zu Anbieter und Kunde"
       }
     },
-    "filter": "Dokumentkategorie",
     "formats": {
       "pdf": "PDF",
       "word": "Word-Dokument"
@@ -3911,10 +3902,8 @@
     "nextPage": "Nächste Beispielseite",
     "openLarger": "Größere Vorschau öffnen",
     "page": "Seite {{page}}",
-    "preview": "Vorschau: {{title}}",
     "previousPage": "Vorherige Beispielseite",
-    "title": "Dokument",
-    "useNamed": "{{title}} verwenden"
+    "title": "Dokument"
   },
   "featureGuide": {
     "close": "Funktionsübersicht schließen",
@@ -6549,11 +6538,8 @@
   "templates": {
     "actions": {
       "delete": "Löschen",
-      "menu": "Aktionen für {{title}}",
-      "preview": "{{title}} in der Vorschau anzeigen",
       "rename": "Vorlage umbenennen"
     },
-    "builtIn": "Integriert",
     "custom": "Eigene",
     "delete": {
       "cancel": "Abbrechen",
@@ -6568,11 +6554,6 @@
       "page": "Seite {{number}}"
     },
     "loadFailed": "Vorlagen konnten nicht geladen werden.",
-    "rename": {
-      "action": "Umbenennen",
-      "cancel": "Abbrechen",
-      "save": "Speichern"
-    },
     "renameFailed": "Vorlage konnte nicht umbenannt werden.",
     "sharedBy": "Geteilt von {{owner}}",
     "sharedByMember": "Von einem Organisationsmitglied geteilt",

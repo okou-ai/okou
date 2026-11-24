@@ -4,6 +4,7 @@ import ai.okou.android.artifacts.ArtifactCatalogModel
 import ai.okou.android.artifacts.ArtifactsRoute
 import ai.okou.android.artifacts.ChatArtifactLinkPreview
 import ai.okou.android.artifacts.ChatArtifactResources
+import ai.okou.android.chat.AssistantFailureText
 import ai.okou.android.chat.AssistantRecoveryModel
 import ai.okou.android.chat.AssistantRecoveryPanel
 import ai.okou.android.chat.ChatArtifactActions
@@ -16,6 +17,7 @@ import ai.okou.android.chat.ChatListScreen
 import ai.okou.android.chat.ChatListSource
 import ai.okou.android.chat.ChatListUiState
 import ai.okou.android.chat.ChatReadPhase
+import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ChatRowAction
 import ai.okou.android.chat.ComposerPrefillResult
 import ai.okou.android.chat.ComposerTarget
@@ -45,6 +47,7 @@ import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchMessageHit
 import ai.okou.android.chat.SearchRead
 import ai.okou.android.chat.SearchWorkflowIntro
+import ai.okou.android.chat.WorkspaceRenameTarget
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.chat.WorkspaceSearchScreen
 import ai.okou.android.chat.conversationRunControls
@@ -183,6 +186,7 @@ internal fun OkouApp(
     defaultModel: DefaultModelSettings? = null,
     snackbar: SnackbarHostState = remember { SnackbarHostState() },
     feedbackInOverlay: Boolean = false,
+    renamePresentation: ChatRenamePresentation? = null,
     settingsProgress: @Composable (SettingsDestination) -> Unit = {},
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
@@ -597,6 +601,22 @@ internal fun OkouApp(
 
     val showRowFeedback = showChatList || showConversationFeedback
     var confirmingProjectDelete by remember(chats) { mutableStateOf<String?>(null) }
+    val renameEditor = renamePresentation?.editor
+    val renameTarget = renameEditor?.target
+    val renameFocus = renamePresentation?.focusReturn
+    fun finishRenameFocus(request: WorkspaceRenameTarget) {
+        renamePresentation?.finishFocus(request)
+    }
+    if (renameFocus != null) {
+        val originVisible =
+            when (renameFocus) {
+                is WorkspaceRenameTarget.Chat ->
+                    if (renameFocus.fromConversation) visibleConversationId == renameFocus.id
+                    else showChatList
+                is WorkspaceRenameTarget.Project -> showChatList
+            }
+        if (!originVisible) LaunchedEffect(renameFocus) { finishRenameFocus(renameFocus) }
+    }
     if (chats != null) {
         WorkspaceChatFeedback(
             chats,
@@ -608,6 +628,8 @@ internal fun OkouApp(
             showRowActionFailure = showRowFeedback || showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
+            renameEditor = renameEditor,
+            dismissRename = { renamePresentation?.dismiss(it) },
         )
     }
 
@@ -1318,7 +1340,19 @@ internal fun OkouApp(
                 thread = thread,
                 onRowAction = { id, action -> rowAction(id, action, fromConversation = true) },
                 onMove = { requestMove(it, fromList = false) },
-                onRename = { id, title -> chats?.renameThread(id, title, fromConversation = true) },
+                onRename = { id, restore ->
+                    renamePresentation?.openChat(
+                        id,
+                        fromConversation = true,
+                        restoreFocus = restore,
+                        list = listState.value,
+                    )
+                },
+                renameFocus =
+                    (renameFocus as? WorkspaceRenameTarget.Chat)?.takeIf {
+                        it.fromConversation && it.id == visibleConversationId
+                    },
+                onRenameFocusFinished = ::finishRenameFocus,
                 openResources =
                     thread
                         ?.id
@@ -1690,8 +1724,25 @@ internal fun OkouApp(
                                     onMoveFocusFinished = { request ->
                                         if (moveFocus == request) moveFocus = null
                                     },
-                                    { id, title -> chats?.renameThread(id, title) },
-                                    { id, name -> chats?.renameProject(id, name) },
+                                    renameThread = { id, restore ->
+                                        renamePresentation?.openChat(
+                                            id,
+                                            fromConversation = false,
+                                            restoreFocus = restore,
+                                            list = listState.value,
+                                        )
+                                    },
+                                    renameProject = { id, restore ->
+                                        renamePresentation?.openProject(
+                                            id,
+                                            restore,
+                                            listState.value,
+                                        )
+                                    },
+                                    renamingProjectId =
+                                        (renameTarget as? WorkspaceRenameTarget.Project)?.id,
+                                    renameFocus = renameFocus,
+                                    onRenameFocusFinished = ::finishRenameFocus,
                                     { id -> confirmingProjectDelete = id },
                                     confirmingProjectDelete,
                                     { id -> chats?.retryProjectRename(id) },
@@ -1870,7 +1921,7 @@ internal fun OkouApp(
                                                         }
                                                     }
                                                 },
-                                            ) { failureId ->
+                                            ) { failure ->
                                                 if (
                                                     recovery != null &&
                                                         composer != null &&
@@ -1880,9 +1931,11 @@ internal fun OkouApp(
                                                         recovery,
                                                         composer,
                                                         composerTarget,
-                                                        failureId = failureId,
+                                                        failureId = failure.id,
+                                                        reason = failure.failureReason,
                                                         offline = list.offline,
                                                     )
+                                                else AssistantFailureText(failure.failureReason)
                                             }
                                             Column(contentWidth.fillMaxWidth()) {
                                                 if (showConversationFeedback)

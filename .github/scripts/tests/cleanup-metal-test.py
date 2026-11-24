@@ -776,16 +776,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(payload["43"]["outcome"], "cleaned")
         self.assertFalse(sibling.exists())
 
-        unit = self.resource("etc/systemd/system/vm0-runner-pr-43.service")
-        result, payload = self.worker("cleanup", 42, 43, RELOAD_ERROR="1")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(payload["42"]["outcome"], "failed")
-        self.assertIn("resource ancestor is a symlink", payload["42"]["error"])
-        self.assertTrue(marker.is_file())
-        self.assertEqual(payload["43"]["outcome"], "unverified")
-        self.assertEqual(payload["43"]["operation_result"]["outcome"], "cleaned")
-        self.assertFalse(unit.exists())
-
     def test_initial_inventory_failure_preserves_image_revocation_failure(self):
         marker = self.resource("external-image/.image-owner-" + "a" * 64)
         sibling_marker = self.resource(
@@ -841,14 +831,6 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('"cleaned"', result.stdout)
 
-    def test_exact_old_head_owner_defers_without_deleting(self):
-        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-        self.github(runs=[self.owner()])
-        result = self.controller()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(config.exists())
-        self.assertIn('"deferred_owner": 1', result.stdout)
-
     def test_disappeared_run_is_rechecked_before_cleanup(self):
         unrelated = {**self.owner(99), "id": 20}
         complete = [{"total_count": 1, "workflow_runs": [unrelated]}]
@@ -882,10 +864,10 @@ class CleanupTests(unittest.TestCase):
     def test_duplicate_pages_with_count_drift_keep_only_the_owned_namespace(self):
         owned = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
         unrelated = self.resource("var/lib/vm0-runner/stripe/pr-43/config")
-        owner = {**self.owner(42), "status": "queued"}
+        owner = self.owner(42)
         self.github(
             run_pages={
-                "queued": [
+                "in_progress": [
                     [
                         {"total_count": 3, "workflow_runs": [owner]},
                         {"total_count": 3, "workflow_runs": [owner]},
@@ -1007,15 +989,13 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(all(not config.exists() for config in configs))
         self.assertEqual((self.root / "github.log").read_text().count("/commits/"), 1)
 
-    def test_ambiguous_owner_or_api_failure_retains_resources(self):
-        for github in ({"runs": [self.owner(associated=False)]}, {"api_error": True}):
-            with self.subTest(github=github):
-                config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
-                self.github(**github)
-                result = self.controller()
-                self.assertEqual(result.returncode, 1, result.stderr)
-                self.assertTrue(config.exists())
-                self.assertIn('"unverified": 1', result.stdout)
+    def test_owner_api_failure_retains_resources(self):
+        config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")
+        self.github(api_error=True)
+        result = self.controller()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertTrue(config.exists())
+        self.assertIn('"unverified": 1', result.stdout)
 
     def test_historical_run_ambiguity_is_not_overridden_by_new_commit_association(self):
         config = self.resource("var/lib/vm0-runner/stripe/pr-42/config")

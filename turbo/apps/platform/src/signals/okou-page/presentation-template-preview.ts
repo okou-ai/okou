@@ -83,26 +83,6 @@ async function loadTemplatePreview(item: PresentationTemplateItem) {
   return { item, draft };
 }
 
-async function renderTemplatePreview(
-  template: ReturnType<typeof loadTemplatePreview>,
-  selection: TemplatePreviewSelection,
-) {
-  const resolved = await template;
-  const slide =
-    resolved.draft.slides[
-      Math.min(selection.index, resolved.draft.slides.length - 1)
-    ];
-  if (slide === undefined) {
-    throw new Error("Presentation template preview slide is missing");
-  }
-  return previewPresentationHtml({
-    activeSlideId: slide.id,
-    additionalHeadStyle: selection.themeCss,
-    html: resolved.draft.html,
-    sourceUrl: resolved.item.embedUrl,
-  });
-}
-
 function createTemplatePreviewSignals() {
   const internalTemplateId$ = state<string | null>(null);
   const internalSelection$ = state<TemplatePreviewSelection | null>(null);
@@ -131,14 +111,6 @@ function createTemplatePreviewSignals() {
   const template$ = computed((get) => {
     const item = get(item$);
     return item === null ? null : loadTemplatePreview(item);
-  });
-  const html$ = computed((get) => {
-    const selection = get(selection$);
-    const template = get(template$);
-    if (selection === null || template === null) {
-      return null;
-    }
-    return renderTemplatePreview(template, selection);
   });
   const themeCss$ = computed((get) => {
     return get(internalSelection$)?.themeCss ?? "";
@@ -179,7 +151,6 @@ function createTemplatePreviewSignals() {
     templateId$,
     template$,
     selection$,
-    html$,
     slideDocuments$,
     setThemedFrameRef$: themedFrames.setFrameRef$,
     select$,
@@ -189,32 +160,14 @@ function createTemplatePreviewSignals() {
 
 export function createPresentationTemplatePreviewSignals() {
   const opened = createTemplatePreviewSignals();
-  const preview = createTemplatePreviewSignals();
-  const openPresentationTemplate$ = command(
-    ({ set }, selection: SelectTemplatePreview) => {
-      set(opened.select$, selection);
-      set(preview.clear$);
-    },
-  );
-  const clearPresentationTemplatePreviews$ = command(({ set }) => {
-    set(opened.clear$);
-    set(preview.clear$);
-  });
   return {
     openedTemplateId$: opened.templateId$,
     openedTemplate$: opened.template$,
     openedTemplateSelection$: opened.selection$,
     openedTemplateSlideDocuments$: opened.slideDocuments$,
     setOpenedTemplateFrameRef$: opened.setThemedFrameRef$,
-    openPresentationTemplate$,
+    openPresentationTemplate$: opened.select$,
     selectOpenedTemplate$: opened.select$,
-    closeOpenedTemplate$: opened.clear$,
-    previewTemplateId$: preview.templateId$,
-    previewTemplate$: preview.template$,
-    previewTemplateSelection$: preview.selection$,
-    previewTemplateHtml$: preview.html$,
-    selectPreviewTemplate$: preview.select$,
-    clearPreviewTemplate$: preview.clear$,
-    clearPresentationTemplatePreviews$,
+    clearPresentationTemplatePreviews$: opened.clear$,
   };
 }

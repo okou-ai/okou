@@ -54,13 +54,18 @@ function createZipArtifactPreview(
     return { ...base, kind: entry.kind };
   }
 
-  const select$ = command(
+  const toggleEntry$ = command(
     async ({ get, set }, entry: ZipArtifactEntry, signal: AbortSignal) => {
-      if (!entry.preview || entry.path === get(selection$)?.path) {
+      if (!entry.preview) {
         return;
       }
       set(diagram.dispose$);
       set(imageCanvas.reset$);
+      if (entry.path === get(selection$)?.path) {
+        set(resetSelection$);
+        set(selection$, null);
+        return;
+      }
       const selectionSignal = set(resetSelection$, owner, signal);
       const read = readEntryPreview(entry.path, entry.preview, selectionSignal);
       set(selection$, {
@@ -78,7 +83,7 @@ function createZipArtifactPreview(
   return {
     entries$,
     selection$,
-    select$,
+    toggleEntry$,
     diagram,
     imageCanvas,
     dispose$,

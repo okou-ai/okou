@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.51.1](https://github.com/okou-ai/okou/compare/android-v0.51.0...android-v0.51.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align failed-reply recovery feedback with design ([#50278](https://github.com/okou-ai/okou/issues/50278)) ([aba089d](https://github.com/okou-ai/okou/commit/aba089dae5167ce904fbc13ccb9dc858f5ee827b))
+* **android:** align update recovery and compact details ([#50309](https://github.com/okou-ai/okou/issues/50309)) ([34bcce9](https://github.com/okou-ai/okou/commit/34bcce92b6d0023509e6c4908704935834776590))
+* **android:** explain terminal connector device authorization results ([#50364](https://github.com/okou-ai/okou/issues/50364)) ([d1b812f](https://github.com/okou-ai/okou/commit/d1b812f636d36d67a8a29e7fc7b6a8b811a95c2b))
+* **android:** sort and expand settings time zones ([#50270](https://github.com/okou-ai/okou/issues/50270)) ([cca10d5](https://github.com/okou-ai/okou/commit/cca10d52d8117b084b2f4903cac9185c95758619))
+
+## [0.51.0](https://github.com/okou-ai/okou/compare/android-v0.50.1...android-v0.51.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+
+
+### Bug Fixes
+
+* **android:** keep search progress below the filters ([#50362](https://github.com/okou-ai/okou/issues/50362)) ([d2a61ad](https://github.com/okou-ai/okou/commit/d2a61ad3b2f7d8a241ee089124639ce608e0ecd6))
+* **android:** retain chat list rename forms through save failures ([#50302](https://github.com/okou-ai/okou/issues/50302)) ([6958795](https://github.com/okou-ai/okou/commit/695879543d6a6b057a784ef392c32dc03a1af516))
+
 ## [0.50.1](https://github.com/okou-ai/okou/compare/android-v0.50.0...android-v0.50.1) (2026-11-24)
 
 

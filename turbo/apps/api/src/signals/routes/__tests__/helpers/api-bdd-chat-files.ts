@@ -42,7 +42,7 @@ import type { ChatEventCursor } from "@okouai/api-contracts/contracts/chat-event
 import { userModelPreferenceContract } from "@okouai/api-contracts/contracts/user-model-preference";
 import {
   artifactCatalogContract,
-  type ArtifactCatalogKind,
+  type ArtifactCatalogListQuery,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -1356,13 +1356,7 @@ export function createChatFilesBddApi(context: TestContext) {
 
     async listArtifactCatalog(
       actor: ApiTestUser,
-      query: {
-        readonly limit?: number;
-        readonly cursor?: string;
-        readonly kind?: ArtifactCatalogKind;
-        readonly chatThreadId?: string;
-        readonly keyword?: string;
-      } = {},
+      query: ArtifactCatalogListQuery = {},
     ): Promise<{
       readonly artifacts: readonly ArtifactSummary[];
       readonly nextCursor: string | null;

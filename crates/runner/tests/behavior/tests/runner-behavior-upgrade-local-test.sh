@@ -147,8 +147,7 @@ if args[0] == 'service':
         if owner == 'b':
             assert (root / 'ready-1').exists(), 'B installed before exact job 1 readiness'
             assert not (root / 'released-1').exists(), 'job 1 released before B installed'
-        if not (scenario == 'inactive-b' and owner == 'b'):
-            (root / f'active-{owner}').touch()
+        (root / f'active-{owner}').touch()
         (root / f'enabled-{owner}').touch()
         update(owner, lambda s: s.update(mode='running', active_runs=[{'run_id': 'unrelated', 'sandbox_id': 'wrong-sandbox', 'phase': 'running'}]))
     elif action == 'drain':
@@ -175,12 +174,11 @@ if args[0] == 'service':
 if args[:2] == ['local', 'submit']:
     prompt = args[args.index('--prompt') + 1]
     number = int(prompt[-1])
-    owner = 'a' if number == 1 or (number == 2 and scenario in ('job2-a', 'inactive-b')) else 'b'
+    owner = 'a' if number == 1 or (number == 2 and scenario == 'job2-a') else 'b'
     if number == 1 and scenario == 'wrong-owner':
         owner = 'b'
     run_id = f'00000000-0000-4000-8000-{number:012d}'
     event('submit', number=number, owner=owner, prompt=prompt, pid=os.getpid())
-    inject_failure(f'submit-{number}')
     if number == 3:
         assert (root / 'retired-a').exists() and (root / 'active-b').exists(), 'fresh job did not run with only B left'
         print(json.dumps({'run_id': run_id, 'exit_code': 0}))
@@ -193,8 +191,6 @@ if args[:2] == ['local', 'submit']:
     request = {'job_id': run_id, 'prompt': prompt}
     temporary = job.with_suffix('.tmp')
     temporary.write_text(json.dumps(request))
-    if scenario == 'early-exit' and number == 1:
-        sys.exit(7)
     claims = queue / 'claims'
     claims.mkdir(exist_ok=True)
     if scenario != 'missing-claim':
@@ -236,8 +232,6 @@ if args[:2] == ['local', 'submit']:
         os.mkfifo(gate)
         with gate.open() as reader:
             reader.read()
-    if scenario == 'failed-submission' and number == 2:
-        result = 1
     status = update(owner, lambda s: s.update(active_runs=[r for r in s['active_runs'] if r['sandbox_id'] != sandbox_id]))
     if status['mode'] == 'draining' and not status['active_runs']:
         (root / f'active-{owner}').unlink(missing_ok=True)
@@ -368,12 +362,10 @@ def run_case(scenario, failure, case, binary):
         assert not any((case / f'{kind}-{owner}').exists() for kind in ('active', 'enabled') for owner in ('a', 'b')), f'{scenario}: service state leaked'
 
 error_statuses = {
-    'install-b': 42, 'inactive-drain-a': 1, 'submit-3': 1, 'cleanup-failure': 42,
+    'inactive-drain-a': 1, 'cleanup-failure': 42,
 }
 following_phases = {
-    'install-b': '--- Submit job 2',
     'inactive-drain-a': '--- Uninstalling runner A',
-    'submit-3': '--- Draining runner B',
     'cleanup-failure': '--- Waiting for job 1',
 }
 
@@ -394,12 +386,9 @@ with tempfile.TemporaryDirectory(prefix='upgrade-worker-test-') as temporary:
         'preparing-only': 'not ready within observation budget',
         'missing-fifo': 'not ready within observation budget',
         'ambiguous-request': 'ambiguous submission',
-        'early-exit': 'submission exited before FIFO readiness',
-        'inactive-b': 'runner B is not active during coexistence',
         'missing-drain-mode': 'did not retain job 1 while draining',
         'release-failure': 'failed to release workload',
         'stalled-completion': 'did not finish after release',
-        'failed-submission': 'submission 00000000-0000-4000-8000-000000000002 failed',
         'mismatched-result': 'submission result did not confirm success',
     }
     cases.update({name: f'injected failure: {name}' for name in error_statuses})

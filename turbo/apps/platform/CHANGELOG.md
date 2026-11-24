@@ -13,6 +13,42 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1173.1](https://github.com/okou-ai/okou/compare/app-v0.1173.0...app-v0.1173.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** remove standalone template picker ([#50365](https://github.com/okou-ai/okou/issues/50365)) ([6a20b9e](https://github.com/okou-ai/okou/commit/6a20b9e686f663c0f71403cf4d52c6d77820e7a6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.867.1
+    * @okouai/ui bumped to 1.22.2
+
+## [0.1173.0](https://github.com/okou-ai/okou/compare/app-v0.1172.0...app-v0.1173.0) (2026-11-24)
+
+
+### Features
+
+* **artifacts:** add a gated searchable artifact library list ([#50231](https://github.com/okou-ai/okou/issues/50231)) ([2bb0a85](https://github.com/okou-ai/okou/commit/2bb0a8587efb1fc8abc513dba5c50109406226ed))
+
+
+### Bug Fixes
+
+* **app:** dismiss zip entry preview on repeat selection ([#50350](https://github.com/okou-ai/okou/issues/50350)) ([24d6ba2](https://github.com/okou-ai/okou/commit/24d6ba23250dd2b62ff95ac99687bdf403ab75ab))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.115.0
+    * @okouai/core bumped to 8.867.0
+    * @okouai/ui bumped to 1.22.1
+
 ## [0.1172.0](https://github.com/okou-ai/okou/compare/app-v0.1171.1...app-v0.1172.0) (2026-11-24)
 
 

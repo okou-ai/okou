@@ -11,17 +11,20 @@ import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime"
 import { closeLightboxImmediately$ } from "../okou-page/attachment-chips.ts";
 import { historyState$, searchParams$ } from "../route.ts";
 import {
-  artifactCatalogKindFromSearchParams,
   artifactCatalogScrollTargetFromHistoryState,
   artifactIdFromCatalogSearchParams,
+  cancelArtifactCatalogQuery$,
+  initializeArtifactCatalogQueryFromRoute$,
   loadThroughArtifactCatalog$,
   openArtifact$,
   prepareArtifactCatalogPreviewHistory$,
   reloadArtifactCatalog$,
-  setArtifactCatalogKindFromRoute$,
 } from "./artifact-catalog-signals.ts";
 
-import { artifactCatalogSidebar } from "./artifact-catalog-instance.ts";
+import {
+  artifactCatalogSidebar,
+  artifactLibraryEnabled$,
+} from "./artifact-catalog-instance.ts";
 
 export const setupArtifactsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -30,16 +33,21 @@ export const setupArtifactsPage$ = command(
       "abort",
       () => {
         set(artifactCatalogSidebar.close$);
+        set(cancelArtifactCatalogQuery$);
       },
       { once: true },
     );
+    const libraryEnabled = await get(artifactLibraryEnabled$);
+    signal.throwIfAborted();
     const routeSearchParams = new URLSearchParams(get(searchParams$));
     const artifactId = artifactIdFromCatalogSearchParams(routeSearchParams);
-    const kind = artifactCatalogKindFromSearchParams(routeSearchParams);
-    // Entering the page always starts a fresh first page. Later pages are
-    // fetched on scroll and never cached across visits.
-    set(setArtifactCatalogKindFromRoute$, kind);
-    set(reloadArtifactCatalog$);
+    // Each visit installs its route-owned query and starts fresh paging.
+    set(
+      initializeArtifactCatalogQueryFromRoute$,
+      routeSearchParams,
+      libraryEnabled,
+      signal,
+    );
     // A synced artifact shows its Google Drive state on its catalog row.
     set(
       setAblyInvalidationLoop$,

@@ -11,15 +11,12 @@ import { expect, test } from "vitest";
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import {
   THREAD_ID,
-  openTemplatePicker,
+  openTemplateRecommendations,
   createTemplateGalleryHelpers,
 } from "./chat-composer-template-gallery-test-helpers.ts";
 import { CLAUDE_SUBSCRIPTION_PROVIDER_ID } from "./chat-composer-test-helpers.ts";
 import { buildRunModel } from "./chat-model-builders.ts";
-import {
-  openSavedPresentationPicker,
-  savedPresentationDraft,
-} from "./presentation-draft-test-helpers.ts";
+import { savedPresentationDraft } from "./presentation-draft-test-helpers.ts";
 
 const context = testContext();
 const { mockTemplateChat } = createTemplateGalleryHelpers(context);
@@ -53,13 +50,11 @@ function uploadedFilePart(message: UserMessageDocument) {
 async function importDeck(
   user: ReturnType<typeof userEvent.setup>,
   file: File,
-  openPicker?: HTMLElement,
+  openShelf?: HTMLElement,
 ): Promise<void> {
-  const picker = openPicker ?? (await openTemplatePicker(user));
-  await user.upload(
-    within(picker).getByLabelText("Import your own deck"),
-    file,
-  );
+  const shelf =
+    openShelf ?? (await openTemplateRecommendations("Presentation"));
+  await user.upload(within(shelf).getByLabelText("Import your own deck"), file);
 }
 
 test("Import a presentation deck over a saved template in an existing chat", async () => {
@@ -87,13 +82,13 @@ test("Import a presentation deck over a saved template in an existing chat", asy
     host: "app.okou.ai",
   });
 
-  const picker = await openSavedPresentationPicker(template.title);
+  const shelf = await openTemplateRecommendations("Presentation");
   await importDeck(
     user,
     new File(["modern"], "modern-deck.pptx", {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
     }),
-    picker,
+    shelf,
   );
   await waitFor(() => {
     expect(capture.sentMessages).toHaveLength(1);
@@ -150,17 +145,15 @@ test("Import a presentation deck from a new chat", async () => {
   });
 });
 
-test("The Presentation tile still offers exactly the decks it always has", async () => {
+test("The Presentation recommendation import accepts deck formats", async () => {
   mockDeckImportChat();
-  const user = userEvent.setup();
-
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
   });
 
-  await openTemplatePicker(user, "Presentation");
+  await openTemplateRecommendations("Presentation");
   // The Presentation tile accepts decks; Document and Image have their own inputs.
   expect(
     screen.getByLabelText("Import your own deck").getAttribute("accept"),

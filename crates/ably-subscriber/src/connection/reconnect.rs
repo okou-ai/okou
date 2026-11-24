@@ -51,7 +51,26 @@ pub(super) enum ReconnectOutcome {
     Closed,
 }
 
-pub(super) struct PendingReconnectToken {
+pub(super) struct ReconnectTokens {
+    refresh_required: bool,
+    pending: Option<PendingReconnectToken>,
+}
+
+impl ReconnectTokens {
+    pub(super) fn new(refresh_required: bool) -> Self {
+        Self {
+            refresh_required,
+            pending: None,
+        }
+    }
+
+    fn invalidate(&mut self) {
+        self.refresh_required = true;
+        self.pending.take();
+    }
+}
+
+struct PendingReconnectToken {
     details: TokenDetails,
     renewal_at: Option<Instant>,
 }
@@ -68,24 +87,23 @@ pub(super) struct PendingReconnectToken {
 /// caller moves the channel into suspended retry, matching ably-js.
 pub(super) async fn attempt_reconnect(
     p: ReconnectContext<'_>,
-    refresh_token: &mut bool,
-    pending_reconnect_token: &mut Option<PendingReconnectToken>,
+    tokens: &mut ReconnectTokens,
 ) -> Result<ReconnectOutcome, Error> {
     let reconnect_timeout = p.timing.reconnect_timeout;
     let reconnect_setup = tokio::time::timeout(reconnect_timeout, async {
         let use_resume = p.session.can_resume();
-        let use_pending_token = *refresh_token || !use_resume;
+        let use_pending_token = tokens.refresh_required || !use_resume;
 
         let active_token = if use_pending_token {
-            if pending_reconnect_token.as_ref().is_some_and(|pending| {
+            if tokens.pending.as_ref().is_some_and(|pending| {
                 pending
                     .renewal_at
                     .is_some_and(|renewal_at| renewal_at <= Instant::now())
             }) {
-                pending_reconnect_token.take();
+                tokens.pending.take();
             }
 
-            let pending = match pending_reconnect_token {
+            let pending = match &mut tokens.pending {
                 Some(pending) => pending,
                 None => {
                     let token_request = (p.get_token)().await.map_err(Error::TokenFetch)?;
@@ -94,7 +112,7 @@ pub(super) async fn attempt_reconnect(
                         &details,
                         p.timing.token_renewal_margin,
                     );
-                    pending_reconnect_token.insert(PendingReconnectToken {
+                    tokens.pending.insert(PendingReconnectToken {
                         details,
                         renewal_at,
                     })
@@ -159,7 +177,8 @@ pub(super) async fn attempt_reconnect(
             .await?;
 
         let new_token = if use_pending_token {
-            pending_reconnect_token
+            tokens
+                .pending
                 .as_ref()
                 .map(|pending| pending.details.clone())
         } else {
@@ -179,8 +198,7 @@ pub(super) async fn attempt_reconnect(
                 &error,
                 Error::Protocol { code, .. } if error_code::is_token_error(*code)
             ) {
-                *refresh_token = true;
-                pending_reconnect_token.take();
+                tokens.invalidate();
             }
             return Err(error);
         }
@@ -218,8 +236,7 @@ pub(super) async fn attempt_reconnect(
                 &error,
                 Error::Protocol { code, .. } if error_code::is_token_error(*code)
             ) {
-                *refresh_token = true;
-                pending_reconnect_token.take();
+                tokens.invalidate();
             }
             return Err(error);
         }
@@ -230,8 +247,7 @@ pub(super) async fn attempt_reconnect(
         AttachOutcome::Attached { channel_serial } => Some(channel_serial),
         AttachOutcome::Detached(err) => {
             if error_code::is_token_error(err.code) {
-                *refresh_token = true;
-                pending_reconnect_token.take();
+                tokens.invalidate();
                 return Err(Error::Protocol {
                     code: err.code,
                     message: protocol_error_message(err.message),
@@ -268,7 +284,7 @@ pub(super) async fn attempt_reconnect(
 
     let transport = transport.into_transport()?;
     if new_token.is_some() {
-        pending_reconnect_token.take();
+        tokens.pending.take();
     }
     Ok(match attached_channel_serial {
         Some(channel_serial) => ReconnectOutcome::Attached {

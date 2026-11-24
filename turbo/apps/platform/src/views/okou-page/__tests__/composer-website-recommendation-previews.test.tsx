@@ -76,12 +76,10 @@ async function openShelf() {
   click(control("button", "Website", create));
   const shelf = await screen.findByRole("group", { name: "Website templates" });
   const eye = control("button", `Preview template ${website.title}`, shelf);
-  const browse = control("button", "View all", screen.getByRole("tabpanel"));
   return {
     editor,
     shelf,
     eye,
-    browse,
     capture,
     readDraft: () => {
       return savedDraft;
@@ -191,48 +189,4 @@ test("Selecting the original Website cover after preview attaches and serializes
     type: "text",
     text: prompt,
   });
-});
-
-test("View all resets direct Website preview dismissal to the normal gallery", async () => {
-  const { eye, browse, editor, capture, readDraft } = await openShelf();
-  const user = userEvent.setup({ delay: null });
-  await user.click(eye);
-  const direct = await websitePreview();
-  const directSrc = direct.frame.getAttribute("src");
-  const directSandbox = direct.frame.getAttribute("sandbox");
-  click(control("button", "Close", direct.dialog));
-  await expectShelfReturn(eye);
-  click(browse);
-  const picker = await screen.findByRole("dialog");
-  expect(control("tab", "Website", picker)).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  const galleryEyeLabel = `Preview website template ${website.title}`;
-  for (const dismissal of ["Close", "Escape"]) {
-    await user.click(control("button", galleryEyeLabel, picker));
-    const nested = await websitePreview();
-    await user.click(nested.prefix);
-    expect(nested.frame).toBeInTheDocument();
-    expect(nested.frame).toHaveAttribute("src", directSrc);
-    expect(nested.frame).toHaveAttribute("sandbox", directSandbox);
-    if (dismissal === "Escape") {
-      await user.keyboard("{Escape}");
-    } else {
-      click(control("button", dismissal, nested.dialog));
-    }
-    await waitFor(() => {
-      expect(nested.dialog).not.toBeInTheDocument();
-      expect(control("button", galleryEyeLabel, picker)).toHaveFocus();
-    });
-    expect(picker).toBeVisible();
-    expect(control("tab", "Website", picker)).toHaveAttribute(
-      "aria-selected",
-      "true",
-    );
-  }
-  expect(editor).toHaveTextContent(DRAFT);
-  expect(composerInlineTemplates()).toHaveLength(0);
-  expect(readDraft()).toStrictEqual(originalDraft());
-  expect(capture.sentMessages).toHaveLength(0);
 });

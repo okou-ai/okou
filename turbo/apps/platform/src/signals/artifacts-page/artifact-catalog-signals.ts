@@ -1,10 +1,16 @@
-import { command } from "ccstate";
+import { command, state } from "ccstate";
+import { animationFrame } from "signal-timers";
 import {
   pageCatalog,
   artifactCatalogSidebar,
 } from "./artifact-catalog-instance.ts";
 import { artifactIdPathParamsSchema } from "@okouai/api-contracts/validators/artifact-catalog";
-import type { ArtifactCatalogKind } from "@okouai/api-contracts/contracts/artifact-catalog";
+import type {
+  ArtifactCatalogDirection,
+  ArtifactCatalogKind,
+  ArtifactCatalogSort,
+} from "@okouai/api-contracts/contracts/artifact-catalog";
+import type { ArtifactCatalogOrder } from "./create-artifact-catalog-signals.ts";
 import {
   historyState$,
   pathname$,
@@ -14,14 +20,20 @@ import {
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { onRef } from "../utils.ts";
+import { pageSignal$ } from "../page-signal.ts";
+import { artifactCatalogViewport$ } from "../artifact-deletion.ts";
+
+// Route defaults and serialization follow the mode installed by page setup.
+// Requests independently read the authoritative feature switch.
+const routeLibraryMode$ = state(false);
+const internalPreviewTrigger$ = state<HTMLElement | null>(null);
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 
-export const setArtifactCatalogKindFromRoute$ = pageCatalog.setKind$;
-
 export function artifactCatalogKindFromSearchParams(
   params: URLSearchParams,
-): ArtifactCatalogKind {
+  libraryEnabled = false,
+): ArtifactCatalogKind | null {
   const tab = params.get("tab");
   switch (tab) {
     case "file":
@@ -34,27 +46,144 @@ export function artifactCatalogKindFromSearchParams(
       return tab;
     }
     default: {
-      return "presentation";
+      return libraryEnabled ? null : "presentation";
     }
   }
 }
 
-export const setArtifactCatalogKind$ = command(
-  ({ get, set }, kind: ArtifactCatalogKind | null) => {
-    set(pageCatalog.setKind$, kind);
+function artifactCatalogSortFromSearchParams(
+  params: URLSearchParams,
+): ArtifactCatalogOrder {
+  const sort = params.get("sort");
+  if (sort !== "createdAt" && sort !== "title") {
+    return { sort: "createdAt", direction: "desc" };
+  }
+  return {
+    sort,
+    direction: params.get("direction") === "asc" ? "asc" : "desc",
+  };
+}
+
+export const initializeArtifactCatalogQueryFromRoute$ = command(
+  (
+    { set },
+    params: URLSearchParams,
+    libraryEnabled: boolean,
+    signal: AbortSignal,
+  ) => {
+    signal.throwIfAborted();
+    set(routeLibraryMode$, libraryEnabled);
+    set(internalPreviewTrigger$, null);
+    set(
+      pageCatalog.initializeQuery$,
+      {
+        kind: artifactCatalogKindFromSearchParams(params, libraryEnabled),
+        search: libraryEnabled ? (params.get("q") ?? "") : "",
+        ...artifactCatalogSortFromSearchParams(params),
+      },
+      signal,
+    );
+  },
+);
+
+const writeArtifactCatalogQueryToRoute$ = command(
+  ({ get, set }, replace: boolean) => {
     const next = new URLSearchParams(get(searchParams$));
-    if (!kind || kind === "presentation") {
+    const kind = get(pageCatalog.selectedKind$);
+    if (get(routeLibraryMode$)) {
+      next.set("tab", kind ?? "all");
+      const search = get(pageCatalog.search$);
+      if (search) {
+        next.set("q", search);
+      } else {
+        next.delete("q");
+      }
+      const order = get(pageCatalog.sort$);
+      next.set("sort", order.sort);
+      next.set("direction", order.direction);
+    } else if (!kind || kind === "presentation") {
       next.delete("tab");
     } else {
       next.set("tab", kind);
     }
-    set(updateSearchParams$, next);
+    if (next.toString() === get(searchParams$).toString()) {
+      return;
+    }
+    const historyState = get(historyState$);
+    const artifactId = artifactIdFromCatalogSearchParams(next);
+    if (
+      get(routeLibraryMode$) &&
+      artifactId !== null &&
+      artifactId ===
+        artifactIdFromHistoryState(
+          historyState,
+          ARTIFACT_PREVIEW_HISTORY_STATE_KEY,
+        )
+    ) {
+      // The edited query now owns this entry; keep the live preview off-route.
+      next.delete("artifact");
+      const catalogHistoryState: Record<string, unknown> =
+        typeof historyState === "object" && historyState !== null
+          ? { ...historyState }
+          : {};
+      delete catalogHistoryState[ARTIFACT_PREVIEW_HISTORY_STATE_KEY];
+      set(replaceSearchParams$, next, catalogHistoryState);
+      return;
+    }
+    set(
+      replace ? replaceSearchParams$ : updateSearchParams$,
+      next,
+      historyState,
+    );
+  },
+);
+
+export const setArtifactCatalogKind$ = command(
+  ({ set }, kind: ArtifactCatalogKind | null) => {
+    set(pageCatalog.setKind$, kind);
+    set(writeArtifactCatalogQueryToRoute$, false);
+  },
+);
+
+export const artifactCatalogSearch$ = pageCatalog.search$;
+
+export const setArtifactCatalogSearch$ = command(
+  async ({ set }, search: string, signal: AbortSignal): Promise<void> => {
+    const update = set(pageCatalog.setSearch$, search, signal);
+    set(writeArtifactCatalogQueryToRoute$, true);
+    await update;
+    signal.throwIfAborted();
+  },
+);
+
+export const artifactCatalogSort$ = pageCatalog.sort$;
+
+export const setArtifactCatalogSort$ = command(
+  ({ set }, sort: ArtifactCatalogSort, direction: ArtifactCatalogDirection) => {
+    set(pageCatalog.setSort$, sort, direction);
+    set(writeArtifactCatalogQueryToRoute$, false);
+  },
+);
+
+export const cancelArtifactCatalogQuery$ = command(({ set }) => {
+  set(internalPreviewTrigger$, null);
+  set(routeLibraryMode$, false);
+  set(pageCatalog.cancelQuery$);
+});
+
+export const rememberArtifactCatalogTrigger$ = command(
+  ({ get, set }, trigger: HTMLElement) => {
+    if (get(routeLibraryMode$)) {
+      set(internalPreviewTrigger$, trigger);
+    }
   },
 );
 
 export const reloadArtifactCatalog$ = pageCatalog.reload$;
 
 export const artifactCatalog$ = pageCatalog.catalog$;
+
+export const artifactCatalogPagingState$ = pageCatalog.pagingState$;
 
 export const loadMoreArtifactCatalog$ = pageCatalog.loadMore$;
 
@@ -136,6 +265,8 @@ export const prepareArtifactCatalogPreviewHistory$ = command(
 );
 
 export const closeArtifactCatalogPreview$ = command(({ get, set }) => {
+  const previewTrigger = get(internalPreviewTrigger$);
+  set(internalPreviewTrigger$, null);
   set(artifactCatalogSidebar.close$);
   const artifactId = artifactIdFromCatalogSearchParams(get(searchParams$));
   const previewArtifactId = artifactIdFromHistoryState(
@@ -149,6 +280,23 @@ export const closeArtifactCatalogPreview$ = command(({ get, set }) => {
   ) {
     window.history.back();
     return;
+  }
+  if (get(routeLibraryMode$)) {
+    const viewport = get(artifactCatalogViewport$);
+    animationFrame(
+      () => {
+        if (get(artifactCatalogSidebar.open$)) {
+          return;
+        }
+        const target = previewTrigger?.isConnected
+          ? previewTrigger
+          : viewport?.isConnected
+            ? viewport
+            : null;
+        target?.focus({ preventScroll: true });
+      },
+      { signal: get(pageSignal$) },
+    );
   }
 });
 

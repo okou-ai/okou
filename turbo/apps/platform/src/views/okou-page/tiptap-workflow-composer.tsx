@@ -53,11 +53,6 @@ import {
   slashActionOptionId,
 } from "./slash-template-panel.tsx";
 import type { SlashAction } from "./slash-actions.ts";
-import {
-  SLASH_TEMPLATE_CATEGORIES,
-  type SlashTemplateCategory,
-  type SlashTemplatePreview,
-} from "./composer-template-catalog.ts";
 import type { ComposerPasteEvent } from "./composer-input-types.ts";
 import {
   useComposerKeyboard,
@@ -407,11 +402,6 @@ interface ComposerSuggestionMenuState {
   readonly workflows: readonly ComposerSlashWorkflowMatch[];
   readonly previewIndex: number | null;
   readonly previewSuggestion: (index: number | null) => void;
-  readonly selectTemplate: (
-    preview: SlashTemplatePreview,
-    category: SlashTemplateCategory,
-  ) => void;
-  readonly browseAllTemplates: () => void;
   readonly workflowsLoading: boolean;
   readonly reversed: boolean;
   readonly reverseWorkflows: boolean;
@@ -433,46 +423,15 @@ interface ComposerSuggestionMenuState {
   readonly handleKeyDown: (event: KeyboardEvent) => boolean;
 }
 
-/** Selecting a template cover activates the category's composer task. */
-const SLASH_TEMPLATE_CATEGORY_TASK = {
-  slides: "presentation",
-  document: "document",
-  illustration: "image",
-  website: "website",
-} as const satisfies Record<SlashTemplateCategory, ComposerTask>;
-
-/** The slash menu's template selection, browsing and workflow actions. */
+/** The slash menu's workflow actions and focus handoff. */
 function useSlashTemplatePanelActions(
   composer: ComposerSignals,
   close: () => void,
 ) {
   const clearSlashRange = useSet(composer.suggestion.clearSlashRange$);
-  const openTask = useSet(composer.taskChips.openTask$);
-  const insertTemplate = useSet(composer.template.insertTemplate$);
-  const openTemplatePicker = useSet(composer.template.openTemplatePicker$);
   const insertText = useSet(composer.editor.insertText$);
   const navigate = useSet(detachedNavigateTo$);
   return {
-    /**
-     * Choosing a cover consumes the token that opened the menu, so the chip
-     * lands where the token was rather than after it. Insert the chip before
-     * activating its task: task activation focuses the caret at the end of the
-     * draft, which would otherwise move the chip off the token it replaces.
-     */
-    selectTemplate(
-      preview: SlashTemplatePreview,
-      category: SlashTemplateCategory,
-    ): void {
-      clearSlashRange();
-      close();
-      insertTemplate(preview.template, preview.attachment);
-      openTask(SLASH_TEMPLATE_CATEGORY_TASK[category]);
-    },
-    browseAll(): void {
-      clearSlashRange();
-      close();
-      openTemplatePicker({ kind: "insert", category: "slides" });
-    },
     /**
      * The same request the Workflows page's Create in chat starts a chat with,
      * written where the token was so the user can still edit it before sending.
@@ -815,8 +774,6 @@ function useComposerSuggestionMenu({
     workflows: workflowSuggestions,
     previewIndex,
     previewSuggestion,
-    selectTemplate: templatePanel.selectTemplate,
-    browseAllTemplates: templatePanel.browseAll,
     workflowsLoading: workflowResult.loading,
     reversed: reversedSuggestions,
     reverseWorkflows: reversedSuggestions && !workflowOverview,
@@ -935,13 +892,10 @@ function ComposerSuggestionSession({
                 overview={suggestionMenu.actionsOverview}
                 workflows={suggestionMenu.workflows}
                 workflowsLoading={suggestionMenu.workflowsLoading}
-                categories={SLASH_TEMPLATE_CATEGORIES}
                 selectedIndex={suggestionMenu.selectedIndex}
                 previewIndex={suggestionMenu.previewIndex}
                 onPreview={suggestionMenu.previewSuggestion}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
-                onSelectTemplate={suggestionMenu.selectTemplate}
-                onBrowseAll={suggestionMenu.browseAllTemplates}
                 onNewWorkflow={suggestionMenu.newWorkflow}
                 onManageWorkflows={() => {
                   suggestionMenu.close();
@@ -966,7 +920,6 @@ function ComposerSuggestionSession({
                 previewIndex={suggestionMenu.previewIndex}
                 onPreview={suggestionMenu.previewSuggestion}
                 onSelectWorkflow={suggestionMenu.selectWorkflow}
-                onBrowseAll={suggestionMenu.browseAllTemplates}
                 workflowOptionId={slashWorkflowOptionId}
               />
             )}

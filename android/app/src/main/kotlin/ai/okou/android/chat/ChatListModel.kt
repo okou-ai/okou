@@ -146,6 +146,7 @@ internal constructor(
     internal val readIntent: ChatReadIntent? = null,
     internal val conversationId: String? = null,
     internal val deleteFromWorkflow: Boolean = false,
+    internal val renameThreadId: String? = null,
 )
 
 internal enum class ChatUndoPhase {
@@ -195,6 +196,7 @@ data class ChatListUiState(
     val filter: ChatListFilter = ChatListFilter.Inbox,
     val pendingRowActions: Map<String, ChatRowAction> = emptyMap(),
     val failedRowAction: ChatRowActionFailure? = null,
+    internal val unconfirmedRenames: Map<String, String> = emptyMap(),
     val rowUndo: ChatRowUndo? = null,
     val markingAllRead: Boolean = false,
     val markAllReadResult: ChatMarkAllReadResult? = null,
@@ -977,14 +979,17 @@ class ChatListModel(
                 deleteFromWorkflow = deleteFromWorkflow,
             )
 
-    internal fun renameThread(threadId: String, title: String, fromConversation: Boolean = false) {
+    internal fun renameThread(
+        threadId: String,
+        title: String,
+        fromConversation: Boolean = false,
+    ): Boolean =
         performRowAction(
             threadId,
             ChatRowAction.Rename,
             title.trim(),
             fromConversation = fromConversation,
         )
-    }
 
     internal fun moveThreadToProject(
         threadId: String,
@@ -1013,7 +1018,9 @@ class ChatListModel(
         if (threadId in state.pendingRowActions) return false
         if (
             action == ChatRowAction.Rename &&
-                (value.isNullOrBlank() || value == thread.title?.trim())
+                (value.isNullOrBlank() ||
+                    value == thread.title?.trim() ||
+                    threadId in state.unconfirmedRenames)
         )
             return false
         val movingProject = action == ChatRowAction.MoveProject
@@ -1047,6 +1054,10 @@ class ChatListModel(
         mutable.value =
             state.copy(
                 pendingRowActions = state.pendingRowActions + (threadId to action),
+                failedRowAction =
+                    state.failedRowAction?.takeUnless {
+                        action == ChatRowAction.Rename && it.renameThreadId == threadId
+                    },
                 projectList =
                     if (
                         movingProject &&
@@ -1084,6 +1095,8 @@ class ChatListModel(
                                         rejected = true,
                                         conversationId = conversationId,
                                         deleteFromWorkflow = deleteFromWorkflow,
+                                        renameThreadId =
+                                            threadId.takeIf { action == ChatRowAction.Rename },
                                     ),
                             )
                         return@launch
@@ -1154,6 +1167,8 @@ class ChatListModel(
                                                 ChatRowMutationOwner.Rollback.ConnectionFailed,
                                         conversationId = conversationId,
                                         deleteFromWorkflow = deleteFromWorkflow,
+                                        renameThreadId =
+                                            threadId.takeIf { action == ChatRowAction.Rename },
                                     ),
                             ),
                     )
@@ -1199,7 +1214,16 @@ class ChatListModel(
                     val failure = confirmation.failure
                     if (undoRequest == null) {
                         if (failure != null) {
-                            val state = mutable.value.copy(failedRowAction = failure)
+                            val previous = mutable.value
+                            val state =
+                                previous.copy(
+                                    failedRowAction = failure,
+                                    unconfirmedRenames =
+                                        if (action == ChatRowAction.Rename && !failure.rejected)
+                                            previous.unconfirmedRenames +
+                                                (threadId to failure.edits.single().eventId)
+                                        else previous.unconfirmedRenames,
+                                )
                             if (movingProject) reconcileProjectMoves(state, rowsChanged = true)
                             else mutable.value = state
                         } else if (!rolledBack) {
@@ -1253,6 +1277,7 @@ class ChatListModel(
                 threadsByRecency = rows.byRecency,
                 acceptedNewChats = projection.acceptedNewChats,
                 failedRowAction = unresolvedRowAction(state.failedRowAction),
+                unconfirmedRenames = projection.unsettledRenames(state.unconfirmedRenames),
             ),
         )
     }
@@ -1352,8 +1377,14 @@ class ChatListModel(
 
     internal fun checkRowActionFailure(failure: ChatRowActionFailure) {
         if (!current() || mutable.value.failedRowAction !== failure || failure.rejected) return
-        if (failure.action.updatesChat) reloadAfterRowActionFailure()
+        if (failure.renameThreadId != null) checkChatRename(failure.renameThreadId)
+        else if (failure.action.updatesChat) reloadAfterRowActionFailure()
         else viewModelScope.launch { readIndicatorsAfterWrite { true } }
+    }
+
+    internal fun checkChatRename(threadId: String) {
+        val eventId = mutable.value.unconfirmedRenames[threadId] ?: return
+        requestListRead(setOf(eventId), userRequested = true)
     }
 
     internal fun dismissRowActionFailure(failure: ChatRowActionFailure) {
@@ -1785,6 +1816,8 @@ class ChatListModel(
     internal fun renameProject(id: String, input: String) = projectOwner.renameProject(id, input)
 
     internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
+
+    internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)
 
     internal fun dismissProjectRenameRejection(rejection: ProjectRenameRejection) =
         projectOwner.dismissProjectRenameRejection(rejection)

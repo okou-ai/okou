@@ -53,15 +53,6 @@ function capabilityAction(label: string): HTMLElement {
   const card = within(capabilities()).queryByRole("region", { name: label });
   return card ? button("Explore", card) : button(label, capabilities());
 }
-function dialogTab(dialog: HTMLElement, label: string): HTMLElement {
-  const tab = queryAllByRoleFast("tab", dialog).find((item) => {
-    return item.textContent?.replace(/\s+/g, " ").trim() === label;
-  });
-  if (!tab) {
-    throw new Error(`Expected ${label} tab in the dialog`);
-  }
-  return tab;
-}
 function capabilityTab(label: string): HTMLElement {
   const list = screen.getByRole("tablist", {
     name: "Explore Okou capabilities",
@@ -325,7 +316,7 @@ test("The capability tabs move with the arrow keys and open on Enter", async () 
   expect(capabilityTab("Workflow")).toHaveAttribute("aria-selected", "true");
 });
 
-test("The tray names a type once and browses its catalog from the header line", async () => {
+test("The tray labels its contextual template shelf and visualization choices", async () => {
   mockTemplateChat();
   await setupHome();
   click(button("Presentation", capabilities()));
@@ -334,18 +325,7 @@ test("The tray names a type once and browses its catalog from the header line", 
   });
   // The type's tab names the shelf; the shelf itself carries only covers.
   expect(within(shelf).queryByText("Presentation templates")).toBeNull();
-  const tray = screen.getByRole("tabpanel");
-  click(button("View all", tray));
-  const dialog = await screen.findByRole("dialog");
-  expect(dialogTab(dialog, "Presentation")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
-  // Chart has no catalog to browse.
+  // Chart offers visualization preferences in the same contextual tray.
   const chart = queryAllByRoleFast(
     "radio",
     screen.getByRole("radiogroup", { name: "Create" }),
@@ -354,11 +334,6 @@ test("The tray names a type once and browses its catalog from the header line", 
   });
   click(chart!);
   await screen.findByRole("region", { name: "Visualization options" });
-  expect(
-    queryAllByRoleFast("button", tray).find((item) => {
-      return item.textContent?.trim() === "View all";
-    }),
-  ).toBeUndefined();
   // Find people says what it finds rather than naming itself again.
   click(capabilityTab("Find people"));
   const people = await screen.findByRole("region", { name: "Find people" });
@@ -398,7 +373,7 @@ test("Capability discovery and templates replace each other while the composer k
   expect(editor).toHaveTextContent("Keep my launch brief");
 });
 
-test("Workflow suggestions preserve the draft and open the real workflow picker", async () => {
+test("Workflow suggestions preserve the draft when switching capabilities", async () => {
   mockTemplateChat();
   const editor = await setupHome();
   await fill(editor, "Focus on customer meetings");
@@ -416,21 +391,6 @@ test("Workflow suggestions preserve the draft and open the real workflow picker"
   expect(
     button("Keep important emails moving", suggestions),
   ).toBeInTheDocument();
-  // "View all" sits beside the kinds in the tray's header line.
-  click(button("View all", screen.getByRole("tabpanel")));
-  const dialog = await screen.findByRole("dialog");
-  // Scoped to the picker: the open capability tab is also named Workflow.
-  expect(dialogTab(dialog, "Workflow")).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
-  expect(
-    button("Select workflow template Morning brief", dialog),
-  ).toBeInTheDocument();
-  click(button("Close", dialog));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog")).toBeNull();
-  });
   click(button("All capabilities"));
   expect(editor).toHaveTextContent(/^Focus on customer meetingsMorning brief$/);
   expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
