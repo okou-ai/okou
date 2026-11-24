@@ -8,7 +8,8 @@ import Observation
 @MainActor @Observable
 final class SSHAuthorizationStore {
   let action: ChatSSHAuthorizationAction
-  let stateStore = CCState.Store()
+  /// The workspace session Store that keeps this card's graph values.
+  let stateStore: CCState.Store
   private(set) var isActive = false
   private(set) var isWorking = false
   private(set) var error: String?
@@ -27,11 +28,12 @@ final class SSHAuthorizationStore {
 
   init(
     action: ChatSSHAuthorizationAction, threadID: String, client: APIClient,
-    didFail: @escaping @MainActor (Error) -> Void,
+    graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void,
     didRetainInteraction: @escaping @MainActor (SSHAuthorizationStore) -> Void = { _ in }
   ) {
     self.action = action
+    stateStore = graph
     self.threadID = threadID.lowercased()
     self.client = client
     self.didFail = didFail

@@ -8,7 +8,8 @@ import Observation
 @MainActor @Observable
 final class ComputerAuthorizationStore {
   let action: ChatComputerAuthorizationAction
-  let stateStore = CCState.Store()
+  /// The workspace session Store that keeps this card's graph values.
+  let stateStore: CCState.Store
   private(set) var chosenHostID: String?
   private(set) var isActive = false
   private(set) var isWorking = false
@@ -31,11 +32,12 @@ final class ComputerAuthorizationStore {
 
   init(
     action: ChatComputerAuthorizationAction, thread: ChatThread, commands: ChatCommands,
-    sync: ChatSync, didFail: @escaping @MainActor (Error) -> Void,
+    sync: ChatSync, graph: CCState.Store, didFail: @escaping @MainActor (Error) -> Void,
     didContinue: @escaping @MainActor () async -> Void,
     didRetainInteraction: @escaping @MainActor (ComputerAuthorizationStore) -> Void = { _ in }
   ) {
     self.action = action
+    stateStore = graph
     self.thread = thread
     self.commands = commands
     self.sync = sync

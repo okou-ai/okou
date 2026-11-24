@@ -173,7 +173,7 @@ final class ConversationStore {
   }
 
   @ObservationIgnored lazy var approvals = ApprovalCardRegistry(
-    thread: thread, commands: commands, sync: sync, didFail: didFail,
+    thread: thread, commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()
