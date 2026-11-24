@@ -111,7 +111,7 @@ class ScreenshotScenario {
                         check(stop.visibleBounds.width() == 48 && stop.visibleBounds.height() == 48)
                         stop.click()
                         fixture.firstStop.awaitEntered("first Stop")
-                        runningWithStopHidden(editor, editorBounds)
+                        runningWithStopHidden(editor, editorBounds, queueCount = 2)
                         check(text(reply).visibleBounds == replyBounds)
                         ScreenshotCapture.capture("01-stop-pending.png")
 
@@ -129,7 +129,7 @@ class ScreenshotScenario {
 
                         fixture.firstStop.release()
                         fixture.retryStop.awaitEntered("automatic Stop retry")
-                        runningWithStopHidden(editor, editorBounds)
+                        runningWithStopHidden(editor, editorBounds, queueCount = 1)
                         fixture.retryStop.release()
                         val stopError = text(R.string.controls_stop_failed)
                         check(fixture.stops.size == 3 && fixture.stops.distinct().size == 1)
@@ -184,6 +184,13 @@ class ScreenshotScenario {
                         check(wideFailure.visibleBounds.left > 320)
                         check(wideFailure.visibleBounds.bottom < wideEditor.visibleBounds.top)
                         ScreenshotCapture.capture("06-wide-stop-failed.png")
+                    } catch (error: Exception) {
+                        try {
+                            ScreenshotCapture.capture("diagnostic.png")
+                        } catch (captureError: Exception) {
+                            error.addSuppressed(captureError)
+                        }
+                        throw error
                     } finally {
                         fixture.releaseAll()
                     }
@@ -210,12 +217,12 @@ class ScreenshotScenario {
         }
     }
 
-    private fun runningWithStopHidden(editor: BySelector, editorBounds: Rect) {
+    private fun runningWithStopHidden(editor: BySelector, editorBounds: Rect, queueCount: Int) {
         condition("Only the Stop button leaves while the original run is still working") {
             !device.hasObject(stopSelector())
         }
         text(R.string.conversation_processing)
-        queueButton(2)
+        queueButton(queueCount)
         assertDraft(editor, editorBounds)
     }
 
