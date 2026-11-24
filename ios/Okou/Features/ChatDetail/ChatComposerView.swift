@@ -100,7 +100,9 @@ struct ChatComposerView: View {
     !hasContent && !canStop && draftState?.voice != nil && (!expandsInput || voiceActive)
   }
   private var showsSecondaryActions: Bool { expandsInput && !voiceActive }
-  private var usesFollowupPlaceholder: Bool { modelSelection?.models.usesFollowupPlaceholder == true }
+  private var usesFollowupPlaceholder: Bool {
+    modelSelection?.models.usesFollowupPlaceholder == true
+  }
   private var resolvedPlaceholder: String {
     placeholder ?? (usesFollowupPlaceholder ? "" : String(localized: "Message Okou"))
   }
