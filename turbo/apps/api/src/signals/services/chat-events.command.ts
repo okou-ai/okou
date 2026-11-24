@@ -2489,11 +2489,13 @@ const resolveFollowupPublicationConflict$ = command(
 );
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
-    const [orgModels, memberModels, memberMetadata] = await Promise.all([
-      get(context.modelFacts$),
-      get(context.memberModels$),
-      get(context.memberMetadata$),
-    ]);
+    const [orgModels, memberModels, memberMetadata, featureSwitchContext] =
+      await Promise.all([
+        get(context.modelFacts$),
+        get(context.memberModels$),
+        get(context.memberMetadata$),
+        get(context.featureSwitches$),
+      ]);
     signal.throwIfAborted();
     return {
       orgModels,
@@ -2501,6 +2503,7 @@ const prepareNormalSendModels$ = command(
         org: orgModels,
         member: memberModels,
         memberMetadata,
+        featureSwitchContext,
       },
     };
   },

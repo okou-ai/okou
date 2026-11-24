@@ -117,6 +117,7 @@ import {
   type PreparedChatEventRow,
 } from "./chat-event-append.service";
 import { recordThreadRunActivationMarkers } from "./chat-first-assistant-event-metric.service";
+import { isAntigravityEnabled } from "./feature-switches.service";
 import {
   queuedThreadInputCondition,
   type QueuedUserMessage,
@@ -1714,6 +1715,7 @@ export function createThreadClaimRunObjects(
         await Promise.allSettled([
           get(automationModel$),
           get(connectorAdmission$),
+          get(promptResources.suggestionsPrompt$),
         ]);
       }
       return;
@@ -2863,6 +2865,7 @@ interface PersistedAtomicLaunchRows {
 }
 
 interface PreparedRunnerLaunch {
+  readonly antigravityEnabled: boolean;
   readonly runnerGroup: string;
   readonly profile: string;
   readonly reuseKey: string;
@@ -3378,6 +3381,7 @@ function prepareRunnerLaunch(input: {
   };
   return {
     runnerGroup: preparedRunnerGroup(),
+    antigravityEnabled: isAntigravityEnabled(args.featureSwitchContext),
     profile: args.profile,
     reuseKey: runnerReuseKey(args.chatThreadId),
     facts,
@@ -3613,6 +3617,7 @@ function threadDispatchInput(args: ThreadRunContext): DirectRunInput {
     runnerGroup: args.launch.runnerGroup,
     profile: args.launch.profile,
     reuseKey: args.launch.reuseKey,
+    antigravityEnabled: args.launch.antigravityEnabled,
     predecessorRunId:
       args.input.args.threadContinuation.expected.frameworkSessionRunId,
   };

@@ -16,7 +16,11 @@ import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
 import { db$ } from "../external/db";
-import { isAntigravityEnabledForMember$ } from "./feature-switches.service";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isAntigravityEnabled,
+  isAntigravityEnabledForMember$,
+} from "./feature-switches.service";
 import { memberModelRouteContextFromAccounts } from "./effective-model-route.service";
 import type { ExecutionMemberMetadata } from "./execution-member-metadata.service";
 import {
@@ -45,6 +49,7 @@ export interface ModelSelectionBootstrap {
   readonly org: OrgModelBootstrap;
   readonly member: MemberModelBootstrap;
   readonly memberMetadata: ExecutionMemberMetadata;
+  readonly featureSwitchContext: FeatureSwitchContext;
 }
 export interface ModelFirstPin {
   readonly modelProviderId: string | null;
@@ -257,14 +262,16 @@ export const resolveModelSelectionPin$ = command(
       isAntigravityModel(requestedModel) &&
       facts.catalog.byModel.has(requestedModel)
     ) {
-      if (
-        !(await set(
-          isAntigravityEnabledForMember$,
-          params.orgId,
-          params.userId,
-          signal,
-        ))
-      ) {
+      const enabled = params.modelBootstrap
+        ? isAntigravityEnabled(params.modelBootstrap.featureSwitchContext)
+        : await set(
+            isAntigravityEnabledForMember$,
+            params.orgId,
+            params.userId,
+            signal,
+          );
+      signal.throwIfAborted();
+      if (!enabled) {
         return badRequestMessage(
           "Select Auto or a model from your connected personal subscription",
         );
