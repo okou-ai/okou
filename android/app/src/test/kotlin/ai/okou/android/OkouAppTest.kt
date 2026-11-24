@@ -537,11 +537,12 @@ class OkouAppTest {
         }
 
         input.performTextReplacement(draft)
+        input.performSemanticsAction(SemanticsActions.RequestFocus).assertIsFocused()
         input.performTextInputSelection(selection)
         input.assertHeightIsEqualTo(160.dp)
 
         resize(479)
-        input.assertHeightIsEqualTo(48.dp)
+        input.assertHeightIsEqualTo(48.dp).assertIsFocused()
         val compactLayouts = mutableListOf<TextLayoutResult>()
         input.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(compactLayouts) }
         val compactLayout = compactLayouts.single()
@@ -557,7 +558,7 @@ class OkouAppTest {
         assertEquals(selection, compactSemantics[SemanticsProperties.TextSelectionRange])
 
         resize(480)
-        input.assertHeightIsEqualTo(144.dp)
+        input.assertHeightIsEqualTo(144.dp).assertIsFocused()
         assertDraftAndSelection()
 
         resize(520)
