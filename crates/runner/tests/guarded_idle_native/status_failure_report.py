@@ -73,9 +73,10 @@ def validate(directory):
                 or not status_evidence.status_wait_advanced(before, after)):
             raise ValueError("status fault was not after complete IO and a positive final wait")
         second = foreground.heartbeat(waiting.get("heartbeat"), 2, polled, injected, (0, 0))
-        if first != second or first in runners:
-            raise ValueError("status-failure heartbeat changed or replayed its runner")
-        runners.add(first)
+        foreground.claim_heartbeat_identity(
+            first, (second,), runners,
+            "status-failure heartbeat changed or replayed its runner",
+        )
         accounting(waiting.get("accounting"), True)
         exact(waiting, {"io_released_ns": io_released, "status_held_ns": status_held,
                         "status_wait_polled_ns": polled, "status_waits_before": before,
