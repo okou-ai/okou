@@ -21,7 +21,6 @@ import type { ArtifactShareTarget } from "@okouai/api-contracts/contracts/artifa
 import { accept } from "../lib/accept.ts";
 import { resolveApiBase } from "./api-base.ts";
 import { apiClient$ } from "./api-client.ts";
-import { hostedSiteVisibilityChanges$ } from "./hosted-site-visibility-changes.ts";
 import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
@@ -155,12 +154,8 @@ function createAttachmentPresignedToken$(
       const currentSource$ = computed((get) => {
         return currentHostedSiteUrl(url, get(hostedSiteUrlChanges$));
       });
-      const revision$ = computed((get) => {
-        return get(hostedSiteVisibilityChanges$)[source.origin] ?? null;
-      });
       return computed(async (get) => {
         get(refreshVersion$);
-        get(revision$);
         const currentSourceUrl = get(currentSource$);
         const currentSource = new URL(currentSourceUrl);
         if (!(await get(clerk$)).user) {

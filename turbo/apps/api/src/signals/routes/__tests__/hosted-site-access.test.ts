@@ -1069,7 +1069,7 @@ test("restricted previews reuse private-artifact credentials only after current 
   expect(Date.parse(renewed.body.expiresAt!) - now()).toBe(48 * 60 * 60 * 1000);
 });
 
-test("public previews keep anonymous addresses without a temporary capability", async () => {
+test("public viewers use anonymous addresses while owners use an independent preview capability", async () => {
   const { owner, prepared } = await publish();
   const result = await accept(
     client(owner).sitePreview({
@@ -1079,10 +1079,8 @@ test("public previews keep anonymous addresses without a temporary capability", 
     }),
     [200],
   );
-  expect(result.body).toStrictEqual({
-    url: `https://${prepared.publicSlug}.okou.app/`,
-    expiresAt: null,
-  });
+  expect(result.body.url).toMatch(/^https:\/\/pv-[a-f0-9]{48}\.okou\.app\/$/u);
+  expect(result.body.expiresAt).not.toBeNull();
   const stranger = createBddApi(context).user();
   expect(
     (
@@ -1095,5 +1093,8 @@ test("public previews keep anonymous addresses without a temporary capability", 
         [200],
       )
     ).body,
-  ).toStrictEqual(result.body);
+  ).toStrictEqual({
+    url: `https://${prepared.publicSlug}.okou.app/`,
+    expiresAt: null,
+  });
 });
