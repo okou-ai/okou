@@ -9,6 +9,7 @@ import ai.okou.android.SettingsRadioOptions
 import ai.okou.android.SettingsSection
 import ai.okou.android.SettingsSheet
 import ai.okou.android.SettingsSheetDescription
+import ai.okou.android.SettingsSheetScroll
 import ai.okou.android.api.generated.UserPreferencesColorTheme
 import ai.okou.android.api.generated.UserPreferencesLocale
 import ai.okou.android.api.generated.UserPreferencesTheme
@@ -171,7 +172,7 @@ internal fun TimezonePicker(
         fallbackFocus = fallbackFocus,
     ) { dismiss ->
         if (current == null || onSelect == null) return@SettingsPickerRow
-        SettingsSheet(title, dismiss, scrollContent = false) {
+        SettingsSheet(title, dismiss, scroll = SettingsSheetScroll.None) {
             SettingsSheetDescription(stringResource(R.string.settings_timezone_hint))
             val locale = LocalConfiguration.current.locales[0]
             val utcName = stringResource(R.string.settings_timezone_utc)

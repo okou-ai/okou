@@ -379,6 +379,12 @@ internal fun settingsPanelPadding(windowHeightDp: Int, centered: Boolean) =
         bottom = if (windowHeightDp < 480) 12.dp else 22.dp,
     )
 
+internal enum class SettingsSheetScroll {
+    Panel,
+    Body,
+    None,
+}
+
 @Composable
 internal fun SettingsSheet(
     title: String,
@@ -387,13 +393,20 @@ internal fun SettingsSheet(
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
-    scrollContent: Boolean = true,
+    scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val windowHeight = currentWindowSizeDp().height
-    val scroll = if (scrollContent) Modifier.verticalScroll(rememberScrollState()) else Modifier
+    val scrollModifier =
+        if (scroll == SettingsSheetScroll.None) Modifier
+        else Modifier.verticalScroll(rememberScrollState())
     SettingsModal(onDismiss) { centered ->
-        Column(modifier.fillMaxWidth().padding(settingsPanelPadding(windowHeight, centered))) {
+        Column(
+            modifier
+                .fillMaxWidth()
+                .padding(settingsPanelPadding(windowHeight, centered))
+                .then(if (scroll == SettingsSheetScroll.Panel) scrollModifier else Modifier),
+        ) {
             Box(Modifier.fillMaxWidth()) {
                 Text(
                     title,
@@ -408,10 +421,14 @@ internal fun SettingsSheet(
                 )
                 if (progress != null) Box(Modifier.align(Alignment.BottomCenter)) { progress() }
             }
-            Column(
-                Modifier.fillMaxWidth().weight(1f, fill = false).then(scroll),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            val body = Modifier.fillMaxWidth()
+            val bodyModifier =
+                when (scroll) {
+                    SettingsSheetScroll.Panel -> body
+                    SettingsSheetScroll.Body -> body.weight(1f, fill = false).then(scrollModifier)
+                    SettingsSheetScroll.None -> body.weight(1f, fill = false)
+                }
+            Column(bodyModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 content()
                 if (actions != null) Box { actions() }
             }

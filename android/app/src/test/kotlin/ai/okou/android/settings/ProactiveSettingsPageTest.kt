@@ -205,6 +205,33 @@ class ProactiveSettingsPageTest {
     }
 
     @Test
+    fun confirmingTimezoneReturnsFocusToMorningBriefWhenSuggestionsDisappears() {
+        val fixture = app.proactive
+        fixture.suggestionsNeedsTimezone = true
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.setInTouchMode(false)
+        try {
+            compose.activityRule.scenario.recreate()
+            openOverview()
+            compose.onNodeWithText(title).performScrollTo().performClick()
+            val trigger = compose.onNodeWithText("Time zone")
+            compose.waitUntilExactlyOneExists(hasText("Time zone"), 10_000)
+            trigger.performSemanticsAction(SemanticsActions.RequestFocus) { assertTrue(it()) }
+            trigger.performKeyInput { pressKey(Key.Enter) }
+            fixture.suggestionsEligible = false
+            compose
+                .onNode(hasText("Shanghai (UTC+8)") and isSelectable())
+                .assertIsFocused()
+                .performKeyInput { pressKey(Key.Enter) }
+            compose.waitUntilDoesNotExist(hasText("Time zone"), 10_000)
+            compose.onNode(hasText("Suggestions") and nativeSwitch).assertDoesNotExist()
+            compose.onNode(hasText("Morning Brief") and nativeSwitch).assertIsFocused()
+        } finally {
+            instrumentation.setInTouchMode(true)
+        }
+    }
+
+    @Test
     @Config(qualifiers = "en-rUS-w720dp-h800dp")
     fun intermediateWidthUsesTheMaterialBottomSheetLimit() {
         openProactiveWithMissingTimezone()

@@ -117,8 +117,20 @@ internal fun ProactiveSettingsPage(
                 else ProactiveSetting.Suggestions
         }
     }
+    val showSuggestions =
+        !suggestions.hidden && (suggestions.confirmed != null || suggestions.loading)
+    val morningFocusable = morning.canChoose && !morningNeedsTimezone
+    val suggestionsFocusable = showSuggestions && suggestions.canChoose
+    val focusTarget =
+        when {
+            timezoneSetting == ProactiveSetting.Suggestions && suggestionsFocusable ->
+                ProactiveSetting.Suggestions
+            morningFocusable -> ProactiveSetting.MorningBrief
+            suggestionsFocusable -> ProactiveSetting.Suggestions
+            else -> null
+        }
     fun focusFor(setting: ProactiveSetting) =
-        if (timezoneSetting == setting) Modifier.focusRequester(relatedFocus) else Modifier
+        if (focusTarget == setting) Modifier.focusRequester(relatedFocus) else Modifier
     val current by preferences.uiState.collectAsStateWithLifecycle()
     val canSelect = needsTimezone && morning.online && current.pending?.timezoneToWrite == null
     val select: (String) -> Unit = { preferences.selectTimezone(it, missingOnServer = true) }
@@ -132,7 +144,7 @@ internal fun ProactiveSettingsPage(
                     model.morningBrief::choose,
                     focusFor(ProactiveSetting.MorningBrief),
                 )
-            if (!suggestions.hidden && (suggestions.confirmed != null || suggestions.loading)) {
+            if (showSuggestions) {
                 HorizontalDivider()
                 if (suggestions.loading) ProactiveSettingPlaceholder()
                 else {
@@ -148,7 +160,7 @@ internal fun ProactiveSettingsPage(
                 current.timezone.takeIf { needsTimezone },
                 select.takeIf { canSelect },
                 visible = needsTimezone,
-                fallbackFocus = relatedFocus,
+                fallbackFocus = relatedFocus.takeIf { focusTarget != null },
             )
             if (needsTimezone || current.timezoneScheduleUpdatePending) {
                 PreferenceFeedback(
