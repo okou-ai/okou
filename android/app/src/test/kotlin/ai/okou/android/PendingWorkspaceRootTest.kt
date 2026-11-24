@@ -291,10 +291,6 @@ class PendingWorkspaceRootTest {
         compose
             .onNodeWithContentDescription(app.getString(R.string.chat_syncing))
             .assertDoesNotExist()
-        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
-        assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
-        assertEquals(listBounds, list.getUnclippedBoundsInRoot())
-        assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
         filter.assertIsEnabled().performClick()
         compose.onNodeWithText("Archived").performClick()
         compose.onNodeWithTag("chat_filter_heading").assert(hasText("Archived"))
@@ -326,6 +322,10 @@ class PendingWorkspaceRootTest {
         compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
         compose.onNodeWithText("Synced startup chat").assertIsDisplayed()
         compose.onNodeWithText(CACHED_CHAT).assertDoesNotExist()
+        assertEquals(searchBounds, search.getUnclippedBoundsInRoot())
+        assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
+        assertEquals(listBounds, list.getUnclippedBoundsInRoot())
+        assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
         settings.performClick()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.waitUntil(10_000) {

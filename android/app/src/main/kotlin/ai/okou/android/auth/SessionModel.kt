@@ -154,6 +154,8 @@ private class EntrySelection(
             current.workspaceId == workspaceId
 }
 
+private class VerifiedWorkspaceAccess(val membership: MembershipAccess?)
+
 private fun NativeSession?.sameSignIn(other: NativeSession?): Boolean =
     this?.sessionId == other?.sessionId && this?.userId == other?.userId
 
@@ -310,7 +312,7 @@ class SessionModel(
         snapshot: AuthenticationState,
         checkingFrom: SessionUiState? = null,
         selection: EntrySelection? = null,
-        allowCachedOpening: Boolean = true,
+        verifiedAccess: VerifiedWorkspaceAccess? = null,
     ) {
         val session = checkNotNull(snapshot.session)
         val ticket = generation
@@ -334,15 +336,18 @@ class SessionModel(
                 ),
         )
         operation = viewModelScope.launch {
-            val observedAccess = initialIdentity?.let { identity ->
-                snapshot.membershipAccess?.firstOrNull {
+            val knownAccess = initialIdentity?.let { identity ->
+                val memberships =
+                    if (verifiedAccess == null) snapshot.membershipAccess.orEmpty()
+                    else listOfNotNull(verifiedAccess.membership)
+                memberships.firstOrNull {
                     it.workspaceId == identity.workspaceId && it.permissions != null
                 }
             }
-            val observedIdentity = observedAccess?.let { access ->
+            val preparedIdentity = knownAccess?.let { access ->
                 checkNotNull(initialIdentity).withAccess(access.role, access)
             }
-            var preparation = observedIdentity?.let { identity ->
+            var preparation = preparedIdentity?.let { identity ->
                 async { prepareChatList(identity) }
             }
             val appearanceRead = initialIdentity?.let { identity ->
@@ -356,7 +361,7 @@ class SessionModel(
             }
             val cacheWarm =
                 initialIdentity
-                    ?.takeIf { observedIdentity == null }
+                    ?.takeIf { preparedIdentity == null }
                     ?.let {
                         launch {
                             try {
@@ -372,37 +377,35 @@ class SessionModel(
                 val initialEntry = initialIdentity == null && checkingFrom == null
                 val cached =
                     if (
-                        allowCachedOpening &&
-                            observedIdentity != null &&
+                        verifiedAccess == null &&
+                            preparedIdentity != null &&
                             checkingFrom == null &&
                             selection == null
                     ) {
                         val gate = CompletableDeferred<Unit>(currentCoroutineContext()[Job])
-                        val owner = createWorkspace(observedIdentity, ticket, snapshot, gate)
+                        val owner = createWorkspace(preparedIdentity, ticket, snapshot, gate)
                         val store = ViewModelStore()
                         presentation = store
                         val cached =
                             OpeningWorkspace.Cached(
-                                observedIdentity,
-                                store.chatList(owner, observedIdentity, ticket, snapshot, gate),
+                                preparedIdentity,
+                                store.chatList(owner, preparedIdentity, ticket, snapshot, gate),
                                 store.workspaceModel {
-                                    ProjectExpansionModel(projectExpansionStore, observedIdentity)
+                                    ProjectExpansionModel(projectExpansionStore, preparedIdentity)
                                 },
                             )
                         cached.chats.restoreStartupCache(checkNotNull(preparation))
                         preparation = null
                         mutable.value = mutable.value.copy(opening = cached)
                         try {
-                            val matches =
+                            val verified =
                                 readWorkspacePreparation(ticket, snapshot) {
-                                    authentication.refresh(session) == observedAccess
+                                    VerifiedWorkspaceAccess(authentication.refresh(session))
                                 } ?: return@launch
                             requireCurrent(ticket, snapshot)
-                            if (!matches) {
-                                // Drop the displayed scope before reopening through online
-                                // verification.
+                            if (verified.membership != knownAccess) {
                                 retire()
-                                prepare(snapshot, allowCachedOpening = false)
+                                prepare(snapshot, verifiedAccess = verified)
                                 return@launch
                             }
                             gate.complete(Unit)
@@ -413,7 +416,8 @@ class SessionModel(
                     } else null
                 val refreshedAccess =
                     when {
-                        cached != null -> observedAccess
+                        cached != null -> knownAccess
+                        verifiedAccess != null -> verifiedAccess.membership
                         initialEntry -> null
                         else -> authentication.refresh(session)
                     }
@@ -452,7 +456,7 @@ class SessionModel(
                     return@launch
                 }
                 val identity = initialIdentity.withAccess(role, refreshedAccess)
-                if (identity != observedIdentity) {
+                if (identity != preparedIdentity) {
                     preparation?.cancel()
                     preparation = async { prepareChatList(identity) }
                 }

@@ -31,10 +31,11 @@ Simplified and Traditional Chinese.
 
 Android reads a private cache of the last confirmed display mode and palette
 while the identified workspace loads. The cache is scoped to the API origin,
-account and workspace and is read off the main thread. Settings can show those
-values after workspace authorization while its preference controls wait for
-the initial response. The server response takes precedence and refreshes the
-cache. Remote workspace content and operations require online confirmation.
+account and workspace and is read off the main thread. With known local
+workspace permissions, Settings can show these values during online
+verification. Preference controls become available after the app loads the
+server preferences, which take precedence and refresh the cache. Remote
+workspace content and operations require online confirmation.
 Temporary workspace metadata and preference failures after authorization retry
 in the foreground and on reconnect. Cached chats stay usable, and the workspace
 row in Settings shows preparation and temporary failures in its subtitle.

@@ -717,13 +717,15 @@ class SessionModelTest : SessionModelTestFixture() {
             )
         auth.refreshedMembership = { MembershipAccess("org-a", "org:member", emptyList()) }
         val verification = CompletableDeferred<Unit>()
-        auth.refreshAction = { verification.await() }
+        var refreshResponse = verification
+        auth.refreshAction = { refreshResponse.await() }
         val memberships = CompletableDeferred<List<WorkspaceMembership>>()
         auth.membershipsAction = { memberships.await() }
         check(auth) { model, resources ->
             runCurrent()
             assertTrue(model.uiState.value.opening is OpeningWorkspace.Cached)
             val cachedOwner = resources.single()
+            refreshResponse = CompletableDeferred()
             verification.complete(Unit)
             runCurrent()
             assertEquals(SessionStage.Ready, model.uiState.value.stage)
@@ -736,6 +738,38 @@ class SessionModelTest : SessionModelTestFixture() {
             memberships.complete(auth.available)
             runCurrent()
             assertEquals(auth.available, model.uiState.value.memberships)
+        }
+    }
+
+    @Test
+    fun removedSelectedMembershipReturnsToThePickerWhileFurtherRefreshIsHeld() {
+        val auth =
+            TestAuthentication(
+                testAuthenticationState()
+                    .copy(
+                        membershipAccess =
+                            listOf(MembershipAccess("org-a", "org:member", emptyList())),
+                    ),
+            )
+        auth.refreshedMembership = { null }
+        auth.available = auth.available.filter { it.id != "org-a" }
+        val verification = CompletableDeferred<Unit>()
+        var refreshResponse = verification
+        auth.refreshAction = { refreshResponse.await() }
+        check(auth) { model, resources ->
+            runCurrent()
+            assertTrue(model.uiState.value.opening is OpeningWorkspace.Cached)
+            val cachedOwner = resources.single()
+
+            refreshResponse = CompletableDeferred()
+            verification.complete(Unit)
+            runCurrent()
+
+            assertTrue(cachedOwner.closed)
+            val state = model.uiState.value
+            assertEquals(SessionStage.ChooseWorkspace, state.stage)
+            assertNull(state.opening)
+            assertEquals(auth.available, state.memberships)
         }
     }
 
