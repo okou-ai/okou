@@ -66,7 +66,9 @@ function serve(session: string, commandId: string) {
     clearTimeout(idle);
     clearTimeout(lifetime);
     if (server.listening) server.close();
-    void pc.close();
+    void pc.close().catch(() => {
+      process.exitCode = 1;
+    });
   }
   pc.onDataChannel.subscribe((channel) => {
     if (

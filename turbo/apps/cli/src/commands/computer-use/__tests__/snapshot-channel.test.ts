@@ -17,7 +17,9 @@ function capture() {
   const png = randomBytes(35_000);
   const key = randomBytes(32);
   const nonce = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, nonce);
+  const cipher = createCipheriv("aes-256-gcm", key, nonce, {
+    authTagLength: 16,
+  });
   cipher.setAAD(Buffer.from(commandId + "/" + snapshotId));
   const bytes = Buffer.concat([
     nonce,

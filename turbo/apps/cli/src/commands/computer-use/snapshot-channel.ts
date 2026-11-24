@@ -80,6 +80,7 @@ export function verifiedSnapshot(
       "aes-256-gcm",
       Buffer.from(encodedKey, "base64"),
       packet.subarray(1, 13),
+      { authTagLength: 16 },
     );
     cipher.setAAD(Buffer.from(commandId + "/" + snapshotId));
     cipher.setAuthTag(packet.subarray(-16));
