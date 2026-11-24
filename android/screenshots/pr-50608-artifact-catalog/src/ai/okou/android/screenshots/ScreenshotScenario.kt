@@ -124,6 +124,7 @@ class ScreenshotScenario {
         see(By.text(artifacts.checklist.title))
         see(By.text("昨天"))
         verifyFocus(query)
+        assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
         tap(By.text("视频"))
         see(By.text("此分类暂无成果"))
         assertTrue(actionBounds("查看全部").height() >= 48)
@@ -151,7 +152,7 @@ class ScreenshotScenario {
         verifyFocus(By.text("全部"))
         see(By.text(artifacts.summary.title))
 
-        val row = By.text(artifacts.summary.title).clickable(true)
+        val row = By.text(artifacts.summary.title)
         focusWithTab(row)
         val rowPosition = bounds(row)
         assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_ENTER))
@@ -173,8 +174,10 @@ class ScreenshotScenario {
         val scoped = By.copy(selector).pkg(app.packageName)
         val focused = By.copy(scoped).focused(true)
         val focusedControl = By.focused(true).hasChild(scoped)
+        val focusedRow = By.focused(true).clickable(true).hasDescendant(scoped)
         val trail = mutableListOf<String?>()
-        fun reached() = device.hasObject(focused) || device.hasObject(focusedControl)
+        fun reached() =
+            device.hasObject(focused) || device.hasObject(focusedControl) || device.hasObject(focusedRow)
         repeat(18) {
             if (reached()) return
             val before = focusName()
@@ -190,7 +193,7 @@ class ScreenshotScenario {
 
     private fun focusName(): String? = try {
         device.findObject(By.pkg(app.packageName).focused(true))?.let { node ->
-            node.text ?: node.contentDescription ?: node.children.firstOrNull()?.text
+            node.text ?: node.contentDescription ?: node.findObject(By.textContains(""))?.text
         }
     } catch (_: StaleObjectException) {
         null
@@ -198,7 +201,9 @@ class ScreenshotScenario {
 
     private fun verifyFocus(selector: BySelector) {
         try {
-            device.awaitKeyboardFocus(By.copy(selector).pkg(app.packageName))
+            val scoped = By.copy(selector).pkg(app.packageName)
+            val focusedRow = By.pkg(app.packageName).focused(true).clickable(true).hasDescendant(scoped)
+            if (!device.hasObject(focusedRow)) device.awaitKeyboardFocus(scoped)
         } catch (error: IllegalStateException) {
             runCatching { ScreenshotCapture.capture("focus-diagnostic.png") }
             throw IllegalStateException("Expected $selector. Observed focus on ${focusName()}", error)
