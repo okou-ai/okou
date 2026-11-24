@@ -9,6 +9,7 @@ struct ChatFeedbackComposer: View {
   @Binding var isFocused: Bool
   let acceptsImages: Bool
   var placeholder = String(localized: "Message Okou")
+  var followup: String?
   var showsTrailingParagraph = true
   var expanded = false
   var returnKeyPreference = ComposerReturnKeyPreference.newline
@@ -88,6 +89,7 @@ struct ChatFeedbackComposer: View {
                   inputReady: { state.voice?.startRequestedInputIfReady() },
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
+                  followup: block.isFeedback ? nil : followup,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: expanded || state.document.hasFeedback || isFocused,
                   returnKeyPreference: returnKeyPreference,
