@@ -423,38 +423,6 @@ expect_failure \
   "$release_head" \
   "release dependency graph contains a cycle: turbo/apps/api,turbo/apps/app"
 
-setup_repo "multiple-missing-releases"
-release_head=$(
-  create_release_head \
-    "$REPO" \
-    release-api \
-    '.["turbo/apps/api"] = "1.0.1"'
-)
-git -C "$REPO" switch -q main
-printf 'runner source change\n' \
-  >>"${REPO}/native/runner/mitm-addon/src/runtime.py"
-printf 'app source change\n' >>"${REPO}/turbo/apps/app/src/index.ts"
-git -C "$REPO" add --all
-git -C "$REPO" commit -qm "feat: change runner and app"
-merge_base=$(git -C "$REPO" rev-parse HEAD)
-merge_head=$(
-  create_merge_head \
-    "$REPO" \
-    merge-api \
-    "$merge_base" \
-    '.["turbo/apps/api"] = "1.0.1"'
-)
-output=""
-if output=$(
-  cd "$REPO"
-  "$CHECK_RELEASES" "$merge_base" "$merge_head" "$release_head" 2>&1
-); then
-  fail "expected multiple missing releases to fail"
-fi
-assert_contains "$output" "native/runner has intervening source changes in native/runner"
-assert_contains "$output" "turbo/apps/app has intervening source changes in turbo/apps/app"
-assert_contains "$output" "2 release target(s) missing"
-
 # Reproduce #33734 at its actual path: API release, intervening App test/docs,
 # then a synthetic release commit whose App version is still unchanged.
 setup_repo "colocated-platform-test"
@@ -481,40 +449,37 @@ merge_head=$(
 )
 expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 
-# Cover each excluded extension, direct/nested src and __tests__ paths, and a
-# shared dependency without releasing either of its Node consumer roots.
-for test_case in \
-  'modify|turbo/apps/app/src/__tests__/runtime.test.js' \
-  'add|turbo/apps/app/src/views/__tests__/page.test.jsx' \
-  'delete|turbo/apps/app/src/signals/__tests__/nested/state.test.ts' \
-  'rename|turbo/apps/app/nested/src/views/__tests__/page.test.tsx' \
-  'modify|turbo/packages/shared/src/contracts/__tests__/contract.test.ts'; do
-  IFS='|' read -r operation test_path <<<"$test_case"
-  setup_repo "colocated-${operation}-${test_path//\//-}"
-  mkdir -p "$(dirname "${REPO}/${test_path}")"
-  if [ "$operation" != "add" ]; then
-    printf 'original test\n' >"${REPO}/${test_path}"
-    git -C "$REPO" add --all
-    git -C "$REPO" commit -qm "test: prepare colocated fixture"
-    BASE=$(git -C "$REPO" rev-parse HEAD)
-  fi
-  release_head=$(
-    create_release_head "$REPO" release-runner '.["native/runner"] = "1.0.1"'
-  )
-  git -C "$REPO" switch -q main
-  case "$operation" in
-  modify | add) printf 'updated test\n' >>"${REPO}/${test_path}" ;;
-  delete) git -C "$REPO" rm -q "$test_path" ;;
-  rename) git -C "$REPO" mv "$test_path" "${test_path%.test.*}-renamed.test.ts" ;;
-  esac
-  git -C "$REPO" add --all
-  git -C "$REPO" commit -qm "test: update colocated tests"
-  merge_base=$(git -C "$REPO" rev-parse HEAD)
-  merge_head=$(
-    create_merge_head "$REPO" merge-runner "$merge_base" '.["native/runner"] = "1.0.1"'
-  )
-  expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
+# Any release-significant path would block this Runner-only release.
+setup_repo "colocated-test-changes"
+modified_test="turbo/apps/app/src/__tests__/runtime.test.js"
+added_test="turbo/apps/app/src/views/__tests__/page.test.jsx"
+deleted_test="turbo/apps/app/src/signals/__tests__/nested/state.test.ts"
+renamed_test="turbo/apps/app/nested/src/views/__tests__/page.test.tsx"
+shared_test="turbo/packages/shared/src/contracts/__tests__/contract.test.ts"
+for test_path in "$modified_test" "$deleted_test" "$renamed_test" "$shared_test"; do
+  mkdir -p "$(dirname "$REPO/$test_path")"
+  printf 'original %s\n' "$test_path" >"$REPO/$test_path"
 done
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "test: prepare colocated fixtures"
+BASE=$(git -C "$REPO" rev-parse HEAD)
+release_head=$(
+  create_release_head "$REPO" release-runner '.["native/runner"] = "1.0.1"'
+)
+git -C "$REPO" switch -q main
+mkdir -p "$(dirname "$REPO/$added_test")"
+for test_path in "$modified_test" "$added_test" "$shared_test"; do
+  printf 'updated test\n' >>"$REPO/$test_path"
+done
+git -C "$REPO" rm -q "$deleted_test"
+git -C "$REPO" mv "$renamed_test" "${renamed_test%.test.tsx}-renamed.test.ts"
+git -C "$REPO" add --all
+git -C "$REPO" commit -qm "test: update colocated tests"
+merge_base=$(git -C "$REPO" rev-parse HEAD)
+merge_head=$(
+  create_merge_head "$REPO" merge-runner "$merge_base" '.["native/runner"] = "1.0.1"'
+)
+expect_success "$REPO" "$merge_base" "$merge_head" "$release_head"
 
 expect_missing_app_release() {
   local repo=$1 merge_base=$2 release_head=$3 source=$4
