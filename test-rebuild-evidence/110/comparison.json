@@ -3,7 +3,7 @@
     "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
     "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
     "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
-    "main": "2534248c6d06e3b120d9ae91b9e1c71370800e6a",
+    "main": "815ec15ee790fd3d198ca6e349ac09db3ae90099",
     "opening": "ad0d44dbca05ff2c7470cc98b88376adf861253d"
   },
   "cases": {
@@ -203,7 +203,7 @@
       "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
       "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "9f6e20438d3de07344fa06030148b710494fd608",
       "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
-      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "b853ed31469235ac573d0cd945c6c395affe6976",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "38e7acb42fcfd15b76a2da34130fa84e3c178bab",
       "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "bf9498f5c4fb52babc401b7c3fcd67e50dcb1e3b",
       "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "15dd2b30dce5f58e4f0155a0a8ac9dea7293faa3",
       "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "e5b1a048d215f2456ff8d7d11e8256b24cf4be43",
@@ -268,8 +268,8 @@
   },
   "independentBodies": [
     {
-      "file": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
-      "bodySha256": "20a303a1cf497e687b9ce61159fa088e36f6ff3752405c6d33e2bb55249cbf90",
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
+      "bodySha256": "cc72ea4564c336c3a58dbf8bc6f25946cbe5ce1f03b75e815cc7fb6610acaf4d",
       "historicalMatches": []
     },
     {
@@ -283,8 +283,8 @@
       "historicalMatches": []
     },
     {
-      "file": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
-      "bodySha256": "cc72ea4564c336c3a58dbf8bc6f25946cbe5ce1f03b75e815cc7fb6610acaf4d",
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
+      "bodySha256": "20a303a1cf497e687b9ce61159fa088e36f6ff3752405c6d33e2bb55249cbf90",
       "historicalMatches": []
     }
   ],

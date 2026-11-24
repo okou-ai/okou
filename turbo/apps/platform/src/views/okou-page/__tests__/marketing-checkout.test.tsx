@@ -52,7 +52,7 @@ async function paywall() {
     ],
   });
   setBilling(context, () => {
-    return billing("limited-free-1", { credits: 0 });
+    return billing("limited-free-1", { credits: 0, canBuyCredits: false });
   });
   await openWorkspace(context, RUN_PATH);
   return await findFastControl("button", "Upgrade to Pro");
