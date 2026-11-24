@@ -447,8 +447,8 @@ export function createTranscriptPages(
     // Let subscribers publish the prepared rows before the browser starts
     // another input task. A deferred render can still land on a later frame.
     await Promise.resolve();
+    signal.throwIfAborted();
     for (let frame = 0; frame <= 2; frame++) {
-      signal.throwIfAborted();
       if (
         get(position$)?.targetEventId !== position?.targetEventId ||
         get(measurements.container$) !== container
@@ -464,6 +464,7 @@ export function createTranscriptPages(
       }
       if (frame < 2) {
         await waitForAnimationFrame(signal);
+        signal.throwIfAborted();
       }
     }
   });
