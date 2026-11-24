@@ -511,6 +511,20 @@
       "success": "作品已删除",
       "title": "删除{{title}}？"
     },
+    "favorites": {
+      "browseAll": "浏览全部作品",
+      "changeError": "无法更新收藏状态，请重试。",
+      "emptyDescription": "收藏作品后，可在这里找到它们。",
+      "emptyTitle": "暂无收藏作品",
+      "loadError": "无法加载收藏状态。",
+      "loading": "正在加载收藏状态",
+      "retry": "重试加载收藏状态",
+      "star": "收藏",
+      "starred": "已收藏",
+      "undo": "撤销",
+      "unstar": "取消收藏",
+      "unstarred": "已取消收藏作品"
+    },
     "fileBadges": {
       "artwork": "美术",
       "audio": "音频",

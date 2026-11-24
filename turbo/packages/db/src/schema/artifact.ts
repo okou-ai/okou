@@ -3,6 +3,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -118,6 +119,29 @@ export const artifacts = pgTable(
         table.createdAt.desc(),
         table.id.desc(),
       ),
+    ];
+  },
+);
+
+/** Personal stars follow the catalog identity, not a replaceable projection. */
+export const artifactCatalogFavorites = pgTable(
+  "artifact_catalog_favorites",
+  {
+    orgId: text("org_id").notNull(),
+    userId: text("user_id").notNull(),
+    artifactId: uuid("artifact_id")
+      .notNull()
+      .references(
+        () => {
+          return artifacts.id;
+        },
+        { onDelete: "cascade" },
+      ),
+  },
+  (table) => {
+    return [
+      primaryKey({ columns: [table.orgId, table.userId, table.artifactId] }),
+      index("artifact_catalog_favorites_artifact_idx").on(table.artifactId),
     ];
   },
 );

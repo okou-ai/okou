@@ -17052,6 +17052,11 @@ enum class ArtifactCatalogQueryDirection {
 }
 
 @Serializable
+enum class ArtifactCatalogQueryStarred {
+    @SerialName("true") TRUE,
+}
+
+@Serializable
 data class ArtifactCatalogQuery(
     val `limit`: Long? = null,
     val `cursor`: String? = null,
@@ -17060,7 +17065,13 @@ data class ArtifactCatalogQuery(
     val `keyword`: String? = null,
     val `sort`: ArtifactCatalogQuerySort? = null,
     val `direction`: ArtifactCatalogQueryDirection? = null,
+    val `starred`: ArtifactCatalogQueryStarred? = null,
 )
+
+@Serializable
+enum class ArtifactDetailQueryAccess {
+    @SerialName("owner") OWNER,
+}
 
 @Serializable
 enum class ArtifactDetailQuerySourceKind {
@@ -17069,6 +17080,7 @@ enum class ArtifactDetailQuerySourceKind {
 
 @Serializable
 data class ArtifactDetailQuery(
+    val `access`: ArtifactDetailQueryAccess? = null,
     val `sourceKind`: ArtifactDetailQuerySourceKind? = null,
     val `chatThreadId`: String? = null,
 )

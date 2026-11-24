@@ -7,6 +7,25 @@ import type { ClientDescriptor } from "./types";
 export const artifactCatalogContract: ClientDescriptor<
   typeof OriginalArtifactCatalogContract
 > = {
+  listFavorites: {
+    method: "GET",
+    path: "/api/artifacts/favorites",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+    },
+  },
+  setFavorite: {
+    method: "PUT",
+    path: "/api/artifacts/catalog/:artifactId/favorite",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   list: {
     method: "GET",
     path: "/api/artifacts/catalog",

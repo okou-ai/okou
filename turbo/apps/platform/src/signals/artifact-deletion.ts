@@ -114,9 +114,12 @@ export function createArtifactDeletionSession(
           const result = await accept(
             createClient(artifactCatalogContract).get({
               params: { artifactId: catalogId },
-              ...(sourceKind && sourceKind !== "reference"
-                ? { query: { sourceKind } }
-                : {}),
+              query: {
+                access: "owner",
+                ...(sourceKind && sourceKind !== "reference"
+                  ? { sourceKind }
+                  : {}),
+              },
               fetchOptions: { cache: "no-store", signal },
             }),
             [200, 401, 403, 404],

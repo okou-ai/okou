@@ -1,4 +1,4 @@
-import type { KeyboardEvent, UIEvent } from "react";
+import type { KeyboardEvent, RefCallback, UIEvent } from "react";
 import type {
   ArtifactCatalogKind,
   ArtifactCatalogSort,
@@ -53,6 +53,7 @@ import {
   artifactCatalogPagingState$,
   artifactCatalogSearch$,
   artifactCatalogSort$,
+  artifactCatalogStarredOnly$,
   loadMoreArtifactCatalog$,
   openArtifact$,
   reloadArtifactCatalog$,
@@ -62,7 +63,12 @@ import {
   setArtifactCatalogKind$,
   setArtifactCatalogSearch$,
   setArtifactCatalogSort$,
+  setArtifactCatalogStarredOnly$,
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
+import {
+  artifactFavoriteIds$,
+  artifactFavoriteDrafts$,
+} from "../../signals/artifacts-page/artifact-favorites.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -73,6 +79,10 @@ import {
   ArtifactCatalogRowDeleteDialog,
 } from "./artifact-catalog-row-actions.tsx";
 import { ArtifactCatalogSidebar } from "./artifact-catalog-sidebar.tsx";
+import {
+  ArtifactFavoriteButton,
+  ArtifactFavoritesReadStatus,
+} from "./artifact-favorite.tsx";
 
 const KIND_ICONS = Object.freeze({
   file: File,
@@ -274,11 +284,11 @@ function ArtifactLibraryName({
 function ArtifactLibraryRow({
   artifact,
   selected,
-  scrollIntoView,
+  scrollTargetRef,
 }: {
   readonly artifact: CatalogArtifact;
   readonly selected: boolean;
-  readonly scrollIntoView: boolean;
+  readonly scrollTargetRef?: RefCallback<HTMLTableRowElement>;
 }) {
   const { t } = useTranslation();
   const openArtifact = useSet(openArtifact$);
@@ -291,7 +301,6 @@ function ArtifactLibraryRow({
     );
   };
   const rememberTrigger = useSet(rememberArtifactCatalogTrigger$);
-  const scrollTargetRef = useSet(scrollArtifactCardIntoViewRef$);
   const options = useKindOptions();
   const kindLabel = options.find((option) => {
     return option.value === artifact.kind;
@@ -309,7 +318,7 @@ function ArtifactLibraryRow({
     "flex min-w-0 w-full items-center gap-3 rounded-sm py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring";
   return (
     <TableRow
-      ref={scrollIntoView ? scrollTargetRef : undefined}
+      ref={scrollTargetRef}
       data-artifact-id={artifact.id}
       data-state={selected ? "selected" : undefined}
       className="cursor-default hover:bg-state-hover/60 data-[state=selected]:bg-state-selected"
@@ -333,6 +342,9 @@ function ArtifactLibraryRow({
         openPreview();
       }}
     >
+      <TableCell className="px-2 py-2 text-center">
+        <ArtifactFavoriteButton artifactId={artifact.id} catalogRow />
+      </TableCell>
       <TableCell className="px-4 py-0">
         {artifact.kind === "shared-thread" ? (
           <a
@@ -559,6 +571,54 @@ function ArtifactLibraryCompactSort() {
   );
 }
 
+function ArtifactLibraryScope() {
+  const { t } = useTranslation();
+  const starredOnly = useGet(artifactCatalogStarredOnly$);
+  const setStarredOnly = useSet(setArtifactCatalogStarredOnly$);
+  return (
+    <div
+      role="group"
+      aria-label={t(($) => {
+        return $.artifacts.title;
+      })}
+      className="mb-4 flex items-center gap-4"
+    >
+      <Button
+        type="button"
+        variant="quiet"
+        aria-pressed={!starredOnly}
+        className={cn(
+          "rounded-none border-b-2 border-transparent px-0 pb-2 text-sm font-medium",
+          !starredOnly && "border-foreground text-foreground",
+        )}
+        onClick={() => {
+          setStarredOnly(false);
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.library.allArtifacts;
+        })}
+      </Button>
+      <Button
+        type="button"
+        variant="quiet"
+        aria-pressed={starredOnly}
+        className={cn(
+          "rounded-none border-b-2 border-transparent px-0 pb-2 text-sm font-medium",
+          starredOnly && "border-foreground text-foreground",
+        )}
+        onClick={() => {
+          setStarredOnly(true);
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.favorites.starred;
+        })}
+      </Button>
+    </div>
+  );
+}
+
 function ArtifactLibraryToolbar({ loading }: { readonly loading: boolean }) {
   const previewOpen = useGet(artifactCatalogSidebar.open$);
   return (
@@ -573,9 +633,11 @@ function ArtifactLibraryToolbar({ loading }: { readonly loading: boolean }) {
 function ArtifactLibraryTable({
   artifacts,
   scrollTargetId,
+  scrollTargetRef,
 }: {
   readonly artifacts: readonly CatalogArtifact[];
   readonly scrollTargetId?: string | null;
+  readonly scrollTargetRef: RefCallback<HTMLTableRowElement>;
 }) {
   const { t } = useTranslation();
   const open = useGet(artifactCatalogSidebar.open$);
@@ -584,6 +646,7 @@ function ArtifactLibraryTable({
     <TooltipProvider delay={300}>
       <Table className="min-w-0">
         <colgroup>
+          <col className="w-12" />
           <col />
           <col className="hidden w-36 @3xl:table-column" />
           <col className="hidden w-28 @4xl:table-column" />
@@ -591,6 +654,13 @@ function ArtifactLibraryTable({
         </colgroup>
         <TableHeader className="bg-background">
           <TableRow>
+            <TableHead className="px-2">
+              <span className="sr-only">
+                {t(($) => {
+                  return $.artifacts.favorites.starred;
+                })}
+              </span>
+            </TableHead>
             <SortHeading
               field="title"
               label={t(($) => {
@@ -629,7 +699,9 @@ function ArtifactLibraryTable({
                   detail.state === "hasData" &&
                   detail.data?.id === artifact.id
                 }
-                scrollIntoView={scrollTargetId === artifact.id}
+                scrollTargetRef={
+                  scrollTargetId === artifact.id ? scrollTargetRef : undefined
+                }
               />
             );
           })}
@@ -646,6 +718,8 @@ function ArtifactLibraryEmpty() {
   const setKind = useSet(setArtifactCatalogKind$);
   const setSearch = useSet(setArtifactCatalogSearch$);
   const signal = useGet(pageSignal$);
+  const starredOnly = useGet(artifactCatalogStarredOnly$);
+  const setStarredOnly = useSet(setArtifactCatalogStarredOnly$);
   const filtered = Boolean(kind || search);
   return (
     <div
@@ -658,19 +732,41 @@ function ArtifactLibraryEmpty() {
         aria-hidden="true"
       />
       <h3 className="text-sm font-medium">
-        {t(($) => {
-          return $.artifacts.library.emptyTitle;
-        })}
+        {starredOnly && !filtered
+          ? t(($) => {
+              return $.artifacts.favorites.emptyTitle;
+            })
+          : t(($) => {
+              return $.artifacts.library.emptyTitle;
+            })}
       </h3>
       <p className="text-sm text-muted-foreground">
         {filtered
           ? t(($) => {
               return $.artifacts.library.emptyDescription;
             })
-          : t(($) => {
-              return $.artifacts.catalog.emptyDescription;
-            })}
+          : starredOnly
+            ? t(($) => {
+                return $.artifacts.favorites.emptyDescription;
+              })
+            : t(($) => {
+                return $.artifacts.catalog.emptyDescription;
+              })}
       </p>
+      {starredOnly && !filtered && (
+        <Button
+          type="button"
+          variant="neutral"
+          className="mt-2"
+          onClick={() => {
+            setStarredOnly(false);
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.favorites.browseAll;
+          })}
+        </Button>
+      )}
       {filtered && (
         <Button
           variant="neutral"
@@ -700,7 +796,11 @@ function ArtifactLibraryResults({
 }) {
   const { t } = useTranslation();
   const catalog = useLastLoadable(artifactCatalog$);
+  const favorites = useLoadable(artifactFavoriteIds$);
+  const drafts = useGet(artifactFavoriteDrafts$);
+  const starredOnly = useGet(artifactCatalogStarredOnly$);
   const reload = useSet(reloadArtifactCatalog$);
+  const scrollTargetRef = useSet(scrollArtifactCardIntoViewRef$);
   if (catalog.state === "loading") {
     return (
       <div
@@ -740,12 +840,25 @@ function ArtifactLibraryResults({
       </div>
     );
   }
-  return catalog.data.artifacts.length === 0 ? (
+  // Hide optimistic removals without changing the cached query, pages or preview.
+  // Until IDs are known, retain the server's Starred results.
+  const artifacts = starredOnly
+    ? catalog.data.artifacts.filter((artifact) => {
+        return (
+          drafts.get(artifact.id) ??
+          (favorites.state === "hasData"
+            ? favorites.data.has(artifact.id)
+            : true)
+        );
+      })
+    : catalog.data.artifacts;
+  return artifacts.length === 0 ? (
     <ArtifactLibraryEmpty />
   ) : (
     <ArtifactLibraryTable
-      artifacts={catalog.data.artifacts}
+      artifacts={artifacts}
       scrollTargetId={scrollTargetId}
+      scrollTargetRef={scrollTargetRef}
     />
   );
 }
@@ -843,14 +956,11 @@ export function ArtifactLibraryPage({
               })}
             </p>
           </div>
-          <h2 className="mb-4 inline-block border-b-2 border-foreground pb-2 text-sm font-medium">
-            {t(($) => {
-              return $.artifacts.library.allArtifacts;
-            })}
-          </h2>
+          <ArtifactLibraryScope />
           <ArtifactLibraryToolbar
             loading={catalogRequest.state === "loading"}
           />
+          <ArtifactFavoritesReadStatus />
           <ArtifactLibraryResults scrollTargetId={scrollTargetId} />
           <ArtifactLibraryPaging />
         </div>

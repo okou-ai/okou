@@ -698,6 +698,22 @@ describe("GET /api/artifacts/catalog", () => {
     expect(filenameMatch.artifacts).toStrictEqual([
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
+    const beforeFavorite = filenameMatch.artifacts[0]!;
+    await accept(
+      setupApp({ context, routes: artifactCatalogRoutes })(
+        artifactCatalogContract,
+      ).setFavorite({
+        headers: authenticateSharedThread(owner.actor),
+        params: { artifactId: entry!.id },
+        body: { starred: true },
+      }),
+      [200],
+    );
+    const starred = await chat.listArtifactCatalog(owner.actor, {
+      starred: "true",
+      sort: "createdAt",
+    });
+    expect(starred.artifacts).toStrictEqual([beforeFavorite]);
     const redeployed = await publishHostedSite({
       owner,
       site,
@@ -710,6 +726,20 @@ describe("GET /api/artifacts/catalog", () => {
       expect.objectContaining({ id: entry!.id, title: "季度销售报告" }),
     ]);
     expect(afterRedeploy.artifacts[0]!.createdAt).toBe(entry!.createdAt);
+    const favorites = await accept(
+      setupApp({ context, routes: artifactCatalogRoutes })(
+        artifactCatalogContract,
+      ).listFavorites({
+        headers: authenticateSharedThread(owner.actor),
+      }),
+      [200],
+    );
+    expect(favorites.body.artifactIds).toStrictEqual([entry!.id]);
+    const projectedFavorite = await chat.listArtifactCatalog(owner.actor, {
+      starred: "true",
+      sort: "createdAt",
+    });
+    expect(projectedFavorite.artifacts).toStrictEqual(afterRedeploy.artifacts);
     const threadArtifacts = await chat.listThreadArtifacts(
       owner.actor,
       published.threadId,
@@ -729,6 +759,115 @@ describe("GET /api/artifacts/catalog", () => {
           aliasUrl: redeployed.url,
         }),
       ]),
+    );
+  });
+
+  it("keeps a nonowner's favorite only while the published site grants live read access", async () => {
+    const owner = await catalogActor("Published favorite owner");
+    const published = await publishHostedSite({
+      owner,
+      site: `favorite-access-${randomUUID().slice(0, 8)}`,
+    });
+    const entry = (await chat.listArtifactCatalog(owner.actor)).artifacts[0]!;
+    const sites = setupApp({ context, routes: hostRoutes })(hostContract);
+    const initialVisibility = await accept(
+      sites.siteVisibility({
+        headers: authenticateSharedThread(owner.actor),
+        params: { siteId: published.siteId },
+      }),
+      [200],
+    );
+    await accept(
+      sites.updateSiteVisibility({
+        headers: authenticateSharedThread(owner.actor),
+        params: { siteId: published.siteId },
+        body: {
+          visibility: "public",
+          expectedRevision: initialVisibility.body.revision,
+        },
+      }),
+      [200],
+    );
+    const reader = bdd.user({
+      orgId: owner.actor.orgId,
+      orgRole: "org:member",
+    });
+    await enableArtifactLibrary(reader);
+    const catalog = setupApp({ context, routes: artifactCatalogRoutes })(
+      artifactCatalogContract,
+    );
+    await accept(
+      catalog.setFavorite({
+        headers: authenticateSharedThread(reader),
+        params: { artifactId: entry.id },
+        body: { starred: true },
+      }),
+      [200],
+    );
+    const before = await accept(
+      catalog.list({
+        headers: authenticateSharedThread(reader),
+        query: { starred: "true" },
+      }),
+      [200],
+    );
+    expect(before.body.artifacts).toStrictEqual([entry]);
+    const detail = await accept(
+      catalog.get({
+        headers: authenticateSharedThread(reader),
+        params: { artifactId: entry.id },
+      }),
+      [200],
+    );
+    expect(detail.body).toMatchObject({
+      site: { id: published.siteId, url: published.url },
+    });
+    await accept(
+      catalog.delete({
+        headers: authenticateSharedThread(reader),
+        params: { artifactId: entry.id },
+      }),
+      [404],
+    );
+    const visibility = await accept(
+      sites.siteVisibility({
+        headers: authenticateSharedThread(owner.actor),
+        params: { siteId: published.siteId },
+      }),
+      [200],
+    );
+    await accept(
+      sites.updateSiteVisibility({
+        headers: authenticateSharedThread(owner.actor),
+        params: { siteId: published.siteId },
+        body: {
+          visibility: "private",
+          expectedRevision: visibility.body.revision,
+        },
+      }),
+      [200],
+    );
+    const favorites = await accept(
+      catalog.listFavorites({
+        headers: authenticateSharedThread(reader),
+      }),
+      [200],
+    );
+    expect(favorites.body.artifactIds).toStrictEqual([]);
+    const after = await accept(
+      catalog.list({
+        headers: authenticateSharedThread(reader),
+        query: { starred: "true" },
+      }),
+      [200],
+    );
+    expect(after.body.artifacts).toStrictEqual([]);
+    await accept(
+      catalog.get({
+        headers: authenticateSharedThread(reader),
+        params: { artifactId: entry.id },
+      }),
+      [404],
     );
   });
 

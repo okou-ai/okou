@@ -1,4 +1,6 @@
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import { artifactLibraryEnabled$ } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
+import { ArtifactFavoriteMenuItem } from "./artifact-favorite.tsx";
 import { artifactCatalogRowDeletionScope } from "../../signals/artifacts-page/artifact-catalog-row-actions.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -7,13 +9,14 @@ import {
   ArtifactDeleteMoreMenu,
 } from "../okou-page/artifact-deletion.tsx";
 
-/** More/Delete for a catalog row; owner detail loads only when its menu opens. */
+/** Row favorites are independent of the owner-only Delete read. */
 export function ArtifactCatalogRowActions({
   artifactId,
 }: {
   readonly artifactId: string;
 }) {
   const scope = artifactCatalogRowDeletionScope;
+  const libraryEnabled = useLastResolved(artifactLibraryEnabled$);
   const pageSignal = useGet(pageSignal$);
   const session = useGet(scope.session$);
   const detail = useLoadable(scope.detail$);
@@ -33,7 +36,10 @@ export function ArtifactCatalogRowActions({
           {
             open,
             trigger: details.trigger,
-            selectingDelete: details.reason === "item-press",
+            selectingDelete:
+              details.reason === "item-press" &&
+              details.event.target instanceof Element &&
+              details.event.target.closest("[data-artifact-delete]") !== null,
           },
           pageSignal,
         );
@@ -45,7 +51,11 @@ export function ArtifactCatalogRowActions({
           "confirm catalog row deletion",
         );
       }}
-    />
+    >
+      {libraryEnabled && (
+        <ArtifactFavoriteMenuItem artifactId={artifactId} catalogRow />
+      )}
+    </ArtifactDeleteMoreMenu>
   );
 }
 

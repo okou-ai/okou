@@ -58,6 +58,7 @@ export interface ArtifactCatalogOrder {
 export interface ArtifactCatalogQuery extends ArtifactCatalogOrder {
   readonly kind: ArtifactCatalogKind | null;
   readonly search: string;
+  readonly starredOnly: boolean;
 }
 
 type CatalogPageRequest = (
@@ -146,6 +147,8 @@ export interface ArtifactCatalogViewSignals extends ArtifactCatalogSelection {
 export interface ArtifactCatalogSignals extends ArtifactCatalogViewSignals {
   readonly selectedKind$: Computed<ArtifactCatalogKind | null>;
   readonly setKind$: Command<void, [ArtifactCatalogKind | null]>;
+  readonly starredOnly$: Computed<boolean>;
+  readonly setStarredOnly$: Command<void, [boolean]>;
   readonly search$: Computed<string>;
   readonly setSearch$: Command<Promise<void>, [string, AbortSignal]>;
   readonly sort$: Computed<ArtifactCatalogOrder>;
@@ -181,6 +184,7 @@ function artifactLibraryPageRequest(
 function createArtifactLibraryQuerySignals(
   enabled$: Computed<Promise<boolean>>,
 ) {
+  const internalStarredOnly$ = state(false);
   const internalSearch$ = state("");
   const internalKeyword$ = state(Promise.resolve(""));
   const internalSort$ = state<ArtifactCatalogOrder>({
@@ -239,6 +243,7 @@ function createArtifactLibraryQuerySignals(
     ({ set }, query: ArtifactCatalogQuery, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(resetSearch$);
+      set(internalStarredOnly$, query.starredOnly);
       set(internalSearch$, query.search);
       set(internalKeyword$, Promise.resolve(query.search.trim()));
       set(setSort$, query.sort, query.direction);
@@ -253,6 +258,12 @@ function createArtifactLibraryQuerySignals(
   });
   return {
     enabled$,
+    starredOnly$: computed((get) => {
+      return get(internalStarredOnly$);
+    }),
+    setStarredOnly$: command(({ set }, starredOnly: boolean) => {
+      set(internalStarredOnly$, starredOnly);
+    }),
     search$: computed((get) => {
       return get(internalSearch$);
     }),
@@ -285,6 +296,7 @@ function createCatalogSource(
     const enabled = library ? get(library.enabled$) : false;
     const keyword = library ? get(library.keyword$) : "";
     const sort = library ? get(library.sort$) : null;
+    const starredOnly = library ? get(library.starredOnly$) : false;
     const request = library ? get(library.request$) : null;
     const libraryEnabled = await enabled;
     const trimmedKeyword = libraryEnabled ? (await keyword).trim() : "";
@@ -294,6 +306,7 @@ function createCatalogSource(
         ...(kind ? { kind } : {}),
         ...(chatThreadId ? { chatThreadId } : {}),
         ...(libraryEnabled && sort ? sort : {}),
+        ...(libraryEnabled && starredOnly ? { starred: "true" as const } : {}),
         ...(trimmedKeyword ? { keyword: trimmedKeyword } : {}),
       },
       request,
@@ -675,8 +688,18 @@ export function createArtifactCatalogSignals(
       set(resetPages$);
     },
   );
+  const setStarredOnly$ = command(({ get, set }, starredOnly: boolean) => {
+    if (get(library.starredOnly$) === starredOnly) {
+      return;
+    }
+    set(library.setStarredOnly$, starredOnly);
+    set(library.restartRequests$, get(pageSignal$));
+    set(resetPages$);
+  });
   return {
     ...view,
+    starredOnly$: library.starredOnly$,
+    setStarredOnly$,
     selectedKind$: computed((get) => {
       return get(source.kind$);
     }),

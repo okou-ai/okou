@@ -1,5 +1,10 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import type { ComponentProps, Ref } from "react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+} from "ccstate-react";
+import type { ComponentProps, ReactNode, Ref } from "react";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -34,6 +39,11 @@ import {
 } from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArtifactActionTooltip } from "./artifact-actions.tsx";
+import { artifactLibraryEnabled$ } from "../../signals/artifacts-page/artifact-catalog-instance.ts";
+import {
+  ArtifactFavoriteButton,
+  ArtifactFavoriteMenuItem,
+} from "../artifacts-page/artifact-favorite.tsx";
 
 export function ArtifactDeleteMoreMenu({
   triggerRef,
@@ -42,8 +52,12 @@ export function ArtifactDeleteMoreMenu({
   disabled = false,
   loading = false,
   iconSize = 16,
+  children,
+  canDelete = true,
 }: {
   readonly triggerRef?: Ref<HTMLButtonElement>;
+  readonly children?: ReactNode;
+  readonly canDelete?: boolean;
   readonly onDelete: () => void;
   readonly onOpenChange?: ComponentProps<typeof DropdownMenu>["onOpenChange"];
   readonly disabled?: boolean;
@@ -73,21 +87,25 @@ export function ArtifactDeleteMoreMenu({
         </DropdownMenuTrigger>
       </ArtifactActionTooltip>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          className="text-destructive"
-          disabled={disabled}
-          aria-busy={loading}
-          onClick={onDelete}
-        >
-          {loading ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Trash2 size={14} />
-          )}
-          {t(($) => {
-            return $.artifacts.deletion.delete;
-          })}
-        </DropdownMenuItem>
+        {children}
+        {canDelete && (
+          <DropdownMenuItem
+            data-artifact-delete
+            className="text-destructive"
+            disabled={disabled}
+            aria-busy={loading}
+            onClick={onDelete}
+          >
+            {loading ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Trash2 size={14} />
+            )}
+            {t(($) => {
+              return $.artifacts.deletion.delete;
+            })}
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -96,9 +114,15 @@ export function ArtifactDeleteMoreMenu({
 function PreviewArtifactDeleteMoreMenu({
   origin,
   iconSize,
+  artifactId,
+  favoriteEnabled,
+  canDelete,
 }: {
   readonly origin: ArtifactDeletionOrigin;
   readonly iconSize: number;
+  readonly artifactId: string;
+  readonly favoriteEnabled: boolean;
+  readonly canDelete: boolean;
 }) {
   const pageSignal = useGet(pageSignal$);
   const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
@@ -108,6 +132,7 @@ function PreviewArtifactDeleteMoreMenu({
     <ArtifactDeleteMoreMenu
       triggerRef={triggerRef}
       iconSize={iconSize}
+      canDelete={canDelete}
       onDelete={() => {
         detach(
           requestDeletion(pageSignal),
@@ -115,7 +140,9 @@ function PreviewArtifactDeleteMoreMenu({
           "confirm artifact deletion",
         );
       }}
-    />
+    >
+      {favoriteEnabled && <ArtifactFavoriteMenuItem artifactId={artifactId} />}
+    </ArtifactDeleteMoreMenu>
   );
 }
 
@@ -136,7 +163,7 @@ export function ArtifactPageDeleteButton({
   );
 }
 
-/** Owner-only action shared by catalog, chat, and standalone previews. */
+/** Owner-only Delete, with catalog-only favorites gated independently. */
 export function ArtifactDeleteButton({
   artifactId,
   sourceKind,
@@ -152,6 +179,9 @@ export function ArtifactDeleteButton({
   readonly menu?: boolean;
 }) {
   const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
+  const libraryEnabled = useLastResolved(artifactLibraryEnabled$);
+  const favoriteEnabled =
+    libraryEnabled === true && origin.kind === "catalog-sidebar";
   const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
   if (!artifactId) {
@@ -163,7 +193,7 @@ export function ArtifactDeleteButton({
       ref={mountRef}
       data-artifact-id={artifactId}
       data-source-kind={sourceKind}
-      className="inline-flex"
+      className="inline-flex items-center gap-1"
     >
       {session?.artifactId === artifactId &&
         session.sourceKind === sourceKind && (
@@ -173,6 +203,7 @@ export function ArtifactDeleteButton({
             origin={origin}
             iconSize={iconSize}
             menu={menu}
+            favoriteEnabled={favoriteEnabled}
           />
         )}
     </span>
@@ -184,23 +215,34 @@ function PreviewArtifactDeleteButton({
   origin,
   iconSize,
   menu,
+  favoriteEnabled,
 }: {
   readonly session: ArtifactDeletionSession;
   readonly origin: ArtifactDeletionOrigin;
   readonly iconSize: number;
   readonly menu: boolean;
+  readonly favoriteEnabled: boolean;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
   const detail = useLastLoadable(session.detail$);
   const requestDeletion = useSet(session.request$);
+  const canDelete = detail.state === "hasData" && detail.data !== null;
   return (
     <>
-      {detail.state === "hasData" &&
-        detail.data &&
-        (menu ? (
-          <PreviewArtifactDeleteMoreMenu origin={origin} iconSize={iconSize} />
-        ) : (
+      {favoriteEnabled && (
+        <ArtifactFavoriteButton artifactId={session.artifactId} />
+      )}
+      {menu && (favoriteEnabled || canDelete) ? (
+        <PreviewArtifactDeleteMoreMenu
+          origin={origin}
+          iconSize={iconSize}
+          artifactId={session.artifactId}
+          favoriteEnabled={favoriteEnabled}
+          canDelete={canDelete}
+        />
+      ) : (
+        canDelete && (
           <Button
             showTooltip
             type="button"
@@ -220,7 +262,8 @@ function PreviewArtifactDeleteButton({
           >
             <Trash2 size={iconSize} />
           </Button>
-        ))}
+        )
+      )}
       <ArtifactDeleteDialog session={session} origin={origin} />
     </>
   );

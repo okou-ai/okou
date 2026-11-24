@@ -365,6 +365,9 @@ export {
   type ArtifactCatalogDirection,
   type ArtifactCatalogKind,
   type ArtifactCatalogSort,
+  type ArtifactCatalogListFavoritesResponse,
+  type ArtifactCatalogSetFavoriteBody,
+  type ArtifactCatalogSetFavoriteResponse,
   type ArtifactDetail,
   type ArtifactSummary,
 } from "./artifact-catalog";

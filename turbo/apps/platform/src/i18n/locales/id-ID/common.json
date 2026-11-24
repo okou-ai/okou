@@ -511,6 +511,20 @@
       "success": "Artefak dihapus",
       "title": "Hapus {{title}}?"
     },
+    "favorites": {
+      "browseAll": "Jelajahi semua artefak",
+      "changeError": "Tidak dapat memperbarui status bintang. Coba lagi.",
+      "emptyDescription": "Beri bintang pada artefak untuk menemukannya di sini.",
+      "emptyTitle": "Belum ada artefak berbintang",
+      "loadError": "Tidak dapat memuat status bintang.",
+      "loading": "Memuat status bintang",
+      "retry": "Muat ulang status bintang",
+      "star": "Beri bintang",
+      "starred": "Berbintang",
+      "undo": "Urungkan",
+      "unstar": "Hapus bintang",
+      "unstarred": "Bintang artefak dihapus"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

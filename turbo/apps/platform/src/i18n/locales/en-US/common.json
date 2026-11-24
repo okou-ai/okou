@@ -512,6 +512,20 @@
       "success": "Artifact deleted",
       "title": "Delete {{title}}?"
     },
+    "favorites": {
+      "browseAll": "Browse all artifacts",
+      "changeError": "Couldn't update starred status. Try again.",
+      "emptyDescription": "Star artifacts to find them here.",
+      "emptyTitle": "No starred artifacts",
+      "loadError": "Couldn't load starred status.",
+      "loading": "Loading starred status",
+      "retry": "Retry starred status",
+      "star": "Star",
+      "starred": "Starred",
+      "undo": "Undo",
+      "unstar": "Unstar",
+      "unstarred": "Artifact unstarred"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

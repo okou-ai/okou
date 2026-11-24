@@ -745,6 +745,56 @@ const authorizedArtifactSharePolicy$ = command(
   },
 );
 
+/** Catalog visibility checks reuse the live grant without issuing delivery URLs. */
+export const canReadArtifactShareTarget$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly target: ArtifactShareTarget;
+      readonly targetId: string;
+      readonly userId: string;
+      readonly orgId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    const row = await get(shareIdentity(args.target.kind, args.targetId));
+    signal.throwIfAborted();
+    if (!row || row.orgId !== args.orgId) {
+      return false;
+    }
+    const authorized = await set(
+      authorizedArtifactSharePolicy$,
+      { id: row.id, userId: args.userId, expectedTarget: args.target },
+      signal,
+    );
+    if (!authorized) {
+      return false;
+    }
+    const candidate = await set(
+      ownedShareTarget$,
+      {
+        target: authorized.policy.target,
+        userId: row.userId,
+        orgId: row.orgId,
+      },
+      signal,
+    );
+    if (!candidate) {
+      return false;
+    }
+    return (
+      authorized.policy.target.kind === "file" ||
+      (
+        await set(
+          checkHostedSiteAccess$,
+          { siteId: authorized.policy.target.siteId, userId: args.userId },
+          signal,
+        )
+      ).allowed
+    );
+  },
+);
+
 export const resolveArtifactShare$ = command(
   async (
     { set },

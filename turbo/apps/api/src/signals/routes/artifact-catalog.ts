@@ -6,30 +6,43 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { notFound, resourceUnavailable } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { setResHeader$ } from "../context/hono";
 import {
-  getArtifactCatalogEntry$,
+  getArtifactLibraryEntry$,
   listArtifactCatalog$,
-} from "../services/artifact-catalog.service";
+  listArtifactCatalogFavorites$,
+  setArtifactCatalogFavorite$,
+} from "../services/artifact-library.service";
 import { ownedGoogleDriveThreadContext$ } from "../services/artifact-google-drive-authorization.service";
 import { googleDriveArtifactDetailStatus$ } from "../services/google-drive-artifact-sync.service";
 import { deleteArtifact$ } from "../services/artifact-deletion.service";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import type { RouteEntry } from "../route-entry";
 
+const artifactLibraryEnabled$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const auth = get(organizationAuthContext$);
+    const featureContext = await set(
+      loadUserFeatureSwitchContext$,
+      auth.orgId,
+      auth.userId,
+      signal,
+    );
+    return isFeatureEnabled(FeatureSwitchKey.ArtifactLibrary, featureContext);
+  },
+);
+
 const listArtifactCatalogInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
     const query = get(queryOf(artifactCatalogContract.list));
-    if (query.sort !== undefined || query.direction !== undefined) {
-      const featureContext = await set(
-        loadUserFeatureSwitchContext$,
-        auth.orgId,
-        auth.userId,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (!isFeatureEnabled(FeatureSwitchKey.ArtifactLibrary, featureContext)) {
+    if (
+      query.sort !== undefined ||
+      query.direction !== undefined ||
+      query.starred !== undefined
+    ) {
+      if (!(await set(artifactLibraryEnabled$, signal))) {
         return resourceUnavailable("Artifact library is not available");
       }
     }
@@ -45,6 +58,7 @@ const listArtifactCatalogInner$ = command(
         keyword: query.keyword,
         sort: query.sort,
         direction: query.direction,
+        starred: query.starred === "true",
       },
       signal,
     );
@@ -69,10 +83,13 @@ const getArtifactCatalogEntryInner$ = command(
     const params = get(pathParamsOf(artifactCatalogContract.get));
     const query = get(queryOf(artifactCatalogContract.get));
     const artifact = await set(
-      getArtifactCatalogEntry$,
+      getArtifactLibraryEntry$,
       {
         artifactId: params.artifactId,
         sourceKind: query.sourceKind,
+        libraryAccess:
+          query.access !== "owner" &&
+          (await set(artifactLibraryEnabled$, signal)),
         orgId: auth.orgId,
         userId: auth.userId,
       },
@@ -128,7 +145,68 @@ const deleteArtifactInner$ = command(
   },
 );
 
+const listFavoritesInner$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(setResHeader$, "Cache-Control", "private, no-store");
+    if (!(await set(artifactLibraryEnabled$, signal))) {
+      return resourceUnavailable("Artifact library is not available");
+    }
+    const artifactIds = await set(
+      listArtifactCatalogFavorites$,
+      get(organizationAuthContext$),
+      signal,
+    );
+    return { status: 200 as const, body: { artifactIds } };
+  },
+);
+
+const setFavoriteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
+  set(setResHeader$, "Cache-Control", "private, no-store");
+  if (!(await set(artifactLibraryEnabled$, signal))) {
+    return resourceUnavailable("Artifact library is not available");
+  }
+  const body = await get(bodyResultOf(artifactCatalogContract.setFavorite));
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    setArtifactCatalogFavorite$,
+    {
+      ...get(organizationAuthContext$),
+      ...get(pathParamsOf(artifactCatalogContract.setFavorite)),
+      starred: body.data.starred,
+    },
+    signal,
+  );
+  return result
+    ? { status: 200 as const, body: result }
+    : notFound("Artifact not found");
+});
+
 export const artifactCatalogRoutes: readonly RouteEntry[] = [
+  {
+    route: artifactCatalogContract.listFavorites,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      listFavoritesInner$,
+    ),
+  },
+  {
+    route: artifactCatalogContract.setFavorite,
+    handler: authRoute(
+      {
+        requireOrganization: true,
+        missingOrganizationStatus: 401,
+        requiredCapability: "chat-event:read",
+      },
+      setFavoriteInner$,
+    ),
+  },
   {
     route: artifactCatalogContract.list,
     handler: authRoute(

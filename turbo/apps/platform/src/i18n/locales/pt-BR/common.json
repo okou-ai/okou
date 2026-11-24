@@ -527,6 +527,20 @@
       "success": "Artefato excluído",
       "title": "Excluir {{title}}?"
     },
+    "favorites": {
+      "browseAll": "Explorar todos os artefatos",
+      "changeError": "Não foi possível atualizar os favoritos. Tente novamente.",
+      "emptyDescription": "Marque artefatos como favoritos para encontrá-los aqui.",
+      "emptyTitle": "Nenhum artefato favorito",
+      "loadError": "Não foi possível carregar os favoritos.",
+      "loading": "Carregando favoritos",
+      "retry": "Recarregar favoritos",
+      "star": "Adicionar aos favoritos",
+      "starred": "Favoritos",
+      "undo": "Desfazer",
+      "unstar": "Remover dos favoritos",
+      "unstarred": "Artefato removido dos favoritos"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "ÁUD",

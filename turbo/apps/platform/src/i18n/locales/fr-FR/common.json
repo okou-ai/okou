@@ -527,6 +527,20 @@
       "success": "Artefact supprimé",
       "title": "Supprimer {{title}} ?"
     },
+    "favorites": {
+      "browseAll": "Parcourir tous les artefacts",
+      "changeError": "Impossible de mettre à jour les favoris. Réessayez.",
+      "emptyDescription": "Ajoutez des artefacts aux favoris pour les retrouver ici.",
+      "emptyTitle": "Aucun artefact favori",
+      "loadError": "Impossible de charger les favoris.",
+      "loading": "Chargement des favoris",
+      "retry": "Recharger les favoris",
+      "star": "Ajouter aux favoris",
+      "starred": "Favoris",
+      "undo": "Annuler",
+      "unstar": "Retirer des favoris",
+      "unstarred": "Artefact retiré des favoris"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

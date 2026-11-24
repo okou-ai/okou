@@ -22,11 +22,13 @@ import { ROUTES } from "../route-paths.ts";
 import { onRef } from "../utils.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { artifactCatalogViewport$ } from "../artifact-deletion.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 
 // Route defaults and serialization follow the mode installed by page setup.
 // Requests independently read the authoritative feature switch.
 const routeLibraryMode$ = state(false);
 const internalPreviewTrigger$ = state<HTMLElement | null>(null);
+const internalScrolledArtifactId$ = state<string | null>(null);
 
 export const selectedArtifactCatalogKind$ = pageCatalog.selectedKind$;
 
@@ -74,11 +76,13 @@ export const initializeArtifactCatalogQueryFromRoute$ = command(
     signal.throwIfAborted();
     set(routeLibraryMode$, libraryEnabled);
     set(internalPreviewTrigger$, null);
+    set(internalScrolledArtifactId$, null);
     set(
       pageCatalog.initializeQuery$,
       {
         kind: artifactCatalogKindFromSearchParams(params, libraryEnabled),
         search: libraryEnabled ? (params.get("q") ?? "") : "",
+        starredOnly: libraryEnabled && params.get("starred") === "true",
         ...artifactCatalogSortFromSearchParams(params),
       },
       signal,
@@ -101,6 +105,11 @@ const writeArtifactCatalogQueryToRoute$ = command(
       const order = get(pageCatalog.sort$);
       next.set("sort", order.sort);
       next.set("direction", order.direction);
+      if (get(pageCatalog.starredOnly$)) {
+        next.set("starred", "true");
+      } else {
+        next.delete("starred");
+      }
     } else if (!kind || kind === "presentation") {
       next.delete("tab");
     } else {
@@ -145,6 +154,15 @@ export const setArtifactCatalogKind$ = command(
   },
 );
 
+export const artifactCatalogStarredOnly$ = pageCatalog.starredOnly$;
+
+export const setArtifactCatalogStarredOnly$ = command(
+  ({ set }, starredOnly: boolean) => {
+    set(pageCatalog.setStarredOnly$, starredOnly);
+    set(writeArtifactCatalogQueryToRoute$, false);
+  },
+);
+
 export const artifactCatalogSearch$ = pageCatalog.search$;
 
 export const setArtifactCatalogSearch$ = command(
@@ -179,6 +197,95 @@ export const rememberArtifactCatalogTrigger$ = command(
   },
 );
 
+interface ArtifactCatalogRowRemovalFocus {
+  readonly owner: string | null;
+  readonly row: HTMLElement;
+  readonly menu: HTMLElement | null;
+  readonly viewport: HTMLElement;
+  readonly targets: readonly HTMLElement[];
+}
+
+export const prepareArtifactCatalogRowRemovalFocus$ = command(
+  ({ get }, artifactId: string, control: HTMLElement) => {
+    const viewport = get(artifactCatalogViewport$);
+    if (!get(pageCatalog.starredOnly$) || !viewport) {
+      return null;
+    }
+    const rows = Array.from(
+      viewport.querySelectorAll<HTMLElement>("tr[data-artifact-id]"),
+    );
+    const row = rows.find((element) => {
+      return element.dataset.artifactId === artifactId;
+    });
+    if (!row) {
+      return null;
+    }
+    const menu = control.closest<HTMLElement>('[role="menu"]');
+    const trigger = row.querySelector<HTMLElement>('[aria-haspopup="menu"]');
+    const ownsMenu =
+      menu !== null && trigger?.getAttribute("aria-controls") === menu.id;
+    const active = document.activeElement;
+    if (!(
+      (row.contains(control) && row.contains(active)) ||
+      (ownsMenu && menu.contains(active))
+    )) {
+      return null;
+    }
+    const index = rows.indexOf(row);
+    const neighbors = [
+      ...rows.slice(index + 1),
+      ...rows.slice(0, index).reverse(),
+    ];
+    return {
+      owner: get(authenticatedSessionKey$),
+      row,
+      menu: ownsMenu ? menu : null,
+      viewport,
+      targets: neighbors.flatMap((neighbor) => {
+        const target = neighbor.querySelector<HTMLElement>(
+          "[data-artifact-open]",
+        );
+        return target ? [target] : [];
+      }),
+    } satisfies ArtifactCatalogRowRemovalFocus;
+  },
+);
+
+export const handoffArtifactCatalogRowRemovalFocus$ = command(
+  (
+    { get },
+    focus: ArtifactCatalogRowRemovalFocus | null,
+    signal: AbortSignal,
+  ) => {
+    if (!focus) {
+      return;
+    }
+    animationFrame(
+      () => {
+        const active = document.activeElement;
+        if (
+          get(pageSignal$) !== signal ||
+          get(authenticatedSessionKey$) !== focus.owner ||
+          get(artifactCatalogViewport$) !== focus.viewport ||
+          !get(pageCatalog.starredOnly$) ||
+          focus.row.isConnected ||
+          (active !== document.body &&
+            !focus.row.contains(active) &&
+            !focus.menu?.contains(active))
+        ) {
+          return;
+        }
+        const target =
+          focus.targets.find((element) => {
+            return element.isConnected;
+          }) ?? (focus.viewport.isConnected ? focus.viewport : null);
+        target?.focus({ preventScroll: true });
+      },
+      { signal },
+    );
+  },
+);
+
 export const reloadArtifactCatalog$ = pageCatalog.reload$;
 
 export const artifactCatalog$ = pageCatalog.catalog$;
@@ -190,8 +297,18 @@ export const loadMoreArtifactCatalog$ = pageCatalog.loadMore$;
 export const loadThroughArtifactCatalog$ = pageCatalog.loadThroughArtifact$;
 
 export const scrollArtifactCardIntoViewRef$ = onRef(
-  command((_context, element: HTMLElement, signal: AbortSignal) => {
+  command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
     signal.throwIfAborted();
+    if (get(routeLibraryMode$)) {
+      const artifactId = element.dataset.artifactId;
+      if (artifactId && get(internalScrolledArtifactId$) === artifactId) {
+        return;
+      }
+      if (artifactId) {
+        // Restoring an unstarred row must not replay the initial deep-link scroll.
+        set(internalScrolledArtifactId$, artifactId);
+      }
+    }
     element.scrollIntoView({ block: "center" });
   }),
 );

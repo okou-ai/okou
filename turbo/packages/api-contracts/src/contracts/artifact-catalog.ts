@@ -158,6 +158,7 @@ export interface ArtifactCatalogListQuery {
   readonly keyword?: string;
   readonly sort?: ArtifactCatalogSort;
   readonly direction?: ArtifactCatalogDirection;
+  readonly starred?: "true";
 }
 
 export interface ArtifactCatalogListClientQuery {
@@ -168,9 +169,12 @@ export interface ArtifactCatalogListClientQuery {
   readonly keyword?: string;
   readonly sort?: ArtifactCatalogSort;
   readonly direction?: ArtifactCatalogDirection;
+  readonly starred?: "true";
 }
 
 export interface ArtifactCatalogGetQuery {
+  /** Require ownership rather than accepting library read access. */
+  readonly access?: "owner";
   /** Resolve an owned shared conversation to its catalog identity. */
   readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
@@ -178,6 +182,8 @@ export interface ArtifactCatalogGetQuery {
 }
 
 export interface ArtifactCatalogGetClientQuery {
+  /** Require ownership rather than accepting library read access. */
+  readonly access?: "owner";
   readonly sourceKind?: "shared-thread";
   /** Current-view thread account context; does not change artifact ownership. */
   readonly chatThreadId?: string;
@@ -229,6 +235,35 @@ export interface ArtifactCatalogDeleteClientRequest extends ArtifactCatalogReque
   readonly params: ArtifactIdPathParams;
 }
 
+export interface ArtifactCatalogListFavoritesResponse {
+  artifactIds: string[];
+}
+
+export interface ArtifactCatalogSetFavoriteBody {
+  readonly starred: boolean;
+}
+
+export interface ArtifactCatalogSetFavoriteResponse {
+  artifactId: string;
+  starred: boolean;
+}
+
+export interface ArtifactCatalogListFavoritesServerRequest extends ArtifactCatalogRequestOptions {
+  readonly headers: ArtifactCatalogAuthHeaders;
+}
+
+export interface ArtifactCatalogListFavoritesClientRequest extends ArtifactCatalogRequestOptions {
+  readonly headers?: ArtifactCatalogAuthHeaders;
+}
+
+export interface ArtifactCatalogSetFavoriteServerRequest extends ArtifactCatalogDeleteServerRequest {
+  readonly body: ArtifactCatalogSetFavoriteBody;
+}
+
+export interface ArtifactCatalogSetFavoriteClientRequest extends ArtifactCatalogDeleteClientRequest {
+  readonly body: ArtifactCatalogSetFavoriteBody;
+}
+
 export type ArtifactCatalogApiErrorRouteResponse<TStatus extends number> = {
   readonly status: TStatus;
   readonly body: ApiErrorResponse;
@@ -270,6 +305,31 @@ export interface ArtifactCatalogDeleteRouteTypes extends AnyRouteTypeSlots {
   readonly serverRequest: ArtifactCatalogDeleteServerRequest;
   readonly clientRequest: ArtifactCatalogDeleteClientRequest;
   readonly response: ArtifactCatalogDeleteRouteResponse;
+}
+
+export interface ArtifactCatalogListFavoritesRouteTypes extends AnyRouteTypeSlots {
+  readonly serverRequest: ArtifactCatalogListFavoritesServerRequest;
+  readonly clientRequest: ArtifactCatalogListFavoritesClientRequest | undefined;
+  readonly response:
+    | {
+        readonly status: 200;
+        readonly body: ArtifactCatalogListFavoritesResponse;
+      }
+    | ArtifactCatalogApiErrorRouteResponse<401>
+    | ArtifactCatalogApiErrorRouteResponse<403>;
+}
+
+export interface ArtifactCatalogSetFavoriteRouteTypes extends AnyRouteTypeSlots {
+  readonly serverRequest: ArtifactCatalogSetFavoriteServerRequest;
+  readonly clientRequest: ArtifactCatalogSetFavoriteClientRequest;
+  readonly response:
+    | {
+        readonly status: 200;
+        readonly body: ArtifactCatalogSetFavoriteResponse;
+      }
+    | ArtifactCatalogApiErrorRouteResponse<401>
+    | ArtifactCatalogApiErrorRouteResponse<403>
+    | ArtifactCatalogApiErrorRouteResponse<404>;
 }
 
 const artifactKindSchema = zEnum(ARTIFACT_CATALOG_KINDS);
@@ -319,9 +379,11 @@ const artifactCatalogListQuerySchema = object({
   keyword: string().trim().min(1).max(256).optional(),
   sort: zEnum(["createdAt", "title"]).optional(),
   direction: zEnum(["asc", "desc"]).optional(),
+  starred: literal("true").optional(),
 });
 
 const artifactCatalogGetQuerySchema = object({
+  access: literal("owner").optional(),
   sourceKind: literal("shared-thread").optional(),
   chatThreadId: uuid().optional(),
 });
@@ -403,6 +465,31 @@ const artifactDetailSchema = discriminatedUnion("kind", [
 ]);
 
 const artifactCatalogRuntimeSpec = {
+  listFavorites: {
+    method: "GET",
+    path: "/api/artifacts/favorites",
+    headers: authHeadersSchema,
+    responses: {
+      200: object({ artifactIds: array(uuid()) }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+    },
+    summary: "List the current member's available favorite artifact IDs",
+  },
+  setFavorite: {
+    method: "PUT",
+    path: "/api/artifacts/catalog/:artifactId/favorite",
+    headers: authHeadersSchema,
+    pathParams: artifactIdPathParamsSchema,
+    body: object({ starred: boolean() }),
+    responses: {
+      200: object({ artifactId: uuid(), starred: boolean() }),
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary: "Set a personal favorite for an artifact the caller can read",
+  },
   list: {
     method: "GET",
     path: "/api/artifacts/catalog",
@@ -446,7 +533,10 @@ const artifactCatalogRuntimeSpec = {
     },
     summary: "Delete an owned artifact and withdraw its Okou links",
   },
-} as const satisfies Record<"list" | "get" | "delete", AppRouteSpec>;
+} as const satisfies Record<
+  "list" | "get" | "delete" | "listFavorites" | "setFavorite",
+  AppRouteSpec
+>;
 
 type ArtifactCatalogReadResponses<T> = Readonly<Record<number, ZodType>> & {
   readonly 200: ZodType<T>;
@@ -486,6 +576,29 @@ export type ArtifactCatalogGetRoute = AppRoute<ArtifactCatalogGetRouteTypes> & {
 };
 
 export type ArtifactCatalogContract = {
+  readonly listFavorites: AppRoute<ArtifactCatalogListFavoritesRouteTypes> & {
+    readonly method: "GET";
+    readonly path: "/api/artifacts/favorites";
+    readonly headers: ZodSchema<
+      ArtifactCatalogAuthHeaders,
+      ArtifactCatalogAuthHeaders
+    >;
+    readonly responses: ArtifactCatalogReadResponses<ArtifactCatalogListFavoritesResponse>;
+  };
+  readonly setFavorite: AppRoute<ArtifactCatalogSetFavoriteRouteTypes> & {
+    readonly method: "PUT";
+    readonly path: "/api/artifacts/catalog/:artifactId/favorite";
+    readonly headers: ZodSchema<
+      ArtifactCatalogAuthHeaders,
+      ArtifactCatalogAuthHeaders
+    >;
+    readonly pathParams: ZodSchema<ArtifactIdPathParams, ArtifactIdPathParams>;
+    readonly body: ZodSchema<
+      ArtifactCatalogSetFavoriteBody,
+      ArtifactCatalogSetFavoriteBody
+    >;
+    readonly responses: ArtifactCatalogReadResponses<ArtifactCatalogSetFavoriteResponse>;
+  };
   readonly list: ArtifactCatalogListRoute;
   readonly get: ArtifactCatalogGetRoute;
   readonly delete: AppRoute<ArtifactCatalogDeleteRouteTypes> & {

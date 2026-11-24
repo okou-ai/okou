@@ -939,6 +939,7 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                             "keyword",
                             "sort",
                             "direction",
+                            "starred",
                         )
                 } &&
                     (!value.containsKey("limit") ||
@@ -995,6 +996,10 @@ internal fun ArtifactCatalogQuery.toQueryParameters(): Map<String, String> {
                             (field is JsonPrimitive &&
                                 field.isString &&
                                 field.content in setOf("asc", "desc"))
+                        }) &&
+                    (!value.containsKey("starred") ||
+                        value["starred"].let { field ->
+                            (field is JsonPrimitive && field.isString && field.content == "true")
                         })),
             )
             .count { it } == 1,
@@ -1015,7 +1020,11 @@ internal fun ArtifactDetailQuery.toQueryParameters(): Map<String, String> {
     val value = Json.encodeToJsonElement(ArtifactDetailQuery.serializer(), this) as JsonObject
     require(
         listOf(
-                (value.keys.all { it in setOf("sourceKind", "chatThreadId") } &&
+                (value.keys.all { it in setOf("access", "sourceKind", "chatThreadId") } &&
+                    (!value.containsKey("access") ||
+                        value["access"].let { field ->
+                            (field is JsonPrimitive && field.isString && field.content == "owner")
+                        }) &&
                     (!value.containsKey("sourceKind") ||
                         value["sourceKind"].let { field ->
                             (field is JsonPrimitive &&

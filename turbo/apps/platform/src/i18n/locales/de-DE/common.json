@@ -512,6 +512,20 @@
       "success": "Artefakt gelöscht",
       "title": "{{title}} löschen?"
     },
+    "favorites": {
+      "browseAll": "Alle Artefakte durchsuchen",
+      "changeError": "Favoritenstatus konnte nicht aktualisiert werden. Versuche es erneut.",
+      "emptyDescription": "Markiere Artefakte als Favoriten, um sie hier zu finden.",
+      "emptyTitle": "Keine favorisierten Artefakte",
+      "loadError": "Favoritenstatus konnte nicht geladen werden.",
+      "loading": "Favoritenstatus wird geladen",
+      "retry": "Favoritenstatus erneut laden",
+      "star": "Als Favorit markieren",
+      "starred": "Favoriten",
+      "undo": "Rückgängig",
+      "unstar": "Aus Favoriten entfernen",
+      "unstarred": "Artefakt aus Favoriten entfernt"
+    },
     "fileBadges": {
       "artwork": "ART",
       "audio": "AUD",

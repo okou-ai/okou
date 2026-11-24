@@ -1,4 +1,8 @@
 import { command } from "ccstate";
+import {
+  initializeArtifactFavorites$,
+  reloadArtifactFavorites$,
+} from "./artifact-favorites.ts";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
 
@@ -39,6 +43,9 @@ export const setupArtifactsPage$ = command(
     );
     const libraryEnabled = await get(artifactLibraryEnabled$);
     signal.throwIfAborted();
+    if (libraryEnabled) {
+      set(initializeArtifactFavorites$, signal);
+    }
     const routeSearchParams = new URLSearchParams(get(searchParams$));
     const artifactId = artifactIdFromCatalogSearchParams(routeSearchParams);
     // Each visit installs its route-owned query and starts fresh paging.
@@ -51,7 +58,12 @@ export const setupArtifactsPage$ = command(
     // A synced artifact shows its Google Drive state on its catalog row.
     set(
       setAblyInvalidationLoop$,
-      { topic: artifactChangedTopic, invalidations: [reloadArtifactCatalog$] },
+      {
+        topic: artifactChangedTopic,
+        invalidations: libraryEnabled
+          ? [reloadArtifactCatalog$, reloadArtifactFavorites$]
+          : [reloadArtifactCatalog$],
+      },
       signal,
     );
     if (artifactId) {

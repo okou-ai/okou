@@ -527,6 +527,20 @@
       "success": "Artefacto eliminado",
       "title": "¿Eliminar {{title}}?"
     },
+    "favorites": {
+      "browseAll": "Explorar todos los artefactos",
+      "changeError": "No se pudo actualizar el estado de favorito. Inténtalo de nuevo.",
+      "emptyDescription": "Marca artefactos como favoritos para encontrarlos aquí.",
+      "emptyTitle": "No hay artefactos favoritos",
+      "loadError": "No se pudo cargar el estado de favorito.",
+      "loading": "Cargando estado de favorito",
+      "retry": "Volver a cargar el estado de favorito",
+      "star": "Marcar como favorito",
+      "starred": "Favoritos",
+      "undo": "Deshacer",
+      "unstar": "Quitar de favoritos",
+      "unstarred": "Artefacto eliminado de favoritos"
+    },
     "fileBadges": {
       "artwork": "ARTE",
       "audio": "AUD",

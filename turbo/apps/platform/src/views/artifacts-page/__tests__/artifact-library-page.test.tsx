@@ -37,6 +37,9 @@ const THIRD_ID = "a0000000-0000-4000-a000-000000000003";
 const SHARED_THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
 function setupLibraryPage(path = "/artifacts") {
+  context.mocks.api(artifactCatalogContract.listFavorites, ({ respond }) => {
+    return respond(200, { artifactIds: [] });
+  });
   return setupPage({
     context,
     path,
@@ -130,9 +133,14 @@ test("The enabled Library starts with all kinds ordered by creation and does not
   expect(
     screen.getByRole("heading", { name: "Artifacts", level: 1 }),
   ).toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: "All artifacts" }),
-  ).toBeInTheDocument();
+  expect(getButtonByName("All artifacts", viewport)).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(getButtonByName("Starred", viewport)).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   expect(
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("");
@@ -150,19 +158,25 @@ test("The enabled Library starts with all kinds ordered by creation and does not
     queryAllByRoleFast("columnheader", viewport).map((heading) => {
       return heading.textContent?.trim();
     }),
-  ).toStrictEqual(["Name", "Created", "Type", "More artifact actions"]);
+  ).toStrictEqual([
+    "Starred",
+    "Name",
+    "Created",
+    "Type",
+    "More artifact actions",
+  ]);
   expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
   expect(
     screen.queryByRole("complementary", { name: "Artifact" }),
   ).not.toBeInTheDocument();
 
   const legacyCells = queryAllByRoleFast("cell", rowFor("legacy-plan.txt"));
-  expect(legacyCells[1]?.querySelector("time")).toHaveAttribute(
+  expect(legacyCells[2]?.querySelector("time")).toHaveAttribute(
     "dateTime",
     "2026-01-01T00:00:00Z",
   );
   const imageCells = queryAllByRoleFast("cell", rowFor("launch-image.png"));
-  for (const cell of [imageCells[0], imageCells[1]]) {
+  for (const cell of [imageCells[1], imageCells[2]]) {
     expect(cell?.querySelector("time")).toHaveAttribute(
       "dateTime",
       "2026-02-01T00:00:00Z",
@@ -174,13 +188,17 @@ test("The enabled Library starts with all kinds ordered by creation and does not
       return control.getAttribute("aria-label");
     }),
   ).toStrictEqual(["Type", "Sort artifacts"]);
-  expect(
-    queryAllByRoleFast("button", viewport).some((button) => {
-      return /\b(star|favorite|source)\b/iu.test(
-        button.getAttribute("aria-label") ?? button.textContent ?? "",
-      );
-    }),
-  ).toBeFalsy();
+  await waitFor(() => {
+    expect(getButtonByName("Star", rowFor("legacy-plan.txt"))).toBeEnabled();
+  });
+  expect(getButtonByName("Star", rowFor("legacy-plan.txt"))).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+  expect(getButtonByName("Star", rowFor("launch-image.png"))).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   expect(
     screen.getByRole("navigation", { name: "Sidebar" }),
   ).toBeInTheDocument();
@@ -208,6 +226,28 @@ test("The enabled Library starts with all kinds ordered by creation and does not
 test.each([undefined, false])(
   "The default or disabled Library switch (%s) keeps the Presentation gallery",
   async (enabled) => {
+    const favoriteRequests: string[] = [];
+    context.mocks.api(
+      artifactCatalogContract.listFavorites,
+      ({ request, respond }) => {
+        favoriteRequests.push(
+          `${request.method} ${new URL(request.url).pathname}`,
+        );
+        return respond(200, { artifactIds: [] });
+      },
+    );
+    context.mocks.api(
+      artifactCatalogContract.setFavorite,
+      ({ params, body, request, respond }) => {
+        favoriteRequests.push(
+          `${request.method} ${new URL(request.url).pathname}`,
+        );
+        return respond(200, {
+          artifactId: params.artifactId,
+          starred: body.starred,
+        });
+      },
+    );
     context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
       expect(query).toStrictEqual({ limit: 60, kind: "presentation" });
       return respond(200, {
@@ -238,6 +278,10 @@ test.each([undefined, false])(
     expect(
       screen.queryByRole("searchbox", { name: "Search artifacts" }),
     ).not.toBeInTheDocument();
+    expect(queryButtonByName("Starred")).toBeUndefined();
+    expect(queryButtonByName("Star")).toBeUndefined();
+    expect(queryButtonByName("Unstar")).toBeUndefined();
+    expect(favoriteRequests).toStrictEqual([]);
   },
 );
 
