@@ -5,7 +5,6 @@
  */
 export enum FeatureSwitchKey {
   ArtifactThreePointTiming = "_artifactThreePointTimingV2",
-  VoiceMessages = "voiceMessages",
   PhoneUse = "_phoneUse",
   CustomConnectorCloudflareAccess = "customConnectorCloudflareAccess",
   MemberConnectorAccountAccess = "memberConnectorAccountAccess",

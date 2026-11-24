@@ -701,32 +701,27 @@ const startIncomingAttachmentRecords$ = command(
   },
 );
 
-const validateIncomingVoiceClips$ = command(
-  async (
-    { get },
-    args: { readonly orgId: string; readonly userId: string },
-    context: AgentRunContextSignals,
-    { voiceIds, rows }: IncomingAttachmentRecords,
-    signal: AbortSignal,
-  ) => {
-    const features = await get(context.featureSwitches$);
-    signal.throwIfAborted();
-    const error = voiceClipRequestError(voiceIds, features);
-    if (error) {
-      return error;
-    }
-    const records = await rows;
-    signal.throwIfAborted();
-    if (!records.ok) {
-      throw records.error;
-    }
-    const voice = resolveVoiceClipRecords(
-      { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
-      records.value,
-    );
-    return "status" in voice ? voice : null;
-  },
-);
+async function validateIncomingVoiceClips(
+  args: { readonly orgId: string; readonly userId: string },
+  { voiceIds, rows }: IncomingAttachmentRecords,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const error = voiceClipRequestError(voiceIds);
+  if (error) {
+    return error;
+  }
+  const records = await rows;
+  signal.throwIfAborted();
+  if (!records.ok) {
+    throw records.error;
+  }
+  const voice = resolveVoiceClipRecords(
+    { orgId: args.orgId, userId: args.userId, fileIds: voiceIds },
+    records.value,
+  );
+  return "status" in voice ? voice : null;
+}
 
 const resolveIncomingAttachmentObject$ = command(
   async (
@@ -2697,10 +2692,8 @@ const prepareNormalSendContext$ = command(
       return prepared;
     }
     if (attachmentRecords?.voiceIds.length) {
-      const voiceError = await set(
-        validateIncomingVoiceClips$,
+      const voiceError = await validateIncomingVoiceClips(
         args,
-        context,
         attachmentRecords,
         signal,
       );
