@@ -743,18 +743,15 @@ describe("CHAT-02: completed chat callback", () => {
     expect(matchingMessageIds).toStrictEqual(
       expect.arrayContaining([queued.id, claimed.id]),
     );
-    // The auto-send publishes happen in background callback processing, so
-    // poll until the message channel has been published before asserting.
-    await flushWaitUntilForTest();
-    expect(
-      context.mocks.ably.publish.mock.calls.some((call) => {
-        return call[0] === `chatThreadMessageCreated:${first.threadId}`;
-      }),
-    ).toBeTruthy();
+    // The completion and the subsequent claim both publish in the background.
     await flushWaitUntilForTest();
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadMessageCreated:${first.threadId}`,
       null,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      `chatThreadMessageCreated:${first.threadId}`,
+      { taskStatesChanged: true },
     );
     await readChatRunExecution(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
@@ -2244,7 +2241,7 @@ describe("CHAT-02/RUN-03: cancellation recovery barrier", () => {
     await waitForRunStatus(actor, run.runId, "cancelled");
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
       `chatThreadMessageCreated:${run.threadId}`,
-      null,
+      { taskStatesChanged: true },
     );
     await expectCancellationRecoveryPending(actor, run.threadId, false);
     expect(context.mocks.ably.publish).toHaveBeenCalledWith(
