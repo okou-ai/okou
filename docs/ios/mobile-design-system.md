@@ -885,8 +885,7 @@ feature; the catalog shows each one.
   white canvas: its cover picture runs across the top at one fixed scale (`ForYouCover`) and the
   rest of the page continues in the picture's own sea colour, read from the asset rather than
   written as a colour, so the cards, the deck and the dock stand on the same scene as the header.
-  A taller or shorter card only covers more or less of it; the picture never resizes, so it keeps
-  one size and one sharpness. At night the whole scene dims, so the light header and status bar
+  The picture never resizes as the cards change, so it keeps one size and one sharpness. At night the whole scene dims, so the light header and status bar
   read on it.
 - **Cards** are white `OkouSurfaceStyle` cards at sheet radius with 24 pt above the heading and
   20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
@@ -898,8 +897,9 @@ feature; the catalog shows each one.
   Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
   as much room below the text as above it. One card uses at most three sizes: title3,
   subheadline and footnote.
-- **Dense text stays readable.** A reason shows three lines ending in an inline Show more (the
-  reason itself opens too), and Show less follows it once open. A card's actions stay at its
+- **Dense text stays readable.** A reason shows as many lines as its card has room for, never
+  fewer than three, ending in an inline Show more only when more remains (the reason itself
+  opens too), and Show less follows it once open; a taller phone shows more of it. A card's actions stay at its
   bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
   fading out at the edge where more lies and flashing its scroll indicator, so the reader can
   tell there is more. Scrolling text runs out to the card's own edges rather than stopping at its
@@ -912,10 +912,11 @@ feature; the catalog shows each one.
   to the first, and back from the first to the last, as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
-  Every card in the deck is as tall as its tallest, never rising above the train's lower edge (the
-  rails and sea may be covered, the train never is), with the room laid between its heading and
-  its actions so the actions stay at the bottom; the dock's room is held on a paused automation
-  too, so the deck's top edge never moves as it pages.
+  Every card fills the room from just under the train's lower edge (the rails and sea may be
+  covered, the train never is) down to the dock, on every phone, so the page keeps one
+  composition whatever the screen or the deck's text, and the deck one shape as it pages. Room
+  the text doesn't need lies between the heading and the actions, so the actions stay at the
+  bottom; the dock's room is held on a paused automation too, so the deck's top edge never moves.
   A card that fits never moves vertically; only one taller than the room scrolls, and only the
   caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
   more shaded than the one above it.
