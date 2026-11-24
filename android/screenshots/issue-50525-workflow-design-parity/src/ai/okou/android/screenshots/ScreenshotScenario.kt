@@ -250,7 +250,7 @@ class ScreenshotScenario {
                 scenario.onActivity { it.window.insetsController?.hide(WindowInsets.Type.ime()) }
                 assertTrue(
                     device.wait(
-                        object : Condition<UiDevice, Boolean>() {
+                        object : Condition<UiDevice, Boolean> {
                             override fun apply(device: UiDevice): Boolean {
                                 var hidden = false
                                 scenario.onActivity {
