@@ -52,6 +52,8 @@ final class ComposerConnectorAccountResources {
   // Native navigation observes retirement; all request phases remain in the resource Tasks.
   private(set) var isClosed = false
   @ObservationIgnored private var generation = UUID()
+  @ObservationIgnored private var catalogTask: Task<ChatCatalogConnector, Error>?
+  @ObservationIgnored private var impactTask: Task<ChatConnectorDeletionImpact?, Error>?
   @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
   @ObservationIgnored private var detailsTask: Task<[ChatConnectorAccountDefault], Error>?
   @ObservationIgnored private var moreTask: Task<Void, Error>?
@@ -91,15 +93,30 @@ final class ComposerConnectorAccountResources {
     setPagination = Command { context, value in try context.set(more, value) }
   }
 
-  @ObservationIgnored lazy var catalog: Computed<Task<ChatCatalogConnector, Error>> =
-    computedTask { [weak self] get, options in
-      guard let self, !isClosed, try get(lifetime),
-        let slug = connector.target.connectorSlug
+  @ObservationIgnored lazy var catalog = makeCatalog()
+
+  private func makeCatalog() -> Computed<Task<ChatCatalogConnector, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, !isClosed, try get(lifetime), let slug = connector.target.connectorSlug
       else { throw CancellationError() }
-      let result = try await service.catalogConnector(slug: slug)
-      try options.signal.checkCancellation()
-      return result
+      _ = try get(revision)
+      let signal = options.signal
+      let task = Task<ChatCatalogConnector, Error> { @MainActor [weak self, service] in
+        do {
+          let result = try await service.catalogConnector(slug: slug)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          return result
+        } catch {
+          if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          throw error
+        }
+      }
+      catalogTask = task
+      signal.onCancel { task.cancel() }
+      return task
     }
+  }
 
   @ObservationIgnored private lazy var first = makeFirst()
 
@@ -195,14 +212,31 @@ final class ComposerConnectorAccountResources {
     }
   }
 
-  @ObservationIgnored lazy var deletionImpact: Computed<Task<ChatConnectorDeletionImpact?, Error>> =
-    computedTask { [weak self] get, options in
+  @ObservationIgnored lazy var deletionImpact = makeDeletionImpact()
+
+  private func makeDeletionImpact() -> Computed<Task<ChatConnectorDeletionImpact?, Error>> {
+    Computed { [weak self] get, options in
       guard let self, !isClosed, try get(lifetime) else { throw CancellationError() }
-      guard let id = try get(deletionID) else { return nil }
-      let result = try await service.deletionImpact(target: connector.target, connectionID: id)
-      try options.signal.checkCancellation()
-      return result
+      let id = try get(deletionID)
+      let target = connector.target
+      let signal = options.signal
+      let task = Task<ChatConnectorDeletionImpact?, Error> { @MainActor [weak self, service] in
+        do {
+          guard let id else { return nil }
+          let result = try await service.deletionImpact(target: target, connectionID: id)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          return result
+        } catch {
+          if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          throw error
+        }
+      }
+      impactTask = task
+      signal.onCancel { task.cancel() }
+      return task
     }
+  }
 
   func prepareDisconnect(_ id: String?) {
     guard !isClosed else { return }
@@ -295,9 +329,13 @@ final class ComposerConnectorAccountResources {
     guard !isClosed else { return }
     isClosed = true
     generation = UUID()
+    catalogTask?.cancel()
+    impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
     moreTask?.cancel()
+    catalogTask = nil
+    impactTask = nil
     firstTask = nil
     detailsTask = nil
     moreTask = nil
@@ -306,6 +344,8 @@ final class ComposerConnectorAccountResources {
   }
 
   isolated deinit {
+    catalogTask?.cancel()
+    impactTask?.cancel()
     firstTask?.cancel()
     detailsTask?.cancel()
     moreTask?.cancel()

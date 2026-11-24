@@ -167,15 +167,15 @@ private struct SettingsConnectorDetail: View {
     switch catalog {
     case .loading: ChatSettingsLoadingView(title: "Loading connector…")
     case .hasError(let error):
-      ContentUnavailableView {
-        Label("Connector unavailable", okouSymbol: "plug")
-      } description: {
-        Text(ChatRequestFailure.message(for: error))
-      } actions: {
+      List {
+        ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
+          await resources.retry()
+        }
         NavigationLink("Manage accounts") {
           ComposerConnectorAccounts(store: store, resources: resources)
         }
-      }
+      }.okouGroupedBackground()
+
     case .hasData(let connector): ComposerConnectorDetail(store: store, connector: connector)
     }
   }

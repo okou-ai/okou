@@ -26,23 +26,25 @@ struct ComposerConnectorDefaults: View {
             }
           }
           Spacer(minLength: 0)
-          Menu {
-            Button("Reconnect") {
-              store.connect(target: resources.connector.target, accountID: account.id)
+          if store.canManageAccounts {
+            Menu {
+              Button("Reconnect") {
+                store.connect(target: resources.connector.target, accountID: account.id)
+              }
+              Button("Rename") {
+                name = account.displayName ?? ""
+                renaming = account
+              }
+              Button("Disconnect", role: .destructive) {
+                resources.prepareDisconnect(account.id)
+                disconnecting = account
+              }
+            } label: {
+              OkouIcon("ellipsis", size: OkouIconSize.standard)
+                .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
             }
-            Button("Rename") {
-              name = account.displayName ?? ""
-              renaming = account
-            }
-            Button("Disconnect", role: .destructive) {
-              resources.prepareDisconnect(account.id)
-              disconnecting = account
-            }
-          } label: {
-            OkouIcon("ellipsis", size: OkouIconSize.standard)
-              .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)
+            .accessibilityLabel("Actions for \(account.label)").disabled(busy)
           }
-          .accessibilityLabel("Actions for \(account.label)").disabled(busy)
         }
         if !account.ready {
           HStack(spacing: OkouSpace.sm) {

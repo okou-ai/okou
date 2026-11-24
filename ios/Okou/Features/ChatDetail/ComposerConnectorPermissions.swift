@@ -78,6 +78,9 @@ private struct ComposerConnectorPermissionsContent: View {
         }
       }
       ComposerConnectorReadError(store: store) { await resources.retry() }
+      if let notice = store.notice {
+        Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+      }
       if case .hasData(let controls) = controls,
         let failure = controls.confirmationFailure, store.error == nil
       {
@@ -174,7 +177,7 @@ private struct ComposerConnectorPermissionsContent: View {
   private var actions: some View {
     HStack(spacing: OkouSpace.md) {
       Button("Cancel") { dismiss() }
-        .buttonStyle(OkouButtonStyle(isPrimary: false))
+        .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         .disabled(store.isSaving)
       Button {
         Task { if await resources.save() { dismiss() } }
@@ -184,7 +187,7 @@ private struct ComposerConnectorPermissionsContent: View {
           Text("Apply")
         }.frame(maxWidth: .infinity)
       }
-      .buttonStyle(OkouButtonStyle(isPrimary: true))
+      .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
       .disabled(busy || !hasChanges)
     }
     .padding(.horizontal, OkouSpace.lg).padding(.vertical, OkouSpace.sm)

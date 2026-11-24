@@ -246,6 +246,7 @@ struct ChatSettingsView: View {
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
       webURL: store.webURL, includesRemote: false,
+      managementEnabled: { true },
       didFail: { [weak models] in models?.report($0) })
   }
 

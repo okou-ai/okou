@@ -23,6 +23,7 @@ final class ComposerConnectorStore {
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private(set) var pendingOptions = ChatComposerOptions()
   private let authorizationService: ChatConnectorService
+  private let managementEnabled: @MainActor () -> Bool
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
   private(set) var resources: ComposerConnectorResources?
@@ -48,6 +49,7 @@ final class ComposerConnectorStore {
   init(
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
     threadID: String? = nil, includesRemote: Bool = true,
+    managementEnabled: @escaping @MainActor () -> Bool = { false },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -59,11 +61,13 @@ final class ComposerConnectorStore {
     self.webURL = webURL
     self.threadID = threadID
     self.includesRemote = includesRemote
+    self.managementEnabled = managementEnabled
     self.didFail = didFail
     resources = makeResources()
   }
 
   var canSend: Bool { !isSaving && !uncertain }
+  var canManageAccounts: Bool { managementEnabled() }
   // This Task owns write-confirmation orchestration, not the Views’ resource phase.
   var isRefreshing: Bool { refreshTask != nil }
   var isUpdatingAccounts: Bool { accountWrite != nil }
@@ -399,10 +403,12 @@ final class ComposerConnectorStore {
       case .defaultAccount(let id):
         await perform { try await service.setDefaultAccount(target: target, connectionID: id) }
       case .rename(let id, let name):
+        guard canManageAccounts else { return }
         await perform {
           try await service.renameAccount(target: target, connectionID: id, displayName: name)
         }
       case .disconnect(let id):
+        guard canManageAccounts else { return }
         await perform { try await service.disconnectAccount(target: target, connectionID: id) }
       case .defaultEnabled(let id, let enabled):
         await perform {

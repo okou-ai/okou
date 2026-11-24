@@ -36,8 +36,8 @@ final class ComposerConnectorPermissionResources {
 
     func summary(for names: [String]) -> String {
       let policies = Set(names.map { policy(for: $0).rawValue })
-      return policies.count == 1
-        ? (policies.first ?? "ask").capitalized : String(localized: "Mixed")
+      if policies.count == 1, let policy = policies.first { return policy.capitalized }
+      return String(localized: "Mixed")
     }
 
     func expiry(for name: String) -> String? {
