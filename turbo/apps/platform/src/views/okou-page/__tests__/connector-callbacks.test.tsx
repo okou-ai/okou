@@ -187,8 +187,8 @@ test.each([null, "app.okou.ai"] as const)(
     });
     const link = await findNamedLink("Return to Okou");
     expect(link).toHaveAttribute("href", destination);
-    expect(new URLSearchParams(location.search).has("code")).toBe(false);
-    expect(new URLSearchParams(location.search).has("state")).toBe(false);
+    expect(new URLSearchParams(location.search).has("code")).toBeFalsy();
+    expect(new URLSearchParams(location.search).has("state")).toBeFalsy();
     await waitFor(() => {
       expect(navigation.calls).toContain(destination);
     });

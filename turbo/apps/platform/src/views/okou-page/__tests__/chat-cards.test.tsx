@@ -447,8 +447,9 @@ test.each([
       connectorAccountsContract.oauthCompletion,
       ({ params, respond }) => {
         expect(params.attemptId).toBe(attempt);
-        if (account.connectionStatus === "connected")
+        if (account.connectionStatus === "connected") {
           return respond(200, { connectionId: account.id });
+        }
         early.resolve();
         return respond(404, {
           error: { code: "NOT_FOUND", message: "Authorization pending" },
@@ -463,7 +464,9 @@ test.each([
     const sent = context.mocks.deferred<string>();
     context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
       expect(body.threadId).toBe(RUN_THREAD_ID);
-      if (typeof body.prompt === "string") sent.resolve(body.prompt);
+      if (typeof body.prompt === "string") {
+        sent.resolve(body.prompt);
+      }
       return respond(201, { threadId: RUN_THREAD_ID });
     });
     const card = await screen.findByTestId("connector-action-card");
@@ -479,15 +482,17 @@ test.each([
       connectorSlug: "github",
     });
     await waitFor(() => {
-      expect(early.settled()).toBe(true);
+      expect(early.settled()).toBeTruthy();
     });
-    expect(sent.settled()).toBe(false);
+    expect(sent.settled()).toBeFalsy();
     account.connectionStatus = "connected";
     account.updatedAt = "2026-09-02T12:00:00.000Z";
     context.mocks.ably.trigger("connector:changed", {
       connectorSlug: "github",
     });
-    if (target === "exact") popup.close();
+    if (target === "exact") {
+      popup.close();
+    }
     await expect(sent.promise).resolves.toBe(callback);
     expect(location.pathname).toBe(RUN_PATH);
   },
