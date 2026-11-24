@@ -2,10 +2,9 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One draft's original read Task and explicit, conversation-owned mail operation.
-@MainActor @Observable
+@MainActor
 final class MailDraftCardStore {
   private enum ReadSource: Equatable, Sendable {
     case remote
@@ -13,15 +12,27 @@ final class MailDraftCardStore {
     case confirmed(ChatMailDraft?)
   }
 
+  /// The explicit Send or Discard: whether it is running, whether its outcome still needs a
+  /// read-only check, its failure, and how many sends the provider confirmed.
+  struct Attempt: Equatable {
+    var isWorking = false
+    var requiresReadback = false
+    var error: String?
+    var sentCount = 0
+  }
+
+  /// What the card shows besides the draft: whether its row is active, and the attempt.
+  struct Presentation: Equatable {
+    var isActive = false
+    var attempt = Attempt()
+  }
+
   let id: String
   /// The workspace session Store that keeps this card's graph values.
   let stateStore: CCState.Store
   let requested: Computed<Bool>
-  private(set) var isActive = false
-  private(set) var isWorking = false
-  private(set) var requiresReadback = false
-  private(set) var error: String?
-  private(set) var sentCount = 0
+  let presentation: Computed<Presentation>
+  private let attempt = CCState.State(Attempt())
   private let available = CCState.State(false)
   private let demand = CCState.State(false)
   private let revision = CCState.State(0)
@@ -32,11 +43,18 @@ final class MailDraftCardStore {
   private let client: APIClient
   private let didFail: @MainActor (Error) -> Void
   private let didBeginMutation: @MainActor (MailDraftCardStore) -> Void
-  @ObservationIgnored private var current: Task<ChatMailDraft?, Error>?
-  @ObservationIgnored private var pending: UUID?
-  @ObservationIgnored private var operation: Task<Void, Never>?
-  @ObservationIgnored private var generation = UUID()
-  @ObservationIgnored private var closed = false
+  private var current: Task<ChatMailDraft?, Error>?
+  private var pending: UUID?
+  private var operation: Task<Void, Never>?
+  private var generation = UUID()
+  private var closed = false
+
+  /// Activation is the read's `available` input.
+  var isActive: Bool { snapshot(of: available) }
+  var isWorking: Bool { snapshot(of: attempt).isWorking }
+  var requiresReadback: Bool { snapshot(of: attempt).requiresReadback }
+  var error: String? { snapshot(of: attempt).error }
+  var sentCount: Int { snapshot(of: attempt).sentCount }
 
   init(
     id: String, client: APIClient, graph: CCState.Store,
@@ -52,7 +70,13 @@ final class MailDraftCardStore {
     let demand = demand
     let revision = revision
     let source = source
+    let attempt = attempt
     requested = Computed { get in try get(available) && get(demand) }
+    presentation = Computed { get in
+      let isActive = try get(available)
+      let current = try get(attempt)
+      return Presentation(isActive: isActive, attempt: current)
+    }
     request = Command { context, refresh in
       guard try context.get(available) else { throw CancellationError() }
       if try !context.get(demand) { try context.set(demand, true) }
@@ -71,7 +95,7 @@ final class MailDraftCardStore {
     confirm = Command { context, draft in try context.set(source, .confirmed(draft)) }
   }
 
-  @ObservationIgnored lazy var value = makeValue()
+  lazy var value = makeValue()
 
   private func makeValue() -> Computed<Task<ChatMailDraft?, Error>> {
     Computed { [weak self] get, options in
@@ -131,7 +155,9 @@ final class MailDraftCardStore {
     guard !isWorking else { return }
     do {
       _ = try await read()
-      if !isWorking, case .remote = try stateStore.get(source) { requiresReadback = false }
+      if !isWorking, case .remote = try stateStore.get(source) {
+        update { $0.requiresReadback = false }
+      }
     } catch {
       // The original Task retains the failure and the native card offers explicit retry.
     }
@@ -142,8 +168,10 @@ final class MailDraftCardStore {
     do {
       _ = try await read(refresh: true)
       guard !isWorking, case .remote = try stateStore.get(source) else { return }
-      requiresReadback = false
-      error = nil
+      update {
+        $0.requiresReadback = false
+        $0.error = nil
+      }
     } catch {
       // Read retry never submits Send or Discard; its original Task presents any failure.
     }
@@ -154,14 +182,16 @@ final class MailDraftCardStore {
 
   private func mutate(sending: Bool) async {
     guard isActive, !closed, operation == nil, !requiresReadback, !Task.isCancelled else { return }
-    isWorking = true
-    error = nil
+    update {
+      $0.isWorking = true
+      $0.error = nil
+    }
     let generation = generation
     let task = Task { @MainActor [weak self] in
       guard let self else { return }
       defer {
         if self.generation == generation {
-          isWorking = false
+          update { $0.isWorking = false }
           operation = nil
         }
       }
@@ -180,33 +210,37 @@ final class MailDraftCardStore {
         current?.cancel()
         pending = nil
         try stateStore.set(confirm, draft)
-        requiresReadback = true
+        update { $0.requiresReadback = true }
         if sending {
           let result = try await client.sendMailDraft(id: id)
           try checkOwner(generation)
           current?.cancel()
           pending = nil
           try stateStore.set(confirm, result)
-          requiresReadback = false
-          if result.status == .sent { sentCount += 1 }
+          update {
+            $0.requiresReadback = false
+            if result.status == .sent { $0.sentCount += 1 }
+          }
         } else {
           try await client.discardMailDraft(id: id)
           try checkOwner(generation)
           try await readbackAfterMutation()
           try checkOwner(generation)
-          requiresReadback = false
+          update { $0.requiresReadback = false }
         }
       } catch is CancellationError {
       } catch {
         guard !closed, isActive, self.generation == generation, !Task.isCancelled else { return }
+        let message: String
         if let failure = error as? APIClientError, sending, failure.statusCode == 400 {
-          self.error = String(
+          message = String(
             localized: "The mail provider rejected this email. Check the recipients.")
         } else if let failure = error as? APIClientError, sending, failure.statusCode == 409 {
-          self.error = String(localized: "This draft can no longer be sent.")
+          message = String(localized: "This draft can no longer be sent.")
         } else {
-          self.error = ChatRequestFailure.message(for: error)
+          message = ChatRequestFailure.message(for: error)
         }
+        update { $0.error = message }
         didFail(error)
         // Known provider rejection reconciles with a read, never another write.
         if let failure = error as? APIClientError, sending,
@@ -215,7 +249,7 @@ final class MailDraftCardStore {
           do {
             try await readbackAfterMutation()
             try checkOwner(generation)
-            requiresReadback = false
+            update { $0.requiresReadback = false }
           } catch {}
         }
       }
@@ -238,26 +272,39 @@ final class MailDraftCardStore {
 
   func activate() {
     guard !isActive, !closed else { return }
-    isActive = true
     do { try stateStore.set(setAvailability, true) } catch { didFail(error) }
   }
 
   func deactivate() {
-    isActive = false
     generation = UUID()
     current?.cancel()
     current = nil
     pending = nil
     operation?.cancel()
     operation = nil
-    isWorking = false
+    update { $0.isWorking = false }
     do { try stateStore.set(setAvailability, false) } catch { didFail(error) }
   }
 
   func close() {
     closed = true
     deactivate()
-    error = nil
+    update { $0.error = nil }
+  }
+
+  // The card's own states are synchronous in-process values; reads and writes cannot fail.
+  private func snapshot<Value>(of signal: Signal<Value>) -> Value {
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read the mail draft card graph: \(error)")
+    }
+  }
+
+  private func update(_ mutation: (inout Attempt) -> Void) {
+    var next = snapshot(of: attempt)
+    mutation(&next)
+    do { try stateStore.set(attempt, next) } catch {
+      preconditionFailure("Cannot update the mail draft card graph: \(error)")
+    }
   }
 
   isolated deinit {

@@ -9,44 +9,61 @@ struct MailDraftCard: View {
   let loadsState: Bool
 
   var body: some View {
-    StoreProvider(store.stateStore) { MailDraftDemandView(store: store) }
+    StoreProvider(store.stateStore) { MailDraftDemandView(store: store, loadsState: loadsState) }
       .id(ObjectIdentifier(store))
-      .task(id: loadsState && store.isActive) { if loadsState { await store.load() } }
   }
 }
 
 private struct MailDraftDemandView: View {
   let store: MailDraftCardStore
+  let loadsState: Bool
   @LoadableValue private var requested: Loadable<Bool>
+  @LoadableValue private var presentation: Loadable<MailDraftCardStore.Presentation>
 
-  init(store: MailDraftCardStore) {
+  init(store: MailDraftCardStore, loadsState: Bool) {
     self.store = store
+    self.loadsState = loadsState
     _requested = LoadableValue(store.requested)
+    _presentation = LoadableValue(store.presentation)
+  }
+
+  private var current: MailDraftCardStore.Presentation {
+    presentation.data ?? MailDraftCardStore.Presentation()
   }
 
   var body: some View {
+    content
+      .task(id: loadsState && current.isActive) { if loadsState { await store.load() } }
+  }
+
+  @ViewBuilder private var content: some View {
     switch requested {
-    case .hasData(true): MailDraftValueView(store: store)
-    case .loading, .hasData(false): MailDraftCardContent(store: store, phase: .loading)
-    case .hasError(let error): MailDraftCardContent(store: store, phase: .hasError(error))
+    case .hasData(true): MailDraftValueView(store: store, attempt: current.attempt)
+    case .loading, .hasData(false):
+      MailDraftCardContent(store: store, attempt: current.attempt, phase: .loading)
+    case .hasError(let error):
+      MailDraftCardContent(store: store, attempt: current.attempt, phase: .hasError(error))
     }
   }
 }
 
 private struct MailDraftValueView: View {
   let store: MailDraftCardStore
+  let attempt: MailDraftCardStore.Attempt
   @LoadableValue private var draft: Loadable<ChatMailDraft?>
 
-  init(store: MailDraftCardStore) {
+  init(store: MailDraftCardStore, attempt: MailDraftCardStore.Attempt) {
     self.store = store
+    self.attempt = attempt
     _draft = LoadableValue(task: store.value, keepLast: true)
   }
 
-  var body: some View { MailDraftCardContent(store: store, phase: draft) }
+  var body: some View { MailDraftCardContent(store: store, attempt: attempt, phase: draft) }
 }
 
 private struct MailDraftCardContent: View {
-  @Bindable var store: MailDraftCardStore
+  let store: MailDraftCardStore
+  let attempt: MailDraftCardStore.Attempt
   let phase: Loadable<ChatMailDraft?>
   @State private var expanded = false
   @State private var confirmsSend = false
@@ -100,12 +117,12 @@ private struct MailDraftCardContent: View {
       } else {
         OkouLoadingRow("Loading email draft…")
       }
-      if let error = store.error {
+      if let error = attempt.error {
         Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.destructive)
       }
-      if store.requiresReadback && phase.error == nil {
+      if attempt.requiresReadback && phase.error == nil {
         Button("Check draft status") { Task { await store.refresh() } }
-          .disabled(store.isWorking || isLoading)
+          .disabled(attempt.isWorking || isLoading)
       }
     }
     .buttonStyle(ChatCardButtonStyle())
@@ -113,7 +130,7 @@ private struct MailDraftCardContent: View {
     .padding(.vertical, OkouSpace.md)
     .frame(maxWidth: .infinity, alignment: .leading)
     .modifier(ChatCardSurface())
-    .sensoryFeedback(.success, trigger: store.sentCount)
+    .sensoryFeedback(.success, trigger: attempt.sentCount)
     .confirmationDialog(
       "Send this email?", isPresented: $confirmsSend, titleVisibility: .visible
     ) {
@@ -138,18 +155,18 @@ private struct MailDraftCardContent: View {
           confirmsSend = true
         } label: {
           HStack(spacing: OkouSpace.xs) {
-            if store.isWorking { ProgressView().controlSize(.mini) }
+            if attempt.isWorking { ProgressView().controlSize(.mini) }
             Text("Send")
           }
         }
         .buttonStyle(ChatCardButtonStyle(emphasis: .primary))
         .disabled(
-          store.isWorking || isLoading || store.requiresReadback || draft.needsReconnect
+          attempt.isWorking || isLoading || attempt.requiresReadback || draft.needsReconnect
             || draft.to.isEmpty
         )
         .accessibilityIdentifier("mail-draft-send")
         Button("Discard", role: .destructive) { confirmsDiscard = true }
-          .disabled(store.isWorking || isLoading || store.requiresReadback)
+          .disabled(attempt.isWorking || isLoading || attempt.requiresReadback)
         if let link = providerLink(draft) {
           Link(draft.provider == "outlook" ? "Outlook" : "Gmail", destination: link)
         }
@@ -171,7 +188,7 @@ private struct MailDraftCardContent: View {
   }
 
   private func statusText(_ draft: ChatMailDraft) -> String {
-    if store.requiresReadback { return String(localized: "Check draft status") }
+    if attempt.requiresReadback { return String(localized: "Check draft status") }
     return switch draft.status {
     case .draft: String(localized: "Draft · not sent")
     case .sending: String(localized: "Sending…")
