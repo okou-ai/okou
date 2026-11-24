@@ -298,7 +298,9 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("Inbox").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
-        compose.openChatListSettings()
+        more.performClick()
+        val newProject = compose.onNodeWithText("New project").assertIsNotEnabled()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
         val creditBalance = compose.onNodeWithText("Credit balance").assertIsNotEnabled()
         val creditBounds = creditBalance.getUnclippedBoundsInRoot()
@@ -326,6 +328,10 @@ class PendingWorkspaceRootTest {
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
         assertEquals(listBounds, list.getUnclippedBoundsInRoot())
         assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
+        more.performClick()
+        newProject.assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Project name").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
         compose.openChatListSettings()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.waitUntil(10_000) {

@@ -1102,15 +1102,20 @@ internal fun OkouApp(
         if (creation?.phase == ProjectCreatePhase.Confirmed) {
             val filter = listState.value.filter
             LaunchedEffect(creation, filter, projectCreationEditor) {
-                if (projectCreationEditor != null) {
+                val projectId =
+                    creation.id.takeIf { id ->
+                        projectCreationEditor != null &&
+                            listState.value.projects.any { it.id == id }
+                    }
+                if (projectId != null) {
                     if (filter != ChatListFilter.Inbox) {
                         chats.selectFilter(ChatListFilter.Inbox)
                         return@LaunchedEffect
                     }
                     keyboard?.hide()
-                    projectExpansion?.setExpanded(creation.id, true)
+                    projectExpansion?.setExpanded(projectId, true)
                 }
-                namePresentation?.finishProjectCreation(creation.id)
+                namePresentation?.finishProjectCreation(projectId)
                 chats.dismissProjectCreation()
             }
         }
@@ -1518,9 +1523,7 @@ internal fun OkouApp(
                                     navigation.copy(settings = SettingsDestination.Overview)
                             },
                     openProjectCreation =
-                        namePresentation
-                            ?.takeIf { chats != null && workspaceReady }
-                            ?.let { it::openProjectCreation },
+                        namePresentation?.takeIf { chats != null }?.let { it::openProjectCreation },
                 )
                 if (namePresentation?.restoreCreationFocus == true) {
                     LaunchedEffect(namePresentation) {

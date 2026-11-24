@@ -84,9 +84,11 @@ class WorkspaceNamePresentation : ViewModel() {
         restoreCreationFocus = editor.restoreFocus
     }
 
-    internal fun finishProjectCreation(createdId: String) {
-        if (creationOpen)
-            focusReturn = WorkspaceRenameTarget.Project(createdId, newlyCreated = true)
+    internal fun finishProjectCreation(createdId: String?) {
+        projectCreation?.let { editor ->
+            if (createdId == null) restoreCreationFocus = editor.restoreFocus
+            else focusReturn = WorkspaceRenameTarget.Project(createdId, newlyCreated = true)
+        }
         creationOpen = false
         creationEditor = null
     }

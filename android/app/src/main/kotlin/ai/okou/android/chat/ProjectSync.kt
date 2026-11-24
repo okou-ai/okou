@@ -18,6 +18,8 @@ typealias ConfirmedProject = ProjectArchiveProjectsItem
 internal fun ProjectRecord.asConfirmedProject(expectedId: String): ConfirmedProject {
     if (id != expectedId || name.isBlank() || name.length > ProjectNameLimit)
         throw ApiFailure.IncompatibleResponse()
+    // Validate the timestamp used to rank a receipt without a sort order.
+    if (sortOrder == null) chatTime(createdAt)
     return ConfirmedProject(id, name, createdAt, updatedAt, sortOrder, archived, lastArchivedAt)
 }
 
