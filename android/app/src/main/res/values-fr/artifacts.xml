@@ -28,6 +28,7 @@
     <string name="artifact_empty">Aucun artefact pour le moment</string>
     <string name="artifact_empty_type">Aucun artefact de ce type</string>
     <string name="artifact_no_matches">Aucun artefact correspondant</string>
+    <string name="artifact_clear_keyword">Effacer la recherche</string>
     <string name="artifact_show_all">Tout afficher</string>
     <string name="artifact_catalog_load_failed">Chargement des artefacts temporairement indisponible</string>
     <string name="artifact_catalog_refresh_failed">Mise à jour temporairement indisponible. Les artefacts déjà chargés restent visibles.</string>

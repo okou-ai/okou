@@ -37,8 +37,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +61,7 @@ internal fun ArtifactsRoute(
     val state by model.state.collectAsStateWithLifecycle()
     val position = rememberLazyListState()
     val focus = LocalFocusManager.current
+    val inputMode = LocalInputModeManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val input = rememberTextFieldState()
     val page = rememberArtifactPageState()
@@ -127,7 +130,7 @@ internal fun ArtifactsRoute(
                 restoreRow = page.restoreRow,
                 onFocusRestored = { page.restoreRow = null },
                 onSelect = { item ->
-                    focus.clearFocus()
+                    if (!wide || inputMode.inputMode != InputMode.Keyboard) focus.clearFocus()
                     keyboard?.hide()
                     page.selectedId = item.id
                     model.select(item.id, item)

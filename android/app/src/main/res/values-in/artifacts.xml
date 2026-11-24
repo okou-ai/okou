@@ -28,6 +28,7 @@
     <string name="artifact_empty">Belum ada artefak</string>
     <string name="artifact_empty_type">Tidak ada artefak jenis ini</string>
     <string name="artifact_no_matches">Tidak ada artefak yang cocok</string>
+    <string name="artifact_clear_keyword">Hapus pencarian</string>
     <string name="artifact_show_all">Tampilkan semua</string>
     <string name="artifact_catalog_load_failed">Artefak tidak dapat dimuat untuk sementara</string>
     <string name="artifact_catalog_refresh_failed">Pembaruan tidak dapat dilakukan untuk sementara. Menampilkan artefak yang sudah dimuat.</string>
