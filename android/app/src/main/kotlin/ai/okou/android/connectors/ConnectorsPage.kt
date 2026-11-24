@@ -182,10 +182,11 @@ internal fun ConnectorsPage(
                     onRestored = { restoreRow = null },
                     editQuery = ::setQuery,
                     setCategory = ::setCategory,
-                    open = { slug ->
+                    open = { entry ->
                         focus.clearFocus()
                         keyboard?.hide()
-                        route.slug = slug
+                        route.slug = entry.slug
+                        model.select(entry.slug, entry)
                     },
                 )
             }
@@ -221,7 +222,7 @@ internal fun ConnectorsPage(
                     ConnectorDetails(
                         model,
                         matchingState ?: ConnectorUiState(offline = state.offline),
-                        entry,
+                        entry ?: matchingState?.selectedPreview,
                         wide,
                         initialAccountId = initialAccountId.takeIf { selected == initialSlug },
                         onCloseInitialAccount = close,
@@ -283,7 +284,7 @@ private fun ConnectorDirectory(
     onRestored: () -> Unit,
     editQuery: (TextFieldValue) -> Unit,
     setCategory: (String?) -> Unit,
-    open: (String) -> Unit,
+    open: (ConnectorEntry) -> Unit,
 ) {
     val query = route.committedQuery.text.trim()
     val searchFocus = remember { FocusRequester() }
@@ -436,7 +437,7 @@ private fun ConnectorDirectory(
                         (if (restoring) Modifier.focusRequester(restoreFocus) else Modifier)
                             .testTag("connector-${entry.slug}"),
                     ) {
-                        open(entry.slug)
+                        open(entry)
                     }
                     if (restoring)
                         LaunchedEffect(entry.slug) {
@@ -669,11 +670,13 @@ private fun ConnectorDirectoryRow(
     open: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(8.dp)
     Row(
         modifier
             .fillMaxWidth()
             .heightIn(min = 80.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .updateFocusOutline(shape, colors.onSurface, keyboardOnly = true)
+            .clip(shape)
             .background(if (selected) colors.surfaceVariant else colors.background)
             .selectable(selected = selected, role = Role.Button, onClick = open)
             .padding(horizontal = 12.dp, vertical = 8.dp),
