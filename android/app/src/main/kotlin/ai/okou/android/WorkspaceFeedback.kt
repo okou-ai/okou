@@ -185,10 +185,10 @@ internal fun WorkspaceChatFeedback(
                 savedRename = renameEditor.target
             }
         }
-    val deleteFeedback = list.projectDeleteFeedback
+    val deleteFeedback = if (showChatList) list.projectDeleteFeedback else emptyList()
     val deleteProject = list.projects.firstOrNull { it.id == confirmingProjectDelete }
     if (deleteProject != null && showChatList) {
-        val feedback = deleteFeedback?.takeIf { it.projectId == deleteProject.id }
+        val feedback = deleteFeedback.lastOrNull { it.projectId == deleteProject.id }
         DeleteProjectDialog(
             projectName = deleteProject.name,
             pending = list.projectList.deletingId == deleteProject.id,
@@ -196,11 +196,7 @@ internal fun WorkspaceChatFeedback(
             enabled = list.canDeleteProject,
             dismiss = {
                 dismissProjectDelete()
-                if (
-                    feedback?.status == ProjectDeleteStatus.Rejected ||
-                        feedback?.status == ProjectDeleteStatus.ConnectionFailed
-                )
-                    chats.dismissProjectDeleteFeedback(feedback)
+                if (feedback?.rejected == true) chats.dismissProjectDeleteFeedback(feedback)
             },
             confirm = {
                 if (feedback?.status == ProjectDeleteStatus.Unconfirmed)
@@ -280,10 +276,11 @@ internal fun WorkspaceChatFeedback(
             (it.renameThreadId == null || it.renameThreadId != openRenameId)
     }
     val rowError = listFailures.firstOrNull { it.rejected }
-    val projectNotice = deleteFeedback?.takeIf { showChatList && it.projectId != deleteProject?.id }
-    val projectError = projectNotice?.takeIf {
-        it.status == ProjectDeleteStatus.Rejected ||
-            it.status == ProjectDeleteStatus.ConnectionFailed
+    val projectError = deleteFeedback.firstOrNull {
+        it.rejected && it.projectId != deleteProject?.id
+    }
+    val projectNotice = deleteFeedback.lastOrNull {
+        !it.rejected && it.projectId != deleteProject?.id
     }
     val batchError = if (showChatList) batchResults.firstOrNull { it.rejected > 0 } else null
     val listUndo = list.rowUndo?.takeIf { showChatList }
@@ -367,10 +364,7 @@ private fun ProjectDeleteSnackbar(
         )
     val retry = if (unconfirmed && canDeleteProject) stringResource(R.string.retry) else null
     LaunchedEffect(chats, snackbar, feedback, message, retry) {
-        val error =
-            feedback.status == ProjectDeleteStatus.Rejected ||
-                feedback.status == ProjectDeleteStatus.ConnectionFailed
-        if (error) snackbar.currentSnackbarData?.dismiss()
+        if (feedback.rejected) snackbar.currentSnackbarData?.dismiss()
         val result =
             snackbar.showSnackbar(
                 message,

@@ -3987,7 +3987,8 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
 
             releaseDelete.countDown()
             compose.waitUntil(10_000) {
-                currentList()?.projectDeleteFeedback?.status == ProjectDeleteStatus.Rejected
+                currentList()?.projectDeleteFeedback?.singleOrNull()?.status ==
+                    ProjectDeleteStatus.Rejected
             }
             val failure = "Could not delete the Project."
             compose.onNodeWithText(failure).assertDoesNotExist()
@@ -3996,6 +3997,77 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             val listFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
             compose.onNode(hasText(failure) and listFeedback).assertIsDisplayed()
             compose.onNodeWithText("Research").assertIsDisplayed()
+        } finally {
+            releaseDelete.countDown()
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun movingAChatPreservesAQueuedProjectDeletionError() {
+        val app = compose.activity.application as ChatListApplication
+        val releaseDelete = CountDownLatch(1)
+        val deleteStarted = CountDownLatch(1)
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/projects/$CHAT_PROJECT" -> {
+                    deleteStarted.countDown()
+                    releaseDelete.await()
+                    MockResponse().setResponseCode(409)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> MockResponse().setResponseCode(400)
+                "/api/chat-threads/$CHAT_PERSONAL/project" -> {
+                    val eventId =
+                        request.jsonCommandBody().getValue("eventId").jsonPrimitive.content
+                    events +=
+                        24L to
+                            chatEventWire(
+                                id = eventId,
+                                seq = 24,
+                                kind = "project_updated",
+                                extra = ",\"projectId\":\"$CHAT_PROJECT\"",
+                            )
+                    jsonResponse("""{"threadId":"$CHAT_PERSONAL","projectId":"$CHAT_PROJECT"}""")
+                }
+                else -> null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val inListFeedback = hasAnyAncestor(hasTestTag("chat_list_feedback"))
+        val archiveError = hasText("Could not complete “Archive chat”.") and inListFeedback
+        val projectError = hasText("Could not delete the Project.") and inListFeedback
+        val personal = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        try {
+            compose.onNodeWithText("Research").performTouchInput { longClick() }
+            compose.onNodeWithText("Delete Project").performClick()
+            compose.onNodeWithText("Delete Project").performClick()
+            compose.waitUntil(10_000) { deleteStarted.count == 0L }
+            compose.onNodeWithText("Cancel").performClick()
+
+            personal.performTouchInput { longClick() }
+            compose.onNodeWithText("Archive chat").performClick()
+            compose.waitUntilExactlyOneExists(archiveError, 10_000)
+
+            releaseDelete.countDown()
+            compose.waitUntil(10_000) {
+                val list = currentList()
+                list?.projectList?.deletingId == null &&
+                    list?.projectDeleteFeedback?.singleOrNull()?.status ==
+                        ProjectDeleteStatus.Rejected
+            }
+            compose.onNode(archiveError).assertIsDisplayed()
+            compose.onNode(projectError).assertDoesNotExist()
+            personal.performTouchInput { longClick() }
+            compose.onNodeWithText("Move to Research").performClick()
+            compose.waitUntil(10_000) {
+                currentList()?.threads?.singleOrNull { it.id == CHAT_PERSONAL }?.projectId ==
+                    CHAT_PROJECT
+            }
+
+            compose.waitUntilExactlyOneExists(projectError, 10_000)
+            compose.onNode(projectError).assertIsDisplayed()
         } finally {
             releaseDelete.countDown()
         }

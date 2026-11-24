@@ -2939,7 +2939,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
                 val original = model.uiState.value.threads.associateBy { it.id }
                 model.deleteProject(CHAT_PROJECT)
                 runCurrent()
-                val feedback = checkNotNull(model.uiState.value.projectList.deleteFeedback)
+                val feedback = model.uiState.value.projectList.deleteFeedback.single()
                 assertEquals(ProjectDeleteStatus.Unconfirmed, feedback.status)
                 assertEquals(7, UUID.fromString(source.deleteIds.single()).version())
                 assertEquals(listOf("Research"), model.uiState.value.projects.map { it.name })
@@ -2965,7 +2965,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
                 assertNull(confirmed.projectList.deletingId)
                 assertEquals(
                     ProjectDeleteStatus.Confirmed,
-                    confirmed.projectList.deleteFeedback?.status,
+                    confirmed.projectList.deleteFeedback.single().status,
                 )
                 assertEquals(
                     listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
@@ -3004,7 +3004,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             runCurrent()
 
             val deleted = model.uiState.value
-            assertEquals(ProjectDeleteStatus.Confirmed, deleted.projectList.deleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                deleted.projectList.deleteFeedback.single().status,
+            )
             assertEquals(original, deleted.threads.single { it.id == CHAT_PERSONAL })
             assertEquals(
                 listOf(CHAT_PERSONAL, CHAT_IN_PROJECT),
@@ -3041,8 +3044,11 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             runCurrent()
             val waiting = model.uiState.value
             assertEquals(listOf(destination), waiting.projects.map { it.id })
-            assertEquals(ProjectDeleteStatus.Confirmed, waiting.projectList.deleteFeedback?.status)
-            assertNull(waiting.projectDeleteFeedback)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                waiting.projectList.deleteFeedback.single().status,
+            )
+            assertTrue(waiting.projectDeleteFeedback.isEmpty())
 
             source.chatReadUnavailable = false
             connectivity.value = false
@@ -3053,7 +3059,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             val outside = chatListGroups(regrouped).single { it.projectId == null }
             assertEquals(listOf(CHAT_PERSONAL, CHAT_IN_PROJECT), outside.threads.map { it.id })
             assertEquals("a2", outside.threads.single { it.id == CHAT_IN_PROJECT }.pinOrder)
-            assertEquals(ProjectDeleteStatus.Confirmed, regrouped.projectDeleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.Confirmed,
+                regrouped.projectDeleteFeedback.single().status,
+            )
             assertSame(failure, regrouped.failedRowAction)
             assertNull(regrouped.chatMoveNotice)
 
@@ -3252,7 +3261,10 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             advanceUntilIdle()
             val failed = model.uiState.value
             assertEquals(1, source.deleteIds.size)
-            assertEquals(ProjectDeleteStatus.ConnectionFailed, failed.projectDeleteFeedback?.status)
+            assertEquals(
+                ProjectDeleteStatus.ConnectionFailed,
+                failed.projectDeleteFeedback.single().status,
+            )
             assertEquals(CHAT_PROJECT, failed.projects.single().id)
             assertTrue(failed.canDeleteProject)
 
@@ -3263,7 +3275,7 @@ internal class ChatListProjectMembershipModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.projects.isEmpty())
             assertEquals(
                 ProjectDeleteStatus.Confirmed,
-                model.uiState.value.projectDeleteFeedback?.status,
+                model.uiState.value.projectDeleteFeedback.single().status,
             )
         }
     }
