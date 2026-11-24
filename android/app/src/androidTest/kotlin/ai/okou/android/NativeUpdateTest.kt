@@ -142,6 +142,32 @@ class NativeUpdateTest {
                 device.waitForIdle()
                 takeScreenshot().writeToTestStorage("android-update-$name")
             }
+            fun withShortWindowAndLargeText(width: Int, block: () -> Unit) {
+                val originalSize =
+                    device
+                        .executeShellCommand("wm size")
+                        .substringAfter("Override size: ", "")
+                        .trim()
+                val fontScale = device.executeShellCommand("settings get system font_scale").trim()
+                try {
+                    device.executeShellCommand("wm size ${width}x850")
+                    device.executeShellCommand("settings put system font_scale 2.0")
+                    val resized =
+                        object : Condition<UiDevice, Boolean> {
+                            override fun apply(device: UiDevice) =
+                                device.displayWidth == width &&
+                                    device.displayHeight == 850 &&
+                                    app.resources.configuration.fontScale >= 2f
+                        }
+                    assertTrue(device.wait(resized, 10_000) == true)
+                    block()
+                } finally {
+                    if (fontScale.toFloatOrNull() == null)
+                        device.executeShellCommand("settings delete system font_scale")
+                    else device.executeShellCommand("settings put system font_scale $fontScale")
+                    device.executeShellCommand("wm size ${originalSize.ifBlank { "reset" }}")
+                }
+            }
             device.awaitChatList(app)
             val searchLabel = app.getString(R.string.chat_search_workspace)
             val search = By.pkg(app.packageName).desc(searchLabel)
@@ -353,26 +379,9 @@ class NativeUpdateTest {
             )
             captureState("details-retry-offline")
             assertEquals(initialDetailsBounds, detailsBounds())
-            val originalSize =
-                device.executeShellCommand("wm size").substringAfter("Override size: ", "").trim()
-            val fontScale = device.executeShellCommand("settings get system font_scale").trim()
-            try {
-                device.executeShellCommand("wm size 780x850")
-                device.executeShellCommand("settings put system font_scale 2.0")
-                val resized =
-                    object : Condition<UiDevice, Boolean> {
-                        override fun apply(device: UiDevice) =
-                            device.displayHeight == 850 &&
-                                app.resources.configuration.fontScale >= 2f
-                    }
-                assertTrue(device.wait(resized, 10_000) == true)
+            withShortWindowAndLargeText(width = 780) {
                 exists(R.string.updates_retry_download)
                 captureState("details-short-retry-offline")
-            } finally {
-                if (fontScale.toFloatOrNull() == null)
-                    device.executeShellCommand("settings delete system font_scale")
-                else device.executeShellCommand("settings put system font_scale $fontScale")
-                device.executeShellCommand("wm size ${originalSize.ifBlank { "reset" }}")
             }
             online.value = true
             assertNotNull(text(progressLabel))
@@ -388,6 +397,18 @@ class NativeUpdateTest {
             download.get().complete(file)
             exists(R.string.updates_open_settings)
             captureState("install-permission")
+            withShortWindowAndLargeText(width = 1000) {
+                exists(R.string.updates_allow_install)
+                val minTouchHeight = (48 * density).roundToInt() - 1
+                for (label in listOf(R.string.updates_later, R.string.updates_open_settings)) {
+                    val action = button(By.pkg(app.packageName).text(app.getString(label)))
+                    assertTrue(
+                        "Expected a visible 48dp target for ${app.getString(label)}",
+                        action.visibleBounds.height() >= minTouchHeight,
+                    )
+                }
+                captureState("install-permission-short")
+            }
             click(R.string.updates_later)
             assertNotNull(text(searchQuery))
             button(By.pkg(app.packageName).desc(app.getString(R.string.back))).click()
