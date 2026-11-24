@@ -898,7 +898,9 @@ feature; the catalog shows each one.
   reason itself opens too), and Show less follows it once open. A card's actions stay at its
   bottom (`ForYouCardLayout`); when the heading is longer than the room it scrolls above them,
   fading out at the edge where more lies and flashing its scroll indicator, so the reader can
-  tell there is more.
+  tell there is more. Scrolling text runs out to the card's own edge (and down to the actions),
+  never stopping at the card's inset. When the actions would leave the heading less than a third
+  of the card, as at the largest text sizes, heading and actions scroll together from the title.
 - **The deck pages round.** A sideways swipe carries the front card with the finger; it settles
   back a little but never tilts, since paging throws nothing away, and the next card rises out
   of the deck, solid within the first third of the swipe. Past the last card the deck carries on
@@ -916,7 +918,14 @@ feature; the catalog shows each one.
   handled, error on a failure; nothing while the finger moves.
 - **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
   reasons menu. Confirmations drop in under the header so they never cover the next card's
-  directions.
+  directions; a failure there can be dismissed too.
+- **Writing a direction focuses the page.** The scene recedes under the page's ground, so the
+  composer's glass and the keyboard read plain instead of taking the sea's colour, and the counter
+  and segments step aside while keeping their room. The card stays above the input as its
+  context: its heading only, as tall as it is up to the room under the header, scrolling and
+  fading there like a dense card, with its directions and source set aside so the draft is never
+  left behind. The card already says what the direction answers, so the input carries no quote of
+  it. A tap around the card puts the input away; the card itself stays readable.
 
 ### Sign-in and account
 

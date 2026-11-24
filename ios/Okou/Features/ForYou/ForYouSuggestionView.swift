@@ -11,6 +11,10 @@ struct ForYouSuggestionView: View {
   var report: ((CGFloat) -> Void)?
   /// The direction whose choice is under way, which shows its progress in place of its arrow.
   var pendingOptionID: String?
+  /// While the member writes a direction of their own, the card stands above the input as its
+  /// context: its title and reason only, within the height it is given. Its source steps aside
+  /// with its directions, so the draft is never left behind for another chat.
+  var isContext = false
   let openSource: (String) -> Void
   let choose: (ForYouOption) -> Void
   @State private var showsWholeReason = false
@@ -31,9 +35,11 @@ struct ForYouSuggestionView: View {
   }
 
   var body: some View {
-    ForYouCardLayout(height: height, spacing: OkouSpace.xl, report: report) {
+    ForYouCardLayout(
+      height: height, spacing: OkouSpace.xl, showsActions: !isContext, report: report
+    ) {
       VStack(alignment: .leading, spacing: OkouSpace.sm) {
-        if let source {
+        if let source, !isContext {
           Button {
             openSource(source.id)
           } label: {
@@ -49,6 +55,7 @@ struct ForYouSuggestionView: View {
           }
           .buttonStyle(ForYouChipButtonStyle()).accessibilityHint("View source")
           .padding(.bottom, OkouSpace.xs)
+          .transition(.opacity)
         }
         Text(suggestion.title).font(.okou(.title3).weight(.semibold))
           .accessibilityAddTraits(.isHeader).fixedSize(horizontal: false, vertical: true)
@@ -255,15 +262,28 @@ struct ForYouAutomationView: View {
   }
 }
 
+/// The room between a card's edge and its content: more above the heading, where the card's
+/// large corner curves. A heading that scrolls runs out to the card's edge through it.
+enum ForYouCardInset {
+  static let top = OkouSpace.xxl
+  static let side = OkouSpace.xl
+  static let bottom = OkouSpace.xl
+}
+
 /// A card's heading over its actions. Given the deck's height, the actions stay at the card's
-/// bottom and the heading takes what is left, scrolling there when it is longer: while more lies
-/// below, the heading fades out at its foot, and its scroll indicator flashes when it appears, so
-/// the reader can tell there is more. Without a height, as while a direction is being written,
-/// the card takes its own height. Either way it reports its own height (heading, gap and actions), which never depends
-/// on the height it is given.
+/// bottom and the heading takes what is left, scrolling there when it is longer. A scrolling
+/// heading runs from the card's top edge down to the actions, so its text comes and goes at those
+/// edges rather than at the card's inset; it fades out at whichever edge more lies beyond, and
+/// its scroll indicator flashes when it appears, so the reader can tell there is more. When the
+/// actions would leave the heading less than a third of the card, as at the largest text sizes,
+/// heading and actions scroll as one from the title. Without its actions, as while a direction is
+/// written, the heading takes its own height up to the one given and runs out through the card's
+/// bottom edge past it. Without a height the card takes its own. Either way it reports its own
+/// height (heading, gap and actions), which never depends on the height it is given.
 struct ForYouCardLayout<Heading: View, Actions: View>: View {
   let height: CGFloat?
   let spacing: CGFloat
+  let showsActions: Bool
   let report: ((CGFloat) -> Void)?
   let heading: Heading
   let actions: Actions
@@ -272,15 +292,18 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
   @State private var hasMoreBelow = false
   @State private var hasMoreAbove = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// The height over which the heading fades out while more of it lies below.
+  /// The height over which the text fades out at an edge more lies beyond.
   private var fade: CGFloat { OkouSpace.xxxl }
+  /// The least share of the card a heading keeps beside actions that stay put.
+  private var headingShare: CGFloat { 1 / 3 }
 
   init(
-    height: CGFloat?, spacing: CGFloat, report: ((CGFloat) -> Void)?,
+    height: CGFloat?, spacing: CGFloat, showsActions: Bool = true, report: ((CGFloat) -> Void)?,
     @ViewBuilder heading: () -> Heading, @ViewBuilder actions: () -> Actions
   ) {
     self.height = height
     self.spacing = spacing
+    self.showsActions = showsActions
     self.report = report
     self.heading = heading()
     self.actions = actions()
@@ -288,47 +311,80 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
 
   var body: some View {
     if let height {
+      let pinsActions = showsActions && height - actionsHeight - spacing >= height * headingShare
       VStack(alignment: .leading, spacing: spacing) {
-        ScrollView { measuredHeading }
-          .scrollBounceBehavior(.basedOnSize, axes: .vertical)
-          .scrollIndicatorsFlash(onAppear: true)
-          .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y + geometry.containerSize.height
-              < geometry.contentSize.height - OkouSpace.one
-          } action: { _, more in
-            hasMoreBelow = more
+        scrolling(below: pinsActions ? spacing : ForYouCardInset.bottom) {
+          measuredHeading
+          if showsActions && !pinsActions {
+            measuredActions.padding(.top, spacing).transition(.opacity)
           }
-          .onScrollGeometryChange(for: Bool.self) { geometry in
-            geometry.contentOffset.y > OkouSpace.one
-          } action: { _, more in
-            hasMoreAbove = more
-          }
-          .mask {
-            VStack(spacing: 0) {
-              LinearGradient(
-                colors: [.black.opacity(hasMoreAbove ? 0 : 1), .black], startPoint: .top,
-                endPoint: .bottom
-              )
-              .frame(height: fade)
-              Rectangle()
-              LinearGradient(
-                colors: [.black, .black.opacity(hasMoreBelow ? 0 : 1)], startPoint: .top,
-                endPoint: .bottom
-              )
-              .frame(height: fade)
-            }
-          }
-          .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreBelow)
-          .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreAbove)
-        measuredActions
+        }
+        if pinsActions { measuredActions.transition(.opacity) }
       }
-      .frame(height: height, alignment: .top)
+      .frame(height: contentRoom(within: height), alignment: .top)
     } else {
       VStack(alignment: .leading, spacing: spacing) {
         measuredHeading
-        measuredActions
+        if showsActions { measuredActions.transition(.opacity) }
       }
     }
+  }
+
+  /// Scrolls its content within the card. It reaches past the content by the card's top inset
+  /// above and by `below` underneath, keeping that room inside the scroll, so the text scrolls in
+  /// and out at the card's edge (or at the actions) instead of stopping short of it.
+  private func scrolling<Content: View>(
+    below: CGFloat, @ViewBuilder _ content: () -> Content
+  ) -> some View {
+    let above = ForYouCardInset.top
+    return ScrollView {
+      VStack(alignment: .leading, spacing: 0) { content() }
+        .padding(.top, above).padding(.bottom, below)
+    }
+    .contentMargins(.top, above, for: .scrollIndicators)
+    .contentMargins(.bottom, below, for: .scrollIndicators)
+    // The page keeps its card at the bottom; the card's own text opens at its title and stays
+    // put as a reason opens.
+    .defaultScrollAnchor(.top, for: .initialOffset)
+    .defaultScrollAnchor(.top, for: .alignment)
+    .defaultScrollAnchor(.top, for: .sizeChanges)
+    .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+    .scrollIndicatorsFlash(onAppear: true)
+    .onScrollGeometryChange(for: Bool.self) { geometry in
+      geometry.contentOffset.y + geometry.containerSize.height
+        < geometry.contentSize.height - OkouSpace.one
+    } action: { _, more in
+      hasMoreBelow = more
+    }
+    .onScrollGeometryChange(for: Bool.self) { geometry in
+      geometry.contentOffset.y > OkouSpace.one
+    } action: { _, more in
+      hasMoreAbove = more
+    }
+    .mask {
+      VStack(spacing: 0) {
+        LinearGradient(
+          colors: [.black.opacity(hasMoreAbove ? 0 : 1), .black], startPoint: .top,
+          endPoint: .bottom
+        )
+        .frame(height: fade)
+        Rectangle()
+        LinearGradient(
+          colors: [.black, .black.opacity(hasMoreBelow ? 0 : 1)], startPoint: .top,
+          endPoint: .bottom
+        )
+        .frame(height: fade)
+      }
+    }
+    .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreBelow)
+    .animation(reduceMotion ? nil : OkouMotion.transition, value: hasMoreAbove)
+    .padding(.top, -above).padding(.bottom, -below)
+  }
+
+  /// The card's content height for the height it is given: all of it beside the actions, or
+  /// without them only as much as the heading needs.
+  private func contentRoom(within height: CGFloat) -> CGFloat {
+    showsActions || headingHeight == 0 ? height : min(height, headingHeight)
   }
 
   private var measuredHeading: some View {

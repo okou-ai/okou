@@ -11,6 +11,9 @@ struct ForYouHeader: View {
   let position: CGFloat
   let isBusy: Bool
   let canPage: Bool
+  /// Whether the count and the segments show. While a direction is written they step aside,
+  /// keeping their room, so only the card and the input hold the eye.
+  var showsPlace = true
   let back: () -> Void
   let show: (Int) -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -44,10 +47,15 @@ struct ForYouHeader: View {
             .padding(.horizontal, OkouSpace.md)
             .frame(minHeight: OkouSpace.xxxl)
             .glassEffect(.regular, in: Capsule())
+            .opacity(showsPlace ? 1 : 0)
+            .accessibilityHidden(!showsPlace)
         }
       }
-      if count > 1 { progress }
+      if count > 1 {
+        progress.opacity(showsPlace ? 1 : 0).accessibilityHidden(!showsPlace)
+      }
     }
+    .animation(reduceMotion ? nil : OkouMotion.transition, value: showsPlace)
     .foregroundStyle(OkouColor.foreground)
     .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
   }
