@@ -2568,7 +2568,7 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
                         jsonResponse("""{"lastReadAt":"$receipt"}""")
                     }
                     CHAT_IN_PROJECT ->
-                        if (rejectProject.get()) MockResponse().setResponseCode(503)
+                        if (rejectProject.get()) MockResponse().setResponseCode(409)
                         else {
                             projectUnread.set(false)
                             jsonResponse("""{"lastReadAt":"$CHAT_DATE"}""")
@@ -2625,12 +2625,12 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         try {
             markAll()
             compose.waitUntil(10_000) { marked.size == 2 }
-            compose.onNodeWithText("Personal chat").assertIsDisplayed()
-            compose.onNodeWithText("Research").assert(projectUnreadCount)
+            compose.onNodeWithText("Personal chat").assertDoesNotExist()
+            compose.onNodeWithText("Research").assertDoesNotExist()
         } finally {
             releaseWrites.countDown()
         }
-        awaitMessage("Marked 1 of 2 chats as read.")
+        awaitMessage("Chats marked as read: 1. Failed: 1.")
         assertEquals(setOf(CHAT_PERSONAL, CHAT_IN_PROJECT), marked.toSet())
         assertEquals(2, marked.size)
         list.performScrollToNode(hasText("Personal chat"))
@@ -3284,6 +3284,47 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         compose.onNode(hasContentDescription("Dismiss") and inList).performClick()
         val conversationNotice = hasText("Could not complete “Archive chat”.")
         compose.waitUntilExactlyOneExists(conversationNotice and inConversation, 10_000)
+    }
+
+    @Test
+    @Config(qualifiers = "en-rUS-w400dp-h800dp")
+    fun allRejectedBatchReadsTemporarilyReplaceTheListUndo() {
+        val app = compose.activity.application as ChatListApplication
+        val events = app.fixture.rowEventTail()
+        app.fixture.commandResponse = { request ->
+            when (request.requestUrl?.encodedPath) {
+                "/api/chat-threads/$CHAT_PERSONAL/archive" -> {
+                    events.add(24L to request.rowEvent(24, CHAT_PERSONAL, "archived"))
+                    MockResponse().setResponseCode(204)
+                }
+                "/api/chat-threads/$CHAT_PERSONAL/unarchive" -> {
+                    events.add(25L to request.rowEvent(25, CHAT_PERSONAL, "unarchived"))
+                    MockResponse().setResponseCode(204)
+                }
+                else ->
+                    if (request.requestUrl?.pathSegments?.lastOrNull() == "mark-read")
+                        MockResponse().setResponseCode(409)
+                    else null
+            }
+        }
+        app.responseGate.countDown()
+        awaitListAndNames()
+        val row = compose.onNodeWithTag("chat_$CHAT_PERSONAL")
+        row.performTouchInput { longClick() }
+        compose.onNodeWithText("Archive chat").performClick()
+        val undo = hasText("Undo")
+        compose.waitUntilExactlyOneExists(undo, 10_000)
+
+        compose.onNodeWithContentDescription("Filter").performClick()
+        compose.onNodeWithText("Mark all as read").performClick()
+        val failure = hasText("Could not mark chats as read.")
+        compose.waitUntilExactlyOneExists(failure, 10_000)
+        compose.onNode(undo).assertDoesNotExist()
+
+        compose.waitUntilExactlyOneExists(undo, 10_000)
+        compose.onNode(failure).assertDoesNotExist()
+        compose.onNode(undo).performClick()
+        compose.waitUntilExactlyOneExists(hasTestTag("chat_$CHAT_PERSONAL"), 10_000)
     }
 
     @Test
