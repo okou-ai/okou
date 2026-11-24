@@ -506,7 +506,7 @@ private fun ConnectorAccountStatusText(account: ConnectorSavedAccount) {
 @Composable
 private fun ConnectorSectionDivider() {
     Spacer(Modifier.height(16.dp))
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
     Spacer(Modifier.height(16.dp))
 }
 

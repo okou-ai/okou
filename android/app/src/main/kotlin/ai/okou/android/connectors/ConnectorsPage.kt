@@ -190,7 +190,7 @@ internal fun ConnectorsPage(
                 )
             }
         }
-        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outline)
+        if (wide) VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         if (selected != null) {
             Column(Modifier.weight(1f).fillMaxHeight()) {
                 if (!wide) ConnectorTopBar(stringResource(R.string.connector_title), ::back)
@@ -269,7 +269,7 @@ private fun ConnectorTopBar(title: String, back: () -> Unit) {
                 containerColor = MaterialTheme.colorScheme.background,
             ),
     )
-    HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 }
 
 @Composable
@@ -471,7 +471,7 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                     .background(accent),
             )
         },
-        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline) },
+        divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant) },
     ) {
         listOf(R.string.connector_discover, R.string.connector_connected).forEachIndexed {
             index,
@@ -482,7 +482,10 @@ private fun ConnectorTabs(connected: Boolean, select: (Boolean) -> Unit) {
                 modifier =
                     Modifier.heightIn(min = 48.dp)
                         .focusRequester(focus[index])
-                        .updateFocusOutline(RoundedCornerShape(8.dp), accent)
+                        .updateFocusOutline(
+                            RoundedCornerShape(8.dp),
+                            MaterialTheme.colorScheme.onBackground,
+                        )
                         .onPreviewKeyEvent { event ->
                             if (
                                 event.type == KeyEventType.KeyDown &&
@@ -560,7 +563,7 @@ private fun ConnectorFilters(
                         .background(colors.surfaceVariant)
                         .border(
                             if (focused) 2.dp else 1.dp,
-                            if (focused) LocalActivityStatusColor.current else colors.outline,
+                            if (focused) colors.onSurface else colors.outline,
                             shape,
                         )
                         .padding(
@@ -609,7 +612,7 @@ private fun ConnectorFilters(
                 modifier =
                     Modifier.size(48.dp)
                         .focusRequester(categoryFocus)
-                        .updateFocusOutline(categoryShape, LocalActivityStatusColor.current)
+                        .updateFocusOutline(categoryShape, colors.onSurface)
                         .clip(categoryShape)
                         .background(
                             if (route.category == null) colors.background
@@ -842,7 +845,7 @@ internal fun ConnectorStatusBanner(message: Int) {
     Text(
         stringResource(message),
         Modifier.padding(bottom = 8.dp, top = 4.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(12.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .semantics { liveRegion = LiveRegionMode.Polite },
         color = MaterialTheme.colorScheme.onSurfaceVariant,

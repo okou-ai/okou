@@ -297,7 +297,7 @@ class MainActivity : AppCompatActivity() {
                                         Modifier.heightIn(min = 48.dp)
                                             .updateFocusOutline(
                                                 ButtonDefaults.shape,
-                                                LocalActivityStatusColor.current,
+                                                MaterialTheme.colorScheme.onSurface,
                                             ),
                                     colors =
                                         ButtonDefaults.textButtonColors(

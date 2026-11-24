@@ -263,7 +263,6 @@ internal fun OkouSwitch(checked: Boolean, enabled: Boolean) {
                     colors.onSurface
                         .copy(alpha = if (dark) 0.16f else 0.12f)
                         .compositeOver(colors.surface),
-                outline = colors.onSurface.copy(alpha = 0.64f).compositeOver(colors.surface),
             )
         }
     MaterialTheme(colorScheme = switchColors) {
@@ -650,7 +649,7 @@ internal fun SettingsChoiceRow(
             .fillMaxWidth()
             .heightIn(min = 56.dp)
             .clip(shape)
-            .updateFocusOutline(shape, LocalActivityStatusColor.current)
+            .updateFocusOutline(shape, foreground)
             .then(if (selected) Modifier.background(colors.secondaryContainer) else Modifier)
             .selectable(
                 selected,

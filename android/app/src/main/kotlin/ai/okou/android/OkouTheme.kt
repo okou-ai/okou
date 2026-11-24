@@ -113,18 +113,6 @@ internal data class PaletteColors(
     val swatchCompanion: Color,
 )
 
-internal val ColorScheme.controlOutline: Color
-    get() {
-        val text = onSurface
-        val base = surface
-        fun mix(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
-        return Color(
-            red = mix(text.red, base.red),
-            green = mix(text.green, base.green),
-            blue = mix(text.blue, base.blue),
-        )
-    }
-
 /** The wrapper is used only for color lookup; native controls keep the real Activity context. */
 internal fun resolvePalette(
     context: Context,
@@ -155,6 +143,9 @@ internal fun resolvePalette(
         check(value.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT)
         return Color(value.data)
     }
+    val surface = role(R.attr.okou_palette_card)
+    val onSurface = role(R.attr.okou_palette_card_foreground)
+    fun mixOutline(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
     val colors =
         (if (dark) darkColorScheme() else lightColorScheme()).copy(
             primary = role(R.attr.okou_palette_primary),
@@ -171,17 +162,22 @@ internal fun resolvePalette(
             onTertiaryContainer = role(R.attr.okou_palette_foreground),
             background = role(R.attr.okou_palette_background),
             onBackground = role(R.attr.okou_palette_foreground),
-            surface = role(R.attr.okou_palette_card),
-            onSurface = role(R.attr.okou_palette_card_foreground),
+            surface = surface,
+            onSurface = onSurface,
             surfaceVariant = role(R.attr.okou_palette_muted),
             onSurfaceVariant = role(R.attr.okou_palette_muted_foreground),
             surfaceTint = role(R.attr.okou_palette_primary),
             surfaceContainerLowest = role(R.attr.okou_palette_background),
-            surfaceContainerLow = role(R.attr.okou_palette_card),
+            surfaceContainerLow = surface,
             surfaceContainer = role(R.attr.okou_palette_muted),
             surfaceContainerHigh = role(R.attr.okou_palette_muted),
             surfaceContainerHighest = role(R.attr.okou_palette_muted),
-            outline = role(R.attr.okou_palette_border),
+            outline =
+                Color(
+                    red = mixOutline(onSurface.red, surface.red),
+                    green = mixOutline(onSurface.green, surface.green),
+                    blue = mixOutline(onSurface.blue, surface.blue),
+                ),
             outlineVariant = role(R.attr.okou_palette_border),
             error = role(R.attr.okou_palette_destructive),
             onError = role(R.attr.okou_palette_destructive_foreground),
