@@ -327,7 +327,9 @@ async fn wait_for_finalizing_resource(
     } = request;
     let cancel = cancellation.token();
     let wait_started_at = tokio::time::Instant::now();
-    let mut handoff = handoff_context.predecessor.request_handoff(run_id);
+    let mut handoff = handoff_context
+        .native_generation_run_id
+        .and_then(|_| handoff_context.predecessor.request_handoff(run_id));
     #[cfg(any(test, feature = "test-support"))]
     if handoff.is_some() {
         test_hooks.notify_handoff_requested(handoff_context.source_run_id, run_id);
