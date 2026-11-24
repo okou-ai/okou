@@ -44,6 +44,8 @@ data class HistoryMessage(
     val queueSequence: Long? = null,
     val queuedWorkflow: QueuedWorkflow? = null,
     val sourceSeqId: Long? = null,
+    val occurredAtMillis: Long? = null,
+    val followups: List<ConversationFollowup>? = null,
 )
 
 data class QueuedWorkflow(val name: String?, val triggerBrief: String?)
@@ -220,6 +222,16 @@ fun projectHistory(checkpoint: HistoryCheckpoint): HistoryTranscript {
                     QueuedWorkflow(part?.text("workflowName"), part?.text("automationBrief"))
                 } else null,
             sourceSeqId = row.seqId,
+            occurredAtMillis =
+                if (
+                    role == HistoryRole.User && row.runId != null ||
+                        row.terminal ||
+                        row.type == "control.interrupt"
+                )
+                    row.timeMillis()
+                else null,
+            followups =
+                if (row.type == "output.followups") conversationFollowups(row.content) else null,
         )
     }
     val endedRuns = terminals + interrupted

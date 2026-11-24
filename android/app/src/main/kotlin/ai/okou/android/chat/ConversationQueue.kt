@@ -58,6 +58,7 @@ import kotlinx.serialization.json.jsonObject
 internal data class ConversationContent(
     val messages: List<ConversationMessage>,
     val queue: List<ConversationMessage>,
+    val completion: ConversationCompletion?,
 )
 
 private data class QueueFocus(val id: String, val index: Int)
@@ -70,9 +71,13 @@ internal fun conversationContent(
     hiddenQueueInputs: Set<String>,
 ): ConversationContent {
     val confirmed = transcript?.withOutput(output, threadId).orEmpty()
+    val retainedRunIds =
+        if (output.threadId == threadId) output.messages.mapNotNull { it.runId } else emptyList()
+    val liveRuns = transcript?.liveRunsIncluding(retainedRunIds).orEmpty().toSet()
     val pending = transcript?.pendingInputIds.orEmpty()
     if (pending.isEmpty() && previews.isEmpty()) {
-        return ConversationContent(conversationMessages(confirmed), emptyList())
+        val turns = conversationTurns(confirmed, liveRuns)
+        return ConversationContent(turns.messages, emptyList(), turns.completion)
     }
     val observed = previews.associateBy { it.eventId }
     val messages = mutableListOf<HistoryMessage>()
@@ -119,9 +124,13 @@ internal fun conversationContent(
         val entry = ConversationMessage(message, preview = preview)
         if (message.queued) queue += entry else local += entry
     }
+    val turns = conversationTurns(messages, liveRuns)
     return ConversationContent(
-        conversationMessages(messages) + local,
+        turns.messages + local,
         queue.sortedBy { it.message.queueSequence ?: Long.MAX_VALUE },
+        turns.completion.takeIf {
+            pending.isEmpty() && queue.isEmpty() && local.none { !it.message.rejected }
+        },
     )
 }
 
