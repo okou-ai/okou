@@ -34,7 +34,6 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -147,22 +146,23 @@ class ScreenshotScenario {
                                 device.hasObject(input)
                         }
                         check(!device.hasObject(retry) && !device.hasObject(skeleton))
-                        val bounds = checkNotNull(device.findObject(progress)).visibleBounds
-                        check(
-                            bounds.height() ==
-                                (4 * app.resources.displayMetrics.density).roundToInt(),
-                        )
+                        // Material 3 expands progress accessibility bounds vertically. Check the
+                        // painted track in the result image instead of using semantics height.
                         awaitActiveSegment(progress)
                     }
                     realtime.snapshot.value = RealtimeSnapshot(RealtimePhase.Unavailable)
                     showThirdFailure()
-                    check(checkNotNull(device.findObject(input)).visibleBounds == inputBounds)
-                    check(checkNotNull(device.findObject(editor)).visibleBounds == editorBounds)
+                    ScreenshotCapture.capture("02-cached-read-retrying.png")
+                    check(checkNotNull(device.findObject(input)).visibleBounds == inputBounds) {
+                        "Cached message moved when refresh feedback appeared"
+                    }
+                    check(checkNotNull(device.findObject(editor)).visibleBounds == editorBounds) {
+                        "Composer moved when refresh feedback appeared"
+                    }
                     check(
                         checkNotNull(device.findObject(progress)).visibleBounds.width() ==
                             device.displayWidth,
                     )
-                    ScreenshotCapture.capture("02-cached-read-retrying.png")
 
                     fun recoverHistory() {
                         historyStatus.set(200)
