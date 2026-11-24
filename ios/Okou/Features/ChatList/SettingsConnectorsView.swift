@@ -149,6 +149,7 @@ private struct SettingsConnectedConnectors: View {
         OkouIcon("chevron-right", size: OkouIconSize.inline)
           .foregroundStyle(OkouColor.mutedForeground).accessibilityHidden(true)
       }
+      .contentShape(Rectangle())
     }.buttonStyle(.plain).disabled(store.isSaving || store.uncertain)
   }
 
