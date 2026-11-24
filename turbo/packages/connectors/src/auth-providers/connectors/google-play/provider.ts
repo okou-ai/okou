@@ -6,7 +6,8 @@ import {
 } from "../../oauth/google";
 import { oauthRefreshResultToProviderResult } from "../../oauth/types";
 
-const ANDROID_PUBLISHER_SCOPE = "https://www.googleapis.com/auth/androidpublisher";
+const ANDROID_PUBLISHER_SCOPE =
+  "https://www.googleapis.com/auth/androidpublisher";
 
 export const googlePlayProvider: AuthCodeConnectorAuthProvider<"google-play"> =
   {
