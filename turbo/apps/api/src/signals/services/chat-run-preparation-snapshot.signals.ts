@@ -444,7 +444,8 @@ export function createChatRunPreparationSnapshot(
     }
     const thread = {
       ...joinedThread,
-      id: claim.chatThreadId,
+      // A published lease can retain the casing of the client-supplied UUID.
+      id: claim.chatThreadId.toLowerCase(),
       userId: bootstrap.userId,
       titled: row.titled,
     };
