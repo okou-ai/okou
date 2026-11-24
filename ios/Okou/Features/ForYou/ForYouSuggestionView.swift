@@ -418,16 +418,17 @@ private struct ForYouOptionButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     let shape = RoundedRectangle(cornerRadius: OkouRadius.control, style: .continuous)
     let pressed = configuration.isPressed
+    // The fill, its pressed state and the hairline all lie under the label, so the mark on the
+    // corner covers the border instead of letting it run through.
     configuration.label
-      .background(OkouColor.card, in: shape)
-      .overlay {
-        shape.fill(pressed ? OkouColor.statePressed : .clear).allowsHitTesting(false)
-      }
-      .overlay {
-        shape.strokeBorder(
-          pressed ? OkouColor.controlBorder : OkouColor.border, lineWidth: OkouSpace.hairline
-        )
-        .allowsHitTesting(false)
+      .background {
+        shape.fill(OkouColor.card)
+          .overlay { shape.fill(pressed ? OkouColor.statePressed : .clear) }
+          .overlay {
+            shape.strokeBorder(
+              pressed ? OkouColor.controlBorder : OkouColor.border, lineWidth: OkouSpace.hairline)
+          }
+          .allowsHitTesting(false)
       }
       .contentShape(shape)
       .scaleEffect(pressed && !reduceMotion ? Self.pressedScale : 1)
