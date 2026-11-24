@@ -1,7 +1,7 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { billingStatusContract } from "@okouai/api-contracts/contracts/billing";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
-import { hostedSiteSharingContract } from "@okouai/api-contracts/contracts/hosted-site-sharing";
+import { artifactSharingContract } from "@okouai/api-contracts/contracts/artifact-sharing";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -1179,19 +1179,19 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
     return respond(200, {
       shares: shared ? [{ id: shareId, email: account.email }] : [],
     });
   });
-  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+  context.mocks.api(artifactSharingContract.search, ({ query, respond }) => {
     expect(query.query.toLowerCase()).toContain("ta");
     return respond(200, { accounts: [account] });
   });
   context.mocks.api(
-    hostedSiteSharingContract.share,
+    artifactSharingContract.share,
     ({ body, params, respond }) => {
-      expect(params.siteId).toBe(siteId);
+      expect(params).toMatchObject({ kind: "site", id: siteId });
       expect(body.email).toBe(account.email);
       shared = true;
       return respond(200, {
@@ -1199,7 +1199,7 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
       });
     },
   );
-  context.mocks.api(hostedSiteSharingContract.remove, ({ params, respond }) => {
+  context.mocks.api(artifactSharingContract.remove, ({ params, respond }) => {
     expect(params.shareId).toBe(shareId);
     shared = false;
     return respond(200, { removed: shareId });
@@ -1210,13 +1210,14 @@ test("owners search accounts in Share, grant access, and remove a named viewer",
   const input = within(menu).getByRole("combobox", {
     name: "Share with people",
   });
+  const inviteButton = getButtonByName("Invite", menu);
   await fill(input, "Ta");
-  expect(getButtonByName("Invite", menu)).toBeDisabled();
+  expect(inviteButton).toBeDisabled();
   click(await screen.findByRole("option", { name: /Taylor Viewer/ }));
   await waitFor(() => {
     return expect(input).toHaveValue(account.email);
   });
-  click(getButtonByName("Invite", menu));
+  click(inviteButton);
   await waitFor(() => {
     expect(
       queryButtonByName(`Remove access for ${account.email}`, menu),
@@ -1243,15 +1244,15 @@ test("a complete email can be invited without a matching account and private acc
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
     return respond(200, { accounts: [] });
   });
-  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
     return respond(200, {
       shares: invited ? [{ id: shareId, email }] : [],
     });
   });
-  context.mocks.api(hostedSiteSharingContract.share, ({ body, respond }) => {
+  context.mocks.api(artifactSharingContract.share, ({ body, respond }) => {
     expect(body.email).toBe(email);
     invited = true;
     return respond(200, {
@@ -1265,11 +1266,12 @@ test("a complete email can be invited without a matching account and private acc
   const input = within(menu).getByRole("combobox", {
     name: "Share with people",
   });
+  const inviteButton = getButtonByName("Invite", menu);
   await fill(input, email);
   await screen.findByText(
     "No workspace matches. Enter a full email to invite.",
   );
-  click(getButtonByName("Invite", menu));
+  click(inviteButton);
   await expect(
     screen.findByText("Sharing invitation processed"),
   ).resolves.toBeInTheDocument();
@@ -1292,10 +1294,10 @@ test("a limited member search shows a recoverable message while complete email s
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
     return respond(200, { shares: [] });
   });
-  context.mocks.api(hostedSiteSharingContract.search, ({ query, respond }) => {
+  context.mocks.api(artifactSharingContract.search, ({ query, respond }) => {
     return query.query === "Taylor"
       ? respond(429, {
           error: {
@@ -1311,30 +1313,31 @@ test("a limited member search shows a recoverable message while complete email s
   const input = within(menu).getByRole("combobox", {
     name: "Share with people",
   });
+  const inviteButton = getButtonByName("Invite", menu);
   await fill(input, "Taylor");
-  await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
+  await expect(screen.findByRole("alert")).resolves.toHaveTextContent(
     "Member search is temporarily unavailable. Try again shortly.",
   );
-  expect(getButtonByName("Invite", menu)).toBeDisabled();
+  expect(inviteButton).toBeDisabled();
   await fill(input, "taylor@external.example");
-  await within(menu).findByText(
+  await screen.findByText(
     "No workspace matches. Enter a full email to invite.",
   );
   expect(within(menu).queryByRole("alert")).not.toBeInTheDocument();
-  expect(getButtonByName("Invite", menu)).toBeEnabled();
+  expect(inviteButton).toBeEnabled();
 });
 
 test("a limited invitation keeps its email draft and shows no success confirmation", async () => {
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "private", revision: null });
   });
-  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
     return respond(200, { shares: [] });
   });
-  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
     return respond(200, { accounts: [] });
   });
-  context.mocks.api(hostedSiteSharingContract.share, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.share, ({ respond }) => {
     return respond(429, {
       error: {
         code: "RATE_LIMITED",
@@ -1348,8 +1351,9 @@ test("a limited invitation keeps its email draft and shows no success confirmati
   const input = within(menu).getByRole("combobox", {
     name: "Share with people",
   });
+  const inviteButton = getButtonByName("Invite", menu);
   await fill(input, "taylor@external.example");
-  click(getButtonByName("Invite", menu));
+  click(inviteButton);
   await expect(within(menu).findByRole("alert")).resolves.toHaveTextContent(
     "Could not update sharing. Try again shortly.",
   );
@@ -1360,7 +1364,7 @@ test("a limited invitation keeps its email draft and shows no success confirmati
   expect(
     queryButtonByName("Remove access for taylor@external.example", menu),
   ).toBeUndefined();
-  expect(getButtonByName("Invite", menu)).toBeEnabled();
+  expect(inviteButton).toBeEnabled();
 });
 
 test("audience choices hide people controls and retain drafts and invitations", async () => {
@@ -1380,7 +1384,7 @@ test("audience choices hide people controls and retain drafts and invitations", 
     };
     return respond(200, status);
   });
-  context.mocks.api(hostedSiteSharingContract.list, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.list, ({ respond }) => {
     return respond(200, {
       shares: [
         {
@@ -1390,7 +1394,7 @@ test("audience choices hide people controls and retain drafts and invitations", 
       ],
     });
   });
-  context.mocks.api(hostedSiteSharingContract.search, ({ respond }) => {
+  context.mocks.api(artifactSharingContract.search, ({ respond }) => {
     return respond(200, { accounts: [] });
   });
   await openSite({ emailSharing: true });
@@ -1401,9 +1405,10 @@ test("audience choices hide people controls and retain drafts and invitations", 
     name: "Share with people",
   });
   await within(menu).findByRole("list", { name: "People with access" });
+  const workspace = permission("Workspace");
   await fill(input, "draft@example.com");
 
-  click(permission("Workspace"));
+  click(workspace);
   await expectPermission("Workspace");
   expect(
     within(menu).getByText("Default Org members and invited people"),

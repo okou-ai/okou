@@ -24,6 +24,11 @@ export interface TakenRunnerDispatch extends ReservedRunnerDispatch {
 export type RunnerDispatchEncoding = "identity" | "gzip";
 
 export interface RunnerDispatchTransport {
+  readonly request: (url: string, options: RequestInit) => Promise<Response>;
+  readonly poolStats?: (origin: string) => {
+    readonly connected: number;
+    readonly pending: number;
+  };
   readonly reserve: (
     runId: string,
     url: string,

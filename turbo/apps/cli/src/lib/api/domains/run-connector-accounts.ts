@@ -6,12 +6,15 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { getClientConfig, handleError } from "../core/client-factory";
 
-export async function listRunConnectorAccounts() {
+export async function listRunConnectorAccounts(includeApprovalScope = false) {
   const client = initClient(runConnectorAccountsContract, {
     ...(await getClientConfig()),
     validateResponse: true,
   });
-  const result = await client.list({ headers: {} });
+  const result = await client.list({
+    headers: {},
+    query: includeApprovalScope ? { includeApprovalScope: "true" } : {},
+  });
   if (result.status !== 200)
     handleError(result, "Failed to read this Run's Chat account access");
   return result.body;

@@ -36,6 +36,8 @@ final class ThreadActionsFixture: Sendable {
     var unread = true
     var archived = false
     var title = "Planning a useful week"
+    var parentStatus = 200
+    var snapshotIncludesThread = true
     var failNext: [String: Int] = [:]
     var nextGate: ThreadActionGate?
     var nextWriteRequested: (@Sendable () -> Void)?
@@ -199,11 +201,13 @@ final class ThreadActionsFixture: Sendable {
           "{\"id\":\"\(Self.thread)\",\"selectedModel\":null,\"modelSettings\":{},\"serviceTier\":null,\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
       )
     case "/api/chat-threads/\(Self.thread)/event-snapshot":
+      if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       return ChatHTTPResponse(
         status: 404,
         body:
           "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
     case "/api/chat-threads/\(Self.thread)/event-rows":
+      if state.value.withLock({ $0.parentStatus == 404 }) { return missingThread }
       let since =
         Int(
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
@@ -227,13 +231,19 @@ final class ThreadActionsFixture: Sendable {
         body:
           "{\"rows\":[\(rows)],\"cursor\":{\"lastEventId\":\"\(Self.messageID(2))\",\"lastSeqId\":2},\"hasMore\":false}"
       )
+    case "/api/chat-threads/\(Self.thread)/composer-draft":
+      return composerDraftResponse(request, state: state)
     case "/api/chat-threads/\(Self.thread)":
-      return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+      return parentResponse(state: state)
     case "/api/chat-threads/\(Self.thread)/connector-selections":
       return ChatHTTPResponse(body: "{\"selections\":[]}")
     case "/api/feature-switches":
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case "/api/chat-threads/snapshot":
+      if !state.value.withLock({ $0.snapshotIncludesThread }) {
+        return ChatHTTPResponse(
+          body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
+      }
       return ChatHTTPResponse(
         body:
           "{\"chatThreads\":[{\"id\":\"\(Self.thread)\",\"title\":\"Planning a useful week\",\"muted\":\(muted),\"createdAt\":\"\(Self.date)\",\"updatedAt\":\"\(Self.date)\",\"sortAt\":\"\(Self.date)\"}],\"latestEventId\":null,\"latestSeqId\":null}"
@@ -260,6 +270,40 @@ final class ThreadActionsFixture: Sendable {
         body: "{\"threads\":\(indicator),\"unreadAt\":\(unreadAt)}")
     default: throw URLError(.unsupportedURL)
     }
+  }
+
+  private static func composerDraftResponse(_ request: URLRequest, state: StateBox)
+    -> ChatHTTPResponse
+  {
+    if request.httpMethod == "PATCH" {
+      let missing = state.value.withLock { state in
+        if state.failNext.removeValue(forKey: "draft-save") == 404 { state.parentStatus = 404 }
+        return state.parentStatus == 404
+      }
+      return missing ? missingDraftParent : ChatHTTPResponse(status: 204, body: "")
+    }
+    if state.value.withLock({ $0.parentStatus == 404 }) { return missingDraftParent }
+    return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
+  }
+
+  private static var missingDraftParent: ChatHTTPResponse {
+    ChatHTTPResponse(
+      status: 404,
+      body: #"{"error":{"code":"CHAT_THREAD_NOT_FOUND","message":"Chat thread not found"}}"#)
+  }
+
+  private static func parentResponse(state: StateBox) -> ChatHTTPResponse {
+    let status = state.value.withLock { $0.parentStatus }
+    if status == 404 { return missingThread }
+    if status != 200 {
+      return ChatHTTPResponse(status: status, body: #"{"error":{"message":"Unavailable"}}"#)
+    }
+    return ChatHTTPResponse(body: "{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}")
+  }
+
+  private static var missingThread: ChatHTTPResponse {
+    ChatHTTPResponse(
+      status: 404, body: #"{"error":{"code":"NOT_FOUND","message":"Chat thread not found"}}"#)
   }
 
   func remote(kind: String, extra: String = "") {

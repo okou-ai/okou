@@ -474,6 +474,34 @@ fn overlapping_mount_is_rejected_before_stale_cleanup() {
 }
 
 #[test]
+fn packed_files_require_manifest_order_and_stop_after_a_batch_fails() {
+    let root = tempfile::tempdir().unwrap();
+    let first = root.path().join("first");
+    let second = root.path().join("second");
+    let manifest = serde_json::to_vec(&json!({"storageMounts": [
+        {"mountPath":first,"archiveUrl":storage_files::PACKED_BATCH_START_URL},
+        {"mountPath":second,"archiveUrl":storage_files::PACKED_BATCH_START_URL}
+    ]}))
+    .unwrap();
+    let files = files();
+    let first_group = (first.to_str().unwrap(), files.as_slice());
+    let second_group = (second.to_str().unwrap(), files.as_slice());
+    let reversed = storage_files::encode_input(&manifest, &[second_group, first_group]).unwrap();
+    assert!(!guest_storage_apply::run_storage_files_bytes(&reversed));
+    assert!(!first.exists());
+    assert!(!second.exists());
+
+    fs::create_dir_all(first.join("empty/child")).unwrap();
+    let ordered = storage_files::encode_input(&manifest, &[first_group, second_group]).unwrap();
+    assert!(!guest_storage_apply::run_storage_files_bytes(&ordered));
+    assert_eq!(
+        fs::read(first.join("nested/tool")).unwrap(),
+        b"final-content"
+    );
+    assert!(!second.exists());
+}
+
+#[test]
 fn failed_final_write_is_failure_without_rollback_or_archive_retry() {
     let root = tempfile::tempdir().unwrap();
     let target = root.path().join("mount");

@@ -131,7 +131,7 @@ test("initializes a fresh customer metadata Plan and replays without another pro
     tier: "limited-free-1",
     credits: 0,
     concurrencyLimit: 2,
-    canBuyCredits: false,
+    canBuyCredits: true,
     canBuyConcurrency: false,
     showUsagePack: false,
     autoRechargeAllowed: false,

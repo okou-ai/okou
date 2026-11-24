@@ -428,12 +428,12 @@ final class ComposerDraftTests: XCTestCase {
     }
     let opening = Task { await composer.synchronize() }
     await fulfillment(of: [started], timeout: 2)
-    composer.setForeground(false)
+    composer.setScenePhase(.background)
     composer.text = "Edit retained while synchronization is paused"
     await composer.synchronize()
     XCTAssertEqual(server.state.value.withLock { $0.remote }, ComposerDraft())
 
-    composer.setForeground(true)
+    composer.setScenePhase(.active)
     await composer.synchronize()
     gate.open()
     await opening.value

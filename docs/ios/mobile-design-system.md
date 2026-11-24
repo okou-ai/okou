@@ -1046,20 +1046,10 @@ feature; the catalog shows each one.
   controllers, and native Form/List row chrome retain platform interaction and
   material behavior. Product labels and supplied menu icons use the shared
   typography/assets where the public API permits it.
-- With Return set to Send, a composer's key follows only its own editor's text, as in
-  any native field: automatic disabling stays on, and UIKit enables the key as the
-  user types. Quotes, attachments, and send readiness never change keyboard traits;
-  the toolbar's Send reflects them. iOS can retain a disabled Return key after
-  programmatic text insertion or when automatic disabling is turned off, despite
-  `reloadInputViews()`, and the only refresh is restarting the input session, which
-  puts the keyboard away and brings it back. The owning editor restarts only after
-  inserting text programmatically or when an empty editor leaves Send, and returns
-  focus to the same view. Defer this refresh until marked-text composition settles;
-  preserve the document, selection, and undo history rather than replacing text or
-  overriding `hasText`. Skip it while a sheet or cover is presented over the editor:
-  UIKit has put the keyboard away with the editor still first responder, a reload
-  would bring the keyboard back over that presentation, and the keyboard takes the
-  current traits when UIKit returns it.
+- The chat composer uses the native multiline Return key. The toolbar Send button
+  submits the draft. Accepting a follow-up inserts editable text in the same
+  keyboard session. The active input method and suggestion lists own candidate
+  confirmation.
 - First-party authentication uses native provider, email, code, password, and
   required-profile steps, composed from shared controls. Provider availability,
   required fields, verification, transport, OAuth, and session authority come from

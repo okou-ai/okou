@@ -49,6 +49,7 @@
     <string name="artifact_open_website">Buka di browser</string>
     <string name="artifact_browser_unavailable">Browser tidak dapat dibuka</string>
     <string name="artifact_play_media">Pemutaran media</string>
+    <string name="artifact_play">Putar</string>
     <string name="artifact_catalog_access_denied">Anda tidak memiliki akses ke katalog artefak ini</string>
     <string name="artifact_catalog_missing">Katalog artefak ini sudah tidak tersedia</string>
     <string name="chat_resources_related">Chat terkait</string>

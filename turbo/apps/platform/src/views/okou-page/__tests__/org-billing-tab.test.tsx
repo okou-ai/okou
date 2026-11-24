@@ -2708,6 +2708,35 @@ test("Show billing controls according to plan capabilities", async () => {
   });
 });
 
+test("Buy credits on Free without enabling automatic top-ups or concurrency purchases", async () => {
+  const billingStory = mockBillingStory(noActiveBillingStatus());
+  await openBillingTab();
+
+  await expect(
+    screen.findByRole("heading", { name: "Buy credits" }),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Enable auto-recharge"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "Concurrency" }),
+  ).not.toBeInTheDocument();
+
+  click(buttonByText("Quick buy $20.00"));
+
+  await waitFor(() => {
+    expect(window.location.href).toBe(
+      "https://billing.stripe.com/checkout/credit-purchase",
+    );
+  });
+  expect(billingStory.creditCheckoutRequest()).toMatchObject({
+    credits: 20_000,
+  });
+  expect(billingStory.creditCheckoutRequest()).not.toHaveProperty(
+    "autoRecharge",
+  );
+});
+
 test("Manage workspace payment methods in Stripe", async () => {
   context.mocks.data.org({
     id: "org_1",

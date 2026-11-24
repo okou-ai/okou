@@ -31,6 +31,8 @@
     <string name="auth_signing_out">ログアウトしています…</string>
     <string name="auth_workspace">現在のワークスペース</string>
     <string name="auth_switch_workspace">ワークスペースを切り替え</string>
+    <string name="auth_switch_workspace_pending">ワークスペースを切り替え中</string>
+    <string name="auth_switch_workspace_failed">このワークスペースに切り替えられませんでした。</string>
     <string name="auth_browser_unavailable">ワークスペースの設定を開くにはブラウザをインストールしてください。</string>
     <string name="preference_color_theme">カラーテーマ</string>
     <string name="preference_language">言語</string>

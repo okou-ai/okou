@@ -104,8 +104,8 @@ def wait(kind):
     repo = os.environ["GITHUB_REPOSITORY"]
     run = os.environ["GITHUB_RUN_ID"]
     attempt = os.environ["GITHUB_RUN_ATTEMPT"]
-    # Actions metadata records the PR tip. Checkout and artifact names use the merge SHA.
-    pr_head = os.environ["PR_HEAD_SHA"]
+    # PR metadata uses the branch tip; queue metadata uses the tested merge commit.
+    run_head = os.environ["RUN_HEAD_SHA"]
     checkout = os.environ["GITHUB_SHA"]
     base = f"repos/{repo}/actions/runs/{run}"
     producer = "test-packages" if kind == "products" else "prepare-package-sources"
@@ -125,11 +125,11 @@ def wait(kind):
         if matching:
             job = matching[0]
             if (
-                job["head_sha"] != pr_head
+                job["head_sha"] != run_head
                 or str(job["run_id"]) != run
                 or str(job["run_attempt"]) != attempt
             ):
-                raise ValueError("Producer identity does not match this PR run attempt")
+                raise ValueError("Producer identity does not match this run attempt")
             # Source artifacts keep their name across reruns. Wait for this attempt
             # to replace the previous upload before downloading by name.
             if kind == "sources" and job["conclusion"] != "success":
@@ -145,8 +145,8 @@ def wait(kind):
                 raise ValueError("Ambiguous input artifact")
             if live:
                 origin = live[0]["workflow_run"]
-                if str(origin["id"]) != run or origin["head_sha"] != pr_head:
-                    raise ValueError("Artifact identity does not match this PR run")
+                if str(origin["id"]) != run or origin["head_sha"] != run_head:
+                    raise ValueError("Artifact identity does not match this run")
                 print(
                     f"Receiving {name} from {producer}, artifact {live[0]['id']}",
                     flush=True,

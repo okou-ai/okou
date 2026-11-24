@@ -288,7 +288,10 @@ final class ChatClientTests: XCTestCase {
         let events =
           current && chatQueryValue("sinceSeqId", in: request) == nil
           ? (1...101).map {
-            threadEventJSON(seq: $0, kind: "renamed", thread: fixtureThread, title: "Event \($0)")
+            $0 == 101
+              ? threadEventJSON(seq: $0, kind: "deleted", thread: deletedThread)
+              : threadEventJSON(
+                seq: $0, kind: "renamed", thread: fixtureThread, title: "Event \($0)")
           }
           : []
         return ChatHTTPResponse(
@@ -309,6 +312,13 @@ final class ChatClientTests: XCTestCase {
     let result = try await sync.threadsWithIndicators()
     XCTAssertEqual(result.threads.first?.title, "Compacted title")
     XCTAssertEqual(result.eventIDs, Set((1...101).map(eventIdentity)))
+    // A notification extension can commit this snapshot before the app ever sees the deletion.
+    let cached = await sync.cachedThreadList()
+    XCTAssertEqual(cached?.deletedThreadIDs, [deletedThread])
+    XCTAssertEqual(cached?.removalsToAcknowledge, [deletedThread])
+    await sync.acknowledgeRemovedThreads([deletedThread])
+    let acknowledged = await sync.cachedThreadList()
+    XCTAssertEqual(acknowledged?.deletedThreadIDs, [])
   }
 
 }

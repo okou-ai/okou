@@ -62,7 +62,12 @@ final class AttachmentFlowFixture: Sendable {
       case "/api/workflows/for-composer":
         guard let workflows else { throw URLError(.unsupportedURL) }
         return try await workflows(request)
-      case "/api/chat-threads/\(Self.threadID)/draft":
+      case "/api/chat-threads/\(Self.threadID)/composer-draft":
+        if request.httpMethod == "PATCH" {
+          let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
+          state.value.withLock { $0.draft = draft }
+          return ChatHTTPResponse(status: 204, body: "")
+        }
         await draftRead()
         return try ChatHTTPResponse(
           json: state.value.withLock { $0.draft })
@@ -95,11 +100,6 @@ final class AttachmentFlowFixture: Sendable {
       case let path where path.hasSuffix("/event-rows"):
         return try Self.historyResponse(request, state: state)
       case "/api/chat-threads/\(Self.threadID)":
-        if request.httpMethod == "PATCH" {
-          let draft = try JSONDecoder().decode(ComposerDraft.self, from: chatRequestBody(request))
-          state.value.withLock { $0.draft = draft }
-          return ChatHTTPResponse(status: 204, body: "")
-        }
         return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case "/api/chat/events":
         return await Self.sendResponse(

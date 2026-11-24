@@ -174,6 +174,7 @@ internal fun ConnectorAuthorizationSheet(
                 else R.string.connector_open_provider
             is ConnectorAuthorization.Device -> R.string.connector_continue_provider
             is ConnectorAuthorization.External -> R.string.connector_submit_code
+            is ConnectorAuthorization.DeviceVerification,
             is ConnectorAuthorization.Receipt -> R.string.connector_verify_authorization
             null ->
                 when (method?.grantKind) {
@@ -186,6 +187,7 @@ internal fun ConnectorAuthorizationSheet(
     val canSubmit =
         when (step) {
             is ConnectorAuthorization.Receipt -> canDismiss
+            is ConnectorAuthorization.DeviceVerification -> canDismiss && !offline
             is ConnectorAuthorization.External -> canContinue && code.text.trim().length in 1..4096
             null ->
                 canModify &&
@@ -215,6 +217,7 @@ internal fun ConnectorAuthorizationSheet(
                     is ConnectorAuthorization.Device -> continueInBrowser()
                     is ConnectorAuthorization.External ->
                         model.completeExternal(code.text.toString())
+                    is ConnectorAuthorization.DeviceVerification,
                     is ConnectorAuthorization.Receipt -> model.checkAuthorization()
                     null ->
                         if (method != null) {
@@ -304,6 +307,7 @@ internal fun ConnectorAuthorizationSheet(
                     secret = true,
                 )
             }
+            is ConnectorAuthorization.DeviceVerification,
             is ConnectorAuthorization.Receipt -> Unit
         }
         ConnectorActionFeedback(action)

@@ -31,6 +31,8 @@
     <string name="auth_signing_out">Cerrando sesión…</string>
     <string name="auth_workspace">Espacio de trabajo actual</string>
     <string name="auth_switch_workspace">Cambiar de espacio de trabajo</string>
+    <string name="auth_switch_workspace_pending">Cambiando de espacio de trabajo</string>
+    <string name="auth_switch_workspace_failed">No se pudo cambiar a este espacio de trabajo.</string>
     <string name="auth_browser_unavailable">Instala un navegador para configurar el espacio de trabajo.</string>
     <string name="preference_color_theme">Tema de color</string>
     <string name="preference_language">Idioma</string>

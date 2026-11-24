@@ -24,6 +24,10 @@ export function artifactVisibilityUnavailable() {
   );
 }
 
+export function chatThreadNotFound() {
+  return httpError(404, "CHAT_THREAD_NOT_FOUND", "Chat thread not found");
+}
+
 export function notFound(message: string) {
   return httpError(404, "NOT_FOUND", message);
 }

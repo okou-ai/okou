@@ -24,6 +24,7 @@ final class ComposerConnectorStore {
   private(set) var pendingOptions = ChatComposerOptions()
   private let authorizationService: ChatConnectorService
   private let managementEnabled: @MainActor () -> Bool
+  private let memberAccessEnabled: @MainActor () -> Bool
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
   private(set) var resources: ComposerConnectorResources?
@@ -50,6 +51,7 @@ final class ComposerConnectorStore {
     service: ChatComposerAccess, authorizationService: ChatConnectorService, webURL: URL,
     threadID: String? = nil, includesRemote: Bool = true,
     managementEnabled: @escaping @MainActor () -> Bool = { false },
+    memberAccessEnabled: @escaping @MainActor () -> Bool = { false },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -62,12 +64,22 @@ final class ComposerConnectorStore {
     self.threadID = threadID
     self.includesRemote = includesRemote
     self.managementEnabled = managementEnabled
+    self.memberAccessEnabled = memberAccessEnabled
     self.didFail = didFail
     resources = makeResources()
   }
 
   var canSend: Bool { !isSaving && !uncertain }
   var canManageAccounts: Bool { managementEnabled() }
+  var usesMemberAccess: Bool { memberAccessEnabled() }
+  var submissionOptions: ChatComposerOptions {
+    guard usesMemberAccess else { return pendingOptions }
+    var options = pendingOptions
+    // The only client-written selections currently come from legacy draft overrides.
+    options.initialConnectorAccessOverrides = []
+    options.connectorSelections = []
+    return options
+  }
   // This Task owns write-confirmation orchestration, not the Views’ resource phase.
   var isRefreshing: Bool { refreshTask != nil }
   var isUpdatingAccounts: Bool { accountWrite != nil }
@@ -131,13 +143,13 @@ final class ComposerConnectorStore {
     let request = generation
     return ComposerConnectorResources(
       service: service, threadID: threadID, options: pendingOptions,
-      includesRemote: includesRemote,
+      includesRemote: includesRemote, memberAccessEnabled: memberAccessEnabled,
       sleep: readRetrySleep,
       didLoadConnected: { [weak self] entries in
         guard let self, !closed, request == generation else { return }
         // Confirmed business values are also consumed by drafts and account actions.
         connectors = entries
-        if threadID == nil {
+        if threadID == nil && !usesMemberAccess {
           let touched = Set(
             pendingOptions.connectorSelections.map { $0.target.key }
               + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
@@ -243,7 +255,7 @@ final class ComposerConnectorStore {
   func setAccountAccess(
     target: ChatConnectorTarget, connectionID: String, enabled: Bool?
   ) async {
-    guard !closed, !isSaving else { return }
+    guard !closed, !isSaving, !usesMemberAccess else { return }
     if let threadID {
       await perform {
         try await service.setConnectorAccess(
@@ -411,8 +423,14 @@ final class ComposerConnectorStore {
         guard canManageAccounts else { return }
         await perform { try await service.disconnectAccount(target: target, connectionID: id) }
       case .defaultEnabled(let id, let enabled):
+        guard !usesMemberAccess else { return }
         await perform {
           try await service.setDefaultEnabled(target: target, connectionID: id, enabled: enabled)
+        }
+      case .policy(let id, let policy):
+        guard usesMemberAccess else { return }
+        await perform {
+          try await service.setAccountPolicy(target: target, connectionID: id, policy: policy)
         }
       }
       guard !closed, !Task.isCancelled, request == generation else { return }

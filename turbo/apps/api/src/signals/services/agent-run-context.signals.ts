@@ -55,7 +55,6 @@ import { QueryBuilder } from "drizzle-orm/pg-core";
 import { db$ } from "../external/db";
 
 import { createConnectorRuntimeSelection } from "./connector-catalog-entries.service";
-import { expandConnectorServerFirewallPolicies } from "./connector-server-firewall-catalog.service";
 import { buildAgentRunVariables } from "./agent-run-variables";
 import type { PaidToolId } from "@okouai/api-contracts/contracts/paid-tools";
 import {
@@ -669,7 +668,7 @@ const bootstrapVariablesDecoder = zodDriverValueDecoder(
     object({
       name: string(),
       value: string(),
-      userId: string(),
+      isOrg: boolean(),
     }),
   ),
 );
@@ -842,7 +841,6 @@ function createAgentEnvironment(
     const materialize = connectorContextDuration(materializeStartedAt);
     return {
       ...snapshot,
-      builtin: first.builtin,
       custom: first.custom,
       permissions: first.permissions,
       threadSources: first.threadSources,
@@ -897,7 +895,7 @@ function bootstrapVariableSnapshot(
       .select({
         values: sql`jsonb_agg(jsonb_build_object(
         'name', ${rows.name}, 'value', ${rows.value},
-        'userId', ${rows.userId}
+        'isOrg', ${eq(rows.userId, ORG_SENTINEL_USER_ID)}
       ))`
           .mapWith(nullableDriverValueDecoder(bootstrapVariablesDecoder))
           .as("user_variable_values"),
@@ -1003,30 +1001,12 @@ function createConnectorContext(
     };
   });
   const permissionPolicies$ = computed(async (get) => {
-    const [grants, { scope }, catalog] = await Promise.all([
-      get(permissionGrants$),
-      get(connectorSelection$),
-      get(catalog$),
-    ]);
-    const stored = permissionGrantsToFirewallPolicies(
+    const grants = await get(permissionGrants$);
+    return permissionGrantsToFirewallPolicies(
       grants.map(({ connectorSlug, permission, action }) => {
         return { connectorSlug, permission, action };
       }),
     );
-    if (
-      scope.allowedConnectorSlugs.length === 0 &&
-      scope.allowedCustomConnectorIds.length === 0
-    ) {
-      return stored;
-    }
-    if (!catalog) {
-      throw new Error("Scoped connector catalog is missing from bootstrap");
-    }
-    return await expandConnectorServerFirewallPolicies({
-      catalog: catalog.serverFirewalls,
-      stored,
-      connectorSlugs: [...scope.allowedConnectorSlugs],
-    });
   });
   return {
     threadConnectorSources$,

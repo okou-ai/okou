@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.17](https://github.com/okou-ai/okou/compare/runner-host-v0.12.16...runner-host-v0.12.17) (2026-11-24)
+
+## [0.12.16](https://github.com/okou-ai/okou/compare/runner-host-v0.12.15...runner-host-v0.12.16) (2026-11-24)
+
+
+### Refactoring
+
+* **rust:** share test process session retirement ([#50511](https://github.com/okou-ai/okou/issues/50511)) ([7c9025a](https://github.com/okou-ai/okou/commit/7c9025af98e840271151001a11aa98a8ea7c76cc))
+
 ## [0.12.15](https://github.com/okou-ai/okou/compare/runner-host-v0.12.14...runner-host-v0.12.15) (2026-11-24)
 
 ## [0.12.14](https://github.com/okou-ai/okou/compare/runner-host-v0.12.13...runner-host-v0.12.14) (2026-11-23)

@@ -12,6 +12,7 @@ import ai.okou.android.chat.ChatChanges
 import ai.okou.android.chat.ConversationHistorySync
 import android.app.Activity
 import android.content.Intent
+import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Looper
 import android.os.SystemClock
@@ -20,6 +21,7 @@ import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.widget.VideoView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -52,9 +54,13 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.width
 import androidx.core.view.children
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.ByteArrayOutputStream
@@ -64,6 +70,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.math.abs
 import kotlinx.coroutines.runBlocking
 import okhttp3.mockwebserver.MockResponse
 import org.junit.After
@@ -699,6 +706,26 @@ internal class ArtifactCatalogReadRootTest : ArtifactCatalogRootTestFixture() {
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = ChatListApplication::class)
 internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
     @Test
+    fun catalogUsesTheDesignedDateSpacingAndRowAlignment() {
+        val fixture = ArtifactApiFixture(app.fixture)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        awaitText(fixture.checklist.title)
+
+        val first = compose.onNodeWithText(fixture.checklist.title).getUnclippedBoundsInRoot()
+        val title =
+            compose
+                .onNodeWithText(fixture.checklist.title, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+        val nextDay = compose.onNodeWithText("Yesterday").getUnclippedBoundsInRoot()
+        assertTrue(first.height >= 80.dp)
+        assertEquals(8.dp, title.top - first.top)
+        assertEquals(16.dp, nextDay.top - first.bottom)
+    }
+
+    @Test
     fun firstDisplayAndSourceReturnUseTheNativeCatalogAndReferenceAuthority() {
         val fixture = ArtifactApiFixture(app.fixture)
         fixture.install()
@@ -725,6 +752,16 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         compose.onNodeWithText("Yesterday").assertDoesNotExist()
         compose.onNodeWithText(fixture.summary.title).performClick()
         awaitText("Preview only", partial = true)
+        val previewTitleLayouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithTag("artifact_preview_title").performSemanticsAction(
+            SemanticsActions.GetTextLayoutResult,
+        ) {
+            it(previewTitleLayouts)
+        }
+        val titleStyle = previewTitleLayouts.single().layoutInput.style
+        assertEquals(22.sp, titleStyle.fontSize)
+        assertEquals(28.sp, titleStyle.lineHeight)
+        assertEquals(FontWeight.SemiBold, titleStyle.fontWeight)
         compose.onNodeWithText("Save file").assertDoesNotExist()
         compose
             .onNodeWithText("View source conversation")
@@ -1017,6 +1054,7 @@ internal class ArtifactCatalogRootTest : ArtifactCatalogRootTestFixture() {
         assertTrue(fixture.requestedReferences.isEmpty())
         compose.onNodeWithText(fixture.summary.title).assertHeightIsAtLeast(60.dp).performClick()
         awaitText("Preview only", partial = true)
+        compose.onNodeWithText("Artifact preview").assertIsDisplayed()
         compose.onNodeWithText("Save file").assertDoesNotExist()
         assertEquals(1, fixture.requestedReferences.size)
         assertTrue(fixture.catalogScopes.isEmpty())
@@ -1221,7 +1259,90 @@ internal class ArtifactPreviewRootTest : ArtifactCatalogRootTestFixture() {
         awaitText(fixture.image.title)
         compose.onNodeWithText(fixture.image.title).performClick()
         awaitText("No preview is available for this file")
+        val frame = compose.onNodeWithTag("artifact_preview_surface").getUnclippedBoundsInRoot()
+        val status =
+            compose
+                .onNodeWithText("No preview is available for this file")
+                .getUnclippedBoundsInRoot()
+        assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
+        val frameCenter = frame.top + frame.height / 2
+        val statusCenter = status.top + status.height / 2
+        assertTrue(abs((statusCenter - frameCenter).value) <= 1)
     }
+
+    @Test
+    fun mediaStartsOnlyAfterPlayAndKeepsItsFrameWhenPlaybackFails() {
+        val videoTitle = openVideoPreview()
+
+        val surface = compose.onNodeWithTag("artifact_preview_surface")
+        val frame = surface.getUnclippedBoundsInRoot()
+        assertTrue(abs(frame.height.value - frame.width.value * 9 / 16) <= 1)
+        assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+        compose.onNodeWithText("Play").assertHeightIsAtLeast(48.dp).performClick()
+        val view =
+            checkNotNull(
+                compose.runOnIdle { compose.activity.window.decorView.videoPreview() },
+            )
+        assertTrue(compose.runOnIdle { view.isPlaying })
+        assertEquals(frame, surface.getUnclippedBoundsInRoot())
+
+        compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+        assertTrue(compose.runOnIdle { !view.isPlaying })
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        assertTrue(compose.runOnIdle { !view.isPlaying })
+
+        compose.runOnIdle {
+            shadowOf(view).onErrorListener.onError(null, MediaPlayer.MEDIA_ERROR_UNKNOWN, 0)
+        }
+        awaitText("Temporarily unable to load preview")
+        assertEquals(frame, surface.getUnclippedBoundsInRoot())
+        assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+        compose.onNodeWithContentDescription("Back to artifacts").performClick()
+        compose.onNodeWithText(videoTitle).assertIsDisplayed()
+        compose.onNodeWithText("Videos").assertIsSelected()
+    }
+
+    @Test
+    fun mediaDoesNotStartWhenThePlayFrameArrivesAfterPause() {
+        openVideoPreview()
+        val scenario = compose.activityRule.scenario
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText("Play").performClick()
+            assertNull(compose.runOnIdle { compose.activity.window.decorView.videoPreview() })
+            scenario.moveToState(Lifecycle.State.STARTED)
+            compose.mainClock.advanceTimeByFrame()
+            val view =
+                checkNotNull(
+                    compose.runOnIdle { compose.activity.window.decorView.videoPreview() },
+                )
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.runOnIdle { assertTrue(!view.isPlaying) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun openVideoPreview(): String {
+        val fixture = ArtifactApiFixture(app.fixture, includeVideo = true)
+        fixture.install()
+        app.responseGate.countDown()
+        awaitText(fixture.sourceTitle)
+        compose.onNodeWithContentDescription("Artifacts").performClick()
+        compose.onNodeWithText("Videos").performClick()
+        awaitText(fixture.video.title)
+        compose.onNodeWithText(fixture.video.title).performClick()
+        awaitText("Play")
+        return fixture.video.title
+    }
+
+    private fun View.videoPreview(): VideoView? =
+        when (this) {
+            is VideoView -> this
+            is ViewGroup -> children.firstNotNullOfOrNull { it.videoPreview() }
+            else -> null
+        }
 
     @Test
     @GraphicsMode(GraphicsMode.Mode.NATIVE)

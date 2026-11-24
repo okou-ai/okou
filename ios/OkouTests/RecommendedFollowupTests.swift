@@ -68,7 +68,7 @@ final class RecommendedFollowupTests: XCTestCase {
     let conversation = fixture.conversation()
     defer { conversation.close() }
     let state = conversation.composer
-    let prompt = "Compare the alternatives"
+    let prompt = "Compare the alternatives and explain which option best fits our release schedule"
     let host = UIHostingController(
       rootView: StoreProvider(state.store) {
         FollowupComposerHarness(state: state, followup: prompt)
@@ -76,6 +76,8 @@ final class RecommendedFollowupTests: XCTestCase {
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
+    XCTAssertEqual(input.placeholder.numberOfLines, 1)
+    XCTAssertEqual(input.placeholder.lineBreakMode, .byTruncatingTail)
     XCTAssertTrue(conversation.draft.isEmpty)
     state.editor.acceptFollowup("A different thread's suggestion")
     XCTAssertTrue(conversation.draft.isEmpty)
@@ -84,7 +86,9 @@ final class RecommendedFollowupTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     input.insertText(" ")
     input.insertText("please")
-    XCTAssertEqual(conversation.draft, prompt + " please")
+    input.insertText("\n")
+    input.insertText("Second line")
+    XCTAssertEqual(conversation.draft, prompt + " please\nSecond line")
 
     replaceInput("", in: input)
     input.insertText(" ")

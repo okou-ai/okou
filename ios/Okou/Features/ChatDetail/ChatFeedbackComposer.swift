@@ -1,4 +1,3 @@
-import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -14,8 +13,6 @@ struct ChatFeedbackComposer: View {
   var followup: String?
   var showsTrailingParagraph = true
   var expanded = false
-  var returnKeyPreference = ComposerReturnKeyPreference.newline
-  var submitFromKeyboard: (@MainActor () -> Void)?
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
 
@@ -93,9 +90,7 @@ struct ChatFeedbackComposer: View {
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   followup: block.isFeedback ? nil : followup,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
-                  expanded: expanded || presentation.draft.document.hasFeedback || isFocused,
-                  returnKeyPreference: returnKeyPreference,
-                  submitFromKeyboard: submitFromKeyboard
+                  expanded: expanded || presentation.draft.document.hasFeedback || isFocused
                 )
               }
               .id(block.id)

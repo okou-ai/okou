@@ -251,7 +251,7 @@ async fn assert_early_storage_lifecycle(split: bool) {
             );
         }
         if failure != "hard" && publication.is_none() {
-            application.release_many(if split { 4 } else { 1 });
+            application.release_many(if split { 2 } else { 1 });
         }
         let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
             .await
@@ -263,18 +263,18 @@ async fn assert_early_storage_lifecycle(split: bool) {
             assert!(outcome.storage_fingerprints.storages["/mnt/pending"].matches("pending", "v1"));
             if split {
                 let batches = overrides.storage_manifest_calls();
-                assert_eq!(batches.len(), 5);
-                for call in &batches[2..] {
-                    let (json, payload) =
-                        guest_contracts::storage_files::split_input(&call.manifest_json).unwrap();
-                    let manifest: guest_contracts::storage_manifest::Manifest =
-                        serde_json::from_slice(json).unwrap();
-                    assert!(manifest.cleanup_paths.is_empty());
-                    assert!(manifest.instruction_cleanups.is_empty());
-                    assert!(manifest.archive_readiness.is_none());
-                    let groups = guest_contracts::storage_files::decode(payload).unwrap();
-                    assert_eq!(groups.len(), 1);
-                    assert_eq!(groups[0].files[0].content, b"content");
+                assert_eq!(batches.len(), 3);
+                let (json, payload) =
+                    guest_contracts::storage_files::split_input(&batches[2].manifest_json).unwrap();
+                let manifest: guest_contracts::storage_manifest::Manifest =
+                    serde_json::from_slice(json).unwrap();
+                assert!(manifest.cleanup_paths.is_empty());
+                assert!(manifest.instruction_cleanups.is_empty());
+                assert!(manifest.archive_readiness.is_none());
+                let groups = guest_contracts::storage_files::decode(payload).unwrap();
+                assert_eq!(groups.len(), 3);
+                for group in groups {
+                    assert_eq!(group.files[0].content, b"content");
                 }
             }
         } else {

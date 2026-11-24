@@ -19,15 +19,12 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.core.graphics.ColorUtils
 
 internal val LocalActivityStatusColor = staticCompositionLocalOf { Color(0xFFB5790C) }
-internal val LocalUndoActionColor = staticCompositionLocalOf { Color.Unspecified }
 internal val LocalOkouDarkMode = staticCompositionLocalOf { false }
 
 internal fun activityStatusColor(palette: UserPreferencesColorTheme, dark: Boolean): Color =
@@ -61,14 +58,6 @@ fun OkouTheme(
     val resolved =
         remember(context, configuration, dark, palette) { resolvePalette(context, dark, palette) }
     val colors = resolved.scheme
-    val undoAction =
-        Color(
-            ColorUtils.blendARGB(
-                colors.background.toArgb(),
-                activityStatusColor(palette, !dark).toArgb(),
-                0.5f,
-            ),
-        )
     val font = remember { FontFamily(Font(R.font.geist)) }
     val typography = remember { Typography() }
     MaterialTheme(
@@ -94,7 +83,6 @@ fun OkouTheme(
         content = {
             CompositionLocalProvider(
                 LocalActivityStatusColor provides activityStatusColor(palette, dark),
-                LocalUndoActionColor provides undoAction,
                 LocalOkouDarkMode provides dark,
                 LocalTextSelectionColors provides
                     TextSelectionColors(
@@ -143,8 +131,10 @@ internal fun resolvePalette(
         check(value.type in TypedValue.TYPE_FIRST_COLOR_INT..TypedValue.TYPE_LAST_COLOR_INT)
         return Color(value.data)
     }
+    val background = role(R.attr.okou_palette_background)
     val surface = role(R.attr.okou_palette_card)
     val onSurface = role(R.attr.okou_palette_card_foreground)
+    val inverseAccent = activityStatusColor(palette, !dark)
     fun mixOutline(foreground: Float, background: Float) = foreground * 0.64f + background * 0.36f
     val colors =
         (if (dark) darkColorScheme() else lightColorScheme()).copy(
@@ -153,21 +143,21 @@ internal fun resolvePalette(
             primaryContainer = role(R.attr.okou_palette_accent),
             onPrimaryContainer = role(R.attr.okou_palette_accent_foreground),
             secondary = role(R.attr.okou_palette_foreground),
-            onSecondary = role(R.attr.okou_palette_background),
+            onSecondary = background,
             secondaryContainer = role(R.attr.okou_palette_accent),
             onSecondaryContainer = role(R.attr.okou_palette_accent_foreground),
             tertiary = role(R.attr.okou_palette_primary),
             onTertiary = role(R.attr.okou_palette_primary_foreground),
             tertiaryContainer = role(R.attr.okou_palette_muted),
             onTertiaryContainer = role(R.attr.okou_palette_foreground),
-            background = role(R.attr.okou_palette_background),
+            background = background,
             onBackground = role(R.attr.okou_palette_foreground),
             surface = surface,
             onSurface = onSurface,
             surfaceVariant = role(R.attr.okou_palette_muted),
             onSurfaceVariant = role(R.attr.okou_palette_muted_foreground),
             surfaceTint = role(R.attr.okou_palette_primary),
-            surfaceContainerLowest = role(R.attr.okou_palette_background),
+            surfaceContainerLowest = background,
             surfaceContainerLow = surface,
             surfaceContainer = role(R.attr.okou_palette_muted),
             surfaceContainerHigh = role(R.attr.okou_palette_muted),
@@ -184,8 +174,13 @@ internal fun resolvePalette(
             errorContainer = role(R.attr.okou_palette_muted),
             onErrorContainer = role(R.attr.okou_palette_destructive),
             inverseSurface = role(R.attr.okou_palette_foreground),
-            inverseOnSurface = role(R.attr.okou_palette_background),
-            inversePrimary = role(R.attr.okou_palette_primary),
+            inverseOnSurface = background,
+            inversePrimary =
+                Color(
+                    red = (background.red + inverseAccent.red) * 0.5f,
+                    green = (background.green + inverseAccent.green) * 0.5f,
+                    blue = (background.blue + inverseAccent.blue) * 0.5f,
+                ),
         )
     return PaletteColors(
         colors,

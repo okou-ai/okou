@@ -6,6 +6,7 @@ use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
 };
+use guest_contracts::storage_files::{PACKED_BATCH_FILE_URL, PACKED_BATCH_START_URL};
 use guest_contracts::storage_paths::normalize_path;
 use guest_telemetry::{log_error, log_info};
 use std::any::Any;
@@ -51,6 +52,17 @@ impl<'input> DownloadTask<'input> {
 
     pub(crate) fn mount_path(&self) -> &str {
         &self.mount_path
+    }
+
+    fn log_progress(&self) -> bool {
+        // Packed decoded requests keep batch progress and per-mount result
+        // metrics. Avoid synchronous stderr and system-log writes for the
+        // start and successful completion of every decoded mount.
+        self.files.is_none()
+            || !matches!(
+                self.url.as_str(),
+                PACKED_BATCH_START_URL | PACKED_BATCH_FILE_URL
+            )
     }
 
     pub(crate) fn set_files(
@@ -177,12 +189,14 @@ impl<'input> StartedDownload<'input> {
         #[cfg(target_os = "linux")] paired_inflater: Option<usize>,
     ) -> Self {
         let start = Instant::now();
-        log_info!(
-            LOG_TAG,
-            "Downloading {} to {}",
-            download.task.task.label,
-            download.task.task.mount_path
-        );
+        if download.task.task.log_progress() {
+            log_info!(
+                LOG_TAG,
+                "Downloading {} to {}",
+                download.task.task.label,
+                download.task.task.mount_path
+            );
+        }
         Self {
             id: download.id,
             remote_metrics: download.task.task.telemetry.remote_metrics(),
@@ -208,12 +222,14 @@ impl<'input> StartedDownload<'input> {
                     self.remote_metrics.as_ref(),
                     self.local_metrics.as_ref(),
                 );
-                log_info!(
-                    LOG_TAG,
-                    "{} downloaded in {}ms",
-                    self.task.task.label,
-                    elapsed.as_millis()
-                );
+                if self.task.task.log_progress() {
+                    log_info!(
+                        LOG_TAG,
+                        "{} downloaded in {}ms",
+                        self.task.task.label,
+                        elapsed.as_millis()
+                    );
+                }
                 true
             }
             Err(error) => {
