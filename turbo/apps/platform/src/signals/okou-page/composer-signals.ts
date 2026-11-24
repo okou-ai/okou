@@ -82,6 +82,7 @@ import {
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
   | "editor"
+  | "voiceChips$"
   | "setContainerRef$"
   | "focus$"
   | "hasInput$"
@@ -380,6 +381,7 @@ function composerEditorSignals(
     singleLineOnMobile: options.singleLineOnMobile,
     forwardComposer: options.forwardComposer,
     editor: composer.editor,
+    voiceChips$: composer.voiceChips$,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
     hasInput$: composer.hasInput$,

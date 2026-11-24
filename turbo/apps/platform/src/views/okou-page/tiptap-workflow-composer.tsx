@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+import { VoiceMessagePlayer } from "./voice-message-player.tsx";
 import {
   useGet,
   useLastLoadable,
@@ -13,6 +15,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import {
   Button,
+  InlineReferenceContent,
   cn,
   Popover,
   useMediaQuery,
@@ -1112,11 +1115,34 @@ function ComposerSuggestionMenu({
         />
         {children}
       </div>
+      <ComposerVoiceChips editor={composer.editor} />
       {sessionActive && (
         <ComposerSuggestionSession composer={composer} onKeyDown={onKeyDown} />
       )}
     </>
   );
+}
+
+function ComposerVoiceChips({ editor }: { editor: ComposerSignals["editor"] }) {
+  const chips = useGet(editor.voiceChips$);
+  const { t } = useTranslation();
+  return chips.map((chip) => {
+    return (
+      <InlineReferenceContent key={chip.key} host={chip.dom}>
+        <VoiceMessagePlayer player={chip.player} variant="composer" />
+        <button
+          type="button"
+          aria-label={t(($) => {
+            return $.chat.voice.removeDraft;
+          })}
+          className="inline-flex h-full w-6 shrink-0 items-center justify-center rounded-r-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50"
+          onClick={chip.remove}
+        >
+          <X size={13} aria-hidden="true" />
+        </button>
+      </InlineReferenceContent>
+    );
+  });
 }
 
 export function TiptapWorkflowComposer({

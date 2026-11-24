@@ -6781,7 +6781,7 @@ function UserMessageAttachments({
         testId="message-file-attachments"
       >
         {voicePlayer ? (
-          <VoiceMessagePlayer player={voicePlayer} compact />
+          <VoiceMessagePlayer player={voicePlayer} variant="compact" />
         ) : null}
       </UserMessageAttachmentRow>
     </div>

@@ -11,6 +11,14 @@ const heights = Object.freeze([
   4,
 ]);
 
+const playerStyles = Object.freeze({
+  bubble:
+    "h-12 w-[245px] shrink-0 gap-3 rounded-full border border-border bg-muted px-3",
+  compact:
+    "h-9 w-26 shrink-0 gap-1 rounded-lg border border-border bg-background px-2",
+  composer: "h-full w-25 min-w-0 gap-1 rounded-l-md pl-1.5 pr-1",
+});
+
 function ClipMetadata({ track }: { track: VoicePlayer["tracks"][number] }) {
   const url = useLoadable(track.resourceUrl$);
   const setDuration = useSet(track.duration$);
@@ -29,11 +37,12 @@ function ClipMetadata({ track }: { track: VoicePlayer["tracks"][number] }) {
 
 export function VoiceMessagePlayer({
   player,
-  compact = false,
+  variant = "bubble",
 }: {
   player: VoicePlayer;
-  compact?: boolean;
+  variant?: "bubble" | "compact" | "composer";
 }) {
+  const compact = variant !== "bubble";
   const bars = compact ? heights.slice(0, 7) : heights;
   const { t } = useTranslation();
   const playback = useGet(player.playback$);
@@ -69,7 +78,7 @@ export function VoiceMessagePlayer({
         );
       }}
       aria-label={label}
-      className={`inline-flex max-w-full shrink-0 items-center border border-border text-foreground hover:bg-accent ${compact ? "h-9 w-26 gap-1 rounded-lg bg-background px-2" : "h-12 w-[245px] gap-3 rounded-full bg-muted px-3"}`}
+      className={`inline-flex max-w-full items-center text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50 ${playerStyles[variant]}`}
     >
       <span
         aria-hidden="true"
