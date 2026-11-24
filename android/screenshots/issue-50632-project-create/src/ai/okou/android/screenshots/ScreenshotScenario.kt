@@ -121,7 +121,7 @@ class ScreenshotScenario {
                             null,
                             if (updateAvailable.get())
                                 AndroidUpdatesRelease("99.0.0", 24, 1_000, "a".repeat(64), "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk", "")
-                            else null,
+                            else AndroidUpdatesRelease(BuildConfig.VERSION_NAME, 24, 1_000, "a".repeat(64), "https://static.okou.io/android-updates/releases/99.0.0/${"a".repeat(64)}.apk", ""),
                         )
                     override suspend fun recover(release: AndroidUpdatesRelease): File? = null
                     override suspend fun download(release: AndroidUpdatesRelease, progress: (Long) -> Unit): File =
