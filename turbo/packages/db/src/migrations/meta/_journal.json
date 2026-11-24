@@ -3858,6 +3858,13 @@
       "when": 1795519845513,
       "tag": "1629_allow_free_credit_purchases",
       "breakpoints": true
+    },
+    {
+      "idx": 1630,
+      "version": "7",
+      "when": 1795527168266,
+      "tag": "1630_antigravity_member_profiles",
+      "breakpoints": true
     }
   ]
 }

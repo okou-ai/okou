@@ -841,9 +841,12 @@ warming. Detail-only notifications do not request warming. Like Web, the
 cohort combines the 100 most recent non-hidden conversations
 with indicator thread IDs. The selected conversation keeps its own reader. A
 one-second serialized trailing worker reads lightweight Room cursors and uses the
-canonical batch catch-up endpoint; missing cursors rebuild through concurrent
-snapshot reads, matching Web. A recoverable failure in one snapshot does not
-discard successful siblings; authorization/update failures cancel the batch.
+canonical batch catch-up endpoint. Missing cursors rebuild in at most two
+concurrent jobs. Each job holds its slot until cache persistence or recovery
+cleanup completes, so the bound also covers decoded checkpoints waiting to be
+written. The selected conversation reads independently of those slots. A
+recoverable snapshot failure preserves successful siblings. Authorization and
+update failures cancel the batch.
 Warming never marks content read or drives list loading. Conditional transactions
 reject an obsolete baseline or a now-selected target, preserving newer foreground
 history. STOP/retirement cancels the worker, and failures remain owned separately
@@ -851,10 +854,10 @@ from visible reads. Every conversation remains fully readable on demand regardle
 of warming eligibility; the cohort is not a row, content or history-size limit.
 
 `HistoryWarmingTest` exercises actual batch HTTPS/tuple codecs, cursor reuse,
-large Unicode rows and disk reopen, concurrent snapshot/missing-thread recovery,
+large Unicode rows and disk reopen, bounded snapshot recovery and missing threads,
 held-background independence, stale foreground/background publication and
-stop/restart/retirement. Parallel recovery can increase concurrent network and
-memory use; its resource owner still cancels every child on STOP or retirement.
+stop/restart/retirement. The warming owner cancels both active and queued
+recoveries on STOP or retirement.
 
 The native conversation uses canonical history to show reading progress. The
 workspace observes realtime transport independently of that UI. The generated empty-object

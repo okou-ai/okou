@@ -15,6 +15,7 @@ import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { command } from "ccstate";
 import { and, eq, isNull } from "drizzle-orm";
 import { badRequestMessage } from "../../lib/error";
+import { confirmedAntigravityProfile$ } from "./antigravity-personal-subscription";
 import { db$ } from "../external/db";
 import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import {
@@ -277,8 +278,12 @@ export const resolveModelSelectionPin$ = command(
         );
       }
       if (!personal) {
+        const profile = await set(confirmedAntigravityProfile$, params, signal);
+        signal.throwIfAborted();
         return badRequestMessage(
-          "This model requires a connected personal Google AI subscription.",
+          profile
+            ? "Your Google AI subscription is connected. Cloud runs for this model are not enabled yet."
+            : "This model requires a connected personal Google AI subscription.",
         );
       }
     }

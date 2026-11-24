@@ -11,7 +11,8 @@ final class MessageArtifactResources {
     let thumbnail: Bool
   }
 
-  let store = CCState.Store()
+  /// The workspace session's Store, which keeps this visit's artifact reads.
+  let store: CCState.Store
   fileprivate let lifetime = CCState.State(true)
   private let revision = CCState.State(0)
   private let reload: Command<Void, Void>
@@ -27,9 +28,10 @@ final class MessageArtifactResources {
   private var closed = false
 
   init(
-    service: ChatArtifacts, threadID: String?, webURL: URL,
+    service: ChatArtifacts, threadID: String?, webURL: URL, graph: CCState.Store,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
+    store = graph
     self.service = service
     self.threadID = threadID
     self.webURL = webURL

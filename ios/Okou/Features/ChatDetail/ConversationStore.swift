@@ -68,10 +68,10 @@ final class ConversationStore {
       await refresh()
     }, didFail: didFail)
   @ObservationIgnored lazy var attachmentViewer = MessageAttachmentStore(
-    commands: commands, didFail: didFail)
+    commands: commands, graph: graph, didFail: didFail)
   @ObservationIgnored lazy var artifacts = MessageArtifactStore(
     service: commands.artifacts, threadID: thread.id, webURL: webURL, markdown: messageMarkdown,
-    didFail: didFail)
+    graph: graph, didFail: didFail)
   // Confirmed input for delivery, Stop, read watermarks and the native render window.
   // Independent resource phases remain in their original Tasks, not in this snapshot.
   // Its values live in the workspace session's Store; views read `transcript`.
@@ -179,7 +179,7 @@ final class ConversationStore {
       await refresh()
     })
   @ObservationIgnored lazy var permissionActions = PermissionActionRegistry(
-    commands: commands, sync: sync, didFail: didFail,
+    commands: commands, sync: sync, graph: graph, didFail: didFail,
     didContinue: { [weak self] in
       guard let self, !closed else { return }
       await refresh()

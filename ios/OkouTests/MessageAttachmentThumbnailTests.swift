@@ -357,7 +357,8 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
   private func makeViewer(_ fixture: ChatHTTPFixture) -> MessageAttachmentStore {
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     addTeardownBlock { commands.closeFileCache() }
-    return MessageAttachmentStore(commands: commands, didFail: { _ in })
+    return MessageAttachmentStore(
+      commands: commands, graph: makeTestWorkspaceGraph(), didFail: { _ in })
   }
 
   private func imageData(color: UIColor = .systemTeal) -> Data {

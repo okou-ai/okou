@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.65.0](https://github.com/okou-ai/okou/compare/ios-v0.64.0...ios-v0.65.0) (2026-11-24)
+
+
+### Features
+
+* **ios:** say what for you directions do and throw the top card both ways ([#50568](https://github.com/okou-ai/okou/issues/50568)) ([dfc99d5](https://github.com/okou-ai/okou/commit/dfc99d5c28b54aa7d1d7960f2d46938732f8e19a))
+
+
+### Bug Fixes
+
+* **ios:** close the fork after its sheet dismisses ([#50554](https://github.com/okou-ai/okou/issues/50554)) ([ef5b4dc](https://github.com/okou-ai/okou/commit/ef5b4dc21a619da181fa8c6283fe07c00b72e3d0))
+
+
+### Refactoring
+
+* **ios:** keep conversation reads and run usage in the session Store ([#50556](https://github.com/okou-ai/okou/issues/50556)) ([229d5ea](https://github.com/okou-ai/okou/commit/229d5ea180cebda0c13f98987025c841d2211651))
+
 ## [0.64.0](https://github.com/okou-ai/okou/compare/ios-v0.63.1...ios-v0.64.0) (2026-11-24)
 
 

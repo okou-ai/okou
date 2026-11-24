@@ -245,6 +245,18 @@ function serializeDispatch(envelope: DispatchEnvelope): SerializedDispatch {
   return { body, bodyBytes: Buffer.byteLength(body, "utf8") };
 }
 
+function hasPreferredHomeWait(
+  preference: PlacementPreference | undefined,
+): preference is Extract<PlacementPreference, { tier: "predecessorHome" }> & {
+  home: { homeWaitUntil: string };
+} {
+  return (
+    preference?.tier === "predecessorHome" &&
+    "homeWaitUntil" in preference.home &&
+    preference.home.homeWaitUntil !== undefined
+  );
+}
+
 function createDispatchOffer(
   envelope: DispatchEnvelope,
   ordinaryBody: SerializedDispatch,
@@ -259,11 +271,7 @@ function createDispatchOffer(
     ...ordinaryBody,
     busyRetry: { until: expiresAt, retryAtExpiry: false },
   };
-  if (
-    preference.tier !== "predecessorHome" ||
-    !("homeWaitUntil" in preference.home) ||
-    preference.home.homeWaitUntil === undefined
-  ) {
+  if (!hasPreferredHomeWait(preference)) {
     return ordinaryOffer;
   }
   const sentAt = now();
@@ -367,6 +375,7 @@ const offerToProcess$ = command(
       readonly body: SerializedDispatch;
       readonly envelope: DispatchEnvelope;
       readonly preparedFirstOffer: WireDispatchOffer | undefined;
+      readonly firstOwner: boolean;
       readonly token: string;
       readonly window: DeliveryWindow;
       readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
@@ -390,7 +399,9 @@ const offerToProcess$ = command(
       ));
     signal.throwIfAborted();
     let gzipEncodeMs = offer.gzipEncodeMs;
-    let checkOwner = args.preparedFirstOffer === undefined;
+    // The first assignment is the final owner observation before its first POST.
+    // The Runner reconciles any cancellation committed after that write.
+    let checkOwner = !args.firstOwner;
     for (;;) {
       if (checkOwner) {
         const state = await set(readDirectRunState$, args.runId, signal);
@@ -514,14 +525,17 @@ export const dispatchPreparedRun$ = command(
         if (body.bodyBytes > RUNNER_DISPATCH_MAX_BODY_BYTES) {
           break;
         }
-        if (owner === null) {
+        const firstOwner = owner === null;
+        if (firstOwner) {
           reserveFirstOffer(target, input.run.id, body.bodyBytes, signal);
         }
-        // Finish ordinary first-send preparation before the conditional write.
-        // The Runner reconciles cancellations committed after that write.
+        // Start a timed Home wait after the owner write.
         const preparedFirstOffer =
-          owner === null && !target.preference
-            ? await encodeDispatchOffer(body, window)
+          firstOwner && !hasPreferredHomeWait(target.preference)
+            ? await encodeDispatchOffer(
+                createDispatchOffer(envelope, body, target.preference, window),
+                window,
+              )
             : undefined;
         if (preparedFirstOffer && remainingDelivery(window) <= 0) {
           break;
@@ -542,7 +556,6 @@ export const dispatchPreparedRun$ = command(
           break;
         }
         const ownerWriteMs = monotonicNow() - ownerWriteStartedAt;
-        const firstOwner = owner === null;
         owner = target;
         if (firstOwner) {
           recordRunContextSnapshot({
@@ -560,6 +573,7 @@ export const dispatchPreparedRun$ = command(
             body,
             envelope,
             preparedFirstOffer,
+            firstOwner,
             token,
             window,
             preparationTiming: firstOwner
