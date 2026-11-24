@@ -1,3 +1,10 @@
+- name: Require release asset URL and SHA-256
+  assert:
+    that:
+      - (runner_asset_url | default('') | length) > 0
+      - (runner_asset_checksum | default('')) is match('^sha256:[0-9a-f]{64}$')
+    fail_msg: "Staging requires a release asset URL and its published SHA-256."
+
 - name: Read installed runner checksum
   stat:
     path: "{{ bin_dir }}/runner"

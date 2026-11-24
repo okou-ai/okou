@@ -2787,27 +2787,15 @@ jobs:
           . .github/scripts/runner/runner-image-target.sh
           TAG=$(runner_image_release_tag "$VERSION")
           ASSET_NAME=$(runner_image_release_asset_name "$VERSION" "$TARGET_TRIPLE")
-          if ! ASSET_CHECKSUM=$(printf 'Authorization: Bearer %s\n' "$GH_TOKEN" | curl -sfL \
-            --retry 5 \
-            --retry-delay 2 \
-            --retry-max-time 60 \
-            --retry-all-errors \
-            -H @- \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
-            | jq -er --arg name "$ASSET_NAME" '
-                [.assets[] | select(.name == $name)]
-                | select(length == 1)
-                | .[0].digest
-                | strings
-                | select(test("^sha256:[0-9a-f]{64}$"))
-              '); then
+          . .github/scripts/runner/runner-release-assets.sh
+          if ! ASSET_CHECKSUM=$(runner_release_assets_read "$TAG" | runner_release_asset_checksum "$ASSET_NAME") ||
+            [ -z "$ASSET_CHECKSUM" ]; then
             echo "::error::release ${TAG} did not return a unique asset ${ASSET_NAME} with a SHA-256 digest"
             exit 1
           fi
 
-          printf 'url=%s/%s/releases/download/%s/%s\nchecksum=%s\n' \
-            "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$TAG" "$ASSET_NAME" "$ASSET_CHECKSUM" >> "$GITHUB_OUTPUT"
+          printf 'url=%s\nchecksum=%s\n' \
+            "$(runner_release_asset_url "$TAG" "$ASSET_NAME")" "$ASSET_CHECKSUM" >> "$GITHUB_OUTPUT"
 
       # Decrypt R2 secrets from resolve-image-cache.  The secrets were
       # AES-encrypted with GRAFANA_CLOUD_API_KEY (a repo-level-only
