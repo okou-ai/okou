@@ -77,7 +77,7 @@ enum class ChatListSource {
 data class ChatMarkAllReadResult(
     val confirmed: Int,
     val requested: Int,
-    internal val connectionFailed: Boolean = false,
+    internal val rejected: Int = 0,
 )
 
 class ChatReadIntent
@@ -664,6 +664,7 @@ class ChatListModel(
             state.copy(
                 pendingRowActions =
                     state.pendingRowActions + targets.keys.associateWith { ChatRowAction.MarkRead },
+                readIntents = state.readIntents + intents,
                 markingAllRead = true,
                 markAllReadResult = null,
             )
@@ -681,6 +682,7 @@ class ChatListModel(
                                             intent,
                                             reportFailure = false,
                                             publishOnReceipt = true,
+                                            priorProjection = state.readIntents[id],
                                         )
                                     }
                                 }
@@ -700,11 +702,26 @@ class ChatListModel(
                 val connectionFailed = confirmations.all { it.connectionFailed }
                 if (!connectionFailed) readIndicatorsAfterWrite()
                 requireCurrent()
+                val latest = mutable.value
+                val unsettled =
+                    confirmations
+                        .filterNot { it.receiptCoversIntent }
+                        .mapTo(hashSetOf()) { it.intent }
+                val unverifiedProjections =
+                    intents.keys.filter { latest.readIntents[it] in unsettled }
+                if (unverifiedProjections.isNotEmpty()) {
+                    // If the indicator read failed, only remove this batch's unverified display.
+                    // A later indicator read still uses the original write confirmations.
+                    mutable.value =
+                        latest.copy(
+                            readIntents = latest.readIntents - unverifiedProjections.toSet(),
+                        )
+                }
                 result =
                     ChatMarkAllReadResult(
                         confirmations.count { it.receiptCoversIntent },
                         targets.size,
-                        connectionFailed,
+                        confirmations.count { it.rejected },
                     )
             } finally {
                 if (current()) {
@@ -727,6 +744,7 @@ class ChatListModel(
         reportFailure: Boolean,
         publishOnReceipt: Boolean = false,
         conversationId: String? = null,
+        priorProjection: ChatReadIntent? = null,
     ): ReadConfirmation {
         var alreadySatisfied = false
         suspend fun writeRead(): Boolean {
@@ -770,7 +788,10 @@ class ChatListModel(
                         error is ApiFailure.Http && error.status in 400..499 && error.status != 408
                 ) {
                     val state = mutable.value
-                    val earlier = readConfirmations[threadId]?.projectedIntent
+                    val earlier =
+                        readConfirmations[threadId]?.projectedIntent?.takeIf {
+                            reportFailure || it === priorProjection
+                        }
                     mutable.value =
                         state.copy(
                             readIntents =
