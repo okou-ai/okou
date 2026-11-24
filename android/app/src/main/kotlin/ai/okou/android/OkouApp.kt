@@ -1918,6 +1918,10 @@ internal fun OkouApp(
                                                 historyAvailable = !awaitingCreatedChat,
                                                 controls = runActions,
                                                 stopPlacement = stopPlacement,
+                                                paneFeedbackVisible =
+                                                    visibleConversationId != null &&
+                                                        conversationSnackbar.currentSnackbarData !=
+                                                            null,
                                                 queueOpen = queueOpen,
                                                 dismissQueue = { queueOpen = false },
                                                 artifactActions =
