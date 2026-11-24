@@ -9,7 +9,9 @@ import ai.okou.android.artifacts.ArtifactItem
 import ai.okou.android.artifacts.ArtifactKind
 import ai.okou.android.artifacts.ArtifactPage
 import ai.okou.android.artifacts.ConfirmedArtifactCatalog
+import ai.okou.android.artifacts.ConfirmedRelatedChatRead
 import ai.okou.android.artifacts.ConfirmedRelatedChats
+import ai.okou.android.artifacts.ConfirmedWorkflowResources
 import ai.okou.android.auth.WorkspaceIdentity
 import ai.okou.android.auth.scopeHash
 import ai.okou.android.auth.workspaceStorageKey
@@ -42,6 +44,14 @@ import kotlinx.serialization.json.Json
 data class CachedChats(val checkpoint: ChatCheckpoint, val confirmedAt: Long)
 
 data class CachedProjects(val checkpoint: ProjectCheckpoint, val confirmedAt: Long)
+
+// Keep the existing related chat fields at the top level for older cache records.
+@Serializable
+private data class CachedChatRelations(
+    val created: ConfirmedRelatedChatRead? = null,
+    val communicating: ConfirmedRelatedChatRead? = null,
+    val workflows: ConfirmedWorkflowResources? = null,
+)
 
 internal data class PreparedChatList(
     val identity: WorkspaceIdentity,
@@ -285,23 +295,55 @@ internal constructor(
             }
 
         internal suspend fun loadRelatedResources(threadId: String): ConfirmedRelatedChats? =
+            loadChatRelations(threadId)?.let {
+                ConfirmedRelatedChats(it.created, it.communicating).takeIf { related ->
+                    related.oldestConfirmation != null
+                }
+            }
+
+        internal suspend fun loadWorkflowResources(threadId: String): ConfirmedWorkflowResources? =
+            loadChatRelations(threadId)?.workflows
+
+        private suspend fun loadChatRelations(threadId: String): CachedChatRelations? =
             withContext(dispatcher) {
                 lock.withLock {
                     checkCurrent()
                     if (database == null && !file.exists()) return@withLock null
-                    val record = database().chats().relatedResources(key, threadId)
+                    val record = readChatRelations(database().chats(), threadId)
                     checkCurrent()
                     record
-                        ?.takeIf { it.authorization == authorization }
-                        ?.let {
-                            json.decodeFromString<ConfirmedRelatedChats>(it.payload)
-                        }
                 }
             }
 
-        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats) =
+        private suspend fun readChatRelations(dao: ChatCacheDao, threadId: String) =
+            dao.relatedResources(key, threadId)
+                ?.takeIf { it.authorization == authorization }
+                ?.let {
+                    try {
+                        json.decodeFromString<CachedChatRelations>(it.payload)
+                    } catch (_: SerializationException) {
+                        Log.w("ChatCacheStore", "Ignoring unreadable chat resource cache")
+                        null
+                    }
+                }
+
+        internal suspend fun saveRelatedResources(threadId: String, data: ConfirmedRelatedChats?) =
+            updateChatRelations(threadId) {
+                it.copy(created = data?.created, communicating = data?.communicating)
+            }
+
+        internal suspend fun saveWorkflowResources(
+            threadId: String,
+            data: ConfirmedWorkflowResources,
+        ) = updateChatRelations(threadId) { it.copy(workflows = data) }
+
+        private suspend fun updateChatRelations(
+            threadId: String,
+            update: (CachedChatRelations) -> CachedChatRelations,
+        ) =
             withContext(dispatcher) {
                 persist(clear = { it.deleteRelatedResources(key, threadId) }, saved = {}) { dao ->
+                    val data = update(readChatRelations(dao, threadId) ?: CachedChatRelations())
                     dao.putRelatedResources(
                         ChatRelatedResourceRecord(
                             key,

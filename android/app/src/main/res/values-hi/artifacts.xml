@@ -54,4 +54,10 @@
     <string name="chat_resources_related">संबंधित चैट</string>
     <string name="chat_resources_related_load_failed">फ़िलहाल संबंधित चैट लोड नहीं हो पा रही हैं</string>
     <string name="chat_resources_related_access_lost">संबंधित चैट अब उपलब्ध नहीं हैं</string>
+    <string name="chat_resources_origin">स्रोत</string>
+    <string name="chat_resources_workflows">वर्कफ़्लो और ऑटोमेशन</string>
+    <string name="chat_resources_workflows_load_failed">फ़िलहाल संबंधित वर्कफ़्लो लोड नहीं हो सके</string>
+    <string name="chat_resources_wechat">WeChat</string>
+    <string name="chat_resources_feishu">Feishu</string>
+    <string name="chat_resources_messages">मैसेज</string>
 </resources>

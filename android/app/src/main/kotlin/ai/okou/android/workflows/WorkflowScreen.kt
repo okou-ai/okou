@@ -153,7 +153,7 @@ internal fun WorkflowScreen(
     restoreHistoryRunId: String?,
     onHistoryFocusRestored: () -> Unit,
     onOpenChat: (runId: String, threadId: String) -> Unit,
-    fromSearch: Boolean = false,
+    directEntry: Boolean = false,
 ) {
     val wide = listWidth != null
     val focus = LocalFocusManager.current
@@ -172,7 +172,7 @@ internal fun WorkflowScreen(
         when {
             editor != null -> exitEditor()
             state.writing -> Unit
-            route.id != null && !wide && !fromSearch && !handoffPending -> {
+            route.id != null && !wide && !directEntry && !handoffPending -> {
                 restoreRow = route.id
                 changeRoute(route.copy(id = null, tab = WorkflowTab.Instructions))
             }
