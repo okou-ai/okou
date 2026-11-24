@@ -14,6 +14,7 @@ import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.services.storage.TestStorage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.UiObject2
@@ -84,10 +85,17 @@ class ScreenshotScenario {
         }
 
         fun focusBack() {
+            val back = By.pkg(app.packageName).desc("返回")
             repeat(20) {
                 device.waitForIdle()
-                if (device.hasObject(By.pkg(app.packageName).desc("返回").focused(true))) return
-                device.pressKeyCode(KeyEvent.KEYCODE_TAB)
+                val target = device.findObject(back)
+                if (
+                    target != null &&
+                        generateSequence(target) { it.parent }.take(3).any { it.isFocused }
+                ) {
+                    return
+                }
+                assertTrue("Could not inject Tab", device.pressKeyCode(KeyEvent.KEYCODE_TAB))
             }
             error("Workflow Back did not receive keyboard focus")
         }
@@ -118,6 +126,22 @@ class ScreenshotScenario {
             ScreenshotCapture.capture(filename)
         }
 
+        fun verifyWindow(width: Int, height: Int, verify: () -> Unit) {
+            device.executeShellCommand("wm size ${width}x${height}")
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                try {
+                    scenario.onActivity { assertEquals(width, it.resources.configuration.screenWidthDp) }
+                    verify()
+                } catch (error: Throwable) {
+                    runCatching {
+                        TestStorage().openOutputFile("capture-failure.xml")
+                            .use(device::dumpWindowHierarchy)
+                    }
+                    throw error
+                }
+            }
+        }
+
         try {
             fixture.active.set(true)
             app.chatService = fixture.service
@@ -138,15 +162,10 @@ class ScreenshotScenario {
                     session = "workflow-editor-${UUID.randomUUID()}",
                 )
             device.executeShellCommand("wm density 160")
-            device.executeShellCommand("wm size 412x892")
             device.executeShellCommand("settings put system font_scale 1.0")
 
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                scenario.onActivity { assertEquals(412, it.resources.configuration.screenWidthDp) }
+            verifyWindow(412, 892) {
                 openDirectory()
-                focusBack()
-                ScreenshotCapture.capture("phone-keyboard-focus.png")
-
                 openEditor()
                 text(fixture.releaseTitle)
                 val schedule = text("定时").visibleBounds
@@ -172,12 +191,21 @@ class ScreenshotScenario {
                 ScreenshotCapture.capture("phone-gmail.png")
             }
 
-            device.executeShellCommand("wm size 1180x820")
-            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
-                scenario.onActivity { assertEquals(1180, it.resources.configuration.screenWidthDp) }
+            verifyWindow(1180, 820) {
                 openDirectory()
                 openEditor()
                 showTimezonePicker(1180, "wide-timezone.png")
+            }
+
+            verifyWindow(412, 892) {
+                openDirectory()
+                instrumentation.setInTouchMode(false)
+                try {
+                    focusBack()
+                    ScreenshotCapture.capture("phone-keyboard-focus.png")
+                } finally {
+                    instrumentation.resetInTouchMode()
+                }
             }
         } finally {
             try {
