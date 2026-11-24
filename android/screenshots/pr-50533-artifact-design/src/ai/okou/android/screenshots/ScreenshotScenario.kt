@@ -106,64 +106,61 @@ class ScreenshotScenario {
     }
 
     private fun capturePhone(artifacts: ArtifactApiFixture) {
-        val avatarPosition = control(artifacts.image.title).bounds
+        val avatarPosition = bounds(By.text(artifacts.image.title))
         ScreenshotCapture.capture("catalog-phone.png")
         tap(By.text(artifacts.image.title))
         see(By.text("此文件暂不支持预览"))
         ScreenshotCapture.capture("unavailable-phone.png")
         tap(By.desc("返回成果列表"))
-        assertEquals(avatarPosition, control(artifacts.image.title).bounds)
+        assertEquals(avatarPosition, bounds(By.text(artifacts.image.title)))
         tap(By.text("视频"))
         tap(By.text(artifacts.video.title))
-        val play = control("播放")
-        assertTrue(play.bounds.height() >= 48)
+        assertTrue(actionBounds("播放").height() >= 48)
         assertFalse(device.hasObject(By.desc("媒体播放").pkg(app.packageName)))
         ScreenshotCapture.capture("video-phone.png")
         device.pressBack()
         see(By.text(artifacts.video.title))
-        assertTrue(control("视频").selected)
+        assertFalse(device.hasObject(By.text(artifacts.summary.title).pkg(app.packageName)))
 
         tap(By.desc("返回工作区"))
         tap(By.text(artifacts.sourceTitle))
         tap(By.desc("聊天操作").enabled(true))
         tap(By.text("对话资料"))
-        val resourcePosition = control(artifacts.summary.title).bounds
+        val resourcePosition = bounds(By.text(artifacts.summary.title))
         tap(By.text(artifacts.summary.title))
         see(By.text("成果预览"))
         see(By.textContains("仅供预览"))
         see(By.textContains("帮助团队继续推进在手工作"))
         ScreenshotCapture.capture("chat-preview-phone.png")
         device.pressBack()
-        assertEquals(resourcePosition, control(artifacts.summary.title).bounds)
+        assertEquals(resourcePosition, bounds(By.text(artifacts.summary.title)))
     }
 
     private fun captureWide(artifacts: ArtifactApiFixture) {
-        val rowPosition = control(artifacts.summary.title).bounds
+        val rowPosition = bounds(By.text(artifacts.summary.title))
         tap(By.text(artifacts.summary.title))
         see(By.textContains("仅供预览"))
-        val source = control("查看来源对话")
+        val source = actionBounds("查看来源对话")
         assertFalse(device.hasObject(By.text("保存文件").pkg(app.packageName)))
-        assertTrue(rowPosition.right < source.bounds.left)
-        assertTrue(source.bounds.height() >= 48)
+        assertTrue(rowPosition.right < source.left)
+        assertTrue(source.height() >= 48)
         see(By.textContains("帮助团队继续推进在手工作"))
         ScreenshotCapture.capture("preview-wide.png")
         tap(By.text("查看来源对话"))
         tap(By.desc("返回成果预览"))
         see(By.text("查看来源对话"))
-        assertEquals(rowPosition, control(artifacts.summary.title).bounds)
+        assertEquals(rowPosition, bounds(By.text(artifacts.summary.title)))
     }
 
-    private data class Control(val bounds: Rect, val selected: Boolean)
+    private fun bounds(selector: BySelector): Rect = read(selector) { it.visibleBounds }
 
-    private fun control(label: String): Control =
+    private fun actionBounds(label: String): Rect =
         read(By.text(label)) { text ->
-            generateSequence(text) { it.parent }.firstOrNull { it.isClickable }?.let {
-                Control(it.visibleBounds, it.isSelected || it.isChecked)
-            }
+            generateSequence(text) { it.parent }.firstOrNull { it.isClickable }?.visibleBounds
         }
 
     private fun tap(selector: BySelector) {
-        val bounds = read(selector) { it.visibleBounds }
+        val bounds = bounds(selector)
         assertTrue(device.click(bounds.centerX(), bounds.centerY()))
     }
 
