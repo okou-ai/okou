@@ -569,6 +569,23 @@
       "text": "Teks",
       "video": "Video"
     },
+    "library": {
+      "allArtifacts": "Semua artefak",
+      "allTypes": "Semua jenis",
+      "clearFilters": "Hapus filter",
+      "clearSearch": "Hapus pencarian",
+      "created": "Dibuat",
+      "emptyDescription": "Coba nama atau jenis lain.",
+      "emptyTitle": "Tidak ada artefak ditemukan",
+      "loadMore": "Muat lebih banyak",
+      "name": "Nama",
+      "retry": "Coba lagi",
+      "search": "Cari artefak",
+      "sort": "Urutkan artefak",
+      "sortAscending": "Urutkan menaik",
+      "sortDescending": "Urutkan menurun",
+      "type": "Jenis"
+    },
     "metadata": {
       "generated": "Dibuat {{date}}",
       "updated": "Diperbarui {{date}}"

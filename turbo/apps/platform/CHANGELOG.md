@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1172.0](https://github.com/okou-ai/okou/compare/app-v0.1171.1...app-v0.1172.0) (2026-11-24)
+
+
+### Features
+
+* add recording chips to chat composers behind a switch ([#50334](https://github.com/okou-ai/okou/issues/50334)) ([7fa55b1](https://github.com/okou-ai/okou/commit/7fa55b15b8286465939af85fe2faeaa1d39a952e))
+
+
+### Bug Fixes
+
+* **platform:** remove the visible search result count row ([#50347](https://github.com/okou-ai/okou/issues/50347)) ([26bdcc2](https://github.com/okou-ai/okou/commit/26bdcc2844029158317bb8a7149bce3a744bb830))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.114.0
+    * @okouai/core bumped to 8.866.0
+    * @okouai/ui bumped to 1.22.0
+
 ## [0.1171.1](https://github.com/okou-ai/okou/compare/app-v0.1171.0...app-v0.1171.1) (2026-11-24)
 
 

@@ -4,7 +4,7 @@ import type { UserMessageDocument } from "@okouai/api-contracts/contracts/chat-t
 import { expect, test } from "vitest";
 
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
-import { readyChat, RUN_PATH } from "./chat-capability-test-helpers.ts";
+import { RUN_PATH } from "./chat-capability-test-helpers.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import {
   completedEvent,
@@ -166,9 +166,9 @@ test("Fold each workflow run's work behind its own result", async () => {
     context,
     path: RUN_PATH,
   });
-  await readyChat();
-
-  expect(screen.getByText("Earlier workflow result 1")).toBeVisible();
+  await expect(
+    screen.findByText("Earlier workflow result 1"),
+  ).resolves.toBeVisible();
   expect(screen.getByText("Earlier workflow result 2")).toBeVisible();
   expect(screen.queryByText("Earlier workflow evidence 1")).toBeNull();
   expect(screen.queryByText("Earlier workflow evidence 2")).toBeNull();
@@ -190,7 +190,6 @@ test("Show the current workflow run's output as its own response", async () => {
     context,
     path: RUN_PATH,
   });
-  await readyChat();
   await expect(screen.findByText("Thinking...")).resolves.toBeVisible();
 
   events.push(

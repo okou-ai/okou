@@ -188,6 +188,10 @@ internal class ChatRowMutationOwner(
                     submission.action,
                     edits = edits,
                     conversationId = conversationId,
+                    renameThreadId =
+                        edits.singleOrNull()?.threadId.takeIf {
+                            submission.action == ChatRowAction.Rename
+                        },
                 ),
                 false,
             )

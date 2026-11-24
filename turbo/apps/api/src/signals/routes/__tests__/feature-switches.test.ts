@@ -227,33 +227,30 @@ describe("/api/feature-switches", () => {
     expect(original.body.effectiveSwitches[FeatureSwitchKey.Dummy]).toBeFalsy();
   });
 
-  it("applies an org-scoped override consistently across one organization", async () => {
+  it.each([
+    FeatureSwitchKey.LarkIntegration,
+    FeatureSwitchKey.ComposerVoiceMessages,
+  ])("shares %s overrides only within the same organization", async (key) => {
     const clerk = createRouteMocks(context).clerk;
     const headers = { authorization: "Bearer clerk-session" };
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     clerk.session(userId, orgId, "org:member");
     const initial = await accept(client().get({ headers }), [200]);
-    expect(
-      initial.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
-    ).toBeFalsy();
+    expect(initial.body.effectiveSwitches[key]).toBeFalsy();
     await accept(
       client().update({
         headers,
-        body: { switches: { [FeatureSwitchKey.LarkIntegration]: true } },
+        body: { switches: { [key]: true } },
       }),
       [200],
     );
     clerk.session(`user_${randomUUID()}`, orgId, "org:member");
     const peer = await accept(client().get({ headers }), [200]);
-    expect(
-      peer.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
-    ).toBeTruthy();
+    expect(peer.body.effectiveSwitches[key]).toBeTruthy();
     clerk.session(userId, `org_${randomUUID()}`, "org:member");
     const elsewhere = await accept(client().get({ headers }), [200]);
-    expect(
-      elsewhere.body.effectiveSwitches[FeatureSwitchKey.LarkIntegration],
-    ).toBeFalsy();
+    expect(elsewhere.body.effectiveSwitches[key]).toBeFalsy();
   });
 
   it("merges concurrent unrelated personal keys without losing either override", async () => {

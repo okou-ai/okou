@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.50.1](https://github.com/okou-ai/okou/compare/android-v0.50.0...android-v0.50.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align chat stop and queue action feedback ([#50289](https://github.com/okou-ai/okou/issues/50289)) ([adc0cde](https://github.com/okou-ai/okou/commit/adc0cded8702f8988b1187645d85a90c8ef11d22))
+* **android:** preserve workflow action focus on return ([#50296](https://github.com/okou-ai/okou/issues/50296)) ([3a97bb5](https://github.com/okou-ai/okou/commit/3a97bb50e4b4249086ad36880c334de50f410f52))
+
 ## [0.50.0](https://github.com/okou-ai/okou/compare/android-v0.49.0...android-v0.50.0) (2026-11-23)
 
 

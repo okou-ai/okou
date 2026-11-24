@@ -374,6 +374,8 @@ internal fun SettingsModal(
 internal fun settingsPanelContentPadding(compactHeight: Boolean) =
     PaddingValues(start = 16.dp, end = 16.dp, bottom = if (compactHeight) 12.dp else 22.dp)
 
+@Composable internal fun isShortSettingsPanelWindow() = currentWindowSizeDp().height < 480
+
 internal enum class SettingsSheetScroll {
     Panel,
     Body,
@@ -388,10 +390,11 @@ internal fun SettingsSheet(
     actions: (@Composable () -> Unit)? = null,
     titleInset: Dp = 0.dp,
     progress: (@Composable () -> Unit)? = null,
+    actionSpacing: Dp = 8.dp,
     scroll: SettingsSheetScroll = SettingsSheetScroll.Body,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val compactHeight = currentWindowSizeDp().height < 480
+    val compactHeight = isShortSettingsPanelWindow()
     val scrollModifier =
         if (scroll == SettingsSheetScroll.None) Modifier
         else Modifier.verticalScroll(rememberScrollState())
@@ -424,9 +427,13 @@ internal fun SettingsSheet(
                     SettingsSheetScroll.Body -> body.weight(1f, fill = false).then(scrollModifier)
                     SettingsSheetScroll.None -> body.weight(1f, fill = false)
                 }
-            Column(bodyModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                content()
-                if (actions != null) Box { actions() }
+            Column(bodyModifier) {
+                Column(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    content = content,
+                )
+                if (actions != null) Box(Modifier.padding(top = actionSpacing)) { actions() }
             }
         }
     }

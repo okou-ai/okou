@@ -11,6 +11,7 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
+import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
@@ -86,6 +87,7 @@ data class ReadyWorkspace(
     val workflows: WorkflowModel?,
     val connectors: ConnectorModel? = null,
     val search: WorkspaceSearchModel,
+    internal val renamePresentation: ChatRenamePresentation,
 )
 
 sealed interface OpeningWorkspace {
@@ -105,6 +107,7 @@ sealed interface OpeningWorkspace {
         val artifacts: ArtifactCatalogModel,
         val chatArtifacts: ArtifactCatalogModel,
         val search: WorkspaceSearchModel,
+        internal val renamePresentation: ChatRenamePresentation,
     ) : OpeningWorkspace
 }
 
@@ -509,6 +512,7 @@ class SessionModel(
                                 { workspaceFailure(ticket, snapshot, it) },
                             )
                         },
+                        store.workspaceModel { ChatRenamePresentation() },
                     )
                 entrySelection = null
                 mutable.value =
@@ -758,6 +762,7 @@ class SessionModel(
                         workflows = workflows,
                         connectors = connectors,
                         search = opened.search,
+                        renamePresentation = opened.renamePresentation,
                     ),
                 working = false,
                 cachedAppearance = null,
