@@ -69,7 +69,7 @@ final class ChatThreadDeleteTests: XCTestCase {
     let chat = try XCTUnwrap(store.selectedConversation)
     chat.composer.text = "Edited before the chat was removed"
     fixture.state.value.withLock { $0.failNext["draft-save"] = 404 }
-    chat.composer.setForeground(true)
+    store.setPhase(.active)
     await chat.composer.synchronize()
     XCTAssertNil(store.selectedThreadID)
     XCTAssertFalse(storage.hasThreadDraft(id))
