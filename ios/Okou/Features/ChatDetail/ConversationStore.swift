@@ -225,9 +225,10 @@ final class ConversationStore {
     self.workflowSource = workflowSource
     self.didRequestNewChat = didRequestNewChat
     readResources = ConversationReadResources(
-      sync: sync, threadID: thread.id, sleep: readRetrySleep, didFail: didFail,
+      sync: sync, threadID: thread.id, graph: graph, sleep: readRetrySleep, didFail: didFail,
       lifecycleTasks: lifecycleTasks)
-    self.runUsage = ConversationRunUsageStore(sync: sync, threadID: thread.id, didFail: didFail)
+    self.runUsage = ConversationRunUsageStore(
+      sync: sync, threadID: thread.id, graph: graph, didFail: didFail)
     self.activitySummary = ConversationActivitySummary(
       sync: sync, threadID: thread.id, graph: graph, didRequireUpgrade: didFail,
       sleep: activitySleep, lifecycleTasks: lifecycleTasks)
