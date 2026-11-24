@@ -683,26 +683,12 @@ fn run_download_attempt(download: &mut StartedDownload<'_>) -> Result<(), Downlo
         )
         .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
-    download_and_extract(
-        &download.task.task.url,
-        download.task.effective_mount_path(),
-        &mut download.opened_file_compressed_bytes,
-        download.remote_metrics.as_mut(),
-        download.local_metrics.as_mut(),
-        download.concurrency,
-        download.task.task.template_guidance.as_ref(),
-    )
+    download_and_extract(download)
 }
 
-fn download_and_extract(
-    url: &str,
-    target_path: &Path,
-    opened_file_compressed_bytes: &mut Option<u64>,
-    remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
-    local_metrics: Option<&mut LocalArchiveTaskMetrics>,
-    concurrency: usize,
-    template_guidance: Option<&guest_contracts::storage_manifest::TemplateGuidanceReference>,
-) -> Result<(), DownloadError> {
+fn download_and_extract(download: &mut StartedDownload<'_>) -> Result<(), DownloadError> {
+    let task = &download.task.task;
+    let target_path = download.task.effective_mount_path();
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
             "Failed to create directory {}: {e}",
@@ -710,38 +696,64 @@ fn download_and_extract(
         ))
     })?;
 
-    let attempt_metrics = remote_metrics
+    let attempt_metrics = download
+        .remote_metrics
         .is_some()
         .then(source::RemoteArchiveAttemptMetrics::default);
-    let local_attempt_metrics = local_metrics
+    let local_attempt_metrics = download
+        .local_metrics
         .is_some()
         .then(source::LocalArchiveAttemptMetrics::default);
+    #[cfg(target_os = "linux")]
+    if download.concurrency == 1
+        && task.telemetry.is_artifact()
+        && task.template_guidance.is_none()
+        && let Some(path) = task.url.strip_prefix("file://")
+    {
+        let archive = source::LocalArchive::open(path)?;
+        download.opened_file_compressed_bytes = archive.compressed_bytes;
+        let extract_start = Instant::now();
+        let result =
+            archive::inflate::extract_staged(archive, target_path, local_attempt_metrics.as_ref());
+        if let (Some(metrics), Some(attempt)) =
+            (&mut download.local_metrics, &local_attempt_metrics)
+        {
+            metrics.record_extraction(attempt.body_read(), extract_start.elapsed());
+        }
+        return result;
+    }
+
     let reader = match source::open_archive(
-        url,
+        &task.url,
         attempt_metrics.as_ref(),
         local_attempt_metrics.as_ref(),
     ) {
         Ok(reader) => reader,
         Err(error) => {
-            if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
+            if let (Some(metrics), Some(attempt_metrics)) =
+                (&mut download.remote_metrics, &attempt_metrics)
+            {
                 metrics.record_attempt(attempt_metrics.snapshot(), Duration::ZERO);
             }
             return Err(error);
         }
     };
-    *opened_file_compressed_bytes = reader.compressed_bytes();
+    download.opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = match template_guidance {
+    let result = match &task.template_guidance {
         Some(reference) => {
-            crate::template_guidance::extract(reader, target_path, concurrency, reference)
+            crate::template_guidance::extract(reader, target_path, download.concurrency, reference)
         }
-        None => archive::extract_tar_gz(reader, target_path, concurrency),
+        None => archive::extract_tar_gz(reader, target_path, download.concurrency),
     };
     let extract_wall = extract_start.elapsed();
-    if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
+    if let (Some(metrics), Some(attempt_metrics)) = (&mut download.remote_metrics, &attempt_metrics)
+    {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);
     }
-    if let (Some(metrics), Some(attempt_metrics)) = (local_metrics, &local_attempt_metrics) {
+    if let (Some(metrics), Some(attempt_metrics)) =
+        (&mut download.local_metrics, &local_attempt_metrics)
+    {
         metrics.record_extraction(attempt_metrics.body_read(), extract_wall);
     }
     result

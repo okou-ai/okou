@@ -8,6 +8,8 @@ use std::io::{self, Read};
 use std::path::Path;
 
 #[cfg(target_os = "linux")]
+pub(crate) mod inflate;
+#[cfg(target_os = "linux")]
 pub(crate) mod rooted;
 
 /// Extract a gzip-compressed tar archive into an existing target directory.
@@ -60,14 +62,32 @@ pub(crate) fn extract_tar_gz_checked(
     target: &Path,
     concurrency: usize,
     max_unpacked_bytes: u64,
+    validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> io::Result<()>,
+) -> Result<(), DownloadError> {
+    let (reader, http_body_read_failure) = source.into_parts();
+    extract_tar(
+        flate2::read::GzDecoder::new(reader),
+        http_body_read_failure,
+        target,
+        concurrency,
+        max_unpacked_bytes,
+        validate_entry,
+    )
+}
+
+fn extract_tar(
+    decoded: impl Read,
+    http_body_read_failure: crate::source::HttpBodyReadFailure,
+    target: &Path,
+    concurrency: usize,
+    max_unpacked_bytes: u64,
     mut validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> io::Result<()>,
 ) -> Result<(), DownloadError> {
     debug_assert!(concurrency > 0);
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
     #[cfg(target_os = "linux")]
     let mut rooted = rooted::RootedWriter::new(target, concurrency);
-    let (reader, http_body_read_failure) = source.into_parts();
-    let decoder = flate2::read::GzDecoder::new(reader).take(max_unpacked_bytes.saturating_add(1));
+    let decoder = decoded.take(max_unpacked_bytes.saturating_add(1));
     let budget = MetadataBudget::default();
     let mut archive = tar::Archive::new(MetadataReader::new(decoder, &budget));
 
