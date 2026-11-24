@@ -3,7 +3,7 @@
     "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
     "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
     "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
-    "main": "815ec15ee790fd3d198ca6e349ac09db3ae90099",
+    "main": "48394a2ca0df27d4b7d4f8c37dbc02ef7da87d01",
     "opening": "ad0d44dbca05ff2c7470cc98b88376adf861253d"
   },
   "cases": {
@@ -268,8 +268,8 @@
   },
   "independentBodies": [
     {
-      "file": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
-      "bodySha256": "cc72ea4564c336c3a58dbf8bc6f25946cbe5ce1f03b75e815cc7fb6610acaf4d",
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts",
+      "bodySha256": "b4197fc8bb7ed6c520c9a2d3707476de139f3de39e41d7192a827b6179135f2b",
       "historicalMatches": []
     },
     {
@@ -278,8 +278,8 @@
       "historicalMatches": []
     },
     {
-      "file": "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts",
-      "bodySha256": "b4197fc8bb7ed6c520c9a2d3707476de139f3de39e41d7192a827b6179135f2b",
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
+      "bodySha256": "cc72ea4564c336c3a58dbf8bc6f25946cbe5ce1f03b75e815cc7fb6610acaf4d",
       "historicalMatches": []
     },
     {

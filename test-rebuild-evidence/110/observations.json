@@ -819,6 +819,133 @@
       ]
     }
   ],
+  "postCloseIndicatorRepeat": [
+    {
+      "label": "First dashboard after signed metadata",
+      "known": true,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "signedUrlIssued",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "signedObject",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [
+        "A"
+      ],
+      "heldAliases": []
+    },
+    {
+      "label": "A held before B opens",
+      "metadataArrivals": [],
+      "publicOperations": [],
+      "indicatorAliases": [],
+      "heldAliases": [
+        "A"
+      ]
+    },
+    {
+      "label": "B first dashboard without publication",
+      "via": false,
+      "unread": 0,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    },
+    {
+      "label": "Surviving B after a new publication",
+      "viaAfter": false,
+      "unread": 0,
+      "metadataArrivals": [],
+      "publicOperations": [],
+      "indicatorAliases": [],
+      "heldAliases": [
+        "A"
+      ]
+    }
+  ],
   "offlineEmpty": [
     {
       "label": "First dashboard after signed metadata",

@@ -104,7 +104,7 @@ Find a documented indicators caller that exposes the computed rejection, includi
 
 ## message-port-020
 
-With A’s token service held, B entered the dashboard without a new publication. Its link was visible with no unread badge and the indicator endpoint saw no read using B. After A closed, a separate publication made the receiver accept B’s bearer alias and the unread badge appeared.
+With A’s token service held, B entered the dashboard without a new publication. Its link was visible with no unread badge and the indicator endpoint saw no read using B. After A closed, a separate publication reached B’s bearer and showed the unread badge in the first trial. With the same release order in a later fresh profile, the receiver recorded the publication and additional pending A token requests. It saw no B indicator GET or badge in the observation window.
 
 Observe a fresh B-owned indicator request and its result before releasing A while both tabs remain registered. A later publication after closure is a separate control.
 
