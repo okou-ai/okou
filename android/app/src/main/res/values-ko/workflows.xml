@@ -123,4 +123,8 @@
     <string name="workflow_history_earlier_failed">이전 실행을 불러오지 못했습니다.</string>
     <string name="workflow_rule_checking">결과 확인 중…</string>
     <string name="workflow_rule_unconfirmed">결과가 아직 확인되지 않았습니다.</string>
+    <string name="workflow_event">이벤트</string>
+    <string name="workflow_event_source">이벤트 소스</string>
+    <string name="workflow_source_gmail">Gmail · 메일 수신</string>
+    <string name="workflow_source_calendar">Google Calendar · 일정 생성</string>
 </resources>

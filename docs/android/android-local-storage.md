@@ -37,8 +37,10 @@ backup policy.
 Use `WorkspaceIdentity.workspaceStorageKey()` for workspace-local persistence.
 It derives the stable key from the canonical API address, account ID, and
 workspace ID. Session renewal and signing back into the same account preserve
-that key. Revalidate workspace authorization before restoring protected content
-and retire stale publication. A key locates the data and conveys no access.
+that key. Check the active session and the resource's required access scope
+before restoring protected content. Retire presentation when its access scope
+changes or access is denied. A key identifies the storage location. See
+[cache-first presentation](android-development.md#cache-first-presentation-and-optimistic-actions).
 
 When a workspace closes, retire its cache lease and cancel work owned by its
 presentation. Process-owned journals can finish writes they have already

@@ -190,10 +190,12 @@ internal fun OkouApp(
     feedbackInOverlay: Boolean = false,
     renamePresentation: ChatRenamePresentation? = null,
     settingsProgress: @Composable (SettingsDestination) -> Unit = {},
+    cachedStartupChats: ChatListModel? = null,
 ) {
     val startupPhase = if (startupRecovery == null) ChatReadPhase.Loading else ChatReadPhase.Idle
+    val listOwner = chats ?: cachedStartupChats
     val listState =
-        chats?.uiState?.collectAsStateWithLifecycle()
+        listOwner?.uiState?.collectAsStateWithLifecycle()
             ?: rememberUpdatedState(
                 remember(startupPhase) { ChatListUiState(listPhase = startupPhase) },
             )
@@ -253,7 +255,7 @@ internal fun OkouApp(
     val composerInput = composer?.uiState?.collectAsStateWithLifecycle()
     val settings =
         when {
-            chats == null -> null
+            listOwner == null -> null
             navigation.settings == SettingsDestination.Instructions && !workspaceReady ->
                 SettingsDestination.Overview
             else -> navigation.settings
@@ -1462,12 +1464,12 @@ internal fun OkouApp(
                 WorkspaceToolbarActions(
                     showFilter = showList,
                     list = listState.value,
-                    selectFilter = chats?.let { it::selectFilter },
-                    markAllRead = { chats?.markAllRead() },
+                    selectFilter = listOwner?.let { it::selectFilter },
+                    markAllRead = chats?.let { it::markAllRead },
                     update = updateToolbarAction.takeIf { showList },
                     settingsFocus = settingsFocus,
                     openSettings =
-                        if (chats == null) null
+                        if (listOwner == null) null
                         else
                             { restore ->
                                 restoreSettingsFocus = restore
@@ -1794,13 +1796,16 @@ internal fun OkouApp(
                                     projectExpansion,
                                     listPositions[list.filter.ordinal],
                                     ::startNewChat,
-                                    showInbox = { chats?.selectFilter(ChatListFilter.Inbox) },
+                                    showInbox = { listOwner?.selectFilter(ChatListFilter.Inbox) },
                                     selectedChatId =
                                         if (listWidth != null)
                                             (target as? WorkspaceTarget.Chat)?.id ?: provisionalId
                                         else null,
                                     wide = listWidth != null,
                                     newChatEnabled = workspaceReady,
+                                    chatActionsEnabled = chats != null,
+                                    startupSyncPending =
+                                        cachedStartupChats != null && startupRecovery == null,
                                     startupRecovery = startupRecovery,
                                     dismissProjectRenameRejection = {
                                         chats?.dismissProjectRenameRejection(it)

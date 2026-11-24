@@ -125,4 +125,8 @@
     <string name="workflow_history_earlier_failed">Não foi possível carregar as execuções anteriores.</string>
     <string name="workflow_rule_checking">A verificar o resultado…</string>
     <string name="workflow_rule_unconfirmed">O resultado ainda não foi confirmado.</string>
+    <string name="workflow_event">Evento</string>
+    <string name="workflow_event_source">Origem do evento</string>
+    <string name="workflow_source_gmail">Gmail · E-mail recebido</string>
+    <string name="workflow_source_calendar">Google Calendar · Evento criado</string>
 </resources>

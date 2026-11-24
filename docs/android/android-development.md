@@ -76,7 +76,11 @@ or numerical startup budget is not a prerequisite for applying this contract.
 
 ## Cache-First Presentation and Optimistic Actions
 
-Restore usable, last-confirmed data after checking the current authorization.
+Check the active identity and access scope before restoring last-confirmed data.
+The chat list can present its exact-scope cache after a locally restored session
+identifies the active account and workspace with known permissions. Verify that
+scope online in the background and retire the cached presentation on denial or
+an identity or scope change.
 Enable each action when its own prerequisites are satisfied. Give each cached
 resource a freshness policy and a canonical refresh path. Keep usable content
 visible during refresh and preserve the distinction between unknown and

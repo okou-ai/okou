@@ -123,4 +123,8 @@
     <string name="workflow_history_earlier_failed">暫時無法載入較早的執行記錄</string>
     <string name="workflow_rule_checking">正在核對結果…</string>
     <string name="workflow_rule_unconfirmed">提交結果尚未確認。</string>
+    <string name="workflow_event">事件</string>
+    <string name="workflow_event_source">事件來源</string>
+    <string name="workflow_source_gmail">Gmail · 收到郵件</string>
+    <string name="workflow_source_calendar">Google Calendar · 建立行程</string>
 </resources>

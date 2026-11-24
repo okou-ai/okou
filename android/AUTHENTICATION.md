@@ -66,14 +66,14 @@ authorization, the current API resource and its workspace presentation store.
 Identity includes API origin, user, Clerk session and workspace. An additional
 in-memory generation fences replaced work; it is not persisted as identity.
 
-A locally restored active SDK session with a selected workspace opens the native
-chat list immediately in its loading state. The workspace owner refreshes Clerk
-and confirms the organization with the origin-bound API client. A selected
-membership with known permissions in both the refreshed and observed SDK state
-allows the complete workspace picker to load separately. Startup falls back to
-the complete membership request when that evidence is unavailable. The existing
-Room connection can open during these checks. Scoped rows are restored after
-authorization while canonical preferences and list synchronization run.
+A locally restored active SDK session with known permissions for its selected
+workspace can display its matching Room chat checkpoint before Clerk refresh
+completes. The cache is scoped to the API origin, user, workspace, role and
+permissions. Local filtering is available during verification. Workspace API
+calls and chat actions wait for online confirmation. Recoverable failures keep
+the cached list visible and retry when the app is active and online. Explicit
+denial or a changed scope retires the cached presentation. When local evidence
+is incomplete, startup still checks Clerk before displaying workspace content.
 
 A 409 or incomplete timezone, locale or member memory invokes the existing
 idempotent preferences initialization endpoint. Complete preferences enable the
