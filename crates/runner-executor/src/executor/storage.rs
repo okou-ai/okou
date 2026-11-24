@@ -427,11 +427,12 @@ fn storage_inputs(
     manifest.artifacts = ordinary_artifacts;
     // The Guest builds a task from a nonempty URL, then binds its decoded file
     // group before running it. Keep a source marker and omit the signed URL.
-    // A legacy Workflow can rewrite its document after each helper call. Keep
-    // those batch boundaries, including when mounts alias the same directory.
+    // Keep batch boundaries for legacy Workflow document rewrites, since
+    // logical mounts can alias the same directory. The Guest also owns errors
+    // from validating those mount names at the end of their original batch.
     if decoded_storages
         .iter()
-        .all(|entry| entry.vas_storage_name.as_deref() != Some("workflow"))
+        .all(|entry| matches!(entry.workflow_document_name(), Ok(None)))
     {
         for url in decoded_storages
             .iter_mut()

@@ -135,7 +135,16 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let content = (0..storage_files::MAX_FILE_BYTES)
         .map(|index| index as u8)
         .collect::<Vec<_>>();
-    let fixture = DeliveryFixture::with_archive(3, 3, 35_000, archive_with_content(&content)).await;
+    let mut fixture =
+        DeliveryFixture::with_archive(3, 3, 35_000, archive_with_content(&content)).await;
+    let workflow_mount = fixture.root.path().join("guest/mount-000--wf-source");
+    std::fs::create_dir_all(&workflow_mount).unwrap();
+    std::fs::write(
+        workflow_mount.join("SKILL.md"),
+        b"---\nname: mount-000--wf-source\n---\n\nWorkflow instruction.\n",
+    )
+    .unwrap();
+    fixture.manifest.storages[0].mount_path = workflow_mount.to_str().unwrap().into();
     let overrides = Arc::new(MockSandboxOverrides::new());
     let gate = MockLifecycleGate::new();
     overrides.set_storage_manifest_lifecycle_gate(gate.clone());
@@ -143,7 +152,7 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     // Keep the legacy boundaries without logging padded names or version IDs
     // when the allocation child exercises the real materializer.
-    manifest.storages[0].vas_storage_name = Some("workflow".into());
+    manifest.storages[0].vas_storage_name = Some(WORKFLOW_STORAGE_NAME.into());
     let expected = serde_json::to_value(&manifest).unwrap();
     let context = minimal_context();
     let mut telemetry = test_telemetry(&fixture.config, &context);

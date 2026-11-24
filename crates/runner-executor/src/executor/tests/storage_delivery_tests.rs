@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
 use guest_contracts::storage_files;
-use guest_contracts::storage_manifest::{Manifest, StorageEntry};
+use guest_contracts::storage_manifest::{Manifest, StorageEntry, WORKFLOW_STORAGE_NAME};
 use sandbox::ExecResult;
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxOverrides};
 use tracing::instrument::WithSubscriber;
@@ -518,12 +518,17 @@ async fn oversized_artifact_manifest_compacts_urls_and_preserves_identity() {
 }
 
 #[tokio::test]
-async fn oversized_mixed_manifest_preserves_workflow_batch_boundaries() {
-    for (name, expected_calls) in [("mixed-storage", 1), ("workflow", 3)] {
+async fn oversized_mixed_manifest_preserves_legacy_workflow_batch_boundaries() {
+    for (name, directory, expected_calls) in [
+        (WORKFLOW_STORAGE_NAME, "current-workflow", 1),
+        (WORKFLOW_STORAGE_NAME, "copy--wf-source", 3),
+        (WORKFLOW_STORAGE_NAME, "copy--instruction", 3),
+        ("mixed-storage", "copy--wf-source", 1),
+    ] {
         let fixture = DeliveryFixture::artifacts(2, 2, 35_000).await;
         let sandbox = MockSandbox::new("decoded-large-mixed");
         let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
-        let storage_mount = fixture.root.path().join("guest/mixed--wf-copy");
+        let storage_mount = fixture.root.path().join("guest").join(directory);
         let prefix = "http://127.0.0.1:9/storage?signature=";
         let mut storage = StorageEntry {
             template_guidance: None,

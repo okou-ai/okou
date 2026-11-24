@@ -13,27 +13,10 @@ const MAX_DOCUMENT_BYTES: u64 = 32 * 1024 * 1024;
 
 pub(crate) fn apply(entries: &[StorageEntry]) -> io::Result<()> {
     for entry in entries {
-        if entry.vas_storage_name.as_deref() != Some("workflow") {
+        let Some(name) = entry.workflow_document_name()? else {
             continue;
-        }
+        };
         let root = Path::new(&entry.mount_path);
-        let name = root
-            .file_name()
-            .and_then(|value| value.to_str())
-            .ok_or_else(|| io::Error::other("Workflow mount has no name"))?;
-        if !name.contains("--wf-") && !name.ends_with("--instruction") {
-            continue;
-        }
-        if name.is_empty()
-            || name.len() > 64
-            || name.starts_with('-')
-            || name.ends_with('-')
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-        {
-            return Err(io::Error::other("Invalid Workflow document name"));
-        }
         let skill = root.join("SKILL.md");
         let (source, instruction_package) = match read_document(&skill) {
             Ok(source) => (source, false),
