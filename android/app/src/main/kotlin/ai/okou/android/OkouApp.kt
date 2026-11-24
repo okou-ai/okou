@@ -124,6 +124,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -377,14 +378,17 @@ internal fun OkouApp(
             key(settings) { rememberScrollState() }
         else settingsPosition
     val conversations = rememberConversationUiState()
-    val linkSnackbar = remember(chats) { SnackbarHostState() }
+    val conversationNavigationErrors =
+        remember(chats) {
+            mutableStateListOf<ConversationNavigationError>()
+        }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val linkUnavailable = stringResource(R.string.conversation_link_unavailable)
     val browserUnavailable = stringResource(R.string.conversation_link_no_browser)
 
     fun clearConversationLinks() {
-        linkSnackbar.currentSnackbarData?.dismiss()
+        conversationNavigationErrors.clear()
         linkReturns.forEach { link ->
             link.navigation.chatResourcesId?.let {
                 resourcesPageState.removeState("chat-resources:$it")
@@ -601,6 +605,9 @@ internal fun OkouApp(
                 (listWidth != null || !searchActive)
         }
     val conversationSnackbar = remember(chats) { SnackbarHostState() }
+    LaunchedEffect(visibleConversationId) {
+        conversationNavigationErrors.removeAll { it.threadId != visibleConversationId }
+    }
     val showWorkflowFeedback = showWorkflows && workflowRoute.id != null
     val visibleThread = thread?.takeIf {
         settings == null && !showWorkflows && !showArtifacts && (!searchActive || listWidth != null)
@@ -634,6 +641,9 @@ internal fun OkouApp(
             conversationSnackbar,
             showChatList,
             visibleConversationId,
+            navigationError =
+                conversationNavigationErrors.firstOrNull { it.threadId == visibleConversationId },
+            dismissNavigationError = { conversationNavigationErrors.remove(it) },
             showWorkflowFeedback,
             confirmingProjectDelete = confirmingProjectDelete,
             dismissProjectDelete = { confirmingProjectDelete = null },
@@ -687,7 +697,6 @@ internal fun OkouApp(
     }
 
     fun returnFromLink() {
-        linkSnackbar.currentSnackbarData?.dismiss()
         val source = linkReturns.last()
         linkReturns = linkReturns.dropLast(1)
         closeFind()
@@ -703,32 +712,34 @@ internal fun OkouApp(
             ?.let { chats?.history?.open(it) }
     }
 
-    fun showLinkFailure(message: String) {
-        linkSnackbar.currentSnackbarData?.dismiss()
-        scope.launch { linkSnackbar.showSnackbar(message) }
+    fun showConversationNavigationError(threadId: String, message: String) {
+        conversationNavigationErrors.add(ConversationNavigationError(threadId, message))
     }
 
     fun returnFromUnavailableLink(source: ConversationLinkReturn) {
         if (linkReturns.lastOrNull() !== source) return
         returnFromLink()
-        showLinkFailure(linkUnavailable)
+        showConversationNavigationError(source.threadId, linkUnavailable)
     }
 
     fun openMessageLink(link: ConversationLink, source: ConversationLinkSource) {
         when (link) {
             is ConversationLink.Web -> {
-                if (!openConversationWebLink(context, link)) showLinkFailure(browserUnavailable)
+                if (!openConversationWebLink(context, link)) {
+                    (target as? WorkspaceTarget.Chat)?.let {
+                        showConversationNavigationError(it.id, browserUnavailable)
+                    }
+                }
             }
             is ConversationLink.Chat -> {
                 val current = thread ?: return
                 val destination =
                     list.threads.firstOrNull { it.id == link.threadId && it.hidden != true }
                 if (destination == null) {
-                    showLinkFailure(linkUnavailable)
+                    showConversationNavigationError(current.id, linkUnavailable)
                     return
                 }
                 if (destination.id == current.id && link.anchor == null) return
-                linkSnackbar.currentSnackbarData?.dismiss()
                 val next =
                     (linkReturns + ConversationLinkReturn(navigation, current.id, source)).takeLast(
                         16,
@@ -1943,11 +1954,10 @@ internal fun OkouApp(
                                                         navigation =
                                                             navigation.copy(messageSequence = null)
                                                         if (!found) {
-                                                            scope.launch {
-                                                                conversationSnackbar.showSnackbar(
-                                                                    missingMessage,
-                                                                )
-                                                            }
+                                                            showConversationNavigationError(
+                                                                target.id,
+                                                                missingMessage,
+                                                            )
                                                         }
                                                     }
                                                 },
@@ -1989,15 +1999,6 @@ internal fun OkouApp(
                                                                 else resourcesFocus)
                                                                 .requestFocus()
                                                         },
-                                                    )
-                                                if (
-                                                    conversationSnackbar.currentSnackbarData ==
-                                                        null &&
-                                                        linkSnackbar.currentSnackbarData != null
-                                                )
-                                                    WorkspaceFeedbackHost(
-                                                        linkSnackbar,
-                                                        Modifier.padding(bottom = feedbackGap),
                                                     )
                                                 if (hasComposer) {
                                                     ChatComposerField(
