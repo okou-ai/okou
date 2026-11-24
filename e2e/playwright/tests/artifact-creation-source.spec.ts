@@ -259,9 +259,11 @@ test("resolve authenticated artifact sources through publication, navigation and
             rejected,
             "Fixture publication must be admitted",
           ).toBeUndefined();
+          // Launch appends a Run-bound replacement of the queued input.
           const input = rows.find(
             (row) =>
-              row.eventType === "input.prompt" && row.id === clientEventId,
+              row.eventType === "input.prompt" &&
+              row.revokesEventId === clientEventId,
           );
           if (input && typeof input.runId === "string") {
             runId = string(input.runId);
