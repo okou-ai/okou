@@ -105,7 +105,7 @@ internal fun ConversationMessageRow(
     artifactActions: ChatArtifactActions? = null,
     findHighlight: ConversationFindHighlight? = null,
     links: ConversationLinkActions? = null,
-    onToggleEarlierReplies: (toggle: () -> Unit) -> Unit = { it() },
+    beforeToggleEarlierReplies: () -> Unit = {},
     failureContent: @Composable (HistoryMessage) -> Unit = {
         AssistantFailureText(it.failureReason)
     },
@@ -157,7 +157,8 @@ internal fun ConversationMessageRow(
                         }
                     }
                     ConversationReplySummary(entry.summary, entry.earlier.size, expanded) {
-                        onToggleEarlierReplies { expanded = !expanded }
+                        beforeToggleEarlierReplies()
+                        expanded = !expanded
                     }
                     if (expanded && entry.earlier.isNotEmpty()) {
                         ConversationReplyTimeline {
