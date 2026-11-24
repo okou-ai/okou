@@ -1,3 +1,4 @@
+import { HOSTED_DOMAIN_PROBE_HEADER } from "@okouai/api-contracts/contracts/hosted-site-domains";
 import {
   authorizeSiteRequest,
   hostedSiteAuthCallback,
@@ -465,6 +466,69 @@ function hostedDownloadToken(pathname: string): string | null {
   return /^\/\.okou\/download\/([a-f0-9]{48})$/u.exec(pathname)?.[1] ?? null;
 }
 
+async function serveCustomDomainIngress(
+  request: Request,
+  env: Env,
+  pathname: string,
+  fileHost: boolean,
+  target: HostedSiteRequestTarget | null,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  if (pathname === "/.okou/domain-verification") {
+    const domainId = url.searchParams.get("domainId");
+    const hostname = url.searchParams.get("hostname");
+    const proof = url.searchParams.get("proof");
+    if (!domainId || !hostname || !proof)
+      return privateResponse(notFoundResponse());
+    const endpoint = new URL(
+      `/api/host/custom-domain-probes/${encodeURIComponent(domainId)}`,
+      env.HOSTED_SITE_API_ORIGIN,
+    );
+    endpoint.search = new URLSearchParams({ hostname, proof }).toString();
+    const response = await fetch(endpoint, {
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
+    });
+    if (response.status !== 200)
+      throw new Error("Custom domain probe is unavailable");
+    return new Response(await response.text(), {
+      headers: {
+        "Content-Type": "application/json",
+        [HOSTED_DOMAIN_PROBE_HEADER]: "1",
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
+  if (!fileHost && !target) {
+    const endpoint = new URL(
+      `/api/host/custom-domains/${encodeURIComponent(url.hostname)}`,
+      env.HOSTED_SITE_API_ORIGIN,
+    );
+    const response = await fetch(endpoint, {
+      cache: "no-store",
+      redirect: "error",
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(3000)]),
+    });
+    if (response.status !== 200)
+      throw new Error("Custom domain authority is unavailable");
+    const binding = hostContract.resolveCustomDomain.responses[200].parse(
+      await response.json(),
+    );
+    if (!binding) return privateResponse(notFoundResponse());
+    return serveLegacyHostedSite(
+      request,
+      env,
+      pathname,
+      { publicSlug: binding.publicSlug, layouts: ["current"] },
+      undefined,
+      { ...binding, hostname: url.hostname },
+    );
+  }
+  return null;
+}
+
 async function serveHostedSite(
   request: Request,
   env: Env,
@@ -486,7 +550,14 @@ async function serveHostedSite(
   if (download) return serveHostedDownload(request, env, download);
   const fileHost = url.hostname === env.PUBLIC_ARTIFACT_HOST;
   const target = hostedSiteRequestTarget(url.hostname, env);
-  if (!fileHost && !target) return notFoundResponse();
+  const custom = await serveCustomDomainIngress(
+    request,
+    env,
+    pathname,
+    fileHost,
+    target,
+  );
+  if (custom) return custom;
   // Previously emitted share links survive the URL change. Keep this reader
   // until #32492 verifies that no retained pre-registry share links need it.
   const shared = target
@@ -775,18 +846,25 @@ async function registrationComplete(
   return true;
 }
 
+interface CustomDomainBinding {
+  readonly hostname: string;
+  readonly siteId: string;
+  readonly revision: string;
+}
+
 async function serveLegacyHostedSite(
   request: Request,
   env: Env,
   pathname: string,
   target: HostedSiteRequestTarget,
   record: Extract<ArtifactDeliveryRecord, { kind: "legacy-site" }> | undefined,
+  customBinding?: CustomDomainBinding,
 ): Promise<Response> {
   const deploymentId = IMMUTABLE_DEPLOYMENT_HOST_PATTERN.exec(
     target.publicSlug,
   )?.[1];
-  let pointerLayouts = target.layouts;
-  if (!record) {
+  let pointerLayouts = customBinding ? [] : target.layouts;
+  if (!record && !customBinding) {
     // Existing public aliases predate the delivery registry. Remove this
     // compatibility read after #32492 verifies registration for every layout
     // and old API writers have drained; the completion marker closes it now.
@@ -846,6 +924,7 @@ async function serveLegacyHostedSite(
       target.publicSlug,
       resolved.pointer,
       resolved.layout,
+      customBinding,
     );
     if (authorization.response?.status === 404) {
       // An old pointer can survive a rename or alias reassignment.
@@ -857,6 +936,7 @@ async function serveLegacyHostedSite(
         target.publicSlug,
         resolved.pointer,
         resolved.layout,
+        customBinding,
       );
     }
     if (authorization.response) return authorization.response;
@@ -977,6 +1057,7 @@ async function authorizeHostedSiteDelivery(
   alias: string,
   pointer: ActiveSitePointer,
   layout: StorageLayout,
+  customBinding?: CustomDomainBinding,
 ) {
   const url = new URL(
     `/api/host/delivery/${encodeURIComponent(pointer.siteId)}/${encodeURIComponent(pointer.deploymentId)}`,
@@ -995,6 +1076,15 @@ async function authorizeHostedSiteDelivery(
       isSiteDownloadPath(new URL(request.url).pathname))
   )
     url.searchParams.set("presentation", "banner");
+  if (customBinding) {
+    if (customBinding.siteId !== pointer.siteId)
+      return {
+        response: privateResponse(notFoundResponse()),
+        headers: new Headers(),
+      };
+    url.searchParams.set("hostname", customBinding.hostname);
+    url.searchParams.set("bindingRevision", customBinding.revision);
+  }
   return authorizeSiteRequest(request, env, url);
 }
 

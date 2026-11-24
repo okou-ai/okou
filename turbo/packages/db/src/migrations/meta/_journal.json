@@ -3830,6 +3830,20 @@
       "when": 1795451971668,
       "tag": "1625_project_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 1626,
+      "version": "7",
+      "when": 1795501841416,
+      "tag": "1626_tough_master_chief",
+      "breakpoints": true
+    },
+    {
+      "idx": 1627,
+      "version": "7",
+      "when": 1795501898641,
+      "tag": "1627_calm_vector",
+      "breakpoints": true
     }
   ]
 }

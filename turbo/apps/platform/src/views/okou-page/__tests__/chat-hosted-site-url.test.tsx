@@ -1,3 +1,6 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import type { infer as zInfer } from "zod";
 import { hostContract } from "@okouai/api-contracts/contracts/host";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -33,6 +36,7 @@ const siteTitle = "Quarterly launch report";
 async function setupHostedSite(
   initialSlug = "launch-site",
   hostDomain = "okou.app",
+  customDomains = false,
 ) {
   const deploymentUrl = `https://dpl-${deploymentId}.${hostDomain}/`;
   let currentSlug = initialSlug;
@@ -170,6 +174,9 @@ async function setupHostedSite(
     context,
     host: "app.okou.ai",
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: {
+      [FeatureSwitchKey.HostedSiteCustomDomains]: customDomains,
+    },
   });
   await screen.findByText("Open website");
   const link = queryAllByRoleFast("link").find((element) => {
@@ -316,4 +323,108 @@ test("Share directly copies legacy website links without URL customization", asy
   expect(
     screen.queryByRole("dialog", { name: shareLabel }),
   ).not.toBeInTheDocument();
+});
+
+test("custom domain verification stays manual and requires selection and Save before changing the sharing link", async () => {
+  const domainId = "00000000-0000-4000-8000-000000000051";
+  const revision = "00000000-0000-4000-8000-000000000052";
+  let settings: zInfer<typeof hostedDomainSettingsSchema> = {
+    siteId,
+    defaultUrl: "https://launch-site.okou.app",
+    effectiveUrl: "https://launch-site.okou.app",
+    selectedDomainId: null,
+    revision,
+    allowed: true,
+    domains: [],
+  };
+  let verifies = 0;
+  let saves = 0;
+  context.mocks.api(hostContract.siteDomains, ({ respond }) => {
+    return respond(200, settings);
+  });
+  context.mocks.api(hostContract.addSiteDomain, ({ body, respond }) => {
+    settings = {
+      ...settings,
+      domains: [
+        {
+          id: domainId,
+          hostname: body.hostname,
+          revision,
+          ready: false,
+          removing: false,
+          records: [
+            {
+              type: "TXT",
+              name: "_okou-challenge.www.customer-example.net",
+              value: "okou-verification=demo",
+            },
+            {
+              type: "CNAME",
+              name: "www.customer-example.net",
+              value: "connect.okou.app",
+            },
+          ],
+          verification: null,
+        },
+      ],
+    };
+    return respond(200, settings);
+  });
+  context.mocks.api(hostContract.verifySiteDomain, ({ respond }) => {
+    verifies++;
+    settings = {
+      ...settings,
+      domains: settings.domains.map((domain) => {
+        return { ...domain, ready: true };
+      }),
+    };
+    return respond(200, settings);
+  });
+  context.mocks.api(hostContract.selectSiteDomain, ({ body, respond }) => {
+    saves++;
+    expect(body.domainId).toBe(domainId);
+    settings = {
+      ...settings,
+      selectedDomainId: domainId,
+      effectiveUrl: "https://www.customer-example.net",
+    };
+    return respond(200, settings);
+  });
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const preview = await setupHostedSite("launch-site", "okou.app", true);
+  const menu = await openHostedSiteShare(preview);
+  click(buttonNamed("Customize URL", menu));
+  await within(menu).findByLabelText("Website URL");
+  click(buttonNamed("Custom domain", menu));
+  const input = await within(menu).findByPlaceholderText("www.example.com");
+  fireEvent.change(input, { target: { value: "www.customer-example.net" } });
+  expect(input).toHaveValue("www.customer-example.net");
+  expect(buttonNamed("Continue", menu)).toBeEnabled();
+  click(buttonNamed("Continue", menu));
+  await within(menu).findByText("No verification yet");
+  expect(verifies).toBe(0);
+  click(buttonNamed("Verify", menu));
+  await within(menu).findByText("Domain verified. Select it in Customize URL.");
+  expect(verifies).toBe(1);
+  expect(saves).toBe(0);
+  click(buttonNamed("Back to Customize URL", menu));
+  const select = await within(menu).findByRole("combobox", { name: "Domain" });
+  click(select);
+  const option = await screen.findByRole("option", {
+    name: "www.customer-example.net",
+  });
+  click(option);
+  await within(menu).findByText("https://www.customer-example.net");
+  expect(saves).toBe(0);
+  click(buttonNamed("Save", menu));
+  await waitFor(() => {
+    return expect(buttonNamed("Copy link", menu)).toBeEnabled();
+  });
+  click(buttonNamed("Copy link", menu));
+  await waitFor(() => {
+    return expect(clipboard.writes.at(-1)).toBe(
+      "https://www.customer-example.net",
+    );
+  });
+  expect(saves).toBe(1);
 });

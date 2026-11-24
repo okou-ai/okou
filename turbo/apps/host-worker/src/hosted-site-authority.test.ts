@@ -1173,3 +1173,95 @@ it("authorizes a private Site before showing its HTML on the first visit", async
   expect(document.status).toBe(200);
   expect(await document.text()).toBe("<p>ok</p>");
 });
+
+it("routes exact custom hostnames through live delivery authority before reading cached website files", async () => {
+  const hostname = "www.customer-example.net";
+  const revision = "00000000-0000-4000-8000-000000000031";
+  let denied = false;
+  let reads = 0;
+  server.use(
+    http.get(
+      "https://authority.test/api/host/custom-domains/:hostname",
+      ({ params }) => {
+        expect(params.hostname).toBe(hostname);
+        return HttpResponse.json({ siteId, publicSlug: "demo", revision });
+      },
+    ),
+    http.get("https://authority.test/api/host/aliases/:publicSlug", () => {
+      return HttpResponse.json({
+        pointer: {
+          version: 1,
+          publicBrand: "okou",
+          siteId,
+          deploymentId,
+          publicSlug: "demo",
+          prefix,
+          manifestKey: `${prefix}/manifest.json`,
+          spaFallback: false,
+          updatedAt: "2026-10-08T00:00:00Z",
+        },
+      });
+    }),
+    http.get(endpoint, ({ request }) => {
+      const url = new URL(request.url);
+      expect(url.searchParams.get("hostname")).toBe(hostname);
+      expect(url.searchParams.get("bindingRevision")).toBe(revision);
+      return HttpResponse.json(
+        denied
+          ? { allowed: false, decision: "deny" }
+          : { allowed: true, decision: "allow" },
+      );
+    }),
+  );
+  const env = environment(true, async () => {
+    reads++;
+  });
+  const request = () => {
+    return new Request(`https://${hostname}/`);
+  };
+  const first = await fetchWorker(request(), env);
+  expect(first.status).toBe(200);
+  expect(await first.text()).toBe("<p>ok</p>");
+  expect(first.headers.get("Cache-Control")).toContain("no-store");
+  expect(reads).toBe(1);
+  denied = true;
+  const next = await fetchWorker(request(), env);
+  expect(next.status).toBe(404);
+  expect(reads).toBe(1);
+});
+it("does not treat an unknown custom hostname's first label as a platform alias", async () => {
+  server.use(
+    http.get("https://authority.test/api/host/custom-domains/:hostname", () => {
+      return HttpResponse.json(null);
+    }),
+  );
+  const response = await fetchWorker(
+    new Request("https://demo.customer-example.net/"),
+    environment(),
+  );
+  expect(response.status).toBe(404);
+});
+it("keeps pending domain probes separate from website content", async () => {
+  const proof = "a".repeat(64);
+  server.use(
+    http.get(
+      "https://authority.test/api/host/custom-domain-probes/:domainId",
+      ({ request, params }) => {
+        expect(params.domainId).toBe(siteId);
+        expect(new URL(request.url).searchParams.get("hostname")).toBe(
+          "www.customer-example.net",
+        );
+        return HttpResponse.json({ proof });
+      },
+    ),
+  );
+  const response = await fetchWorker(
+    new Request(
+      `https://connect.okou.app/.okou/domain-verification?domainId=${siteId}&hostname=www.customer-example.net&proof=${proof}`,
+    ),
+    environment(),
+  );
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ proof });
+  expect(response.headers.get("Cache-Control")).toBe("no-store");
+});

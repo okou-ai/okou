@@ -273,6 +273,9 @@ importers:
       tar:
         specifier: '>=7.5.21'
         version: 7.5.22
+      tldts:
+        specifier: 7.0.28
+        version: 7.0.28
       uuid:
         specifier: ^14.0.0
         version: 14.0.0

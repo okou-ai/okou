@@ -148,6 +148,7 @@ import * as orgCustomConnectorDcrRegistrationSchema from "./schema/org-custom-co
 import * as customConnectorAccountOauthBindingSchema from "./schema/custom-connector-account-oauth-binding";
 import * as builtinConnectorDcrRegistrationSchema from "./schema/connector-dcr-registration";
 import * as builtinConnectorAccountOauthBindingSchema from "./schema/connector-account-oauth-binding";
+import * as hostedSiteDomainSchema from "./schema/hosted-site-domain";
 import * as hostedSiteSchema from "./runtime/hosted-site";
 import * as hostedSiteBrowserSessionSchema from "./schema/hosted-site-browser-session";
 import * as artifactSchema from "./schema/artifact";
@@ -328,6 +329,7 @@ export const schema = {
   ...builtinConnectorDcrRegistrationSchema,
   ...builtinConnectorAccountOauthBindingSchema,
   ...hostedSiteSchema,
+  ...hostedSiteDomainSchema,
   ...hostedSiteShareSchema,
   ...hostedSiteShareRateLimitSchema,
   ...hostedSiteBrowserSessionSchema,

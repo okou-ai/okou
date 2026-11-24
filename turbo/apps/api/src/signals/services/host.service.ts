@@ -1,3 +1,7 @@
+import {
+  hostedSiteDomains,
+  hostedSiteDomainSettings,
+} from "@okouai/db/schema/hosted-site-domain";
 import type {
   HostedSiteAccessDecision,
   HostedSiteVisibility,
@@ -2126,10 +2130,34 @@ const takeHostedSiteOffline$ = command(
         )
         .returning({ id: privateHostedDeployments.id }),
     );
+    const customDomains = writeDb.$with("revoked_hosted_domains").as(
+      writeDb
+        .update(hostedSiteDomains)
+        .set({
+          revokedAt: deleted.updatedAt,
+          verifyingId: null,
+          verifyingUntil: null,
+        })
+        .where(
+          and(
+            eq(hostedSiteDomains.siteId, siteId),
+            isNull(hostedSiteDomains.releasedAt),
+            exists(owned),
+          ),
+        )
+        .returning({ id: hostedSiteDomains.id }),
+    );
+    const customAddress = writeDb.$with("reset_hosted_domain_address").as(
+      writeDb
+        .update(hostedSiteDomainSettings)
+        .set({ selectedDomainId: null, revision: sql`gen_random_uuid()` })
+        .where(and(eq(hostedSiteDomainSettings.siteId, siteId), exists(owned)))
+        .returning({ siteId: hostedSiteDomainSettings.siteId }),
+    );
     // Both version tables and the live binding change in one local statement.
     // Address changes do not change the captured, owned Site identity.
     const [site] = await writeDb
-      .with(publicVersions, privateVersions)
+      .with(publicVersions, privateVersions, customDomains, customAddress)
       .update(hostedSites)
       .set({ activeDeploymentId: null, updatedAt: deleted.updatedAt })
       .where(ownership)

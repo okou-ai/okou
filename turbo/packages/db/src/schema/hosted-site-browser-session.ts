@@ -23,6 +23,7 @@ export const hostedSiteBrowserSessions = pgTable(
         { onDelete: "cascade" },
       ),
     origin: text("origin").notNull(),
+    customDomainRevision: uuid("custom_domain_revision"),
     userId: text("user_id").notNull(),
     clerkSessionId: text("clerk_session_id").notNull(),
     codeHash: text("code_hash").unique(),

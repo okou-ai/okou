@@ -1,3 +1,9 @@
+import type { infer as zInfer } from "zod";
+import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import {
+  HostedSiteDomains,
+  type HostedSiteDomainOperations,
+} from "./hosted-site-domains.tsx";
 import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ReactNode } from "react";
@@ -12,6 +18,11 @@ import {
 import {
   Button,
   Input,
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
   MENU_ROW_HEIGHT_CLASS,
   Popover,
   PopoverContent,
@@ -302,16 +313,211 @@ function WebsiteUrlStatus({
   );
 }
 
+function WebsiteDomainSelector({
+  session,
+  saving,
+  standalone,
+  configuration,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly standalone: boolean;
+  readonly configuration: zInfer<typeof hostedDomainSettingsSchema>;
+}) {
+  const { t } = useTranslation();
+  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const chooseDomain = useSet(session.domains.choose$);
+  const id = session.inputId;
+  return (
+    <Select
+      value={selectedDomainId ?? "platform"}
+      disabled={saving}
+      onValueChange={(value) => {
+        return chooseDomain(value === "platform" ? null : value);
+      }}
+    >
+      <SelectTrigger
+        id={standalone ? id : `${id}-domain`}
+        autoFocus={standalone}
+        aria-label={t(($) => {
+          return $.artifacts.customDomain.domain;
+        })}
+        className={standalone ? "w-full" : "h-auto border-0 bg-transparent p-0"}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="platform">
+          .{resolveEditableHostedSiteDomain()}
+        </SelectItem>
+        {configuration.domains
+          .filter((domain) => {
+            return domain.ready && !domain.removing;
+          })
+          .map((domain) => {
+            return (
+              <SelectItem key={domain.id} value={domain.id}>
+                {domain.hostname}
+              </SelectItem>
+            );
+          })}
+      </SelectContent>
+    </Select>
+  );
+}
+function WebsiteCustomDomainRow({
+  session,
+  saving,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+}) {
+  const { t } = useTranslation();
+  const domainSettings = useLoadable(session.domains.settings$);
+  const previousDomainSettings = useLastResolved(session.domains.settings$);
+  const configuration =
+    domainSettings.state === "hasData"
+      ? domainSettings.data
+      : previousDomainSettings;
+  const showDomains = useSet(session.domains.show$);
+  const signal = useGet(session.signal$);
+  if (!signal) {
+    return null;
+  }
+  return (
+    <>
+      {" "}
+      {configuration && (
+        <div className="mt-3 border-t border-border pt-2">
+          <Button
+            aria-label={t(($) => {
+              return $.artifacts.customDomain.title;
+            })}
+            type="button"
+            variant="quiet"
+            disabled={saving}
+            className="w-full justify-start font-normal"
+            onClick={() => {
+              detach(showDomains(signal), Reason.DomCallback);
+            }}
+          >
+            <span>
+              {t(($) => {
+                return $.artifacts.customDomain.title;
+              })}
+            </span>
+            <ProBadge />
+            <ChevronRight size={14} className="ml-auto" />
+          </Button>
+        </div>
+      )}
+      {domainSettings.state === "loading" && (
+        <Skeleton className="mt-3 h-9 w-full rounded-lg" />
+      )}
+    </>
+  );
+}
+function canSaveWebsiteAddress(
+  custom: boolean,
+  changed: boolean,
+  available: boolean,
+  unchanged: boolean,
+) {
+  return custom ? changed : available || (changed && unchanged);
+}
+function WebsiteSlugInput({
+  session,
+  saving,
+  suffix,
+  onChange,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly suffix: ReactNode;
+  readonly onChange: (value: string) => void;
+}) {
+  const id = session.inputId;
+  const draft = useGet(session.draft$);
+  const validation = useGet(session.validation$);
+  if (draft === null) {
+    return null;
+  }
+  return (
+    <Input
+      id={id}
+      autoFocus
+      value={draft}
+      disabled={saving}
+      autoComplete="off"
+      autoCapitalize="none"
+      spellCheck={false}
+      maxLength={63}
+      aria-describedby={`${id}-hint`}
+      aria-invalid={validation === "invalid" || validation === "taken"}
+      suffix={suffix}
+      className="mt-2"
+      onChange={(event) => {
+        onChange(event.target.value);
+      }}
+      onKeyDown={(event) => {
+        // Composition confirmation, including Safari's final key, cannot submit.
+        if (
+          event.key === "Enter" &&
+          (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
+        ) {
+          event.preventDefault();
+        }
+      }}
+    />
+  );
+}
+function WebsiteUrlActions({
+  session,
+  saving,
+  disabled,
+}: {
+  readonly session: HostedSiteShareSession;
+  readonly saving: boolean;
+  readonly disabled: boolean;
+}) {
+  const { t } = useTranslation();
+  const cancel = useSet(session.cancel$);
+  return (
+    <div className="mt-4 flex justify-end gap-1">
+      <Button
+        type="button"
+        variant="quiet"
+        size="sm"
+        disabled={saving}
+        onClick={() => {
+          cancel();
+        }}
+      >
+        {t(($) => {
+          return $.artifacts.siteUrl.cancel;
+        })}
+      </Button>
+      <Button type="submit" size="sm" disabled={disabled}>
+        {saving && <Loader2 size={14} className="animate-spin" />}
+        {t(($) => {
+          return $.artifacts.siteUrl.save;
+        })}
+      </Button>
+    </div>
+  );
+}
 function WebsiteUrlEditor({
   session,
   saving,
   saveFailed,
   onSave,
+  domainOperations,
 }: {
   readonly session: HostedSiteShareSession;
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
+  readonly domainOperations: HostedSiteDomainOperations;
 }) {
   const { t } = useTranslation();
   const signal = useGet(session.signal$);
@@ -320,16 +526,49 @@ function WebsiteUrlEditor({
   const draft = useGet(session.draft$);
   const validation = useGet(session.validation$);
   const [checking, change] = useLoadableSet(session.change$);
-  const cancel = useSet(session.cancel$);
   const feedback = useWebsiteUrlFeedback(
     session,
     checking.state === "loading",
     checking.state === "hasError",
     saveFailed,
   );
+  const domainSettings = useLoadable(session.domains.settings$);
+  const previousDomainSettings = useLastResolved(session.domains.settings$);
+  const selectedDomainId = useGet(session.domains.selectedDomainId$);
+  const domainOpen = useGet(session.domains.open$);
+  const domainNotice = useGet(session.domains.notice$);
   if (!details || draft === null || !signal) {
     return null;
   }
+  const configuration =
+    domainSettings.state === "hasData"
+      ? domainSettings.data
+      : (previousDomainSettings ?? null);
+  const customDomain = configuration?.domains.find((domain) => {
+    return domain.id === selectedDomainId && domain.ready;
+  });
+  const changedDomain =
+    configuration !== null &&
+    selectedDomainId !== configuration.selectedDomainId;
+  const canSave = canSaveWebsiteAddress(
+    Boolean(customDomain),
+    changedDomain,
+    validation === "available",
+    draft === details.publicSlug,
+  );
+  if (domainOpen) {
+    return (
+      <HostedSiteDomains session={session} operations={domainOperations} />
+    );
+  }
+  const domainSelector = configuration ? (
+    <WebsiteDomainSelector
+      session={session}
+      saving={saving}
+      standalone={Boolean(customDomain)}
+      configuration={configuration}
+    />
+  ) : null;
   const suffix = new URL(details.url).hostname.slice(details.publicSlug.length);
   return (
     <form
@@ -346,35 +585,21 @@ function WebsiteUrlEditor({
             return $.artifacts.siteUrl.label;
           })}
         </label>
-        <WebsiteUrlStatus status={feedback.status} />
+        {!customDomain && <WebsiteUrlStatus status={feedback.status} />}
       </div>
 
-      <Input
-        id={id}
-        autoFocus
-        value={draft}
-        disabled={saving}
-        autoComplete="off"
-        autoCapitalize="none"
-        spellCheck={false}
-        maxLength={63}
-        aria-describedby={`${id}-hint`}
-        aria-invalid={validation === "invalid" || validation === "taken"}
-        suffix={suffix}
-        className="mt-2"
-        onChange={(event) => {
-          detach(change(event.target.value, signal), Reason.DomCallback);
-        }}
-        onKeyDown={(event) => {
-          // Composition confirmation, including Safari's final key, cannot submit.
-          if (
-            event.key === "Enter" &&
-            (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229)
-          ) {
-            event.preventDefault();
-          }
-        }}
-      />
+      {customDomain ? (
+        <div className="mt-2">{domainSelector}</div>
+      ) : (
+        <WebsiteSlugInput
+          session={session}
+          saving={saving}
+          suffix={domainSelector ?? suffix}
+          onChange={(value) => {
+            detach(change(value, signal), Reason.DomCallback);
+          }}
+        />
+      )}
       <p
         id={`${id}-hint`}
         role="status"
@@ -383,35 +608,19 @@ function WebsiteUrlEditor({
           feedback.error ? "text-destructive" : "text-muted-foreground",
         )}
       >
-        {feedback.message}
+        {domainNotice ??
+          (customDomain
+            ? `https://${customDomain.hostname}`
+            : feedback.message)}
       </p>
-      <div className="mt-4 flex justify-end gap-1">
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          disabled={saving}
-          onClick={() => {
-            cancel();
-          }}
-        >
-          {t(($) => {
-            return $.artifacts.siteUrl.cancel;
-          })}
-        </Button>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={
-            saving || checking.state === "loading" || validation !== "available"
-          }
-        >
-          {saving && <Loader2 size={14} className="animate-spin" />}
-          {t(($) => {
-            return $.artifacts.siteUrl.save;
-          })}
-        </Button>
-      </div>
+      <WebsiteCustomDomainRow session={session} saving={saving} />
+      <WebsiteUrlActions
+        session={session}
+        saving={saving}
+        disabled={
+          saving || (!customDomain && checking.state === "loading") || !canSave
+        }
+      />
     </form>
   );
 }
@@ -569,12 +778,14 @@ function HostedSiteShareUrl({
   saving,
   saveFailed,
   onSave,
+  domainOperations,
 }: {
   readonly session: HostedSiteShareSession;
   readonly surface: "dialog" | "sidebar";
   readonly saving: boolean;
   readonly saveFailed: boolean;
   readonly onSave: () => void;
+  readonly domainOperations: HostedSiteDomainOperations;
 }) {
   const link = useLoadable(session.copyUrl$);
   // Stays subscribed while the editor is open, so Cancel and Save return to
@@ -593,6 +804,7 @@ function HostedSiteShareUrl({
           saving={saving}
           saveFailed={saveFailed}
           onSave={onSave}
+          domainOperations={domainOperations}
         />
       ) : link.state === "loading" ? (
         // Nothing can be copied or customized until the current address is
@@ -612,7 +824,11 @@ function HostedSiteShareUrl({
           link={link.state === "hasData" ? link.data : null}
           address={
             details.state === "hasData" && details.data
-              ? new URL(details.data.url).hostname
+              ? new URL(
+                  link.state === "hasData" && link.data
+                    ? link.data
+                    : (details.data.effectiveUrl ?? details.data.url),
+                ).hostname
               : null
           }
           customizable={
@@ -722,6 +938,16 @@ function HostedSiteShareSessionMenu({
   readonly banner: ReactNode;
 }) {
   const signal = useGet(session.signal$);
+  const domainOpen = useGet(session.domains.open$);
+  const [domainCreating, createDomain] = useLoadableSet(
+    session.domains.create$,
+  );
+  const [domainVerifying, verifyDomain] = useLoadableSet(
+    session.domains.verify$,
+  );
+  const [domainRemoving, removeDomain] = useLoadableSet(
+    session.domains.remove$,
+  );
   const [saving, save] = useLoadableSet(session.save$);
   const [sharing, share] = useLoadableSet(session.people.share$);
   const [removing, remove] = useLoadableSet(session.people.remove$);
@@ -739,7 +965,10 @@ function HostedSiteShareSessionMenu({
       saving={
         saving.state === "loading" ||
         sharing.state === "loading" ||
-        removing.state === "loading"
+        removing.state === "loading" ||
+        domainCreating.state === "loading" ||
+        domainVerifying.state === "loading" ||
+        domainRemoving.state === "loading"
       }
       {...props}
     >
@@ -748,7 +977,7 @@ function HostedSiteShareSessionMenu({
         aria-label={props.ariaLabel}
         className={cn(
           "max-w-[calc(100vw-2rem)] p-0",
-          emailSharing ? "w-100" : "w-90",
+          domainOpen ? "w-150" : emailSharing ? "w-100" : "w-90",
         )}
       >
         <HostedSiteShareBody
@@ -779,6 +1008,20 @@ function HostedSiteShareSessionMenu({
             surface={surface}
             saving={saving.state === "loading"}
             saveFailed={saving.state === "hasError"}
+            domainOperations={{
+              creating: domainCreating.state === "loading",
+              verifying: domainVerifying.state === "loading",
+              removing: domainRemoving.state === "loading",
+              create: () => {
+                detach(createDomain(signal), Reason.DomCallback);
+              },
+              verify: () => {
+                detach(verifyDomain(signal), Reason.DomCallback);
+              },
+              remove: () => {
+                detach(removeDomain(signal), Reason.DomCallback);
+              },
+            }}
             onSave={() => {
               detach(save(signal), Reason.DomCallback);
             }}

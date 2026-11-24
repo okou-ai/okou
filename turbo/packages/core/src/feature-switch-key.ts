@@ -51,6 +51,7 @@ export enum FeatureSwitchKey {
   CloudBrowserPanel = "cloudBrowserPanel",
   ShareAudienceDescriptions = "shareAudienceDescriptions",
   WorksChannelCards = "worksChannelCards",
+  HostedSiteCustomDomains = "hostedSiteCustomDomains",
   HostedSiteShareRows = "hostedSiteShareRows",
   HostedSiteEmailSharing = "hostedSiteEmailSharing",
   FreePlanArtifactPaywall = "freePlanArtifactPaywall",

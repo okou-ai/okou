@@ -1,3 +1,5 @@
+import { hostedSiteDomainRoutes } from "./hosted-site-domains";
+import { resolveHostedCustomDomain$ } from "../services/hosted-site-domains.service";
 import { hostedSiteAccessRoutes } from "./hosted-site-access";
 import { hostedSiteSharingRoutes } from "./hosted-site-sharing";
 import { hostedSiteSessionViewer$ } from "../services/hosted-site-sessions.service";
@@ -103,16 +105,41 @@ const deliveryAuthorization$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     set(setResHeader$, "Cache-Control", "private, no-store");
     const args = { ...get(deliveryParams$), ...get(deliveryQuery$) };
+    if (args.hostname) {
+      const binding = await set(
+        resolveHostedCustomDomain$,
+        args.hostname,
+        signal,
+      );
+      if (
+        !binding ||
+        binding.siteId !== args.siteId ||
+        binding.revision !== args.bindingRevision ||
+        binding.publicSlug !== args.alias
+      ) {
+        return {
+          status: 200 as const,
+          body: { allowed: false as const, decision: "deny" as const },
+        };
+      }
+    } else if (args.bindingRevision) {
+      return {
+        status: 200 as const,
+        body: { allowed: false as const, decision: "deny" as const },
+      };
+    }
     let body = await set(authorizeHostedSiteDelivery$, args, signal);
     if (body.decision === "authenticate") {
       const userId = await set(
         hostedSiteSessionViewer$,
         {
           siteId: args.siteId,
-          origin: hostedLinkOrigin(
-            linkLayoutFromSegment(args.publicBrand),
-            args.alias,
-          ),
+          origin: args.hostname
+            ? `https://${args.hostname}`
+            : hostedLinkOrigin(
+                linkLayoutFromSegment(args.publicBrand),
+                args.alias,
+              ),
         },
         signal,
       );
@@ -263,6 +290,7 @@ const deleteSiteInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const hostRoutes: readonly RouteEntry[] = [
   ...hostedSiteTitleRoutes,
   ...hostedSiteUrlRoutes,
+  ...hostedSiteDomainRoutes,
   ...hostedSiteAccessRoutes,
   ...hostedSiteSharingRoutes,
   {

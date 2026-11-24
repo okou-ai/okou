@@ -270,6 +270,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.HostedSiteCustomDomains]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Custom domains",
+    description:
+      "Connect verified custom domains from Customize URL with a subscription.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.FreePlanArtifactPaywall]: {
     maintainer: "ming@okou.ai",
     displayName: "Free plan artifact paywall",

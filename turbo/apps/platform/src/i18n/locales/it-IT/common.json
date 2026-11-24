@@ -517,6 +517,32 @@
       "kindIcon": "{{kind}} artefatto",
       "loading": "Caricamento degli artefatti"
     },
+    "customDomain": {
+      "addAnother": "Add another domain",
+      "back": "Back to Customize URL",
+      "checks": {
+        "certificate": "HTTPS",
+        "dns": "DNS connection",
+        "ownership": "Ownership"
+      },
+      "continue": "Continue",
+      "copied": "Copied",
+      "copyFailed": "Could not copy. Select the value to copy it.",
+      "copyRecord": "Copy {{type}} value",
+      "dnsHelp": "Add these records at your DNS provider, then click Verify",
+      "domain": "Domain",
+      "lastChecked": "Last checked {{time}}",
+      "notChecked": "No verification yet",
+      "ownDomain": "Enter a domain you own",
+      "remove": "Remove",
+      "removeConfirm": "Your sharing link will return to {{url}}.",
+      "removeTitle": "Remove custom domain?",
+      "removing": "This domain is disconnected. Click Remove to finish cleaning up its configuration.",
+      "title": "Custom domain",
+      "verified": "Domain verified. Select it in Customize URL.",
+      "verify": "Verify",
+      "yourDomains": "Your domains"
+    },
     "deletion": {
       "cancel": "Annulla",
       "delete": "Elimina",

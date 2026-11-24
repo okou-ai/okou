@@ -1,0 +1,375 @@
+import { writeToClipboard } from "./okou-page/clipboard.ts";
+import { i18n } from "../i18n/index.ts";
+import { command, computed, state, type Computed } from "ccstate";
+import type { infer as zInfer } from "zod";
+import { hostContract } from "@okouai/api-contracts/client/host";
+import type { hostedSiteUrlSchema } from "@okouai/api-contracts/contracts/host";
+import type { hostedDomainSettingsSchema } from "@okouai/api-contracts/contracts/hosted-site-domains";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { accept } from "../lib/accept.ts";
+import { apiClient$ } from "./api-client.ts";
+import { featureSwitches$ } from "./external/feature-switch.ts";
+import { openSettingsBillingPlansDialog$ } from "./okou-page/settings/settings-dialog.ts";
+
+type Settings = zInfer<typeof hostedDomainSettingsSchema>;
+type SiteSignal = Computed<Promise<zInfer<typeof hostedSiteUrlSchema> | null>>;
+function createDomainState(site$: SiteSignal) {
+  const saved$ = state<Settings | null>(null);
+  const open$ = state(false);
+  const selectedDomainId$ = state<string | null>(null);
+  const managedDomainId$ = state<string | null>(null);
+  const hostname$ = state("");
+  const notice$ = state<string | null>(null);
+  const removalConfirmation$ = state(false);
+  const settings$ = computed(async (get) => {
+    const site = await get(site$);
+    if (
+      !(await get(featureSwitches$))[
+        FeatureSwitchKey.HostedSiteCustomDomains
+      ] &&
+      !site?.effectiveUrl
+    ) {
+      return null;
+    }
+    if (!site?.isActive) {
+      return null;
+    }
+    const saved = get(saved$);
+    if (saved) {
+      return saved;
+    }
+    const result = await accept(
+      get(apiClient$)(hostContract).siteDomains({
+        params: { siteId: site.siteId },
+        fetchOptions: { cache: "no-store" },
+      }),
+      [200, 403, 404],
+    );
+    return result.status === 200 ? result.body : null;
+  });
+  const effectiveUrl$ = computed((get) => {
+    return get(saved$)?.effectiveUrl ?? null;
+  });
+  return {
+    saved$,
+    open$,
+    selectedDomainId$,
+    managedDomainId$,
+    hostname$,
+    notice$,
+    removalConfirmation$,
+    settings$,
+    effectiveUrl$,
+  };
+}
+type DomainState = ReturnType<typeof createDomainState>;
+type DomainAction = "create" | "verify" | "remove";
+function createDomainNavigation(scope: DomainState) {
+  const {
+    open$,
+    selectedDomainId$,
+    managedDomainId$,
+    hostname$,
+    notice$,
+    removalConfirmation$,
+    settings$,
+  } = scope;
+  const begin$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const settings = await get(settings$);
+    signal.throwIfAborted();
+    set(open$, false);
+    set(notice$, null);
+    set(
+      selectedDomainId$,
+      settings?.allowed &&
+        settings.domains.some((domain) => {
+          return domain.id === settings.selectedDomainId && domain.ready;
+        })
+        ? settings.selectedDomainId
+        : null,
+    );
+  });
+  const show$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const settings = await get(settings$);
+    signal.throwIfAborted();
+    if (!settings || (!settings.allowed && settings.domains.length === 0)) {
+      await set(openSettingsBillingPlansDialog$, signal);
+      signal.throwIfAborted();
+      return;
+    }
+    set(
+      managedDomainId$,
+      settings.domains.find((domain) => {
+        return !domain.removing;
+      })?.id ?? null,
+    );
+    set(notice$, null);
+    set(open$, true);
+  });
+  const back$ = command(({ set }) => {
+    set(open$, false);
+    set(notice$, null);
+  });
+  const choose$ = command(({ set }, id: string | null) => {
+    set(selectedDomainId$, id);
+    set(notice$, null);
+  });
+  const manage$ = command(({ set }, id: string | null) => {
+    set(managedDomainId$, id);
+    set(hostname$, "");
+    set(notice$, null);
+  });
+  const editHostname$ = command(({ set }, value: string) => {
+    set(hostname$, value);
+    set(notice$, null);
+  });
+  const confirmRemoval$ = command(({ set }, open: boolean) => {
+    return set(removalConfirmation$, open);
+  });
+  const copy$ = command(async ({ set }, value: string, signal: AbortSignal) => {
+    const copied = await writeToClipboard(value);
+    signal.throwIfAborted();
+    const message = copied
+      ? i18n.t(($) => {
+          return $.artifacts.customDomain.copied;
+        })
+      : i18n.t(($) => {
+          return $.artifacts.customDomain.copyFailed;
+        });
+    set(notice$, message);
+  });
+  return {
+    begin$,
+    show$,
+    back$,
+    choose$,
+    manage$,
+    editHostname$,
+    confirmRemoval$,
+    copy$,
+  };
+}
+const requestDomainChange$ = command(
+  (
+    { get },
+    args: {
+      readonly settings: Settings;
+      readonly domain: Settings["domains"][number] | undefined;
+      readonly action: DomainAction;
+      readonly hostname: string;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { settings, domain, action, hostname } = args;
+    const api = get(apiClient$)(hostContract);
+    const params = { siteId: settings.siteId, domainId: domain?.id ?? "" };
+    const body = { expectedRevision: domain?.revision ?? "" };
+    return accept(
+      action === "create"
+        ? api.addSiteDomain({
+            params: { siteId: settings.siteId },
+            body: { hostname },
+            fetchOptions: { signal },
+          })
+        : action === "verify"
+          ? api.verifySiteDomain({ params, body, fetchOptions: { signal } })
+          : api.removeSiteDomain({ params, body, fetchOptions: { signal } }),
+      [200, 400, 402, 409, 503],
+      signal,
+    );
+  },
+);
+const applyDomainSettings$ = command(
+  (
+    { get, set },
+    args: {
+      readonly scope: DomainState;
+      readonly settings: Settings;
+      readonly action: DomainAction;
+      readonly domainId?: string;
+    },
+  ) => {
+    const { scope, settings, action, domainId } = args;
+    const { saved$, selectedDomainId$, notice$, managedDomainId$, hostname$ } =
+      scope;
+    set(saved$, settings);
+    if (
+      get(selectedDomainId$) &&
+      !settings.domains.some((domain) => {
+        return domain.id === get(selectedDomainId$) && domain.ready;
+      })
+    ) {
+      set(selectedDomainId$, null);
+    }
+    set(notice$, null);
+    if (action === "create") {
+      set(
+        managedDomainId$,
+        settings.domains.find((item) => {
+          return (
+            item.hostname ===
+            new URL(`https://${get(hostname$).trim()}`).hostname
+              .toLowerCase()
+              .replace(/\.$/u, "")
+          );
+        })?.id ??
+          settings.domains.at(-1)?.id ??
+          null,
+      );
+    }
+    if (action === "remove") {
+      set(managedDomainId$, null);
+      if (get(selectedDomainId$) === domainId) {
+        set(selectedDomainId$, null);
+      }
+    }
+  },
+);
+const handleDomainFailure$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly scope: DomainState;
+      readonly settings: Settings;
+      readonly action: DomainAction;
+      readonly domainId?: string;
+      readonly response: {
+        readonly status: number;
+        readonly body: { readonly error: { readonly message: string } };
+      };
+    },
+    signal: AbortSignal,
+  ) => {
+    const { scope, settings, action, domainId, response } = args;
+    const { saved$, selectedDomainId$, notice$ } = scope;
+    if (action === "remove" && response.status === 503) {
+      const current = await accept(
+        get(apiClient$)(hostContract).siteDomains({
+          params: { siteId: settings.siteId },
+          fetchOptions: { signal, cache: "no-store" },
+        }),
+        [200],
+        signal,
+      );
+      signal.throwIfAborted();
+      set(saved$, current.body);
+      if (get(selectedDomainId$) === domainId) {
+        set(selectedDomainId$, null);
+      }
+    }
+    if (response.status === 402) {
+      await set(openSettingsBillingPlansDialog$, signal);
+      signal.throwIfAborted();
+    } else {
+      set(notice$, response.body.error.message);
+    }
+  },
+);
+function createDomainMutations(scope: DomainState) {
+  const { settings$, managedDomainId$, hostname$, removalConfirmation$ } =
+    scope;
+  const mutate$ = command(
+    async ({ get, set }, action: DomainAction, signal: AbortSignal) => {
+      const settings = await get(settings$);
+      signal.throwIfAborted();
+      if (!settings) {
+        return;
+      }
+      if (action !== "remove" && !settings.allowed) {
+        await set(openSettingsBillingPlansDialog$, signal);
+        signal.throwIfAborted();
+        return;
+      }
+      const domain = settings.domains.find((item) => {
+        return item.id === get(managedDomainId$);
+      });
+      if (action !== "create" && !domain) {
+        return;
+      }
+      const response = await set(
+        requestDomainChange$,
+        { settings, domain, action, hostname: get(hostname$) },
+        signal,
+      );
+      signal.throwIfAborted();
+      if (response.status !== 200) {
+        await set(
+          handleDomainFailure$,
+          { scope, settings, action, domainId: domain?.id, response },
+          signal,
+        );
+        signal.throwIfAborted();
+        return;
+      }
+      set(applyDomainSettings$, {
+        scope,
+        settings: response.body,
+        action,
+        domainId: domain?.id,
+      });
+    },
+  );
+  const create$ = command(({ set }, signal: AbortSignal) => {
+    return set(mutate$, "create", signal);
+  });
+  const verify$ = command(({ set }, signal: AbortSignal) => {
+    return set(mutate$, "verify", signal);
+  });
+  const remove$ = command(async ({ set }, signal: AbortSignal) => {
+    await set(mutate$, "remove", signal);
+    signal.throwIfAborted();
+    set(removalConfirmation$, false);
+  });
+  return { create$, verify$, remove$ };
+}
+function createDomainSelection(scope: DomainState, site$: SiteSignal) {
+  const { settings$, selectedDomainId$, notice$, saved$ } = scope;
+  const persist$ = command(
+    async ({ get, set }, publicSlug: string, signal: AbortSignal) => {
+      const settings = await get(settings$);
+      signal.throwIfAborted();
+      const site = await get(site$);
+      signal.throwIfAborted();
+      if (!settings || !site) {
+        return null;
+      }
+      const response = await accept(
+        get(apiClient$)(hostContract).selectSiteDomain({
+          params: { siteId: site.siteId },
+          body: {
+            domainId: get(selectedDomainId$),
+            expectedRevision: settings.revision,
+            publicSlug: get(selectedDomainId$) ? site.publicSlug : publicSlug,
+            expectedPublicSlug: site.publicSlug,
+          },
+          fetchOptions: { signal },
+        }),
+        [200, 402, 409],
+        signal,
+      );
+      signal.throwIfAborted();
+      if (response.status !== 200) {
+        if (response.status === 402) {
+          await set(openSettingsBillingPlansDialog$, signal);
+          signal.throwIfAborted();
+        } else {
+          set(notice$, response.body.error.message);
+        }
+        return null;
+      }
+      set(saved$, response.body);
+      set(notice$, null);
+      return response.body;
+    },
+  );
+  return { persist$ };
+}
+export function createHostedSiteDomainSignals(site$: SiteSignal) {
+  const scope = createDomainState(site$);
+  return {
+    ...scope,
+    ...createDomainNavigation(scope),
+    ...createDomainMutations(scope),
+    ...createDomainSelection(scope, site$),
+  };
+}
