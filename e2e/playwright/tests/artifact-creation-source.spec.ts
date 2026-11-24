@@ -464,12 +464,17 @@ test("resolve authenticated artifact sources through publication, navigation and
       .getByRole("button", { name: "More artifact actions", exact: true })
       .click();
     const importedMenu = page.getByRole("menu");
-    await expect(
-      importedMenu.getByRole("menuitem", {
-        name: "View creation source",
-        exact: true,
-      }),
-    ).toHaveAttribute("aria-disabled", "true");
+    const importedSource = importedMenu.getByRole("menuitem", {
+      name: "View creation source",
+      exact: true,
+    });
+    await expect(importedSource).toHaveAttribute("aria-busy", "false");
+    await expect(importedSource).toHaveAttribute("aria-disabled", "true");
+    await expect(importedSource).not.toHaveAttribute("href");
+    await expect(importedSource).toHaveAttribute(
+      "title",
+      "Creation source unavailable",
+    );
     await expect(
       importedMenu.getByRole("menuitem", { name: "Delete", exact: true }),
     ).not.toHaveAttribute("aria-disabled", "true");
