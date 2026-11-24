@@ -1,6 +1,7 @@
 // Production service configuration. The Clerk publishable key is public.
 OKOU_API_BASE_URL = https:/$()/api.okou.ai
 OKOU_WEB_BASE_URL = https:/$()/app.okou.ai
+OKOU_CONNECTOR_CALLBACK_HOST = app.okou.ai
 CLERK_PUBLISHABLE_KEY = pk_live_Y2xlcmsub2tvdS5haSQ
 OKOU_CLERK_KEYCHAIN_ACCESS_GROUP = C5UWSXYB67.ai.okou.ios
 // Crash reporting is opt-in for local Debug builds. Release supplies its public DSN.
