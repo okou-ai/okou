@@ -328,8 +328,9 @@ test.each([
     context.mocks.browser.matchMedia((query) => {
       return query === "(min-width: 48rem)" && !mobile;
     });
-    const toggle = (name: string) =>
-      queryFastControl("button", "Show or hide chats in " + name);
+    const toggle = (name: string) => {
+      return queryFastControl("button", "Show or hide chats in " + name);
+    };
     const archiveResponse = context.mocks.deferred<void>();
     const restoreResponse = context.mocks.deferred<void>();
     const ordinary = continuityThread(328, 1, "Ordinary chat");

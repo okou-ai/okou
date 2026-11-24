@@ -21,13 +21,13 @@
     {
       "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
       "title": "The replacement viewer accepts typing with the expired handshake withheld",
-      "reason": "The released arm already verifies usable replacement input while the original reply is pending and after its late disposition.",
+      "reason": "After the hidden handshake expires, the original socket already has zero active connections. The retained row reveals the page, releases the obsolete hello, then types into the recovered replacement. The withheld row reaches the same usable replacement after the old connection has closed; neither asserts replacement input before releasing a still-live hello.",
       "representative": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx — The replacement viewer accepts typing with the expired handshake released"
     },
     {
       "path": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx",
       "title": "Replacement page receives typing when the pending descriptor expires and its original reply is withhold",
-      "reason": "The released arm already verifies usable replacement input while the original reply is pending and after its late disposition.",
+      "reason": "The retained visible-descriptor row types into the replacement while the HTTP descriptor response is still held, delivers and observes the old response, then types again on the replacement. This covers both sides of late descriptor delivery. Hidden-descriptor recovery remains open at browser-response-deadlines-006.",
       "representative": "turbo/apps/platform/src/views/browser-session/__tests__/browser-response-deadlines.test.tsx — Replacement page receives typing when the pending descriptor expires and its original reply is deliver"
     },
     {

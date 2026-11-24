@@ -1,7 +1,6 @@
 import { test, expect } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import { feishuBrowserConnectContract } from "@okouai/api-contracts/contracts/feishu-browser-connect";
-import { feishuOauthContract } from "@okouai/api-contracts/contracts/feishu-oauth";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";

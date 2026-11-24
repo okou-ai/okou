@@ -23,3 +23,9 @@ The [comparison](comparison.json) checks the authored callbacks across frozen so
 ## Main integration and scope
 
 The rebuilt project chat list includes all three Project archive and restore cases from #50475, including mobile and rejected confirmation, in addition to the existing branch registrations. The post-merge iOS SSH state change did not touch Platform. The final PR summary records the exact-head shard and protected-gate results.
+
+The final two-window attach control holds an actual provider HTTP response until both original subscribers have requested the topic. The provider returns 503. Only the new delivery after reacquisition changes the same B document from Cedar to Maple. No provider credential value is retained in this evidence.
+
+For history paging, the eleven matching scroll, transcript and conversation-locator production source paths on main have no changes against the common base of main and the opening PR head. The main test loads “History question 3” and compares the same anchor’s top after pagination. [Main registration](https://github.com/okou-ai/okou/blob/51c0094012/turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx#L1776)
+
+The expired-hello registration releases the reply after its original socket has zero active connections, then types on the replacement. The visible-descriptor registration types on the replacement both before and after the old HTTP descriptor is delivered. The hidden descriptor remains a separate open case.
