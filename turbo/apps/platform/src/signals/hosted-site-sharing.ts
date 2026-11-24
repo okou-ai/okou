@@ -17,7 +17,6 @@ import {
   recordHostedSiteUrlChange$,
 } from "./hosted-site-url-changes.ts";
 import { createShareLinkCopy } from "./share-link-copy.ts";
-import { recordHostedSiteVisibilityChange$ } from "./hosted-site-visibility-changes.ts";
 import {
   debounceCommand,
   onRef,
@@ -32,10 +31,7 @@ type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
-function createSiteVisibilitySignals(
-  sourceUrl: string,
-  site$: Computed<Promise<SiteUrl | null>>,
-) {
+function createSiteVisibilitySignals(site$: Computed<Promise<SiteUrl | null>>) {
   const reload$ = state(0);
   const details$ = computed(async (get) => {
     const site = await get(site$);
@@ -64,7 +60,7 @@ function createSiteVisibilitySignals(
       if (!details || details.visibility === visibility) {
         return false;
       }
-      const updated = await accept(
+      await accept(
         get(apiClient$)(hostContract).updateSiteVisibility({
           params: { siteId: details.siteId },
           body: { visibility, expectedRevision: details.revision },
@@ -76,10 +72,6 @@ function createSiteVisibilitySignals(
       signal.throwIfAborted();
       set(reload$, (value) => {
         return value + 1;
-      });
-      set(recordHostedSiteVisibilityChange$, {
-        url: sourceUrl,
-        revision: updated.body.revision,
       });
       await get(details$);
       signal.throwIfAborted();
@@ -273,7 +265,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
   const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl, details$);
+  const visibility = createSiteVisibilitySignals(details$);
   const people = createHostedSitePeopleSignals(visibility.visibility$, open$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
