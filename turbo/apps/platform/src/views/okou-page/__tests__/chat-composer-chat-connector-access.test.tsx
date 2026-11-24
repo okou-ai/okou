@@ -11,6 +11,7 @@ import { customConnectorByIdContract } from "@okouai/api-contracts/contracts/cus
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   fill,
@@ -869,6 +870,45 @@ test("Preserve the internally resolved account when enabling several accounts be
   await expect(
     screen.findByRole("switch", { name: "Personal access" }),
   ).resolves.toBeChecked();
+});
+
+test("Show member account eligibility in Composer and send the first message without Chat overrides", async () => {
+  const user = userEvent.setup({ delay: null });
+  installAccess({ personalOff: true });
+  context.mocks.api(
+    chatConnectorAccessContract.setThreadOverride,
+    ({ respond }) => {
+      return respond(400, {
+        error: {
+          code: "BAD_REQUEST",
+          message: "Legacy overrides are disabled",
+        },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/",
+    locale: "en-US",
+    featureSwitches: { [FeatureSwitchKey.MemberConnectorAccountAccess]: true },
+  });
+  const editor = await findComposer();
+  await user.click(await openMenu());
+  const panel = await screen.findByRole("group", { name: "GitHub" });
+  expect(within(panel).queryByRole("switch")).toBeNull();
+  await expect(within(panel).findByText("Allow")).resolves.toBeInTheDocument();
+  expect(within(panel).getByText("Deny")).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      "Account access applies across your chats and is managed in Connectors settings.",
+    ),
+  ).toBeInTheDocument();
+  await user.keyboard("{Escape}{Escape}");
+  await fill(editor, "Use my GitHub account");
+  click(await findFastControl("button", "Send"));
+  await waitFor(() => {
+    expect(window.location.pathname).toMatch(/^\/chats\//u);
+  });
 });
 
 test.each([false, true])(

@@ -1,9 +1,16 @@
 import type { FormEvent, ReactNode } from "react";
 
-import { useGet, useLastLoadable, useSet, type Loadable } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useSet,
+  type Loadable,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { EllipsisVertical, Search } from "lucide-react";
+import { ChevronDown, EllipsisVertical, Search } from "lucide-react";
+import type { ConnectorAccountPolicyChoice } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validators/connector-accounts";
 import type {
   ConnectorAccountConnection,
@@ -21,19 +28,22 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Input,
   Skeleton,
 } from "@okouai/ui";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { memberConnectorAccountAccess$ } from "../../../../signals/external/feature-switch.ts";
+import { permissionGrantExpiryText } from "../../../../signals/permission-allow/permission-grant-expiration.ts";
 import {
   CONNECTOR_ACCOUNT_SEARCH_THRESHOLD,
   type ConnectorAccountList,
 } from "../../../../signals/okou-page/connector-accounts.ts";
 import {
   settingsConnectorAccounts,
-  createConnectorAccountDefaultSignals,
+  createConnectorAccountAccessSettingsSignals,
 } from "../../../../signals/okou-page/settings/connector-accounts.ts";
 import {
   clearConnectorAccountDeletion$,
@@ -47,7 +57,7 @@ import {
   connectorAccountRenameInputRef$,
   prepareConnectorAccountDeletion$,
   resetConnectorAccountManagerDrafts$,
-  managedConnectorAccountDefaults$,
+  managedConnectorAccountAccessSettings$,
   saveConnectorAccountRename$,
   setConnectorAccountRenameValue$,
   startConnectorAccountRename$,
@@ -332,24 +342,25 @@ function AccountsCard({
   target,
   onReconnect,
   onReviewScopes,
-  defaults,
-  defaultSignals,
+  memberAccess,
+  accessSettings,
 }: {
   readonly loadable: Loadable<ConnectorAccountList>;
   readonly target: ConnectorAccountTarget;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
-  readonly defaults:
-    | readonly {
-        connectionId: string;
-        defaultEnabled: boolean;
-        isDefault: boolean;
-      }[]
-    | null;
-  readonly defaultSignals: ReturnType<
-    typeof createConnectorAccountDefaultSignals
+  readonly memberAccess: boolean | undefined;
+  readonly accessSettings: ReturnType<
+    typeof createConnectorAccountAccessSettingsSignals
   >;
 }) {
+  const { t } = useTranslation();
+  const defaultsLoadable = useLastLoadable(accessSettings.defaults$);
+  const policiesLoadable = useLastLoadable(accessSettings.policies$);
+  const defaults =
+    defaultsLoadable.state === "hasData" ? defaultsLoadable.data : null;
+  const policies =
+    policiesLoadable.state === "hasData" ? policiesLoadable.data : null;
   const renameDraft = useGet(connectorAccountRenameDraft$);
   const editingAccount = renameDraft?.account;
   const { rows, displayedRows, messageKey } = accountManagerRows(
@@ -371,18 +382,28 @@ function AccountsCard({
           onReconnect={onReconnect}
           onReviewScopes={onReviewScopes}
           enableControl={
-            <AccountEnabledToggle
-              account={account}
-              enabled={
-                defaults?.some((entry) => {
-                  return (
-                    entry.connectionId === account.id && entry.defaultEnabled
-                  );
-                }) ?? false
-              }
-              loading={defaults === null}
-              signals={defaultSignals}
-            />
+            memberAccess ? (
+              <AccountPolicyControl
+                account={account}
+                policy={policies?.find((entry) => {
+                  return entry.connectionId === account.id;
+                })}
+                signals={accessSettings}
+              />
+            ) : memberAccess === false ? (
+              <AccountEnabledToggle
+                account={account}
+                enabled={
+                  defaults?.some((entry) => {
+                    return (
+                      entry.connectionId === account.id && entry.defaultEnabled
+                    );
+                  }) ?? false
+                }
+                loading={defaults === null}
+                signals={accessSettings}
+              />
+            ) : null
           }
         />
       </div>
@@ -391,12 +412,147 @@ function AccountsCard({
   return (
     <>
       {messageKey ? <AccountsMessage messageKey={messageKey} /> : null}
+      {memberAccess && policiesLoadable.state === "hasError" && (
+        <p role="alert" className="pb-2 text-sm text-destructive">
+          {t(($) => {
+            return $.connectorChatAccess.memberPolicyLoadFailed;
+          })}
+        </p>
+      )}
       {displayedRows.length > 0 ? (
         <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
           {accountRows}
         </div>
       ) : null}
     </>
+  );
+}
+
+function AccountPolicyControl({
+  account,
+  policy,
+  signals,
+}: {
+  readonly account: ConnectorAccountConnection;
+  readonly policy:
+    | { readonly enabled: boolean; readonly expiresAt: string | null }
+    | undefined;
+  readonly signals: ReturnType<
+    typeof createConnectorAccountAccessSettingsSignals
+  >;
+}) {
+  const { t } = useTranslation();
+  const [saving, update] = useLoadableSet(signals.updatePolicy$);
+  const signal = useGet(pageSignal$);
+  const label = useConnectorAccountLabel()(account);
+  if (!policy) {
+    return null;
+  }
+  const allow = t(($) => {
+    return $.connectors.permissions.actions.allow;
+  });
+  const deny = t(($) => {
+    return $.connectors.permissions.actions.deny;
+  });
+  const status = policy.enabled ? allow : deny;
+  const duration = policy.expiresAt
+    ? permissionGrantExpiryText(policy.expiresAt)
+    : policy.enabled
+      ? t(($) => {
+          return $.connectors.permissions.always;
+        })
+      : null;
+  const accessLabel = t(
+    ($) => {
+      return $.connectorChatAccess.accountAccess;
+    },
+    {
+      account: label,
+    },
+  );
+  const options: readonly (readonly [ConnectorAccountPolicyChoice, string])[] =
+    [
+      [
+        "allow-always",
+        t(($) => {
+          return $.connectors.permissions.allowDuration.always;
+        }),
+      ],
+      [
+        "allow-1h",
+        t(($) => {
+          return $.connectors.permissions.allowDuration.oneHour;
+        }),
+      ],
+      [
+        "allow-24h",
+        t(($) => {
+          return $.connectors.permissions.allowDuration.twentyFourHours;
+        }),
+      ],
+      [
+        "allow-7d",
+        t(($) => {
+          return $.connectors.permissions.allowDuration.sevenDays;
+        }),
+      ],
+    ];
+  return (
+    <div className="flex min-w-0 flex-col items-end gap-1">
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={[accessLabel, status, duration]
+            .filter(Boolean)
+            .join(", ")}
+          disabled={saving.state === "loading"}
+          render={
+            <Button
+              type="button"
+              size="xs"
+              variant="neutral"
+              pending={saving.state === "loading"}
+            />
+          }
+        >
+          <span>{status}</span>
+          {duration && (
+            <span className="max-w-28 truncate text-xs text-muted-foreground">
+              {duration}
+            </span>
+          )}
+          <ChevronDown size={14} aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          {options.map(([value, text]) => {
+            return (
+              <DropdownMenuItem
+                key={value}
+                onClick={() => {
+                  detach(update(account.id, value, signal), Reason.DomCallback);
+                }}
+              >
+                {text}
+              </DropdownMenuItem>
+            );
+          })}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => {
+              detach(update(account.id, "deny", signal), Reason.DomCallback);
+            }}
+          >
+            {deny}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {saving.state === "hasError" && (
+        <span role="alert" className="text-xs text-destructive">
+          {t(($) => {
+            return $.authorization.permission.errors.updateFailed;
+          })}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -409,7 +565,9 @@ function AccountEnabledToggle({
   readonly account: ConnectorAccountConnection;
   readonly enabled: boolean;
   readonly loading: boolean;
-  readonly signals: ReturnType<typeof createConnectorAccountDefaultSignals>;
+  readonly signals: ReturnType<
+    typeof createConnectorAccountAccessSettingsSignals
+  >;
 }) {
   const [saving, update] = useLoadableSet(signals.update$);
   const signal = useGet(pageSignal$);
@@ -679,7 +837,10 @@ function connectorAccountNextCursor(
 function ConnectorAccountManagerHeader({
   connectorLabel,
   icon,
-}: Pick<ConnectorAccountManagerDialogProps, "connectorLabel" | "icon">) {
+  memberAccess,
+}: Pick<ConnectorAccountManagerDialogProps, "connectorLabel" | "icon"> & {
+  readonly memberAccess: boolean | undefined;
+}) {
   const { t } = useTranslation();
 
   return (
@@ -700,7 +861,9 @@ function ConnectorAccountManagerHeader({
           <DialogDescription>
             {t(
               ($) => {
-                return $.connectorChatAccess.settingsDescription;
+                return memberAccess === false
+                  ? $.connectorChatAccess.settingsDescription
+                  : $.connectorChatAccess.memberSettingsDescription;
               },
               { connector: connectorLabel },
             )}
@@ -714,11 +877,11 @@ function ConnectorAccountManagerHeader({
 export function ConnectorAccountManagerDialog(
   props: ConnectorAccountManagerDialogProps,
 ) {
-  const defaultsSignals = useGet(managedConnectorAccountDefaults$);
-  return defaultsSignals ? (
+  const accessSettings = useGet(managedConnectorAccountAccessSettings$);
+  return accessSettings ? (
     <LoadedConnectorAccountManagerDialog
       {...props}
-      defaultsSignals={defaultsSignals}
+      accessSettings={accessSettings}
     />
   ) : null;
 }
@@ -731,16 +894,16 @@ function LoadedConnectorAccountManagerDialog({
   onAdd,
   onReconnect,
   onReviewScopes,
-  defaultsSignals,
+  accessSettings,
   finalFocus,
 }: ConnectorAccountManagerDialogProps & {
-  readonly defaultsSignals: ReturnType<
-    typeof createConnectorAccountDefaultSignals
+  readonly accessSettings: ReturnType<
+    typeof createConnectorAccountAccessSettingsSignals
   >;
 }) {
   const { t } = useTranslation();
 
-  const defaults = useLastLoadable(defaultsSignals.defaults$);
+  const memberAccess = useLastResolved(memberConnectorAccountAccess$);
   const accountsLoadable = useLastLoadable(settingsConnectorAccounts.accounts$);
   const search = useGet(settingsConnectorAccounts.search$);
   const [loadMoreLoadable, loadMore] = useLoadableSet(
@@ -774,6 +937,7 @@ function LoadedConnectorAccountManagerDialog({
         <ConnectorAccountManagerHeader
           connectorLabel={connectorLabel}
           icon={icon}
+          memberAccess={memberAccess}
         />
         {showSearch ? (
           <div className="shrink-0">
@@ -782,8 +946,8 @@ function LoadedConnectorAccountManagerDialog({
         ) : null}
         <div className="min-h-0 overflow-y-auto">
           <AccountsCard
-            defaults={defaults.state === "hasData" ? defaults.data : null}
-            defaultSignals={defaultsSignals}
+            memberAccess={memberAccess}
+            accessSettings={accessSettings}
             loadable={accountsLoadable}
             target={target}
             onReconnect={reconnect}

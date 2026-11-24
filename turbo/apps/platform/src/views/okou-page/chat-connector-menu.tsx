@@ -38,7 +38,7 @@ function ChatAccountChoiceRow({
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
-  readonly onChange: (enabled: boolean) => Promise<void>;
+  readonly onChange?: (enabled: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -62,22 +62,32 @@ function ChatAccountChoiceRow({
           )}
         </span>
       </div>
-      <Switch
-        size="compact"
-        aria-label={t(
-          ($) => {
-            return $.connectorChatAccess.accountAccess;
-          },
-          { account: name },
-        )}
-        checked={access.enabled}
-        readOnly={busy}
-        aria-busy={busy || undefined}
-        className="aria-readonly:opacity-50"
-        onCheckedChange={(enabled) => {
-          detach(onChange(enabled), Reason.DomCallback);
-        }}
-      />
+      {onChange ? (
+        <Switch
+          size="compact"
+          aria-label={t(
+            ($) => {
+              return $.connectorChatAccess.accountAccess;
+            },
+            { account: name },
+          )}
+          checked={access.enabled}
+          readOnly={busy}
+          aria-busy={busy || undefined}
+          className="aria-readonly:opacity-50"
+          onCheckedChange={(enabled) => {
+            detach(onChange(enabled), Reason.DomCallback);
+          }}
+        />
+      ) : (
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {t(($) => {
+            return access.enabled
+              ? $.connectors.permissions.actions.allow
+              : $.connectors.permissions.actions.deny;
+          })}
+        </span>
+      )}
     </div>
   );
 }
@@ -145,9 +155,13 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
-              onChange={(enabled) => {
-                return override(account.id, enabled, signal);
-              }}
+              onChange={
+                entry.memberAccess
+                  ? undefined
+                  : (enabled) => {
+                      return override(account.id, enabled, signal);
+                    }
+              }
             />
           ) : null;
         })}
@@ -380,7 +394,9 @@ function ChatConnectorAccountPanel({
         <p className="truncate text-sm font-medium">{entry.label}</p>
         <p className="mt-1 text-xs text-muted-foreground">
           {t(($) => {
-            return $.connectorChatAccess.accountsInChat;
+            return entry.memberAccess
+              ? $.connectorChatAccess.memberAccountsInChat
+              : $.connectorChatAccess.accountsInChat;
           })}
         </p>
       </div>

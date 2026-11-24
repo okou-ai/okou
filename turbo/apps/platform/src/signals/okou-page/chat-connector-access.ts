@@ -19,6 +19,7 @@ import type {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../api-client.ts";
+import { memberConnectorAccountAccess$ } from "../external/feature-switch.ts";
 import { onRef, resetSignal } from "../utils.ts";
 import {
   connectorAccountTargetKey,
@@ -51,6 +52,7 @@ export interface ChatConnectorMenuTarget {
 
 export interface ChatConnectorOverview extends ChatConnectorMenuTarget {
   readonly access: ChatConnectorAccess;
+  readonly memberAccess: boolean;
   readonly current:
     | (ChatConnectorOverviewEntry["accounts"][number] & { readonly id: string })
     | null;
@@ -92,35 +94,38 @@ function createChatConnectorReads({
     async (get): Promise<readonly ChatConnectorOverview[]> => {
       const pending = get(pending$);
       const entries = await get(entries$);
+      const memberAccess = await get(memberConnectorAccountAccess$);
       return entries.map((entry) => {
         const key = connectorAccountTargetKey(entry.target);
-        const accounts = entry.accounts.map((account) => {
-          const overrideEnabled = threadId
-            ? account.overrideEnabled
-            : (pending.overrides.find((candidate) => {
-                return (
-                  candidate.connectionId === account.connectionId &&
-                  connectorAccountTargetKey(candidate.target) === key
-                );
-              })?.enabled ?? null);
-          return {
-            ...account,
-            overrideEnabled,
-            enabled: overrideEnabled ?? account.defaultEnabled,
-          };
-        });
+        const accounts = memberAccess
+          ? entry.accounts
+          : entry.accounts.map((account) => {
+              const overrideEnabled = threadId
+                ? account.overrideEnabled
+                : (pending.overrides.find((candidate) => {
+                    return (
+                      candidate.connectionId === account.connectionId &&
+                      connectorAccountTargetKey(candidate.target) === key
+                    );
+                  })?.enabled ?? null);
+              return {
+                ...account,
+                overrideEnabled,
+                enabled: overrideEnabled ?? account.defaultEnabled,
+              };
+            });
         const allowed = accounts.filter((account) => {
           return account.enabled;
         });
-        const selection = pending.selections.find((candidate) => {
-          return connectorAccountTargetKey(candidate.target) === key;
-        });
+        const selectedConnectionId =
+          threadId || memberAccess
+            ? entry.currentConnectionId
+            : pending.selections.find((candidate) => {
+                return connectorAccountTargetKey(candidate.target) === key;
+              })?.connectionId;
         const current =
           allowed.find((account) => {
-            return (
-              account.connectionId ===
-              (threadId ? entry.currentConnectionId : selection?.connectionId)
-            );
+            return account.connectionId === selectedConnectionId;
           }) ??
           allowed.find((account) => {
             return account.isDefault;
@@ -135,6 +140,7 @@ function createChatConnectorReads({
         return {
           ...entry,
           access,
+          memberAccess,
           current: current ? { ...current, id: current.connectionId } : null,
         };
       });

@@ -1,9 +1,15 @@
 import { command, computed, state } from "ccstate";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/client/chat-connector-access";
+import type { ConnectorAccountPolicyChoice } from "@okouai/api-contracts/contracts/chat-connector-access";
+import { memberConnectorAccountAccess$ } from "../../external/feature-switch.ts";
 
 import { onRef, resetSignal } from "../../utils.ts";
 import { reloadUserConnectedConnectors$ } from "../connector-overview.ts";
-import { invalidateConnectorAccountProjection$ } from "../connector-account-projection.ts";
+import {
+  builtinConnectorAccountProjectionVersion$,
+  customConnectorAccountProjectionVersion$,
+  invalidateConnectorAccountProjection$,
+} from "../connector-account-projection.ts";
 import { connectorAccountsContract } from "@okouai/api-contracts/client/connector-accounts";
 import { connectorAccountConnectionSchema } from "@okouai/api-contracts/validators/connector-accounts";
 import type {
@@ -153,12 +159,23 @@ export const settingsConnectorAccounts = createConnectorAccountListSignals({
   includeBuiltinScopeMismatch: true,
 });
 
-function accountDefaultsRequest(
+function accountAccessRequests(
   target: ConnectorAccountTarget,
   signal: AbortSignal,
 ) {
   return {
-    read: (client: ApiClientFactory) => {
+    readPolicies: (client: ApiClientFactory) => {
+      return accept(
+        client(chatConnectorAccessContract).accountPolicies({
+          query: target,
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+    },
+    readDefaults: (client: ApiClientFactory) => {
       return accept(
         client(chatConnectorAccessContract).accountDefaults({
           query: target,
@@ -168,28 +185,54 @@ function accountDefaultsRequest(
         signal,
       );
     },
+    updatePolicy: (
+      client: ApiClientFactory,
+      connectionId: string,
+      policy: ConnectorAccountPolicyChoice,
+    ) => {
+      return accept(
+        client(chatConnectorAccessContract).updateAccountPolicy({
+          params: { connectionId },
+          body: { target, policy },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+        { showErrorToast: false },
+      );
+    },
   };
 }
 
-export function createConnectorAccountDefaultSignals(
+export function createConnectorAccountAccessSettingsSignals(
   target: ConnectorAccountTarget,
 ) {
-  const request$ = state<ReturnType<typeof accountDefaultsRequest> | null>(
-    null,
-  );
+  const request$ = state<ReturnType<typeof accountAccessRequests> | null>(null);
   const resetOwner$ = resetSignal();
   const resetSave$ = resetSignal();
   const defaults$ = computed(async (get) => {
     const request = get(request$);
-    if (!request) {
+    if (!request || (await get(memberConnectorAccountAccess$))) {
       return null;
     }
     await get(settingsConnectorAccounts.accounts$);
-    const result = await request.read(get(apiClient$));
+    const result = await request.readDefaults(get(apiClient$));
     return result.body;
   });
+  const policies$ = computed(async (get) => {
+    const request = get(request$);
+    if (!request || !(await get(memberConnectorAccountAccess$))) {
+      return null;
+    }
+    get(
+      target.kind === "builtin"
+        ? builtinConnectorAccountProjectionVersion$
+        : customConnectorAccountProjectionVersion$,
+    );
+    return (await request.readPolicies(get(apiClient$))).body;
+  });
   const open$ = command(({ set }, signal: AbortSignal) => {
-    set(request$, accountDefaultsRequest(target, set(resetOwner$, signal)));
+    set(request$, accountAccessRequests(target, set(resetOwner$, signal)));
   });
   const close$ = command(({ set }) => {
     set(resetOwner$);
@@ -218,7 +261,25 @@ export function createConnectorAccountDefaultSignals(
       set(reloadUserConnectedConnectors$);
     },
   );
-  return { defaults$, open$, close$, update$ };
+  const updatePolicy$ = command(
+    async (
+      { get, set },
+      connectionId: string,
+      policy: ConnectorAccountPolicyChoice,
+      signal: AbortSignal,
+    ) => {
+      signal.throwIfAborted();
+      const request = get(request$);
+      if (!request) {
+        return;
+      }
+      await request.updatePolicy(get(apiClient$), connectionId, policy);
+      signal.throwIfAborted();
+      set(invalidateConnectorAccountProjection$, target);
+      set(reloadUserConnectedConnectors$);
+    },
+  );
+  return { defaults$, policies$, open$, close$, update$, updatePolicy$ };
 }
 
 const invalidateConnectorAccounts$ = command(({ set }, signal: AbortSignal) => {
