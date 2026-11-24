@@ -122,7 +122,7 @@ not copied from CSS and are not all mandated by Apple.
 | Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
 | Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
 | Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label to make it fit                                                                                                                               |
+| Type roles   | Choose a text style by the role the text plays, at most three sizes on one surface; see [Type roles](#type-roles)                                                                                                                                                                                                                 |
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
@@ -135,6 +135,44 @@ buttons require an explicit accessible label. Errors appear next to the owning
 input/action and retain an accessible explanation. Keep keyboard type, content
 type, autofill, IME composition, focus restoration, and native dismissal behavior
 with their owning input/controller.
+
+#### Type roles
+
+Text takes the Dynamic Type style for the role it plays, through `Font.okou(_:)`;
+its size follows from the role, never the other way round. Sizes are at the
+default content size and grow with the reader's text size.
+
+| Style       | Size        | Role                                                                                   | In Okou                                                  |
+| ----------- | ----------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Large title | 34          | A screen's own title where no navigation bar names it                                  | Not used yet                                             |
+| Title       | 28          | The one heading of a full-screen moment                                                | Sign-in, subscription headers                            |
+| Title 2     | 22          | A page's heading                                                                       | For you header, new-chat greeting                        |
+| Title 3     | 20          | A heading inside a page, over reading text: a card or panel that is the page's subject | For you card, connector detail                           |
+| Headline    | 17 semibold | An emphasised line among dense text: a row's title, a short heading over a group       | Workspace header, catalog sections                       |
+| Body        | 17          | Reading text and input                                                                 | Messages, the composer, sheets' explanations             |
+| Callout     | 16          | Text beside body that reads a step quieter; controls inside the composer               | Composer controls, chat cards                            |
+| Subheadline | 15          | The secondary line under a body or headline line, and the body of a dense surface      | Row details, list descriptions                           |
+| Footnote    | 13          | Supporting text and metadata                                                           | Status lines, `OkouBanner`, timestamps, sources          |
+| Caption     | 12 / 11     | The smallest labels, a word or two; Caption 2 (11) is the floor                        | Badges, counts, tile and chip captions; never a sentence |
+
+- **Build a surface on one set of neighbours.** A reading surface (a chat, a
+  sheet, a card that is the page's subject) builds on Body: Title 3 heading,
+  Body text, Subheadline for secondary lines (Footnote only for metadata). A
+  dense surface (rows, banners, compact cards) builds one step down: Headline,
+  Subheadline, Footnote. One surface uses at most three sizes.
+- **Don't mix the sets.** A Title 3 heading straight over Subheadline text skips
+  Body and reads as a heading over fine print; a Headline over Body is too weak
+  to lead. Pick the set by what the surface is for, then take its neighbours.
+- **Within a size, weight and colour make the hierarchy.** Semibold for
+  headings, medium for a control's or row's label, regular for text;
+  `foreground` for the primary line, `muted-foreground` for the secondary one.
+  Don't add a size to separate two lines that weight or colour can separate.
+- **Keep text readable.** Sentences stay at Footnote 13 or larger; Caption is
+  for a word or two. Chinese, Japanese and Korean read denser at the same size:
+  prefer Subheadline 15 or larger for their reading text, and keep Footnote 13
+  as their smallest sentence.
+- **Never shrink text to fit.** Let it wrap, truncate with a way to see the
+  rest, or scroll. A control's label keeps its style at every size.
 
 ### Iconography
 

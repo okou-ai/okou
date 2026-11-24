@@ -63,14 +63,44 @@
   struct OkouCatalogTypographyPage: View {
     let close: (() -> Void)?
 
+    /// Each Dynamic Type style with its default size and the role it plays
+    /// (docs/ios/mobile-design-system.md#type-roles).
+    private struct TypeRole {
+      let style: Font.TextStyle
+      let name: String
+      let role: String
+    }
+
+    private static let roles = [
+      TypeRole(style: .largeTitle, name: "Large title · 34", role: "A screen's own title"),
+      TypeRole(style: .title, name: "Title · 28", role: "The heading of a full-screen moment"),
+      TypeRole(style: .title2, name: "Title 2 · 22", role: "A page's heading"),
+      TypeRole(style: .title3, name: "Title 3 · 20", role: "A heading over reading text"),
+      TypeRole(style: .headline, name: "Headline · 17", role: "A row's title among dense text"),
+      TypeRole(style: .body, name: "Body · 17", role: "Reading text and input"),
+      TypeRole(
+        style: .callout, name: "Callout · 16", role: "A step quieter than body; composer controls"),
+      TypeRole(
+        style: .subheadline, name: "Subheadline · 15",
+        role: "A secondary line; a dense surface's body"),
+      TypeRole(style: .footnote, name: "Footnote · 13", role: "Supporting text and metadata"),
+      TypeRole(style: .caption, name: "Caption · 12", role: "A word or two"),
+      TypeRole(style: .caption2, name: "Caption 2 · 11", role: "The floor; never a sentence")
+    ]
+
     var body: some View {
       OkouCatalogPage(.typography, close: close) {
         OkouCatalogSection("Type roles") {
-          Text("Geist · Title").font(.okou(.title))
-          Text("Headline · 17 pt").font(.okou(.headline))
-          Text("Body · 17 pt · Dynamic Type").font(.okou(.body))
-          Text("Supporting text · 13 pt").font(.okou(.footnote))
-            .foregroundStyle(OkouColor.mutedForeground)
+          ForEach(Self.roles, id: \.name) { role in
+            VStack(alignment: .leading, spacing: OkouSpace.two) {
+              Text(verbatim: role.name).font(.okou(role.style))
+              Text(verbatim: role.role).font(.okou(.footnote))
+                .foregroundStyle(OkouColor.mutedForeground)
+            }
+            .accessibilityElement(children: .combine)
+          }
+        }
+        OkouCatalogSection("Faces") {
           Text("Geist Mono · code").font(.okou(.body, design: .monospaced))
           Text("Keep going · run-section label")
             .font(.okou(.subheadline, design: .serif).italic())
