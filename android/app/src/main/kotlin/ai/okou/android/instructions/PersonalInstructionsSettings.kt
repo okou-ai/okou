@@ -88,8 +88,8 @@ internal fun PersonalInstructionsSettings(
         onDispose { lifecycle.removeObserver(observer) }
     }
     var closeAfterSave by rememberSettingsFlag()
-    var confirmDiscard by rememberSettingsFlag()
-    var confirmReload by rememberSettingsFlag()
+    var discardDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
+    var reloadDraft by remember(model) { mutableStateOf<InstructionsDraft?>(null) }
     var offlineSave by rememberSettingsFlag()
     var editorFocused by rememberSettingsFlag()
     var editorKeyboardVisible by rememberSettingsFlag()
@@ -126,8 +126,9 @@ internal fun PersonalInstructionsSettings(
     fun confirmDismiss(): Boolean {
         val current = model.uiState.value
         if (current.phase == InstructionsPhase.Saving) return false
-        if (current.draft?.attempted == false) {
-            confirmDiscard = true
+        val draft = current.draft
+        if (draft != null && !draft.attempted) {
+            if (discardDraft == null && reloadDraft == null) discardDraft = draft
             return false
         }
         return true
@@ -137,8 +138,8 @@ internal fun PersonalInstructionsSettings(
     }
     BackHandler {
         when {
-            confirmDiscard -> confirmDiscard = false
-            confirmReload -> confirmReload = false
+            discardDraft != null -> discardDraft = null
+            reloadDraft != null -> reloadDraft = null
             else -> requestDismiss()
         }
     }
@@ -363,7 +364,7 @@ internal fun PersonalInstructionsSettings(
                     if (canReload)
                         InstructionsAction(
                             R.string.instructions_reload,
-                            { confirmReload = true },
+                            { reloadDraft = state.draft },
                             !offline,
                         )
                     if (checkSavedVersion)
@@ -374,30 +375,31 @@ internal fun PersonalInstructionsSettings(
             }
         }
     }
-    if (confirmDiscard) {
+    discardDraft?.let { draft ->
         OkouConfirmationDialog(
-            onDismiss = { confirmDiscard = false },
+            onDismiss = { discardDraft = null },
             title = stringResource(R.string.instructions_discard),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
-                closeAfterSave = false
-                confirmDiscard = false
-                model.discardEdits()
-                dismiss()
+                discardDraft = null
+                if (model.discardEdits(draft)) {
+                    closeAfterSave = false
+                    dismiss()
+                }
             },
         ) {
             Text(stringResource(R.string.instructions_unsaved))
         }
     }
-    if (confirmReload) {
+    reloadDraft?.let { draft ->
         OkouConfirmationDialog(
-            onDismiss = { confirmReload = false },
+            onDismiss = { reloadDraft = null },
             title = stringResource(R.string.instructions_reload),
             confirm = stringResource(R.string.instructions_discard),
             onConfirm = {
                 closeAfterSave = false
-                confirmReload = false
-                model.reloadLatest()
+                reloadDraft = null
+                model.reloadLatest(draft)
             },
         ) {
             Text(stringResource(R.string.instructions_conflict))

@@ -133,15 +133,18 @@ internal class PersonalInstructionsOwner(
             replaceDraft(revision, mutable.value.draft)
     }
 
-    fun reloadLatest(connection: Connection) {
+    fun reloadLatest(connection: Connection, draft: InstructionsDraft) {
         val state = mutable.value
-        if (state.canEdit && state.conflicting) refresh(connection, discard = true)
+        if (state.draft === draft && state.canEdit && state.conflicting) {
+            refresh(connection, discard = true)
+        }
     }
 
-    fun discardEdits(connection: Connection) {
+    fun discardEdits(connection: Connection, draft: InstructionsDraft): Boolean {
         val state = mutable.value
-        if (!connection.current() || state.draft?.attempted != false) return
+        if (!connection.current() || state.draft !== draft || draft.attempted) return false
         replaceDraft(revision, null, state.copy(rejection = InstructionsRejection.None))
+        return true
     }
 
     fun refreshFromForeground(connection: Connection) {
