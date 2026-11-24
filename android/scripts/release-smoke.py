@@ -306,14 +306,20 @@ def terminate(_signum, _frame):
 
 
 def stop_preparation(preparation):
+    options = os.WEXITED | os.WNOWAIT | os.WNOHANG
+    try:
+        leader_exit = os.waitid(os.P_PID, preparation.pid, options)
+    except ChildProcessError:
+        # Cancellation can interrupt Popen after waitpid reaps the leader.
+        preparation.wait()
+        return
     with suppress(ProcessLookupError):
         os.killpg(preparation.pid, signal.SIGTERM)
     deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
+    while leader_exit is None and time.monotonic() < deadline:
         # Leave the leader unreaped until its process group has been stopped.
-        if os.waitid(os.P_PID, preparation.pid, os.WEXITED | os.WNOWAIT | os.WNOHANG):
-            break
         time.sleep(0.05)
+        leader_exit = os.waitid(os.P_PID, preparation.pid, options)
     with suppress(ProcessLookupError):
         os.killpg(preparation.pid, signal.SIGKILL)
     preparation.wait()

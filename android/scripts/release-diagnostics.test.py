@@ -278,6 +278,16 @@ else:
                     with suppress(ProcessLookupError):
                         os.killpg(preparation.pid, signal.SIGKILL)
 
+    @unittest.skipUnless(hasattr(os, "waitid"), "Release smoke uses Linux process groups")
+    def test_release_smoke_does_not_signal_a_group_after_reaping_its_leader(self):
+        stop = runpy.run_path(str(SCRIPTS / "release-smoke.py"))["stop_preparation"]
+        with subprocess.Popen([sys.executable, "-c", "pass"], start_new_session=True) as preparation:
+            os.waitpid(preparation.pid, 0)
+            self.assertIsNone(preparation.returncode)
+            with mock.patch.object(os, "killpg") as kill_group:
+                stop(preparation)
+            kill_group.assert_not_called()
+
     def test_native_gate_rejects_incomplete_failed_and_skipped_results(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
