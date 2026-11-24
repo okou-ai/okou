@@ -2,6 +2,7 @@ package ai.okou.android.workflows
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.api.generated.WorkflowAutomation
 import ai.okou.android.api.generated.WorkflowDetail
@@ -22,9 +23,9 @@ import ai.okou.android.state.retainWhileComposing
 import ai.okou.android.updates.updateFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,7 +53,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -77,6 +77,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -85,7 +86,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -221,8 +221,10 @@ internal fun WorkflowScreen(
                     canNavigate && handoffPending && draftFocusAction == WorkflowDraftAction.Create,
                 createError = createError,
                 onScope = {
-                    query.position.requestScrollToItem(0)
-                    changeRoute(route.copy(scope = it))
+                    if (it != route.scope) {
+                        query.position.requestScrollToItem(0)
+                        changeRoute(route.copy(scope = it))
+                    }
                 },
                 onSelect = {
                     focus.clearFocus()
@@ -387,7 +389,8 @@ private fun WorkflowToolbar(
 ) {
     Column {
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 12.dp, end = 16.dp),
+            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
@@ -452,10 +455,28 @@ private fun WorkflowDirectory(
         remember(catalog, route.scope, text) {
             catalog?.filter { it.matches(route.scope, text) }.orEmpty()
         }
+    val readFeedback =
+        if (catalog == null) null
+        else
+            state.catalogFailure.cachedReadFeedback(R.string.workflow_catalog_refresh_failed)
+                ?: state.rulesFailure?.let {
+                    if (state.rules == null) R.string.workflow_rules_load_failed
+                    else it.cachedReadFeedback()
+                }
+                ?: state.connectionReadFeedback()
+    keepWorkflowReadStart(query.position, readFeedback != null)
     val anchor = query.pendingAnchor
-    LaunchedEffect(rows, anchor, catalog) {
-        if (anchor != null && catalog != null)
-            query.restorePosition(rows.indexOfFirst { it.id == anchor.key }.takeIf { it >= 0 })
+    LaunchedEffect(rows, anchor, catalog, readFeedback != null) {
+        if (anchor != null && catalog != null) {
+            val rowIndex = rows.indexOfFirst { it.id == anchor.key }
+            query.restorePosition(
+                when {
+                    rowIndex >= 0 -> rowIndex + if (readFeedback == null) 0 else 1
+                    anchor.key == DIRECTORY_READ_FEEDBACK && readFeedback != null -> 0
+                    else -> null
+                },
+            )
+        }
     }
     Column(
         modifier.testTag("workflow_directory"),
@@ -482,11 +503,15 @@ private fun WorkflowDirectory(
                     ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.onBackground,
                     ),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
             ) {
                 Icon(painterResource(R.drawable.ic_add), null, Modifier.size(18.dp))
-                Spacer(Modifier.size(4.dp))
-                Text(stringResource(R.string.workflow_new), style = workflowSmallStyle())
+                Spacer(Modifier.size(6.dp))
+                Text(
+                    stringResource(R.string.workflow_new),
+                    style = workflowSmallStyle(),
+                    fontWeight = FontWeight(550),
+                )
             }
         }
         if (state.catalogFailure == WorkflowReadFailure.Unavailable) {
@@ -503,45 +528,41 @@ private fun WorkflowDirectory(
         ) {
             if (createError != null) WorkflowNotice(createError)
             WorkflowQuery(query)
-            FlowRow(
-                Modifier.selectableGroup(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                for (scope in WorkflowScope.entries) {
-                    val selected = scope == route.scope
-                    Box(
-                        Modifier.heightIn(min = 48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.secondaryContainer
-                                else MaterialTheme.colorScheme.background,
-                            )
-                            .selectable(
-                                selected,
-                                role = Role.RadioButton,
-                                onClick = { onScope(scope) },
-                            )
-                            .padding(horizontal = 10.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(stringResource(scope.label), style = workflowSmallStyle())
-                    }
-                }
-            }
+            WorkspaceFilterRow(
+                WorkflowScope.entries,
+                route.scope,
+                Role.RadioButton,
+                label = { stringResource(it.label) },
+                modifier = Modifier.fillMaxWidth(),
+                optionModifier = { Modifier.testTag("workflow_scope_${it.name}") },
+                onSelect = onScope,
+            )
         }
         Box(Modifier.weight(1f).widthIn(max = 730.dp).fillMaxWidth()) {
             when {
                 catalog == null && state.catalogFailure != null ->
                     WorkflowInitialReadError(R.string.workflow_load_failed)
                 catalog == null -> WorkflowSkeleton(directory = true)
-                rows.isEmpty() -> WorkflowEmpty(route.scope, text, query::reset, onScope)
                 else ->
                     LazyColumn(
                         Modifier.fillMaxSize(),
                         state = query.position,
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 20.dp),
                     ) {
+                        if (readFeedback != null)
+                            item(key = DIRECTORY_READ_FEEDBACK) {
+                                WorkflowNotice(readFeedback, PaddingValues(bottom = 12.dp))
+                            }
+                        if (rows.isEmpty())
+                            item(key = "workflow_directory_empty") {
+                                WorkflowEmpty(
+                                    route.scope,
+                                    text,
+                                    query::reset,
+                                    onScope,
+                                    Modifier.fillParentMaxSize(),
+                                )
+                            }
                         items(rows, key = { it.id }) { row ->
                             WorkflowRow(
                                 row,
@@ -556,17 +577,6 @@ private fun WorkflowDirectory(
                         }
                     }
             }
-        }
-        if (catalog != null) {
-            val rulesFeedback =
-                if (state.rulesFailure != null && state.rules == null)
-                    R.string.workflow_rules_load_failed
-                else state.rulesFailure.cachedReadFeedback()
-            WorkflowReadFeedback(
-                state.catalogFailure.cachedReadFeedback()
-                    ?: rulesFeedback
-                    ?: state.connectionReadFeedback(),
-            )
         }
     }
 }
@@ -646,6 +656,8 @@ private fun WorkflowQuery(query: ChatSearchState) {
                         Icon(
                             painterResource(R.drawable.ic_close),
                             stringResource(R.string.workflow_clear_search),
+                            modifier = Modifier.size(20.dp),
+                            tint = colors.onSurfaceVariant,
                         )
                     }
             }
@@ -659,9 +671,10 @@ private fun WorkflowEmpty(
     text: String,
     reset: () -> Unit,
     onScope: (WorkflowScope) -> Unit,
+    modifier: Modifier,
 ) {
     Column(
-        Modifier.fillMaxSize().padding(16.dp),
+        modifier.padding(16.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -713,12 +726,15 @@ private fun WorkflowRow(
             onRestored()
         }
     }
+    val shape = RoundedCornerShape(8.dp)
+    val foreground = if (selected) colors.onSecondaryContainer else colors.onBackground
     Row(
         Modifier.fillMaxWidth()
             .heightIn(min = 80.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .background(if (selected) colors.secondaryContainer else colors.background)
             .focusRequester(requester)
+            .updateFocusOutline(shape, colors.onBackground)
             .selectable(selected, enabled = enabled, role = Role.Button, onClick = onSelect)
             .testTag("workflow_row_${item.id}")
             .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -735,6 +751,7 @@ private fun WorkflowRow(
                 item.displayName ?: item.name,
                 style = workflowBodyStyle(),
                 fontWeight = FontWeight.SemiBold,
+                color = foreground,
             )
             item.description
                 ?.takeIf { it.isNotBlank() }
@@ -771,7 +788,7 @@ private fun WorkflowRow(
             painterResource(R.drawable.ic_chevron_right),
             null,
             Modifier.align(Alignment.CenterVertically).size(18.dp),
-            tint = colors.onBackground,
+            tint = foreground,
         )
     }
 }
@@ -811,6 +828,8 @@ private fun WorkflowDetailPane(
         if (tab == WorkflowTab.History && state.history == null) rememberLazyListState()
         else position
     val editEnabled = !state.writing && !handoffPending
+    val detailFeedback = state.detailFailure.cachedReadFeedback()
+    keepWorkflowReadStart(listState, detailFeedback != null)
     Column(
         Modifier.fillMaxSize().testTag("workflow_detail"),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -826,6 +845,10 @@ private fun WorkflowDetailPane(
                     bottom = 24.dp,
                 ),
         ) {
+            if (detailFeedback != null)
+                item(key = "workflow_detail_read_feedback") {
+                    WorkflowNotice(detailFeedback, PaddingValues(bottom = 12.dp))
+                }
             item(key = "header") { WorkflowDetailHeader(detail) }
             stickyHeader(key = "tabs") { WorkflowTabs(tab, onTab) }
             when (tab) {
@@ -850,7 +873,7 @@ private fun WorkflowDetailPane(
                         )
                     }
                 WorkflowTab.Automations -> {
-                    item {
+                    item(key = "workflow_trigger_rules_heading") {
                         WorkflowSectionHeader(R.string.workflow_trigger_rules) {
                             if (detail.canAddAutomation) {
                                 WorkflowEditorAction(
@@ -866,9 +889,20 @@ private fun WorkflowDetailPane(
                                 }
                             }
                         }
-                        if (detail.automations.isEmpty())
-                            WorkflowSecondary(stringResource(R.string.workflow_no_rules))
                     }
+                    val connectionFeedback =
+                        state.connectionReadFeedback().takeIf {
+                            detailFeedback == null &&
+                                detail.automations.any { it.source.connector != null }
+                        }
+                    if (connectionFeedback != null)
+                        item(key = "workflow_connections_read_feedback") {
+                            WorkflowNotice(connectionFeedback, PaddingValues(bottom = 12.dp))
+                        }
+                    if (detail.automations.isEmpty())
+                        item(key = "workflow_no_rules") {
+                            WorkflowSecondary(stringResource(R.string.workflow_no_rules))
+                        }
                     items(detail.automations, key = { it.id }) { rule ->
                         WorkflowRuleRow(
                             rule = rule,
@@ -888,9 +922,18 @@ private fun WorkflowDetailPane(
                 }
                 WorkflowTab.History -> {
                     val history = state.history
+                    val earlier = state.historyRead?.earlier == true
+                    val historyFeedback =
+                        state.historyFailure.cachedReadFeedback().takeIf {
+                            detailFeedback == null && history != null && !earlier
+                        }
                     item(key = "history_heading") {
                         WorkflowSectionHeader(R.string.workflow_recent_runs)
                     }
+                    if (historyFeedback != null)
+                        item(key = "workflow_history_read_feedback") {
+                            WorkflowNotice(historyFeedback, PaddingValues(bottom = 12.dp))
+                        }
                     if (history == null) {
                         item(key = "history_pending") {
                             WorkflowHistoryPending(state.historyFailure)
@@ -912,6 +955,13 @@ private fun WorkflowDetailPane(
                         )
                     }
                     if (history?.nextCursor != null) {
+                        if (earlier && state.historyFailure != null)
+                            item(key = "workflow_history_page_feedback") {
+                                WorkflowNotice(
+                                    R.string.workflow_history_earlier_failed,
+                                    PaddingValues(top = 12.dp),
+                                )
+                            }
                         item(key = "history_earlier") {
                             TextButton(
                                 onClick = onEarlierRuns,
@@ -931,20 +981,6 @@ private fun WorkflowDetailPane(
                 }
             }
         }
-        val connectionFeedback =
-            if (
-                tab == WorkflowTab.Automations &&
-                    detail.automations.any { it.source.connector != null }
-            )
-                state.connectionReadFeedback()
-            else null
-        val historyFeedback =
-            state.historyFailure.cachedReadFeedback().takeIf {
-                tab == WorkflowTab.History && state.history != null
-            }
-        WorkflowReadFeedback(
-            state.detailFailure.cachedReadFeedback() ?: historyFeedback ?: connectionFeedback,
-        )
         WorkflowUseBar(
             wide = wide,
             enabled =
@@ -1185,62 +1221,78 @@ internal fun WorkflowAction(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     primary: Boolean = false,
-    saving: Boolean = false,
+    @StringRes pendingStatus: Int? = null,
+    showPendingProgress: Boolean = true,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(12.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+    val showProgress = pendingStatus != null && showPendingProgress
+    val pendingSemantics =
+        if (pendingStatus != null) {
+            val status = stringResource(pendingStatus)
+            Modifier.clearAndSetSemantics {
+                contentDescription = label
+                role = Role.Button
+                stateDescription = status
+                if (showProgress) liveRegion = LiveRegionMode.Polite
+                disabled()
+            }
+        } else Modifier
+    val click = { if (pendingStatus == null) onClick() }
+    val content: @Composable () -> Unit = {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                label,
+                color =
+                    when {
+                        showProgress -> Color.Transparent
+                        pendingStatus != null -> colors.onSurfaceVariant
+                        else -> Color.Unspecified
+                    },
+                style = workflowSmallStyle(),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight(550),
+            )
+            if (showProgress) {
+                CircularProgressIndicator(
+                    Modifier.size(16.dp),
+                    color = colors.onSurfaceVariant,
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+    }
     if (primary) {
-        val savingSemantics =
-            if (saving) {
-                val savingLabel = stringResource(R.string.settings_saving)
-                Modifier.clearAndSetSemantics {
-                    contentDescription = label
-                    role = Role.Button
-                    stateDescription = savingLabel
-                    liveRegion = LiveRegionMode.Polite
-                    disabled()
-                }
-            } else Modifier
         Button(
-            onClick,
+            click,
             modifier
                 .heightIn(min = 48.dp)
                 .updateFocusOutline(shape, colors.background)
-                .then(savingSemantics),
+                .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
             colors =
                 ButtonDefaults.buttonColors(
                     containerColor = colors.onBackground,
                     contentColor = colors.background,
+                    disabledContainerColor = colors.surfaceVariant,
+                    disabledContentColor = colors.onSurfaceVariant,
                 ),
             contentPadding = padding,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Text(
-                    label,
-                    color = if (saving) Color.Transparent else Color.Unspecified,
-                    style = workflowSmallStyle(),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight(550),
-                )
-                if (saving) {
-                    CircularProgressIndicator(
-                        Modifier.size(16.dp),
-                        color = colors.onSurfaceVariant,
-                        strokeWidth = 2.dp,
-                    )
-                }
-            }
+            content()
         }
     } else {
         var focused by remember { mutableStateOf(false) }
         val keyboardFocused =
             focused && LocalInputModeManager.current.inputMode == InputMode.Keyboard
         OutlinedButton(
-            onClick,
-            modifier.heightIn(min = 48.dp).onFocusChanged { focused = it.isFocused },
+            click,
+            modifier
+                .heightIn(min = 48.dp)
+                .onFocusChanged { focused = it.isFocused }
+                .then(pendingSemantics),
             enabled = enabled,
             shape = shape,
             colors = ButtonDefaults.outlinedButtonColors(contentColor = colors.onBackground),
@@ -1249,12 +1301,7 @@ internal fun WorkflowAction(
                 else BorderStroke(1.dp, colors.outline),
             contentPadding = padding,
         ) {
-            Text(
-                label,
-                style = workflowSmallStyle(),
-                textAlign = TextAlign.Center,
-                fontWeight = FontWeight(550),
-            )
+            content()
         }
     }
 }
@@ -1320,24 +1367,18 @@ private fun WorkflowSkeleton(directory: Boolean) {
     }
 }
 
+private const val DIRECTORY_READ_FEEDBACK = "workflow_directory_read_feedback"
+
 @Composable
-private fun WorkflowReadFeedback(label: Int?) {
-    if (label == null) return
-    val shape = RoundedCornerShape(12.dp)
-    Text(
-        stringResource(label),
-        Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-            .widthIn(max = 480.dp)
-            .fillMaxWidth()
-            .heightIn(min = 48.dp)
-            .shadow(2.dp, shape)
-            .background(MaterialTheme.colorScheme.surface, shape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .padding(12.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = workflowBodyStyle().copy(fontSize = 14.sp, lineHeight = 20.sp),
-    )
+private fun keepWorkflowReadStart(position: LazyListState, hasFeedback: Boolean) {
+    val previous = remember(position) { mutableStateOf(hasFeedback) }
+    SideEffect {
+        if (previous.value != hasFeedback) {
+            // Rows keep their keyed offset mid-list. A reader at the top sees new feedback.
+            if (!position.canScrollBackward) position.requestScrollToItem(0)
+            previous.value = hasFeedback
+        }
+    }
 }
 
 @Composable
