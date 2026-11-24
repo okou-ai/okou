@@ -800,7 +800,7 @@ feature; the catalog shows each one.
   `UINavigationController`, with the sidebar at its root and the chat pushed above it.
   The navigation bar stays hidden: each page retains its custom header, footer,
   typography, colors and controls. Button navigation uses the system transition. A swipe
-  drives a UIKit percent-driven pop, with a crossfade under Reduce Motion. Retain both page hosts across navigation
+  drives the live pages through a UIKit interactive pop, with a crossfade under Reduce Motion. Retain both page hosts across navigation
   so drafts and scroll state survive. Forward the SwiftUI environment to both
   hosts, including appearance, scene phase and scoped link/system-entry actions.
   The sidebar host uses only container safe areas, so the chat's keyboard never

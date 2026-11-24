@@ -17,7 +17,8 @@ final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureR
 
   private var canPop: Bool {
     guard let navigation else { return false }
-    return navigation.viewControllers.count > 1 && navigation.transitionCoordinator == nil
+    return transition == nil && navigation.viewControllers.count > 1
+      && navigation.transitionCoordinator == nil
       && navigation.presentedViewController == nil
   }
 
@@ -130,8 +131,7 @@ final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureR
     switch state {
     case .began:
       guard canPop else { return }
-      let interaction = WorkspacePopTransition()
-      interaction.completionCurve = .easeOut
+      let interaction = WorkspacePopTransition { [weak self] in self?.transition = nil }
       transition = interaction
       if navigation.popViewController(animated: true) == nil {
         transition = nil
@@ -143,15 +143,9 @@ final class WorkspacePopPanGestureRecognizer: UIPanGestureRecognizer, UIGestureR
     case .ended:
       // A short flick can finish, and reversing before release can still cancel.
       let projectedDistance = distance + velocity(in: view).x * forward * 0.2
-      if projectedDistance > width / 2 {
-        transition?.finish()
-      } else {
-        transition?.cancel()
-      }
-      transition = nil
+      transition?.end(completes: projectedDistance > width / 2)
     case .cancelled, .failed:
-      transition?.cancel()
-      transition = nil
+      transition?.end(completes: false)
     default:
       break
     }

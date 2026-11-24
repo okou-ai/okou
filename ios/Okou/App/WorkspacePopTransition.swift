@@ -1,10 +1,22 @@
 import UIKit
 
-/// The pan supplies the fraction. UIKit coordinates cancellation, appearance and keyboard changes.
-final class WorkspacePopTransition: UIPercentDrivenInteractiveTransition,
+/// Keeps the live page frames at the finger's actual position while UIKit owns the stack and focus.
+@MainActor
+final class WorkspacePopTransition: NSObject, UIViewControllerInteractiveTransitioning,
   UIViewControllerAnimatedTransitioning
 {
-  private var animator: UIViewPropertyAnimator?
+  private let didEnd: () -> Void
+  private var context: (any UIViewControllerContextTransitioning)?
+  private var chatFrame = CGRect.zero
+  private var listFrame = CGRect.zero
+  private var offset: CGFloat = 0
+  private var progress: CGFloat = 0
+  private var completes: Bool?
+  private let fades = UIAccessibility.isReduceMotionEnabled
+
+  init(didEnd: @escaping () -> Void) {
+    self.didEnd = didEnd
+  }
 
   func transitionDuration(using transitionContext: (any UIViewControllerContextTransitioning)?)
     -> TimeInterval
@@ -12,59 +24,76 @@ final class WorkspacePopTransition: UIPercentDrivenInteractiveTransition,
     0.25
   }
 
-  func animateTransition(using transitionContext: any UIViewControllerContextTransitioning) {
-    interruptibleAnimator(using: transitionContext).startAnimation()
+  func animateTransition(using context: any UIViewControllerContextTransitioning) {
+    completes = true
+    startInteractiveTransition(context)
   }
 
-  func interruptibleAnimator(using context: any UIViewControllerContextTransitioning)
-    -> any UIViewImplicitlyAnimating
-  {
-    if let animator { return animator }
-    let animator = UIViewPropertyAnimator(
-      duration: transitionDuration(using: context), curve: .linear)
-    self.animator = animator
+  func startInteractiveTransition(_ context: any UIViewControllerContextTransitioning) {
     guard let chat = context.view(forKey: .from), let list = context.view(forKey: .to),
       let listController = context.viewController(forKey: .to)
     else {
-      animator.addCompletion { [weak self] _ in
-        self?.animator = nil
-        context.completeTransition(false)
-      }
-      return animator
+      didEnd()
+      if context.isInteractive { context.cancelInteractiveTransition() }
+      context.completeTransition(false)
+      return
     }
-
+    self.context = context
     let container = context.containerView
-    let chatFrame = chat.frame
-    let listFrame = context.finalFrame(for: listController)
-    let width = container.bounds.width
-    let offset = container.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -width : width
-    let fades = UIAccessibility.isReduceMotionEnabled
-    let chatAlpha = chat.alpha
+    chatFrame = chat.frame
+    listFrame = context.finalFrame(for: listController)
+    offset =
+      container.effectiveUserInterfaceLayoutDirection == .rightToLeft
+      ? -container.bounds.width : container.bounds.width
     container.insertSubview(list, belowSubview: chat)
-    list.frame = fades ? listFrame : listFrame.offsetBy(dx: -offset / 3, dy: 0)
+    list.frame = listFrame
+    update(progress)
+    if let completes { end(completes: completes) }
+  }
 
-    animator.addAnimations {
-      if fades {
-        chat.alpha = 0
+  func update(_ fraction: CGFloat) {
+    progress = fraction
+    guard let context else { return }
+    if context.isInteractive { context.updateInteractiveTransition(fraction) }
+    positionPages(at: fraction, in: context)
+  }
+
+  private func positionPages(
+    at fraction: CGFloat, in context: any UIViewControllerContextTransitioning
+  ) {
+    if fades {
+      context.view(forKey: .from)?.alpha = 1 - fraction
+    } else {
+      context.view(forKey: .from)?.frame = chatFrame.offsetBy(dx: offset * fraction, dy: 0)
+      context.view(forKey: .to)?.frame = listFrame.offsetBy(dx: -offset * (1 - fraction) / 3, dy: 0)
+    }
+  }
+
+  func end(completes: Bool) {
+    self.completes = completes
+    guard let context else { return }  // UIKit may supply the context after a very short drag ends.
+    self.context = nil
+    if context.isInteractive {
+      if completes {
+        context.finishInteractiveTransition()
       } else {
-        chat.frame = chatFrame.offsetBy(dx: offset, dy: 0)
-        list.frame = listFrame
+        context.cancelInteractiveTransition()
       }
     }
-    animator.addCompletion { [weak self] _ in
-      let completed = !context.transitionWasCancelled
-      if !completed { list.removeFromSuperview() }
-      context.completeTransition(completed)
-      // Restore the retained hosts in their final hierarchy, including their accessibility frames.
-      chat.frame = chatFrame
-      chat.alpha = chatAlpha
-      list.frame = listFrame
-      if !completed {
-        chat.setNeedsLayout()
-        chat.layoutIfNeeded()
-      }
-      self?.animator = nil
+    let target: CGFloat = completes ? 1 : 0
+    let duration = transitionDuration(using: context) * abs(target - progress)
+    UIView.animate(withDuration: duration, delay: 0, options: .curveEaseOut) {
+      self.positionPages(at: target, in: context)
+    } completion: { _ in
+      let chat = context.view(forKey: .from)
+      let list = context.view(forKey: .to)
+      if !completes { list?.removeFromSuperview() }
+      self.didEnd()
+      context.completeTransition(completes)
+      chat?.frame = self.chatFrame
+      chat?.alpha = 1
+      list?.frame = self.listFrame
+      if !completes { UIAccessibility.post(notification: .layoutChanged, argument: nil) }
     }
-    return animator
   }
 }
