@@ -285,20 +285,21 @@ test.each([
     expect(prompt).toContain(
       "Author the finished deck directly as semantic HTML, CSS, and SVG",
     );
-    const policyMarker =
-      "resolve the output format from the explicit current request";
+    const policyMarker = "- Presentation output:";
     const templatePrompt =
       prompt.split(/^# Inline Templates$/mu)[1]?.split(/^# /mu)[0] ?? "";
+    expect(prompt.split(/^- Presentation output:/mu)).toHaveLength(
+      outputFormatEnabled ? 2 : 1,
+    );
     if (outputFormatEnabled) {
-      expect(templatePrompt).toContain(policyMarker);
-      expect(templatePrompt).toContain(
-        "then HTML without asking or saving a preference",
+      expect(prompt).toContain(
+        "explicit current request → CURRENT message's saved `# Presentation Output Preference` → HTML",
       );
       expect(templatePrompt).toContain(
-        "For resolved PPTX output with an HTML-only template, use the enabled HTML-to-PPTX conversion workflow and deliver PPTX, not intermediate HTML; no separate conversion request is needed.",
+        "For PPTX delivery from an HTML-only template, use the enabled HTML-to-PPTX conversion workflow without another conversion request and deliver the converted PPTX.",
       );
       expect(templatePrompt).toContain(
-        "Template instructions do not override the resolved format.",
+        "If conversion is unavailable or fails, report the blocker instead of changing format or style.",
       );
     } else {
       expect(prompt).not.toContain(policyMarker);
@@ -312,13 +313,13 @@ test.each([
       );
       expect(prompt).toContain(
         outputFormatEnabled
-          ? "For PPTX output from an HTML-only template, or an explicit request to convert an existing HTML deck"
+          ? "HTML-to-PPTX conversion: run"
           : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
       );
       if (outputFormatEnabled) {
         expect(prompt).toContain("inspect the converted slide images");
         expect(prompt).toContain(
-          "Do not deliver intermediate HTML unless multiple formats were requested.",
+          "For an existing HTML deck, convert that file without regenerating it.",
         );
       }
     } else {

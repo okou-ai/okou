@@ -91,27 +91,30 @@ describe("okou generate presentation command", () => {
         const stdout = mockConsoleLog.mock.calls.flat().join("\n");
         expect(featureSwitchReads).toBe(1);
         expect(stdout).toContain(`Requested output format: ${format}`);
-        expect(stdout.includes("# Presentation Output Preference")).toBe(
-          enabled,
+        expect(stdout.split(/^- Presentation output:/mu)).toHaveLength(
+          enabled ? 2 : 1,
         );
         if (enabled) {
           expect(stdout).toContain(
-            "- Presentation delivery: resolve the output format from the explicit current request, then the saved default in the CURRENT message's `# Presentation Output Preference`, then HTML without asking or saving a preference.",
-          );
-          expect(stdout).toContain("do not query or update preferences");
-          expect(stdout).toContain(
-            "Use the matching HTML/PPTX template version directly",
+            "explicit current request → CURRENT message's saved `# Presentation Output Preference` → HTML",
           );
           expect(stdout).toContain(
-            "use the enabled HTML-to-PPTX conversion workflow",
+            "Do not ask for, query or save a preference",
           );
           expect(stdout).toContain(
-            "If a package or conversion is unavailable, or conversion fails, report the blocker",
+            "A default does not request a presentation or affect other artifact types",
           );
+          expect(stdout).toContain(
+            "Use the template version matching this format; template instructions do not override it",
+          );
+          expect(stdout).toContain(
+            "If the selected package is unavailable, stop and report it",
+          );
+          expect(stdout.split("Deliver one format")).toHaveLength(2);
           expect(stdout).toContain(
             format === "html"
-              ? "Follow the HTML preview and hosting steps below only for resolved HTML output"
-              : "Follow the native PPTX steps below only for resolved PPTX output",
+              ? "For HTML delivery only, follow the preview and hosting steps below"
+              : "For a new deck with resolved PPTX output, author an editable native PPTX",
           );
         } else if (format === "html") {
           expect(stdout).toContain(

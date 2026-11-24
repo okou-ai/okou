@@ -8749,36 +8749,62 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it.each([
         {
+          label: "new HTML over a PPTX default",
           outputFormatEnabled: true,
           conversionEnabled: true,
           savedFormat: "pptx",
-          requestedFormat: "HTML",
+          request:
+            "Make a deck about our quarterly plan. Deliver HTML this time.",
+          workflow:
+            "For a new deck with resolved PPTX output, author an editable native PPTX",
         },
         {
+          label: "new PPTX without conversion capability",
           outputFormatEnabled: true,
           conversionEnabled: false,
           savedFormat: "html",
-          requestedFormat: "PPTX",
+          request:
+            "Make a deck about our quarterly plan. Deliver PPTX this time.",
+          workflow: "For PPTX delivery from an HTML-only template",
         },
         {
+          label: "legacy native package",
           outputFormatEnabled: false,
           conversionEnabled: true,
           savedFormat: "pptx",
-          requestedFormat: "HTML",
+          request:
+            "Make a deck about our quarterly plan. Deliver HTML this time.",
+          workflow:
+            "Author an editable native PPTX directly with the selected package",
         },
         {
+          label: "legacy HTML package",
           outputFormatEnabled: false,
           conversionEnabled: true,
           savedFormat: "html",
-          requestedFormat: "PPTX",
+          request:
+            "Make a deck about our quarterly plan. Deliver PPTX this time.",
+          workflow:
+            "For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions",
+        },
+        {
+          label: "existing HTML conversion with a native template attached",
+          outputFormatEnabled: true,
+          conversionEnabled: true,
+          savedFormat: "pptx",
+          request:
+            'Convert this existing HTML deck to PPTX without regenerating it: <html><body><section class="slide"><h1>Original slide</h1></section></body></html>',
+          workflow:
+            "For a new deck with resolved PPTX output, author an editable native PPTX",
         },
       ] as const)(
-        "gates $savedFormat presentation guidance at startup and active input (format policy $outputFormatEnabled, conversion $conversionEnabled)",
+        "$label: startup and active-input guidance",
         async ({
           outputFormatEnabled,
           conversionEnabled,
           savedFormat,
-          requestedFormat,
+          request,
+          workflow,
         }) => {
           const api = createRunsApi(context);
           const connectors = createConnectorBddApi(context);
@@ -8791,7 +8817,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             [FeatureSwitchKey.PresentationOutputFormat]: outputFormatEnabled,
             [FeatureSwitchKey.PresentationConvert]: conversionEnabled,
           });
-          const request = `Make a deck about our quarterly plan. Please deliver ${requestedFormat} this time.`;
           const preference = `# Presentation Output Preference\n- Output format: ${savedFormat.toUpperCase()} format`;
           const userMessage: UserMessageInputDocument = {
             version: 1,
@@ -8841,10 +8866,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             run.runId,
           );
           expect(activeInput.input?.eventId).toBe(eventId);
-          const templatePrompts = [
-            startupTemplatePrompt,
-            activeInput.input?.prompt ?? "",
-          ];
+          const activePrompt = activeInput.input?.prompt ?? "";
+          const templatePrompts = [startupTemplatePrompt, activePrompt];
           for (const templatePrompt of templatePrompts) {
             expect(templatePrompt).toContain(
               `Output format: ${savedFormat.toUpperCase()}`,
@@ -8862,17 +8885,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 ? "The replacement packet supersedes all remaining instructions here."
                 : "The message wins over the selected format preference.",
             );
-            expect(templatePrompt).toContain(
-              savedFormat === "pptx"
-                ? "Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck."
-                : "- Keep all slides and visible content in index.html",
-            );
+            expect(templatePrompt).toContain(workflow);
           }
-          const policyMarker =
-            "resolve the output format from the explicit current request";
-          for (const guidance of [toolsPrompt, ...templatePrompts]) {
-            expect(guidance.includes(policyMarker)).toBe(outputFormatEnabled);
-          }
+          const policyMarker = "- Presentation output:";
+          expect(toolsPrompt.includes(policyMarker)).toBe(outputFormatEnabled);
+          expect(
+            [prompt, activePrompt]
+              .join("\n")
+              .split(/^- Presentation output:/mu),
+          ).toHaveLength(outputFormatEnabled ? 2 : 1);
           if (!outputFormatEnabled) {
             expect(toolsPrompt).toContain(
               "Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX.",
@@ -8891,7 +8912,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             expect(capabilities).toContain("presentation-convert:write");
             expect(toolsPrompt).toContain(
               outputFormatEnabled
-                ? "For PPTX output from an HTML-only template, or an explicit request to convert an existing HTML deck"
+                ? "For an existing HTML deck, convert that file without regenerating it"
                 : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
             );
             expect(toolsPrompt).toContain(

@@ -132,37 +132,30 @@ describe("presentation runbook packages", () => {
       expect(instructions).toContain(
         "If the selected package is unavailable, stop and report it",
       );
-      expect(instructions).toContain(
-        "resolve the output format from the explicit current request, then the saved default in the CURRENT message's `# Presentation Output Preference`",
-      );
-      expect(instructions).toContain(
-        "A default alone does not request a presentation or change other artifact types",
-      );
-      expect(instructions).toContain("do not query or update preferences");
-      expect(instructions).toContain(
-        "deliver PPTX, not intermediate HTML; no separate conversion request is needed",
-      );
-      expect(instructions).toContain(
-        "If a package or conversion is unavailable, or conversion fails, report the blocker instead of substituting a format or style",
-      );
-      expect(instructions).toContain(
-        "Template instructions do not override the resolved format",
-      );
-      expect(instructions).toContain(
-        "then HTML without asking or saving a preference",
-      );
-      expect(instructions).toContain(
-        "Use the matching HTML/PPTX template version directly",
-      );
       if (outputFormat === "pptx") {
         expect(instructions).toContain(
-          "Author an editable native PPTX directly",
+          "For a new deck with resolved PPTX output, author an editable native PPTX",
+        );
+        expect(instructions).toContain(
+          "Follow its export and verification workflow, render and inspect the slides",
+        );
+        expect(instructions).toContain(
+          "upload the .pptx with this integration's upload-file command and return its exact URL",
         );
         expect(instructions).not.toContain("okou host");
         expect(instructions).not.toContain("index.html");
       } else {
         expect(instructions).toContain(
           "Keep all slides and visible content in index.html",
+        );
+        expect(instructions).toContain(
+          "use the enabled HTML-to-PPTX conversion workflow without another conversion request and deliver the converted PPTX",
+        );
+        expect(instructions).toContain(
+          "If conversion is unavailable or fails, report the blocker instead of changing format or style",
+        );
+        expect(instructions).toContain(
+          "For HTML delivery only, follow the preview and hosting steps below",
         );
         expect(instructions).toContain("okou host");
       }

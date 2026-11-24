@@ -238,7 +238,7 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
     ...(args.presentationConvertEnabled
       ? [
           args.presentationOutputFormatEnabled
-            ? "- For PPTX output from an HTML-only template, or an explicit request to convert an existing HTML deck, run `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted slide images, then upload the PPTX with this surface's `upload-file` command. Do not deliver intermediate HTML unless multiple formats were requested."
+            ? "- HTML-to-PPTX conversion: run `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, inspect the converted slide images, then upload the PPTX with this surface's `upload-file` command. For an existing HTML deck, convert that file without regenerating it."
             : "- Only when the user explicitly requests PowerPoint/PPTX conversion of an HTML deck (not native PPTX template generation), convert the finished HTML directly with `okou presentation convert --input <deck.html> --out <deck.pptx> --verify`, then upload the PPTX with this surface's `upload-file` command.",
         ]
       : []),

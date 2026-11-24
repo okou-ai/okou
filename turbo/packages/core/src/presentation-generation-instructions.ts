@@ -11,7 +11,7 @@ export const PRESENTATION_DELIVERY_INSTRUCTION =
   "- Presentation delivery: when a native PPTX template is selected, follow its native authoring and verification workflow; do not author or convert HTML first. Otherwise, first author and check the deck as HTML. Deliver HTML by default; convert to PPTX only when the user explicitly requests PowerPoint/PPTX. Do not infer a conversion request from remembered preferences or intended use. Deliver one format unless the user requests multiple formats.";
 
 export const PRESENTATION_OUTPUT_FORMAT_INSTRUCTION =
-  "- Presentation delivery: resolve the output format from the explicit current request, then the saved default in the CURRENT message's `# Presentation Output Preference`, then HTML without asking or saving a preference. A default alone does not request a presentation or change other artifact types. Do not infer a format from history, Memory, intended use, or an attached package; do not query or update preferences. Use the matching HTML/PPTX template version directly. For resolved PPTX output with an HTML-only template, use the enabled HTML-to-PPTX conversion workflow and deliver PPTX, not intermediate HTML; no separate conversion request is needed. If a package or conversion is unavailable, or conversion fails, report the blocker instead of substituting a format or style. Template instructions do not override the resolved format. Deliver one format unless the user requests multiple formats.";
+  "- Presentation output: explicit current request → CURRENT message's saved `# Presentation Output Preference` → HTML. Do not ask for, query or save a preference, or infer a format from history, Memory or intended use. A default does not request a presentation or affect other artifact types. Use the template version matching this format; template instructions do not override it. Deliver one format unless multiple are requested.";
 
 export function presentationImageInstructions(
   imageGenerationEnabled: boolean,
@@ -27,29 +27,30 @@ export function presentationDeliveryInstructions(
   } = {},
 ): readonly string[] {
   if (options.outputFormat === "pptx") {
-    return [
-      ...(options.presentationOutputFormatEnabled
-        ? [
-            PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
-            "- Follow the native PPTX steps below only for resolved PPTX output.",
-          ]
-        : []),
-      "- Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
-      "- Follow the package's PowerPoint export and verification workflow, then render and inspect its slide images before delivery.",
-      "- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead. Deliver one format unless the user requests multiple formats.",
-      "- Return the exact URL printed by the file delivery command.",
-    ];
+    return options.presentationOutputFormatEnabled
+      ? [
+          "- For a new deck with resolved PPTX output, author an editable native PPTX with this package, not HTML. Follow its export and verification workflow, render and inspect the slides, then upload the .pptx with this integration's upload-file command and return its exact URL.",
+        ]
+      : [
+          "- Author an editable native PPTX directly with the selected package; do not author HTML first or convert an HTML deck.",
+          "- Follow the package's PowerPoint export and verification workflow, then render and inspect its slide images before delivery.",
+          "- Deliver the final .pptx with this integration's upload-file command. Do not host an HTML deck instead. Deliver one format unless the user requests multiple formats.",
+          "- Return the exact URL printed by the file delivery command.",
+        ];
   }
   const hostCommand =
     options.hostCommand ??
     "okou host <output-dir> --site <slug> --artifact-kind presentation-html --preview ./generated/previews/cover.png --json";
   return [
-    options.presentationOutputFormatEnabled
-      ? PRESENTATION_OUTPUT_FORMAT_INSTRUCTION
-      : PRESENTATION_DELIVERY_INSTRUCTION,
-    options.presentationOutputFormatEnabled
-      ? "- Follow the HTML preview and hosting steps below only for resolved HTML output."
-      : "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below.",
+    ...(options.presentationOutputFormatEnabled
+      ? [
+          "- For PPTX delivery from an HTML-only template, use the enabled HTML-to-PPTX conversion workflow without another conversion request and deliver the converted PPTX. If conversion is unavailable or fails, report the blocker instead of changing format or style.",
+          "- For HTML delivery only, follow the preview and hosting steps below.",
+        ]
+      : [
+          PRESENTATION_DELIVERY_INSTRUCTION,
+          "- For an explicit PowerPoint/PPTX request, follow the platform's conversion instructions. Otherwise, follow the HTML preview and hosting steps below.",
+        ]),
     ...artifactPreviewInstructions(),
     `- For HTML delivery, host the finished deck: ${hostCommand}`,
     "- Return the exact URL printed by the selected delivery command.",

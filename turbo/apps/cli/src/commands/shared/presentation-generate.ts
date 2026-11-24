@@ -24,6 +24,7 @@ import {
 import {
   presentationImageInstructions,
   PRESENTATION_STATIC_HTML_INSTRUCTION,
+  PRESENTATION_OUTPUT_FORMAT_INSTRUCTION,
   presentationDeliveryInstructions,
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
@@ -215,6 +216,9 @@ ${formatPresentationTemplateListing(templates)}`;
               "",
               `Requested output format: ${outputFormat}`,
               "",
+              ...(presentationOutputFormatEnabled
+                ? [PRESENTATION_OUTPUT_FORMAT_INSTRUCTION]
+                : []),
               ...buildPresentationRunbookInstructionLines({
                 runbookPackage: template,
                 colorSystemToken: template.defaultColorSystem,
@@ -235,6 +239,9 @@ ${formatPresentationTemplateListing(templates)}`;
             "# Okou generate presentation",
             "",
             "Select a built-in presentation template from the catalog below, then use its authoring workflow.",
+            ...(presentationOutputFormatEnabled
+              ? [PRESENTATION_OUTPUT_FORMAT_INSTRUCTION]
+              : []),
             "",
             "## User Prompt",
             prompt,
@@ -267,11 +274,20 @@ ${formatPresentationTemplateListing(templates)}`;
             }),
             "## Use the Selected Template",
             `- Pull only the selected package once: \`okou resource pull <Package from the catalog> --dir ${resourceDir}\`.`,
+            ...(presentationOutputFormatEnabled
+              ? [
+                  "- If the selected package is unavailable, stop and report it; do not substitute another format or style.",
+                ]
+              : []),
             "- Read SKILL.md in the source directory printed by the pull command fully, then read the workflow instructions it references. Follow that package's authoring, worker startup, layout and verification workflow, using its listed default color system unless the request specifies another supported palette.",
             "- Use the source understanding above in the selected workflow; do not restart source preparation unnecessarily. Preserve the requested slide count and substantive content rather than copying the reference deck's sample story, wording, metrics, imagery or page count.",
-            outputFormat === "html"
-              ? PRESENTATION_STATIC_HTML_INSTRUCTION
-              : "- Author the deck natively as PPTX using the selected package's workflow; keep slide content editable instead of authoring HTML and converting it. If the package is unavailable, report the failure instead of substituting an HTML package.",
+            ...(outputFormat === "html"
+              ? [PRESENTATION_STATIC_HTML_INSTRUCTION]
+              : presentationOutputFormatEnabled
+                ? []
+                : [
+                    "- Author the deck natively as PPTX using the selected package's workflow; keep slide content editable instead of authoring HTML and converting it. If the package is unavailable, report the failure instead of substituting an HTML package.",
+                  ]),
             ...presentationImageInstructions(
               isPaidToolEnabled("image-generation"),
             ),
