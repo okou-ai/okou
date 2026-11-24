@@ -1,3 +1,4 @@
+import { VoiceMessagePlayer } from "./voice-message-player.tsx";
 import {
   useGet,
   useLastLoadable,
@@ -13,6 +14,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { useEditorState } from "@tiptap/react";
 import {
   Button,
+  InlineReferenceContent,
   cn,
   Popover,
   useMediaQuery,
@@ -1112,11 +1114,23 @@ function ComposerSuggestionMenu({
         />
         {children}
       </div>
+      <ComposerVoiceChips editor={composer.editor} />
       {sessionActive && (
         <ComposerSuggestionSession composer={composer} onKeyDown={onKeyDown} />
       )}
     </>
   );
+}
+
+function ComposerVoiceChips({ editor }: { editor: ComposerSignals["editor"] }) {
+  const chips = useGet(editor.voiceChips$);
+  return chips.map((chip) => {
+    return (
+      <InlineReferenceContent key={chip.key} host={chip.dom}>
+        <VoiceMessagePlayer player={chip.player} variant="composer" />
+      </InlineReferenceContent>
+    );
+  });
 }
 
 export function TiptapWorkflowComposer({

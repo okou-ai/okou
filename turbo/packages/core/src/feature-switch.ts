@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ComposerVoiceMessages]: {
+    maintainer: "ethan@okou.ai",
+    displayName: "Voice recordings in the composer",
+    description:
+      "Attach recordings to chat messages instead of dictating text.",
+    enabled: false,
+  },
   [FeatureSwitchKey.ChatShareRefresh]: {
     maintainer: "ming@okou.ai",
     displayName: "Refined message sharing",

@@ -2865,6 +2865,7 @@
       "storageFailed": "Audio tidak dapat disimpan. Hanya audio yang sudah tersimpan di perangkat ini yang tersedia.",
       "textTakingShape": "Teks sedang terbentuk",
       "transcribing": "Mentranskripsi",
+      "uploadingRecording": "Mengunggah rekaman…",
       "useRecording": "Gunakan rekaman"
     },
     "walletAction": {

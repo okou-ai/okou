@@ -2880,6 +2880,7 @@
       "storageFailed": "Audio konnte nicht gespeichert werden. Nur bereits auf diesem Gerät gespeichertes Audio ist verfügbar.",
       "textTakingShape": "Der Text nimmt Form an",
       "transcribing": "Transkribieren",
+      "uploadingRecording": "Aufnahme wird hochgeladen…",
       "useRecording": "Aufnahme verwenden"
     },
     "walletAction": {

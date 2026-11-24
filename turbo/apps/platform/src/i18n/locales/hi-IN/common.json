@@ -2880,6 +2880,7 @@
       "storageFailed": "ऑडियो सेव नहीं हो सका। केवल इस डिवाइस पर पहले से सेव ऑडियो उपलब्ध है।",
       "textTakingShape": "टेक्स्ट तैयार हो रहा है",
       "transcribing": "प्रतिलेखन",
+      "uploadingRecording": "रिकॉर्डिंग अपलोड हो रही है…",
       "useRecording": "रिकॉर्डिंग इस्तेमाल करें"
     },
     "walletAction": {

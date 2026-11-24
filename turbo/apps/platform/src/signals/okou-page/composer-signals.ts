@@ -82,6 +82,7 @@ import {
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
   | "editor"
+  | "voiceChips$"
   | "setContainerRef$"
   | "focus$"
   | "hasInput$"
@@ -380,6 +381,7 @@ function composerEditorSignals(
     singleLineOnMobile: options.singleLineOnMobile,
     forwardComposer: options.forwardComposer,
     editor: composer.editor,
+    voiceChips$: composer.voiceChips$,
     setContainerRef$: composer.setContainerRef$,
     focus$: composer.focus$,
     hasInput$: composer.hasInput$,
@@ -515,6 +517,11 @@ function createComposerVoiceInput(
   );
   return createComposerVoiceInputSignals(
     deliverText$,
+    command(async ({ set }, fileId: string, signal: AbortSignal) => {
+      await set(options.draft.load$, signal);
+      signal.throwIfAborted();
+      set(workflowComposer.insertVoiceClip$, fileId);
+    }),
     workflowComposer.readVoiceContext$,
     options.voiceDraftTarget,
   );

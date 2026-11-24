@@ -494,6 +494,10 @@ export const iosClientContracts: readonly {
   },
   { id: "ios.uploadsContract.prepare", route: uploadsContract.prepare },
   {
+    id: "ios.uploadsContract.preparePrivate",
+    route: uploadsContract.preparePrivate,
+  },
+  {
     id: "ios.userModelPreferenceContract.get",
     route: userModelPreferenceContract.get,
   },
