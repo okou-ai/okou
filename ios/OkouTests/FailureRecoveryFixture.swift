@@ -345,6 +345,7 @@ final class FailureRecoveryFixture: Sendable {
     let sync = ChatSync(client: http.client, cache: cache)
     let conversation = ConversationStore(
       thread: thread, sync: sync, commands: ChatCommands(client: http.client, sync: sync),
+      graph: makeTestWorkspaceGraph(),
       webURL: http.baseURL, messageMarkdown: MessageMarkdownCache(baseURL: http.baseURL),
       isVisible: isVisible, didMarkRead: { _ in }, didSend: {}, didFail: { _ in }, didSettle: {},
       modelSelection: selection,

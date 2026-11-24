@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 import XCTest
@@ -63,13 +64,14 @@ private struct SendTransitionProbe: View {
   let conversation: ConversationStore
 
   var body: some View {
-    ChatComposerView(
-      draft: Binding(get: { conversation.draft }, set: { conversation.draft = $0 }),
-      isBusy: conversation.isSending, showsProgress: false, canStop: false, needsUpgrade: false,
-      error: conversation.error, attachmentURL: conversation.webURL,
-      attachments: conversation.attachmentDraft, draftState: conversation.composer,
-      submit: { await conversation.send() }, refresh: nil
-    )
-    .frame(maxHeight: .infinity, alignment: .bottom)
+    StoreProvider(conversation.composer.store) {
+      ChatComposerView(
+        isBusy: conversation.isSending, showsProgress: false, canStop: false, needsUpgrade: false,
+        error: conversation.error, attachmentURL: conversation.webURL,
+        draftState: conversation.composer,
+        submit: { await conversation.send() }, refresh: nil
+      )
+      .frame(maxHeight: .infinity, alignment: .bottom)
+    }
   }
 }

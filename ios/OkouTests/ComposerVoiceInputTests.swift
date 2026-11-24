@@ -244,9 +244,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 16)
-    try await waitForBusinessResult { voice.duration == 16 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 16
+    }
     gate.release()
     await starting.value
     await fulfillment(of: [upload], timeout: 3)
@@ -280,9 +284,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 15)
-    try await waitForBusinessResult { voice.duration == 15 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 15
+    }
     gate.release()
     await starting.value
     XCTAssertEqual(voice.phase, .saved)
@@ -323,9 +331,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 1)
-    try await waitForBusinessResult { voice.duration == 1 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 1
+    }
     let finish = Task { await voice.finish() }
     addTeardownBlock { @MainActor in
       gate.release()
@@ -333,7 +345,9 @@ final class ComposerVoiceInputTests: XCTestCase {
       await voice.discard()
       await finish.value
     }
-    try await waitForBusinessResult { voice.phase == .processing }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .processing
+    }
     gate.release()
     await starting.value
     await finish.value
@@ -342,7 +356,9 @@ final class ComposerVoiceInputTests: XCTestCase {
     XCTAssertEqual(composer.text, "Notes: ")
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
     composer.close()
-    try await waitForBusinessResult { voice.phase == .saved }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .saved
+    }
     unmount(window)
 
     fixture.state.value.withLock {
@@ -382,9 +398,13 @@ final class ComposerVoiceInputTests: XCTestCase {
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
-    try await waitForBusinessResult { voice.phase == .recording }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .recording
+    }
     capture.speak(seconds: 16)
-    try await waitForBusinessResult { voice.duration == 16 }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.duration == 16
+    }
     await voice.discard()
     await starting.value
     XCTAssertEqual(voice.phase, .idle)
@@ -670,7 +690,9 @@ final class VoiceAudioCaptureTests: XCTestCase {
     await voice.start()
     capture.speak(seconds: 1)
     voice.suspend()
-    try await waitForBusinessResult { voice.phase == .saved }
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .saved
+    }
     XCTAssertEqual(voice.duration, 2)
     await voice.finish()
     XCTAssertEqual(composer.text, "spoken words")
