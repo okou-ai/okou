@@ -8,6 +8,7 @@ import { createServer } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
   createSecureContext,
@@ -15,6 +16,7 @@ import {
   setDefaultCACertificates,
 } from "node:tls";
 import "../src/__tests__/global-setup-env.ts";
+import { createPreviewRunnerDispatchPool } from "../src/runner-dispatch-pool.node.ts";
 import { createRunnerDispatchTransport } from "../src/runner-dispatch-transport.node.ts";
 import { awaitWithSignal } from "../src/signals/utils.ts";
 
@@ -57,12 +59,12 @@ setDefaultCACertificates([
 ]);
 const dispatchBody = JSON.stringify({ prompt: "Summarize the café menu" });
 
-async function withPeer(signal, run) {
+async function withPeer(signal, run, pool) {
   const handshake = Promise.withResolvers();
   const secure = Promise.withResolvers();
   const firstClosed = Promise.withResolvers();
   const context = createSecureContext({ key, cert });
-  const transport = createRunnerDispatchTransport({ observe() {} });
+  const transport = createRunnerDispatchTransport({ ...pool, observe() {} });
   const sockets = new Set();
   const ports = [];
   const bodyPorts = [];
@@ -80,6 +82,7 @@ async function withPeer(signal, run) {
     {
       key,
       cert,
+      ...(pool && { keepAliveTimeout: 35_000 }),
       SNICallback(_servername, callback) {
         handshake.resolve();
         if (released) {
@@ -91,6 +94,10 @@ async function withPeer(signal, run) {
     },
     (request, response) => {
       requestPaths.push(request.url);
+      if (pool) {
+        // Omit the timeout hint so the client uses its configured idle limit.
+        response.setHeader("keep-alive", "max=1000");
+      }
       const chunks = [];
       request.on("data", (chunk) => {
         chunks.push(chunk);
@@ -175,7 +182,7 @@ function reserve(transport, runId, url, signal, encoding = "identity") {
     url,
     (body, connectionSignal) => {
       return {
-        response: globalThis.fetch(url, {
+        response: transport.request(url, {
           method: "POST",
           headers: {
             "content-type": "application/json",
@@ -198,7 +205,7 @@ async function send(transport, url) {
   const reserved = transport.take(url, dispatchBody, 1, signal);
   try {
     const response = await (reserved?.response ??
-      globalThis.fetch(url, {
+      transport.request(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: dispatchBody,
@@ -283,6 +290,37 @@ test(
       assert.equal(peer.ports.length, 1);
       assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
     });
+  },
+);
+
+test(
+  "shares the Preview socket across reserved and direct POSTs after an idle gap",
+  { timeout: 12_000 },
+  async (t) => {
+    const pool = createPreviewRunnerDispatchPool();
+    try {
+      await withPeer(
+        t.signal,
+        async (peer) => {
+          const { transport, origin } = peer;
+          reserve(transport, "preview", origin, t.signal);
+          await peer.firstHandshake;
+          assert.deepEqual(peer.requestPaths, []);
+          peer.releaseHandshake();
+          await send(transport, origin);
+          await delay(5_500, undefined, { signal: t.signal });
+          await send(transport, origin + "/next");
+          assert.deepEqual(peer.requestPaths, ["/", "/next"]);
+          assert.deepEqual(peer.bodies, [dispatchBody, dispatchBody]);
+          assert.equal(peer.ports.length, 1);
+          assert.deepEqual(peer.bodyPorts, [peer.ports[0], peer.ports[0]]);
+          assert.equal(transport.poolStats(origin).connected, 1);
+        },
+        pool,
+      );
+    } finally {
+      await pool.destroy();
+    }
   },
 );
 

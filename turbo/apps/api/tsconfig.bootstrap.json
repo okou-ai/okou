@@ -13,6 +13,7 @@
   },
   "include": [
     "src/index.ts",
+    "src/index.preview.ts",
     "src/production-bootstrap.ts",
     "src/server.ts",
     "src/signals/route.ts"

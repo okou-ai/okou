@@ -21,7 +21,10 @@ import {
   currentRunnerDispatchTransport,
   runnerDispatchPath,
   type RunnerDispatchEncoding,
+  type RunnerDispatchRequest,
+  type RunnerDispatchResponse,
   type RunnerDispatchTiming,
+  type RunnerDispatchTransport,
   type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
 
@@ -117,7 +120,9 @@ const dispatchTransport = singleton(() => {
   return scope;
 });
 
-function readRunnerDispatchTiming(response: Response | undefined) {
+function readRunnerDispatchTiming(
+  response: RunnerDispatchResponse | undefined,
+) {
   const header = response?.headers.get(dispatchTimingHeader);
   if (!header || header.length > 512) {
     return undefined;
@@ -179,7 +184,7 @@ export function reserveRunnerDispatch(
     origin + path,
     (body, connectionSignal) => {
       const timing = { origin, path, sendCount: 0, startedAt: monotonicNow() };
-      const options: RequestInit = {
+      const options: RunnerDispatchRequest = {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
         duplex: "half",
@@ -187,7 +192,7 @@ export function reserveRunnerDispatch(
       };
       return {
         response: dispatchTransport().run(timing, () => {
-          return fetch(origin + path, options);
+          return transport.request(origin + path, options);
         }),
         timing,
       };
@@ -209,6 +214,20 @@ interface RunnerDispatchPost {
   readonly firstCandidateReadyAt: number | undefined;
 }
 
+function dispatchPoolDimensions(
+  transport: RunnerDispatchTransport | undefined,
+  origin: string,
+) {
+  const stats = transport?.poolStats?.(origin);
+  return (
+    stats && {
+      api_dispatch_pool: "preview_retained_http1",
+      api_dispatch_pool_connected: stats.connected,
+      api_dispatch_pool_pending: stats.pending,
+    }
+  );
+}
+
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
   args: RunnerDispatchPost,
@@ -217,7 +236,7 @@ export async function postRunnerDispatch(
   signal.throwIfAborted();
   const { target, runId, body, bodyBytes, serviceToken, timeoutMs } = args;
   const encoding = typeof body === "string" ? "identity" : "gzip";
-  let response: Response | undefined;
+  let response: RunnerDispatchResponse | undefined;
   let responseHeadersMs: number | undefined;
   let observation: DispatchObservation | undefined;
   const startedAt = monotonicNow();
@@ -230,21 +249,17 @@ export async function postRunnerDispatch(
     startedAt,
     sendCount: 0,
   };
+  const requestTransport = currentRunnerDispatchTransport();
   return await (async () => {
     const deadline = AbortSignal.any([
       signal,
       AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
     ]);
     const url = origin + path;
-    reserved = currentRunnerDispatchTransport()?.take(
-      url,
-      body,
-      startedAt,
-      deadline,
-      encoding,
-    );
+    reserved = requestTransport?.take(url, body, startedAt, deadline, encoding);
     const dispatch = () => {
-      return fetch(url, {
+      const request = requestTransport?.request ?? fetch;
+      return request(url, {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
         signal: deadline,
@@ -314,6 +329,7 @@ export async function postRunnerDispatch(
             timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
           api_preconnect_used:
             reserved === undefined ? undefined : timing.sendCount === 1,
+          ...dispatchPoolDimensions(requestTransport, origin),
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
@@ -334,7 +350,7 @@ export async function postRunnerDispatch(
 }
 
 async function observeRunnerDispatch(
-  response: Response,
+  response: RunnerDispatchResponse,
   target: DirectRunTarget,
   runId: string,
   signal: AbortSignal,

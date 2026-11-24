@@ -78,6 +78,7 @@ function fixture(t) {
   for (const file of ["src/index.ts", "src/server.ts", "src/worker.ts"]) {
     write(root, file, 'import "./production-bootstrap";\n');
   }
+  write(root, "src/index.preview.ts", 'import "./index";\n');
   for (const file of [
     "src/worker-runtime.d.ts",
     "src/__tests__/worker-lifecycle.test.ts",

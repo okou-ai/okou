@@ -13,7 +13,7 @@ export interface RunnerDispatchTiming {
 }
 
 export interface ReservedRunnerDispatch {
-  readonly response: Promise<Response>;
+  readonly response: Promise<RunnerDispatchResponse>;
   readonly timing: RunnerDispatchTiming;
 }
 
@@ -23,7 +23,30 @@ export interface TakenRunnerDispatch extends ReservedRunnerDispatch {
 
 export type RunnerDispatchEncoding = "identity" | "gzip";
 
+export interface RunnerDispatchRequest extends Pick<
+  RequestInit,
+  "cache" | "duplex" | "method" | "redirect" | "signal"
+> {
+  readonly body: string | Uint8Array<ArrayBuffer> | ReadableStream<Uint8Array>;
+  readonly headers: Record<string, string>;
+}
+
+export interface RunnerDispatchResponse {
+  readonly status: number;
+  readonly headers: Pick<Headers, "get">;
+  readonly body: { cancel(): Promise<void> } | null;
+  json(): Promise<unknown>;
+}
+
 export interface RunnerDispatchTransport {
+  readonly request: (
+    url: string,
+    options: RunnerDispatchRequest,
+  ) => Promise<RunnerDispatchResponse>;
+  readonly poolStats?: (origin: string) => {
+    readonly connected: number;
+    readonly pending: number;
+  };
   readonly reserve: (
     runId: string,
     url: string,
