@@ -108,7 +108,7 @@ class ScreenshotScenario {
             text(zone)
         }
 
-        val selectedZone = By.pkg(app.packageName).text(zone).clazz("android.widget.RadioButton")
+        val selectedZone = By.pkg(app.packageName).checked(true).hasChild(By.text(zone))
 
         fun showTimezonePicker(width: Int, filename: String) {
             val field = action(zone)
@@ -168,7 +168,9 @@ class ScreenshotScenario {
                 openDirectory()
                 openEditor()
                 text(fixture.releaseTitle)
-                val schedule = text("定时").visibleBounds
+                val selectedSchedule = checkNotNull(text("定时").parent)
+                assertTrue(selectedSchedule.isChecked)
+                val schedule = selectedSchedule.visibleBounds
                 val event = action("事件").visibleBounds
                 assertTrue(schedule.height() >= 48)
                 assertTrue(event.height() >= 48)
