@@ -119,4 +119,8 @@
     <string name="workflow_history_trigger_unavailable">Pemicu tidak tersedia</string>
     <string name="workflow_history_scheduled">Pemicu terjadwal</string>
     <string name="workflow_history_manual">Eksekusi manual</string>
+    <string name="workflow_catalog_refresh_failed">Direktori alur kerja tidak dapat diperbarui. Menampilkan alur kerja yang sudah dimuat.</string>
+    <string name="workflow_history_earlier_failed">Eksekusi sebelumnya tidak dapat dimuat.</string>
+    <string name="workflow_rule_checking">Memeriksa hasil…</string>
+    <string name="workflow_rule_unconfirmed">Hasilnya belum dikonfirmasi.</string>
 </resources>

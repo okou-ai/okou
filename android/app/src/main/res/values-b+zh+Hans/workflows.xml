@@ -119,4 +119,8 @@
     <string name="workflow_history_trigger_unavailable">触发方式不可用</string>
     <string name="workflow_history_scheduled">定时触发</string>
     <string name="workflow_history_manual">手动运行</string>
+    <string name="workflow_catalog_refresh_failed">暂时无法更新工作流目录，显示已加载内容</string>
+    <string name="workflow_history_earlier_failed">暂时无法加载更早的运行记录</string>
+    <string name="workflow_rule_checking">正在核对结果…</string>
+    <string name="workflow_rule_unconfirmed">提交结果尚未确认。</string>
 </resources>

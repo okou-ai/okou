@@ -120,4 +120,8 @@
     <string name="workflow_history_trigger_unavailable">Auslöser nicht verfügbar</string>
     <string name="workflow_history_scheduled">Zeitgesteuerter Auslöser</string>
     <string name="workflow_history_manual">Manuelle Ausführung</string>
+    <string name="workflow_catalog_refresh_failed">Das Workflow-Verzeichnis konnte nicht aktualisiert werden. Geladene Workflows werden angezeigt.</string>
+    <string name="workflow_history_earlier_failed">Frühere Ausführungen konnten nicht geladen werden.</string>
+    <string name="workflow_rule_checking">Ergebnis wird überprüft…</string>
+    <string name="workflow_rule_unconfirmed">Das Ergebnis ist noch nicht bestätigt.</string>
 </resources>

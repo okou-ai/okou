@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
+import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
@@ -10,14 +11,8 @@ import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
 import ai.okou.android.workspaceSearchTextStyle
 import androidx.annotation.StringRes
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.BringIntoViewSpec
-import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,11 +27,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -47,7 +37,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -59,21 +48,14 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.InputMode
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -90,7 +72,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -268,105 +249,24 @@ internal fun WorkspaceSearchScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchTypes(
     selectedType: WorkspaceSearchType,
     typeFocus: Map<WorkspaceSearchType, FocusRequester>,
     modifier: Modifier,
     onSelect: (WorkspaceSearchType) -> Unit,
-) {
-    val colors = MaterialTheme.colorScheme
-    val keyboardFocus = LocalInputModeManager.current.inputMode == InputMode.Keyboard
-    val shape = RoundedCornerShape(12.dp)
-    val scroll = rememberScrollState()
-    val reveal = remember { WorkspaceSearchType.entries.associateWith { BringIntoViewRequester() } }
-    var focusedType by remember { mutableStateOf<WorkspaceSearchType?>(null) }
-    val fade = with(LocalDensity.current) { 16.dp.toPx() }
-    val defaultSpec = LocalBringIntoViewSpec.current
-    val filterSpec =
-        remember(defaultSpec, scroll, fade) {
-            object : BringIntoViewSpec by defaultSpec {
-                override fun calculateScrollDistance(
-                    offset: Float,
-                    size: Float,
-                    containerSize: Float,
-                ): Float {
-                    if (scroll.maxValue == 0) return 0f
-                    // Keep the focused control clear of the fade when it fits with room to spare.
-                    val margin = ((containerSize - size) / 2).coerceIn(0f, fade)
-                    return defaultSpec.calculateScrollDistance(
-                        offset - margin,
-                        size + 2 * margin,
-                        containerSize,
-                    )
-                }
-            }
-        }
-    val visibleType = focusedType ?: selectedType
-    LaunchedEffect(visibleType, scroll.maxValue) { reveal.getValue(visibleType).bringIntoView() }
-    CompositionLocalProvider(LocalBringIntoViewSpec provides filterSpec) {
-        Row(
-            modifier
-                .padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
-                .drawWithContent {
-                    drawContent()
-                    val rtl = layoutDirection == LayoutDirection.Rtl
-                    val background = colors.background
-                    val transparent = background.copy(alpha = 0f)
-                    if (if (rtl) scroll.canScrollForward else scroll.canScrollBackward) {
-                        drawRect(
-                            Brush.horizontalGradient(listOf(background, transparent), endX = fade),
-                            size = Size(fade, size.height),
-                        )
-                    }
-                    if (if (rtl) scroll.canScrollBackward else scroll.canScrollForward) {
-                        val x = size.width - fade
-                        drawRect(
-                            Brush.horizontalGradient(listOf(transparent, background), startX = x),
-                            topLeft = Offset(x, 0f),
-                            size = Size(fade, size.height),
-                        )
-                    }
-                }
-                .horizontalScroll(scroll)
-                .selectableGroup(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            for (type in WorkspaceSearchType.entries) {
-                val selected = selectedType == type
-                Box(
-                    Modifier.widthIn(min = 48.dp)
-                        .heightIn(min = 48.dp)
-                        .clip(shape)
-                        .focusRequester(typeFocus.getValue(type))
-                        .focusProperties { canFocus = true }
-                        .background(if (selected) colors.secondaryContainer else colors.background)
-                        .then(
-                            if (keyboardFocus && focusedType == type)
-                                Modifier.border(2.dp, colors.onBackground, shape)
-                            else Modifier,
-                        )
-                        .bringIntoViewRequester(reveal.getValue(type))
-                        .onFocusChanged {
-                            if (it.isFocused) focusedType = type
-                            else if (focusedType == type) focusedType = null
-                        }
-                        .testTag("search_type_${type.name}")
-                        .selectable(selected, role = Role.Tab) { onSelect(type) }
-                        .padding(horizontal = 8.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        stringResource(type.label),
-                        style = searchSecondaryStyle(),
-                        color = if (selected) colors.onSecondaryContainer else colors.onSurface,
-                    )
-                }
-            }
-        }
-    }
-}
+) =
+    WorkspaceFilterRow(
+        WorkspaceSearchType.entries,
+        selectedType,
+        Role.Tab,
+        label = { stringResource(it.label) },
+        modifier = modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        optionModifier = {
+            Modifier.focusRequester(typeFocus.getValue(it)).testTag("search_type_${it.name}")
+        },
+        onSelect = onSelect,
+    )
 
 private const val GroupKeyPrefix = "group:"
 private const val MessageKeyPrefix = "message:"
@@ -641,16 +541,27 @@ private fun SearchResults(
             workspacePreparation == null &&
                 onOpenArtifact == null &&
                 type == WorkspaceSearchType.Artifacts
-    val hasRemoteResults =
-        messages.isNotEmpty() || workflowRead is SearchRead.Ready || artifacts.isNotEmpty()
+    val hasUsableRemoteSource =
+        messages.isNotEmpty() ||
+            (messageRead is SearchRead.Ready && !needsMessageChats) ||
+            workflowRead is SearchRead.Ready ||
+            artifactPage != null
+    val onlySavedChats = confirmedChats && !hasUsableRemoteSource
     val readFailure =
         when {
             grouped &&
                 (messageFailure || workflowFailure || artifactFailure || chatRefreshFailed) ->
-                if (confirmedChats && !hasRemoteResults) R.string.chat_search_partial_local
-                else R.string.chat_search_unavailable
+                when {
+                    onlySavedChats && items.isEmpty() -> R.string.chat_search_saved_chats_no_matches
+                    onlySavedChats -> R.string.chat_search_partial_local
+                    items.isEmpty() -> R.string.chat_search_failed
+                    else -> R.string.chat_search_unavailable
+                }
             needsChatList && !confirmedChats && listFailed -> R.string.chat_list_first_load_failed
-            showChats && chatRefreshFailed -> R.string.chat_search_saved_chats
+            showChats && chatRefreshFailed ->
+                if (keyword.isNotEmpty() && items.isEmpty())
+                    R.string.chat_search_saved_chats_no_matches
+                else R.string.chat_search_saved_chats
             grouped -> null
             keyword.isEmpty() -> null
             type == WorkspaceSearchType.Messages && messageFailure ->
@@ -664,7 +575,7 @@ private fun SearchResults(
                 else R.string.chat_search_artifacts_failed
             else -> null
         }
-    val status = readFailure.takeUnless { remotePending }
+    val status = readFailure.takeUnless { pending }
     val showEmpty =
         items.isEmpty() &&
             !waitingForList &&
@@ -673,19 +584,11 @@ private fun SearchResults(
             (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
         key(keyword, type) {
-            rememberChatWaitIndicator(
-                remotePending || waitingForList && items.isEmpty() && status == null,
-                delayMillis = 250,
-            )
+            rememberChatWaitIndicator(pending, delayMillis = 250)
         }
-    val showSkeleton = showPending && items.isEmpty() && status == null && !showEmpty
-    val showProgress = showPending && items.isNotEmpty() && remotePending
-    val errorTitle =
-        status
-            ?.takeIf { items.isEmpty() }
-            ?.let {
-                if (grouped) R.string.chat_search_failed else it
-            }
+    val showSkeleton = showPending && items.isEmpty() && !showEmpty
+    val showProgress = showPending && items.isNotEmpty()
+    val errorTitle = status.takeIf { items.isEmpty() }
     val inlineStatus = status.takeIf { errorTitle == null }
     val visibleItems =
         remember(inlineStatus, items) {

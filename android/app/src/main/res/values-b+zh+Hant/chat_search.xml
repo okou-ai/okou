@@ -27,6 +27,7 @@
     <string name="chat_search_short">搜尋</string>
     <string name="chat_search_partial_local">部分結果暫時無法使用，僅顯示本機聊天。</string>
     <string name="chat_search_saved_chats">暫時無法更新，顯示本機聊天。</string>
+    <string name="chat_search_saved_chats_no_matches">暫時只能搜尋本機聊天，未找到符合的結果。</string>
     <string name="chat_search_saved_results">暫時無法更新，顯示已取得的結果。</string>
     <string name="chat_search_messages_failed">暫時無法搜尋訊息</string>
     <string name="chat_search_workflows_failed">暫時無法搜尋工作流程</string>
