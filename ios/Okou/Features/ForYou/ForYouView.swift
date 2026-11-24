@@ -45,8 +45,9 @@ struct ForYouView: View {
   private static let riseSolid: CGFloat = 0.3
   /// How much smaller a leaving card is a whole page away, as it settles back from the front.
   private static let leaveShrink: CGFloat = 0.04
-  /// Each deeper layer of the deck fades by this much, so the stack recedes.
-  private static let layerFade: Double = 0.45
+  /// Each deeper layer of the deck is shaded by this much more, so the stack recedes while every
+  /// layer stays a solid card on the scene.
+  private static let layerShade: Double = 0.06
   /// How far the cover drifts for each card, so it moves well behind the cards.
   private static let coverDrift: CGFloat = 36
 
@@ -155,11 +156,14 @@ struct ForYouView: View {
             .fill(OkouColor.card)
             .overlay {
               RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
+                .fill(OkouMediaColor.scrim.opacity(Double(layer) * Self.layerShade))
+            }
+            .overlay {
+              RoundedRectangle(cornerRadius: OkouRadius.sheet, style: .continuous)
                 .strokeBorder(OkouColor.border, lineWidth: OkouSpace.hairline)
             }
             .scaleEffect(x: 1 - CGFloat(layer) * Self.layerInset, y: 1, anchor: .bottom)
             .offset(y: CGFloat(layer) * Self.layerDrop)
-            .opacity(1 - Double(layer - 1) * Self.layerFade)
         }
       }
       .frame(width: front.width, height: front.height)
@@ -342,8 +346,10 @@ struct ForYouView: View {
     .defaultScrollAnchor(.bottom, for: .alignment)
     .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollIndicators(.hidden)
+    // A card that fits stays put: only one taller than the room (large text, the keyboard up)
+    // scrolls, so a vertical drag never pulls the card down off the deck.
+    .scrollBounceBehavior(.basedOnSize, axes: .vertical)
     .scrollDismissesKeyboard(.interactively)
-    .refreshable { await store.load() }
     .visualEffect { content, proxy in
       let width = max(proxy.size.width, 1)
       let distance = proxy.frame(in: .scrollView(axis: .horizontal)).minX

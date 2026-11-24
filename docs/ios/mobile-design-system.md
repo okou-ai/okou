@@ -899,6 +899,9 @@ feature; the catalog shows each one.
   to the first, and back from the first to the last, as the web's stack turns. The counter rolls
   and the lit progress segment follows the finger. A handled card sinks away while the next one
   rises into its place. Under Reduce Motion the cards page side by side and the cover holds still.
+  A card that fits never moves vertically; only one taller than the room scrolls, and only the
+  caught-up panel pulls to refresh. The layers under the front card are solid cards, each a little
+  more shaded than the one above it.
 - **Haptics**: selection when a new card comes to rest in front, success when a card is
   handled, error on a failure; nothing while the finger moves.
 - **The dock** is an `OkouGlassPrompt` that grows into the composer, and Dismiss with its
