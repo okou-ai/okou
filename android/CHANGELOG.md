@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.54.1](https://github.com/okou-ai/okou/compare/android-v0.54.0...android-v0.54.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **android:** align artifact browsing and previews with design ([#50533](https://github.com/okou-ai/okou/issues/50533)) ([6648ee0](https://github.com/okou-ai/okou/commit/6648ee0ebee90280c3afefe05989a4605efef71a))
+* **android:** prioritize chat list errors and preserve undo ([#50414](https://github.com/okou-ai/okou/issues/50414)) ([2a51cbd](https://github.com/okou-ai/okou/commit/2a51cbde0790a3be5a9681ea9a00d5407c0d4b65))
+* **android:** retain the workspace chooser through activation ([#50536](https://github.com/okou-ai/okou/issues/50536)) ([cb42b2b](https://github.com/okou-ai/okou/commit/cb42b2b65b1dff0242f27d83fadc5c404069443a))
+* **android:** show keyboard focus across workspace search ([#50526](https://github.com/okou-ai/okou/issues/50526)) ([eb70b20](https://github.com/okou-ai/okou/commit/eb70b20e003db58625e905daf0b9c859f5a60ee1))
+* **android:** verify uncertain connector device authorization after expiry ([#50528](https://github.com/okou-ai/okou/issues/50528)) ([03cdd2c](https://github.com/okou-ai/okou/commit/03cdd2cb87ce32f0da678ff4b9d752c073a80c22))
+
 ## [0.54.0](https://github.com/okou-ai/okou/compare/android-v0.53.0...android-v0.54.0) (2026-11-24)
 
 
