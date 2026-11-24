@@ -1191,17 +1191,23 @@ internal fun WorkflowAction(
     val shape = RoundedCornerShape(12.dp)
     val padding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
     if (primary) {
-        val savingLabel = if (saving) stringResource(R.string.settings_saving) else null
-        Button(
-            onClick,
-            modifier.heightIn(min = 48.dp).updateFocusOutline(shape, colors.background).semantics {
-                if (savingLabel != null) {
+        val savingSemantics =
+            if (saving) {
+                val savingLabel = stringResource(R.string.settings_saving)
+                Modifier.clearAndSetSemantics {
                     contentDescription = label
                     role = Role.Button
                     stateDescription = savingLabel
                     liveRegion = LiveRegionMode.Polite
+                    disabled()
                 }
-            },
+            } else Modifier
+        Button(
+            onClick,
+            modifier
+                .heightIn(min = 48.dp)
+                .updateFocusOutline(shape, colors.background)
+                .then(savingSemantics),
             enabled = enabled,
             shape = shape,
             colors =
@@ -1214,7 +1220,6 @@ internal fun WorkflowAction(
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     label,
-                    modifier = if (saving) Modifier.clearAndSetSemantics {} else Modifier,
                     color = if (saving) Color.Transparent else Color.Unspecified,
                     style = workflowSmallStyle(),
                     textAlign = TextAlign.Center,
@@ -1222,7 +1227,7 @@ internal fun WorkflowAction(
                 )
                 if (saving) {
                     CircularProgressIndicator(
-                        Modifier.size(16.dp).clearAndSetSemantics {},
+                        Modifier.size(16.dp),
                         color = colors.onSurfaceVariant,
                         strokeWidth = 2.dp,
                     )
