@@ -110,7 +110,6 @@ private fun ChatUndoFeedback(
     actionPending: Boolean,
     snackbar: SnackbarHostState,
 ) {
-    val persistent = undo.phase != ChatUndoPhase.Failed
     val message =
         when (undo.phase) {
             ChatUndoPhase.Offered ->
@@ -122,14 +121,12 @@ private fun ChatUndoFeedback(
                     },
                 )
             ChatUndoPhase.Checking -> stringResource(R.string.chat_undo_checking)
-            ChatUndoPhase.Failed -> stringResource(R.string.chat_undo_failed)
             ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_undo_unconfirmed)
         }
     val action =
         when {
             undo.phase == ChatUndoPhase.Unconfirmed -> stringResource(R.string.chat_refresh)
-            persistent -> stringResource(R.string.chat_undo)
-            else -> null
+            else -> stringResource(R.string.chat_undo)
         }
     key(chats, undo.sequence) {
         val currentUndo = rememberUpdatedState(undo)
@@ -139,7 +136,7 @@ private fun ChatUndoFeedback(
                     message,
                     action,
                     undo.phase != ChatUndoPhase.Checking && !actionPending,
-                    persistent,
+                    showDismiss = true,
                 ),
             )
         LaunchedEffect(snackbar) {
@@ -237,16 +234,11 @@ internal fun WorkspaceChatFeedback(
     }
     val conversationError = conversationFailures.firstOrNull { it.rejected }
     val conversationNotice = conversationFailures.firstOrNull()
-    val firstConversationError =
-        minOf(
-            conversationError?.feedbackOrder ?: Long.MAX_VALUE,
-            navigationError?.feedbackOrder ?: Long.MAX_VALUE,
-            conversationUndo?.failureOrder ?: Long.MAX_VALUE,
-        )
     when {
-        conversationError != null && conversationError.feedbackOrder == firstConversationError ->
+        conversationError != null &&
+            conversationError.feedbackOrder < (navigationError?.feedbackOrder ?: Long.MAX_VALUE) ->
             ChatRowFailureFeedback(chats, list, conversationError, conversationSnackbar)
-        navigationError != null && navigationError.feedbackOrder == firstConversationError ->
+        navigationError != null ->
             LaunchedEffect(conversationSnackbar, navigationError) {
                 conversationSnackbar.currentSnackbarData?.dismiss()
                 conversationSnackbar.showSnackbar(
@@ -289,7 +281,6 @@ internal fun WorkspaceChatFeedback(
                 rowError?.feedbackOrder,
                 projectError?.feedbackOrder,
                 batchError?.feedbackOrder,
-                listUndo?.failureOrder,
             )
             .minOrNull()
     val rowNotice = listFailures.firstOrNull()
@@ -518,6 +509,7 @@ private fun ChatRowFailureFeedback(
     val action = failure.action
     val message =
         when {
+            failure.fromUndo -> stringResource(R.string.chat_undo_failed)
             action == ChatRowAction.Delete && failure.rejected && !failure.deleteFromWorkflow ->
                 stringResource(R.string.chat_delete_rejected)
             failure.rejected && action.recoversInBackground ->
