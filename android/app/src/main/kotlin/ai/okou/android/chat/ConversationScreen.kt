@@ -102,6 +102,7 @@ internal fun ConversationRoute(
     historyAvailable: Boolean = true,
     controls: ConversationRunControls? = null,
     stopPlacement: ConversationStopPlacement? = null,
+    paneFeedbackVisible: Boolean = false,
     queueOpen: Boolean = false,
     dismissQueue: () -> Unit = {},
     artifactActions: ChatArtifactActions? = null,
@@ -659,7 +660,9 @@ internal fun ConversationRoute(
                                             else Alignment.BottomCenter,
                                         )
                                         .padding(
-                                            bottom = if (stopFeedbackVisible) 8.dp else 4.dp,
+                                            bottom =
+                                                if (stopFeedbackVisible || paneFeedbackVisible) 8.dp
+                                                else 4.dp,
                                             end = if (window.height < 480) 12.dp else 0.dp,
                                         ),
                                 onClick = { scope.launch { position.scrollToItem(0) } },

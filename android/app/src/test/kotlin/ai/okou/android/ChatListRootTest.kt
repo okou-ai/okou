@@ -3189,9 +3189,10 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
     @Test
     @Config(qualifiers = "en-rUS-w400dp-h800dp")
     @GraphicsMode(GraphicsMode.Mode.NATIVE)
-    fun archivingInACompactConversationKeepsUndoBesideTheComposer() {
+    fun compactConversationKeepsArchiveUndoBetweenJumpAndComposer() {
         val app = compose.activity.application as ChatListApplication
         val fixture = app.fixture
+        fixture.historyReply = List(32) { "Reply paragraph ${it + 1}." }.joinToString("\n\n")
         val events = fixture.rowEventTail()
         fixture.commandResponse = { request ->
             when (request.requestUrl?.encodedPath) {
@@ -3209,6 +3210,10 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
         app.responseGate.countDown()
         awaitListAndNames()
         compose.onNodeWithTag("chat_$CHAT_PERSONAL").performClick()
+        compose.waitUntilExactlyOneExists(hasText("Reply paragraph 32."), 10_000)
+        compose.onNodeWithTag("conversation").performScrollToNode(hasText("Hello history"))
+        val jump = hasTestTag("conversation_jump")
+        compose.waitUntilExactlyOneExists(jump, 10_000)
         val composer = compose.onNodeWithTag("chat_composer").assertIsDisplayed()
         val bottom = composer.getUnclippedBoundsInRoot().bottom
         compose.onNodeWithContentDescription("Chat actions").performClick()
@@ -3217,8 +3222,16 @@ internal class ChatListRowActionsRootTest : ChatListRootTestFixture() {
             compose.onAllNodes(hasText("Undo") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
         }
         val feedback = compose.onNodeWithTag("conversation_feedback").assertIsDisplayed()
+        val feedbackBounds = feedback.getUnclippedBoundsInRoot()
+        val jumpBounds = compose.onNode(jump).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertEquals(
+            "Gap below the reading jump",
+            8f,
+            (feedbackBounds.top - jumpBounds.bottom).value,
+            1f,
+        )
         val composerTop = composer.getUnclippedBoundsInRoot().top
-        assertEquals(8f, (composerTop - feedback.getUnclippedBoundsInRoot().bottom).value, 1f)
+        assertEquals(8f, (composerTop - feedbackBounds.bottom).value, 1f)
         val undoBounds = compose.onNodeWithText("Undo").getUnclippedBoundsInRoot()
         assertTrue(undoBounds.right - undoBounds.left >= 48.dp)
         assertTrue(undoBounds.bottom - undoBounds.top >= 48.dp)
