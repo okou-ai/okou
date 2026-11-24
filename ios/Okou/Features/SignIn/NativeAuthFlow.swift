@@ -139,9 +139,22 @@ final class NativeAuthFlow {
     }
   }
 
-  func submitPassword() {
-    guard let signIn, !password.isEmpty else { return }
-    run {
+  var canUsePassword: Bool {
+    guard step == .code, let signIn else { return false }
+    return signIn.supportedFirstFactors?.contains(where: { $0.strategy == .password }) == true
+  }
+
+  func usePassword() {
+    guard canUsePassword, !isWorking else { return }
+    code = ""
+    error = nil
+    step = .password
+  }
+
+  @discardableResult
+  func submitPassword() -> Task<Void, Never>? {
+    guard let signIn, !password.isEmpty else { return nil }
+    return run {
       let result = try await signIn.authenticateWithPassword(self.password)
       try self.requireCurrentOperation()
       self.password = ""
