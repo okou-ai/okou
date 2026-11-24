@@ -10,8 +10,15 @@ import {
   WebSocketPair,
   type Request,
 } from "miniflare";
-import { expect, onTestFinished } from "vitest";
-import { number, object, unknown as zUnknown, type infer as zInfer } from "zod";
+import { expect, onTestFinished, type TestContext } from "vitest";
+import {
+  boolean,
+  number,
+  object,
+  string,
+  unknown as zUnknown,
+  type infer as zInfer,
+} from "zod";
 
 export const APPLICATION_ID = "100000000000000001";
 // Older applications have a bot user ID distinct from the application ID.
@@ -25,6 +32,12 @@ export const BOT_TOKEN = "test-discord-bot-token";
 
 const packetSchema = object({ op: number(), d: zUnknown() });
 type Packet = zInfer<typeof packetSchema>;
+
+const healthObservationSchema = object({
+  running: boolean(),
+  pending: number(),
+  connection: object({ stage: string() }),
+});
 
 class Events<T> {
   private readonly buffered: T[] = [];
@@ -258,10 +271,15 @@ export class RelayFixture {
     await this.runtime.ready;
   }
 
-  request(path: string, token: string | null = CONTROL_SECRET) {
+  request(
+    path: string,
+    token: string | null = CONTROL_SECRET,
+    signal?: AbortSignal,
+  ) {
     return this.runtime.dispatchFetch(`https://relay.example.test${path}`, {
       method: ["/health", "/dead-letters"].includes(path) ? "GET" : "POST",
       headers: token === null ? {} : { Authorization: `Bearer ${token}` },
+      signal,
     });
   }
 
@@ -269,6 +287,50 @@ export class RelayFixture {
     const response = await this.request("/health");
     expect(response.status).toBe(200);
     return response.json();
+  }
+
+  async waitForHealth(test: TestContext, expected: object): Promise<void> {
+    let phase = "waiting for health headers";
+    let lastStatus: number | null = null;
+    let lastHealth: zInfer<typeof healthObservationSchema> | null = null;
+    let complete = false;
+    test.onTestFailed(() => {
+      if (complete) return;
+      console.error("Discord relay health wait", {
+        phase,
+        lastStatus,
+        lastHealth,
+      });
+    });
+
+    // The test deadline also includes startup and protocol work. Avoid an
+    // independent short deadline for HTTP and durable state convergence.
+    await expect
+      .poll(
+        async ({ signal }) => {
+          const requestSignal = AbortSignal.any([test.signal, signal]);
+          requestSignal.throwIfAborted();
+          phase = "waiting for health headers";
+          const response = await this.request(
+            "/health",
+            CONTROL_SECRET,
+            requestSignal,
+          );
+          requestSignal.throwIfAborted();
+          phase = "reading health body";
+          lastStatus = response.status;
+          const health = await response.json();
+          requestSignal.throwIfAborted();
+          phase = "matching health state";
+          const observation = healthObservationSchema.safeParse(health);
+          lastHealth = observation.success ? observation.data : null;
+          expect(response.status).toBe(200);
+          return health;
+        },
+        { timeout: test.task.timeout },
+      )
+      .toMatchObject(expected);
+    complete = true;
   }
 
   async durableObjectHealth(name: string) {

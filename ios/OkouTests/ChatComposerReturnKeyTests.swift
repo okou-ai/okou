@@ -47,7 +47,7 @@ final class ChatComposerReturnKeyTests: XCTestCase {
       mentionTable(in: host.view)?.visibleCells.first != nil
     }
     input.insertText("\n")
-    try await waitForBusinessResult {
+    try await waitForBusinessResult(watching: workspace.newComposer) {
       workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
     }
     input.insertText("🌷 old after")
@@ -62,7 +62,9 @@ final class ChatComposerReturnKeyTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
-    try await waitForBusinessResult { workspace.newComposer.document == before }
+    try await waitForBusinessResult(watching: workspace.newComposer) {
+      workspace.newComposer.document == before
+    }
   }
 
   private func chatReferenceSuggestionStatus(

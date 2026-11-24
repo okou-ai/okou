@@ -179,24 +179,21 @@ describe("Discord Gateway connection health", () => {
     expect(JSON.stringify(await relay.health())).not.toContain("private");
   });
 
-  it("reports an exhausted Identify budget without inventing a connection failure", async () => {
+  it("reports an exhausted Identify budget without inventing a connection failure", async (test) => {
     const relay = await createRelay();
     relay.gatewayMetadata.session_start_limit.remaining = 0;
     expect((await relay.request("/start")).status).toBe(200);
-    await expect
-      .poll(() => {
-        return relay.health();
-      })
-      .toMatchObject({
-        running: true,
-        connected: false,
-        connection: {
-          stage: "session-limit-wait",
-          failures: 0,
-          reconnectAt: expect.any(Number),
-          lastFailure: null,
-        },
-      });
+    await relay.discoveries.next();
+    await relay.waitForHealth(test, {
+      running: true,
+      connected: false,
+      connection: {
+        stage: "session-limit-wait",
+        failures: 0,
+        reconnectAt: expect.any(Number),
+        lastFailure: null,
+      },
+    });
   });
 
   it("retains the durable retry count but discards runtime details on restart", async () => {

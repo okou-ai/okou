@@ -1,4 +1,5 @@
 import AVFoundation
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -13,10 +14,28 @@ struct VoiceFocusHarness: View {
   let recordingPresented: XCTestExpectation
 
   var body: some View {
-    MentionComposerHarness(state: composer)
-      .onChange(of: composer.voice?.phase) { _, phase in
-        if phase == .recording { recordingPresented.fulfill() }
-      }
+    StoreProvider(composer.store) {
+      MentionComposerHarness(state: composer)
+        .modifier(
+          RecordingPresentation(voice: composer.voice, recordingPresented: recordingPresented))
+    }
+  }
+}
+
+/// Fulfills when the composer graph reports recording, as the composer itself renders it.
+private struct RecordingPresentation: ViewModifier {
+  let recordingPresented: XCTestExpectation
+  @ResolvedValue private var phase: ComposerVoiceInputStore.Phase?
+
+  init(voice: ComposerVoiceInputStore?, recordingPresented: XCTestExpectation) {
+    self.recordingPresented = recordingPresented
+    _phase = ResolvedValue(voice?.phaseValue ?? ComposerVoiceInputStore.idlePhase)
+  }
+
+  func body(content: Content) -> some View {
+    content.onChange(of: phase) { _, phase in
+      if phase == .recording { recordingPresented.fulfill() }
+    }
   }
 }
 
@@ -181,6 +200,7 @@ final class VoiceComposerFixture: Sendable {
     return ComposerDraftStore(
       target: target,
       commands: ChatCommands(client: client, sync: ChatSync(client: client)),
+      graph: makeTestWorkspaceGraph(),
       repository: syncDrafts ? ChatDraftRepository(client: client) : nil,
       storage: storage, didFail: didFail, voiceCapture: capture)
   }

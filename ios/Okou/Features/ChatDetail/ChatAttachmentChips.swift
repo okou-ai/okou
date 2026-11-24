@@ -3,13 +3,15 @@ import SwiftUI
 
 struct ChatAttachmentChips: View {
   let draft: AttachmentDraftStore
+  /// The composer graph's items for this render; actions go to `draft`.
+  let items: [AttachmentDraftStore.Item]
   let isDisabled: Bool
   @State private var previewURL: URL?
 
   var body: some View {
     ScrollView(.horizontal) {
       HStack(spacing: OkouSpace.sm) {
-        ForEach(draft.items) { item in
+        ForEach(items) { item in
           VStack(alignment: .leading, spacing: OkouSpace.six) {
             HStack(alignment: .top, spacing: OkouSpace.sm) {
               Button {
