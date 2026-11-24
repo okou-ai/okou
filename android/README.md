@@ -171,6 +171,10 @@ and disk readback precedes publication when storage succeeds. A failed write kee
 the confirmed network result available and retries it on refresh. Thread-local
 403/404 clears that history without retiring the workspace.
 
+History cache reads page by sequence within one transaction. Writes serialize
+and insert records in batches within one transaction. These batches limit
+transient memory while preserving the complete history checkpoint.
+
 The reader streams gzip NDJSON snapshots and follows canonical paired-cursor raw
 rows, including valid zero cold start, missing snapshot fallback, gap-tolerant
 sequences, an extra cold confirmation page and expired-cursor rebuild. Malformed
