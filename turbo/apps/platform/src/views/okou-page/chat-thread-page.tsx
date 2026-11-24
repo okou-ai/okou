@@ -3438,7 +3438,6 @@ function ChatThreadEventsPane({ thread }: { thread: ChatPanelSignals }) {
         ref={scrollContainerOnRef}
         data-slot="scroll-area-viewport"
         data-scroll-container
-        data-scroll-area-omit-overflow-vars=""
         tabIndex={-1}
         onScroll={handleScroll}
         className={cn(

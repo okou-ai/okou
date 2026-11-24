@@ -3,6 +3,32 @@
 @import "tailwindcss";
 @import "@okouai/ui/styles/globals.css";
 
+/* Base UI updates these distances on every scroll. Our fades use its edge
+   attributes, so descendants can keep their initial values on WebKit too. */
+@property --scroll-area-overflow-x-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-area-overflow-x-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-area-overflow-y-start {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --scroll-area-overflow-y-end {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
 @custom-variant pointer-coarse (@media (pointer: coarse));
 
 /* The composer's controls fit against the composer, not the window. A chat
