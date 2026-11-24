@@ -24,6 +24,9 @@ struct ForYouSuggestionView: View {
   /// directions in view.
   private static let reasonLines = 3
   private static let descriptionLines = 3
+  private static let labelFont = Font.okou(.subheadline).weight(.medium)
+  /// The room between directions: enough that each reads as its own button.
+  private static let directionGap = OkouSpace.ten
 
   private var source: (id: String, title: String)? {
     let target = suggestion.options.compactMap(\.threadId).first
@@ -62,7 +65,7 @@ struct ForYouSuggestionView: View {
         if !suggestion.rationale.isEmpty { reason }
       }
     } actions: {
-      VStack(spacing: OkouSpace.sm) {
+      VStack(spacing: Self.directionGap) {
         ForEach(suggestion.options) { option in
           optionButton(option)
         }
@@ -147,11 +150,16 @@ struct ForYouSuggestionView: View {
     return Button {
       choose(option)
     } label: {
-      VStack(alignment: .leading, spacing: OkouSpace.two) {
-        HStack(spacing: OkouSpace.md) {
-          Text(option.label).font(.okou(.subheadline).weight(.medium))
+      VStack(alignment: .leading, spacing: OkouSpace.six) {
+        HStack(alignment: .firstTextBaseline, spacing: OkouSpace.md) {
+          Text(option.label).font(Self.labelFont)
             .frame(maxWidth: .infinity, alignment: .leading)
-          ForYouOptionMark(sends: sends, isPending: isPending)
+          // The mark centres on the label's first line without making the row taller, so the
+          // row keeps the same room above the label as below the description, and the mark
+          // sits about as far from the row's top as from its side.
+          OkouLineIcon(font: Self.labelFont, width: OkouControl.addControl) {
+            ForYouOptionMark(sends: sends, isPending: isPending)
+          }
         }
         // A long description keeps its first lines so a dense card leaves its heading room;
         // VoiceOver reads all of it.
@@ -164,7 +172,7 @@ struct ForYouSuggestionView: View {
       }
       .multilineTextAlignment(.leading)
       .padding(.leading, OkouSpace.lg).padding(.trailing, OkouSpace.md)
-      .padding(.vertical, OkouSpace.md)
+      .padding(.vertical, OkouSpace.lg)
       .frame(minHeight: OkouControl.minimumTarget)
     }
     .buttonStyle(ForYouOptionButtonStyle(isPending: isPending))
@@ -267,7 +275,11 @@ struct ForYouAutomationView: View {
 enum ForYouCardInset {
   static let top = OkouSpace.xxl
   static let side = OkouSpace.xl
+  /// Under the directions' own bordered rows, matching the sides.
   static let bottom = OkouSpace.xl
+  /// Under a card that ends in text, as a direction's context does: as much as above, so the
+  /// text sits evenly in the card.
+  static let textBottom = top
 }
 
 /// A card's heading over its actions. Given the deck's height, the actions stay at the card's
@@ -314,7 +326,10 @@ struct ForYouCardLayout<Heading: View, Actions: View>: View {
     if let height {
       let pinsActions = showsActions && height - actionsHeight - spacing >= height * headingShare
       VStack(alignment: .leading, spacing: spacing) {
-        scrolling(below: pinsActions ? 0 : ForYouCardInset.bottom) {
+        scrolling(
+          below: pinsActions
+            ? 0 : showsActions ? ForYouCardInset.bottom : ForYouCardInset.textBottom
+        ) {
           measuredHeading
           if showsActions && !pinsActions {
             measuredActions.padding(.top, spacing).transition(.opacity)

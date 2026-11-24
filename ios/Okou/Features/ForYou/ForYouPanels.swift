@@ -160,7 +160,7 @@ struct ForYouLoadingCard: View {
         OkouSkeletonBlock(width: Self.titleEnd, height: OkouSpace.xxl)
         OkouSkeletonBlock(height: OkouSpace.lg).padding(.top, OkouSpace.xs)
       }
-      VStack(spacing: OkouSpace.sm) {
+      VStack(spacing: OkouSpace.ten) {
         ForEach(0..<2, id: \.self) { _ in
           OkouSkeletonBlock(height: Self.option, radius: OkouRadius.control)
         }

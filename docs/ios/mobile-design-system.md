@@ -892,8 +892,11 @@ feature; the catalog shows each one.
   20 pt elsewhere. A direction is a raised button (card fill, hairline, `state-pressed` while
   pressed); one that sends carries the composer's amber send mark, one that drafts a quiet arrow,
   and the chosen one shows progress in its mark until the choice settles. The mark sits beside
-  the direction's label, so its description takes the full width (at most three lines; the mark
-  and VoiceOver's hint say what choosing it does). One card uses at most three sizes: title3,
+  the direction's label, centred on its first line without making the row taller, so its
+  description takes the full width (at most three lines; the mark and VoiceOver's hint say what
+  choosing it does) and the row keeps 16 pt above the label and below the description.
+  Directions stand 10 pt apart. A card that ends in text, as a direction's context does, keeps
+  as much room below the text as above it. One card uses at most three sizes: title3,
   subheadline and footnote.
 - **Dense text stays readable.** A reason shows three lines ending in an inline Show more (the
   reason itself opens too), and Show less follows it once open. A card's actions stay at its
@@ -924,8 +927,8 @@ feature; the catalog shows each one.
   ("Noted — this is not planned · Undo", "Sent to the chat · Open chat") drops in as
   `ChatFeedbackSurface`: one line with its action on the right and a ✕, floating over the scene
   so the deck never moves and the card's directions are never covered. It lifts away after six
-  idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure stays in the
-  page's flow until it is dismissed.
+  idle seconds or a sideways swipe; Undo stays in the caught-up recap. A failure floats in the
+  same place and stays until it is dismissed.
 - **Writing a direction focuses the page.** The scene recedes under the page's ground, so the
   composer's glass and the keyboard read plain instead of taking the sea's colour, and the counter
   and segments step aside while keeping their room. The card stays above the input as its

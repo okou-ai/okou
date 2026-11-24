@@ -88,11 +88,10 @@ struct ForYouView: View {
         count: store.cards.count, live: livePosition, position: pagePosition,
         isBusy: store.busy, canPage: !store.busy && !isComposing, showsPlace: !isComposing,
         back: { dismiss() }, show: show)
-      notices
       content
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .overlay { if isComposing { aroundCard } }
-        .overlay(alignment: .top) { confirmation }
+        .overlay(alignment: .top) { notices }
       dock
     }
     // A card settling, a confirmation arriving or the dock coming and going moves the page as one
@@ -200,42 +199,40 @@ struct ForYouView: View {
 
   // MARK: Header and notices
 
-  /// A failure sits on the cover in the page's flow until it is dismissed, so it never covers the
-  /// next card's directions. It drops in from under the header and lifts away again.
+  /// What the page has to say floats under the header, over the scene, so the deck never moves
+  /// and the card's directions are never covered. A failure stays until it is dismissed. A
+  /// finished action ("Noted — this is not planned · Undo") is the chat's feedback surface and
+  /// lifts away after a few idle seconds or a sideways swipe, its Undo kept in the caught-up
+  /// recap. Each drops in from under the header, and a new one replaces the last in place.
   @ViewBuilder private var notices: some View {
     Group {
       if let error = store.error, store.current != nil {
         OkouBanner(Text(error), icon: "circle-alert", tone: .problem, dismiss: clearError)
+          .disabled(store.busy)
+          .padding(.top, OkouSpace.sm)
           .id(error)
           .transition(noticeTransition)
+      } else if let notice = store.notice {
+        confirmation(notice)
       }
     }
     .frame(maxWidth: OkouControl.readableWidth)
-    .padding(.horizontal, OkouSpace.lg).padding(.top, OkouSpace.sm)
-    .disabled(store.busy)
+    .padding(.horizontal, OkouSpace.lg)
   }
 
-  /// A finished action ("Noted — this is not planned · Undo") floats under the header in the
-  /// chat's feedback surface: over the scene, so the deck never moves and the card's directions
-  /// are never covered. It drops in, lifts away after a few idle seconds or a sideways swipe, and
-  /// a new one replaces the last in place; Undo stays in the caught-up recap.
-  @ViewBuilder private var confirmation: some View {
-    if let notice = store.notice, store.error == nil {
-      ChatFeedbackSurface(
-        message: notice.text, icon: "circle-check",
-        actionTitle: notice.undo != nil
-          ? String(localized: "Undo")
-          : notice.threadID != nil ? String(localized: "Open chat") : nil,
-        actionEnabled: !store.busy,
-        actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
-        autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
-        dismiss: clearNotice
-      )
-      .frame(maxWidth: OkouControl.readableWidth)
-      .padding(.horizontal, OkouSpace.lg)
-      .id(notice.undo?.undoID ?? notice.text)
-      .transition(noticeTransition)
-    }
+  private func confirmation(_ notice: ForYouStore.Notice) -> some View {
+    ChatFeedbackSurface(
+      message: notice.text, icon: "circle-check",
+      actionTitle: notice.undo != nil
+        ? String(localized: "Undo")
+        : notice.threadID != nil ? String(localized: "Open chat") : nil,
+      actionEnabled: !store.busy,
+      actionIdentifier: notice.undo != nil ? "for-you-undo" : "for-you-open-chat",
+      autoDismissAfter: Self.confirmationLife, action: { act(on: notice) },
+      dismiss: clearNotice
+    )
+    .id(notice.undo?.undoID ?? notice.text)
+    .transition(noticeTransition)
   }
 
   private func act(on notice: ForYouStore.Notice) {
@@ -375,7 +372,7 @@ struct ForYouView: View {
     let leaveShrink = Self.leaveShrink
     let depth = !reduceMotion
     return ScrollView {
-      surface(placementOf: page.id) {
+      surface(placementOf: page.id, asContext: store.direction?.cardID == page.card.id) {
         cardView(
           page.card, height: cardHeight(for: page.card.id),
           // Only the card itself reports, not its copy at an end of the loop.
@@ -446,13 +443,14 @@ struct ForYouView: View {
   /// The one surface of the page. It reports where it sits, for the cover and the deck: a
   /// card under its id, the standalone panel under none.
   private func surface<Content: View>(
-    placementOf id: String?, @ViewBuilder _ content: () -> Content
+    placementOf id: String?, asContext: Bool = false, @ViewBuilder _ content: () -> Content
   ) -> some View {
     // The card's large corner takes room from its content, so the text keeps well clear of the
     // edge: more above the heading, where the corner curves.
     content()
       .padding(.horizontal, ForYouCardInset.side)
-      .padding(.top, ForYouCardInset.top).padding(.bottom, ForYouCardInset.bottom)
+      .padding(.top, ForYouCardInset.top)
+      .padding(.bottom, asContext ? ForYouCardInset.textBottom : ForYouCardInset.bottom)
       .frame(maxWidth: .infinity, alignment: .leading)
       .modifier(OkouSurfaceStyle(radius: OkouRadius.sheet))
       .onGeometryChange(for: ForYouCardPlacement.self) { proxy in
@@ -476,7 +474,10 @@ struct ForYouView: View {
     guard pagerFrame.height > 0 else { return nil }
     let bottom = pagerFrame.maxY - deckFoot(asContext: asContext)
     let top = pagerFrame.minY + OkouSpace.xxl
-    if asContext { return max(bottom - top - Self.cardPadding, OkouControl.minimumTarget) }
+    if asContext {
+      let padding = ForYouCardInset.top + ForYouCardInset.textBottom
+      return max(bottom - top - padding, OkouControl.minimumTarget)
+    }
     let room = max(bottom - max(top, horizon), pagerFrame.height * Self.minimumRoomShare)
     return room - Self.cardPadding
   }
