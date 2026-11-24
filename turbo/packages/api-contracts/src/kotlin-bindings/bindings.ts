@@ -1,4 +1,4 @@
-import type { ZodType } from "zod";
+import { string, type ZodType } from "zod";
 import type { NoBodyMarker } from "../contracts/trpc-contract";
 import { orgContract } from "../contracts/org-routes";
 import { userPreferencesContract } from "../contracts/user-preferences";
@@ -430,14 +430,9 @@ export const kotlinRouteBindings: readonly KotlinRouteBinding[] = [
     route: userModelPreferenceContract.update,
   },
   {
-    name: "imageModelPreference",
-    response: "ImageModelPreference",
-    route: userModelPreferenceContract.get,
-  },
-  {
     name: "updateImageModelPreference",
     request: "UpdateImageModelPreference",
-    response: "ImageModelPreference",
+    response: "DefaultModelPreference",
     route: userModelPreferenceContract.updateImageModel,
   },
   {
@@ -872,25 +867,16 @@ export const kotlinTypeBindings: readonly KotlinTypeBinding[] = [
   {
     name: "DefaultModelPreference",
     schema: userModelPreferenceContract.get.responses[200],
-    readSchema: userModelPreferenceContract.get.responses[200].pick({
-      selectedModel: true,
-      serviceTier: true,
-      modelSettings: true,
-    }),
+    readSchema: userModelPreferenceContract.get.responses[200]
+      .pick({ selectedModel: true, serviceTier: true, modelSettings: true })
+      // Image catalog changes must remain decodable by the chat-model picker.
+      .extend({ selectedImageModel: string().nullish() }),
     direction: "output",
   },
   {
     name: "UpdateDefaultModelPreference",
     schema: userModelPreferenceContract.update.body,
     direction: "input",
-  },
-  {
-    name: "ImageModelPreference",
-    schema: userModelPreferenceContract.get.responses[200],
-    readSchema: userModelPreferenceContract.get.responses[200].pick({
-      selectedImageModel: true,
-    }),
-    direction: "output",
   },
   {
     name: "UpdateImageModelPreference",

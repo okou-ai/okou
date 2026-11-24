@@ -18,8 +18,6 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
-import kotlinx.serialization.json.encodeToJsonElement
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okhttp3.HttpUrl
@@ -62,12 +60,7 @@ internal class CanonicalBuiltInToolsService(private val api: ApiClient, origin: 
     override suspend fun setEnabled(id: String, enabled: Boolean) =
         !api.write { updatePaidTool(it, id, UpdatePaidTool(!enabled)) }.disabled
 
-    override suspend fun imageModel() =
-        api.read { imageModelPreference(it) }
-            .selectedImageModel
-            ?.let {
-                Json.encodeToJsonElement(it).jsonPrimitive.content
-            }
+    override suspend fun imageModel() = api.read { defaultModelPreference(it) }.selectedImageModel
 
     override suspend fun selectImageModel(id: String): String? {
         val model =
@@ -76,7 +69,6 @@ internal class CanonicalBuiltInToolsService(private val api: ApiClient, origin: 
             )
         return api.write { updateImageModelPreference(it, UpdateImageModelPreference(model)) }
             .selectedImageModel
-            ?.let { Json.encodeToJsonElement(it).jsonPrimitive.content }
     }
 
     override fun close() = router.close()

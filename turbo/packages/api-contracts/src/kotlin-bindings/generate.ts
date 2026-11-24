@@ -286,7 +286,7 @@ export function renderKotlinTestFiles(): ReadonlyMap<string, string> {
   return files;
 }
 
-function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
+export function renderKotlinProductionFiles(): ReadonlyMap<string, string> {
   return new Map([
     ...[...renderKotlinFiles()].map(([file, source]) => {
       return [join(generatedKotlinRelativeDirectory, file), source] as const;
@@ -310,17 +310,20 @@ function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
           "internal val imageToolOptions = listOf(",
           ...[
             ...PUBLIC_IMAGE_MODELS,
-            ...IMAGE_MODEL_IDS.filter(
-              (id) => !PUBLIC_IMAGE_MODELS.some((model) => model === id),
-            ),
-          ].map(
-            (id) =>
+            ...IMAGE_MODEL_IDS.filter((id) => {
+              return !PUBLIC_IMAGE_MODELS.some((model) => {
+                return model === id;
+              });
+            }),
+          ].map((id) => {
+            return (
               "    ImageToolOption(" +
               [id, IMAGE_MODEL_CONFIGS[id].label, IMAGE_MODEL_PRICE_TIER[id]]
                 .map(quote)
                 .join(", ") +
-              "),",
-          ),
+              "),"
+            );
+          }),
           ")",
           "",
           "internal val publicImageToolOptions = imageToolOptions.take(" +
@@ -329,8 +332,14 @@ function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
           "",
         ].join("\n"),
     ],
-    ...(testFixtures ? renderKotlinTestFiles() : []),
   ]);
+}
+
+function outputFiles(testFixtures: boolean): ReadonlyMap<string, string> {
+  const production = renderKotlinProductionFiles();
+  return testFixtures
+    ? new Map([...production, ...renderKotlinTestFiles()])
+    : production;
 }
 
 export async function checkGeneratedKotlin(

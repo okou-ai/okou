@@ -22,7 +22,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -47,13 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 internal fun BuiltInToolsPage(workspace: String, model: BuiltInToolsSettings) {
     val state by model.state.collectAsStateWithLifecycle()
-    DisposableEffect(model) {
-        model.show()
-        onDispose { model.hidePage() }
-    }
     LifecycleResumeEffect(model) {
-        model.refresh()
-        onPauseOrDispose {}
+        model.show()
+        onPauseOrDispose { model.hidePage() }
     }
     Text(
         stringResource(R.string.settings_tool_scope, workspace),
@@ -144,13 +139,14 @@ private fun ToolSwitch(
 @Composable
 private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettings) {
     val title = stringResource(R.string.settings_tool_image_model)
-    val selected = imageToolOptions.firstOrNull { it.id == state.displayedImage }
+    val selectedModel = state.displayedImage
+    val selected = imageToolOptions.firstOrNull { it.id == selectedModel }
     SettingsPickerRow(
         title,
-        value = selected?.title,
+        value = selected?.title ?: selectedModel,
         leading = { SettingsIcon(R.drawable.ic_memory) },
         enabled =
-            selected != null &&
+            selectedModel != null &&
                 state.enabled(imageGenerationTool) == true &&
                 imageGenerationTool !in state.savingTools &&
                 !state.savingImage,
@@ -201,6 +197,8 @@ private fun ImageModelPicker(state: BuiltInToolsState, model: BuiltInToolsSettin
     }
     if (state.savingImage) LinearProgressIndicator(Modifier.fillMaxWidth())
     if (state.imageFailed) ToolStatus(stringResource(R.string.settings_tool_image_save_failed))
+    if (state.imageUnavailable && state.enabled(imageGenerationTool) == true)
+        ToolStatus(stringResource(R.string.settings_tools_unavailable))
 }
 
 @Composable

@@ -2,6 +2,7 @@ package ai.okou.android.settings
 
 import ai.okou.android.api.ApiFailure
 import ai.okou.android.auth.WorkspaceIdentity
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
@@ -87,6 +88,38 @@ class BuiltInToolsSettingsTest {
         assertEquals(otherImage, settings.state.value.confirmedImage)
         assertNull(settings.state.value.draftImage)
         assertFalse(settings.state.value.imageFailed)
+    }
+
+    @Test
+    fun pendingToolChangeOnlySendsTheLatestChoiceAfterConfirmation() = runTest {
+        val fixture = ToolFixture()
+        val pending = CompletableDeferred<Unit>()
+        val writes = mutableListOf<Boolean>()
+        val service =
+            object : BuiltInToolsService by fixture {
+                override suspend fun setEnabled(id: String, enabled: Boolean): Boolean {
+                    writes += enabled
+                    pending.await()
+                    return fixture.setEnabled(id, enabled)
+                }
+            }
+        val settings = model(service)
+        settings.show()
+        runCurrent()
+        settings.toggle(webSearchTool, false)
+        runCurrent()
+        settings.toggle(webSearchTool, true)
+        settings.toggle(webSearchTool, false)
+        settings.toggle(webSearchTool, true)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertEquals(listOf(false), writes)
+
+        pending.complete(Unit)
+        runCurrent()
+        assertEquals(listOf(false, true), writes)
+        assertEquals(true, settings.state.value.enabled(webSearchTool))
+        assertTrue(settings.state.value.savingTools.isEmpty())
+        assertTrue(webSearchTool !in fixture.disabledTools())
     }
 
     private fun TestScope.model(service: BuiltInToolsService) =

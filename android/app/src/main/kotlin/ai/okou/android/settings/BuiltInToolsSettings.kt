@@ -27,6 +27,7 @@ internal data class BuiltInToolsState(
     val disabled: Set<String>? = null,
     val preferencesUnavailable: Boolean = false,
     val confirmedImage: String? = null,
+    val imageUnavailable: Boolean = false,
     val draftImage: String? = null,
     val savingImage: Boolean = false,
     val imageFailed: Boolean = false,
@@ -130,9 +131,14 @@ internal class BuiltInToolsSettings(
                             }
                         }
                         val model = readResource { service.imageModel() ?: defaultImageToolModel }
-                        if (model != null && authorized() && image == imageRevision) {
-                            mutable.update { it.copy(confirmedImage = model) }
-                            cacheImage(model)
+                        if (authorized() && image == imageRevision) {
+                            mutable.update {
+                                it.copy(
+                                    confirmedImage = model ?: it.confirmedImage,
+                                    imageUnavailable = model == null && it.confirmedImage == null,
+                                )
+                            }
+                            if (model != null) cacheImage(model)
                         }
                     }
             }
