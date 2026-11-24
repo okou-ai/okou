@@ -3856,7 +3856,11 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             compose.onNodeWithText("Rename").performClick()
             val save = compose.onNodeWithText("Save")
             editor.performTextReplacement("a".repeat(121))
-            save.assertIsNotEnabled()
+            val nameTooLong = app.getString(R.string.chat_project_name_too_long, 120)
+            compose.onNodeWithText(nameTooLong).assertDoesNotExist()
+            save.performClick()
+            compose.onNodeWithText(nameTooLong).assertIsDisplayed()
+            assertTrue(writes.isEmpty())
             editor.performTextReplacement("  Field notes  ")
             val beforeSave = System.currentTimeMillis()
             save.performClick()
@@ -3867,7 +3871,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             assertEquals(2, operationId.variant())
             assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
             editor.assertTextContains("  Field notes  ")
-            save.assertIsNotEnabled()
+            compose.onNodeWithText(app.getString(R.string.settings_saving)).assertIsNotEnabled()
         } finally {
             pending.countDown()
         }

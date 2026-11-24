@@ -106,7 +106,7 @@ internal fun RenameListItemSheet(
     SettingsSheet(
         title = stringResource(titleRes),
         onDismiss = dismiss,
-        modifier = if (projectName) projectNamePanelMotion() else Modifier,
+        modifier = if (projectName) Modifier.projectNamePanelMotion() else Modifier,
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = if (projectName) SettingsSheetScroll.Panel else SettingsSheetScroll.Body,
         fullScreenInShortWindow = projectName,
@@ -189,7 +189,7 @@ internal fun CreateProjectSheet(
     SettingsSheet(
         title = stringResource(R.string.chat_project_create),
         onDismiss = dismiss,
-        modifier = projectNamePanelMotion().testTag("create_project_sheet"),
+        modifier = Modifier.projectNamePanelMotion().testTag("create_project_sheet"),
         actionSpacing = OkouFormLayout.GroupGap,
         scroll = SettingsSheetScroll.Panel,
         dismissible = !busy,
@@ -249,9 +249,9 @@ private fun projectNameActionLabels(@StringRes idle: Int, @StringRes pending: In
     )
 
 @Composable
-private fun projectNamePanelMotion(): Modifier =
-    if (isShortSettingsPanelWindow()) Modifier
-    else Modifier.animateContentSize(tween(250, easing = ChatListMotionEasing))
+private fun Modifier.projectNamePanelMotion(): Modifier =
+    if (isShortSettingsPanelWindow()) this
+    else animateContentSize(tween(250, easing = ChatListMotionEasing))
 
 @Composable
 private fun projectNameError(field: WorkspaceNameField): String? =

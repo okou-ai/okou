@@ -268,13 +268,13 @@ class PendingWorkspaceRootTest {
     fun coldStartShowsLocalControlsAndCachedContentBeforeWorkspaceReads() {
         val avatar = compose.onNodeWithContentDescription("Switch workspace", substring = true)
         val filter = compose.onNodeWithContentDescription("Filter")
-        val settings = compose.onNodeWithContentDescription("More actions")
+        val more = compose.onNodeWithContentDescription("More actions")
         val search = compose.onNodeWithTag("workspace_search_entry")
         compose.runOnIdle { app.membershipsResponse = CompletableDeferred() }
         awaitCachedRow()
         avatar.assertIsDisplayed().assertIsNotEnabled()
         filter.assertIsDisplayed().assertIsEnabled()
-        settings.assertIsDisplayed().assertIsEnabled()
+        more.assertIsDisplayed().assertIsEnabled()
         val searchBounds = search.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("chat_list")
@@ -298,7 +298,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("Inbox").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
-        settings.assertIsEnabled().performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
         val creditBalance = compose.onNodeWithText("Credit balance").assertIsNotEnabled()
         val creditBounds = creditBalance.getUnclippedBoundsInRoot()
@@ -326,7 +326,7 @@ class PendingWorkspaceRootTest {
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
         assertEquals(listBounds, list.getUnclippedBoundsInRoot())
         assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
-        settings.performClick()
+        compose.openChatListSettings()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Workspace A").fetchSemanticsNodes().isNotEmpty()
