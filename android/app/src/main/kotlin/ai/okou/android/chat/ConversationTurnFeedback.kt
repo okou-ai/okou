@@ -228,7 +228,6 @@ internal fun ConversationCompletionRow(
         ) {
             Text(
                 label,
-                Modifier.weight(1f, fill = false),
                 color = colors.onSurfaceVariant,
                 style = MaterialTheme.typography.bodySmall.copy(fontStyle = FontStyle.Italic),
             )
