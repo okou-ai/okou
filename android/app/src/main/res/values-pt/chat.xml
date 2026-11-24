@@ -12,7 +12,6 @@
     <string name="chat_undo_failed">Não foi possível desfazer a alteração.</string>
     <string name="chat_undo_unconfirmed">Não foi possível confirmar se a alteração foi desfeita.</string>
     <string name="chat_feedback_dismiss">Fechar</string>
-    <string name="chat_list_offline">Sem conexão</string>
     <string name="chat_list_first_load_failed">Temporariamente indisponível para carregar</string>
     <string name="chat_list_load_when_online">As conversas serão carregadas quando você voltar a ficar online.</string>
     <string name="chat_list_title">Conversas</string>
