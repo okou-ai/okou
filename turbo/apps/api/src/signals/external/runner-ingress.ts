@@ -22,6 +22,7 @@ import {
   runnerDispatchPath,
   type RunnerDispatchEncoding,
   type RunnerDispatchTiming,
+  type RunnerDispatchTransport,
   type TakenRunnerDispatch,
 } from "./runner-dispatch-transport";
 
@@ -187,7 +188,7 @@ export function reserveRunnerDispatch(
       };
       return {
         response: dispatchTransport().run(timing, () => {
-          return fetch(origin + path, options);
+          return transport.request(origin + path, options);
         }),
         timing,
       };
@@ -239,6 +240,20 @@ interface RunnerDispatchPost {
   readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
 }
 
+function dispatchPoolDimensions(
+  transport: RunnerDispatchTransport | undefined,
+  origin: string,
+) {
+  const stats = transport?.poolStats?.(origin);
+  return (
+    stats && {
+      api_dispatch_pool: "retained_http1",
+      api_dispatch_pool_connected: stats.connected,
+      api_dispatch_pool_pending: stats.pending,
+    }
+  );
+}
+
 /** A failed response is never made into evidence against an earlier attempt. */
 export async function postRunnerDispatch(
   args: RunnerDispatchPost,
@@ -260,21 +275,17 @@ export async function postRunnerDispatch(
     startedAt,
     sendCount: 0,
   };
+  const requestTransport = currentRunnerDispatchTransport();
   return await (async () => {
     const deadline = AbortSignal.any([
       signal,
       AbortSignal.timeout(Math.max(1, Math.ceil(timeoutMs))),
     ]);
     const url = origin + path;
-    reserved = currentRunnerDispatchTransport()?.take(
-      url,
-      body,
-      startedAt,
-      deadline,
-      encoding,
-    );
+    reserved = requestTransport?.take(url, body, startedAt, deadline, encoding);
     const dispatch = () => {
-      return fetch(url, {
+      const request = requestTransport?.request ?? fetch;
+      return request(url, {
         ...dispatchRequestOptions(serviceToken, encoding),
         body,
         signal: deadline,
@@ -341,6 +352,7 @@ export async function postRunnerDispatch(
             timing.sendCount === 1 ? timing.sendHeadersMs : undefined,
           api_preconnect_used:
             reserved === undefined ? undefined : timing.sendCount === 1,
+          ...dispatchPoolDimensions(requestTransport, origin),
           response_headers_ms: responseHeadersMs,
           http_status: response?.status,
           dispatch_outcome:
