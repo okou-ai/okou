@@ -1,6 +1,7 @@
 package ai.okou.android.chat
 
 import ai.okou.android.OkouTheme
+import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -11,11 +12,19 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ComposeUiTestConfig
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -32,11 +41,33 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "en-rUS-w400dp-h800dp", application = TestOkouApplication::class)
 class ChatListViewportTest {
-    @get:Rule val compose = createComposeRule()
+    private val animationScale = mutableFloatStateOf(1f)
+    private val motion =
+        object : MotionDurationScale {
+            override val scaleFactor: Float
+                get() = animationScale.floatValue
+        }
+    @get:Rule val compose = createComposeRule(ComposeUiTestConfig(motion))
+
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun reducedMotionPreservesTheActiveSegmentAndProgressSemantics() {
+        animationScale.floatValue = 0f
+        compose.setContent { OkouTheme(dark = false) { ChatReadProgress(R.string.chat_syncing) } }
+        val indicator = compose.onNodeWithContentDescription("Syncing chats…")
+        assertEquals(
+            ProgressBarRangeInfo.Indeterminate,
+            indicator.fetchSemanticsNode().config[SemanticsProperties.ProgressBarRangeInfo],
+        )
+        val pixels = indicator.captureToImage().toPixelMap()
+        assertEquals(Color(0xFFB5790C), pixels[pixels.width / 8, pixels.height / 2])
+        assertEquals(Color(0xFFF6EFE2), pixels[pixels.width * 3 / 4, pixels.height / 2])
+    }
 
     @Test
     fun aReaderAtTheEndFollowsNewRowsAndViewportChanges() {

@@ -2,6 +2,7 @@ package ai.okou.android.chat
 
 import ai.okou.android.LocalActivityStatusColor
 import ai.okou.android.R
+import ai.okou.android.ReadProgressIndicator
 import ai.okou.android.mixPaletteColors
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
@@ -18,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -32,7 +32,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -146,10 +145,8 @@ internal fun ChatListViewport(
 internal fun ChatReadProgress(@StringRes label: Int) {
     val description = stringResource(label)
     val active = LocalActivityStatusColor.current
-    LinearProgressIndicator(
-        Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).semantics {
-            contentDescription = description
-        },
+    ReadProgressIndicator(
+        description,
         color = active,
         trackColor = mixPaletteColors(MaterialTheme.colorScheme.background, active, 0.12f),
     )
