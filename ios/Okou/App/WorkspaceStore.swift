@@ -94,7 +94,7 @@ final class WorkspaceStore {
   private(set) var newChatProjectID: String?
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
-  private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
+  private let voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   private var workspaceComposerReady = false
@@ -174,7 +174,7 @@ final class WorkspaceStore {
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
     projectDisclosure: ProjectDisclosureStorage? = nil,
     measurementScope: ChatCacheScope? = nil,
-    voiceCapture: (@MainActor () -> any VoiceAudioCapture)? = nil,
+    voiceCapture: (@MainActor (ChatDraftTarget) -> any VoiceAudioCapture)? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -224,7 +224,7 @@ final class WorkspaceStore {
     newComposer = ComposerDraftStore(
       target: .unassigned, commands: commands, graph: resources.store, storage: draftStorage,
       didFail: { _ in }, lifecycleTasks: lifecycleTasks)
-    newComposer.setForeground(false)
+    newComposer.setScenePhase(.inactive)
     resources.featureSnapshot.didRequireUpgrade = { [weak self] in self?.handle($0) }
   }
 
@@ -271,12 +271,13 @@ final class WorkspaceStore {
           models: modelStore, thread: thread, lifecycleTasks: lifecycleTasks),
         workflowSource: composerWorkflows,
         draftRepository: draftRepository, draftStorage: draftStorage,
+        voiceCapture: voiceCapture?(.thread(id)),
         didSaveDraft: { [weak self] draft in await self?.sidebarDrafts.didSave(draft, threadID: id)
         },
         measurementScope: measurementScope,
         didRequestNewChat: { [weak self] in self?.startNewChat() },
         readRetrySleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
-      conversation.composer.setForeground(isForeground)
+      conversation.composer.setScenePhase(synchronization.scenePhase)
       conversation.runOutput = { [weak self] runID, handler in
         self?.realtime?.subscribeRunOutput(runID: runID, handler: handler)
       }
@@ -329,7 +330,7 @@ final class WorkspaceStore {
     let composer = ComposerDraftStore(
       target: .workspace, commands: commands, graph: resources.store,
       repository: draftRepository, storage: draftStorage,
-      didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
+      didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(.workspace),
       syncSleep: readRetrySleep, lifecycleTasks: lifecycleTasks)
     // Preserve input entered before the workspace composer was prepared.
     if !isCreating && previous.hasContent {
@@ -338,7 +339,7 @@ final class WorkspaceStore {
     if !isCreating { previous.close() }
     workspaceComposerReady = true
     newComposer = composer
-    composer.setForeground(isForeground)
+    composer.setScenePhase(synchronization.scenePhase)
     composerSyncTask = Task { await composer.synchronize() }
     if let composerSyncTask { lifecycleTasks.track(composerSyncTask) }
   }

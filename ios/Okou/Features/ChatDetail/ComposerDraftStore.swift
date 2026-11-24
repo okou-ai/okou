@@ -2,6 +2,7 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
+import SwiftUI
 
 /// One composer owns device persistence, canonical draft hydration and a serialized save loop.
 /// Like the web composer, its draft, upload and voice state live in one CCState graph: SwiftUI
@@ -156,14 +157,20 @@ final class ComposerDraftStore {
     lifecycleTasks.track(task)
   }
 
-  func setForeground(_ active: Bool) {
-    guard !closed, isForeground != active else { return }
+  func setScenePhase(_ phase: ScenePhase) {
+    guard !closed else { return }
+    let active = phase == .active
+    if !active {
+      let pendingStart = voice?.isWaitingToStartCapture == true
+      if pendingStart ? phase == .background : isForeground { voice?.suspend() }
+    }
+    guard isForeground != active else { return }
     isForeground = active
     if active {
+      voice?.resumePendingStart()
       // Resume pending writes, including clears owned by a different cached composer.
       if dirty { requestSync() }
     } else {
-      voice?.suspend()
       persist()
       debounceTask?.cancel()
       // A cancelled task can finish after the next foreground sync has started.
@@ -185,7 +192,7 @@ final class ComposerDraftStore {
   private var revision = 0
   private var applying = false
   private var closed: Bool { signals.snapshot.closed }
-  private var isForeground: Bool {
+  private(set) var isForeground: Bool {
     get { signals.statusSnapshot.isForeground }
     set { signals.updateStatus { $0.isForeground = newValue } }
   }

@@ -84,10 +84,95 @@ final class VoiceInputNavigationTests: XCTestCase {
     XCTAssertEqual(reopened.newChatDraft, "Existing notes: spoken words")
   }
 
+  func testFirstMicrophoneGrantStartsRecordingInTheSelectedChatAndAnOverlaySavesIt() async throws {
+    let fixture = VoiceEntryFixture()
+    addTeardownBlock { try fixture.removeFiles() }
+    let capture = VoiceCaptureFixture()
+    let gate = VoiceResponseGate(
+      started: expectation(description: "Microphone permission requested"))
+    capture.startGate = gate
+    let granted = expectation(description: "Microphone permission granted")
+    capture.permissionGranted = granted
+    let workspace = fixture.workspace(
+      capture: capture, target: .thread(AttachmentFlowFixture.threadID))
+    addTeardownBlock { @MainActor in await workspace.close().value }
+    await workspace.list.refresh()
+    workspace.setPhase(.active)
+    workspace.selectChat(AttachmentFlowFixture.threadID)
+    let composer = try XCTUnwrap(workspace.selectedConversation?.composer)
+    let voice = try XCTUnwrap(composer.voice)
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+
+    let start = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      await voice.discard()
+      await start.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    workspace.setPhase(.inactive)
+    gate.release()
+    await fulfillment(of: [granted], timeout: 3)
+    XCTAssertEqual(voice.phase, .starting)
+    workspace.setPhase(.active)
+    await start.value
+    XCTAssertEqual(voice.phase, .recording)
+
+    capture.speak(seconds: 1)
+    workspace.setPhase(.inactive)
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .saved
+    }
+    workspace.setPhase(.active)
+    XCTAssertEqual(voice.phase, .saved)
+    XCTAssertEqual(voice.duration, 1)
+  }
+
+  func testBackgroundDuringMicrophonePromptCancelsTheStartAfterReturning() async throws {
+    let fixture = VoiceEntryFixture()
+    addTeardownBlock { try fixture.removeFiles() }
+    let capture = VoiceCaptureFixture()
+    let gate = VoiceResponseGate(
+      started: expectation(description: "Microphone permission requested"))
+    capture.startGate = gate
+    let workspace = fixture.workspace(capture: capture)
+    addTeardownBlock { @MainActor in await workspace.close().value }
+    await workspace.prepareWorkspaceComposer()
+    workspace.setPhase(.active)
+    let composer = workspace.newComposer
+    let voice = try XCTUnwrap(composer.voice)
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+
+    let start = Task { await voice.start() }
+    addTeardownBlock { @MainActor in
+      gate.release()
+      await voice.discard()
+      await start.value
+    }
+    await fulfillment(of: [gate.started], timeout: 3)
+    workspace.setPhase(.inactive)
+    workspace.setPhase(.background)
+    workspace.setPhase(.active)
+    gate.release()
+    await start.value
+    try await waitForBusinessResult(watching: voice.value, in: composer.store) {
+      voice.phase == .idle
+    }
+    XCTAssertFalse(voice.canUseRecording)
+  }
+
   func testVoiceQuickActionWaitsForTheEditorAndPreservesDraftWhenMicrophoneDenied() async throws {
     let fixture = VoiceEntryFixture()
     addTeardownBlock { try fixture.removeFiles() }
     let capture = VoiceCaptureFixture()
+    let gate = VoiceResponseGate(
+      started: expectation(description: "Microphone permission requested"))
+    capture.startGate = gate
+    defer { gate.release() }
     capture.startFailure = NativeVoiceAudioCapture.CaptureError.permissionDenied
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
@@ -112,7 +197,13 @@ final class VoiceInputNavigationTests: XCTestCase {
       rootView: VoiceEntryHarness(workspace: workspace, isAuthenticated: true))
     let window = try await mountMentionHost(host)
     addTeardownBlock { @MainActor in unmount(window) }
-    try await eventually { voice.microphoneDenied }
+    await fulfillment(of: [gate.started], timeout: 3)
+    workspace.setPhase(.inactive)
+    gate.release()
+    try await waitForBusinessResult(watching: voice.value, in: workspace.newComposer.store) {
+      voice.microphoneDenied
+    }
+    workspace.setPhase(.active)
     XCTAssertEqual(voice.phase, .idle)
     XCTAssertNotNil(voice.error)
     XCTAssertEqual(workspace.newChatDraft, "Keep these notes")
@@ -257,7 +348,9 @@ private final class VoiceEntryFixture: Sendable {
   }
 
   @MainActor
-  func workspace(capture: VoiceCaptureFixture) -> WorkspaceStore {
+  func workspace(
+    capture: VoiceCaptureFixture, target: ChatDraftTarget = .workspace
+  ) -> WorkspaceStore {
     let storage = ChatDraftStorage(
       scope: ChatCacheScope(
         apiBaseURL: flow.http.baseURL, userID: "voice-entry-user",
@@ -265,7 +358,7 @@ private final class VoiceEntryFixture: Sendable {
       directory: directory)
     return WorkspaceStore(
       client: flow.http.client, webURL: flow.http.baseURL, draftStorage: storage,
-      voiceCapture: { capture })
+      voiceCapture: { $0 == target ? capture : VoiceCaptureFixture() })
   }
 
   func removeFiles() throws {
