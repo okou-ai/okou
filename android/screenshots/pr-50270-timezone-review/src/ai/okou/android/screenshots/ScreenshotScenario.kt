@@ -292,40 +292,41 @@ class ScreenshotScenario {
                     check(device.wait(Until.gone(selector().text("时区已保存，晨报时间未能更新。")), 12_000))
                     checkStoredTimezone("Asia/Bishkek")
 
-                    returning()
-                    fixture.suggestionsNeedsTimezone = true
-                    app.preferenceWrite = { _, save ->
-                        save().also { fixture.suggestionsNeedsTimezone = false }
-                    }
-                    text("主动服务").click()
-                    contains("请先选择时区以安排发送。")
-                    tabTo("比什凯克（UTC+6）")
-                    check(device.pressEnter())
-                    text("用于新建定时任务的默认时区。")
-                    awaitFocus("比什凯克（UTC+6）")
-                    check(device.pressEnter())
-                    awaitFocus("建议")
-                    check(device.wait(Until.gone(selector().text("时区")), 12_000))
-                    capture("proactive-timezone-suggestions-return.png")
-
-                    returning()
-                    app.preferenceWrite = originalPreferenceWrite
-                    fixture.suggestionsNeedsTimezone = true
-                    text("主动服务").click()
-                    contains("请先选择时区以安排发送。")
-                    tabTo("比什凯克（UTC+6）")
-                    check(device.pressEnter())
-                    text("用于新建定时任务的默认时区。")
-                    awaitFocus("比什凯克（UTC+6）")
-                    fixture.suggestionsEligible = false
-                    check(device.pressEnter())
-                    check(device.wait(Until.gone(selector().text("建议")), 12_000))
-                    check(device.wait(Until.gone(selector().text("时区")), 12_000))
-                    awaitFocus("晨报")
-                    check(toggle("晨报", false).isEnabled)
-                    capture("proactive-timezone-eligibility-return.png")
                 }
                 app.preferenceWrite = originalPreferenceWrite
+
+                fun captureSuggestionConfirmation(
+                    remainsEligible: Boolean,
+                    expectedFocus: String,
+                    filename: String,
+                ) {
+                    fixture.morningNeedsTimezone = false
+                    fixture.suggestionsNeedsTimezone = true
+                    fixture.suggestionsEligible = true
+                    auth.state.value =
+                        testAuthenticationState(user = "suggestions-timezone-${UUID.randomUUID()}")
+                    ActivityScenario.launch(MainActivity::class.java).use {
+                        settings()
+                        showEntry().click()
+                        contains("请先选择时区以安排发送。")
+                        text("时区")
+                        tabTo("时区")
+                        check(device.pressEnter())
+                        text("用于新建定时任务的默认时区。")
+                        awaitFocus("加德满都（UTC+5:45）")
+                        fixture.suggestionsNeedsTimezone = false
+                        fixture.suggestionsEligible = remainsEligible
+                        check(device.pressEnter())
+                        if (!remainsEligible) {
+                            check(device.wait(Until.gone(selector().text("建议")), 12_000))
+                        }
+                        check(device.wait(Until.gone(selector().text("时区")), 12_000))
+                        awaitFocus(expectedFocus)
+                        capture(filename)
+                    }
+                }
+                captureSuggestionConfirmation(true, "建议", "proactive-timezone-suggestions-return.png")
+                captureSuggestionConfirmation(false, "晨报", "proactive-timezone-eligibility-return.png")
                 fixture.suggestionsEligible = true
                 fixture.suggestionsNeedsTimezone = false
 
