@@ -456,9 +456,11 @@ class NativeUpdateTest {
                     )
                 assertTrue(checkVersions.visibleBounds.height() >= (48 * density).roundToInt() - 1)
                 captureState("required-incompatible-short")
+                candidate.set(release.copy(version = "99.1.0"))
+                checkVersions.click()
+                exists(R.string.updates_download)
             }
-            candidate.set(release.copy(version = "99.1.0"))
-            click(R.string.updates_check_compatible)
+            exists(R.string.updates_required)
             exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()
