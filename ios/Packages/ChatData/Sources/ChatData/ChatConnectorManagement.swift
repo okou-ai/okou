@@ -15,7 +15,9 @@ extension ChatComposerAccess {
   }
 
   /// Inspect every saved account, including accounts disabled by default.
-  public func managedConnectors() async throws -> [ChatComposerConnector] {
+  public func managedConnectors(
+    memberAccess: Bool = false
+  ) async throws -> [ChatComposerConnector] {
     struct Inspection: Decodable, Sendable {
       let kind: String
       let connectionId: String
@@ -24,7 +26,9 @@ extension ChatComposerAccess {
     }
     struct Body: Encodable { let selections: [ChatConnectorSelection] }
     struct Response: Decodable, Sendable { let results: [Inspection] }
-    var connectors = try await connectors().filter { $0.target.kind == "builtin" }
+    var connectors = try await connectors(memberAccess: memberAccess).filter {
+      $0.target.kind == "builtin"
+    }
     let selections = connectors.flatMap { connector in
       connector.access.accounts.map {
         ChatConnectorSelection(target: connector.target, connectionId: $0.connectionId)

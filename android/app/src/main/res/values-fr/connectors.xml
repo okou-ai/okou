@@ -122,4 +122,17 @@
     <string name="connector_device_denied">Le fournisseur a refusé l’autorisation.</string>
     <string name="connector_device_expired">Le code de l’appareil a expiré. Relancez l’autorisation.</string>
     <string name="connector_device_failed">Impossible de terminer l’autorisation de l’appareil.</string>
+    <string name="connector_access_scope">S’applique à toutes vos discussions.</string>
+    <string name="connector_access_label">Accès pour %1$s, %2$s</string>
+    <string name="connector_access_allow">Autoriser</string>
+    <string name="connector_access_deny">Refuser</string>
+    <string name="connector_access_always">Toujours</string>
+    <string name="connector_access_expired">Expiré</string>
+    <string name="connector_access_under_hour">&lt;1 h</string>
+    <string name="connector_access_hours">%d h</string>
+    <string name="connector_access_days">%d j</string>
+    <string name="connector_access_allow_always">Toujours autoriser</string>
+    <string name="connector_access_allow_hour">Autoriser pendant 1 h</string>
+    <string name="connector_access_allow_day">Autoriser pendant 24 h</string>
+    <string name="connector_access_allow_week">Autoriser pendant 7 jours</string>
 </resources>

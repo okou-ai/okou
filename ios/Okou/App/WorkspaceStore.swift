@@ -450,7 +450,7 @@ final class WorkspaceStore {
     else {
       return
     }
-    let options = newModelSelection.connectors.pendingOptions
+    let options = newModelSelection.connectors.submissionOptions
     let messageID = UUID().uuidString.lowercased()
     let transition = sendTransition ?? ConversationSendTransition()
     if sendTransition != nil, !reduceMotion, sourceComposer.attachments.items.isEmpty,
