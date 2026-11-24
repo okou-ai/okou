@@ -3,7 +3,7 @@ package ai.okou.android.artifacts
 import ai.okou.android.R
 import ai.okou.android.chat.ConfirmedChat
 import ai.okou.android.chat.HistoryMarkdown
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.rememberArtifactWebScroll
 import ai.okou.android.workspaceSearchFocusOutline
 import android.annotation.SuppressLint
@@ -314,7 +314,7 @@ private fun PreviewContent(preview: ArtifactPreviewState?, offline: Boolean) {
     val problem = preview?.problem
     val hosted = preview?.isHosted == true
     val waiting = content == null && problem == null
-    val showLoading = rememberChatWaitIndicator(waiting)
+    val showLoading = rememberContentReadFeedbackAfter(100L.takeIf { waiting })
     if (!hosted && waiting && !showLoading) return
     val colors = MaterialTheme.colorScheme
     val documentSurface = content is ArtifactContent.Text || content is ArtifactContent.Image

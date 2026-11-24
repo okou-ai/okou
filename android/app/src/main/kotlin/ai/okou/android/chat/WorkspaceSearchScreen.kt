@@ -1,11 +1,13 @@
 package ai.okou.android.chat
 
+import ai.okou.android.ContentReadFeedbackDelayMillis
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
 import ai.okou.android.WorkspaceSearchToolbar
 import ai.okou.android.artifacts.label
+import ai.okou.android.rememberContentReadFeedbackAfter
 import ai.okou.android.state.ChatSearchState
 import ai.okou.android.workspaceSearchControlHeight
 import ai.okou.android.workspaceSearchFocusOutline
@@ -584,7 +586,7 @@ private fun SearchResults(
             (!remotePending || reads.all { it == null || it is SearchRead.Ready })
     val showPending =
         key(keyword, type) {
-            rememberChatWaitIndicator(pending, delayMillis = 250)
+            rememberContentReadFeedbackAfter(ContentReadFeedbackDelayMillis.takeIf { pending })
         }
     val showSkeleton = showPending && items.isEmpty() && !showEmpty
     val showProgress = showPending && items.isNotEmpty()

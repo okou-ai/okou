@@ -5,6 +5,7 @@ import ai.okou.android.api.generated.Indicators
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.api.generated.ThreadDetail
 import ai.okou.android.auth.WorkspaceIdentity
+import ai.okou.android.contentReadStaleDelayMillis
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.util.concurrent.atomic.AtomicLong
@@ -34,7 +35,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
-private const val chatSyncNoticeAgeMillis = 10 * 60 * 1_000L
 private const val listRetryProgressThreshold = 3
 private const val unreadSnapshotLifetimeMillis = 120_000L
 private const val unreadSnapshotRenewalMillis = 30_000L
@@ -49,10 +49,8 @@ private fun CachedUnread.remainingMillis(now: Long): Long {
     } else 0
 }
 
-internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long {
-    val age = (now - confirmedAt).coerceAtLeast(0)
-    return (chatSyncNoticeAgeMillis + 1 - age).coerceAtLeast(0)
-}
+internal fun chatSyncNoticeDelayMillis(confirmedAt: Long, now: Long): Long =
+    contentReadStaleDelayMillis(confirmedAt.coerceAtMost(now), now)
 
 enum class ChatReadPhase {
     Idle,

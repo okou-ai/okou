@@ -2,14 +2,14 @@ package ai.okou.android.artifacts
 
 import ai.okou.android.ContentReadProgress
 import ai.okou.android.R
-import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.ChatResourceOrigin
 import ai.okou.android.chat.ConversationLink
 import ai.okou.android.chat.ConversationUiState
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.MessageLinkAnchor
 import ai.okou.android.chat.conversationLink
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.state.rememberArtifactPageState
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
@@ -150,9 +150,9 @@ internal fun ChatArtifactResources(
     val workflows = state.workflows.takeIf { matchesQuery && workflowIds.isNotEmpty() }
     val workflowRows = workflows?.confirmed?.items.orEmpty().filter { it.id in workflowIds }
     val showWorkflowSkeleton =
-        rememberChatWaitIndicator(
-            workflows?.checking == true && workflows.confirmed == null,
-            ChatListSkeletonDelayMillis,
+        rememberContentReadSkeleton(
+            hasContent = workflows?.confirmed != null,
+            awaitingRead = workflows?.checking == true,
         )
     val external = references?.origin as? ChatResourceOrigin.External
     val externalTitle = external?.let { resourceSourceTitle(it) }
@@ -176,19 +176,17 @@ internal fun ChatArtifactResources(
             null -> null
         }
     val showRelatedSkeleton =
-        rememberChatWaitIndicator(
-            related?.checking == true &&
-                related.confirmed == null &&
-                (result != null || failure != null),
-            ChatListSkeletonDelayMillis,
+        rememberContentReadSkeleton(
+            hasContent = related?.confirmed != null,
+            awaitingRead = related?.checking == true && (result != null || failure != null),
         )
     val showSkeleton =
-        rememberChatWaitIndicator(result == null && failure == null, ChatListSkeletonDelayMillis)
-    val historyDelay = history.syncProgressDelayMillis.takeUnless { references == null }
+        rememberContentReadSkeleton(hasContent = result != null, awaitingRead = failure == null)
     val historyStale =
-        rememberChatWaitIndicator(
-            historyDelay != null && history.phase == HistoryPhase.Loading,
-            historyDelay ?: 0L,
+        rememberContentReadFeedbackAfter(
+            history.syncProgressDelayMillis.takeIf {
+                references != null && history.phase == HistoryPhase.Loading
+            },
         )
     val dates = rememberArtifactDates()
     val rowFocus = remember { FocusRequester() }

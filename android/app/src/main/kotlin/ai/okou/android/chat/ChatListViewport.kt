@@ -22,10 +22,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,14 +40,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 internal val ChatListRowHeight = 52.dp
 internal val ChatListRowShape = RoundedCornerShape(8.dp)
 internal val ChatListRowPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 internal val ChatPaneBottomInset = 16.dp
-internal const val ChatListSkeletonDelayMillis = 250L
 
 internal fun Density.chatInlineFeedbackHeight() = maxOf(216.dp, 16.sp.toDp() * 9)
 
@@ -190,18 +185,6 @@ private fun NewChatAction(enabled: Boolean, onClick: () -> Unit) {
             )
         }
     }
-}
-
-@Composable
-internal fun rememberChatWaitIndicator(waiting: Boolean, delayMillis: Long = 100): Boolean {
-    var visible by remember(waiting, delayMillis) { mutableStateOf(false) }
-    LaunchedEffect(waiting, delayMillis) {
-        if (waiting) {
-            delay(delayMillis)
-            visible = true
-        }
-    }
-    return visible
 }
 
 @Composable

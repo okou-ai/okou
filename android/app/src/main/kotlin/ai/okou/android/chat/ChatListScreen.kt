@@ -7,6 +7,8 @@ import ai.okou.android.WorkspaceMenu
 import ai.okou.android.WorkspaceMenuItem
 import ai.okou.android.api.generated.IndicatorsThreadsValue
 import ai.okou.android.currentWindowSizeDp
+import ai.okou.android.rememberContentReadFeedbackAfter
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
@@ -308,15 +310,16 @@ internal fun ChatListScreen(
         !state.offline &&
             if (missingUnread) state.indicatorsNonRetryableFailure
             else state.listReadFailure == ChatListReadFailure.NeedsRetry
-    val awaitingFirstList =
-        (state.confirmedAt == null || missingUnread) &&
-            pendingByProject.isEmpty() &&
-            !(missingUnread && state.offline) &&
-            !firstLoadFailed &&
-            (startupRecovery == null || state.listPhase != ChatReadPhase.Idle)
-    val skeletonVisible = rememberChatWaitIndicator(awaitingFirstList, ChatListSkeletonDelayMillis)
-    val unreadFilter = state.filter == ChatListFilter.Unread
     val hasUsableList = state.confirmedAt != null && !missingUnread
+    val skeletonVisible =
+        rememberContentReadSkeleton(
+            hasContent = hasUsableList || pendingByProject.isNotEmpty(),
+            awaitingRead =
+                !(missingUnread && state.offline) &&
+                    !firstLoadFailed &&
+                    (startupRecovery == null || state.listPhase != ChatReadPhase.Idle),
+        )
+    val unreadFilter = state.filter == ChatListFilter.Unread
     val syncConfirmation =
         if (!hasUsableList || state.offline) null
         else {
@@ -338,14 +341,11 @@ internal fun ChatListScreen(
         remember(syncConfirmation) {
             syncConfirmation?.let { chatSyncNoticeDelayMillis(it, System.currentTimeMillis()) }
         }
-    // Keep the timer's composition in place as reads start and finish.
-    val syncDelayReached =
-        rememberChatWaitIndicator(syncDelay != null && syncDelay > 0L, syncDelay ?: 0L)
+    val syncDelayReached = rememberContentReadFeedbackAfter(syncDelay)
     val syncVisible =
         hasUsableList &&
             (state.listRetryProgressVisible ||
                 unreadFilter && state.indicatorsRetryProgressVisible ||
-                syncDelay == 0L ||
                 syncDelayReached)
     // Follow changes to refreshed content without turning Project expansion into a scroll action.
     val lastContentKey =

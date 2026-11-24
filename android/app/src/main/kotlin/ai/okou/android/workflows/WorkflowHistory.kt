@@ -7,7 +7,7 @@ import ai.okou.android.api.generated.WorkflowRunHistoryEntryEventType
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryStatus
 import ai.okou.android.api.generated.WorkflowRunHistoryEntryTrigger
 import ai.okou.android.chat.ChatSkeletonBlock
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.updates.updateFocusOutline
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,9 +50,7 @@ internal fun WorkflowHistoryPending(failure: WorkflowReadFailure?) {
             if (failure == WorkflowReadFailure.Unavailable) R.string.workflow_history_unavailable
             else R.string.workflow_history_failed,
         )
-    } else if (
-        rememberChatWaitIndicator(waiting = true, delayMillis = WORKFLOW_SKELETON_DELAY_MILLIS)
-    ) {
+    } else if (rememberContentReadSkeleton()) {
         val label = stringResource(R.string.workflow_history_loading)
         Column(
             Modifier.fillMaxWidth().testTag("workflow_history_loading").semantics {

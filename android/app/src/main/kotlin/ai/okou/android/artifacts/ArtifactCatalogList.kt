@@ -3,9 +3,8 @@ package ai.okou.android.artifacts
 import ai.okou.android.R
 import ai.okou.android.WorkspaceFilterRow
 import ai.okou.android.WorkspaceSearchField
-import ai.okou.android.chat.ChatListSkeletonDelayMillis
 import ai.okou.android.chat.ChatListTextAction
-import ai.okou.android.chat.rememberChatWaitIndicator
+import ai.okou.android.rememberContentReadSkeleton
 import ai.okou.android.workspaceSearchFocusOutline
 import android.text.format.DateFormat
 import androidx.annotation.StringRes
@@ -162,7 +161,7 @@ internal fun ArtifactCatalogList(
             )
             return@Column
         }
-        val showSkeleton = rememberChatWaitIndicator(page == null, ChatListSkeletonDelayMillis)
+        val showSkeleton = rememberContentReadSkeleton(hasContent = page != null)
         val restoreAfterLayout =
             if (restoreRow != null && page != null) {
                 Modifier.onGloballyPositioned {
