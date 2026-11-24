@@ -197,6 +197,36 @@ export function reserveRunnerDispatch(
   );
 }
 
+export interface RunnerDispatchPreparationTiming {
+  readonly candidateStartedAt: number;
+  readonly candidateReadyAt: number;
+  readonly contextStartedAt: number;
+  readonly contextReadyAt: number;
+  readonly ownerWriteMs: number;
+  readonly early: boolean;
+  readonly candidateRefreshed: boolean;
+}
+
+function dispatchPreparationDimensions(
+  timing: RunnerDispatchPreparationTiming | undefined,
+  startedAt: number,
+) {
+  if (!timing) {
+    return {};
+  }
+  return {
+    first_candidate_lead_ms: startedAt - timing.candidateReadyAt,
+    first_candidate_read_ms:
+      timing.candidateReadyAt - timing.candidateStartedAt,
+    execution_context_lead_ms: startedAt - timing.contextReadyAt,
+    execution_context_prepare_ms:
+      timing.contextReadyAt - timing.contextStartedAt,
+    first_owner_write_ms: timing.ownerWriteMs,
+    early_runner_preparation: timing.early,
+    early_runner_candidate_refreshed: timing.candidateRefreshed,
+  };
+}
+
 interface RunnerDispatchPost {
   readonly target: DirectRunTarget;
   readonly runId: string;
@@ -206,7 +236,7 @@ interface RunnerDispatchPost {
   readonly serviceToken: string;
   readonly timeoutMs: number;
   readonly firstRankedTarget: boolean;
-  readonly firstCandidateReadyAt: number | undefined;
+  readonly preparationTiming: RunnerDispatchPreparationTiming | undefined;
 }
 
 /** A failed response is never made into evidence against an earlier attempt. */
@@ -302,10 +332,7 @@ export async function postRunnerDispatch(
           body_encoding: encoding,
           api_body_gzip_encode_ms: args.gzipEncodeMs,
           first_ranked_target: args.firstRankedTarget,
-          first_candidate_lead_ms:
-            args.firstCandidateReadyAt === undefined
-              ? undefined
-              : startedAt - args.firstCandidateReadyAt,
+          ...dispatchPreparationDimensions(args.preparationTiming, startedAt),
           api_socket_use:
             timing.sendCount === 1
               ? (timing.connection ?? "unknown")
