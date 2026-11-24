@@ -2936,7 +2936,6 @@
     "accountsInChat": "Pilih akun yang aktif dalam chat ini.",
     "enableByDefault": "Aktifkan {{account}} secara default",
     "manageAccounts": "Kelola akun",
-    "memberAccountsInChat": "Akses akun berlaku untuk semua chat Anda dan dikelola di pengaturan Konektor.",
     "memberPolicyLoadFailed": "Akses akun tidak dapat dimuat.",
     "memberSettingsDescription": "Pilih akun {{connector}} yang dapat digunakan Okou di semua chat Anda.",
     "permissions": "Izin",

@@ -2953,7 +2953,6 @@
     "accountsInChat": "चुनें कि इस चैट में कौन-से खाते चालू हैं।",
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
     "manageAccounts": "खाते प्रबंधित करें",
-    "memberAccountsInChat": "खातों की पहुँच आपकी सभी चैट पर लागू होती है और इसे कनेक्टर सेटिंग में प्रबंधित किया जाता है।",
     "memberPolicyLoadFailed": "खातों की पहुँच लोड नहीं हो सकी।",
     "memberSettingsDescription": "चुनें कि Okou आपकी चैट में किन {{connector}} खातों का उपयोग कर सकता है।",
     "permissions": "अनुमतियाँ",

@@ -31,6 +31,7 @@ import {
   type ConnectorPermissionsTarget,
 } from "./settings/connector-permissions.ts";
 import { createChatConnectorAccountManagerSignals } from "./chat-connector-account-manager.ts";
+import { createConnectorAccountAccessSettingsSignals } from "./settings/connector-accounts.ts";
 import { pageSignal$ } from "../page-signal.ts";
 
 interface PendingChatConnectorOverride {
@@ -278,7 +279,17 @@ function createAccountPanelSignals(
   list: ReturnType<typeof createConnectorAccountListSignals>,
 ) {
   const target$ = state<ChatConnectorMenuTarget | null>(null);
-  const closeTarget$ = command(({ set }) => {
+  const policySettings$ = computed((get) => {
+    const target = get(target$);
+    return target
+      ? createConnectorAccountAccessSettingsSignals(target.target)
+      : null;
+  });
+  const closeTarget$ = command(({ get, set }) => {
+    const settings = get(policySettings$);
+    if (settings) {
+      set(settings.close$);
+    }
     set(target$, null);
     set(list.clearTarget$);
   });
@@ -298,11 +309,15 @@ function createAccountPanelSignals(
   );
   const openTarget$ = command(
     (
-      { set },
+      { get, set },
       target: ChatConnectorMenuTarget,
       rect: DOMRect | undefined,
       signal: AbortSignal,
     ) => {
+      const previous = get(policySettings$);
+      if (previous) {
+        set(previous.close$);
+      }
       // Pin the panel to its opening position while the connector list scrolls.
       set(
         anchor$,
@@ -315,10 +330,25 @@ function createAccountPanelSignals(
           : undefined,
       );
       set(target$, target);
+      const settings = get(policySettings$);
+      if (settings) {
+        set(settings.open$, signal);
+      }
       set(list.setTarget$, target.target, signal);
     },
   );
-  return { target$, anchor$, openTarget$, closeTarget$, openRowRef$ };
+  return {
+    target$,
+    anchor$,
+    openTarget$,
+    closeTarget$,
+    openRowRef$,
+    policySettings$,
+    policies$: computed(async (get) => {
+      const settings = get(policySettings$);
+      return settings ? await get(settings.policies$) : null;
+    }),
+  };
 }
 
 /** One composer's Chat preferences; opening the menu owns its account reads. */
@@ -355,8 +385,15 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(setPermissions$, null);
   });
   const list = createConnectorAccountListSignals();
-  const { target$, anchor$, openTarget$, closeTarget$, openRowRef$ } =
-    createAccountPanelSignals(list);
+  const {
+    target$,
+    anchor$,
+    openTarget$,
+    closeTarget$,
+    openRowRef$,
+    policySettings$,
+    policies$,
+  } = createAccountPanelSignals(list);
   const cache = createChatConnectorOverviewSignals(threadId);
   const { overview$, active$ } = createChatConnectorReads({
     entries$: cache.entries$,
@@ -418,6 +455,8 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     retry$: cache.retry$,
     current$,
     openRowRef$,
+    policySettings$,
+    policies$,
     anchor$: computed((get) => {
       return get(anchor$);
     }),

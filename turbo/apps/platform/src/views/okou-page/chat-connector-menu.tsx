@@ -3,7 +3,13 @@ import type { ReactNode } from "react";
 import type { ChatConnectorAccess } from "@okouai/api-contracts/contracts/chat-connector-access";
 import type { ConnectorAccountConnection } from "@okouai/api-contracts/contracts/connector-accounts";
 import { connectorAccountExternalIdentity } from "@okouai/api-contracts/validators/connector-accounts";
-import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, SlidersHorizontal, Users } from "lucide-react";
@@ -25,6 +31,7 @@ import { connectorAccountTargetKey } from "../../signals/okou-page/connector-acc
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
+import { AccountPolicyControl } from "./components/settings/connector-account-policy-control.tsx";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import { CustomConnectorIcon } from "./components/settings/custom-connector-icon.tsx";
 import { ComposerConnectorMenuShell } from "./composer-connector-menu-shell.tsx";
@@ -34,11 +41,13 @@ function ChatAccountChoiceRow({
   access,
   busy,
   onChange,
+  policyControl,
 }: {
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
   readonly onChange?: (enabled: boolean) => Promise<void>;
+  readonly policyControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -80,13 +89,7 @@ function ChatAccountChoiceRow({
           }}
         />
       ) : (
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {t(($) => {
-            return access.enabled
-              ? $.connectors.permissions.actions.allow
-              : $.connectors.permissions.actions.deny;
-          })}
-        </span>
+        policyControl
       )}
     </div>
   );
@@ -101,6 +104,8 @@ function ChatAccountChoices({
 }) {
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
+  const policySettings = useGet(accounts.policySettings$);
+  const policies = useLastLoadable(accounts.policies$);
   const list = useLoadable(accounts.list.accounts$);
   const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
@@ -155,6 +160,19 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
+              policyControl={
+                entry.memberAccess &&
+                policySettings &&
+                policies.state === "hasData" ? (
+                  <AccountPolicyControl
+                    account={account}
+                    policy={policies.data?.find((policy) => {
+                      return policy.connectionId === account.id;
+                    })}
+                    updatePolicy$={policySettings.updatePolicy$}
+                  />
+                ) : undefined
+              }
               onChange={
                 entry.memberAccess
                   ? undefined
@@ -179,6 +197,13 @@ function ChatAccountChoices({
         <p className="px-3 py-2 text-sm text-muted-foreground">
           {t(($) => {
             return $.connectors.accounts.accountsUnavailable;
+          })}
+        </p>
+      )}
+      {policies.state === "hasError" && (
+        <p role="alert" className="px-3 py-2 text-sm text-destructive">
+          {t(($) => {
+            return $.connectorChatAccess.memberPolicyLoadFailed;
           })}
         </p>
       )}
@@ -392,13 +417,13 @@ function ChatConnectorAccountPanel({
     <>
       <div className="shrink-0 border-b border-border/50 px-3 py-3">
         <p className="truncate text-sm font-medium">{entry.label}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {t(($) => {
-            return entry.memberAccess
-              ? $.connectorChatAccess.memberAccountsInChat
-              : $.connectorChatAccess.accountsInChat;
-          })}
-        </p>
+        {!entry.memberAccess && (
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t(($) => {
+              return $.connectorChatAccess.accountsInChat;
+            })}
+          </p>
+        )}
       </div>
       <div
         role="group"

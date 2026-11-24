@@ -872,9 +872,39 @@ test("Preserve the internally resolved account when enabling several accounts be
   ).resolves.toBeChecked();
 });
 
-test("Show member account eligibility in Composer and send the first message without Chat overrides", async () => {
+test("Edit member account policy in Composer and send the first message without Chat overrides", async () => {
   const user = userEvent.setup({ delay: null });
   const { access } = installAccess({ personalOff: true });
+  let personalPolicy = {
+    connectionId: personal.id,
+    allowed: false,
+    enabled: false,
+    expiresAt: null,
+  };
+  context.mocks.api(
+    chatConnectorAccessContract.accountPolicies,
+    ({ respond }) => {
+      return respond(200, [
+        {
+          connectionId: work.id,
+          allowed: true,
+          enabled: true,
+          expiresAt: null,
+        },
+        personalPolicy,
+      ]);
+    },
+  );
+  context.mocks.api(
+    chatConnectorAccessContract.updateAccountPolicy,
+    ({ params, body, respond }) => {
+      expect(params.connectionId).toBe(personal.id);
+      expect(body.target).toStrictEqual(target);
+      expect(body.policy).toBe("allow-always");
+      personalPolicy = { ...personalPolicy, allowed: true, enabled: true };
+      return respond(200, personalPolicy);
+    },
+  );
   context.mocks.api(chatConnectorAccessContract.overview, ({ respond }) => {
     const overview = chatConnectorOverviewFixture({
       target,
@@ -887,7 +917,14 @@ test("Show member account eligibility in Composer and send the first message wit
       {
         ...overview,
         accounts: overview.accounts.map((account) => {
-          return { ...account, defaultEnabled: true };
+          return {
+            ...account,
+            defaultEnabled: true,
+            enabled:
+              account.connectionId === personal.id
+                ? personalPolicy.enabled
+                : account.enabled,
+          };
         }),
       },
     ]);
@@ -913,13 +950,15 @@ test("Show member account eligibility in Composer and send the first message wit
   await user.click(await openMenu());
   const panel = await screen.findByRole("group", { name: "GitHub" });
   expect(within(panel).queryByRole("switch")).toBeNull();
-  await expect(within(panel).findByText("Allow")).resolves.toBeInTheDocument();
-  expect(within(panel).getByText("Deny")).toBeInTheDocument();
-  expect(
-    screen.getByText(
-      "Account access applies across your chats and is managed in Connectors settings.",
-    ),
-  ).toBeInTheDocument();
+  await user.click(
+    await findFastControl("button", "Personal access, Deny", panel),
+  );
+  await user.click(
+    within(await screen.findByRole("menu")).getByText("Allow always"),
+  );
+  await expect(
+    findFastControl("button", "Personal access, Allow, Always", panel),
+  ).resolves.toBeEnabled();
   await user.keyboard("{Escape}{Escape}");
   await fill(editor, "Use my GitHub account");
   click(await findFastControl("button", "Send"));
@@ -980,9 +1019,9 @@ test("Refresh Composer eligibility when a member policy save finishes after clos
     async ({ params, body, respond }) => {
       expect(params.connectionId).toBe(work.id);
       expect(body.policy).toBe("deny");
-      workPolicy = { ...workPolicy, allowed: false, enabled: false };
       committed.resolve();
       await response.promise;
+      workPolicy = { ...workPolicy, allowed: false, enabled: false };
       return respond(200, workPolicy);
     },
   );

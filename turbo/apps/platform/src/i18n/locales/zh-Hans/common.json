@@ -2936,7 +2936,6 @@
     "accountsInChat": "选择在此对话中开启哪些账号。",
     "enableByDefault": "默认启用 {{account}}",
     "manageAccounts": "管理账号",
-    "memberAccountsInChat": "账号访问权限适用于你的所有聊天，可在连接器设置中管理。",
     "memberPolicyLoadFailed": "无法加载账号访问权限。",
     "memberSettingsDescription": "选择 Okou 可在你的所有聊天中使用的 {{connector}} 账号。",
     "permissions": "权限",

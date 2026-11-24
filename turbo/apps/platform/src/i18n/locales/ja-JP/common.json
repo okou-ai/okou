@@ -2936,7 +2936,6 @@
     "accountsInChat": "このチャットで有効にするアカウントを選択します。",
     "enableByDefault": "{{account}} を既定で有効にする",
     "manageAccounts": "アカウントを管理",
-    "memberAccountsInChat": "アカウントへのアクセスはすべてのチャットに適用され、コネクター設定で管理できます。",
     "memberPolicyLoadFailed": "アカウントへのアクセス設定を読み込めませんでした。",
     "memberSettingsDescription": "Okou がすべてのチャットで使用できる {{connector}} アカウントを選択します。",
     "permissions": "権限",

@@ -2936,7 +2936,6 @@
     "accountsInChat": "選擇在此對話中開啟哪些帳號。",
     "enableByDefault": "預設啟用 {{account}}",
     "manageAccounts": "管理帳號",
-    "memberAccountsInChat": "帳號存取權限適用於你的所有聊天，可在連接器設定中管理。",
     "memberPolicyLoadFailed": "無法載入帳號存取權限。",
     "memberSettingsDescription": "選擇 Okou 可在你的所有聊天中使用的 {{connector}} 帳號。",
     "permissions": "權限",

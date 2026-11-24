@@ -2936,7 +2936,6 @@
     "accountsInChat": "이 채팅에서 켤 계정을 선택하세요.",
     "enableByDefault": "{{account}} 기본 활성화",
     "manageAccounts": "계정 관리",
-    "memberAccountsInChat": "계정 액세스는 모든 채팅에 적용되며 커넥터 설정에서 관리할 수 있습니다.",
     "memberPolicyLoadFailed": "계정 액세스 설정을 불러오지 못했습니다.",
     "memberSettingsDescription": "Okou가 모든 채팅에서 사용할 수 있는 {{connector}} 계정을 선택하세요.",
     "permissions": "권한",
