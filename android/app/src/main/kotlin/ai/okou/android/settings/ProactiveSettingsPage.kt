@@ -10,8 +10,8 @@ import ai.okou.android.SettingsSheetDescription
 import ai.okou.android.SettingsSwitchRow
 import ai.okou.android.SettingsTrigger
 import ai.okou.android.preferences.MemberPreferencesModel
-import ai.okou.android.preferences.PreferenceFeedback
 import ai.okou.android.preferences.TimezonePicker
+import ai.okou.android.preferences.TimezoneScheduleFeedback
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -163,7 +163,7 @@ internal fun ProactiveSettingsPage(
                 fallbackFocus = relatedFocus.takeIf { focusTarget != null },
             )
             if (needsTimezone || current.timezoneScheduleUpdatePending) {
-                PreferenceFeedback(
+                TimezoneScheduleFeedback(
                     current,
                     preferences::retry,
                     Modifier.padding(start = 16.dp, top = 8.dp, end = 16.dp),

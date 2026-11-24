@@ -139,10 +139,13 @@ fn run_scoped_cleanup_paths(paths: &paths::GuestPaths, include_session: bool) ->
 }
 
 #[test]
-fn framework_supports_active_input_for_all_cli_frameworks() {
+fn active_input_is_admitted_only_for_interactive_backends() {
     assert!(framework_supports_active_input(env::Framework::ClaudeCode));
     assert!(framework_supports_active_input(env::Framework::Codex));
     assert!(framework_supports_active_input(env::Framework::Pi));
+    assert!(!framework_supports_active_input(
+        env::Framework::Antigravity
+    ));
 }
 
 struct TestRuntimeRootGuard;

@@ -1,5 +1,6 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
+  catalogFixture,
   customConnectorCompletionFixture,
   connectorFixtureAccount,
 } from "../../../mocks/handlers/connector-account-fixtures.ts";
@@ -958,7 +959,7 @@ test("Continue after connecting a custom connector with permission metadata", as
   expect(sentPrompts(sends)).toStrictEqual(["Resume document lookup"]);
 });
 
-test("Reconnect an expired connector before resuming the task", async () => {
+test("Reconnect an expired default directly using its saved method before resuming the task", async () => {
   const sends: CapturedChatSend[] = [];
   const slug = "expired-drive";
   const method = browserAuthMethod();
@@ -985,25 +986,40 @@ test("Reconnect an expired connector before resuming the task", async () => {
   );
   const popup = mockOpenedWindow();
   installCatalogLookup((requestedSlug) => {
-    return requestedSlug === slug
-      ? catalogConnector({
-          slug,
-          label: "Expired Drive",
-          method,
-          hasAccount: true,
-          reconnectRequired: !restored,
-          connectionId: CONNECTOR_CONNECTION_ID,
-          tokenExpiresAt: restored ? null : "2026-07-01T00:00:00.000Z",
-        })
-      : null;
-  });
-  context.mocks.api(builtinConnectorOauthStartContract.start, ({ respond }) => {
-    return respond(200, {
-      authorizationUrl: "https://provider.example.test/reconnect-drive",
-      oauthAttemptId,
+    if (requestedSlug !== slug) {
+      return null;
+    }
+    const item = catalogConnector({
+      slug,
+      label: "Expired Drive",
+      method,
+      hasAccount: true,
+      reconnectRequired: !restored,
       connectionId: CONNECTOR_CONNECTION_ID,
+      tokenExpiresAt: restored ? null : "2026-07-01T00:00:00.000Z",
+    });
+    return catalogFixture({
+      ...item,
+      authMethods: [method, browserAuthMethod("alternative-oauth")],
+      singleAuthCodeAuthMethodId: null,
+      account: connectorFixtureAccount(item),
     });
   });
+  context.mocks.api(
+    builtinConnectorOauthStartContract.start,
+    ({ body, respond }) => {
+      expect(body.authMethod).toBe(method.id);
+      expect(body.account).toStrictEqual({
+        intent: "reconnect",
+        connectionId: CONNECTOR_CONNECTION_ID,
+      });
+      return respond(200, {
+        authorizationUrl: "https://provider.example.test/reconnect-drive",
+        oauthAttemptId,
+        connectionId: CONNECTOR_CONNECTION_ID,
+      });
+    },
+  );
   context.mocks.api(builtinConnectorsMainContract.list, ({ respond }) => {
     return respond(200, {
       connectors: [

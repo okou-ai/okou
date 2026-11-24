@@ -108,18 +108,16 @@ describe("artifact library list queries", () => {
     const legacy = await list({ limit: 1 });
     expect(legacy.artifacts[0]).toMatchObject({ title: "second.txt" });
     expect(legacy.nextCursor).toStrictEqual(expect.any(String));
-    for (const query of [
-      { sort: "createdAt" as const },
-      { direction: "asc" as const },
-    ]) {
-      await accept(
-        client()(artifactCatalogContract).list({ headers, query }),
-        [403],
-      );
-    }
+    await accept(
+      client()(artifactCatalogContract).list({
+        headers,
+        query: { direction: "asc" },
+      }),
+      [403],
+    );
 
     await enableLibrary();
-    const library = await list({ sort: "createdAt", direction: "asc" });
+    const library = await list({ direction: "asc" });
     expect(
       library.artifacts.map((artifact) => {
         return artifact.title;
@@ -129,7 +127,7 @@ describe("artifact library list queries", () => {
     await accept(
       client()(artifactCatalogContract).list({
         headers,
-        query: { sort: "title", direction: "desc" },
+        query: { direction: "desc" },
       }),
       [403],
     );
@@ -145,7 +143,7 @@ describe("artifact library list queries", () => {
     );
   });
 
-  it("sorts the full filtered result in either direction and paginates equal values without repeats", async () => {
+  it("orders the full filtered result by creation in either direction across every page", async () => {
     for (const filename of ["Zulu.txt", "Echo.txt", "Alpha.txt", "Echo.txt"]) {
       await upload(filename);
     }
@@ -153,42 +151,7 @@ describe("artifact library list queries", () => {
     await enableLibrary();
     const legacyFiles = (await list({ kind: "file" })).artifacts;
     for (const direction of ["asc", "desc"] as const) {
-      const byTitle = await collect({ sort: "title", direction, kind: "file" });
-      expect(
-        byTitle.map((artifact) => {
-          return artifact.title;
-        }),
-      ).toStrictEqual(
-        direction === "asc"
-          ? ["Alpha.txt", "Echo.txt", "Echo.txt", "Zulu.txt"]
-          : ["Zulu.txt", "Echo.txt", "Echo.txt", "Alpha.txt"],
-      );
-      expect(
-        new Set(
-          byTitle.map((artifact) => {
-            return artifact.id;
-          }),
-        ).size,
-      ).toBe(4);
-      const echoes = byTitle.filter((artifact) => {
-        return artifact.title === "Echo.txt";
-      });
-      const echoIds = echoes
-        .map((artifact) => {
-          return artifact.id;
-        })
-        .sort();
-      expect(
-        echoes.map((artifact) => {
-          return artifact.id;
-        }),
-      ).toStrictEqual(direction === "asc" ? echoIds : echoIds.reverse());
-
-      const byCreated = await collect({
-        sort: "createdAt",
-        direction,
-        kind: "file",
-      });
+      const byCreated = await collect({ direction, kind: "file" });
       expect(
         byCreated.map((artifact) => {
           return artifact.id;
@@ -203,7 +166,6 @@ describe("artifact library list queries", () => {
     }
     const deck = await list({
       kind: "presentation",
-      sort: "title",
       direction: "asc",
       keyword: "DECK",
       limit: 1,
@@ -214,7 +176,7 @@ describe("artifact library list queries", () => {
     expect(deck.nextCursor).toBeNull();
   });
 
-  it("binds library cursors to sorting, filters and the authorized owner without widening literal search", async () => {
+  it("binds library cursors to direction, filters and the authorized owner without widening literal search", async () => {
     const orgId = `org_${randomUUID()}`;
     const userId = `user_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
@@ -222,13 +184,12 @@ describe("artifact library list queries", () => {
       await upload(filename);
     }
     await enableLibrary();
-    const query = { sort: "title", direction: "asc" } as const;
+    const query = { direction: "asc" } as const;
     const first = await list({ ...query, limit: 1 });
     expect(first.artifacts[0]?.title).toBe("Alpha.txt");
     expect(first.nextCursor).toStrictEqual(expect.any(String));
     const cursor = first.nextCursor!;
     for (const changed of [
-      { ...query, sort: "createdAt" as const },
       { ...query, direction: "desc" as const },
       { ...query, kind: "file" as const },
       { ...query, keyword: "Alpha" },

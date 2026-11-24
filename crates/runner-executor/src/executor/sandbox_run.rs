@@ -1913,6 +1913,7 @@ fn normalize_guest_cli_agent_session_id(
                 None
             }
         }
+        EffectiveCliFramework::Antigravity => None,
         EffectiveCliFramework::Pi => {
             if is_valid_cli_agent_session_id(&session_id) {
                 Some(session_id)

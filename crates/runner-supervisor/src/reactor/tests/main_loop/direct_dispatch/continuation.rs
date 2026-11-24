@@ -11,6 +11,7 @@ enum Successor {
     Continue,
     Cancel,
     OtherGeneration,
+    NewSession,
 }
 
 #[tokio::test]
@@ -26,6 +27,11 @@ async fn supplied_http_cancellation_releases_a_waiting_continuation_without_a_sa
 #[tokio::test]
 async fn supplied_http_other_native_generation_keeps_the_available_blank() {
     assert_finalizing_home(Successor::OtherGeneration).await;
+}
+
+#[tokio::test]
+async fn supplied_http_new_session_reuses_home_after_local_finalization() {
+    assert_finalizing_home(Successor::NewSession).await;
 }
 
 async fn assert_finalizing_home(successor: Successor) {
@@ -107,15 +113,17 @@ async fn assert_finalizing_home(successor: Successor) {
     let run_id = RunId::new_v4();
     let mut next = envelope(identity, run_id);
     next["executionContext"]["reuseKey"] = json!(reuse_key);
-    next["executionContext"]["nativeContinuation"] = json!({
-        "sessionId": RunId::new_v4(),
-        "generationRunId": if matches!(successor, Successor::OtherGeneration) {
-            RunId::new_v4()
-        } else {
-            source
-        },
-        "recoveryPrompt": null
-    });
+    if !matches!(successor, Successor::NewSession) {
+        next["executionContext"]["nativeContinuation"] = json!({
+            "sessionId": RunId::new_v4(),
+            "generationRunId": if matches!(successor, Successor::OtherGeneration) {
+                RunId::new_v4()
+            } else {
+                source
+            },
+            "recoveryPrompt": null
+        });
+    }
     let next = next.to_string();
     assert_eq!(
         client(&socket, identity, run_id, &next).await.2["disposition"],
@@ -126,7 +134,7 @@ async fn assert_finalizing_home(successor: Successor) {
         // A different native producer must execute without waiting for this
         // sandbox, even though its reuse key matches the finalizing producer.
         execution.wait_entered(2, WAIT).await.unwrap();
-    } else {
+    } else if !matches!(successor, Successor::NewSession) {
         // Either causal event lets the baseline finish: before the repair the
         // second process starts on the blank, and the completion identity below
         // exposes the lost home continuity. No elapsed delay creates the race.
@@ -173,7 +181,7 @@ async fn assert_finalizing_home(successor: Successor) {
             } else {
                 source_sandbox
             }),
-            "a matching continuation must retain the producer's actual home"
+            "the successor must use the selected sandbox"
         );
     }
     assert_eq!(

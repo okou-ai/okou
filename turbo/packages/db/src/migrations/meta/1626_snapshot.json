@@ -1,5 +1,5 @@
 {
-  "id": "5362fde2-6729-4b49-8cd1-c944a205990d",
+  "id": "95e9e7d4-e1c1-49dd-850a-9f67a19a1591",
   "prevId": "44bfcbc0-7a3e-4f02-9197-febe43af1768",
   "version": "7",
   "dialect": "postgresql",
@@ -9599,18 +9599,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::jsonb"
-        },
-        "snapshot_offer": {
-          "name": "snapshot_offer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "snapshot_answer": {
-          "name": "snapshot_answer",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "result": {
           "name": "result",
@@ -21642,7 +21630,7 @@
       "checkConstraints": {
         "chk_model_routes_provider_type": {
           "name": "chk_model_routes_provider_type",
-          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'codex-oauth-token', 'built-in')"
+          "value": "\"model_routes\".\"provider_type\" IN ('claude-code-oauth-token', 'codex-oauth-token', 'antigravity', 'built-in')"
         },
         "chk_model_routes_concrete_provider_type": {
           "name": "chk_model_routes_concrete_provider_type",
@@ -21650,7 +21638,7 @@
         },
         "chk_model_routes_subscription_type": {
           "name": "chk_model_routes_subscription_type",
-          "value": "\"model_routes\".\"subscription_type\" IS NULL OR (\"model_routes\".\"subscription_type\" IN ('claude-code-oauth-token', 'codex-oauth-token') AND \"model_routes\".\"subscription_type\" = \"model_routes\".\"provider_type\")"
+          "value": "(\"model_routes\".\"subscription_type\" IS NULL AND \"model_routes\".\"provider_type\" <> 'antigravity') OR (\"model_routes\".\"subscription_type\" IS NOT NULL AND \"model_routes\".\"provider_type\" <> 'built-in' AND \"model_routes\".\"subscription_type\" = \"model_routes\".\"provider_type\")"
         },
         "chk_model_routes_priority": {
           "name": "chk_model_routes_priority",

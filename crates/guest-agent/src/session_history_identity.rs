@@ -33,7 +33,8 @@ pub(crate) fn build_final_session_history_identity(
 ) -> Result<SessionHistoryIdentity, SessionHistoryIdentityBuildError> {
     let session_id_hash = session_id_hash(framework, cli_agent_session_id)
         .ok_or(SessionHistoryIdentityBuildError::InvalidSessionId)?;
-    let framework = final_framework(framework);
+    let framework = SessionHistoryFramework::try_from(CliFramework::from(framework))
+        .map_err(SessionHistoryIdentityBuildError::InvalidMetadata)?;
     SessionHistoryIdentity::new(
         framework,
         session_id_hash,
@@ -50,12 +51,9 @@ fn session_id_hash(framework: env::Framework, session_id: &str) -> Option<String
         env::Framework::ClaudeCode => session_id.to_owned(),
         env::Framework::Codex => canonical_codex_thread_id(session_id)?,
         env::Framework::Pi => session_id.to_owned(),
+        env::Framework::Antigravity => return None,
     };
     Some(hex::encode(Sha256::digest(normalized.as_bytes())))
-}
-
-fn final_framework(framework: env::Framework) -> SessionHistoryFramework {
-    SessionHistoryFramework::from(CliFramework::from(framework))
 }
 
 /// Verify the current guest session history matches final identity metadata.

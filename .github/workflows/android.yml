@@ -133,7 +133,7 @@ jobs:
           path: android/app/build/test-results/testDebugUnitTest/TEST-*.xml
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: matrix.shard == 0
         with:
@@ -141,7 +141,7 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 1
 
   instrumentation:
     needs: detect
@@ -202,7 +202,7 @@ jobs:
             android/app/build/outputs/androidTest-results/
             android/app/build/outputs/managed_device_android_test_additional_output/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
       - name: Retain Debug device shard results for the gate
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -283,7 +283,7 @@ jobs:
             ${{ steps.release-smoke.outputs.release-directory }}/okou-android-*-mapping.txt.gz
           if-no-files-found: error
           overwrite: true
-          retention-days: 7
+          retention-days: 1
       - name: Retain Release smoke evidence
         id: smoke-evidence
         if: always()
@@ -292,7 +292,7 @@ jobs:
           name: android-release-smoke-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: android/build/reports/release/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
 
   retrace-failure:
     needs: release-smoke
@@ -345,7 +345,7 @@ jobs:
           name: android-retraced-api35-${{ github.sha }}${{ github.run_attempt != '1' && format('-attempt-{0}', github.run_attempt) || '' }}
           path: retraced/
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
 
   ci-gate-android:
     needs: [detect-release, detect, build-test, instrumentation, release-smoke]

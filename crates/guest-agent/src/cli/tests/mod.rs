@@ -52,6 +52,8 @@ fn guest_config_for_cli_test(user_env: HashMap<String, String>) -> env::GuestCon
         pi_session_id: String::new(),
         #[cfg(debug_assertions)]
         test_pi_cli_path: None,
+        #[cfg(feature = "test-support")]
+        test_antigravity_cli_path: None,
         stuck_tool_timeout_secs: constants::STUCK_TOOL_TIMEOUT_SECS,
         post_result_sigterm_grace: Duration::from_secs(constants::POST_RESULT_SIGTERM_GRACE_SECS),
         post_result_total_cap: Duration::from_secs(constants::POST_RESULT_TOTAL_CAP_SECS),
@@ -127,6 +129,7 @@ fn runtime_for_command_test<'a>(
                 sessions_dir: Some("/tmp/codex-home/sessions".to_string()),
             },
             env::Framework::Pi => SessionHistoryLaunchSource::Pi,
+            env::Framework::Antigravity => SessionHistoryLaunchSource::Antigravity,
         },
         claude_append_system_prompt_file: Cow::Borrowed("/tmp/claude-append-system-prompt"),
         pi_session_id: Cow::Borrowed(""),
@@ -135,6 +138,8 @@ fn runtime_for_command_test<'a>(
         pi_model_config: Cow::Borrowed(""),
         #[cfg(debug_assertions)]
         test_pi_cli_path: None,
+        #[cfg(feature = "test-support")]
+        test_antigravity_cli_path: None,
         user_env,
     }
 }

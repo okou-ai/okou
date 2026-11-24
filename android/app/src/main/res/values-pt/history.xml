@@ -2,9 +2,8 @@
 <resources>
     <string name="history_syncing">Sincronizando mensagens…</string>
     <string name="history_loading">Carregando conversa…</string>
-    <string name="history_failed">Não foi possível atualizar a conversa. Tente novamente.</string>
+    <string name="history_failed">Não foi possível carregar esta conversa.</string>
     <string name="history_missing">Esta conversa foi excluída ou está indisponível.</string>
-    <string name="history_read_failed">Não foi possível confirmar a leitura. Atualize para tentar novamente.</string>
     <string name="history_empty">Nenhuma mensagem ainda.</string>
     <string name="history_queued">Na fila</string>
     <string name="history_rejected">Não enviado</string>

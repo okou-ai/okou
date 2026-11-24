@@ -45,7 +45,7 @@ struct ForYouDirectionComposer: View {
         submit: { await workspace.forYou.sendDirection(card, from: direction) }, refresh: nil,
         modelSelection: direction.models, connectorSelection: direction.models.connectors,
         mentionSource: ComposerMentionSource(threads: workspace.list.threads),
-        workflowSource: workspace.composerWorkflows, quotedSuggestionTitle: suggestion.title,
+        workflowSource: workspace.composerWorkflows, writesDirection: true,
         placeholder: String(localized: "What do you have in mind?")
       )
     }

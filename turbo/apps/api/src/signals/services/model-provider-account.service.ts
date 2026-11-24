@@ -73,13 +73,7 @@ export interface MemberModelAccountSnapshot {
   readonly userId: string;
   readonly accounts: readonly Pick<
     typeof modelProviderAccounts.$inferSelect,
-    | "id"
-    | "modelProviderId"
-    | "orgId"
-    | "userId"
-    | "type"
-    | "isActive"
-    | "disconnectedAt"
+    "id" | "modelProviderId" | "orgId" | "userId" | "type" | "isActive"
   >[];
 }
 

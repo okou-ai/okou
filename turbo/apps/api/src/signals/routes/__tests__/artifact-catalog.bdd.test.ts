@@ -692,7 +692,6 @@ describe("GET /api/artifacts/catalog", () => {
     ).resolves.toStrictEqual({ artifacts: [], nextCursor: null });
     const filenameMatch = await chat.listArtifactCatalog(owner.actor, {
       keyword: site,
-      sort: "title",
       direction: "asc",
     });
     expect(filenameMatch.artifacts).toStrictEqual([

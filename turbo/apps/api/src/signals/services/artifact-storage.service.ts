@@ -423,7 +423,7 @@ function publicArtifactObjectReads(
       return s3ObjectHead(bucket, key, counts, signal);
     },
     list(prefix: string) {
-      return listS3Objects(bucket, prefix, counts);
+      return listS3Objects(bucket, prefix, counts, signal);
     },
   };
 }

@@ -24,7 +24,10 @@ struct ChatComposerView: View {
   var workflowSource: ComposerWorkflowSource?
 
   var sendTransition: ConversationSendTransition?
-  var quotedSuggestionTitle: String?
+  /// Writes a direction for a For you card rather than a chat message. The card stands above
+  /// the input as its context, so the input stays open; the card's own files are not the
+  /// member's content; and the page sets the input's width.
+  var writesDirection = false
   var placeholder: String?
   var recommendedFollowup: String?
   var showsTrailingFeedbackInput = true
@@ -54,7 +57,7 @@ struct ChatComposerView: View {
 
   private var hasText: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
   private var hasContent: Bool {
-    if quotedSuggestionTitle != nil {
+    if writesDirection {
       return hasText
         || draftState?.document.parts.contains {
           $0["type"]?.string != "text" && ComposerAttributedDocument.isInline($0)
@@ -84,7 +87,7 @@ struct ChatComposerView: View {
   /// one truncated line under the controls. Voice input opens it too, and the model sheet
   /// keeps it open while the keyboard is down under the sheet.
   private var expandsInput: Bool {
-    quotedSuggestionTitle != nil || showsEditingLayout || hasText
+    writesDirection || showsEditingLayout || hasText
       || draftState?.document.hasFeedback == true
       || draftState?.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
       || voiceActive || showsModels
@@ -197,12 +200,6 @@ struct ChatComposerView: View {
         // through a draft reset can restart keyboard avoidance during the send flight.
         OkouComposerSurface(isExpanded: expandsInput) {
           VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            if let quotedSuggestionTitle {
-              Label(quotedSuggestionTitle, okouSymbol: "quote")
-                .font(.okou(.footnote).weight(.medium)).lineLimit(2)
-                .padding(.horizontal, OkouSpace.sm).padding(.vertical, OkouSpace.xs)
-                .background(OkouColor.muted, in: RoundedRectangle(cornerRadius: OkouRadius.small))
-            }
             let followup = visibleFollowup
             HStack(spacing: OkouSpace.xs) {
               textInput(id: inputID, followup: followup)
@@ -232,6 +229,7 @@ struct ChatComposerView: View {
             } label: {
               OkouToolbarIcon("plus")
                 .frame(width: actionSize, height: actionSize)
+                .contentShape(Rectangle())
                 .overlay(alignment: .topTrailing) {
                   if connectorSelection?.uncertain == true {
                     OkouIcon("circle-alert", size: OkouIconSize.badge)
@@ -272,7 +270,7 @@ struct ChatComposerView: View {
         value: hasText)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
-    .padding(.horizontal, quotedSuggestionTitle == nil ? OkouControl.pageInset : 0)
+    .padding(.horizontal, writesDirection ? 0 : OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, showsEditingLayout ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)

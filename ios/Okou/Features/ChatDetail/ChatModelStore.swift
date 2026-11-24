@@ -211,7 +211,10 @@ final class ChatModelSelectionStore {
     clearMetadata = Command { context in try context.set(metadataDemand, nil) }
     connectors = ComposerConnectorStore(
       service: models.connectorAccess, authorizationService: models.connectorAuthorization,
-      webURL: models.webURL, threadID: threadID, readRetrySleep: models.readRetrySleep,
+      webURL: models.webURL, threadID: threadID,
+      managementEnabled: { [weak models] in
+        models?.configuration?.switches["iosConnectorManagement"] == true
+      }, readRetrySleep: models.readRetrySleep,
       didFail: models.report)
     self.threadID = threadID
     stored = cachedSelection

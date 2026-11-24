@@ -24,6 +24,7 @@ import flow_metadata_keys as metadata_keys
 import http_response_classification
 import model_usage_request
 import model_websocket_usage
+import openrouter_routing_log
 import response_inspection
 import run_usage
 import stream_capture
@@ -332,9 +333,17 @@ def _configure_model_sse_inspection(
             usage_protocol=usage_protocol,
         )
 
+    routing = openrouter_routing_log.observation(flow)
+    routing_scanner = routing.sse_scanner() if routing is not None else None
+
+    def feed_steps(chunk: bytes) -> Generator[None]:
+        yield from parser_fn.feed_steps(chunk)
+        if routing_scanner is not None:
+            yield from routing_scanner.feed_steps(chunk)
+
     sse_inspection = response_inspection.inspect_decoded_response(
         decode_session.iter_chunks,
-        parser_fn.feed_steps,
+        feed_steps if routing_scanner is not None else parser_fn.feed_steps,
         fail_sse_inspection,
     )
     flow.metadata[_RESPONSE_INSPECTION] = sse_inspection
@@ -381,10 +390,22 @@ def _configure_model_json_inspection(
     websocket_header_work_limit: int,
 ) -> _ResponseStreamSetup:
     extractor = usage.create_model_json_response_inspector(model_protocol)
+    routing = openrouter_routing_log.observation(flow)
+
+    def accepts_more_input() -> bool:
+        return extractor.accepts_more_input() or (
+            routing is not None and routing.accepts_more_input()
+        )
+
+    def feed_steps(chunk: bytes) -> Generator[None]:
+        if routing is not None:
+            routing.on_data(chunk)
+        yield from extractor.feed_steps(chunk)
+
     decode_session = _make_response_decode_session(
         extractor.feed,
         response.headers,
-        should_continue=extractor.accepts_more_input,
+        should_continue=accepts_more_input if routing is not None else extractor.accepts_more_input,
     )
     needs_buffered_fallback = False
     if decode_session is None:
@@ -424,7 +445,7 @@ def _configure_model_json_inspection(
     if decode_session is not None:
         json_inspection = response_inspection.inspect_decoded_response(
             decode_session.iter_chunks,
-            extractor.feed_steps,
+            feed_steps if routing is not None else extractor.feed_steps,
             fail_json_inspection,
         )
     else:
@@ -441,7 +462,7 @@ def _configure_model_json_inspection(
             )
             if decode_error is None:
                 if stream_body.buffer:
-                    yield from extractor.feed_steps(decoded_body)
+                    yield from feed_steps(decoded_body)
                 else:
                     finished = True
 
@@ -630,6 +651,7 @@ def configure_response_stream(
     if not flow.response:
         return
 
+    openrouter_routing_log.observe_headers(flow)
     metrics = stream_capture.empty_stream_byte_count()
     setup = _configure_response_inspection_stream(
         flow,
@@ -809,4 +831,5 @@ def release_response_stream_state(flow: http.HTTPFlow) -> None:
     flow.metadata.pop(_MODEL_JSON_USAGE_FINISH, None)
     flow.metadata.pop(_MODEL_SSE_USAGE_FINISH, None)
     flow.metadata.pop(_CONNECTOR_RESPONSE_FINALIZER, None)
+    openrouter_routing_log.release(flow)
     stream_capture.replace_owned_stream(flow.response, stream_callback)

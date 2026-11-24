@@ -1,3 +1,8 @@
+import {
+  connectorNativeAppReturnSchema,
+  type ConnectorNativeAppReturn,
+} from "@okouai/api-contracts/validators/connectors";
+import { connectorHttpsReturn } from "./connector-https-return";
 import type { StoredBuiltinOAuthState } from "../services/connector-oauth-state.service";
 import type { AuthUrlResult } from "@okouai/connectors/auth-providers/provider-flow-types";
 
@@ -7,6 +12,7 @@ const STRAVA_IOS_AUTHORIZATION_CONTEXT = JSON.stringify({
   iosConnectorAppAuthorization: "strava-v1",
 });
 const NATIVE_ATTEMPT_HEADER = "X-Okou-Native-Connector-Attempt";
+const NATIVE_HTTPS_HOST_HEADER = "X-Okou-Native-Connector-Https-Host";
 
 export function connectorNativeAppAuthorization(args: {
   readonly authorization: AuthUrlResult;
@@ -59,18 +65,27 @@ export function nativeConnectorCallbackResponse(
   response: Response,
   state: StoredBuiltinOAuthState,
 ): Response {
-  if (isStravaIosAuthorization(state)) {
+  const httpsReturn = connectorHttpsReturn(state);
+  if (httpsReturn || isStravaIosAuthorization(state)) {
     response.headers.set(NATIVE_ATTEMPT_HEADER, state.id);
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Referrer-Policy", "no-referrer");
+  }
+  if (httpsReturn?.httpsHost) {
+    response.headers.set(NATIVE_HTTPS_HOST_HEADER, httpsReturn.httpsHost);
   }
   return response;
 }
 
-export function nativeConnectorReturn(response: Response):
-  | {
-      readonly platform: "ios";
-      readonly attemptId: string;
-    }
-  | undefined {
+export function nativeConnectorReturn(
+  response: Response,
+): ConnectorNativeAppReturn | undefined {
   const attemptId = response.headers.get(NATIVE_ATTEMPT_HEADER);
-  return attemptId ? { platform: "ios", attemptId } : undefined;
+  return attemptId
+    ? connectorNativeAppReturnSchema.parse({
+        platform: "ios",
+        attemptId,
+        httpsHost: response.headers.get(NATIVE_HTTPS_HOST_HEADER) ?? undefined,
+      })
+    : undefined;
 }

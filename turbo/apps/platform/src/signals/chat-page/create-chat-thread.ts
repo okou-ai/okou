@@ -1450,7 +1450,9 @@ function createThreadArtifactRuns(
   threadId: string,
   driveAccountRevision$: Computed<string>,
 ) {
-  return computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+  const reloadVersion$ = state(0);
+  const artifacts$ = computed(async (get): Promise<ChatThreadArtifactRun[]> => {
+    get(reloadVersion$);
     get(artifactCatalogRevision$);
     get(driveAccountRevision$);
     const client = get(apiClient$)(chatThreadArtifactsContract);
@@ -1462,6 +1464,12 @@ function createThreadArtifactRuns(
     );
     return result.body.runs;
   });
+  const reloadArtifacts$ = command(({ set }) => {
+    set(reloadVersion$, (version) => {
+      return version + 1;
+    });
+  });
+  return { artifacts$, reloadArtifacts$ };
 }
 
 interface EventTreeRegistries {
@@ -2589,6 +2597,7 @@ interface RunTrackingDeps {
   automationSignals: Pick<ChatPanelSignals, "headerAutomations">;
   cancellationRecovery: ReturnType<typeof createCancellationRecoverySignals>;
   reloadConnectorAccountPreference$: Command<void, []>;
+  reloadArtifacts$: Command<void, []>;
 }
 
 const INITIAL_RENDER_GROUP_COUNT = 5;
@@ -2799,7 +2808,7 @@ function createEnsureVisibleEventTrees({
   diagramCodesForEvents$,
   mermaidDiagrams,
   syncVisibleRunUsage$,
-  syncVisibleRows$,
+  publishRows$,
   initialEventsReady$,
 }: {
   readonly visibleChatGroups$: Computed<ChatEventGroup[]>;
@@ -2808,7 +2817,7 @@ function createEnsureVisibleEventTrees({
   readonly diagramCodesForEvents$: ChatRenderWindowOptions["diagramCodesForEvents$"];
   readonly mermaidDiagrams: MermaidDiagramRegistry;
   readonly syncVisibleRunUsage$: ChatRenderWindowOptions["syncVisibleRunUsage$"];
-  readonly syncVisibleRows$: Command<void, []>;
+  readonly publishRows$: Command<Promise<void>, [AbortSignal]>;
   readonly initialEventsReady$: State<boolean>;
 }): Command<Promise<void>, [boolean, AbortSignal]> {
   return command(
@@ -2828,16 +2837,19 @@ function createEnsureVisibleEventTrees({
       signal.throwIfAborted();
       // Rows reflect the window once its bodies are parsed; diagram layout
       // below does not change them.
-      set(syncVisibleRows$);
+      const aligned = set(publishRows$, signal);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
       }
-      await set(
-        prewarmMermaidDiagrams$,
-        mermaidDiagrams,
-        set(diagramCodesForEvents$, visibleEvents),
-        signal,
-      );
+      await Promise.all([
+        aligned,
+        set(
+          prewarmMermaidDiagrams$,
+          mermaidDiagrams,
+          set(diagramCodesForEvents$, visibleEvents),
+          signal,
+        ),
+      ]);
     },
   );
 }
@@ -2904,6 +2916,7 @@ function createChatRenderWindow({
   const transcriptPages = createTranscriptPages(
     transcriptWindow,
     visibleRows$,
+    syncVisibleRows$,
     threadScrollPosition$,
   );
 
@@ -2920,7 +2933,7 @@ function createChatRenderWindow({
     diagramCodesForEvents$,
     mermaidDiagrams,
     syncVisibleRunUsage$,
-    syncVisibleRows$,
+    publishRows$: transcriptPages.publishRows$,
     initialEventsReady$,
   });
 
@@ -3023,6 +3036,7 @@ function createRunTracking({
   automationSignals,
   cancellationRecovery,
   reloadConnectorAccountPreference$,
+  reloadArtifacts$,
 }: RunTrackingDeps) {
   const onSubscribed$ = createOnSubscribedCommand({
     threadId,
@@ -3045,6 +3059,7 @@ function createRunTracking({
           threadId,
           invalidations: {
             artifactCatalog: [
+              reloadArtifacts$,
               messages.sidebar.artifactCatalog.reload$,
               messages.refreshArtifactPreviews$,
             ],
@@ -3949,7 +3964,10 @@ export function createChatPanelSignals(
     kind: "builtin",
     connectorSlug: "google-drive",
   });
-  const artifacts$ = createThreadArtifactRuns(threadId, driveAccountRevision$);
+  const { artifacts$, reloadArtifacts$ } = createThreadArtifactRuns(
+    threadId,
+    driveAccountRevision$,
+  );
   // The native input graph invokes this only after admitting page input.
   const onPageInput$ = command(({ get, set }) => {
     detach(
@@ -3999,6 +4017,7 @@ export function createChatPanelSignals(
     automationSignals: threadOwned,
     cancellationRecovery,
     reloadConnectorAccountPreference$: composer.connector.chatAccess.reload$,
+    reloadArtifacts$,
   });
   const relations = createChatRelationSignals(threadId, messagePipeline);
   return {

@@ -179,27 +179,49 @@ describe("Chat Completions upstream stream failures", () => {
     },
   );
 
-  it("keeps top-level SDK error messages and classifies their numeric provider code", async () => {
-    server.use(
-      http.post(endpoint, () => {
-        return response({
-          topLevel: true,
-          error: {
-            code: 429,
-            message: "Specific upstream rate failure",
-            metadata: { raw: "private-top-level-sentinel" },
+  it.each([
+    {
+      code: 429,
+      message: "Specific upstream rate failure",
+      reason: "provider_rate_limited",
+    },
+    {
+      code: 403,
+      message: "Output data may contain inappropriate content.",
+      reason: "safety_policy_refusal",
+    },
+  ])(
+    "classifies an upstream $code error inside an HTTP 200 stream as $reason",
+    async ({ code, message, reason }) => {
+      server.use(
+        http.post(endpoint, () => {
+          return response({
+            topLevel: true,
+            error: {
+              code,
+              message,
+              metadata: { raw: "private-top-level-sentinel" },
+            },
+          });
+        }),
+      );
+      const result = await stream().result();
+      expect(result.stopReason).toBe("error");
+      expect(JSON.parse(result.errorMessage ?? "")).toEqual({
+        error: { code, message },
+      });
+      expect(piModelFailureReason(result)).toBe(reason);
+      expect(result.diagnostics).toMatchObject([
+        {
+          details: {
+            httpStatus: 200,
+            transportAttempts: 1,
+            failureReason: reason,
           },
-        });
-      }),
-    );
-    const result = await stream().result();
-    expect(result.errorMessage).toContain("Specific upstream rate failure");
-    expect(result.errorMessage).not.toContain("private-top-level-sentinel");
-    expect(piModelFailureReason(result)).toBe("provider_rate_limited");
-    expect(result.diagnostics).toMatchObject([
-      { details: { httpStatus: 200, transportAttempts: 1 } },
-    ]);
-  });
+        },
+      ]);
+    },
+  );
 
   it.each([false, true])(
     "keeps a detail-free failure generic without publishing raw metadata (top-level: %s)",

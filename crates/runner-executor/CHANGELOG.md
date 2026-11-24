@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.24.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.28...runner-executor-v0.24.0) (2026-11-24)
+
+
+### Features
+
+* **runner:** execute gemini 4 turns with antigravity cli ([#50389](https://github.com/okou-ai/okou/issues/50389)) ([17f9b83](https://github.com/okou-ai/okou/commit/17f9b831b49c876e71002ac641b338badf0bff40))
+
+## [0.23.28](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.27...runner-executor-v0.23.28) (2026-11-24)
+
 ## [0.23.27](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.26...runner-executor-v0.23.27) (2026-11-24)
 
 ## [0.23.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.23.25...runner-executor-v0.23.26) (2026-11-24)

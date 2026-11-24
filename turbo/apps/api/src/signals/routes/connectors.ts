@@ -46,6 +46,10 @@ import {
 import { connectorOAuthStateExpiresAt } from "../../lib/connector-oauth-state";
 import { connectorNativeAppAuthorization } from "./connector-native-app-authorization";
 import {
+  connectorHttpsCallbackUrl,
+  connectorHttpsReturnState,
+} from "./connector-https-return";
+import {
   buildBuiltinConnectorAuthCodeAuthUrlWithMethod,
   prepareBuiltinConnectorAuthCodeStartWithMethod,
 } from "./connector-auth-code-start";
@@ -427,13 +431,18 @@ const startBuiltinConnectorOauthInner$ = command(
     if (!prepared.ok) {
       return internalServerError(`${connectorSlug} auth client not configured`);
     }
+    const state = connectorHttpsReturnState({
+      state: prepared.state,
+      connectorSlug: resolved.connectorSlug,
+      nativeCallback: bodyResult.data.nativeCallback,
+    });
     const authorization = await buildBuiltinConnectorAuthCodeAuthUrlWithMethod({
       connectorSlug: resolved.connectorSlug,
       authMethodId: resolved.authMethodId,
       method,
       authClient: prepared.authClient,
       redirectUri: prepared.redirectUri,
-      state: prepared.state,
+      state,
     });
     signal.throwIfAborted();
     const authResult = connectorNativeAppAuthorization({
@@ -470,7 +479,7 @@ const startBuiltinConnectorOauthInner$ = command(
     const [oauthState] = await writeDb
       .insert(connectorOauthStates)
       .values({
-        state: prepared.state,
+        state,
         connectorSlug: resolved.connectorSlug,
         authMethod: resolved.authMethodId,
         userId: auth.userId,
@@ -493,6 +502,7 @@ const startBuiltinConnectorOauthInner$ = command(
       status: 200 as const,
       body: {
         authorizationUrl: authResult.url,
+        nativeCallbackUrl: connectorHttpsCallbackUrl(state, oauthState.id),
         nativeAppAuthorization: authResult.nativeAppAuthorization,
         connectionId:
           bodyResult.data.account.intent === "add" ? oauthState.id : undefined,

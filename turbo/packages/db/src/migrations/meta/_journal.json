@@ -3834,8 +3834,15 @@
     {
       "idx": 1626,
       "version": "7",
-      "when": 1795496688957,
-      "tag": "1626_computer_use_snapshot_signals",
+      "when": 1795497745008,
+      "tag": "1626_internal_antigravity_model_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 1627,
+      "version": "7",
+      "when": 1795508283559,
+      "tag": "1627_computer_use_snapshot_signals",
       "breakpoints": true
     }
   ]

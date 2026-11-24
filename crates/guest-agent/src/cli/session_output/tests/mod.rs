@@ -10,7 +10,7 @@ use super::*;
 const RUN_ID: &str = "00000000-0000-4000-8000-000000000001";
 const THREAD_ID: &str = "00000000-0000-4000-8000-000000000002";
 
-async fn wait_for_block_failure(sender: &PiSessionOutputSender, run_event_id: &str) {
+async fn wait_for_block_failure(sender: &SessionOutputSender, run_event_id: &str) {
     tokio::time::timeout(Duration::from_secs(2), async {
         while !sender.state.block_failed(run_event_id) {
             tokio::time::sleep(Duration::from_millis(10)).await;
