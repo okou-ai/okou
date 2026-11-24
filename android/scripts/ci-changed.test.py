@@ -98,6 +98,15 @@ class ChangeSelectionTest(unittest.TestCase):
             expect(base, "true", "true", event="workflow_dispatch")
             self.assertNotEqual(detect(base, "unsupported", check=False).returncode, 0)
 
+            current = git("rev-parse", "HEAD")
+            shared_font = "ios/Okou/Resources/Fonts/Fixture.ttf"
+            write(shared_font)
+            commit()
+            git("sparse-checkout", "set", "--cone",
+                ".github/actions/detect-release", ".github/scripts/checks", "android/scripts")
+            self.assertFalse((root / shared_font).exists())
+            expect(current, "true")
+
 
 if __name__ == "__main__":
     unittest.main()

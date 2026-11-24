@@ -1,5 +1,13 @@
 # Changelog
 
+## [8.873.0](https://github.com/okou-ai/okou/compare/core-v8.872.0...core-v8.873.0) (2026-11-24)
+
+
+### Features
+
+* add first-use presentation format setup ([#50150](https://github.com/okou-ai/okou/issues/50150)) ([0e802ee](https://github.com/okou-ai/okou/commit/0e802ee6b10be62579cc7a5e40f3fc21182a0b15))
+* enable member connector account access for staff ([#50629](https://github.com/okou-ai/okou/issues/50629)) ([d824b76](https://github.com/okou-ai/okou/commit/d824b7647e34b77f0bfb0f6d86049a62d8b5f1d0))
+
 ## [8.872.0](https://github.com/okou-ai/okou/compare/core-v8.871.0...core-v8.872.0) (2026-11-24)
 
 

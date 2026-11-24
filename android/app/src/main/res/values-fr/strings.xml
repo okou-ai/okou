@@ -96,6 +96,7 @@
     <string name="updates_download_failed">Échec du téléchargement</string>
     <string name="updates_check_compatible">Vérifier les versions</string>
     <string name="updates_required_incompatible">Cet appareil ne peut pas mettre à jour Okou</string>
+    <string name="updates_required_incompatible_short">Mise à jour impossible</string>
     <string name="updates_required_short">Mise à jour requise</string>
     <string name="updates_ready">Reprendre l’installation</string>
     <string name="updates_later">Plus tard</string>
@@ -120,7 +121,7 @@
     <string name="updates_error_interrupted">Le téléchargement a été interrompu.</string>
     <string name="updates_error_install">Android n’a pas pu installer la mise à jour.</string>
     <string name="updates_unavailable">Aucune mise à jour adaptée n’est encore disponible.</string>
-    <string name="updates_android_unsupported">Cette mise à jour nécessite une version Android plus récente.</string>
+    <string name="updates_android_unsupported">Installez une version plus récente d’Android, puis vérifiez à nouveau.</string>
     <string name="settings_account">Compte</string>
     <string name="settings_cancel">Annuler</string>
     <string name="settings_saving">Enregistrement…</string>

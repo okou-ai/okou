@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="chat_syncing">Syncing chats…</string>
     <string name="workspace_workflows">Workflows</string>
     <string name="workspace_connectors">Connectors</string>
@@ -79,6 +79,15 @@
     <string name="chat_delete_description">Messages and drafts in “%1$s” will be permanently deleted. Running tasks will stop and linked automations will pause.</string>
     <string name="chat_rename_project">Rename Project</string>
     <string name="chat_project_name">Project name</string>
+    <string name="chat_project_create">New project</string>
+    <string name="chat_project_create_confirm">Create</string>
+    <string name="chat_project_creating">Creating…</string>
+    <string name="chat_project_create_close">Close</string>
+    <string name="chat_project_checking">Checking…</string>
+    <string name="chat_project_create_failed">Couldn’t create the project. The name has been kept.</string>
+    <string name="chat_project_create_unconfirmed">Project creation hasn’t been confirmed</string>
+    <!-- The formatted value is the fixed 120-character Project limit. -->
+    <string name="chat_project_name_too_long" tools:ignore="PluralsCandidate">Project name must be %1$d characters or fewer</string>
     <string name="chat_project_rename_unconfirmed">Could not confirm the Project name.</string>
     <string name="chat_project_rename_rejected">Could not rename the Project.</string>
     <string name="chat_project_rename_save">Save</string>

@@ -2488,6 +2488,128 @@ internal class ChatListRowActionsModelTest : ChatListModelTestFixture() {
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = TestOkouApplication::class)
+internal class ChatListProjectCreationModelTest : ChatListModelTestFixture() {
+    @Test
+    fun temporaryCreateFailuresUseTheSameOperationAndLookItUpBeforeRetrying() = runTest {
+        val calls = mutableListOf<Pair<String, String>>()
+        val service =
+            object : TestChatService() {
+                override suspend fun createProject(
+                    projectId: String,
+                    name: String,
+                ): ConfirmedProject {
+                    calls += "POST" to projectId
+                    assertEquals("Research", name)
+                    if (calls.count { it.first == "POST" } == 1)
+                        throw ApiFailure.Http(503, null, null, null)
+                    return ConfirmedProject(projectId, name, CHAT_DATE, CHAT_DATE, "a0")
+                }
+
+                override suspend fun projectDetail(projectId: String): ConfirmedProject {
+                    calls += "GET" to projectId
+                    throw ApiFailure.Http(404, null, null, null)
+                }
+            }
+        withCatchUpModel(service) { model ->
+            runCurrent()
+            model.createProject(" Research ")
+            runCurrent()
+            val creation = checkNotNull(model.uiState.value.projectList.creation)
+            assertEquals(ProjectCreatePhase.Creating, creation.phase)
+            assertTrue(model.uiState.value.projects.isEmpty())
+            model.createProject("Another project")
+            runCurrent()
+            assertEquals(listOf("POST" to creation.id), calls)
+            advanceUntilIdle()
+            assertEquals(
+                listOf("POST" to creation.id, "GET" to creation.id, "POST" to creation.id),
+                calls,
+            )
+            assertEquals(
+                ProjectCreation(creation.id, ProjectCreatePhase.Confirmed),
+                model.uiState.value.projectList.creation,
+            )
+            assertEquals(creation.id, model.uiState.value.projects.single().id)
+        }
+    }
+
+    @Test
+    fun matchingProjectEventConfirmsWhileTheHttpReceiptIsStillPending() =
+        confirmFromEventWhileRequestIsHeld(lookupPending = false)
+
+    @Test
+    fun matchingProjectEventPreventsReplayAfterAnEarlierLookupCompletes() =
+        confirmFromEventWhileRequestIsHeld(lookupPending = true)
+
+    private fun confirmFromEventWhileRequestIsHeld(lookupPending: Boolean) = runTest {
+        val pendingReceipt = CompletableDeferred<ConfirmedProject>()
+        val realtime = TestRealtimeService()
+        val calls = mutableListOf<String>()
+        var receipt: ProjectEventsEventsItem? = null
+        val service =
+            object : TestChatService() {
+                override suspend fun createProject(
+                    projectId: String,
+                    name: String,
+                ): ConfirmedProject {
+                    calls += "POST"
+                    if (lookupPending) throw ApiFailure.Http(503, null, null, null)
+                    return pendingReceipt.await()
+                }
+
+                override suspend fun projectDetail(projectId: String): ConfirmedProject {
+                    calls += "GET"
+                    return pendingReceipt.await()
+                }
+
+                override suspend fun projectEvents(since: Long) =
+                    ProjectEvents(listOfNotNull(receipt).filter { it.seqId > since }, false)
+            }
+        withCatchUpModel(service, realtime) { model ->
+            model.updates.foreground(true)
+            advanceUntilIdle()
+            model.createProject("Research")
+            advanceUntilIdle()
+            val attempt = checkNotNull(model.uiState.value.projectList.creation)
+            val expectedCalls = if (lookupPending) listOf("POST", "GET") else listOf("POST")
+            assertEquals(expectedCalls, calls)
+            receipt =
+                ProjectEventsEventsItem(
+                    id = attempt.id,
+                    seqId = 1,
+                    projectId = attempt.id,
+                    kind = ProjectEventsEventsItemKind.CREATED,
+                    name = "Research",
+                    createdAt = CHAT_DATE,
+                    sortOrder = "a0",
+                )
+            realtime.invalidate(ChatChanges(list = true))
+            advanceUntilIdle()
+            assertEquals(
+                ProjectCreatePhase.Confirmed,
+                model.uiState.value.projectList.creation?.phase,
+            )
+            assertEquals("Research", model.uiState.value.projects.single().name)
+
+            model.dismissProjectCreation()
+            if (lookupPending) {
+                pendingReceipt.completeExceptionally(ApiFailure.Http(404, null, null, null))
+            } else {
+                pendingReceipt.complete(
+                    ConfirmedProject(attempt.id, "Research", CHAT_DATE, CHAT_DATE, "a0"),
+                )
+            }
+            advanceUntilIdle()
+            assertNull(model.uiState.value.projectList.creation)
+            assertEquals(attempt.id, model.uiState.value.projects.single().id)
+            assertEquals(expectedCalls, calls)
+        }
+    }
+}
+
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [35], application = TestOkouApplication::class)
 internal class ChatListProjectRenameModelTest : ChatListModelTestFixture() {
     @Test
     fun rejectedCachedProjectRenameRestoresConfirmedNameWhileInitialReadIsHeld() = runTest {
@@ -4641,7 +4763,9 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
                 override suspend fun indicators(): Indicators {
                     if (!failing) return Indicators(emptyMap(), unread)
                     indicatorAttempts.add(testScheduler.currentTime)
-                    throw ApiFailure.Network(IOException("No response"))
+                    if (indicatorAttempts.size <= 3)
+                        throw ApiFailure.Network(IOException("No response"))
+                    return Indicators(emptyMap(), unread)
                 }
             }
         withCatchUpModel(service, realtime) { model ->
@@ -4680,17 +4804,21 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             advanceTimeBy(1_000)
             runCurrent()
-            assertEquals(ChatReadPhase.Failed, model.uiState.value.indicatorsPhase)
+            assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             assertEquals(unread, model.uiState.value.displayUnreadAt)
             advanceTimeBy(9_000)
             runCurrent()
-            assertEquals(listOf(start, start + 3_000, start + 6_000), indicatorAttempts)
+            assertEquals(
+                listOf(start, start + 3_000, start + 6_000, start + 12_000),
+                indicatorAttempts,
+            )
             assertEquals(listOf(start, start + 5_000), projectAttempts)
+            assertEquals(ChatReadPhase.Ready, model.uiState.value.indicatorsPhase)
         }
     }
 
     @Test
-    fun activeUnreadRefreshKeepsRowsAndShowsProgressUntilTheFourthAttemptSucceeds() = runTest {
+    fun activeIndicatorRefreshContinuesAcrossFiltersAndKeepsConfirmedRows() = runTest {
         val unread = mapOf(CHAT_PERSONAL to CHAT_DATE)
         val refreshedUnread = Indicators(emptyMap(), unread)
         val attempts = mutableListOf<Long>()
@@ -4723,6 +4851,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             assertTrue(model.uiState.value.indicatorsRetryProgressVisible)
             assertEquals(unread, model.uiState.value.displayUnreadAt)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
+            model.selectFilter(ChatListFilter.Archived)
             advanceTimeBy(5_999)
             runCurrent()
             assertEquals(3, attempts.size)
@@ -4736,7 +4865,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
     }
 
     @Test
-    fun continuousUnreadReadStopsSendingWhenTheSelectedScopeCloses() = runTest {
+    fun continuousIndicatorReadStopsSendingWhenTheListCloses() = runTest {
         var attempts = 0
         val service =
             Service().apply {
@@ -4752,7 +4881,7 @@ internal class ChatListRefreshModelTest : ChatListModelTestFixture() {
             runCurrent()
             assertEquals(3, attempts)
             assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
-            model.selectFilter(ChatListFilter.Inbox)
+            model.listVisibilityChanged(false)
             advanceTimeBy(60_000)
             runCurrent()
             assertEquals(3, attempts)

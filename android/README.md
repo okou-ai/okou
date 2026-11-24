@@ -127,7 +127,8 @@ linked chat from a workflow run returns feedback to the run history.
 Canonical event IDs settle submitted changes, including events observed before
 a snapshot rebase. Chat list reads retry while the foreground needs the list,
 after 3, 3, 6, 12, 24, and then every 48 seconds. Server `Retry-After` can extend
-the wait.
+the wait. Unread and activity indicators use the same retry schedule while the
+foreground needs the list.
 Recoverable request failures follow this schedule. A first read with no
 available list shows the skeleton after 250 ms. Failures keep the available list or skeleton
 in place. With a confirmed list, the progress bar appears during an active

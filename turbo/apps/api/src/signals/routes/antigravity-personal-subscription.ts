@@ -46,13 +46,17 @@ function profileResponse(row: typeof profiles.$inferSelect) {
       body: { status: "unavailable" as const, bindingId },
     };
   }
+  const terminal =
+    "loginOrigin" in worker
+      ? { loginOrigin: worker.loginOrigin }
+      : { loginHost: worker.loginHost };
   if (row.confirmedAt) {
     return {
       status: 200 as const,
       body: {
         status: "connected" as const,
         bindingId,
-        loginHost: worker.loginHost,
+        ...terminal,
       },
     };
   }
@@ -62,7 +66,7 @@ function profileResponse(row: typeof profiles.$inferSelect) {
       status: "pending" as const,
       bindingId,
       expiresAt: row.expiresAt.toISOString(),
-      loginHost: worker.loginHost,
+      ...terminal,
     },
   };
 }

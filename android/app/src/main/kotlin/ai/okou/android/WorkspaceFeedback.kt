@@ -12,7 +12,6 @@ import ai.okou.android.chat.ChatUndoPhase
 import ai.okou.android.chat.DeleteProjectDialog
 import ai.okou.android.chat.ProjectDeleteFeedback
 import ai.okou.android.chat.ProjectDeleteStatus
-import ai.okou.android.chat.ProjectNameLimit
 import ai.okou.android.chat.RenameListItemSheet
 import ai.okou.android.chat.RenameStatus
 import ai.okou.android.chat.WorkspaceRenameTarget
@@ -484,7 +483,7 @@ private fun WorkspaceRenameForm(
                 confirmedName = project.name,
                 titleRes = R.string.chat_rename_project,
                 labelRes = R.string.chat_project_name,
-                maxLength = ProjectNameLimit,
+                projectName = true,
                 enabled = list.canRenameProject,
                 status = status,
                 check = { chats.checkProjectRename(id) },

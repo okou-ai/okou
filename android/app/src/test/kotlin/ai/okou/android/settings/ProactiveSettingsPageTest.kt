@@ -6,6 +6,7 @@ import ai.okou.android.ProactiveSettingsApiFixture
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.api.ApiFailure
+import ai.okou.android.openChatListSettings
 import ai.okou.android.preferences.timezoneOptions
 import ai.okou.android.testPreferences
 import android.icu.util.TimeZone
@@ -119,7 +120,7 @@ class ProactiveSettingsPageTest {
             entry.assertIsFocused().assertIsDisplayed()
             assertEquals(entryBounds, entry.getUnclippedBoundsInRoot())
             compose.onNodeWithContentDescription("Back").performClick()
-            compose.onNodeWithContentDescription("Settings").assertIsDisplayed()
+            compose.onNodeWithContentDescription("More actions").assertIsDisplayed()
         } finally {
             release.countDown()
             instrumentation.setInTouchMode(true)
@@ -359,8 +360,8 @@ class ProactiveSettingsPageTest {
     }
 
     private fun openOverview() {
-        compose.waitUntilExactlyOneExists(hasContentDescription("Settings"), 10_000)
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.waitUntilExactlyOneExists(hasContentDescription("More actions"), 10_000)
+        compose.openChatListSettings()
         compose.waitUntilExactlyOneExists(hasText(title), 10_000)
     }
 

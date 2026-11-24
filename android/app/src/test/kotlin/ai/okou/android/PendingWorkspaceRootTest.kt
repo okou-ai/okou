@@ -305,13 +305,13 @@ class PendingWorkspaceRootTest {
     fun coldStartShowsLocalControlsAndCachedContentBeforeWorkspaceReads() {
         val avatar = compose.onNodeWithContentDescription("Switch workspace", substring = true)
         val filter = compose.onNodeWithContentDescription("Filter")
-        val settings = compose.onNodeWithContentDescription("Settings")
+        val more = compose.onNodeWithContentDescription("More actions")
         val search = compose.onNodeWithTag("workspace_search_entry")
         compose.runOnIdle { app.membershipsResponse = CompletableDeferred() }
         awaitCachedRow()
         avatar.assertIsDisplayed().assertIsNotEnabled()
         filter.assertIsDisplayed().assertIsEnabled()
-        settings.assertIsDisplayed().assertIsEnabled()
+        more.assertIsDisplayed().assertIsEnabled()
         val searchBounds = search.getUnclippedBoundsInRoot()
         val avatarBounds = avatar.getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("chat_list")
@@ -335,7 +335,9 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText("Inbox").performClick()
         compose.onNodeWithText(CACHED_CHAT).assertIsDisplayed()
 
-        settings.assertIsEnabled().performClick()
+        more.performClick()
+        val newProject = compose.onNodeWithText("New project").assertIsNotEnabled()
+        compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Display mode").assertIsNotEnabled()
         val creditBalance = compose.onNodeWithText("Credit balance").assertIsNotEnabled()
         val creditBounds = creditBalance.getUnclippedBoundsInRoot()
@@ -363,7 +365,11 @@ class PendingWorkspaceRootTest {
         assertEquals(avatarBounds, avatar.getUnclippedBoundsInRoot())
         assertEquals(listBounds, list.getUnclippedBoundsInRoot())
         assertEquals(toolBounds, tools.map { it.getUnclippedBoundsInRoot() })
-        settings.performClick()
+        more.performClick()
+        newProject.assertIsEnabled().performClick()
+        compose.onNodeWithContentDescription("Project name").assertIsDisplayed()
+        compose.onNodeWithText("Cancel").performClick()
+        compose.openChatListSettings()
         compose.runOnIdle { app.organizationResponse.complete(Unit) }
         compose.waitUntil(10_000) {
             compose.onAllNodesWithText("Workspace A").fetchSemanticsNodes().isNotEmpty()
@@ -450,7 +456,7 @@ class PendingWorkspaceRootTest {
         val empty = compose.activity.getString(R.string.chat_empty)
         compose.onNodeWithText(empty).assertDoesNotExist()
         compose.onNodeWithContentDescription("Filter").assertIsEnabled()
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
 
         compose.runOnIdle { app.listResponse.complete(Unit) }
         compose.waitUntil(10_000) { listState()?.source == ChatListSource.Network }
@@ -599,7 +605,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
         compose.onNodeWithContentDescription("Search workspace").performClick()
         compose.onNodeWithTag("chat_search_query").performTextReplacement("startup")
         compose.onNodeWithText(CACHED_CHAT).performClick()
@@ -615,7 +621,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("chat_search_query").assert(hasText("startup"))
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithContentDescription("Settings").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertExists()
         compose.onNodeWithText("New chat").assertIsEnabled()
         assertEquals(startupBounds, searchEntry.getUnclippedBoundsInRoot())
     }
@@ -687,7 +693,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithText(CACHED_CHAT).assertExists()
         compose.onNodeWithContentDescription("Back").performClick()
 
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose
             .onNodeWithText(app.getString(R.string.chat_list_first_load_failed))
             .performScrollTo()
@@ -705,7 +711,7 @@ class PendingWorkspaceRootTest {
                 "Muted, Updating chat…",
             ),
         )
-        compose.onNodeWithContentDescription("Settings").assertIsEnabled()
+        compose.onNodeWithContentDescription("More actions").assertIsEnabled()
         compose.onNodeWithText("New chat").assertIsNotEnabled()
         row.performClick()
         compose.onNodeWithTag("conversation").assertExists()
@@ -713,7 +719,7 @@ class PendingWorkspaceRootTest {
         compose.onNodeWithTag("message_input").assertDoesNotExist()
         compose.onNodeWithContentDescription("Back").performClick()
         row.assertExists()
-        compose.onNodeWithContentDescription("Settings").assertExists()
+        compose.onNodeWithContentDescription("More actions").assertExists()
     }
 
     @Test

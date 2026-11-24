@@ -5,6 +5,7 @@ import ai.okou.android.MainActivity
 import ai.okou.android.R
 import ai.okou.android.TestOkouApplication
 import ai.okou.android.auth.SessionModel
+import ai.okou.android.openChatListSettings
 import android.content.Intent
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -162,7 +163,7 @@ class PersonalInstructionsSettingsTest {
             RuntimeEnvironment.setFontScale(2f)
             compose.activityRule.scenario.recreate()
             compose.onNodeWithContentDescription("Chats").assertExists()
-            compose.onNodeWithContentDescription("Settings").performClick()
+            compose.openChatListSettings()
             compose
                 .onNodeWithText("Personal Instructions")
                 .performScrollTo()
@@ -194,7 +195,7 @@ class PersonalInstructionsSettingsTest {
     fun loadingLeavesSettingsUsableAndConflictsPreserveNativeSelectionUntilExplicitReload() {
         val app = compose.activity.application as InstructionsApplication
         compose.onNodeWithContentDescription("Chats").assertExists()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
         compose.onNodeWithText("Personal Instructions").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Loading Instructions…").assertExists()

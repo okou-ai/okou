@@ -1,4 +1,4 @@
-import { antigravityLoginHost } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
+import { antigravityTerminal } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
 import { antigravityMemberProfiles as profiles } from "@okouai/db/schema/antigravity-member-profile";
 import { command } from "ccstate";
 import { and, eq, isNotNull } from "drizzle-orm";
@@ -12,11 +12,10 @@ const workerConfig = array(
     machineId: string().min(1),
     orgId: string().min(1),
     userId: string().min(1),
-    loginHost: antigravityLoginHost,
-  }),
+  }).and(antigravityTerminal),
 );
 
-// One service identity per member-owned OS keyring. Neither the browser nor
+// One service identity per member-owned native profile. Neither the browser nor
 // the worker request body can choose the owner of a successful sign-in.
 export const antigravityWorkers = envSingleton(() => {
   const parsed = workerConfig.safeParse(
@@ -35,7 +34,11 @@ export const antigravityWorkers = envSingleton(() => {
       return JSON.stringify([row.orgId, row.userId]);
     }),
   );
-  return machines.size === parsed.data.length &&
+  const origins = parsed.data.flatMap((worker) => {
+    return "loginOrigin" in worker ? [worker.loginOrigin] : [];
+  });
+  return new Set(origins).size === origins.length &&
+    machines.size === parsed.data.length &&
     members.size === parsed.data.length
     ? parsed.data
     : [];

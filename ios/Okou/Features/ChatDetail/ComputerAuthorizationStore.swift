@@ -2,20 +2,33 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
-import Observation
 
 /// One conversation owns both the cached read and an explicit authorization attempt.
-@MainActor @Observable
+@MainActor
 final class ComputerAuthorizationStore {
+  /// The computer choice and the explicit grant, denial or continuation attempt.
+  struct Attempt: Equatable {
+    var chosenHostID: String?
+    var isWorking = false
+    var needsContinuation = false
+    var hasContinued = false
+    var error: String?
+  }
+
+  /// What the card shows besides the request: whether its transcript row reads the request,
+  /// and the attempt.
+  struct Presentation: Equatable {
+    var isActive = false
+    var attempt = Attempt()
+  }
+
   let action: ChatComputerAuthorizationAction
   /// The workspace session Store that keeps this card's graph values.
   let stateStore: CCState.Store
-  private(set) var chosenHostID: String?
-  private(set) var isActive = false
-  private(set) var isWorking = false
-  private(set) var needsContinuation = false
-  private(set) var hasContinued = false
-  private(set) var error: String?
+  let presentation: Computed<Presentation>
+  // The read is available only while the row is active, so activation is a graph input.
+  private let active = CCState.State(false)
+  private let attempt = CCState.State(Attempt())
   private let revision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, Void>
@@ -25,10 +38,17 @@ final class ComputerAuthorizationStore {
   private let didFail: @MainActor (Error) -> Void
   private let didContinue: @MainActor () async -> Void
   private let didRetainInteraction: @MainActor (ComputerAuthorizationStore) -> Void
-  @ObservationIgnored private var readTask: Task<ChatComputerAuthorizationRequest, Error>?
-  @ObservationIgnored private var operation: Task<Void, Never>?
-  @ObservationIgnored private var generation = UUID()
-  @ObservationIgnored private var closed = false
+  private var readTask: Task<ChatComputerAuthorizationRequest, Error>?
+  private var operation: Task<Void, Never>?
+  private var generation = UUID()
+  private var closed = false
+
+  var isActive: Bool { value(of: active) }
+  var chosenHostID: String? { value(of: attempt).chosenHostID }
+  var isWorking: Bool { value(of: attempt).isWorking }
+  var needsContinuation: Bool { value(of: attempt).needsContinuation }
+  var hasContinued: Bool { value(of: attempt).hasContinued }
+  var error: String? { value(of: attempt).error }
 
   init(
     action: ChatComputerAuthorizationAction, thread: ChatThread, commands: ChatCommands,
@@ -46,13 +66,22 @@ final class ComputerAuthorizationStore {
     self.didRetainInteraction = didRetainInteraction
     let revision = revision
     reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
+    let active = active
+    let attempt = attempt
+    presentation = Computed { get in
+      let isActive = try get(active)
+      let current = try get(attempt)
+      return Presentation(isActive: isActive, attempt: current)
+    }
   }
 
-  @ObservationIgnored lazy var request = makeRequest()
+  lazy var request = makeRequest()
 
   private func makeRequest() -> Computed<Task<ChatComputerAuthorizationRequest, Error>> {
     Computed { [weak self] get, options in
-      guard let self, !closed, isActive, try get(lifetime) else { throw CancellationError() }
+      guard let self, !closed, try get(active), try get(lifetime) else {
+        throw CancellationError()
+      }
       guard action.threadID.lowercased() == thread.id.lowercased() else {
         throw ChatError.invalidContract("This authorization belongs to a different chat.")
       }
@@ -94,25 +123,32 @@ final class ComputerAuthorizationStore {
   }
 
   func selectedHost(in request: ChatComputerAuthorizationRequest) -> String? {
+    Self.selectedHost(in: request, chosen: chosenHostID)
+  }
+
+  /// The user's choice or the request's preferred computer when online, else the only online one.
+  static func selectedHost(in request: ChatComputerAuthorizationRequest, chosen: String?)
+    -> String?
+  {
     let hosts = request.hosts.filter { $0.status == "online" }
-    if let preferred = chosenHostID ?? request.computerUseHostID,
+    if let preferred = chosen ?? request.computerUseHostID,
       hosts.contains(where: { $0.id == preferred })
     {
       return preferred
     }
-    return chosenHostID == nil && hosts.count == 1 ? hosts.first?.id : nil
+    return chosen == nil && hosts.count == 1 ? hosts.first?.id : nil
   }
 
   func selectHost(_ id: String?) {
     guard isActive, !closed, id != chosenHostID else { return }
-    chosenHostID = id
+    update { $0.chosenHostID = id }
     didRetainInteraction(self)
   }
 
   func activate() {
     guard !closed, !isActive else { return }
-    isActive = true
-    invalidate()
+    // Activation is a dependency of the read, so the next read revalidates the request.
+    write(active, true)
   }
 
   func invalidate() {
@@ -133,14 +169,16 @@ final class ComputerAuthorizationStore {
   func decide(_ decision: Decision) async {
     guard isActive, !closed, operation == nil, !Task.isCancelled else { return }
     didRetainInteraction(self)
-    isWorking = true
-    error = nil
+    update {
+      $0.isWorking = true
+      $0.error = nil
+    }
     let generation = generation
     let task = Task { @MainActor [weak self] in
       guard let self else { return }
       defer {
         if self.generation == generation {
-          isWorking = false
+          update { $0.isWorking = false }
           operation = nil
         }
       }
@@ -158,7 +196,8 @@ final class ComputerAuthorizationStore {
             if action.kind == .computerUse && host == nil {
               throw ChatError.invalidContract("Choose an online computer before authorizing.")
             }
-            needsContinuation = action.callbackPrompt != nil
+            let continues = action.callbackPrompt != nil
+            update { $0.needsContinuation = continues }
             try await commands.approvalClient.applyComputerAuthorization(action, hostID: host)
             try checkOwner(generation)
             invalidate()
@@ -177,8 +216,10 @@ final class ComputerAuthorizationStore {
                 chatThreadSortEventID: current.id)
             }
             try checkOwner(generation)
-            needsContinuation = false
-            hasContinued = true
+            update {
+              $0.needsContinuation = false
+              $0.hasContinued = true
+            }
           }
         case .deny:
           guard action.kind == .shell, current.effectiveStatus(at: .now) == .pending else {
@@ -186,14 +227,14 @@ final class ComputerAuthorizationStore {
           }
           _ = try await commands.approvalClient.denyShellAuthorization(id: action.identifier)
           try checkOwner(generation)
-          needsContinuation = false
+          update { $0.needsContinuation = false }
         case .revoke:
           guard action.kind == .shell, current.effectiveStatus(at: .now) == .approved else {
             throw ChatError.invalidContract("This access can no longer be revoked.")
           }
           _ = try await commands.approvalClient.revokeShellAuthorization(id: action.identifier)
           try checkOwner(generation)
-          needsContinuation = false
+          update { $0.needsContinuation = false }
         }
         try checkOwner(generation)
         invalidate()
@@ -201,7 +242,8 @@ final class ComputerAuthorizationStore {
       } catch is CancellationError {
       } catch {
         guard !closed, self.generation == generation, !Task.isCancelled else { return }
-        self.error = ChatRequestFailure.message(for: error)
+        let message = ChatRequestFailure.message(for: error)
+        update { $0.error = message }
         didFail(error)
         // Reconcile an uncertain grant without replaying a write or a callback.
         invalidate()
@@ -217,19 +259,38 @@ final class ComputerAuthorizationStore {
   }
 
   func deactivate() {
-    isActive = false
+    write(active, false)
     generation = UUID()
     readTask?.cancel()
     readTask = nil
     operation?.cancel()
     operation = nil
-    isWorking = false
+    update { $0.isWorking = false }
   }
 
   func close() {
     closed = true
     deactivate()
     do { try stateStore.set(lifetime, false) } catch { didFail(error) }
+  }
+
+  // The card's own states are synchronous in-process values; reads and writes cannot fail.
+  private func value<Value>(of signal: Signal<Value>) -> Value {
+    do { return try stateStore.get(signal) } catch {
+      preconditionFailure("Cannot read the computer access card graph: \(error)")
+    }
+  }
+
+  private func write<Value>(_ state: CCState.State<Value>, _ value: Value) {
+    do { try stateStore.set(state, value) } catch {
+      preconditionFailure("Cannot update the computer access card graph: \(error)")
+    }
+  }
+
+  private func update(_ mutation: (inout Attempt) -> Void) {
+    var next = value(of: attempt)
+    mutation(&next)
+    write(attempt, next)
   }
 
   isolated deinit {

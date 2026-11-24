@@ -108,16 +108,19 @@ action = json.loads(subprocess.check_output(
     ['yq', '-o=json', '.', str(root / '.github/actions/detect-release/action.yml')], text=True))
 classify = action['runs']['steps'][0]['run']
 gate = android['ci-gate-android']['steps'][0]['run']
-assert android['detect-release']['permissions']['pull-requests'] == 'read'
-assert android['detect']['needs'] == ['detect-release']
-assert android['detect']['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
+selection = android['detect']
+release_step, = (step for step in selection['steps'] if step.get('uses') == './.github/actions/detect-release')
+selection_steps = [step for step in selection['steps'] if 'run' in step]
+assert selection['permissions']['pull-requests'] == 'read'
+assert selection['outputs']['skip'] == '${{ steps.' + release_step['id'] + '.outputs.skip }}'
+assert selection['outputs']['shallow-discovery'] == '${{ steps.changes.outputs.shallow-discovery }}'
 build_steps = android['build']['steps']
 shallow = next(step for step in build_steps if step.get('name') == 'Verify dependency discovery with shallow history')
 history = next(step for step in build_steps if step.get('name') == 'Fetch complete history for versioned builds')
 assert shallow['if'] == "needs.detect.outputs.shallow-discovery == 'true'"
 assert 'if' not in history
 assert build_steps.index(shallow) < build_steps.index(history)
-assert 'detect-release' in android['ci-gate-android']['needs']
+assert 'detect' in android['ci-gate-android']['needs']
 assert android['ci-gate-android']['if'] == 'always()'
 for native in ['build', 'build-test', 'instrumentation', 'release-smoke']:
     assert android[native]['needs'] == 'detect'
@@ -216,8 +219,9 @@ print(os.environ['QUEUED_BRANCH'])
         assert result.returncode == 0, result.stderr
         decision = Path(env['GITHUB_OUTPUT']).read_text().strip()
         assert decision == 'skip=' + expected, (event, decision)
-        condition = android['detect']['if'].replace('needs.detect-release.outputs.skip', repr(expected))
-        assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
+        for step in selection_steps:
+            condition = step['if'].replace(f"steps.{release_step['id']}.outputs.skip", repr(expected))
+            assert eval(condition, {'__builtins__': {}}, {}) is (expected == 'false')
     Path(env['GITHUB_OUTPUT']).write_text('')
     failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': queued, 'FAIL_LOOKUP': 'true'})
     assert failed.returncode == 0, failed.stderr
@@ -225,16 +229,15 @@ print(os.environ['QUEUED_BRANCH'])
     failed = execute(classify, {'EVENT_NAME': 'merge_group', 'MQ_HEAD_REF': 'unexpected-ref'})
     assert failed.returncode != 0, failed.stderr
 
-    gate_env = dict(RELEASE_DETECT='success', IS_RELEASE='false', DETECT='success',
+    gate_env = dict(IS_RELEASE='false', DETECT='success',
                     NEEDED='true', BUILD='success', JVM='success',
                     INSTRUMENTATION='success', RELEASE_SMOKE='success')
     skipped = dict(BUILD='skipped', JVM='skipped', INSTRUMENTATION='skipped', RELEASE_SMOKE='skipped')
     for values, passed in [
         ({}, True),
-        (skipped | {'IS_RELEASE': 'true', 'DETECT': 'skipped', 'NEEDED': ''}, True),
+        (skipped | {'IS_RELEASE': 'true', 'NEEDED': ''}, True),
         (skipped | {'NEEDED': 'false'}, True),
-        ({'RELEASE_DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
-        ({'RELEASE_DETECT': 'cancelled'}, False),
+        ({'DETECT': 'failure', 'IS_RELEASE': 'true'}, False),
         ({'IS_RELEASE': ''}, False),
         ({'IS_RELEASE': 'unknown'}, False),
         ({'DETECT': 'failure'}, False),

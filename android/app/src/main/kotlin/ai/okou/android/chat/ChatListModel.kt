@@ -1875,6 +1875,12 @@ class ChatListModel(
 
     internal fun renameProject(id: String, input: String) = projectOwner.renameProject(id, input)
 
+    internal fun createProject(name: String) = projectOwner.createProject(name)
+
+    internal fun checkProjectCreation() = projectOwner.checkProjectCreation()
+
+    internal fun dismissProjectCreation() = projectOwner.dismissProjectCreation()
+
     internal fun retryProjectRename(id: String) = projectOwner.retryProjectRename(id)
 
     internal fun checkProjectRename(id: String) = projectOwner.checkProjectRename(id)
@@ -1967,8 +1973,7 @@ class ChatListModel(
         }
     }
 
-    private fun continueUnreadRead(): Boolean =
-        listIsVisible && listInForeground && mutable.value.filter == ChatListFilter.Unread
+    private fun continueIndicatorRead(): Boolean = listIsVisible && listInForeground
 
     private fun readIndicators(
         verifyPendingRead: ((String) -> Boolean)? = null,
@@ -2002,7 +2007,7 @@ class ChatListModel(
                 val (eligible, result) =
                     retry?.read(
                         isCurrent = ::current,
-                        continuous = ::continueUnreadRead,
+                        continuous = ::continueIndicatorRead,
                         onRetry = { failures ->
                             val state = mutable.value
                             if (
@@ -2127,16 +2132,17 @@ class ChatListModel(
                 throw cancelled
             } catch (error: Exception) {
                 val retryable = dependencyRetryAfterMillis(error) != null
-                val resumeUnread = afterWrite && retryable && continueUnreadRead()
+                val resumeIndicators = afterWrite && retryable && continueIndicatorRead()
                 fail(error) {
                     it.copy(
                         indicatorsPhase = ChatReadPhase.Failed,
                         indicatorsNonRetryableFailure = !retryable,
                         indicatorsRetryProgressVisible =
-                            resumeUnread && it.indicatorsRetryProgressVisible,
+                            resumeIndicators && it.indicatorsRetryProgressVisible,
                     )
                 }
-                if (resumeUnread && current()) requestIndicators(immediate = true)
+                if (resumeIndicators && current())
+                    requestIndicators(immediate = true, verifyReadCursors = true)
             } finally {
                 indicatorsRetry = null
                 indicatorReadReceipts.clear()

@@ -941,7 +941,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         awaitListAndNames()
         compose.onNodeWithTag("chat_list").performScrollToNode(hasText("Personal chat"))
         compose.onNodeWithText("Personal chat").assertExists()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
     }
 
@@ -1049,7 +1049,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         }
         assertTrue(descriptors.get() >= 2)
         compose.onNodeWithContentDescription("Back").performClick()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
     }
 
@@ -1128,7 +1128,7 @@ internal class ChatListRootTest : ChatListRootTestFixture() {
         compose.onNodeWithContentDescription("Switch workspace", substring = true).performClick()
         compose.onNodeWithText("Workspace B").assertExists()
         compose.onNode(hasText("Workspace A") and isSelectable()).assertIsSelected().performClick()
-        compose.onNodeWithContentDescription("Settings").performClick()
+        compose.openChatListSettings()
         compose.onNodeWithText("Display mode").assertExists()
         (compose.activity.application as ChatListApplication).responseGate.countDown()
         compose.onNodeWithContentDescription("Back").performClick()
@@ -3842,7 +3842,11 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             compose.onNodeWithText("Rename").performClick()
             val save = compose.onNodeWithText("Save")
             editor.performTextReplacement("a".repeat(121))
-            save.assertIsNotEnabled()
+            val nameTooLong = app.getString(R.string.chat_project_name_too_long, 120)
+            compose.onNodeWithText(nameTooLong).assertDoesNotExist()
+            save.performClick()
+            compose.onNodeWithText(nameTooLong).assertIsDisplayed()
+            assertTrue(writes.isEmpty())
             editor.performTextReplacement("  Field notes  ")
             val beforeSave = System.currentTimeMillis()
             save.performClick()
@@ -3853,7 +3857,7 @@ internal class ChatListProjectsRootTest : ChatListRootTestFixture() {
             assertEquals(2, operationId.variant())
             assertTrue(issuedAt in beforeSave..System.currentTimeMillis())
             editor.assertTextContains("  Field notes  ")
-            save.assertIsNotEnabled()
+            compose.onNodeWithText(app.getString(R.string.settings_saving)).assertIsNotEnabled()
         } finally {
             pending.countDown()
         }

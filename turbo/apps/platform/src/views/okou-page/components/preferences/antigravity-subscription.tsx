@@ -1,4 +1,8 @@
-import { antigravityTerminalCommand } from "@okouai/core/antigravity-terminal";
+import type { AntigravitySubscriptionProfile } from "@okouai/api-contracts/contracts/antigravity-personal-subscription";
+import {
+  antigravityBrowserTerminalUrl,
+  antigravityTerminalCommand,
+} from "@okouai/core/antigravity-terminal";
 import { Button } from "@okouai/ui";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -10,6 +14,47 @@ import {
 } from "../../../../signals/okou-page/settings/antigravity-subscription.ts";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
+
+function AntigravityTerminal({
+  profile,
+}: {
+  readonly profile: AntigravitySubscriptionProfile;
+}) {
+  const { t } = useTranslation();
+  if ("loginOrigin" in profile) {
+    return (
+      <a
+        className="text-sm font-medium text-foreground underline"
+        href={antigravityBrowserTerminalUrl(profile)}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {t(($) => {
+          return $.settings.models.antigravity.openTerminal;
+        })}
+      </a>
+    );
+  }
+  if (!("loginHost" in profile)) {
+    return null;
+  }
+  return (
+    <>
+      <p className="text-sm text-muted-foreground">
+        {profile.status === "pending"
+          ? t(($) => {
+              return $.settings.models.antigravity.terminal;
+            })
+          : t(($) => {
+              return $.settings.models.antigravity.verify;
+            })}
+      </p>
+      <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
+        {antigravityTerminalCommand(profile)}
+      </code>
+    </>
+  );
+}
 
 export function AntigravitySubscription() {
   const { t } = useTranslation();
@@ -48,23 +93,7 @@ export function AntigravitySubscription() {
           })}
         </p>
       )}
-      {enabled &&
-        (profile.status === "pending" || profile.status === "connected") && (
-          <>
-            <p className="text-sm text-muted-foreground">
-              {profile.status === "pending"
-                ? t(($) => {
-                    return $.settings.models.antigravity.terminal;
-                  })
-                : t(($) => {
-                    return $.settings.models.antigravity.verify;
-                  })}
-            </p>
-            <code className="max-w-full select-all break-all rounded-md bg-muted px-2 py-1 text-xs">
-              {antigravityTerminalCommand(profile)}
-            </code>
-          </>
-        )}
+      {enabled && <AntigravityTerminal profile={profile} />}
       {profile.status === "expired" && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
@@ -96,20 +125,22 @@ export function AntigravitySubscription() {
               })}
             </Button>
           )}
-        {enabled && profile.status === "pending" && (
-          <Button
-            size="sm"
-            variant="neutral"
-            disabled={busy}
-            onClick={() => {
-              refresh();
-            }}
-          >
-            {t(($) => {
-              return $.settings.models.antigravity.check;
-            })}
-          </Button>
-        )}
+        {enabled &&
+          (profile.status === "pending" ||
+            (profile.status === "connected" && "loginOrigin" in profile)) && (
+            <Button
+              size="sm"
+              variant="neutral"
+              disabled={busy}
+              onClick={() => {
+                refresh();
+              }}
+            >
+              {t(($) => {
+                return $.settings.models.antigravity.check;
+              })}
+            </Button>
+          )}
         {profile.status !== "disconnected" &&
           profile.status !== "unassigned" && (
             <Button

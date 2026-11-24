@@ -8,6 +8,7 @@ import ai.okou.android.updates.UpdateRecord
 import ai.okou.android.updates.UpdateService
 import ai.okou.android.updates.UpdateStore
 import ai.okou.android.updates.UpdateTransfer
+import android.text.format.Formatter
 import android.view.KeyEvent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.takeScreenshot
@@ -203,7 +204,7 @@ class NativeUpdateTest {
                 assertTrue(device.pressKeyCode(KeyEvent.KEYCODE_BACK))
                 device.awaitChatList(app)
             }
-            button(By.pkg(app.packageName).desc(app.getString(R.string.settings))).click()
+            device.openChatListSettings(app)
             val noUpdateNeeded = app.getString(R.string.updates_not_needed)
             val updateNeeded = app.getString(R.string.updates_needed)
             val checking = app.getString(R.string.updates_check_in_progress)
@@ -238,9 +239,23 @@ class NativeUpdateTest {
             assertNotNull(text(noUpdateNeeded))
             assertSettingsRowSize()
             captureState("settings-current")
-            candidate.set(release)
+            candidate.set(release.copy(minimumSdk = 36))
             click(R.string.updates_title)
             click(R.string.updates_check)
+            exists(R.string.updates_android_unsupported)
+            assertNotNull(text(updateTarget))
+            assertNotNull(
+                text(
+                    app.getString(
+                        R.string.updates_package_size,
+                        Formatter.formatShortFileSize(app, release.size),
+                    ),
+                ),
+            )
+            captureState("details-incompatible")
+            candidate.set(release)
+            click(R.string.updates_check_compatible)
+            exists(R.string.updates_download)
             assertNotNull(text(updateTarget))
             device.waitForIdle()
             assertEquals(initialDetailsBounds, detailsBounds())
@@ -271,6 +286,7 @@ class NativeUpdateTest {
             fun awaitMenuFocus(label: String) =
                 device.awaitKeyboardFocus(By.pkg(app.packageName).text(label))
             assertNotNull(text(filter))
+            assertNotNull(text(app.getString(R.string.chat_project_create)))
             assertNotNull(text(app.getString(R.string.settings)))
             instrumentation.setInTouchMode(false)
             awaitMenuFocus(filter)
@@ -432,8 +448,20 @@ class NativeUpdateTest {
             exists(R.string.updates_required_incompatible)
             exists(R.string.updates_android_unsupported)
             captureState("required-incompatible")
-            candidate.set(release.copy(version = "99.1.0"))
-            click(R.string.updates_check_compatible)
+            withShortWindowAndLargeText(width = 1000) {
+                exists(R.string.updates_required_incompatible_short)
+                val checkVersions =
+                    button(
+                        By.pkg(app.packageName)
+                            .text(app.getString(R.string.updates_check_compatible)),
+                    )
+                assertTrue(checkVersions.visibleBounds.height() >= (48 * density).roundToInt() - 1)
+                captureState("required-incompatible-short")
+                candidate.set(release.copy(version = "99.1.0"))
+                checkVersions.click()
+                exists(R.string.updates_download)
+            }
+            exists(R.string.updates_required)
             exists(R.string.updates_download)
             captureState("update-required")
             scenario.recreate()

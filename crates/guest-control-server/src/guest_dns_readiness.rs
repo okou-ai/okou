@@ -1,5 +1,4 @@
 use std::io;
-use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -12,11 +11,11 @@ use guest_control_proto::{
     GuestDnsReadinessTermination, MSG_GUEST_DNS_READINESS_RESULT,
 };
 
-use crate::drain::{BoundedDrainHandle, DrainCancellation};
+use crate::drain::{DrainCancellation, FixedGroupOutput, FixedGroupOutputError};
 use crate::error::to_io_error;
 use crate::helper_output::truncate_utf8;
 use crate::helper_program::TestHelperProgram;
-use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
+use crate::process::{extract_exit_code, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::user::apply_command_identity;
 use crate::wait::{WaitOutcome, collect_bounded_output, wait_for_helper_with_group_cleanup};
@@ -190,7 +189,7 @@ fn run_probe(
             format!("failed to select sandbox user: {error}"),
         );
     }
-    let mut child = match spawn_in_own_process_group(&mut command) {
+    let child = match spawn_in_own_process_group(&mut command) {
         Ok(child) => child,
         Err(error) => {
             return failed_output(
@@ -200,76 +199,49 @@ fn run_probe(
             );
         }
     };
-    let Some(stdout) = child.stdout.take() else {
-        kill_and_reap_child(child);
-        return failed_output(
-            GuestDnsReadinessTermination::WaitFailed,
-            started,
-            "guest DNS readiness stdout pipe missing".to_string(),
-        );
-    };
-    let Some(stderr) = child.stderr.take() else {
-        drop(stdout);
-        kill_and_reap_child(child);
-        return failed_output(
-            GuestDnsReadinessTermination::WaitFailed,
-            started,
-            "guest DNS readiness stderr pipe missing".to_string(),
-        );
-    };
-
-    let (drain_done_tx, drain_done_rx) = mpsc::channel();
-    let stdout_drain = match BoundedDrainHandle::spawn(
-        OwnedFd::from(stdout),
-        GUEST_DNS_READINESS_MAX_ANSWER_BYTES,
-        Arc::clone(&drain_cancel),
-        drain_done_tx.clone(),
-        THREAD_STDOUT,
+    let FixedGroupOutput {
+        child,
+        drains,
+        done_rx,
+    } = match FixedGroupOutput::start(
+        child,
+        &drain_cancel,
+        [
+            (GUEST_DNS_READINESS_MAX_ANSWER_BYTES, THREAD_STDOUT),
+            (GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES, THREAD_STDERR),
+        ],
     ) {
-        Ok(drain) => drain,
+        Ok(output) => output,
         Err(error) => {
-            drop(stderr);
-            kill_and_reap_child(child);
+            let diagnostic = match error {
+                FixedGroupOutputError::MissingStdout => {
+                    "guest DNS readiness stdout pipe missing".to_string()
+                }
+                FixedGroupOutputError::MissingStderr => {
+                    "guest DNS readiness stderr pipe missing".to_string()
+                }
+                FixedGroupOutputError::StartStdout(error) => {
+                    format!("failed to start guest DNS stdout drain: {error}")
+                }
+                FixedGroupOutputError::StartStderr(error) => {
+                    format!("failed to start guest DNS stderr drain: {error}")
+                }
+            };
             return failed_output(
                 GuestDnsReadinessTermination::WaitFailed,
                 started,
-                format!("failed to start guest DNS stdout drain: {error}"),
+                diagnostic,
             );
         }
     };
-    let stderr_drain = match BoundedDrainHandle::spawn(
-        OwnedFd::from(stderr),
-        GUEST_DNS_READINESS_MAX_DIAGNOSTIC_BYTES,
-        Arc::clone(&drain_cancel),
-        drain_done_tx.clone(),
-        THREAD_STDERR,
-    ) {
-        Ok(drain) => drain,
-        Err(error) => {
-            drain_cancel.cancel();
-            kill_and_reap_child(child);
-            drop(drain_done_tx);
-            let _ = stdout_drain.join();
-            return failed_output(
-                GuestDnsReadinessTermination::WaitFailed,
-                started,
-                format!("failed to start guest DNS stderr drain: {error}"),
-            );
-        }
-    };
-    drop(drain_done_tx);
 
     program.await_test_timeout_gate(child.id());
     let outcome = wait_for_helper_with_group_cleanup(child, timeout_ms, connection_cancel);
     if !matches!(outcome, WaitOutcome::Exited(_)) {
         drain_cancel.cancel();
     }
-    let [stdout_result, stderr_result] = collect_bounded_output(
-        [stdout_drain, stderr_drain],
-        &drain_done_rx,
-        &drain_cancel,
-        OUTPUT_DRAIN_DEADLINE,
-    );
+    let [stdout_result, stderr_result] =
+        collect_bounded_output(drains, &done_rx, &drain_cancel, OUTPUT_DRAIN_DEADLINE);
 
     let (termination, wait_diagnostic) = match outcome {
         WaitOutcome::Exited(status) => (

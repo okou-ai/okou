@@ -9722,6 +9722,14 @@ data class ChatMessageSearchResponse(
 )
 
 @Serializable
+data class CreateProjectRequest(
+    val `id`: String,
+    val `eventId`: String,
+    val `name`: String,
+    val `fromThreadId`: String? = null,
+)
+
+@Serializable
 data class RenameProjectRequest(
     val `eventId`: String,
     val `name`: String? = null,
@@ -9729,7 +9737,7 @@ data class RenameProjectRequest(
 )
 
 @Serializable
-data class RenamedProject(
+data class ProjectRecord(
     val `id`: String,
     val `name`: String,
     val `createdAt`: String,

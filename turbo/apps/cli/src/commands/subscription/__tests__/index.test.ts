@@ -218,6 +218,24 @@ describe("okou subscription", () => {
 describe("internal Antigravity subscription", () => {
   const profileUrl = "http://localhost:3000/api/me/subscriptions/antigravity";
   const bindingId = "30000000-0000-4000-8000-000000000001";
+  it("prints the assigned browser link for a web-only worker", async () => {
+    server.use(
+      http.get(profileUrl, () => {
+        return HttpResponse.json({
+          status: "connected",
+          bindingId,
+          loginOrigin: "https://member.agy.example.com",
+        });
+      }),
+    );
+    await subscriptionCommand.parseAsync(["antigravity", "status"], {
+      from: "user",
+    });
+    expect(output()).toContain(
+      `https://member.agy.example.com/?arg=${bindingId}`,
+    );
+    expect(output()).not.toContain("ssh -t");
+  });
   it("shows the assigned sign-in terminal and disconnects only the requested binding", async () => {
     server.use(
       http.post(profileUrl, async ({ request }) => {

@@ -96,6 +96,7 @@
     <string name="updates_download_failed">डाउनलोड विफल</string>
     <string name="updates_check_compatible">वर्शन की जाँच करें</string>
     <string name="updates_required_incompatible">इस डिवाइस पर Okou अपडेट नहीं हो सकता</string>
+    <string name="updates_required_incompatible_short">अपडेट नहीं हो सकता</string>
     <string name="updates_required_short">अपडेट ज़रूरी है</string>
     <string name="updates_ready">इंस्टॉलेशन जारी रखें</string>
     <string name="updates_later">बाद में</string>
@@ -120,7 +121,7 @@
     <string name="updates_error_interrupted">डाउनलोड बाधित हुआ।</string>
     <string name="updates_error_install">Android अपडेट इंस्टॉल नहीं कर सका।</string>
     <string name="updates_unavailable">उपयुक्त अपडेट अभी उपलब्ध नहीं है।</string>
-    <string name="updates_android_unsupported">इस अपडेट के लिए नया Android सिस्टम संस्करण चाहिए।</string>
+    <string name="updates_android_unsupported">Android का नया संस्करण इंस्टॉल करें, फिर जाँचें।</string>
     <string name="settings_account">खाता</string>
     <string name="settings_cancel">रद्द करें</string>
     <string name="settings_saving">सेव हो रहा है…</string>

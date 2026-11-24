@@ -10,7 +10,6 @@ import ai.okou.android.chat.ChatCacheStore
 import ai.okou.android.chat.ChatComposerModel
 import ai.okou.android.chat.ChatListFilter
 import ai.okou.android.chat.ChatListModel
-import ai.okou.android.chat.ChatRenamePresentation
 import ai.okou.android.chat.ComposerJournalStore
 import ai.okou.android.chat.HistoryPhase
 import ai.okou.android.chat.ProjectExpansionModel
@@ -18,6 +17,7 @@ import ai.okou.android.chat.ProjectExpansionStore
 import ai.okou.android.chat.RunControlOwners
 import ai.okou.android.chat.RunControlsModel
 import ai.okou.android.chat.SearchRecentChatsStore
+import ai.okou.android.chat.WorkspaceNamePresentation
 import ai.okou.android.chat.WorkspaceSearchModel
 import ai.okou.android.connectors.ConnectorModel
 import ai.okou.android.instructions.PersonalInstructionsDraftStore
@@ -85,7 +85,7 @@ data class ReadyWorkspace(
     val workflows: WorkflowModel?,
     val connectors: ConnectorModel? = null,
     val search: WorkspaceSearchModel,
-    internal val renamePresentation: ChatRenamePresentation,
+    internal val namePresentation: WorkspaceNamePresentation,
 )
 
 sealed interface OpeningWorkspace {
@@ -111,7 +111,7 @@ sealed interface OpeningWorkspace {
         val artifacts: ArtifactCatalogModel,
         val chatArtifacts: ArtifactCatalogModel,
         val search: WorkspaceSearchModel,
-        internal val renamePresentation: ChatRenamePresentation,
+        internal val namePresentation: WorkspaceNamePresentation,
     ) : OpeningWorkspace
 }
 
@@ -558,7 +558,7 @@ class SessionModel(
                                 { workspaceFailure(ticket, snapshot, it) },
                             )
                         },
-                        store.workspaceModel { ChatRenamePresentation() },
+                        store.workspaceModel { WorkspaceNamePresentation() },
                     )
                 entrySelection = null
                 mutable.value =
@@ -870,7 +870,7 @@ class SessionModel(
                         workflows = workflows,
                         connectors = connectors,
                         search = opened.search,
-                        renamePresentation = opened.renamePresentation,
+                        namePresentation = opened.namePresentation,
                     ),
                 working = false,
                 cachedAppearance = null,

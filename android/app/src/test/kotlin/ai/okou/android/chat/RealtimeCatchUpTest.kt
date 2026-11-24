@@ -77,7 +77,11 @@ class RealtimeCatchUpTest {
                 api.beforeHistoryResponse = { request ->
                     if (request.requestUrl?.pathSegments?.last() == "event-rows") held.await()
                 }
-                api.indicators = { MockResponse().setResponseCode(503).setBody("unavailable") }
+                val indicatorRequest = CompletableDeferred<Unit>()
+                api.indicators = {
+                    indicatorRequest.complete(Unit)
+                    MockResponse().setResponseCode(503).setBody("unavailable")
+                }
                 api.events = { request ->
                     val fresh =
                         (request.requestUrl?.queryParameter("sinceSeqId")?.toLongOrNull() ?: 0) < 30
@@ -86,10 +90,9 @@ class RealtimeCatchUpTest {
                     )
                 }
                 model.updates.foreground(true)
-                model.uiState.first {
-                    it.threads.any { row -> row.title == "External title" } &&
-                        it.indicatorsPhase == ChatReadPhase.Failed
-                }
+                model.uiState.first { it.threads.any { row -> row.title == "External title" } }
+                indicatorRequest.await()
+                assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
                 assertEquals(HistoryPhase.Loading, model.history.uiState.value.phase)
                 api.events = { request ->
                     val fresh =
@@ -131,8 +134,7 @@ class RealtimeCatchUpTest {
                             } == true
                     }
                 assertEquals(1, history.transcript!!.messages.count { it.id == added })
-                val indicators = model.uiState.first { it.indicatorsPhase != ChatReadPhase.Loading }
-                assertEquals(ChatReadPhase.Failed, indicators.indicatorsPhase)
+                assertEquals(ChatReadPhase.Loading, model.uiState.value.indicatorsPhase)
             }
         } finally {
             held.countDown()
