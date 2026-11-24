@@ -321,17 +321,61 @@ test("directed-connect-page-011 The invalid saved GitHub token opens its missing
   ).toBeInTheDocument();
 });
 
-test("Stripe asks a returning chat member to authorize the connection", async () => {
+test("A Stripe credential connects before its originating chat continues", async () => {
   const chat = chatReturn("Resume my invoices");
+  const account = connectorAccountFixture(
+    { kind: "builtin", connectorSlug: "stripe" },
+    { authMethod: "api-token" },
+  );
+  const grant = context.mocks.deferred<void>();
+  const submitted = context.mocks.deferred<{ slug: string; method: string }>();
   accounts(() => {
-    return [];
+    return grant.settled() ? [account] : [];
   });
+  context.mocks.api(
+    builtinConnectorManualGrantContract.connect,
+    async ({ params, body, respond }) => {
+      submitted.resolve({
+        slug: params.connectorSlug,
+        method: body.authMethod,
+      });
+      await grant.promise;
+      return respond(200, { connectionId: account.id });
+    },
+  );
   await enter("/connectors/stripe/connect?" + chat.query.toString());
   await action("Connect");
   const dialog = await screen.findByRole("dialog");
-  expect(dialog).toHaveTextContent(/Stripe/u);
-  expect(dialog).toHaveTextContent(/API key|OAuth|Sign in/u);
-  expect(chat.deliveries).toStrictEqual([]);
+  const field = dialog.querySelector<HTMLInputElement>(
+    'input[type="password"]',
+  );
+  if (!field) {
+    throw new Error("Missing Stripe credential field");
+  }
+  await userEvent.type(field, "local-stripe-fixture");
+  click(getConnectorAction("button", "Save", dialog));
+  try {
+    await expect(submitted.promise).resolves.toStrictEqual({
+      slug: "stripe",
+      method: "api-token",
+    });
+    expect(chat.deliveries).toStrictEqual([]);
+    grant.resolve();
+    await waitFor(() => {
+      return expect(chat.deliveries).toStrictEqual([chat.expected]);
+    });
+    chat.acknowledge.resolve();
+    await waitFor(() => {
+      return expect(dialog).not.toBeInTheDocument();
+    });
+  } finally {
+    if (!grant.settled()) {
+      grant.resolve();
+    }
+    if (!chat.acknowledge.settled()) {
+      chat.acknowledge.resolve();
+    }
+  }
 });
 
 test("The expired GitHub OAuth account offers reconnection without switching to token entry", async () => {

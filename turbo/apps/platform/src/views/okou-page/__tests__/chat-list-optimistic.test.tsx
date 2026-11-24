@@ -109,7 +109,7 @@ test("chat-list-optimistic-007 reconciles the temporary sidebar destination with
   );
 });
 
-test("A QuickTime attachment appears in the pending conversation before its title is confirmed", async () => {
+test("The pending QuickTime preview uses its conversation when the member opens the recording", async () => {
   const movie = {
     id: crypto.randomUUID(),
     filename: "recording.mov",
@@ -149,10 +149,10 @@ test("A QuickTime attachment appears in the pending conversation before its titl
       serviceTier: null,
     });
   });
-  context.mocks.api(chatThreadArtifactsContract.list, ({ respond }) => {
-    return respond(404, {
-      error: { code: "THREAD_NOT_FOUND", message: "Chat thread not found" },
-    });
+  const catalog = context.mocks.deferred<string>();
+  context.mocks.api(chatThreadArtifactsContract.list, ({ params, respond }) => {
+    catalog.resolve(params.threadId);
+    return respond(200, { runs: [] });
   });
   await setupPage({ context, path: "/" });
   await composerModelTrigger("Claude Sonnet 5");
@@ -182,8 +182,11 @@ test("A QuickTime attachment appears in the pending conversation before its titl
         movie.url + "#t=0.001",
       );
     });
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.queryByText("Chat thread not found")).toBeNull();
+    click(await findEnabledButton("Preview recording.mov"));
+    await expect(catalog.promise).resolves.toBe(id);
+    await findEnabledButton("Close artifact");
+    expect(sidebarThreadLinks()[0]).toHaveAttribute("href", "/chats/" + id);
   } finally {
     release.resolve();
   }

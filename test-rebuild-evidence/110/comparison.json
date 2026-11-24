@@ -1,0 +1,300 @@
+{
+  "revisions": {
+    "frozen": "b0a10287edf4242383c28e39c6f7675053febb32",
+    "beforeFirstWithdrawal": "5310dbb9ba6bd8b95507bc7293f6da3ed8aa004b",
+    "beforeSecondWithdrawal": "a445586e0483bb7e2440e60200a8deed30aa3df9",
+    "main": "2534248c6d06e3b120d9ae91b9e1c71370800e6a",
+    "opening": "ad0d44dbca05ff2c7470cc98b88376adf861253d"
+  },
+  "cases": {
+    "chat-list-optimistic-002": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx"
+    },
+    "agent-suggestions-004": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx"
+    },
+    "agent-suggestions-015": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx"
+    },
+    "integrations-discord-037": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx"
+    },
+    "integrations-discord-038": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx"
+    },
+    "settings-model-loading-001": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx"
+    },
+    "composer-custom-template-recommendations-009": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx"
+    },
+    "connector-directory-010": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx"
+    },
+    "directed-connect-page-008": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx"
+    },
+    "connectors-account-rename-focus-011": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx"
+    },
+    "connectors-account-rename-focus-013": {
+      "frozenOwner": "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx"
+    },
+    "message-port-017": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts"
+    },
+    "message-port-018": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts"
+    },
+    "message-port-020": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "routerSuite": null
+    },
+    "message-port-027": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts",
+      "routerSuite": null
+    },
+    "single-connection-client-001": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/cached-chat-telemetry.test.ts"
+    },
+    "worker-runtime-005": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts",
+      "routerSuite": null
+    },
+    "worker-runtime-008": {
+      "frozenOwner": "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts",
+      "routerSuite": null
+    },
+    "api-client-bootstrap-001": {
+      "frozenOwner": "turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts",
+      "routerSuite": "turbo/apps/platform/src/views/lab-page/__tests__/lab-feature-catalog.test.ts"
+    },
+    "indexeddb-client-003": {
+      "frozenOwner": "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts",
+      "routerSuite": "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts"
+    }
+  },
+  "ownerAndHelperBlobs": {
+    "frozen": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "08c3ed56937c250dedf59b0c799ec2d7629db76b",
+      "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": "51f08f2ef45e4c12b092d0f31ffde1fb41501d7d",
+      "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "8245679a688598a34d1a9c86c4ebfce9d178e0a3",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "580baa671bd48a8f041a34939aef93c99f34e71f",
+      "turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts": "e18a4abf9d7a36688204f8a70bfcc1edff514bae",
+      "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts": "94c6e2f3bd39bcbca5501d95792d1327c6c99f68",
+      "turbo/apps/platform/src/shared-database/single-connection-client.ts": "86d33b0599fdd1e2b468f8a13c3444e1d079f560",
+      "turbo/apps/platform/src/shared-database/worker-runtime.ts": "e7e5aeddd6e59625be4b672249fdd115e931251f",
+      "turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts": "b23f14e6f476b3d19ec5dcb5700092645bb2c22b",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "9f6e20438d3de07344fa06030148b710494fd608",
+      "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "61a2cefb94a4099b899fc3eb5aa6b8c3255d5dc0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "a06b566da0fc290af62adca1f2b4aac3f9413826",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "475ce2ac77a1d4258ee2eb255c9fd56c18312143",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "833183a881658d424a41fffef885bf460444b2ce",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": "e0a7a78ed523b5294cece98683f9fcd501d990dc",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "4efb987b57ca9ad0a004590332a61778d509edd3",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-model-panel-test-helpers.ts": "7cd24e673ed27cd9531a028bdea4b96f66bdbfa1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "190710e62035fad86425c59f7969a38294cab94f",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "f6140d46219e4f1b7a9b4fb208a22e56d37590f9",
+      "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": "3e8b8b5e69525e53a01ca3c399f2b34ad73386e0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": "060b2a4f93d5384a6d9e077467db79538fd03eff",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "119575913209773f37788d3d914c85fa1763a2e2",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "bda7d849f93b11a64187bad1bb1b6a5d8b734412",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": "c2cb839a0c188466401800e899dbebf2b409affc",
+      "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx": "1c92c923e7b23733d6f8d99dea4eba630ee6215e",
+      "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx": "a18fbc35c32b63d97e729bacba487ed608e6723c",
+      "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx": "73f50897a8353b55f3ce1a8d1f0536adb3c41ab2"
+    },
+    "beforeFirstWithdrawal": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "08c3ed56937c250dedf59b0c799ec2d7629db76b",
+      "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": "51f08f2ef45e4c12b092d0f31ffde1fb41501d7d",
+      "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "8245679a688598a34d1a9c86c4ebfce9d178e0a3",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "c3536fc66bd8c19ee1d9ef3b1130c4632cdb6305",
+      "turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts": "231025b5c7eec49527a168fc048a9b8333889351",
+      "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts": "e149bf217c1bc2cf5fb3433fe37acf9bb7b1feb8",
+      "turbo/apps/platform/src/shared-database/single-connection-client.ts": "86d33b0599fdd1e2b468f8a13c3444e1d079f560",
+      "turbo/apps/platform/src/shared-database/worker-runtime.ts": "e7e5aeddd6e59625be4b672249fdd115e931251f",
+      "turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts": "e833306280388e430618e04d2203b86126084517",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "c1d9acd67ae61fca3d08aaecfc07d40ef17e7bdc",
+      "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "adf3677b510ab593d853f44239b013352ad820c2",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "5f3e45924a25f415499a0e192ad4024a9a6c5330",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "475ce2ac77a1d4258ee2eb255c9fd56c18312143",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "833183a881658d424a41fffef885bf460444b2ce",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": "8a252af8370db0b9d6ed8592a864d099935aacc9",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "775ed1605a2dacd60f658d5966ca769c7f43c038",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "bad1c0ca12687d0cc1082787a5f05a0e3f58964c",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-model-panel-test-helpers.ts": "7cd24e673ed27cd9531a028bdea4b96f66bdbfa1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "190710e62035fad86425c59f7969a38294cab94f",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "fb8257b4f9196d72aaf3d9754a7511f12244eee8",
+      "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": "1399eb117f8932d05be9645ab321dc90f4a26a82",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": "b031ab19f5f3d9a36f611ed579b33cbd1a0c8e53",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "faf618a5baff853f600976b4b9f44b819e9abcb5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": "b01135a7118012ebafe4ba0e88f0c1768ed3824d",
+      "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx": "5cde789859bcd7652cc74d4780edd0203e339ed7",
+      "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx": "dbb2b8d4344df582bdf3c40ca1a3e12f44cce15f",
+      "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx": "e318b55a0cdebe2450937ca9151e157d6c0ffce8"
+    },
+    "beforeSecondWithdrawal": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "08c3ed56937c250dedf59b0c799ec2d7629db76b",
+      "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5",
+      "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "8245679a688598a34d1a9c86c4ebfce9d178e0a3",
+      "turbo/apps/platform/src/shared-database/single-connection-client.ts": "86d33b0599fdd1e2b468f8a13c3444e1d079f560",
+      "turbo/apps/platform/src/shared-database/worker-runtime.ts": "e7e5aeddd6e59625be4b672249fdd115e931251f",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "a6d66e335269256a5676f9e3c62e0cab5fb5f0cd",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "5f3e45924a25f415499a0e192ad4024a9a6c5330",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "475ce2ac77a1d4258ee2eb255c9fd56c18312143",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "8881776882e800700598cc78d1708b47055994af",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "4c6e43692ac4c82ccc353cf31c58eb39c6772ad0",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": "8a252af8370db0b9d6ed8592a864d099935aacc9",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "662032ee97395f0fa7c78b57e8605c374e88fc66",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "5a69dc50b02d324a59af1b48511f94eaea3892c2",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-model-panel-test-helpers.ts": "7cd24e673ed27cd9531a028bdea4b96f66bdbfa1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "8edcca255d055feee25597249ef63b175ae52f3d",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "fb8257b4f9196d72aaf3d9754a7511f12244eee8",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": "b031ab19f5f3d9a36f611ed579b33cbd1a0c8e53",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "35ab06ae0ceb10b35f1524c1481aeef561959d2e",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "faf618a5baff853f600976b4b9f44b819e9abcb5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": "b01135a7118012ebafe4ba0e88f0c1768ed3824d"
+    },
+    "main": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "503ff86cdec111e7acb5c2a163170f667dcb8cd7",
+      "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "ef1f9aecfdbcec1d18fb29a004db4a2fe8a1b3d4",
+      "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5",
+      "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "8245679a688598a34d1a9c86c4ebfce9d178e0a3",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts": "99cec3ba4d7d73bbf39d3ef516222c69f62eea59",
+      "turbo/apps/platform/src/shared-database/__tests__/single-connection-client.test.ts": "e18a4abf9d7a36688204f8a70bfcc1edff514bae",
+      "turbo/apps/platform/src/shared-database/__tests__/worker-runtime.test.ts": "9fe2b59638f7bed3b06338aa98f28ab487c5f5b0",
+      "turbo/apps/platform/src/shared-database/single-connection-client.ts": "86d33b0599fdd1e2b468f8a13c3444e1d079f560",
+      "turbo/apps/platform/src/shared-database/worker-runtime.ts": "e7e5aeddd6e59625be4b672249fdd115e931251f",
+      "turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.test.ts": "7ce9e1c31f77f0e43ff5f4d8907db0d3c4486d8b",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/signals/external/__tests__/indexeddb-client.test.ts": "9f6e20438d3de07344fa06030148b710494fd608",
+      "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "b853ed31469235ac573d0cd945c6c395affe6976",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "bf9498f5c4fb52babc401b7c3fcd67e50dcb1e3b",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "15dd2b30dce5f58e4f0155a0a8ac9dea7293faa3",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "e5b1a048d215f2456ff8d7d11e8256b24cf4be43",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": "8a5f16d5de7149c2f793e3adfd09e146a82bcb53",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "495bb81978eb0f6a5746ee0a10f5cbb5b6443410",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "cae4b78c183f01eb5302b6a80ee83207801ddfe5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-model-panel-test-helpers.ts": "7cd24e673ed27cd9531a028bdea4b96f66bdbfa1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "d85ad49532734a4021be9e7d081058ec9f50fb41",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "4ab0ec4aafa634501add3f87f8f78824a2338219",
+      "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": "aac855398e4aeda4c2f1c03da89c2e2f08574c62",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": "47f59a0f596a0a2204b4b2be760006f041acf22c",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "6d092561cb8ba0190b91ed2051119024ac5b8c64",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "680b3ad753215c9b877fef37e3929a3aa9c23f6e",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": "c2cb839a0c188466401800e899dbebf2b409affc",
+      "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx": "8aef3c66081206049bb12297be5ebb82d81c2d26",
+      "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx": "b4b9889318d664fb1e02a1218c2228920e44cd5e",
+      "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx": "73f50897a8353b55f3ce1a8d1f0536adb3c41ab2"
+    },
+    "opening": {
+      "turbo/apps/platform/src/__tests__/mock-auth.ts": "66e10fdecd7c0d2fbf119649f9fa60a69748496d",
+      "turbo/apps/platform/src/__tests__/page-helper.ts": "1a7f0b68f4728337d72def72d1d03d93542cd629",
+      "turbo/apps/platform/src/mocks/handlers/api-billing.ts": "a7c915d6fc99561d9b56e9ac59d6740607465916",
+      "turbo/apps/platform/src/mocks/handlers/api-feature-switches.helpers.ts": "5b2bf3fd8646f73caf40599045c0fbf075c9d3c5",
+      "turbo/apps/platform/src/mocks/handlers/connector-account-fixtures.ts": "8245679a688598a34d1a9c86c4ebfce9d178e0a3",
+      "turbo/apps/platform/src/shared-database/__tests__/message-port.native.replay.mjs": "7a0fccb338856d0d29c19fce4cc77750d6a3eb00",
+      "turbo/apps/platform/src/shared-database/single-connection-client.ts": "86d33b0599fdd1e2b468f8a13c3444e1d079f560",
+      "turbo/apps/platform/src/shared-database/worker-runtime.ts": "e7e5aeddd6e59625be4b672249fdd115e931251f",
+      "turbo/apps/platform/src/signals/__tests__/test-helpers.ts": "728b18a9075783660512557fe91e447847f0a770",
+      "turbo/apps/platform/src/views/artifacts-page/__tests__/artifact-catalog-test-helpers.ts": "89ddf2ab3303714f70803d1a9dd66b4d990821d5",
+      "turbo/apps/platform/src/views/lab-page/__tests__/lab-feature-catalog.test.ts": "078fd29e6aee6aa16d1d21763960fd4c730eccbd",
+      "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx": "62603e2d663171e361d14cb41f6b045968eb0bd3",
+      "turbo/apps/platform/src/views/okou-page/__tests__/cached-chat-telemetry.test.ts": "60520b7038c7c9e4862acc26abb5f3b1f88b47ea",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-account-model-fixture.ts": "76a0fbf413ac749387db22325c883a8d6585af32",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-attachment-test-helpers.ts": "40027d26e8a463be58b14a0fbdcb5585000a0d1a",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-capability-connector-test-helpers.ts": "15dd2b30dce5f58e4f0155a0a8ac9dea7293faa3",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-composer-test-helpers.ts": "e5b1a048d215f2456ff8d7d11e8256b24cf4be43",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-continuity-test-helpers.ts": "a09b5734f146df049ea0368e0cb7a62e41768307",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-event-test-helpers.ts": "a323697c65855e511fdad6a914abe529f5fe99eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx": "1ee2d5fd7a512612faebb95497f3733e86975167",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-test-helpers.ts": "dde91fed1d2929cf1fe66f36c86da5e05c95c1f7",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-message-experience-test-helpers.ts": "cae4b78c183f01eb5302b6a80ee83207801ddfe5",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-model-panel-test-helpers.ts": "7cd24e673ed27cd9531a028bdea4b96f66bdbfa1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-run-test-fixtures.ts": "d85ad49532734a4021be9e7d081058ec9f50fb41",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-storage-telemetry.test.ts": "99b04cfb895a580c0e5f31ca563c58201985a7fb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/chat-test-helpers.ts": "bb2fde210cc6fe23b61719de2069e42a1b0425eb",
+      "turbo/apps/platform/src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx": "3d06486dae808229153e1f1ea0dc7c6ce12e9607",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-directory.test.tsx": "5938a218f32e3f6ea9d421ab57a9bf6e876fe88a",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-integrations-test-helpers.ts": "6d092561cb8ba0190b91ed2051119024ac5b8c64",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connector-page-test-helpers.ts": "d254fb3ee288b894bbb10f893cdd6044b531f975",
+      "turbo/apps/platform/src/views/okou-page/__tests__/connectors-account-rename-focus.test.tsx": "0a3e88b0d73fab5321239fc3a89ca48fc1685ba1",
+      "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx": "92fbb093004f67aae235c4a8a0fb9692932272f7",
+      "turbo/apps/platform/src/views/okou-page/__tests__/discord-consent-fixtures.ts": "54a93ad55b078fecd36e47152345b2601331099b",
+      "turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx": "617baf1872bef930dbcf7571a432b99d6372245b",
+      "turbo/apps/platform/src/views/okou-page/__tests__/personal-account-settings-fixtures.ts": "3f21712b7dbe483c71a0d311d4be56f5e08006b9",
+      "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts": "2738b3a91d9fc98b44414b903c8de1d81ba4f7d7",
+      "turbo/apps/platform/src/views/okou-page/__tests__/settings-model-loading.test.tsx": "c544e225914558063e801dc3a02173757855f178",
+      "turbo/apps/platform/src/views/okou-page/__tests__/switcher-directory-fixture.ts": "edabf12eaca20f6dd2562eeacd5b47f4808909df",
+      "turbo/apps/platform/src/views/okou-page/__tests__/template-submission-fixtures.ts": "61b5b10bced9c748b8fcf0da0123321b6305a3aa"
+    }
+  },
+  "independentBodies": [
+    {
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx",
+      "bodySha256": "20a303a1cf497e687b9ce61159fa088e36f6ff3752405c6d33e2bb55249cbf90",
+      "historicalMatches": []
+    },
+    {
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optimistic.test.tsx",
+      "bodySha256": "4b1f6174f5db4ffb918136e6ff41af966a6d9543739956094667a2096179ee20",
+      "historicalMatches": []
+    },
+    {
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/service-upgrade-responses.test.ts",
+      "bodySha256": "b4197fc8bb7ed6c520c9a2d3707476de139f3de39e41d7192a827b6179135f2b",
+      "historicalMatches": []
+    },
+    {
+      "file": "turbo/apps/platform/src/views/okou-page/__tests__/directed-connect-page.test.tsx",
+      "bodySha256": "cc72ea4564c336c3a58dbf8bc6f25946cbe5ce1f03b75e815cc7fb6610acaf4d",
+      "historicalMatches": []
+    }
+  ],
+  "review": [
+    "The former MOV body installed a catalog 404 and never opened the recording. The new Router test opens it before create release and waits for the same-thread catalog request. The error arm is retained in the replay.",
+    "The model control contrasts a genuinely empty response with managed Auto. The frozen body assumed no available model. The isolated run-models API establishes the supported catalog independently of the page fixture.",
+    "The original Stripe fixture manufactured no-auth Stripe. The current directed entry posts the selected account credential before its chat callback. This does not establish the original no-auth premise.",
+    "The old snapshot and indicators bodies called a private bridge and worker driver. The snapshot error is now received on the registered Router readiness promise. The same promise fulfills for the indicators failure.",
+    "For the worker, cursor and IndexedDB cases the comparisons retain the original return-shape and transaction requirements. External telemetry records only public operation metadata; the native program has no access to the app store or the worker response channel.",
+    "The signed-object fixture validates expiry and HMAC on a separate loopback server. Window aliases are supplied to the synthetic identity provider and external telemetry SDK. The Gmail replay uses stock Chromium, the real local API and isolated PostgreSQL.",
+    "The main merge retains reconstructed Finance and Chat owners. Its new member-wide approval actions and free workspace purchases are regression coverage, separate from this batch\u2019s frozen dispositions."
+  ]
+}

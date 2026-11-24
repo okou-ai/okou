@@ -49,7 +49,11 @@ const github = "/connectors/github/authorize?threadId=" + RUN_THREAD_ID;
 const origin = "https://app.okou.ai";
 const ref = "https://handbook.example/references";
 const ticks = String.fromCharCode(96);
-async function open(text: string, onPrompt?: (prompt: string) => void) {
+type CallbackReceipt = { threadId?: string; prompt?: string };
+async function open(
+  text: string,
+  onSendRequest?: (body: CallbackReceipt) => void,
+) {
   const runId = crypto.randomUUID();
   const events = [
     assistantEvent({ id: "review-copy", runId, seqId: 1, text }),
@@ -58,12 +62,7 @@ async function open(text: string, onPrompt?: (prompt: string) => void) {
   const lifecycle = createChatRunFixtures(context).installRunChat({
     threadId: RUN_THREAD_ID,
     chatEvents: events,
-    onSendRequest: ({ threadId, prompt }) => {
-      if (onPrompt) {
-        expect(threadId).toBe(RUN_THREAD_ID);
-        onPrompt(prompt);
-      }
-    },
+    ...(onSendRequest ? { onSendRequest } : {}),
   });
   await setupPage({ context, path: RUN_PATH, host: "app.okou.ai" });
   return lifecycle;
@@ -683,20 +682,18 @@ test.each([
         return respond(200, body);
       },
     );
-    const sent = context.mocks.deferred<string>();
+    const sent = context.mocks.deferred<CallbackReceipt>();
+    const receipt = ({ threadId, prompt }: CallbackReceipt) => {
+      sent.resolve({ threadId, prompt });
+    };
     let conversation: Awaited<ReturnType<typeof open>> | undefined;
     if (entry === "conversation") {
-      conversation = await open(origin + path, (prompt) => {
-        sent.resolve(prompt);
-      });
+      conversation = await open(origin + path, receipt);
     } else {
       mockAuthorizationCallbackThread(context, RUN_THREAD_ID);
       await setupPage({ context, host: "app.okou.ai", path });
       context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
-        expect(body.threadId).toBe(RUN_THREAD_ID);
-        if (typeof body.prompt === "string" && !sent.settled()) {
-          sent.resolve(body.prompt);
-        }
+        receipt({ threadId: body.threadId, prompt: body.prompt });
         return respond(201, { threadId: RUN_THREAD_ID });
       });
     }
@@ -718,25 +715,28 @@ test.each([
       ) !== null,
     ).toBe(member);
     click(await findEnabledButton(member ? "Allow for 1h" : "Switch", card));
-    await expect(sent.promise).resolves.toBe(callback);
+    await expect(sent.promise).resolves.toStrictEqual({
+      threadId: RUN_THREAD_ID,
+      prompt: callback,
+    });
     await expect(
       within(card).findByText("Switched to Release team"),
     ).resolves.toBeVisible();
     expect(selected).toBe(account.id);
     expect(card.querySelector(githubIcon)).toBeInTheDocument();
-    if (member && conversation) {
-      selected = null;
-      const fresh = new URL(path, origin);
-      fresh.searchParams.set("requestId", crypto.randomUUID());
-      conversation.completeRun("Renew the release approval\n\n" + fresh.href);
-      await waitFor(() => {
-        const cards = screen.getAllByTestId("connector-account-action-card");
-        expect(cards).toHaveLength(2);
-        expect(
-          within(cards[1]!).getByRole("button", { name: "Allow for 1h" }),
-        ).toBeEnabled();
-      });
+    if (!member || !conversation) {
+      return;
     }
+    selected = null;
+    const fresh = new URL(path, origin);
+    fresh.searchParams.set("requestId", crypto.randomUUID());
+    conversation.completeRun("Renew the release approval\n\n" + fresh.href);
+    const renewedCard = await waitFor(() => {
+      const cards = screen.getAllByTestId("connector-account-action-card");
+      expect(cards).toHaveLength(2);
+      return cards[1]!;
+    });
+    await findEnabledButton("Allow for 1h", renewedCard);
   },
 );
 

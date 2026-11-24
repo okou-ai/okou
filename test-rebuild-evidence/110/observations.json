@@ -1,0 +1,1292 @@
+{
+  "scope": "Independent loopback HTTP arrivals are paired with a response and its cancellation status. Offsets are local to a named Router journey. Browser/provider captures record public operation metadata and synthetic labels. Navigation and callback are recorded separately.",
+  "router": {
+    "chat-list-optimistic-002": [
+      {
+        "journey": "Opening the pending QuickTime preview reports the missing artifacts for that conversation",
+        "requests": [
+          {
+            "ingress": 122,
+            "method": "POST",
+            "path": "/api/chat-threads",
+            "reply": 144,
+            "status": 201,
+            "aborted": false
+          },
+          {
+            "ingress": 125,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 127,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 134,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 136,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 141,
+            "method": "GET",
+            "path": "/api/chat-threads/:id/artifacts",
+            "reply": 143,
+            "status": 404,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "agent-suggestions-004": [
+      {
+        "journey": "Opening the unread For you row during a refresh separates a preloaded card from its replacement",
+        "requests": [
+          {
+            "ingress": 77,
+            "method": "GET",
+            "path": "/api/feed/items",
+            "reply": 79,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 103,
+            "method": "GET",
+            "path": "/api/feed/items",
+            "reply": 109,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "agent-suggestions-015": [
+      {
+        "journey": "agent-suggestions-015 a member with only built-in Auto can send the first of two suggestions",
+        "requests": [
+          {
+            "ingress": 105,
+            "method": "GET",
+            "path": "/api/run-models",
+            "reply": 107,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 120,
+            "method": "POST",
+            "path": "/api/chat/events",
+            "reply": 122,
+            "status": 201,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "integrations-discord-037": [
+      {
+        "journey": "Discord status starts at false and returns as false when refresh starts before leaving",
+        "requests": [
+          {
+            "ingress": 42,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 44,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 68,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 70,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 98,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 118,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 138,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 140,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      },
+      {
+        "journey": "Discord status starts at false and returns as true when refresh starts before leaving",
+        "requests": [
+          {
+            "ingress": 48,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 50,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 74,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 76,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 104,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 124,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 144,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 146,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      },
+      {
+        "journey": "Discord status starts at false and returns as true when refresh starts on return",
+        "requests": [
+          {
+            "ingress": 48,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 50,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 74,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 76,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 140,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 148,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "integrations-discord-038": [
+      {
+        "journey": "Discord status starts at true and returns as true when refresh starts before leaving",
+        "requests": [
+          {
+            "ingress": 48,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 50,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 74,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 76,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 104,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 124,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 144,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 146,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      },
+      {
+        "journey": "Discord status starts at true and returns as true when refresh starts on return",
+        "requests": [
+          {
+            "ingress": 42,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 44,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 68,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 70,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 134,
+            "method": "GET",
+            "path": "/api/integrations/discord",
+            "reply": 142,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "settings-model-loading-001": [
+      {
+        "journey": "Reopening Models waits for the subscription even when billing settles first",
+        "requests": [
+          {
+            "ingress": 39,
+            "method": "GET",
+            "path": "/api/me/3rd-party-subscriptions",
+            "reply": 41,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 42,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 44,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 102,
+            "method": "GET",
+            "path": "/api/me/3rd-party-subscriptions",
+            "reply": 130,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 118,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 126,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 142,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 144,
+            "status": null,
+            "aborted": null,
+            "receiverOutcome": "unresolved"
+          }
+        ]
+      },
+      {
+        "journey": "Reopening Models waits for the subscription even when subscriptions settles first",
+        "requests": [
+          {
+            "ingress": 51,
+            "method": "GET",
+            "path": "/api/me/3rd-party-subscriptions",
+            "reply": 53,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 54,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 56,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 114,
+            "method": "GET",
+            "path": "/api/me/3rd-party-subscriptions",
+            "reply": 141,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 130,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 148,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 154,
+            "method": "GET",
+            "path": "/api/billing/status",
+            "reply": 156,
+            "status": null,
+            "aborted": null,
+            "receiverOutcome": "unresolved"
+          }
+        ]
+      }
+    ],
+    "composer-custom-template-recommendations-009": [
+      {
+        "journey": "The Image composer imports a reusable WEBP after receiving a PDF through the clipboard",
+        "requests": [
+          {
+            "ingress": 142,
+            "method": "POST",
+            "path": "/api/chat-threads",
+            "reply": 144,
+            "status": 201,
+            "aborted": false
+          },
+          {
+            "ingress": 145,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 147,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 151,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 153,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 158,
+            "method": "POST",
+            "path": "/api/chat/events",
+            "reply": 160,
+            "status": 201,
+            "aborted": false
+          }
+        ]
+      },
+      {
+        "journey": "The Image composer imports a reusable WEBP after receiving a PDF through the file picker",
+        "requests": [
+          {
+            "ingress": 130,
+            "method": "POST",
+            "path": "/api/chat-threads",
+            "reply": 132,
+            "status": 201,
+            "aborted": false
+          },
+          {
+            "ingress": 133,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 135,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 139,
+            "method": "GET",
+            "path": "/api/web/file-url",
+            "reply": 141,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 146,
+            "method": "POST",
+            "path": "/api/chat/events",
+            "reply": 148,
+            "status": 201,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "connector-directory-010": [
+      {
+        "journey": "Activating Gmail with Enter leaves a provider window that closes with the directory",
+        "requests": [
+          {
+            "ingress": 130,
+            "method": "POST",
+            "path": "/api/connectors/gmail/oauth/start",
+            "reply": 132,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "directed-connect-page-008": [
+      {
+        "journey": "A Stripe credential connects before its originating chat continues",
+        "requests": [
+          {
+            "ingress": 62,
+            "method": "POST",
+            "path": "/api/connectors/stripe/manual-grant",
+            "reply": 64,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 70,
+            "method": "POST",
+            "path": "/api/chat/events",
+            "reply": 72,
+            "status": 201,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "connectors-account-rename-focus-011": [
+      {
+        "journey": "connectors-account-rename-focus-011 revised closed manager keeps outside focus while its saved name is persisted",
+        "requests": [
+          {
+            "ingress": 110,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 112,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 113,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 115,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 121,
+            "method": "PATCH",
+            "path": "/api/connector-accounts/:id",
+            "reply": 123,
+            "status": null,
+            "aborted": null,
+            "receiverOutcome": "AbortError"
+          },
+          {
+            "ingress": 126,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 128,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 129,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 131,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "connectors-account-rename-focus-013": [
+      {
+        "journey": "connectors-account-rename-focus-013 revised reopened manager saves its own draft after the first account changes",
+        "requests": [
+          {
+            "ingress": 113,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 115,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 116,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 118,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 124,
+            "method": "PATCH",
+            "path": "/api/connector-accounts/:id",
+            "reply": 126,
+            "status": null,
+            "aborted": null,
+            "receiverOutcome": "AbortError"
+          },
+          {
+            "ingress": 129,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 131,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 132,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 134,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 144,
+            "method": "PATCH",
+            "path": "/api/connector-accounts/:id",
+            "reply": 146,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 148,
+            "method": "GET",
+            "path": "/api/connector-accounts/connections",
+            "reply": 150,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "message-port-017": [
+      {
+        "journey": "message-port-017 the workspace snapshot rejects startup with its shared database HTTP status",
+        "requests": [
+          {
+            "ingress": 55,
+            "method": "GET",
+            "path": "/api/chat-threads/snapshot",
+            "reply": 57,
+            "status": 426,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "message-port-018": [
+      {
+        "journey": "A held indicators upgrade response reaches the signed-in workspace",
+        "requests": [
+          {
+            "ingress": 47,
+            "method": "GET",
+            "path": "/api/indicators",
+            "reply": 49,
+            "status": 426,
+            "aborted": false
+          }
+        ]
+      }
+    ],
+    "api-client-bootstrap-001": [
+      {
+        "journey": "Lab reads the embedded Banking preference before showing the service's later updates",
+        "requests": [
+          {
+            "ingress": 73,
+            "method": "POST",
+            "path": "/api/feature-switches",
+            "authAlias": "lab-editor",
+            "reply": 75,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 77,
+            "method": "GET",
+            "path": "/api/feature-switches",
+            "authAlias": "lab-editor",
+            "reply": 79,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 89,
+            "method": "DELETE",
+            "path": "/api/feature-switches",
+            "authAlias": "lab-reset",
+            "reply": 91,
+            "status": 200,
+            "aborted": false
+          },
+          {
+            "ingress": 93,
+            "method": "GET",
+            "path": "/api/feature-switches",
+            "authAlias": "lab-reset",
+            "reply": 95,
+            "status": 200,
+            "aborted": false
+          }
+        ]
+      }
+    ]
+  },
+  "nativeGmail": {
+    "close-first": {
+      "steps": [
+        "provider displayed",
+        "directory closed",
+        "callback delivered"
+      ],
+      "closedOnDismiss": false,
+      "finallyClosed": false,
+      "callbacks": [
+        {
+          "status": 200,
+          "result": "error"
+        }
+      ],
+      "providerWindows": 1,
+      "admissions": 1
+    },
+    "callback-first": {
+      "steps": [
+        "provider displayed",
+        "callback delivered",
+        "directory closed"
+      ],
+      "closedOnDismiss": false,
+      "finallyClosed": false,
+      "callbacks": [
+        {
+          "status": 200,
+          "result": "error"
+        }
+      ],
+      "providerWindows": 1,
+      "admissions": 1
+    }
+  },
+  "freshBIndicator": [
+    {
+      "label": "First dashboard after signed metadata",
+      "known": true,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "signedUrlIssued",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "signedObject",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [
+        "A"
+      ],
+      "heldAliases": []
+    },
+    {
+      "label": "A held before B opens",
+      "metadataArrivals": [],
+      "publicOperations": [],
+      "indicatorAliases": [],
+      "heldAliases": [
+        "A"
+      ]
+    },
+    {
+      "label": "B first dashboard without publication",
+      "via": false,
+      "unread": 0,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    },
+    {
+      "label": "Surviving B after a new publication",
+      "viaAfter": true,
+      "unread": 1,
+      "metadataArrivals": [],
+      "publicOperations": [],
+      "indicatorAliases": [
+        "A",
+        "B"
+      ],
+      "heldAliases": [
+        "A"
+      ]
+    }
+  ],
+  "offlineEmpty": [
+    {
+      "label": "First dashboard after signed metadata",
+      "known": true,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "signedUrlIssued",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "signedObject",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [
+        "A"
+      ],
+      "heldAliases": []
+    },
+    {
+      "label": "Two registered windows with individually known conversations",
+      "metadataArrivals": [],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    },
+    {
+      "label": "B first reads the empty conversation after A closed",
+      "closed": true,
+      "cached": true,
+      "rows": 0,
+      "composer": true,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 503
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    },
+    {
+      "label": "B separately reads the stored nonempty conversation while data is withheld",
+      "text": true,
+      "metadataArrivals": [],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    }
+  ],
+  "signedMetadata": [
+    {
+      "label": "First dashboard after signed metadata",
+      "known": true,
+      "metadataArrivals": [
+        {
+          "op": "metadata",
+          "resource": "snapshot",
+          "status": 200
+        },
+        {
+          "op": "signedUrlIssued",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "thread-snapshot.json",
+          "status": 200
+        },
+        {
+          "op": "signedObject",
+          "status": 200
+        },
+        {
+          "op": "metadata",
+          "resource": "events",
+          "status": 200
+        },
+        {
+          "op": "metadataTail",
+          "count": 0
+        }
+      ],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        },
+        {
+          "op": "telemetry",
+          "alias": "A",
+          "name": "chat-thread-event.catch-up",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [
+        "A"
+      ],
+      "heldAliases": []
+    },
+    {
+      "label": "Fresh B, metadata endpoint unavailable",
+      "found": true,
+      "hit": true,
+      "hasDelta": false,
+      "metadataArrivals": [],
+      "publicOperations": [
+        {
+          "op": "telemetry",
+          "alias": "B",
+          "name": "chat-thread-event.cache-only",
+          "runtime": "window",
+          "outcome": "success",
+          "duration": true,
+          "privateValue": false
+        }
+      ],
+      "indicatorAliases": [],
+      "heldAliases": []
+    }
+  ],
+  "signedObjectControl": [
+    {
+      "op": "signedUrlIssued",
+      "status": 200
+    },
+    {
+      "op": "signedObject",
+      "status": 200
+    },
+    {
+      "op": "metadataTail",
+      "count": 0
+    },
+    {
+      "op": "signedUrlIssued",
+      "status": 200
+    },
+    {
+      "op": "signedObject",
+      "status": 200
+    },
+    {
+      "op": "metadataTail",
+      "count": 0
+    },
+    {
+      "op": "signedObject",
+      "status": 403
+    }
+  ],
+  "signedOfflineStages": [
+    {
+      "label": "both signed-in dashboards with snapshot titles",
+      "index": 113,
+      "path": "/",
+      "visible": [
+        "Side survey",
+        "Stored tide ledger",
+        "Find people"
+      ],
+      "network": [
+        [
+          "/api/user-preferences",
+          409
+        ],
+        [
+          "/api/user-model-preference",
+          200
+        ],
+        [
+          "/api/user-preferences/initialize",
+          200
+        ]
+      ]
+    },
+    {
+      "label": "signed snapshot online first selection",
+      "index": 148,
+      "path": "/chats/THREAD",
+      "visible": [
+        "Side survey",
+        "Stored tide ledger",
+        "Stored tide ledger"
+      ],
+      "network": [
+        [
+          "/api/user-preferences",
+          409
+        ],
+        [
+          "/api/user-model-preference",
+          200
+        ],
+        [
+          "/api/user-preferences/initialize",
+          200
+        ]
+      ]
+    },
+    {
+      "label": "A closed before B offline first selection",
+      "index": 155,
+      "closed": true
+    },
+    {
+      "label": "first offline read",
+      "index": 156,
+      "path": "/chats/THREAD",
+      "visible": [
+        "Side survey",
+        "Stored tide ledger",
+        "Stored tide ledger"
+      ],
+      "network": [
+        [
+          "/api/chat-threads/THREAD/draft",
+          200
+        ]
+      ]
+    },
+    {
+      "label": "independent rejected signature control",
+      "index": 158,
+      "status": 403
+    }
+  ],
+  "chatBatch": [
+    {
+      "op": "catchUp",
+      "status": 200,
+      "threads": [
+        {
+          "source": "side",
+          "cursor": 0,
+          "returned": 0
+        },
+        {
+          "source": "primary",
+          "cursor": 0,
+          "returned": 42
+        }
+      ]
+    },
+    {
+      "op": "catchUp",
+      "status": 200,
+      "threads": [
+        {
+          "source": "side",
+          "cursor": 0,
+          "returned": 0
+        },
+        {
+          "source": "primary",
+          "cursor": 42,
+          "returned": 1
+        }
+      ]
+    }
+  ],
+  "chatBatchStages": [
+    {
+      "label": "both signed-in dashboards with snapshot titles",
+      "index": 192,
+      "path": "/",
+      "visible": [
+        "Side survey",
+        "Primary survey",
+        "Find people"
+      ],
+      "network": [
+        [
+          "/api/user-preferences",
+          409
+        ],
+        [
+          "/api/user-model-preference",
+          200
+        ],
+        [
+          "/api/user-preferences/initialize",
+          200
+        ]
+      ]
+    },
+    {
+      "label": "seed batch with primary baseline and empty side",
+      "index": 245
+    },
+    {
+      "label": "primary 42 to 43 plus unchanged side",
+      "index": 279
+    },
+    {
+      "label": "A closed before B offline first selection",
+      "index": 279,
+      "closed": true
+    },
+    {
+      "label": "first offline read",
+      "index": 297,
+      "path": "/chats/THREAD",
+      "visible": [
+        "Side survey",
+        "Primary survey",
+        "Side survey"
+      ],
+      "network": [
+        [
+          "/api/user-preferences",
+          409
+        ],
+        [
+          "/api/user-model-preference",
+          200
+        ],
+        [
+          "/api/user-preferences/initialize",
+          200
+        ]
+      ]
+    },
+    {
+      "label": "offline changed thread",
+      "index": 310,
+      "shown": true
+    }
+  ],
+  "transactionTelemetry": [
+    {
+      "operation": "chat_event_rows.put_many+chat_event_cursor.put_many.transaction.create",
+      "requestCount": null,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 2
+    },
+    {
+      "operation": "chat_event_rows.put_many+chat_event_cursor.put_many",
+      "requestCount": 43,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 1
+    },
+    {
+      "operation": "chat_event_rows.put_many+chat_event_cursor.put_many",
+      "requestCount": 2,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 1
+    },
+    {
+      "operation": "chat_event_cursor.get+chat_event_rows.get_all_by_order.transaction.create",
+      "requestCount": null,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 2
+    },
+    {
+      "operation": "chat_event_cursor.get+chat_event_rows.get_all_by_order",
+      "requestCount": 1,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 1
+    },
+    {
+      "operation": "chat_event_cursor.get+chat_event_rows.get_all_by_order",
+      "requestCount": 2,
+      "durationReported": true,
+      "privateValuePresent": false,
+      "samples": 1
+    }
+  ]
+}

@@ -26,16 +26,6 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 
 **Unverified clauses.** Two mounted shelves showed Harbor exhibit on the first user publication. Plain resume yielded no catalog read; the gap yielded one per window. After A closed only B read the empty catalog. Keeping B open allowed a third publication to reach B. Closing B instead terminated its identified provider connection at the independent loopback server. The server received no topic-specific unsubscribe in that arm. [Batch 108 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/108/README.md#message-port-014).
 
-### message-port-017
-
-Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-017)
-
-- **Given** A registered tab queries a chat snapshot and the API responds with HTTP 426.
-- **When** The query result crosses the message port.
-- **Then** It rejects as a shared-database HTTP error retaining status 426.
-
-**Unverified clauses.** A held snapshot denial produces the required-update dialog. SharedDatabaseHttpError and its status were visible in an internal port reply only. The Router readiness promise for this Workflows route does not expose the snapshot read. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ### message-port-018
 
 Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.test.ts` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/shared-database/__tests__/message-port.bdd.md#message-port-018)
@@ -44,7 +34,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The computed result crosses the message port.
 - **Then** It rejects as an API error retaining status 426 and code REQUEST_FAILED.
 
-**Unverified clauses.** The indicator denial reached the update dialog. Only the diagnostic reply exposed ApiError together with REQUEST_FAILED and status 426. The generic update dialog does not distinguish these fields. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Find a documented indicators caller that exposes the computed rejection, including its class, status and code. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-018).
 
 ### message-port-020
 
@@ -54,7 +44,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The second tab requests the indicators while the first token request is still pending.
 - **Then** The read completes without waiting for the first tab and uses the second tab's bearer token. Both tabs receive token requests.
 
-**Unverified clauses.** Window A had a pending identity request before B opened its dashboard for the first time. Without another notification, B displayed the cached Side survey label, issued no indicator GET bearing B’s alias, and showed no unread mark while A was held. The distinct B-bearing read after a worker refresh is already documented in batch 105. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#message-port-020).
+**Unverified clauses.** Observe a fresh B-owned indicator request and its result before releasing A while both tabs remain registered. A later publication after closure is a separate control. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-020).
 
 ### message-port-023
 
@@ -74,7 +64,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/message-port.te
 - **When** The first tab disconnects and the second performs a cache-only read.
 - **Then** The first tab's port closes, while the second tab's read succeeds with an empty result and its port remains open.
 
-**Unverified clauses.** A visited the empty side conversation and closed. Its Chromium page reported closed before B went offline and opened that conversation for the first time. B showed Side survey and its empty composer. After reconnecting it could read Question number 16 in the nonempty conversation. The literal close of A’s worker port and the empty result returned to B have no separate caller receipt. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#message-port-027).
+**Unverified clauses.** B’s successful empty read and continued use are established. A browser tab close does not expose an acknowledgement that the worker peer’s individual port closed; look for a documented per-port close receipt. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#message-port-027).
 
 ### message-port-030
 
@@ -158,7 +148,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/single-connecti
 - **When** The client queries cached chat events after sequence 42 for a private thread.
 - **Then** The query succeeds with an empty result and produces one production client-telemetry event identifying a successful cache-only chat-event query. The event includes duration but omits the private thread ID, sequence cursor, and entity-specific resource data.
 
-**Unverified clauses.** 生产域收到带 duration 的 cache-only 成功遥测并隐藏私有实体信息，预览域作对照。真实页面先查询空会话，但没有证据显示以指定 afterSeqId=42 发出此查询。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Identify a supported caller that sends afterSeqId 42 on its cache-only read and observe the empty result and its own telemetry together. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#single-connection-client-001).
 
 ## `src/shared-database/__tests__/worker-runtime.test.ts`
 
@@ -170,7 +160,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/worker-runtime.
 - **When** The runtime catches up on thread metadata and then reads it from cache only.
 - **Then** Both reads return the stored conversation as the snapshot with no events.
 
-**Unverified clauses.** The metadata endpoint supplied an expiring object URL. Its external object served Stored tide ledger and the metadata events endpoint initially served no events. An independent rename delta was delivered, and B’s offline first selection displayed Revised tide ledger. A separate run displayed the stored title offline without that rename. The two runtime return envelopes are still unobserved. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#worker-runtime-005).
+**Unverified clauses.** Obtain a supported observer of the two result envelopes that can distinguish an empty event list from an event folded into the same title. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#worker-runtime-005).
 
 ### worker-runtime-008
 
@@ -180,7 +170,7 @@ Frozen owner: `turbo/apps/platform/src/shared-database/__tests__/worker-runtime.
 - **When** The runtime performs the batched chat catch-up.
 - **Then** It reports only the thread with new events, and cache-only reads show an empty list for the unchanged thread and the new row for the updated thread.
 
-**Unverified clauses.** The first batched HTTP response seeded 48 primary rows and zero side rows. After adding one new row, the next batch requested primary cursor 48 and side cursor 0 and returned one and zero rows respectively. First offline visits displayed the empty side conversation and Observed tidal change in the primary conversation. The runtime’s returned list of changed thread IDs has no independent caller receipt. [Batch 106 review](../../../test-rebuild-evidence/106/README.md#worker-runtime-008).
+**Unverified clauses.** The runtime’s changed-thread return list has no identified consumer exposing its membership. Add a caller that distinguishes an unchanged thread incorrectly included in that list. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#worker-runtime-008).
 
 ## `src/signals/__tests__/api-client-bootstrap.test.ts`
 
@@ -192,7 +182,7 @@ Frozen owner: `turbo/apps/platform/src/signals/__tests__/api-client-bootstrap.te
 - **When** The client makes three successive requests, with the third carrying an abort signal.
 - **Then** The first request returns the bootstrap response without obtaining a token or using the network; the next two return the network response, and the token provider is called once per network request with the corresponding signal.
 
-**Unverified clauses.** Lab 从嵌入响应读出初始设置并展示服务器后续变化。三次底层请求的逐次 token、signal 归属及首次零网络调用缺可区分结果。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-99.tsv).
+**Unverified clauses.** Find a public token-provider receipt that identifies each feature-switch request and its signal, including the third request. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#api-client-bootstrap-001).
 
 ## `src/signals/__tests__/clerk-user.test.ts`
 
@@ -466,7 +456,7 @@ Frozen owner: `turbo/apps/platform/src/signals/external/__tests__/indexeddb-clie
 - **When** The transaction is created, executed, and reported to telemetry.
 - **Then** The read returns the written value, and separate successful transaction-creation and execution events are recorded for the shared-worker runtime. The execution event reports two requests, and neither event exposes the key or value.
 
-**Unverified clauses.** 迁移后的值与两种事务遥测有各自路由对照。仍未在同一共享 worker 操作里配对特定写后读值、创建与执行两类事件及 request_count=2。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Find a production journey that writes and immediately reads that same value in one read-write transaction, with a separately attributable two-request execution receipt. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#indexeddb-client-003).
 
 ## `src/signals/voice-io/__tests__/voice-draft-audio.test.ts`
 
@@ -680,17 +670,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestio
 - **When** The user opens For you while its details request is held pending.
 - **Then** The suggestion card appears before the held request is released.
 
-**Unverified clauses.** 首页近身预加载旧卡后，实际读到旧响应和行内 Unread，再触发持有的新一轮详情并打开 For you。此时新旧卡均未出现，放行后只见替换卡。冷重开对照同样须先交付详情。保留响应前显示卡片的缺口。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### agent-suggestions-015
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/agent-suggestions.bdd.md#agent-suggestions-015)
-
-- **Given** At least two cards are available, but no model is available to send a message.
-- **When** The user chooses the first card's action.
-- **Then** The unavailable-model error appears, and the first card remains in its original place.
-
-**Unverified clauses.** After the member disconnected the last personal provider, the run-model API returned available built-in Auto and the first card sent successfully. A separately supplied empty model response produced the expected error and preserved both card positions. The real no-model precondition remains open. [Batch 103 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/103/README.md#agent-suggestions-015).
+**Unverified clauses.** Show a genuinely cached card on the routed surface before releasing an in-flight replacement, or identify a later decision requiring the loading state. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#agent-suggestions-004).
 
 ## `src/views/okou-page/__tests__/chat-capability-voice-recording.test.tsx`
 
@@ -748,7 +728,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-list-optim
 - **When** They send the message with the attachment.
 - **Then** A preview for recording.mov appears using the video URL with a start time of 0.001 seconds. The missing-thread artifact response produces no visible error toast, and creation remains unconfirmed.
 
-**Unverified clauses.** With recording.mov attached, the actual send reached an unconfirmed creation and displayed the resolved QuickTime URL ending in #t=0.001 without an error toast. Neither dispatch nor ingress saw a thread-artifacts GET before creation release. An independent confirmed-document control reached that endpoint and received the configured 404. The pending movie page has no 404 to process in this operation. [Batch 109 evidence](https://github.com/okou-ai/okou/blob/test/app-gwt-inventory/test-rebuild-evidence/109/README.md#chat-list-optimistic-002).
+**Unverified clauses.** A pending inline send starts no catalog read. Opening the preview supplies the missing read, but its error is visible. Revisit if the preview handles a missing pending thread or upstream explicitly narrows the guarantee to inline playback. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#chat-list-optimistic-002).
 
 ## `src/views/okou-page/__tests__/chat-navigation-browser.test.tsx`
 
@@ -884,7 +864,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/composer-custom
 - **When** They paste an unsupported PDF, then import a valid WEBP image as a reusable style.
 - **Then** The PDF is not attached and does not send a message; the draft remains and an Image removal control is present. The WEBP starts a reusable-template analysis and publish message containing the file, without selecting a generation template, and navigates to a chat.
 
-**Unverified clauses.** Pasting a PDF attached it to the Image composer, retained the draft and Remove Image control, and sent no message. Importing a valid WEBP through the style picker sent both identified files in the analysis/publish chat and no generation template. In the paired picker-only control the PDF was filtered and only the WEBP was sent. #39648 and #50365 cover the contextual file chooser, not a changed clipboard rule. Revisit when the production clipboard contract for unsupported style files changes or when a real paste is rejected before attaching. [Batch 105](../../../test-rebuild-evidence/105/README.md#composer-custom-template-recommendations-009).
+**Unverified clauses.** The unsupported clipboard PDF must be rejected on paste, or a sourced disposition must explicitly allow it on this path. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#composer-custom-template-recommendations-009).
 
 ## `src/views/okou-page/__tests__/connector-directory.test.tsx`
 
@@ -896,7 +876,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connector-direc
 - **When** The user tabs to Connect Gmail and presses Enter.
 - **Then** One authorization window opens at the Gmail authorization URL and one OAuth connection request is made. Closing the dialog closes the authorization window.
 
-**Unverified clauses.** Tab and Enter started one real OAuth attempt and opened one provider window per ordering. State digests joined the consent and local API denial callback to that same admission. Closing the directory first left the popup able to deliver the callback. Delivering the callback first also left the popup open after directory dismissal. A product change specifying popup ownership after cross-origin navigation, or a later callback lifecycle that actually closes the original window, would change the conclusion. [Batch 105](../../../test-rebuild-evidence/105/README.md#connector-directory-010).
+**Unverified clauses.** Revisit on a browser ownership change that couples directory dismissal to the native handle. Use both callback orderings. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#connector-directory-010).
 
 ## `src/views/okou-page/__tests__/connector-provider-pages.test.tsx`
 
@@ -920,7 +900,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connectors-acco
 - **When** They close the manager, move focus elsewhere, and the rename response arrives.
 - **Then** Focus stays outside the closed manager, which remains closed. Reopening it shows the renamed account and no active rename input.
 
-**Unverified clauses.** 新控制在服务器先持久化 Work 1、暂扣回执，关闭管理器，在外部搜索取得焦点后结束旧处理，再打开读回 Research archive 且没有编辑框。#37939 引入原注册并限定 save 生命周期；它没有撤销实际旧应答交付这一冻结前提。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** A supported manager lifetime that receives the original delayed response after dismissal could distinguish late delivery from an aborted caller. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#connectors-account-rename-focus-011).
 
 ### connectors-account-rename-focus-013
 
@@ -930,7 +910,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/connectors-acco
 - **When** The older rename response arrives while the new edit is active.
 - **Then** The new input retains focus and its draft; the user can extend and save it as “Work 2 new draft,” after which focus is on that account’s actions.
 
-**Unverified clauses.** 同一持久 Work 1 变更与 Work 2 分开。重开后 Work 2 new 在原处理完成后仍有焦点，追加文字保存，焦点回到 Work 2 new draft 的 Actions，Work 1 同时可查。旧 HTTP 信号已被关闭取消。#37939 引入原注册和生命周期规则，未明文废除旧响应到达条件。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The original response must actually reach a caller while the second edit is active, or upstream must specify cancellation as the final disposition. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#connectors-account-rename-focus-013).
 
 ## `src/views/okou-page/__tests__/directed-connect-page.test.tsx`
 
@@ -942,7 +922,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/directed-connec
 - **When** The user connects Stripe.
 - **Then** Stripe connects once, the originating chat receives the callback prompt, and no visible agent-authorization update is made. No connection dialog remains open.
 
-**Unverified clauses.** Stripe 带聊天返回参数进入现有授权页面。无凭证 Stripe 的前提、该分支成功回调及准确一次连接在当前公开目录均未取得证明。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-98.tsv).
+**Unverified clauses.** A supported no-auth Stripe catalog entry or an explicit Stripe-specific migration of that original precondition is still needed. The authenticated continuation covers the remaining visible steps. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#directed-connect-page-008).
 
 ## `src/views/okou-page/__tests__/integrations-discord.test.tsx`
 
@@ -954,7 +934,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-di
 - **When** The user returns to Works before the refresh completes.
 - **Then** The Discord card continues to show its description and an enabled Connect button; after refresh it shows Connected.
 
-**Unverified clauses.** Started disconnected, held the change-triggered status request, left for Chat and returned before release. The description remained with no buttons. Delivery exposed Connected and enabled More options. In a separate control where refresh started only on return, the card retained enabled Connect until delivery. Both chronologies have a regular registration. The upstream cache promise covers refresh starting on return. A change or a product ruling on refresh already pending before departure could close the original. [Case review](../../../test-rebuild-evidence/104/README.md#integrations-discord-037).
+**Unverified clauses.** The pre-departure refresh must preserve the disconnected button through the second mount, or upstream must explicitly replace that rule. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#integrations-discord-037).
 
 ### integrations-discord-038
 
@@ -964,7 +944,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-di
 - **When** The user returns to Works before the refresh completes.
 - **Then** The Discord card continues to show its description and Connected status; after refresh it still shows Connected.
 
-**Unverified clauses.** Started connected, held refresh before leaving Works and returned while pending. The card showed its description without Connected or actions. The response restored Connected and enabled More options. Starting refresh only on return preserved the cached Connected state. Both initial states and both chronologies were exercised. Look for a decision or implementation that preserves a connected card across departure with a status request already pending. [Case review](../../../test-rebuild-evidence/104/README.md#integrations-discord-038).
+**Unverified clauses.** Observe Connected throughout the original order, or find a production disposition for discarding the cached status on remount. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#integrations-discord-038).
 
 ## `src/views/okou-page/__tests__/paid-media-creation.test.tsx`
 
@@ -988,4 +968,4 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/settings-model-
 - **When** The user switches to Preference and then returns to Models.
 - **Then** The Models heading and the no-accounts-connected message appear, and Connect account remains enabled.
 
-**Unverified clauses.** Preference → Models with both reads held displayed Use more models and Loading accounts…, with neither the empty-account message nor Connect account. Releasing billing first did not restore those controls; releasing the subscription displayed the returned member, including when billing was still pending. #37519 documents the new heading and requests reuse of resolved data on refresh. A supported re-entry retaining confirmed account data through both outstanding reads, or a later product decision explicitly changing that behavior, is needed. [Batch 105](../../../test-rebuild-evidence/105/README.md#settings-model-loading-001).
+**Unverified clauses.** Revisit when the returned Models panel can retain its no-accounts state and enabled Connect while both requests remain outstanding. [Batch 110 observations](../../../test-rebuild-evidence/110/README.md#settings-model-loading-001).

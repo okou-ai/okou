@@ -1215,3 +1215,47 @@ test("For you keeps the first and second cards in order when the model list is e
   click(await findFastControl("link", "Show suggestion 1 of 2"));
   await expect(activeCard(first)).resolves.toBeInTheDocument();
 });
+
+test("agent-suggestions-015 a member with only built-in Auto can send the first of two suggestions", async () => {
+  const first = proposal("Reconcile bore samples", 20);
+  const second = proposal("Compare field maps", 10);
+  feed([first, second]);
+  const sent = context.mocks.deferred<string>();
+  createChatRunFixtures(context).installRunChat({
+    onSendRequest: ({ prompt }) => {
+      return sent.resolve(prompt);
+    },
+  });
+  context.mocks.api(runModelsMainContract.list, ({ respond }) => {
+    return respond(200, {
+      models: [
+        {
+          model: "auto",
+          modelLabel: "Auto",
+          modelProviderId: null,
+          memberEffective: {
+            providerType: "built-in",
+            runtimeProviderType: "openrouter-codex",
+            credentialScope: "org",
+            availability: "available",
+            accountSelection: "not_applicable",
+          },
+        },
+      ],
+    });
+  });
+  await openDeck();
+  click(
+    await findFastControl(
+      "button",
+      "Prepare Reconcile bore samples",
+      await activeCard(first),
+    ),
+  );
+  await expect(sent.promise).resolves.toContain("Reconcile bore samples");
+  await expect(
+    screen.findByText("Sent to a new chat"),
+  ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("The selected model is not available")).toBeNull();
+  await expect(activeCard(second)).resolves.toBeVisible();
+});

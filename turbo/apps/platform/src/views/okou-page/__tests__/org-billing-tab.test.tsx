@@ -922,12 +922,12 @@ test("The free workspace can buy a one-time credit pack", async () => {
   setBilling(context, () => {
     return billing("limited-free-1");
   });
-  const amount = context.mocks.deferred<number>();
+  let receivedCredits: number | undefined;
   context.mocks.api(
     billingCreditCheckoutContract.create,
     ({ body, respond }) => {
       expect(body).not.toHaveProperty("autoRecharge");
-      amount.resolve(body.credits);
+      receivedCredits = body.credits;
       return respond(200, { url: checkout });
     },
   );
@@ -935,9 +935,13 @@ test("The free workspace can buy a one-time credit pack", async () => {
   await screen.findByRole("heading", { name: "Buy credits" });
   expect(screen.queryByLabelText("Enable auto-recharge")).toBeNull();
   expect(screen.queryByRole("heading", { name: "Concurrency" })).toBeNull();
-  click(await action("Quick buy $20.00"));
-  await expect(amount.promise).resolves.toBe(20000);
+  const quickBuy = await action("Quick buy $20.00");
+  await waitFor(() => {
+    expect(quickBuy).toBeEnabled();
+  });
+  click(quickBuy);
   await waitFor(() => {
     expect(window.location.href).toBe(checkout);
   });
+  expect(receivedCredits).toBe(20_000);
 });

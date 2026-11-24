@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import { SharedDatabaseHttpError } from "../../../shared-database/http-error.ts";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
@@ -90,6 +91,30 @@ test("worker-runtime-001 A worker catch-up failure propagates its HTTP status an
   });
   await received.promise;
   body.resolve();
+  await expect(page.ready).rejects.toMatchObject({ status: 426 });
+  await expect(
+    screen.findByRole("dialog", updateDialog),
+  ).resolves.toBeVisible();
+});
+
+test("message-port-017 the workspace snapshot rejects startup with its shared database HTTP status", async () => {
+  const arrived = context.mocks.deferred<void>();
+  const deliver = context.mocks.deferred<void>();
+  context.mocks.http.get("*" + chatThreadsContract.snapshot.path, async () => {
+    if (!arrived.settled()) {
+      arrived.resolve();
+    }
+    await deliver.promise;
+    return upgrade();
+  });
+  const page = await startPage({
+    context,
+    path: "/workflows",
+    sharedWorkerTestTransport: "message-port",
+  });
+  await arrived.promise;
+  deliver.resolve();
+  await expect(page.ready).rejects.toBeInstanceOf(SharedDatabaseHttpError);
   await expect(page.ready).rejects.toMatchObject({ status: 426 });
   await expect(
     screen.findByRole("dialog", updateDialog),
