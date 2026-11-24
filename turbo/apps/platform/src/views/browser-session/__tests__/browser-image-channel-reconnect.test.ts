@@ -1,5 +1,4 @@
-import userEvent from "@testing-library/user-event";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -88,59 +87,45 @@ test("browser-frames-recovery-013 A control loss during image-only recovery revo
   await expect(screen.findByText(/Reconnecting/)).resolves.toBeVisible();
 });
 
-test("The other tab remains navigable after a failed in-flight text entry on the separate image channel", async () => {
-  const viewer = scopedViewer(context);
-  await viewer.start(true);
-  const { cdp } = viewer;
-  const original = viewer.control();
-  cdp.failNext("Input.insertText", "Held text rejected", -32_000);
-  const inputSession = cdp.pageSession(viewer.first);
-  const sent = cdp.holdNext("Input.insertText");
-  const text = "Rejected entry";
-  await userEvent.click(input());
-  fireEvent.input(input(), {
+function enterText(text: string) {
+  const field = input();
+  field.focus();
+  fireEvent.input(field, {
     target: { value: text },
-    inputType: "insertText",
     data: text,
+    inputType: "insertText",
   });
-  await expect(sent.received).resolves.toContain("Held text rejected");
-  cdp.setAutoOpen(false);
+}
+
+test("browser-frames-recovery-004 leaves the failed edit in its original tab and delivers a fresh edit to Other", async () => {
+  const first = document.createElement("textarea");
+  const other = document.createElement("textarea");
+  const viewer = scopedViewer(context, { first, other });
+  await viewer.start(true);
+  const control = viewer.control();
+  const receipt = viewer.cdp.holdNext("Input.insertText", viewer.first);
+  enterText("amber");
+  await waitFor(() => {
+    expect(first).toHaveValue("amber");
+  });
   viewer.disconnectImage();
   await waitFor(() => {
     expect(input()).toBeDisabled();
   });
-  await sent.release();
-  await expect(screen.findByText(/Reconnecting/)).resolves.toBeVisible();
-  expect(screen.queryByText("Retry live image")).toBeNull();
-  cdp.setAutoOpen(true);
-  click(browserTab("Other")!);
-  cdp.openConnection();
-  await expectStreamingAt(nextUrl);
-  expect(cdp.requests).toContainEqual(
-    expect.objectContaining({
-      method: "Input.insertText",
-      sessionId: inputSession,
-      params: { text },
-    }),
-  );
-  const otherSession = cdp.pageSession(viewer.other);
-  const replacementText = "Harbor inspection";
-  await userEvent.click(input());
-  fireEvent.input(input(), {
-    target: { value: replacementText },
-    inputType: "insertText",
-    data: replacementText,
+  await act(async () => {
+    await receipt.reject("Text delivery was not acknowledged");
   });
+  await screen.findByText("Reconnecting…");
   await waitFor(() => {
-    return expect(cdp.requests).toContainEqual(
-      expect.objectContaining({
-        method: "Input.insertText",
-        sessionId: otherSession,
-        params: { text: replacementText },
-      }),
-    );
+    expect(input()).toBeDisabled();
   });
-  expect(otherSession).not.toBe(inputSession);
-  expect(screen.getByLabelText("Address")).toHaveValue(nextUrl);
-  expect(viewer.control()).toBe(original);
+  expect(screen.queryByText("Retry live image")).toBeNull();
+  click(browserTab("Other")!);
+  await expectStreamingAt(nextUrl);
+  enterText("cobalt");
+  await waitFor(() => {
+    expect(other).toHaveValue("cobalt");
+  });
+  expect(first).toHaveValue("amber");
+  expect(viewer.control()).toBe(control);
 });

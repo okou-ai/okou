@@ -44,6 +44,7 @@ export function mockBrowserCdp(
     readonly onConnecting?: (url: string, socket: { open(): void }) => void;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
+    readonly editors?: ReadonlyMap<string, HTMLTextAreaElement>;
     readonly unavailableTargets?: readonly string[];
     readonly crashedTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
@@ -741,6 +742,20 @@ export function mockBrowserCdp(
         return { result: pageResult(request) };
       }
       case "Input": {
+        if (request.method === "Input.insertText" && options.editors) {
+          const editor = options.editors.get(
+            targetForSession(request.sessionId).targetId,
+          );
+          if (editor) {
+            const { text } = object({ text: string() }).parse(request.params);
+            editor.setRangeText(
+              text,
+              editor.selectionStart,
+              editor.selectionEnd,
+              "end",
+            );
+          }
+        }
         if (
           [
             "Input.insertText",
@@ -1112,6 +1127,15 @@ export function mockBrowserCdp(
       return {
         get received() {
           return response.promise.then((reply) => reply.message);
+        },
+        async reject(message: string) {
+          const reply = await response.promise;
+          const { id } = object({ id: number() }).parse(
+            JSON.parse(reply.message),
+          );
+          reply.peer.receive(
+            JSON.stringify({ id, error: { code: -32_000, message } }),
+          );
         },
         async release(result?: unknown, onRead?: () => void) {
           const reply = await response.promise;

@@ -8,7 +8,10 @@ import {
 } from "./browser-native-page-fixture.ts";
 export const firstUrl = "https://example.com",
   nextUrl = "https://other.example";
-export function scopedViewer(context: TestContext) {
+export function scopedViewer(
+  context: TestContext,
+  editors?: { first: HTMLTextAreaElement; other: HTMLTextAreaElement },
+) {
   const first = "review-example",
     other = "review-other";
   let next: ((socket: { open(): void }) => void) | undefined;
@@ -22,6 +25,12 @@ export function scopedViewer(context: TestContext) {
       next?.(socket);
       next = undefined;
     },
+    editors:
+      editors &&
+      new Map([
+        [first, editors.first],
+        [other, editors.other],
+      ]),
     targets: [
       { targetId: first, title: "Example", url: firstUrl, windowId: 101 },
       { targetId: other, title: "Other", url: nextUrl, windowId: 101 },

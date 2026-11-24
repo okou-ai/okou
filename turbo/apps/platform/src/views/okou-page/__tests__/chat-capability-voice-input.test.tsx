@@ -218,7 +218,10 @@ test("voice-draft-audio-015 sends the recorded worklet samples as a playable voi
   expect(pcm.getUint32(40, true)).toBe(levels.length * 2);
   expect(bytes.byteLength).toBe(44 + levels.length * 2);
   for (const [index, expected] of levels.entries()) {
-    expect(pcm.getInt16(44 + 2 * index, true) / 32768).toBeCloseTo(expected, 4);
+    expect(pcm.getInt16(44 + 2 * index, true) / 32_768).toBeCloseTo(
+      expected,
+      4,
+    );
   }
   const [audio, metadata] = play.querySelectorAll("audio");
   if (!audio || !metadata) {
@@ -290,7 +293,9 @@ test.each(["Backspace", "Delete"] as const)(
         );
       },
     );
-    if (!draftText) throw new Error("Missing text between the two recordings");
+    if (!draftText) {
+      throw new Error("Missing text between the two recordings");
+    }
     window
       .getSelection()!
       .collapse(draftText, key === "Backspace" ? 0 : text.text.length);
