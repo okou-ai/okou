@@ -2,9 +2,8 @@
 <resources>
     <string name="history_syncing">正在同步消息…</string>
     <string name="history_loading">正在加载会话…</string>
-    <string name="history_failed">无法刷新会话，请重试。</string>
+    <string name="history_failed">无法加载此对话。</string>
     <string name="history_missing">此会话已删除或不可用。</string>
-    <string name="history_read_failed">无法确认已读状态，请刷新重试。</string>
     <string name="history_empty">暂无消息。</string>
     <string name="history_queued">已排队</string>
     <string name="history_rejected">未发送</string>

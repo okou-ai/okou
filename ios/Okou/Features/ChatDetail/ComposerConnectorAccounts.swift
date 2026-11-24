@@ -119,15 +119,19 @@ private struct ComposerConnectorAccountsContent: View {
     .navigationBarTitleDisplayMode(.inline)
     .connectorPermissionDestination(store: store, destination: $permissionDestination)
     .connectorAccountDestination(store: store, destination: $accountDestination)
-    .searchable(
-      text: Binding(
-        get: { search },
-        set: { resources.update(search: $0) }), prompt: "Find accounts"
+    .connectorSearch(
+      text: Binding(get: { search }, set: { resources.update(search: $0) }),
+      enabled: accountCount > 6 || !search.isEmpty, prompt: "Find accounts"
     )
     .refreshable { await resources.retry() }
     .onChange(of: store.authorization.active?.id) { _, flowID in
       if flowID == nil { Task { await resources.refresh() } }
     }
+  }
+
+  private var accountCount: Int {
+    if case .hasData(let value) = page { return value.accounts.count }
+    return resources.connector.access.accounts.count
   }
 
 }

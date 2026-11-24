@@ -7,7 +7,7 @@ use crate::env::Framework;
 
 pub(super) fn normalize_for_sequencing(framework: Framework, event: Value) -> Vec<Value> {
     let events = match framework {
-        Framework::ClaudeCode => expand_message_content(event, false),
+        Framework::ClaudeCode | Framework::Antigravity => expand_message_content(event, false),
         Framework::Pi => expand_message_content(event, true),
         Framework::Codex => expand_codex_file_changes(event),
     };
@@ -21,7 +21,7 @@ fn restore_original_command(framework: Framework, event: &mut Value) -> bool {
     let command = match framework {
         Framework::ClaudeCode => claude_bash_command_mut(event),
         Framework::Codex => codex_command_mut(event),
-        Framework::Pi => None,
+        Framework::Pi | Framework::Antigravity => None,
     };
     let Some(command) = command else {
         return true;

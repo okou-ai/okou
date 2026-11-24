@@ -88,9 +88,9 @@ struct ChatSidebarView: View {
     List {
       if listRead.state == .loading && !store.list.hasLoadedThreads {
         forYouRow
-        OkouLoadingRow("Loading chats…")
-          .frame(maxWidth: .infinity)
-          .listRowInsets(.horizontal, 0)
+        OkouLoadingRow("Loading chats…", statusColumnWidth: statusColumn)
+          .frame(minHeight: OkouControl.listRow)
+          .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
           .listRowSeparator(.hidden)
           .listRowBackground(Color.clear)
       } else if !store.list.hasLoadedThreads && listError != nil {

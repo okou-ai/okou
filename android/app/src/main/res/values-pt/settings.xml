@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="settings_preferences_save_rolled_back">Não foi possível salvar as configurações. Os valores anteriores foram restaurados.</string>
+    <string name="settings_appearance_sync_failed">Não foi possível sincronizar a aparência. Ela foi aplicada neste dispositivo.</string>
     <string name="settings_email_updates">Atualizações por e-mail</string>
     <string name="settings_email_scope">Receba resumos, lembretes e atualizações de todos os espaços de trabalho.</string>
     <string name="settings_email_receive">Receber e-mails</string>

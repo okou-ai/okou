@@ -159,9 +159,11 @@ function assertRoutes(
     assertRoute(route);
     assert.ok(
       (route.provider_type === route.subscription_type &&
-        ["claude-code-oauth-token", "codex-oauth-token"].includes(
-          route.provider_type,
-        )) ||
+        [
+          "claude-code-oauth-token",
+          "codex-oauth-token",
+          "antigravity",
+        ].includes(route.provider_type)) ||
         (route.provider_type === "built-in" &&
           route.concrete_provider_type === "openrouter-codex" &&
           route.subscription_type === null &&

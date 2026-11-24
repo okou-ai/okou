@@ -18,6 +18,65 @@ import {
 
 const context = testContext();
 
+test("returns an HTTPS attempt through the shared native publisher and removes provider parameters", async () => {
+  const navigation = context.mocks.browser.locationAssign();
+  const attemptId = "11111111-2222-4333-8444-555555555555";
+  const url = `https://app.okou.ai/native/connector-authorization?attemptId=${attemptId}`;
+  context.mocks.api(
+    builtinConnectorsSlugCallbackContract.callback,
+    ({ query, respond }) => {
+      expect(query).toMatchObject({
+        code: "native-code",
+        state: "native-state",
+        responseMode: "json",
+      });
+      return respond(200, {
+        status: "success",
+        username: null,
+        nativeAppReturn: {
+          platform: "ios",
+          attemptId,
+          httpsHost: "app.okou.ai",
+        },
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: "/connectors/github/callback?code=native-code&state=native-state",
+    auth: null,
+  });
+  await waitFor(() => {
+    expect(navigation.calls).toContain(url);
+  });
+  expect(new URLSearchParams(search()).has("code")).toBeFalsy();
+  expect(new URLSearchParams(search()).has("state")).toBeFalsy();
+  expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+    "href",
+    url,
+  );
+});
+
+test("preserves the shared HTTPS return action on a refreshed denial page", async () => {
+  const attemptId = "11111111-2222-4333-8444-555555555555";
+  context.mocks.api(connectorCatalogContract.get, ({ respond }) => {
+    return respond(200, {
+      connector: publicStatusItem({ connectorSlug: "github", label: "GitHub" }),
+    });
+  });
+  await setupPage({
+    context,
+    path: `/connectors/github/callback/error?nativeAppAttemptId=${attemptId}&nativeAppHttpsHost=staging-app.omby.ai&message=Access+denied`,
+    auth: null,
+  });
+  await waitFor(() => {
+    expect(getConnectorAction("link", "Return to Okou")).toHaveAttribute(
+      "href",
+      `https://staging-app.omby.ai/native/connector-authorization?attemptId=${attemptId}`,
+    );
+  });
+});
+
 test("returns a backend-confirmed native attempt to Okou without carrying provider credentials", async () => {
   const navigation = context.mocks.browser.locationAssign();
   const attemptId = "98000000-0000-4000-8000-000000000005";

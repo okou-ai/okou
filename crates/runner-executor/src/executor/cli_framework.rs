@@ -5,6 +5,7 @@ pub(crate) enum EffectiveCliFramework {
     ClaudeCode,
     Codex,
     Pi,
+    Antigravity,
 }
 
 impl From<CliFramework> for EffectiveCliFramework {
@@ -13,6 +14,7 @@ impl From<CliFramework> for EffectiveCliFramework {
             CliFramework::ClaudeCode => Self::ClaudeCode,
             CliFramework::Codex => Self::Codex,
             CliFramework::Pi => Self::Pi,
+            CliFramework::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -23,6 +25,7 @@ impl From<EffectiveCliFramework> for CliFramework {
             EffectiveCliFramework::ClaudeCode => Self::ClaudeCode,
             EffectiveCliFramework::Codex => Self::Codex,
             EffectiveCliFramework::Pi => Self::Pi,
+            EffectiveCliFramework::Antigravity => Self::Antigravity,
         }
     }
 }

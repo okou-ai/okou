@@ -878,6 +878,8 @@ impl From<FailureReason>
 pub enum FailureDetailSource {
     /// The reason came from a Claude result payload.
     ClaudeResult,
+    /// The reason came from an Antigravity terminal result.
+    AntigravityResult,
     /// The reason came from a Pi result payload.
     PiResult,
     /// The reason came from a Codex compatibility JSONL event.
@@ -895,6 +897,7 @@ impl FailureDetailSource {
         match self {
             Self::ClaudeResult => "claude_result",
             Self::PiResult => "pi_result",
+            Self::AntigravityResult => "antigravity_result",
             Self::CodexJsonl => "codex_jsonl",
             Self::Stderr => "stderr",
             Self::FallbackExitCode => "fallback_exit_code",
@@ -912,6 +915,8 @@ pub enum AgentFramework {
     Codex,
     /// Pi native agent loop.
     Pi,
+    /// Google Antigravity CLI.
+    Antigravity,
 }
 
 impl From<crate::env::CliFramework> for AgentFramework {
@@ -920,6 +925,7 @@ impl From<crate::env::CliFramework> for AgentFramework {
             crate::env::CliFramework::ClaudeCode => Self::ClaudeCode,
             crate::env::CliFramework::Codex => Self::Codex,
             crate::env::CliFramework::Pi => Self::Pi,
+            crate::env::CliFramework::Antigravity => Self::Antigravity,
         }
     }
 }
@@ -932,6 +938,7 @@ impl AgentFramework {
             Self::ClaudeCode => "claude_code",
             Self::Codex => "codex",
             Self::Pi => "pi",
+            Self::Antigravity => "antigravity",
         }
     }
 }

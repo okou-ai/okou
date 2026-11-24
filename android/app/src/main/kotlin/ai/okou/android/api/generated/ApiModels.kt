@@ -1725,6 +1725,7 @@ data class ConnectorOauthStartNativeAppAuthorization(
 @Serializable
 data class ConnectorOauthStart(
     val `authorizationUrl`: String,
+    val `nativeCallbackUrl`: String? = null,
     val `connectionId`: String? = null,
     val `oauthAttemptId`: String,
     val `nativeAppAuthorization`: ConnectorOauthStartNativeAppAuthorization? = null,
@@ -1733,6 +1734,11 @@ data class ConnectorOauthStart(
 @Serializable
 enum class ConnectorOauthStartRequestCallbackTarget {
     @SerialName("app") APP,
+}
+
+@Serializable
+enum class ConnectorOauthStartRequestNativeCallback {
+    @SerialName("ios-https") IOS_HTTPS,
 }
 
 @Serializable
@@ -1832,6 +1838,7 @@ object ConnectorOauthStartRequestAccountSerializer :
 data class ConnectorOauthStartRequest(
     val `authMethod`: String,
     val `callbackTarget`: ConnectorOauthStartRequestCallbackTarget? = null,
+    val `nativeCallback`: ConnectorOauthStartRequestNativeCallback? = null,
     val `nativeAppAuthorization`: ConnectorOauthStartRequestNativeAppAuthorization? = null,
     val `account`: ConnectorOauthStartRequestAccount,
 )
@@ -17040,12 +17047,6 @@ enum class ArtifactCatalogQueryKind {
 }
 
 @Serializable
-enum class ArtifactCatalogQuerySort {
-    @SerialName("createdAt") CREATEDAT,
-    @SerialName("title") TITLE,
-}
-
-@Serializable
 enum class ArtifactCatalogQueryDirection {
     @SerialName("asc") ASC,
     @SerialName("desc") DESC,
@@ -17058,7 +17059,6 @@ data class ArtifactCatalogQuery(
     val `kind`: ArtifactCatalogQueryKind? = null,
     val `chatThreadId`: String? = null,
     val `keyword`: String? = null,
-    val `sort`: ArtifactCatalogQuerySort? = null,
     val `direction`: ArtifactCatalogQueryDirection? = null,
 )
 

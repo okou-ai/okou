@@ -249,6 +249,74 @@ describe("Chat connector execution", () => {
     );
   });
 
+  it("applies member eligibility on the existing Run refresh and MCP reads", async () => {
+    const value = await owner();
+    const selected = await addAccount(value.actor, "Selected");
+    const fallback = await addAccount(value.actor, "Fallback");
+    await connectors.updateFeatureSwitches(value.actor, {
+      [FeatureSwitchKey.MemberConnectorAccountAccess]: true,
+    });
+    const admittedAt = now();
+    mockNow(admittedAt);
+    session(value.actor);
+    await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: selected.id },
+        body: { target: builtin, policy: "allow-1h" },
+      }),
+      [200],
+    );
+    const run = await start(value);
+    expect(run.execution.connectorRuntimeTargets).toContainEqual(
+      expect.objectContaining({ ...builtin, sourceId: selected.id }),
+    );
+
+    mockNow(admittedAt + 3_600_000);
+    const targets = [{ ...builtin, sourceId: selected.id }];
+    await expect(
+      runs.syncConnectorRuntime(run.runId, { targets }),
+    ).resolves.toContainEqual(
+      expect.objectContaining({
+        target: builtin,
+        state: "available",
+        accountBinding: { connectionId: fallback.id, baseUrlVars: {} },
+      }),
+    );
+    const listed = await accept(mcp().list({ headers: run.headers }), [200]);
+    expect(listed.body.connectors).toStrictEqual([
+      expect.objectContaining({ connectionId: fallback.id }),
+    ]);
+    const reauthorized = await accept(
+      mcp().reauthorizeOAuth({
+        headers: run.headers,
+        body: { target: builtin, scopes: ["read"] },
+      }),
+      [200],
+    );
+    expect(reauthorized.body).toMatchObject({
+      kind: "reconnect",
+      connectionId: fallback.id,
+    });
+
+    session(value.actor);
+    await accept(
+      access().updateAccountPolicy({
+        headers: sessionHeaders,
+        params: { connectionId: fallback.id },
+        body: { target: builtin, policy: "deny" },
+      }),
+      [200],
+    );
+    await expect(
+      runs.syncConnectorRuntime(run.runId, { targets }),
+    ).resolves.toContainEqual({
+      target: builtin,
+      state: "absent",
+      reason: "connector-unavailable",
+    });
+  });
+
   it("resolves the Chat's selected native credentials alongside a registered MCP account", async () => {
     const value = await owner();
     const nativeTarget = {

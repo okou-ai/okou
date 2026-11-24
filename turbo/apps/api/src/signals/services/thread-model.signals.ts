@@ -647,7 +647,6 @@ function personalSubscriptionAccountCandidates(args: {
   }
   return snapshot.accounts.filter((account) => {
     if (
-      account.disconnectedAt !== null ||
       account.orgId !== snapshot.orgId ||
       account.userId !== snapshot.userId
     ) {

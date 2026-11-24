@@ -23,16 +23,16 @@ import {
 } from "../services/billing-feedback-reward.service";
 import { publishBillingChangedForOrg$ } from "../services/billing-realtime.service";
 
-const rewardEligible$ = computed(async (get) => {
+const rewardIdentity$ = computed((get) => {
   const auth = get(organizationAuthContext$);
-  return await get(
-    billingFeedbackRewardEligible({
-      orgId: auth.orgId,
-      userId: auth.userId,
-      canManageBilling: auth.orgRole === "admin",
-    }),
-  );
+  return {
+    orgId: auth.orgId,
+    userId: auth.userId,
+    canManageBilling: auth.orgRole === "admin",
+  };
 });
+const rewardEligible$ = billingFeedbackRewardEligible(rewardIdentity$);
+const rewardEventBody$ = bodyResultOf(posthogSurveysContract.reward);
 
 const rewardOfferAuthed$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -53,15 +53,10 @@ const rewardOfferAuthed$ = command(
   },
 );
 
-const rewardOffer$ = command(async ({ set }, signal: AbortSignal) => {
-  return await set(
-    authRoute(
-      { requireOrganization: true, missingOrganizationStatus: 401 },
-      rewardOfferAuthed$,
-    ),
-    signal,
-  );
-});
+const rewardOffer$ = authRoute(
+  { requireOrganization: true, missingOrganizationStatus: 401 },
+  rewardOfferAuthed$,
+);
 
 const rewardWebhook$ = command(async ({ get, set }, signal: AbortSignal) => {
   const secret = env("BILLING_FEEDBACK_WEBHOOK_SECRET");
@@ -76,7 +71,7 @@ const rewardWebhook$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Invalid PostHog destination credential",
     );
   }
-  const body = await get(bodyResultOf(posthogSurveysContract.reward));
+  const body = await get(rewardEventBody$);
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;

@@ -154,6 +154,34 @@ test("a Stripe cancellation uses its own survey without promising a reward", asy
   ).toHaveLength(1);
 });
 
+test("a restored upgrade dialog defers checkout feedback until closing completes", async () => {
+  const telemetry = prepareBilling();
+  await setupPage({
+    context,
+    path: "/?billing=canceled&settings=billing&billingView=plans",
+    host: "app.okou.ai",
+  });
+  const plans = await screen.findByRole("dialog", { name: "Choose a plan" });
+  await waitFor(() => {
+    expect(
+      telemetry.events.some((event) => {
+        return event.name === "billing_checkout_canceled";
+      }),
+    ).toBeTruthy();
+  });
+  expect(telemetry.surveyDisplays).toStrictEqual([]);
+
+  click(within(plans).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(
+      telemetry.surveyDisplays.map((display) => {
+        return display.id;
+      }),
+    ).toStrictEqual([BILLING_FEEDBACK_SURVEYS.checkout_canceled]);
+  });
+  expect(plans).not.toBeInTheDocument();
+});
+
 test("an exhaustion card requests the reward questionnaire with the server-issued offer", async () => {
   const telemetry = prepareBilling();
   context.mocks.api(billingFeedbackRewardContract.get, ({ respond }) => {

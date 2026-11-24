@@ -13,7 +13,6 @@
     <string name="conversation_new_reply">有新回覆</string>
     <string name="conversation_view_progress">查看進度</string>
     <string name="conversation_processing">處理中</string>
-    <string name="conversation_history_offline">連線後載入聊天記錄。</string>
     <string name="conversation_offline_send">草稿已保留，請連線後再傳送。</string>
     <string name="conversation_work">工作過程</string>
     <string name="conversation_reply_actions">回覆操作</string>

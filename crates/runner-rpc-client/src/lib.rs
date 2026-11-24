@@ -44,18 +44,32 @@ where
         ),
     )
     .await;
+    publish_terminal(result, sent, output_usable, deadline, async |terminal| {
+        emit(&mut output, &terminal).await
+    })
+    .await
+}
+
+async fn publish_terminal(
+    result: Result<Result<Response, ErrorCode>, tokio::time::error::Elapsed>,
+    sent: bool,
+    output_usable: bool,
+    deadline: Instant,
+    write: impl AsyncFnOnce(Response) -> io::Result<()>,
+) -> io::Result<bool> {
     if !output_usable {
-        // A cancelled/failed partial NDJSON write cannot be safely retried.
+        // A partial output record cannot be followed by a terminal response.
         return Err(io::Error::new(
             io::ErrorKind::BrokenPipe,
             "RPC output unavailable",
         ));
     }
     let terminal = terminal_response(result, sent);
-    timeout_at(deadline, emit(&mut output, &terminal))
+    let succeeded = matches!(terminal, Response::Result { .. });
+    timeout_at(deadline, write(terminal))
         .await
         .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "RPC output deadline"))??;
-    Ok(matches!(terminal, Response::Result { .. }))
+    Ok(succeeded)
 }
 
 fn terminal_response(

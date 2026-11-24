@@ -23,3 +23,24 @@ struct OkouGlassControl: ViewModifier {
     }
   }
 }
+
+/// A prompt on a glass capsule that stands in for an input until it opens (For you's "What do you
+/// have in mind?"). Its text takes the glass's own vibrancy through the hierarchical `.secondary`
+/// style instead of a fixed grey: on a plain page it reads as the placeholder does, and over a
+/// picture or a coloured scene the system adapts it to what the glass picks up, so it never washes
+/// out. A fixed colour would be drawn as it is, whatever the glass sits on.
+struct OkouGlassPrompt: View {
+  let title: LocalizedStringKey
+
+  init(_ title: LocalizedStringKey) {
+    self.title = title
+  }
+
+  var body: some View {
+    Text(title)
+      .font(.okou(.body)).foregroundStyle(.secondary).lineLimit(1)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, OkouSpace.lg)
+      .modifier(OkouGlassControl(shape: .capsule))
+  }
+}

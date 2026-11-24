@@ -1146,6 +1146,69 @@ async function selectGmailAccount(
 }
 
 describe("POST /api/mail/drafts/link", () => {
+  it("rejects a Gmail draft ID with extra text before reading the draft", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    let draftReads = 0;
+    server.use(
+      http.get(`${GMAIL_API_BASE}/drafts/:draftId`, () => {
+        draftReads += 1;
+        return new HttpResponse(null, { status: 400 });
+      }),
+    );
+
+    const response = await accept(
+      client().linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: fixture.thread.id,
+          gmailDraftId: `Draft ${GMAIL_DRAFT_ID}`,
+        },
+      }),
+      [400],
+    );
+
+    expect(response.body.error).toStrictEqual({
+      code: "BAD_REQUEST",
+      message:
+        "Invalid Gmail draft ID. Pass only the top-level id returned by Gmail when creating the draft.",
+    });
+    expect(draftReads).toBe(0);
+  });
+
+  it("keeps Gmail draft read 400s as server failures with finite diagnostics", async () => {
+    const fixture = await seedGmailMailCardFixture();
+    server.use(
+      http.get(`${GMAIL_API_BASE}/drafts/${GMAIL_DRAFT_ID}`, () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 400,
+              status: "INVALID_ARGUMENT",
+              message: "Private provider text",
+              errors: [
+                { reason: "invalid" },
+                { reason: "private-reason@example.invalid" },
+              ],
+            },
+          },
+          { status: 400 },
+        );
+      }),
+    );
+
+    await expect(
+      client({ rethrowErrors: true }).linkDraft({
+        headers: authHeaders(),
+        body: {
+          threadId: fixture.thread.id,
+          gmailDraftId: GMAIL_DRAFT_ID,
+        },
+      }),
+    ).rejects.toThrow(
+      /^Failed to read Gmail draft \(HTTP 400; reason: invalid, unrecognized\)$/u,
+    );
+  });
+
   it("converges simultaneous same-chat links and preserves replay and cross-chat conflict", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     const fixture = await createPublicGmailMailCardFixture();

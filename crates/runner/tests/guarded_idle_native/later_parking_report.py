@@ -7,7 +7,7 @@ import progress_report as foreground
 import pressure_report as pressure
 import report
 import status_evidence
-from cleanup_report import COUNTS, accounting, supplied_policy
+from cleanup_report import COUNTS, accounting, exact_coverage, supplied_policy
 from report import exact
 
 PREFIX = "NATIVE_LATER_PARKING_WITNESS "
@@ -42,9 +42,8 @@ def covered(value, policy):
     if not isinstance(value, dict):
         raise ValueError("missing later parking coverage")
     accounting(value.get("accounting"), False, policy)
-    exact(value, {"allocated": [4, 8192, 2], "accounting": value["accounting"],
-                  "original_lease_active": True, "io_release_withheld": True},
-          "original or separate incoming full lease lost")
+    exact_coverage(value, [4, 8192, 2], value["accounting"],
+                   "original or separate incoming full lease lost")
 
 
 def validate(directory):

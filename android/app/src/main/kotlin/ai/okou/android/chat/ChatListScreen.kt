@@ -88,7 +88,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -1302,20 +1301,12 @@ private fun ChatListTextAction(
 }
 
 @Composable
-internal fun ChatContentLoadNotice(
-    @StringRes message: Int,
-    horizontalPadding: Dp = 12.dp,
-    retry: (() -> Unit)? = null,
-    retryEnabled: Boolean = true,
-) {
-    Column {
-        Box(
-            Modifier.heightIn(min = 48.dp).padding(horizontal = horizontalPadding),
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            ContentReadFeedback(message)
-        }
-        if (retry != null) ChatAction(R.string.retry, retry, enabled = retryEnabled)
+private fun ChatContentLoadNotice(@StringRes message: Int) {
+    Box(
+        Modifier.heightIn(min = 48.dp).padding(horizontal = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        ContentReadFeedback(message)
     }
 }
 

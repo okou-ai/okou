@@ -343,7 +343,20 @@ export function getOnlyAvailableBuiltinConnectorStatusNoAuthMethod(
 
 export function getBuiltinConnectorStatusDirectConnectMethod(
   connector: PlatformConnectorCatalogConnectItem,
+  reconnectAuthMethod?: ConnectorAuthMethodId,
 ): ConnectorStatusDirectConnectMethod | null {
+  if (reconnectAuthMethod !== undefined) {
+    const method = getConnectorStatusAuthMethod(connector, reconnectAuthMethod);
+    if (!method) {
+      return null;
+    }
+    if (isBrowserAuthGrantKind(method.grantKind)) {
+      return { kind: "browser-auth", authMethod: method };
+    }
+    return isNoAuthGrantKind(method.grantKind)
+      ? { kind: "no-auth", authMethod: method.id }
+      : null;
+  }
   const browserAuthMethod =
     getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail(connector);
   if (browserAuthMethod) {

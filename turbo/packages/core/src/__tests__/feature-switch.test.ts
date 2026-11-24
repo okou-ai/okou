@@ -23,6 +23,8 @@ describe("FeatureSwitchKey", () => {
 
 describe("isFeatureEnabled", () => {
   it.each([
+    FeatureSwitchKey.IosConnectorManagement,
+    FeatureSwitchKey.ComposerVoiceMessages,
     FeatureSwitchKey.ZipArtifactPreview,
     FeatureSwitchKey.FollowupPlaceholder,
     FeatureSwitchKey.WorkflowRecencySync,
@@ -179,6 +181,33 @@ describe("isFeatureEnabled", () => {
         expect(isFeatureEnabled(key, context)).toBe(false);
         expect(getAllFeatureStates(context)[key]).toBe(false);
       }
+    }
+  });
+
+  it("allows staff to opt into Antigravity individually, with no default access", () => {
+    const key = FeatureSwitchKey.GeminiAntigravity;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("internal");
+    expect(isFeatureSwitchAvailable(key, staff)).toBe(true);
+    expect(getAllFeatureStates(staff)[key]).toBe(false);
+    expect(isFeatureEnabled(key, staff)).toBe(false);
+    for (const enabled of [true, false]) {
+      const context = { ...staff, overrides: { [key]: enabled } };
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("ignores Antigravity overrides outside staff workspaces, including stale opt-ins", () => {
+    const key = FeatureSwitchKey.GeminiAntigravity;
+    for (const identity of [
+      {},
+      { orgId: "external-org", email: "lancy@okou.ai" },
+    ]) {
+      const context = { ...identity, overrides: { [key]: true } };
+      expect(isFeatureSwitchAvailable(key, context)).toBe(false);
+      expect(isFeatureEnabled(key, context)).toBe(false);
+      expect(getAllFeatureStates(context)[key]).toBe(false);
     }
   });
 
@@ -443,6 +472,9 @@ describe("getFeatureSwitchMetadata", () => {
     const metadata = getFeatureSwitchMetadata();
 
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
+    expect(metadata[FeatureSwitchKey.ComposerVoiceMessages].rolloutStage).toBe(
+      "beta",
+    );
     expect(metadata[FeatureSwitchKey.PresentationConvert].rolloutStage).toBe(
       "alpha",
     );

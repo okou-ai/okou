@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.9...runner-supervisor-v0.28.10) (2026-11-24)
+
+
+### Bug Fixes
+
+* **runner:** reuse finalizing home for new native sessions ([#50441](https://github.com/okou-ai/okou/issues/50441)) ([7b1d40e](https://github.com/okou-ai/okou/commit/7b1d40ea54326a99bf2140381261f8e8cb301939))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.8...runner-supervisor-v0.28.9) (2026-11-24)
+
 ## [0.28.8](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.7...runner-supervisor-v0.28.8) (2026-11-24)
 
 ## [0.28.7](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.28.6...runner-supervisor-v0.28.7) (2026-11-24)

@@ -22,6 +22,7 @@ pub(crate) enum SessionHistoryLaunchSource {
         sessions_dir: Option<String>,
     },
     Pi,
+    Antigravity,
 }
 
 impl SessionHistoryLaunchSource {
@@ -45,6 +46,7 @@ impl SessionHistoryLaunchSource {
                 ),
             },
             Framework::Pi => Self::Pi,
+            Framework::Antigravity => Self::Antigravity,
         }
     }
 
@@ -53,6 +55,7 @@ impl SessionHistoryLaunchSource {
             Self::ClaudeCode { .. } => Framework::ClaudeCode,
             Self::Codex { .. } => Framework::Codex,
             Self::Pi => Framework::Pi,
+            Self::Antigravity => Framework::Antigravity,
         }
     }
 
@@ -90,6 +93,7 @@ impl SessionHistoryLaunchSource {
                         });
                 (thread_id, source)
             }
+            Self::Antigravity => return None,
             Self::Pi => {
                 if !is_valid_cli_agent_session_id(raw_session_id) {
                     return None;

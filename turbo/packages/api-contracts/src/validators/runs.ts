@@ -94,6 +94,24 @@ export const networkLogEntrySchema = object({
   latency_ms: number().optional(),
   request_size: number().optional(),
   response_size: number().optional(),
+  openrouter: object({
+    generation_id: string()
+      .regex(/^gen-[A-Za-z0-9-]+$/)
+      .max(128)
+      .optional(),
+    model: string().min(1).max(128).optional(),
+    provider: string().min(1).max(128).optional(),
+    attempts: array(
+      object({
+        provider: string().min(1).max(128),
+        model: string().min(1).max(128),
+        status: number().int().min(100).max(599),
+      }),
+    )
+      .max(32)
+      .optional(),
+    attempts_incomplete: boolean().optional(),
+  }).optional(),
   browser_user_agent: boolean().optional(),
   model_catalog_cache_status: modelCatalogCacheStatusSchema.optional(),
   model_catalog_cache_upstream_encoding:

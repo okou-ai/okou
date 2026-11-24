@@ -6,10 +6,19 @@ import { accept } from "../lib/accept.ts";
 import { displayBillingFeedbackSurvey } from "../lib/posthog.ts";
 import { apiClient$ } from "./api-client.ts";
 import { authenticatedIdentity$ } from "./auth.ts";
-import { pendingBillingFeedback$ } from "./billing-feedback-flow.ts";
-import { billingStatusAsync$ } from "./okou-page/billing.ts";
+import {
+  consumeBillingFeedback$,
+  pendingBillingFeedback$,
+  requestBillingFeedback$,
+} from "./billing-feedback-flow.ts";
+import {
+  billingStatusAsync$,
+  handleBillingRedirect$,
+} from "./okou-page/billing.ts";
+import { settingsDialogSessionActive$ } from "./okou-page/settings/settings-dialog-session.ts";
 import { isOrgAdmin$ } from "./org.ts";
-import { onRef } from "./utils.ts";
+import { searchParams$ } from "./route.ts";
+import { resetSignal } from "./utils.ts";
 
 export const creditsFeedbackOffer$ = computed(async (get) => {
   const status = await get(billingStatusAsync$);
@@ -29,12 +38,22 @@ export const creditsFeedbackOffer$ = computed(async (get) => {
   return response.body.token ? response.body : null;
 });
 
-export const billingFeedbackRef$ = onRef(
-  command(async ({ get }, _element: HTMLElement, signal: AbortSignal) => {
+const resetFeedbackSignal$ = resetSignal();
+
+/** Click, redirect and dialog-close events own survey initiation. */
+export const showPendingBillingFeedback$ = command(
+  async ({ get, set }, ownerSignal: AbortSignal) => {
+    if (
+      get(settingsDialogSessionActive$) ||
+      get(searchParams$).has("settings")
+    ) {
+      return;
+    }
     const request = get(pendingBillingFeedback$);
     if (!request) {
       return;
     }
+    const signal = set(resetFeedbackSignal$, ownerSignal);
     const [status, identity, isAdmin] = await Promise.all([
       get(billingStatusAsync$),
       get(authenticatedIdentity$),
@@ -57,6 +76,9 @@ export const billingFeedbackRef$ = onRef(
     if (request.kind === "credits_exhausted" && !offer) {
       return;
     }
+    if (!set(consumeBillingFeedback$, request.id)) {
+      return;
+    }
     displayBillingFeedbackSurvey(
       BILLING_FEEDBACK_SURVEYS[request.kind],
       {
@@ -68,5 +90,21 @@ export const billingFeedbackRef$ = onRef(
       currentLocale(),
       signal,
     );
-  }),
+  },
+);
+
+export const handleBillingFeedbackRedirect$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    await set(handleBillingRedirect$, signal);
+    signal.throwIfAborted();
+    // The initial Stripe return precedes page setup and belongs to app startup.
+    await set(showPendingBillingFeedback$, signal);
+  },
+);
+
+export const requestCreditsFeedback$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    set(requestBillingFeedback$, "credits_exhausted");
+    await set(showPendingBillingFeedback$, signal);
+  },
 );

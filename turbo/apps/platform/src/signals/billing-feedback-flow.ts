@@ -31,6 +31,15 @@ export const requestBillingFeedback$ = command(
   },
 );
 
+export const consumeBillingFeedback$ = command(({ get, set }, id: string) => {
+  const request = get(pendingBillingFeedback$);
+  if (request?.id !== id) {
+    return false;
+  }
+  set(request$, null);
+  return true;
+});
+
 /** Logical dialog actions own the attempt, independently of React ref replays. */
 export const beginBillingUpgrade$ = command(({ get, set }) => {
   if (get(upgrade$)) {
@@ -60,7 +69,12 @@ export const finishBillingUpgrade$ = command(
       checkout_started: attempt.checkoutStarted,
       close_reason: dismissed ? "dismissed" : "navigation",
     });
-    if (dismissed && !attempt.checkoutStarted && sameIdentity) {
+    if (
+      dismissed &&
+      !attempt.checkoutStarted &&
+      sameIdentity &&
+      !get(pendingBillingFeedback$)
+    ) {
       set(request$, {
         id: attempt.id,
         kind: "upgrade_dismissed",

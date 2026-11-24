@@ -1,7 +1,7 @@
 import { creditExpiresRecord } from "@okouai/db/schema/credit-expires-record";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { usagePackCreditGrants } from "@okouai/db/schema/usage-pack-credit-grant";
-import { command, computed } from "ccstate";
+import { command, computed, type Computed } from "ccstate";
 import { and, eq, gt, inArray, lte, notExists, sql, sum } from "drizzle-orm";
 import { boolean, number, object } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
@@ -61,12 +61,15 @@ function rewardEligibilitySql(
   )}`;
 }
 
-export function billingFeedbackRewardEligible(identity: {
-  readonly orgId: string;
-  readonly userId: string;
-  readonly canManageBilling: boolean;
-}) {
+export function billingFeedbackRewardEligible(
+  identity$: Computed<{
+    readonly orgId: string;
+    readonly userId: string;
+    readonly canManageBilling: boolean;
+  }>,
+) {
   return computed(async (get) => {
+    const identity = get(identity$);
     const [row] = parseRawRows(
       object({ eligible: boolean() }),
       await get(rawSqlReadDb$).execute(

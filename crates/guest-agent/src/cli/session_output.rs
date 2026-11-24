@@ -1,11 +1,11 @@
-//! Bounded best-effort transport for transient Pi assistant text.
+//! Bounded best-effort transport for transient assistant text.
 //!
 //! This path is deliberately independent from durable agent-event delivery:
 //! it never allocates a public event sequence, never retries an uncertain HTTP
 //! result, and never reports failure into the Run lifecycle. A failed block is
 //! abandoned until its authoritative `message_end` event reconciles the UI.
 //!
-//! The Pi projection applies the configured normal secret policy before
+//! The assistant stream applies the configured normal secret policy before
 //! admitting chunks here. Each native text source
 //! holds back at most the longest configured variant minus one bytes (plus UTF-8
 //! boundary rounding) so a secret split across provider deltas cannot escape.
@@ -13,7 +13,7 @@
 //! discard it. With no eligible configured secrets, previews remain immediate.
 //! The session-output and durable event wire formats are unchanged.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -23,12 +23,14 @@ use tokio::sync::mpsc;
 
 use crate::error::AgentError;
 use crate::http::HttpClient;
+use crate::masker::{SecretMasker, StreamingSecretMasker};
 use crate::timing;
 use guest_telemetry::log_warn;
 use guest_telemetry::telemetry::record_sandbox_op;
 
 use super::LOG_TAG;
 
+const MAX_STREAM_CONTENT_INDEX: usize = 1024;
 const SESSION_OUTPUT_QUEUE_CAPACITY: usize = 256;
 pub(super) const SESSION_OUTPUT_DELTA_MAX_BYTES: usize = 4096;
 const SESSION_OUTPUT_INTERVAL: Duration = Duration::from_millis(50);
@@ -110,13 +112,13 @@ impl SessionOutputState {
 }
 
 #[derive(Clone)]
-pub(super) struct PiSessionOutputSender {
+pub(super) struct SessionOutputSender {
     tx: mpsc::Sender<SessionOutputChunk>,
     state: Arc<SessionOutputState>,
     run_id: Arc<str>,
 }
 
-impl PiSessionOutputSender {
+impl SessionOutputSender {
     /// Admit one already-bounded chunk without waiting for network or capacity.
     ///
     /// `false` permanently closes this block's preview. Durable projection is
@@ -132,7 +134,7 @@ impl PiSessionOutputSender {
             self.state.fail_block(run_event_id);
             log_warn!(
                 LOG_TAG,
-                "Pi session output block exceeded its chunk bound: run_id={} run_event_id={run_event_id}",
+                "Session output block exceeded its chunk bound: run_id={} run_event_id={run_event_id}",
                 self.run_id
             );
             return false;
@@ -148,7 +150,7 @@ impl PiSessionOutputSender {
                 self.state.fail_block(run_event_id);
                 log_warn!(
                     LOG_TAG,
-                    "Pi session output queue full; stopped block preview: run_id={} run_event_id={run_event_id}",
+                    "Session output queue full; stopped block preview: run_id={} run_event_id={run_event_id}",
                     self.run_id
                 );
                 false
@@ -157,7 +159,7 @@ impl PiSessionOutputSender {
                 self.state.disable();
                 log_warn!(
                     LOG_TAG,
-                    "Pi session output worker unavailable; stopped run preview: run_id={}",
+                    "Session output worker unavailable; stopped run preview: run_id={}",
                     self.run_id
                 );
                 false
@@ -170,11 +172,11 @@ impl PiSessionOutputSender {
 pub(super) fn test_channel(
     capacity: usize,
     run_id: &str,
-) -> (PiSessionOutputSender, mpsc::Receiver<SessionOutputChunk>) {
+) -> (SessionOutputSender, mpsc::Receiver<SessionOutputChunk>) {
     let (tx, rx) = mpsc::channel(capacity);
     let state = Arc::new(SessionOutputState::default());
     (
-        PiSessionOutputSender {
+        SessionOutputSender {
             tx,
             state,
             run_id: Arc::from(run_id),
@@ -188,7 +190,7 @@ pub(super) fn start(
     run_id: &str,
     thread_id: &str,
     first_output: FirstSessionOutputTiming,
-) -> Option<PiSessionOutputSender> {
+) -> Option<SessionOutputSender> {
     if !http.has_api()
         || uuid::Uuid::parse_str(run_id).is_err()
         || uuid::Uuid::parse_str(thread_id).is_err()
@@ -198,7 +200,7 @@ pub(super) fn start(
 
     let (tx, rx) = mpsc::channel(SESSION_OUTPUT_QUEUE_CAPACITY);
     let state = Arc::new(SessionOutputState::default());
-    let sender = PiSessionOutputSender {
+    let sender = SessionOutputSender {
         tx,
         state: Arc::clone(&state),
         run_id: Arc::from(run_id),
@@ -280,7 +282,7 @@ async fn run_worker(
             }
             log_warn!(
                 LOG_TAG,
-                "Pi session output publication failed; stopped preview: run_id={run_id} run_event_id={} http_status={}",
+                "Session output publication failed; stopped preview: run_id={run_id} run_event_id={} http_status={}",
                 chunk.run_event_id,
                 status.map_or_else(|| "unknown".to_string(), |status| status.to_string())
             );
@@ -294,6 +296,76 @@ async fn run_worker(
         }
 
         tokio::time::sleep(SESSION_OUTPUT_INTERVAL).await;
+    }
+}
+
+pub(super) struct AssistantTextStream<'a> {
+    event_id_prefix: String,
+    masker: &'a SecretMasker,
+    masking: BTreeMap<usize, StreamingSecretMasker<'a>>,
+    started_sources: HashSet<usize>,
+    closed_sources: HashSet<usize>,
+    output: SessionOutputSender,
+}
+
+impl<'a> AssistantTextStream<'a> {
+    pub(super) fn new(output: SessionOutputSender, masker: &'a SecretMasker) -> Self {
+        Self {
+            event_id_prefix: format!("sandbox:{}", uuid::Uuid::new_v4()),
+            masker,
+            masking: BTreeMap::new(),
+            started_sources: HashSet::new(),
+            closed_sources: HashSet::new(),
+            output,
+        }
+    }
+
+    pub(super) fn push(&mut self, source: usize, text: &str) {
+        if source > MAX_STREAM_CONTENT_INDEX || text.is_empty() {
+            return;
+        }
+        if self.closed_sources.contains(&source) {
+            return;
+        }
+        // Mask each source before trimming or transport chunk boundaries.
+        let masked = self
+            .masking
+            .entry(source)
+            .or_insert_with(|| self.masker.stream())
+            .push(text);
+        self.emit_masked(source, &masked);
+    }
+
+    fn emit_masked(&mut self, source: usize, text: &str) {
+        if self.closed_sources.contains(&source) {
+            return;
+        }
+        let text = if self.started_sources.contains(&source) {
+            text
+        } else {
+            text.trim_start()
+        };
+        let run_event_id = format!("{}:{source}", self.event_id_prefix);
+        let mut remaining = text;
+        while !remaining.is_empty() {
+            let end =
+                remaining.floor_char_boundary(remaining.len().min(SESSION_OUTPUT_DELTA_MAX_BYTES));
+            let delta = remaining[..end].to_string();
+            if !self.output.try_send(&run_event_id, delta) {
+                self.closed_sources.insert(source);
+                self.masking.remove(&source);
+                break;
+            }
+            self.started_sources.insert(source);
+            remaining = &remaining[end..];
+        }
+    }
+
+    pub(super) fn finish(mut self) -> String {
+        for (source, masking) in std::mem::take(&mut self.masking) {
+            self.emit_masked(source, &masking.finish());
+        }
+        self.event_id_prefix
     }
 }
 

@@ -25,7 +25,6 @@ export interface ConnectorSourceConnection {
   readonly storageVersion: number;
   readonly needsReconnect: boolean;
   readonly tokenExpiresAt: Date | null;
-  readonly updatedAt: Date;
 }
 /** Custom definition and OAuth binding captured by the bootstrap loader. */
 export interface CustomConnectorSourceBinding {
@@ -97,7 +96,6 @@ function sourceSnapshot(
       storageVersion: row.storageVersion,
       needsReconnect: row.needsReconnect,
       tokenExpiresAt: row.tokenExpiresAt,
-      updatedAt: row.updatedAt,
     },
     customBinding:
       source.kind === "custom" &&

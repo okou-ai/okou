@@ -264,14 +264,20 @@ function providerErrorReason(
   ) {
     return "context_window_exceeded";
   }
-  if (
-    error.type === "invalid_request_error" &&
-    error.code === "invalid_request_error" &&
-    error.message === "Content Exists Risk"
-  ) {
-    return "safety_policy_refusal";
-  }
+  if (isProviderContentPolicyRefusal(error)) return "safety_policy_refusal";
   return undefined;
+}
+
+function isProviderContentPolicyRefusal(
+  error: Record<string, unknown>,
+): boolean {
+  return (
+    (error.type === "invalid_request_error" &&
+      error.code === "invalid_request_error" &&
+      error.message === "Content Exists Risk") ||
+    (error.code === 403 &&
+      error.message === "Output data may contain inappropriate content.")
+  );
 }
 
 function isProviderModelRestriction(error: Record<string, unknown>): boolean {

@@ -103,7 +103,6 @@ test("The enabled Library starts with all kinds ordered by creation and does not
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query).toStrictEqual({
       limit: 60,
-      sort: "createdAt",
       direction: "desc",
     });
     return respond(200, {
@@ -143,9 +142,9 @@ test("The enabled Library starts with all kinds ordered by creation and does not
     "aria-sort",
     "descending",
   );
-  expect(
-    screen.getByRole("combobox", { name: "Sort artifacts" }),
-  ).toHaveTextContent("Created");
+  expect(getButtonByName("Created Sort ascending", viewport)).toHaveTextContent(
+    "Created",
+  );
   expect(
     queryAllByRoleFast("columnheader", viewport).map((heading) => {
       return heading.textContent?.trim();
@@ -173,7 +172,7 @@ test("The enabled Library starts with all kinds ordered by creation and does not
     queryAllByRoleFast("combobox", viewport).map((control) => {
       return control.getAttribute("aria-label");
     }),
-  ).toStrictEqual(["Type", "Sort artifacts"]);
+  ).toStrictEqual(["Type"]);
   expect(
     queryAllByRoleFast("button", viewport).some((button) => {
       return /\b(star|favorite|source)\b/iu.test(
@@ -277,7 +276,6 @@ test("Search debounces to the latest keyword and finds matches outside the loade
     {
       limit: 60,
       keyword: "launch",
-      sort: "createdAt",
       direction: "desc",
     },
   ]);
@@ -340,7 +338,6 @@ test("Whitespace-only search and clearing it omit the keyword from the productio
       expect(query).toStrictEqual({
         limit: 60,
         kind: "file",
-        sort: "title",
         direction: "asc",
       });
       expect(new URL(request.url).searchParams.has("keyword")).toBeFalsy();
@@ -351,7 +348,7 @@ test("Whitespace-only search and clearing it omit the keyword from the productio
     },
   );
 
-  await setupLibraryPage("/artifacts?tab=file&sort=title&direction=asc");
+  await setupLibraryPage("/artifacts?tab=file&direction=asc");
 
   await expect(
     findArtifactAction("Initial unfiltered notes.txt"),
@@ -374,14 +371,12 @@ test("Whitespace-only search and clearing it omit the keyword from the productio
   expect(queryParams().has("q")).toBeFalsy();
 });
 
-test("Name and Created headings change the server order without losing the keyword", async () => {
+test("The Created heading changes the server direction without losing the keyword", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.keyword).toBe("launch");
     expect(query.kind).toBeUndefined();
     return respond(200, {
-      artifacts: [
-        artifact({ title: `launch-${query.sort}-${query.direction}.txt` }),
-      ],
+      artifacts: [artifact({ title: `launch-${query.direction}.txt` })],
       nextCursor: null,
     });
   });
@@ -389,74 +384,62 @@ test("Name and Created headings change the server order without losing the keywo
   await setupLibraryPage("/artifacts?q=launch");
 
   await expect(
-    findArtifactAction("launch-createdAt-desc.txt"),
+    findArtifactAction("launch-desc.txt"),
   ).resolves.toBeInTheDocument();
-  for (const [heading, sort, direction] of [
-    ["Name", "title", "asc"],
-    ["Name", "title", "desc"],
-    ["Created", "createdAt", "desc"],
-    ["Created", "createdAt", "asc"],
-  ] as const) {
-    click(getSortHeading(heading));
+  for (const direction of ["asc", "desc"] as const) {
+    click(getSortHeading("Created"));
 
     await expect(
-      findArtifactAction(`launch-${sort}-${direction}.txt`),
+      findArtifactAction(`launch-${direction}.txt`),
     ).resolves.toBeInTheDocument();
-    expect(getSortHeading(heading).closest("th")).toHaveAttribute(
+    expect(getSortHeading("Created").closest("th")).toHaveAttribute(
       "aria-sort",
       direction === "asc" ? "ascending" : "descending",
     );
-    expect(queryParams().get("sort")).toBe(sort);
     expect(queryParams().get("direction")).toBe(direction);
     expect(queryParams().get("q")).toBe("launch");
   }
 });
 
-test("Compact sort controls use the same kind, keyword, and backend order as table headings", async () => {
+test("The compact Created button shares direction with the table heading and retains kind and keyword", async () => {
   context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
     expect(query.kind).toBe("image");
     expect(query.keyword).toBe("launch");
     return respond(200, {
       artifacts: [
-        artifact({
-          kind: "image",
-          title: `${query.sort}-${query.direction}.png`,
-        }),
+        artifact({ kind: "image", title: `created-${query.direction}.png` }),
       ],
       nextCursor: null,
     });
   });
 
-  await setupLibraryPage(
-    "/artifacts?tab=image&q=launch&sort=title&direction=asc",
-  );
+  await setupLibraryPage("/artifacts?tab=image&q=launch&direction=asc");
 
   await expect(
-    findArtifactAction("title-asc.png"),
+    findArtifactAction("created-asc.png"),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.getByRole("combobox", { name: "Sort artifacts" }),
-  ).toHaveTextContent("Name");
-  click(screen.getByRole("combobox", { name: "Sort artifacts" }));
-  const choices = await screen.findByRole("listbox");
-  expect(
-    queryAllByRoleFast("option", choices).map((option) => {
-      return option.textContent?.trim();
-    }),
-  ).toStrictEqual(["Created", "Name"]);
-  click(within(choices).getByRole("option", { name: "Created" }));
+  const compactSort = getButtonByName(
+    "Created Sort descending",
+    getCatalogViewport(),
+  );
+  expect(compactSort).toHaveAccessibleName("Created Sort descending");
+  compactSort.focus();
+  const user = userEvent.setup();
+  await user.keyboard("{Enter}");
 
   await expect(
-    findArtifactAction("createdAt-desc.png"),
+    findArtifactAction("created-desc.png"),
   ).resolves.toBeInTheDocument();
   expect(getSortHeading("Created").closest("th")).toHaveAttribute(
     "aria-sort",
     "descending",
   );
-  click(getButtonByName("Sort ascending", getCatalogViewport()));
+  const heading = getSortHeading("Created");
+  heading.focus();
+  await user.keyboard(" ");
 
   await expect(
-    findArtifactAction("createdAt-asc.png"),
+    findArtifactAction("created-asc.png"),
   ).resolves.toBeInTheDocument();
   expect(getSortHeading("Created").closest("th")).toHaveAttribute(
     "aria-sort",
@@ -464,11 +447,10 @@ test("Compact sort controls use the same kind, keyword, and backend order as tab
   );
   expect(queryParams().get("tab")).toBe("image");
   expect(queryParams().get("q")).toBe("launch");
-  expect(queryParams().get("sort")).toBe("createdAt");
   expect(queryParams().get("direction")).toBe("asc");
 });
 
-test.each(["type", "sort", "search"] as const)(
+test.each(["type", "direction", "search"] as const)(
   "Changing %s resets the cursor and cancels an old page while retaining the other filters",
   async (change) => {
     const pagingStarted = context.mocks.deferred<void>();
@@ -479,20 +461,18 @@ test.each(["type", "sort", "search"] as const)(
       limit: 60,
       kind: "file",
       keyword: "launch",
-      sort: "createdAt",
       direction: "desc",
     } satisfies ArtifactCatalogListQuery;
     const changedQuery: ArtifactCatalogListQuery = {
       ...initialQuery,
       ...(change === "type" ? { kind: "image" } : {}),
-      ...(change === "sort" ? { sort: "title", direction: "asc" } : {}),
+      ...(change === "direction" ? { direction: "asc" } : {}),
       ...(change === "search" ? { keyword: "roadmap" } : {}),
     };
     const matchesChangedQuery = (query: ArtifactCatalogListQuery) => {
       return (
         query.kind === changedQuery.kind &&
         query.keyword === changedQuery.keyword &&
-        query.sort === changedQuery.sort &&
         query.direction === changedQuery.direction
       );
     };
@@ -557,9 +537,7 @@ test.each(["type", "sort", "search"] as const)(
       },
     );
 
-    await setupLibraryPage(
-      "/artifacts?tab=file&q=launch&sort=createdAt&direction=desc",
-    );
+    await setupLibraryPage("/artifacts?tab=file&q=launch&direction=desc");
 
     await expect(
       findArtifactAction("Initial filtered result.txt"),
@@ -569,8 +547,8 @@ test.each(["type", "sort", "search"] as const)(
 
     if (change === "type") {
       await selectType("Image");
-    } else if (change === "sort") {
-      click(getSortHeading("Name"));
+    } else if (change === "direction") {
+      click(getSortHeading("Created"));
     } else {
       await fill(
         screen.getByRole("searchbox", { name: "Search artifacts" }),
@@ -604,7 +582,6 @@ test.each(["type", "sort", "search"] as const)(
     ).not.toBeInTheDocument();
     expect(queryParams().get("tab")).toBe(changedQuery.kind);
     expect(queryParams().get("q")).toBe(changedQuery.keyword);
-    expect(queryParams().get("sort")).toBe(changedQuery.sort);
     expect(queryParams().get("direction")).toBe(changedQuery.direction);
   },
 );
@@ -632,7 +609,7 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   );
 
   await setupLibraryPage(
-    "/artifacts?tab=file&q=launch&sort=title&direction=asc&view=keep",
+    "/artifacts?tab=file&q=launch&direction=asc&view=keep",
   );
 
   await expect(
@@ -652,9 +629,8 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   ).resolves.toBeInTheDocument();
   expect(firstRow).toHaveAttribute("aria-current", "true");
   expect(
-    screen.queryByRole("combobox", { name: "Sort artifacts" }),
-  ).not.toBeInTheDocument();
-  expect(queryButtonByName("Sort descending", viewport)).toBeUndefined();
+    queryButtonByName("Created Sort descending", viewport),
+  ).toBeUndefined();
   await waitFor(() => {
     expect(
       getButtonByName("More artifact actions", preview),
@@ -684,9 +660,8 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   ).resolves.toBeInTheDocument();
   const switchedPreview = screen.getByTestId("artifact-sidebar");
   expect(
-    screen.queryByRole("combobox", { name: "Sort artifacts" }),
-  ).not.toBeInTheDocument();
-  expect(queryButtonByName("Sort descending", viewport)).toBeUndefined();
+    queryButtonByName("Created Sort descending", viewport),
+  ).toBeUndefined();
   expect(secondRow).toHaveAttribute("aria-current", "true");
   expect(firstRow).not.toHaveAttribute("aria-current");
   expect(queryParams().get("artifact")).toBeNull();
@@ -699,9 +674,8 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   });
   expect(viewport.scrollTop).toBe(320);
   expect(
-    screen.getByRole("combobox", { name: "Sort artifacts" }),
-  ).toHaveTextContent("Name");
-  expect(getButtonByName("Sort descending", viewport)).toBeInTheDocument();
+    getButtonByName("Created Sort descending", viewport),
+  ).toHaveTextContent("Created");
   expect(
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("launch");
@@ -710,7 +684,6 @@ test("Rows open with Enter and Space, switch previews, and return focus without 
   );
   expect(queryParams().get("tab")).toBe("file");
   expect(queryParams().get("q")).toBe("launch");
-  expect(queryParams().get("sort")).toBe("title");
   expect(queryParams().get("direction")).toBe("asc");
 });
 
@@ -721,7 +694,6 @@ test("A routed preview closes back to its original Library query", async () => {
       limit: 60,
       kind: "file",
       keyword: "release",
-      sort: "createdAt",
       direction: "asc",
     });
     return respond(200, { artifacts: [detail], nextCursor: null });
@@ -737,7 +709,7 @@ test("A routed preview closes back to its original Library query", async () => {
   );
 
   await setupLibraryPage(
-    `/artifacts?tab=file&q=release&sort=createdAt&direction=asc&artifact=${FIRST_ID}`,
+    `/artifacts?tab=file&q=release&direction=asc&artifact=${FIRST_ID}`,
   );
 
   const preview = await screen.findByTestId("artifact-sidebar");
@@ -745,10 +717,7 @@ test("A routed preview closes back to its original Library query", async () => {
     within(preview).findByText("Release preview"),
   ).resolves.toBeInTheDocument();
   expect(
-    screen.queryByRole("combobox", { name: "Sort artifacts" }),
-  ).not.toBeInTheDocument();
-  expect(
-    queryButtonByName("Sort descending", getCatalogViewport()),
+    queryButtonByName("Created Sort descending", getCatalogViewport()),
   ).toBeUndefined();
   expect(queryParams().get("artifact")).toBe(FIRST_ID);
   click(getButtonByName("Close artifact", preview));
@@ -765,20 +734,16 @@ test("A routed preview closes back to its original Library query", async () => {
     screen.getByRole("searchbox", { name: "Search artifacts" }),
   ).toHaveValue("release");
   expect(
-    screen.getByRole("combobox", { name: "Sort artifacts" }),
+    getButtonByName("Created Sort descending", getCatalogViewport()),
   ).toHaveTextContent("Created");
-  expect(
-    getButtonByName("Sort descending", getCatalogViewport()),
-  ).toBeInTheDocument();
   expect(screen.getByRole("combobox", { name: "Type" })).toHaveTextContent(
     "File",
   );
   expect(queryParams().get("q")).toBe("release");
-  expect(queryParams().get("sort")).toBe("createdAt");
   expect(queryParams().get("direction")).toBe("asc");
 });
 
-test.each(["search", "type", "sort"] as const)(
+test.each(["search", "type", "direction"] as const)(
   "Closing a routed preview after changing %s keeps the current query and does not reopen it",
   async (change) => {
     const detail = textDetail(FIRST_ID, "launch-routed.txt");
@@ -786,20 +751,18 @@ test.each(["search", "type", "sort"] as const)(
       limit: 60,
       kind: "file",
       keyword: "launch",
-      sort: "title",
       direction: "asc",
     } satisfies ArtifactCatalogListQuery;
     const changedQuery: ArtifactCatalogListQuery = {
       ...initialQuery,
       ...(change === "search" ? { keyword: "roadmap" } : {}),
       ...(change === "type" ? { kind: "image" } : {}),
-      ...(change === "sort" ? { sort: "createdAt", direction: "desc" } : {}),
+      ...(change === "direction" ? { direction: "desc" } : {}),
     };
     context.mocks.api(artifactCatalogContract.list, ({ query, respond }) => {
       const matchesChangedQuery =
         query.kind === changedQuery.kind &&
         query.keyword === changedQuery.keyword &&
-        query.sort === changedQuery.sort &&
         query.direction === changedQuery.direction;
       let expectedQuery: ArtifactCatalogListQuery = matchesChangedQuery
         ? changedQuery
@@ -846,7 +809,7 @@ test.each(["search", "type", "sort"] as const)(
     );
 
     await setupLibraryPage(
-      `/artifacts?tab=file&q=launch&sort=title&direction=asc&artifact=${FIRST_ID}`,
+      `/artifacts?tab=file&q=launch&direction=asc&artifact=${FIRST_ID}`,
     );
 
     await expect(
@@ -875,7 +838,6 @@ test.each(["search", "type", "sort"] as const)(
     });
     expect(queryParams().get("tab")).toBe(changedQuery.kind);
     expect(queryParams().get("q")).toBe(changedQuery.keyword);
-    expect(queryParams().get("sort")).toBe(changedQuery.sort);
     expect(queryParams().get("direction")).toBe(changedQuery.direction);
     expect(
       getButtonByName(
@@ -1085,7 +1047,7 @@ test("Row deletion retries in its own confirmation and keeps another artifact's 
     },
   );
 
-  await setupLibraryPage("/artifacts?tab=file&q=txt&sort=title&direction=asc");
+  await setupLibraryPage("/artifacts?tab=file&q=txt&direction=asc");
 
   await expect(
     findArtifactAction("keep-open.txt"),
@@ -1145,7 +1107,6 @@ test("Row deletion retries in its own confirmation and keeps another artifact's 
   ).toBeInTheDocument();
   expect(queryParams().get("tab")).toBe("file");
   expect(queryParams().get("q")).toBe("txt");
-  expect(queryParams().get("sort")).toBe("title");
   expect(queryParams().get("direction")).toBe("asc");
 });
 
@@ -1351,7 +1312,6 @@ test("Clearing an empty keyword and type intersection restores All without reset
       ...(query.keyword === "missing"
         ? { kind: "video", keyword: "missing" }
         : {}),
-      sort: "createdAt",
       direction: "asc",
     });
     if (query.keyword === "missing") {
@@ -1363,9 +1323,7 @@ test("Clearing an empty keyword and type intersection restores All without reset
     });
   });
 
-  await setupLibraryPage(
-    "/artifacts?tab=video&q=missing&sort=createdAt&direction=asc",
-  );
+  await setupLibraryPage("/artifacts?tab=video&q=missing&direction=asc");
 
   await expect(
     screen.findByRole("heading", { name: "No artifacts found" }),
@@ -1384,7 +1342,6 @@ test("Clearing an empty keyword and type intersection restores All without reset
   );
   expect(queryParams().get("tab")).toBe("all");
   expect(queryParams().has("q")).toBeFalsy();
-  expect(queryParams().get("sort")).toBe("createdAt");
   expect(queryParams().get("direction")).toBe("asc");
 });
 
@@ -1399,7 +1356,6 @@ test("Load more preserves earlier rows and retries a failed next page with the c
         limit: 60,
         kind: "file",
         keyword: "launch",
-        sort: "title",
         direction: "asc",
         ...(query.cursor ? { cursor: "next-launch-page" } : {}),
       });
@@ -1429,9 +1385,7 @@ test("Load more preserves earlier rows and retries a failed next page with the c
     },
   );
 
-  await setupLibraryPage(
-    "/artifacts?tab=file&q=launch&sort=title&direction=asc",
-  );
+  await setupLibraryPage("/artifacts?tab=file&q=launch&direction=asc");
 
   await expect(
     findArtifactAction("launch-first-page.txt"),

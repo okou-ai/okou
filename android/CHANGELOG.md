@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.52.1](https://github.com/okou-ai/okou/compare/android-v0.52.0...android-v0.52.1) (2026-11-24)
+
+
+### Refactoring
+
+* remove artifact name sorting ([#50428](https://github.com/okou-ai/okou/issues/50428)) ([b693ca5](https://github.com/okou-ai/okou/commit/b693ca5a66bab74587596b3971fdc5163f47f352))
+
+## [0.52.0](https://github.com/okou-ai/okou/compare/android-v0.51.1...android-v0.52.0) (2026-11-24)
+
+
+### Features
+
+* **android:** show chat origins and automation workflows in chat resources ([#50381](https://github.com/okou-ai/okou/issues/50381)) ([1785657](https://github.com/okou-ai/okou/commit/17856573d60e67c60d6c870dcdc5f556c8ae5556))
+
+
+### Bug Fixes
+
+* **android:** show workflow editor save progress in place ([#50360](https://github.com/okou-ai/okou/issues/50360)) ([23fe8cc](https://github.com/okou-ai/okou/commit/23fe8ccfb1c372236bfd3237c4b55f06099be4b0))
+
 ## [0.51.1](https://github.com/okou-ai/okou/compare/android-v0.51.0...android-v0.51.1) (2026-11-24)
 
 
