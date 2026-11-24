@@ -47,6 +47,7 @@ import * as discordGatewayReceiptSchema from "./schema/discord-gateway-receipt";
 import * as chatTeamsContextSchema from "./schema/chat-teams-context";
 import * as chatTelegramContextSchema from "./schema/chat-telegram-context";
 import * as secretSchema from "./schema/secret";
+import * as antigravityMemberProfileSchema from "./schema/antigravity-member-profile";
 import * as modelProviderSchema from "./schema/model-provider";
 import * as modelProviderAccountSchema from "./schema/model-provider-account";
 import * as runModelCatalogSchema from "./schema/run-model-catalog";
@@ -224,6 +225,7 @@ export const schema = {
   ...discordGatewayReceiptSchema,
   ...chatTelegramContextSchema,
   ...secretSchema,
+  ...antigravityMemberProfileSchema,
   ...modelProviderSchema,
   ...modelProviderAccountSchema,
   ...runModelCatalogSchema,

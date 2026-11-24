@@ -245,6 +245,7 @@
     "src/signals/services/model-catalog.service.ts",
     "src/signals/services/run-models.service.ts",
     "src/signals/services/model-route-capabilities.service.ts",
+    "src/signals/services/antigravity-personal-subscription.ts",
     "src/signals/services/model-selection.service.ts",
     "src/signals/services/model-source-context.service.ts",
     "src/signals/services/morning-brief-enrollment-data.service.ts",

@@ -5720,6 +5720,14 @@
       "actions": {
         "resetUsage": "重置用量"
       },
+      "antigravity": {
+        "check": "查看登录状态",
+        "error": "请检查分配给你的登录环境，然后重试。",
+        "expired": "登录已过期，请重新连接。",
+        "terminal": "在终端运行以下命令，然后使用你的个人 Google AI 账号登录。",
+        "title": "Google AI（Antigravity）",
+        "unassigned": "请管理员为你分配登录终端。"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "授权码",

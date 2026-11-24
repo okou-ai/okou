@@ -5811,6 +5811,14 @@
       "actions": {
         "resetUsage": "Redefinir uso"
       },
+      "antigravity": {
+        "check": "Verificar login",
+        "error": "Confira o ambiente de login atribuído a você e tente novamente.",
+        "expired": "O login expirou. Conecte a conta novamente.",
+        "terminal": "Execute este comando no terminal e faça login com sua conta pessoal do Google AI.",
+        "title": "Google AI (Antigravity)",
+        "unassigned": "Peça a um administrador para atribuir um terminal de login a você."
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "Código de autorização",

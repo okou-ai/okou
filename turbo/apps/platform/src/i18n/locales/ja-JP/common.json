@@ -5720,6 +5720,14 @@
       "actions": {
         "resetUsage": "使用量をリセットする"
       },
+      "antigravity": {
+        "check": "ログイン状態を確認",
+        "error": "割り当てられたログイン環境を確認して、もう一度お試しください。",
+        "expired": "ログインの有効期限が切れました。もう一度接続してください。",
+        "terminal": "ターミナルで次のコマンドを実行し、個人の Google AI アカウントでログインしてください。",
+        "title": "Google AI（Antigravity）",
+        "unassigned": "ログイン用のターミナルを管理者に割り当ててもらってください。"
+      },
       "deviceAuth": {
         "claude": {
           "authorizationCode": "認証コード",
