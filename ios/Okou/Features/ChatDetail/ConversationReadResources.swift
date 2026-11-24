@@ -5,6 +5,7 @@ import Foundation
 
 /// One resident conversation owns these independent reads. Confirmed history, delivery
 /// reconciliation and native projection remain in ConversationStore, not in this graph.
+/// The graph's values live in the workspace session's Store.
 @MainActor
 final class ConversationReadResources {
   private let lifecycleTasks: LifecycleTasks
@@ -19,7 +20,7 @@ final class ConversationReadResources {
     }
   }
 
-  private let store = CCState.Store()
+  private let store: CCState.Store
   private let revision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let reload: Command<Void, Void>
@@ -32,12 +33,13 @@ final class ConversationReadResources {
   private var closed = false
 
   init(
-    sync: ChatSync, threadID: String,
+    sync: ChatSync, threadID: String, graph: CCState.Store,
     sleep: @escaping @Sendable (Duration) async throws -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     lifecycleTasks: LifecycleTasks? = nil
   ) {
     self.lifecycleTasks = lifecycleTasks ?? LifecycleTasks()
+    store = graph
     self.sync = sync
     self.threadID = threadID
     self.sleep = sleep

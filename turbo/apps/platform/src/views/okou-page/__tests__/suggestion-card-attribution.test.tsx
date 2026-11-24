@@ -2,7 +2,7 @@ import { proactiveSuggestionsContract } from "@okouai/api-contracts/contracts/pr
 import { suggestionFeedbacks } from "@okouai/api-contracts/contracts/suggestion-context";
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import {
   feedContract,
   type Suggestion,
@@ -31,34 +31,23 @@ import { resetSignal } from "../../../signals/utils.ts";
 import { pathname } from "../../../signals/location.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 import { nowDate } from "../../../lib/time.ts";
-const { posthog } = vi.hoisted(() => {
-  vi.stubEnv("VITE_POSTHOG_KEY", "phc_suggestion_card_test");
+vi.hoisted(() => {
   window.location.href = "https://app.okou.ai/";
-  return {
-    posthog: {
-      capture:
-        vi.fn<(name: string, properties?: Record<string, unknown>) => void>(),
-      identify: vi.fn<() => void>(),
-      init: vi.fn<() => void>(),
-      register: vi.fn<() => void>(),
-      unregister: vi.fn<() => void>(),
-      reset: vi.fn<() => void>(),
-    },
-  };
 });
-vi.mock("posthog-js/dist/module.slim", () => {
-  return { posthog };
+const context = testContext();
+beforeEach(() => {
+  context.mocks.posthog();
 });
 function cardEvents(name: string) {
-  return posthog.capture.mock.calls
-    .filter(([event]) => {
-      return event === name;
+  return context.mocks
+    .posthog()
+    .events.filter((event) => {
+      return event.name === name;
     })
-    .map(([, properties]) => {
-      return properties;
+    .map((event) => {
+      return event.properties;
     });
 }
-const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const threadId = "b0000000-0000-4000-a000-000000000811";
 function makeSuggestion(): Suggestion {
