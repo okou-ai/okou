@@ -37,6 +37,8 @@ final class ComposerConnectorAccountResources {
   private let selectDeletion: Command<Void, String?>
   private let keyword = CCState.State("")
   private let revision = CCState.State(0)
+  private let catalogRevision = CCState.State(0)
+  private let reloadCatalog: Command<Void, Void>
   private let contextRevision = CCState.State(0)
   private let lifetime = CCState.State(true)
   private let tail = CCState.State<Tail?>(nil)
@@ -69,6 +71,10 @@ final class ComposerConnectorAccountResources {
     self.didFail = didFail
     let deletionID = deletionID
     selectDeletion = Command { context, value in try context.set(deletionID, value) }
+    let catalogRevision = catalogRevision
+    reloadCatalog = Command { context in
+      try context.set(catalogRevision, update: { $0 + 1 })
+    }
     let keyword = keyword
     let revision = revision
     let contextRevision = contextRevision
@@ -99,7 +105,7 @@ final class ComposerConnectorAccountResources {
     Computed { [weak self] get, options in
       guard let self, !isClosed, try get(lifetime), let slug = connector.target.connectorSlug
       else { throw CancellationError() }
-      _ = try get(revision)
+      _ = try get(catalogRevision)
       let signal = options.signal
       let task = Task<ChatCatalogConnector, Error> { @MainActor [weak self, service] in
         do {
@@ -241,6 +247,11 @@ final class ComposerConnectorAccountResources {
   func prepareDisconnect(_ id: String?) {
     guard !isClosed else { return }
     do { try store.set(selectDeletion, id) } catch { didFail(error) }
+  }
+
+  func retryCatalog() {
+    guard !isClosed else { return }
+    do { try store.set(reloadCatalog) } catch { didFail(error) }
   }
 
   func update(search: String) {

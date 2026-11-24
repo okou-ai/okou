@@ -169,7 +169,7 @@ private struct SettingsConnectorDetail: View {
     case .hasError(let error):
       List {
         ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
-          await resources.retry()
+          resources.retryCatalog()
         }
         NavigationLink("Manage accounts") {
           ComposerConnectorAccounts(store: store, resources: resources)
