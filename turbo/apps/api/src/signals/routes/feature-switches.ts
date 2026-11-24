@@ -34,7 +34,9 @@ function featureSwitchResponseBody(params: {
 }) {
   const switches = { ...params.switches };
   if (!isStaffOrg(params.orgId)) {
-    for (const key of staffOptInOnlySwitchKeys) delete switches[key];
+    for (const key of staffOptInOnlySwitchKeys) {
+      delete switches[key];
+    }
   }
   return {
     switches,
@@ -90,7 +92,9 @@ const updateFeatureSwitchesInner$ = command(
     }
     if (
       !isStaffOrg(auth.orgId) &&
-      staffOptInOnlySwitchKeys.some((key) => bodyResult.data.switches[key])
+      staffOptInOnlySwitchKeys.some((key) => {
+        return bodyResult.data.switches[key];
+      })
     ) {
       return {
         status: 403 as const,
