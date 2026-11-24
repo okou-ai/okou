@@ -4,7 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { discordOauthContract } from "@okouai/api-contracts/contracts/discord-oauth";
 import { integrationsDiscordContract } from "@okouai/api-contracts/contracts/integrations-discord";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import {
+  click,
+  queryAllByRoleFast,
+  setupPage,
+  startPage,
+} from "../../../__tests__/page-helper.ts";
 import { initSentry } from "../../../lib/sentry.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
 import {
@@ -583,15 +588,21 @@ test("integrations-discord-039 the Works root becomes interactive only after Dis
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
 });
 
-test.each([true, false])(
-  "Discord setup after returning to Works follows the released membership: %s",
-  async (connected) => {
+test.each([
+  { initial: false, connected: false, when: "before leaving" },
+  { initial: false, connected: true, when: "before leaving" },
+  { initial: true, connected: true, when: "before leaving" },
+  { initial: false, connected: true, when: "on return" },
+  { initial: true, connected: true, when: "on return" },
+])(
+  "Discord status starts at $initial and returns as $connected when refresh starts $when",
+  async ({ initial, connected, when }) => {
     const request = context.mocks.deferred<void>();
     const publish = context.mocks.deferred<void>();
     let refreshing = false;
     statusService(context, async () => {
       if (!refreshing) {
-        return { isAdmin: true, isConnected: false };
+        return { isAdmin: true, isConnected: initial };
       }
       if (!request.settled()) {
         request.resolve();
@@ -606,21 +617,34 @@ test.each([true, false])(
       };
     });
     await visit();
-    await expect(findDiscordButton("Connect")).resolves.toBeEnabled();
-    refreshing = true;
-    notifyStatusChanged();
-    await request.promise;
+    await expect(
+      findDiscordButton(initial ? "More options" : "Connect"),
+    ).resolves.toBeEnabled();
+    if (when === "before leaving") {
+      refreshing = true;
+      notifyStatusChanged();
+      await request.promise;
+    }
     click(await findAction("link", "Okou"));
     await waitFor(() => {
       return expect(location.pathname).toBe("/");
     });
+    refreshing = true;
     window.history.back();
+    await request.promise;
     await waitFor(() => {
       return expect(location.pathname).toBe("/works");
     });
     const returningCard = await screen.findByText(description);
     expect(returningCard).toBeInTheDocument();
-    expect(queryAction("button", "Connect", card())).toBeNull();
+    const cached = when === "on return";
+    expect(queryAllByRoleFast("button", card())).toHaveLength(cached ? 1 : 0);
+    expect(Boolean(queryDiscordButton("Connect"))).toBe(cached && !initial);
+    expect(Boolean(queryDiscordButton("More options"))).toBe(cached && initial);
+    expect(card().querySelector("button:disabled")).toBeNull();
+    expect(Boolean(within(card()).queryByText("Connected"))).toBe(
+      cached && initial,
+    );
     publish.resolve();
     await expect(
       findDiscordButton(connected ? "More options" : "Connect"),
@@ -655,4 +679,36 @@ test("A connected Discord callback reads the unverified account before offering 
   expect(queryAction("link", "Open Discord")).toBeNull();
   await expect(findAction("button", "Connect")).resolves.toBeEnabled();
   expect(screen.queryByText("provider-private")).toBeNull();
+});
+
+test("Discord reports denied status globally and restores the connected card on return", async () => {
+  const connected = () => {
+    return { isAdmin: true, isConnected: true };
+  };
+  statusService(context, connected);
+  await visit();
+  await expect(findDiscordButton("More options")).resolves.toBeEnabled();
+  expect(within(card()).getByText("Connected")).toBeInTheDocument();
+
+  context.mocks.api(integrationsDiscordContract.getStatus, ({ respond }) => {
+    return respond(403, {
+      error: { code: "FORBIDDEN", message: "Discord access denied" },
+    });
+  });
+  notifyStatusChanged();
+  const notice = await screen.findByText("Discord access denied");
+  expect(card()).not.toContainElement(notice);
+  expect(within(card()).getByText(description)).toBeInTheDocument();
+  expect(queryAllByRoleFast("button", card())).toHaveLength(0);
+  expect(within(card()).queryByText("Connected")).toBeNull();
+
+  click(await findAction("link", "Okou"));
+  await waitFor(() => {
+    return expect(location.pathname).toBe("/");
+  });
+  statusService(context, connected);
+  window.history.back();
+  await screen.findByText(description);
+  await expect(findDiscordButton("More options")).resolves.toBeEnabled();
+  expect(within(card()).getByText("Connected")).toBeInTheDocument();
 });

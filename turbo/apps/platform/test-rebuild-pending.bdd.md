@@ -548,7 +548,7 @@ Frozen owner: `turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-au
 - **When** The next segment is requested.
 - **Then** No segment is returned.
 
-**Unverified clauses.** 零采样输入没有进入可停止状态，而有声输入可停止并上传 WAV；因此尚不能观察原 Given 的空录音正常结束以及返回零段。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Sent an empty microphone frame through the real recording page. Stop remained absent. A single positive sample enabled Stop. The WAV suite now registers that contrast. No finished zero-sample recording was produced through these controls. Find a supported device termination that completes an empty draft and permits a request for the next segment. [Case review](../../../test-rebuild-evidence/104/README.md#voice-draft-audio-010).
 
 ### voice-draft-audio-013
 
@@ -558,7 +558,7 @@ Frozen owner: `turbo/apps/platform/src/signals/voice-io/__tests__/voice-draft-au
 - **When** The next segment is requested before recording is finished.
 - **Then** A non-final segment covers samples 58 through 73 seconds; the retained 60-second checkpoint is not resliced.
 
-**Unverified clauses.** 持续录至 73 秒，实际整段 WAV 与停止尾段分别覆盖 52–67 与 65–73 秒。录制者可区分两种交付，却未在真实页面构造 60 秒检查点恢复得到 58–73 的输出。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Recorded exactly 60 seconds, navigated away after the fourth live WAV, and reopened the draft. The four live uploads ended at 15, 28, 41 and 54 seconds. Use recording was available without Resume. Its uploads covered 39–54 and 52–60 seconds. The continuous 73-second control has a different non-final 52–67 second window. A supported resume of a retained 60-second checkpoint must emit a non-final 58–73 second WAV. The initial fourth response raced navigation and was requested again on recovery. [Case review](../../../test-rebuild-evidence/104/README.md#voice-draft-audio-013).
 
 ## `src/views/artifacts-page/__tests__/artifact-sharing.test.tsx`
 
@@ -1008,7 +1008,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability
 - **When** The user chooses the recording when polishing is available.
 - **Then** The composer receives all transcript text, grouped into 128 polish segments with one transcript per item; the audio is not retranscribed.
 
-**Unverified clauses.** 真实录音、转写、持久化和路由重开后，用已保存的 128 段生成 128 个独立 polish 项，完整文本进入编辑器；若重转写会得到不同文案。长程补充验证与短录音主套件分列，常规时限内仍缺此规模的注册。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Registered an independent 128-segment recovery trial at the ordinary 5000 ms suite limit. It supplied microphone PCM and received four transcriptions before timeout. It did not reach the restored editor or 128 polish groups in that registration. The previous long-run proof and short registered recovery control remain distinct. A representative saved 128-segment draft must be obtainable at a supported boundary within the normal suite run. [Case review](../../../test-rebuild-evidence/104/README.md#chat-capability-voice-recording-004).
 
 ### chat-capability-voice-recording-005
 
@@ -1018,7 +1018,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-capability
 - **When** The user chooses the recording when polishing is available.
 - **Then** The composer receives all transcript text, grouped into 65 polish segments with up to two transcripts per item; the audio is not retranscribed.
 
-**Unverified clauses.** 同一真实录音链路构造 129 段，重开后读出 64 个双段及最后一个单段；另有缺转写时重新读取的对照。常规 App 套件仍保留规模缺口。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** The separate 129-segment trial supplied its own microphone capture. It reached four transcription responses before the ordinary 5000 ms limit, before recovery and the expected 65 polish items. The prior full-size supplemental recovery remains historical evidence. A regular registration must exercise the 129-to-65 boundary and detect any retranscription or lost final singleton. [Case review](../../../test-rebuild-evidence/104/README.md#chat-capability-voice-recording-005).
 
 ## `src/views/okou-page/__tests__/chat-composer-connector-overview.test.tsx`
 
@@ -1164,7 +1164,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They open and close Automations, revealing the transcript.
 - **Then** After the reveal, the anchored message returns to the same screen position with exactly one scroll adjustment.
 
-**Unverified clauses.** 历史答复在关闭 Automations 后保持同一屏幕位置与距底距离。复查业务锚点不依赖写入次数；观察窗内单个实际滚动调整仍无稳定证据。 Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** At 760 px the history text returned to 263.25 px and offset 4687. Browser animation frames observed 4687 → 0 while hidden and 0 → 4687 on reveal. The scrollTop, scroll, scrollTo and scrollBy observers registered zero application writes during reveal. Two same-frame control scrolls of +22 and −22 were both recorded. Browser visibility restoration and an explicit physical adjustment are distinguishable here. A receiver for compositor changes inside one frame, or an upstream statement defining the count, could resolve the frozen “exactly one.” [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-001).
 
 ### chat-scroll-005
 
@@ -1174,7 +1174,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** A new completed reply arrives while the transcript is hidden, and the reader closes Automations.
 - **Then** The original message remains at the same screen position after reveal, with one scroll adjustment.
 
-**Unverified clauses.** 隐藏期间新回合完成；回到聊天后的原位置与新答复均可验证。跨隐藏与恢复全过程恰好一次物理调整仍无独立归属。 Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Repeated the narrow reveal after the same worker delivered turn 17 behind Automations. The marker was present before close. Offset 4687 and text position 263.25 px returned. Explicit scroll writes during reveal were zero, with one sampled transition and a two-write positive control. The single physical adjustment remains unproved. Preserve the separate completed-reply observation. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-005).
 
 ### chat-scroll-006
 
@@ -1184,17 +1184,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They Alt-click a side conversation in the chat list, opening it alongside the primary conversation and dismissing Automations.
 - **Then** The primary conversation remains at its route with the side conversation selected in the sidebar query, and the empty side conversation shows capability discovery. The original reading anchor is restored; subsequent image growth and incoming replies preserve its screen position without returning to the tail.
 
-**Unverified clauses.** The side-chat fixture did not establish the requested independent target and history. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### chat-scroll-007
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.bdd.md#chat-scroll-007)
-
-- **Given** The reader reaches the tail, then changes the live scroll offset to 275 before opening Automations at a narrow viewport.
-- **When** A new completed reply arrives while the transcript is hidden, and the reader closes Automations.
-- **Then** The transcript restores to scroll offset 275 and the same message remains at the same screen position.
-
-**Unverified clauses.** The browser layout fixture observed two scroll adjustments where the original scenario requires one. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** At 930 px width the side conversation remained accessible under Automations. Alt-click opened the empty side conversation through the sidebar query, kept the primary route and exposed capability discovery. Primary text stayed at 385.25 px through reveal, the incoming reply and a real image decode. The reserved thumbnail stayed 198 × 178 px. Repeat behind a primary image whose rendered height genuinely grows. The 760 px layout did not expose the side-conversation link while covered. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-006).
 
 ### chat-scroll-008
 
@@ -1204,7 +1194,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** A new reply containing a Mermaid diagram begins asynchronous image preparation, and the reader closes Automations before preparation finishes.
 - **Then** The oldest message at the captured reading position remains at the same screen position while preparation is pending and after the diagram image is ready; the reader is not forced to the tail.
 
-**Unverified clauses.** Revealing the older diagram moved the measured anchor from 155 to 0. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** At physical offset 275, delivered a diagram reply while Automations covered the transcript. The seventeenth marker arrived. The external image receiver had zero arrivals both before and after closing the panel. The same question returned at 296 px. Scrolling to the diagram then started the held image request. Revisit when rendering can start actual image preparation for the incoming reply while the transcript is hidden. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-008).
 
 ### chat-scroll-017
 
@@ -1214,7 +1204,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They focus the composer through three keyboard-viewport shrink, pan, and restore cycles, then resize the layout viewport.
 - **Then** The same message remains at the same reading position throughout, and the focused composer retains both draft lines through the keyboard cycles.
 
-**Unverified clauses.** The history anchor moved. The probe could not obtain the required Scroll to bottom control for the final step. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Focused a two-line draft and ran three shrink/restore cycles in Chromium. Desktop layout resizing retained the reference. A PWA installation and launch succeeded, but the observed target reported standalone=false and no independent keyboard pan. Separately, a routed standalone VisualViewport fixture with distinct resize and pan inputs moved the text from 65 to −265 px. Use a standalone target that reports its display mode and a real nonzero visualViewport.offsetTop during keyboard use. Keep the existing tail regression separate. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-017).
 
 ### chat-scroll-018
 
@@ -1224,7 +1214,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They open Research from the Add menu, then close the capability tray.
 - **Then** The transcript remains at the tail while the tray reduces its viewport height by 120 pixels and after it closes; the composer remains empty and the conversation route does not change.
 
-**Unverified clauses.** The Research view opened. Closing the capability tray and the required 120-pixel viewport transition remain unproven. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** From a completed conversation at the tail, clicked Add, Research and Remove Research. Transcript heights were 561 → 201 → 561 px. Distance to the bottom stayed zero, the route stayed put, and the composer stayed empty. The measured reduction was 360 px. Revisit an actual 120 px tray layout or an upstream decision superseding that dimension. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-018).
 
 ### chat-scroll-019
 
@@ -1234,7 +1224,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They open Research from the Add menu, then close the capability tray.
 - **Then** The same message remains at the same reading position while the tray reduces its viewport height by 120 pixels and after it closes; the composer remains empty and the conversation route does not change.
 
-**Unverified clauses.** The Research view opened. Closing the capability tray and the required 120-pixel viewport transition remain unproven. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Delivered a terminal run.cancelled row and opened Research from history with an empty composer. The same text stayed at 249.25 px and scrollTop at 4701 through opening and removal. Heights were 561 → 201 → 561 px, with the route unchanged. The measured reduction was 360 px. A stopped conversation with a 120 px reduction, or a documented replacement for that contract, would settle this case. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-019).
 
 ### chat-scroll-020
 
@@ -1244,7 +1234,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** A late-loaded image above the messages increases content height by 75 pixels.
 - **Then** The anchored message remains at the same screen position.
 
-**Unverified clauses.** The image and scrolled-history fixture did not establish the reference position required by the Then. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Scrolled the Markdown image into view to start an actual SVG request, then read a lower message while the receiver held the response. The image was above the anchor. After releasing the 240 × 75 SVG and awaiting browser decode, the thumbnail was still 198 × 178 px and the reference was still at 351.25 px. Exercise a supported late-loading media presentation that actually increases document height by 75 px. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-020).
 
 ### chat-scroll-023
 
@@ -1254,7 +1244,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** Two completed replies arrive in succession.
 - **Then** Both new replies become visible while the original anchor remains at the same screen position.
 
-**Unverified clauses.** The retained message moved from the measured 180 to -1440 after the append. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Delivered two completed turns through separate catch-up responses. The locator showed 17 then 18 turns. At both arrivals the original text was at 263.25 px. The replies were mounted at 1507.75 and 1789.25 px, below the transcript bottom at 609 px. Both were readable after scrolling to the tail. A layout or presentation change must make both arriving replies visible in the viewport while preserving the history anchor. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-023).
 
 ### chat-scroll-024
 
@@ -1264,7 +1254,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** Older messages load as the reader scrolls.
 - **Then** The sixth question becomes visible and the previously visible anchor stays at the same screen position.
 
-**Unverified clauses.** The sixth question did not render at the target position. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Started from sixteen completed turns with question 6 unmounted. On a wheel event at scrollTop 4036, event …0038, “Turn 13, observation 3.” was at 448.75 px. When the older local page mounted and layout settled at 4680, the same text was still at 448.75 px. Question 6 was offscreen until another wheel reached 2336. With shorter earlier turns and a 1600 px browser height, a single wheel made question 6 visible, but question 9 moved from 1031 to 1019 px. A separate 51 px wheel moved the same control text from 84.25 to 135.25 px. The same delivery must show question 6 in the viewport while the pre-delivery event and text retain their screen coordinate. Recheck a change to native anchor compensation or page measurement. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-024).
 
 ### chat-scroll-025
 
@@ -1274,7 +1264,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/chat-scroll.tes
 - **When** They scroll near the top, away from it, and stop near the top again.
 - **Then** The sixth question loads once and the original visible anchor stays at the same screen position; the fourth question remains absent.
 
-**Unverified clauses.** The sixth question did not render at the target position. Scroll capture uses the visible event anchor and hands reflow to native anchoring. #50334 changes voice-chip rendering, not the anchor or tray geometry in this Given. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Drove near, away, then near again with trusted wheels. Question 6 mounted, unmounted, and mounted again. Question 4 stayed absent. The reference retained its position across each local layout. Repeating with the next wheel issued at the observed scroll event also produced two mounts. Look for a change to page retention or a continuous gesture with a single independently observed mount and the same pre-delivery text position. [Case review](../../../test-rebuild-evidence/104/README.md#chat-scroll-025).
 
 ## `src/views/okou-page/__tests__/composer-custom-template-recommendations.test.tsx`
 
@@ -1384,16 +1374,6 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/get-started-ent
 
 ## `src/views/okou-page/__tests__/integrations-discord.test.tsx`
 
-### integrations-discord-016
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.bdd.md#integrations-discord-016)
-
-- **Given** A user opens a Discord callback URL marked connected, but the account status says there is no verified connection.
-- **When** The callback page loads.
-- **Then** The user is taken to /settings/discord with status=connected and sees the Connect to Discord heading. No Connect action, Open Discord link, provider error detail, or completion request appears.
-
-**Unverified clauses.** 传入 connected 与私有错误、state、completionToken，成员状态返回未连接。实际清理到 /settings/discord?status=connected，没有 Open Discord 或提供方错误，但页面确有可用 Connect。已移除对内部完成次数的断言。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
 ### integrations-discord-037
 
 Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.bdd.md#integrations-discord-037)
@@ -1402,7 +1382,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-di
 - **When** The user returns to Works before the refresh completes.
 - **Then** The Discord card continues to show its description and an enabled Connect button; after refresh it shows Connected.
 
-**Unverified clauses.** 离开并返回 Works 时扣住 Discord 状态，说明可读、Connect 消失。相同操作分别释放 connected / disconnected，前者显示 Connected 和可用 More options，后者重新显示可用 Connect。原等待中可点击 Connect 仍缺。 [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Started disconnected, held the change-triggered status request, left for Chat and returned before release. The description remained with no buttons. Delivery exposed Connected and enabled More options. In a separate control where refresh started only on return, the card retained enabled Connect until delivery. Both chronologies have a regular registration. The upstream cache promise covers refresh starting on return. A change or a product ruling on refresh already pending before departure could close the original. [Case review](../../../test-rebuild-evidence/104/README.md#integrations-discord-037).
 
 ### integrations-discord-038
 
@@ -1412,17 +1392,7 @@ Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-di
 - **When** The user returns to Works before the refresh completes.
 - **Then** The Discord card continues to show its description and Connected status; after refresh it still shows Connected.
 
-**Unverified clauses.** With the initial card connected, the return route reached the description but not the cached Connected status during the retained refresh. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
-
-### integrations-discord-040
-
-Frozen owner: `turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.test.tsx` · [Original frozen entry](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/src/views/okou-page/__tests__/integrations-discord.bdd.md#integrations-discord-040)
-
-- **Given** Discord initially shows Connected, then a status refresh is denied with a 403 error.
-- **When** The user returns to Works after leaving for Chat, once status access is available again.
-- **Then** During the error, the card shows “Discord access denied” and its description, with no buttons or stale Connected status. On returning, it shows Connected again.
-
-**Unverified clauses.** Connected was visible. After the 403 refresh, the requested Discord access denied text did not appear. Recovery after the denied card remains unproved. [Case review](https://github.com/okou-ai/okou/blob/557f30ebbb771a9006ca3e9389e5129ab274e560/turbo/apps/platform/test-rebuild-batch-100.tsv).
+**Unverified clauses.** Started connected, held refresh before leaving Works and returned while pending. The card showed its description without Connected or actions. The response restored Connected and enabled More options. Starting refresh only on return preserved the cached Connected state. Both initial states and both chronologies were exercised. Look for a decision or implementation that preserves a connected card across departure with a status request already pending. [Case review](../../../test-rebuild-evidence/104/README.md#integrations-discord-038).
 
 ## `src/views/okou-page/__tests__/paid-media-creation.test.tsx`
 

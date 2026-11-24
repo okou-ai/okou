@@ -1,0 +1,73 @@
+{
+  "integrations-discord-016": {
+    "path": "/settings/discord?status=connected",
+    "connectEnabled": true,
+    "openDiscordLinks": 0,
+    "providerDetail": 0,
+    "failedControl": 400,
+    "receiver": [
+      {
+        "step": "before-callback"
+      },
+      {
+        "index": 1,
+        "method": "GET",
+        "path": "/api/integrations/discord",
+        "status": 200
+      },
+      {
+        "step": "after-leaving-callback"
+      },
+      {
+        "index": 3,
+        "method": "POST",
+        "path": "/api/integrations/discord/oauth/complete",
+        "status": 400
+      },
+      {
+        "step": "after-control"
+      }
+    ]
+  },
+  "integrations-discord-037": {
+    "initiallyConnected": false,
+    "pendingBeforeDeparture": {
+      "pending": "DiscordMention Okou in a server or send the bot a direct message.",
+      "buttons": 0
+    },
+    "refreshStartsOnReturn": {
+      "pending": "DiscordMention Okou in a server or send the bot a direct message.Connect",
+      "buttons": 1
+    },
+    "afterDelivery": {
+      "connected": true,
+      "moreOptionsEnabled": true
+    }
+  },
+  "integrations-discord-038": {
+    "initiallyConnected": true,
+    "pendingBeforeDeparture": {
+      "pending": "DiscordMention Okou in a server or send the bot a direct message.",
+      "buttons": 0
+    },
+    "refreshStartsOnReturn": {
+      "pending": "DiscordMention Okou in a server or send the bot a direct message.Connected",
+      "buttons": 1
+    },
+    "afterDelivery": {
+      "connected": true,
+      "moreOptionsEnabled": true
+    }
+  },
+  "integrations-discord-040": {
+    "initialConnected": true,
+    "httpStatus": 403,
+    "globalErrorMatches": 1,
+    "cardText": "DiscordMention Okou in a server or send the bot a direct message.",
+    "cardActionCount": 0,
+    "afterReturning": {
+      "connected": true,
+      "moreOptionsEnabled": true
+    }
+  }
+}

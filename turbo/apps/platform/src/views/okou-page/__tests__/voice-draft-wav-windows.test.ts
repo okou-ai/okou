@@ -1,6 +1,6 @@
 import { voiceIoTranscribeContract } from "@okouai/api-contracts/contracts/voice-io-transcribe";
 import { voiceIoPolishSegmentsContract } from "@okouai/api-contracts/contracts/voice-io-polish";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
@@ -9,7 +9,7 @@ import {
   createChatCapabilityHelpers,
   RUN_PATH,
 } from "./chat-capability-test-helpers.ts";
-import { findEnabledButton } from "./chat-run-test-fixtures.ts";
+import { findEnabledButton, queryButton } from "./chat-run-test-fixtures.ts";
 const context = testContext();
 const rate = 16_000;
 function speech(count: number) {
@@ -221,4 +221,27 @@ test("The speech detector receives full-scale microphone samples before the tran
     expect.closeTo(0, 4),
   ]);
   expect(files[0]?.type).toBe("audio/wav");
+});
+
+test("An empty microphone frame leaves recording in startup until the first sample arrives", async () => {
+  const microphone = context.mocks.deferred<(samples: Float32Array) => void>();
+  context.mocks.browser.voiceInput({
+    rms: 0.25,
+    vadProbability: 0.99,
+    onPcmCapture: (emit) => {
+      return microphone.resolve(emit);
+    },
+    finalPcmSamples: new Float32Array(0),
+  });
+  await setupPage({ context, path: "/" });
+  click(await findEnabledButton("Voice input"));
+  const emit = await microphone.promise;
+  act(() => {
+    return emit(new Float32Array(0));
+  });
+  expect(queryButton("Stop recording")).toBeNull();
+  act(() => {
+    return emit(Float32Array.of(0.25));
+  });
+  await expect(findEnabledButton("Stop recording")).resolves.toBeEnabled();
 });
